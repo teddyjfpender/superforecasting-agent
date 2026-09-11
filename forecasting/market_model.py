@@ -206,7 +206,7 @@ def _run_market_agent(
     carry ``fallback_model`` (provider failover) + ``parent_session_id`` (lineage).
     ``main_runtime`` is unused here (it belongs to the auxiliary call_llm).
     """
-    from run_agent import AIAgent
+    from agent.runtime import AIAgent
 
     rt = runtime or {}
     preset = preset or DEPTH_PRESETS.get(depth, DEPTH_PRESETS[DEFAULT_DEPTH])

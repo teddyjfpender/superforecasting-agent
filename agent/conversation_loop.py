@@ -79,7 +79,7 @@ def _ra():
     ``run_agent.handle_function_call`` / ``run_agent._set_interrupt`` /
     ``run_agent.OpenAI`` and have those patches reach this code path.
     """
-    import run_agent
+    from agent import runtime as run_agent
     return run_agent
 
 

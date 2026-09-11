@@ -53,7 +53,7 @@ def _run_task_agent(
     ``forecast_ledger_tool``; this only scopes the session to the composed
     instruction. Returns ``run_conversation``'s result dict. A module-level function
     so tests can stub it exactly as they stub ``cli._run_update_agent``."""
-    from run_agent import AIAgent
+    from agent.runtime import AIAgent
 
     agent = AIAgent(
         model=model or "",

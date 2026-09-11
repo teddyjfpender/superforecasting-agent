@@ -28,7 +28,7 @@ The formality layer of the modularization program
 | `superforecasting_agent/tooling/skill_types.py` | skill source contracts | `SkillMeta`, `SkillBundle`, `SkillSource`; re-exported by `tools.skills_hub` | Standard library only; importing contracts does not load source adapters |
 | `superforecasting_agent/tooling/github_auth.py` | skill source authentication | `GitHubAuth`, re-exported by `tools.skills_hub` | Credentials resolve lazily; importing the module does not load source adapters |
 | `superforecasting_agent/tooling/skill_paths.py` | skill bundle path validation | Shared name, category, and relative-file validators, re-exported by `tools.skills_hub` | Standard-library-only validation before filesystem access |
-| `tools/` | tools | `tools.registry`; `tools.forecast_actions.ACTIONS` | `run_agent` (ratchet) |
+| `tools/` | tools | `tools.registry`; `tools.forecast_actions.ACTIONS` | `run_agent` (forbidden) |
 | `forecasting/domains.py` | semantic classification | Explicit source categories and audited active-question corrections | No title-based inference or probability-history rewriting |
 | `forecasting/source_bindings.py` | measurement contracts | NWS temperature and USGS magnitude extraction | No network calls or inferred settlement decisions |
 | `forecasting/sources/bls_parsing.py` | BLS parsing | Finite measurements, exact series identity, periods and duplicate/revision checks | No network, CLI or ledger writes; periods are not publication times |
@@ -41,12 +41,19 @@ The formality layer of the modularization program
 | `superforecasting_agent/runtime/handoff_commands.py` | classic CLI handoff surface | `ForecastCLI._handle_handoff_command` delegates to this handler | Gateway configuration and session storage remain the handoff authorities |
 | `superforecasting_agent/runtime/audit_discovery.py`, `audit_types.py` | dependency audit discovery and records | Re-exported through `runtime.security_audit`; OSV and command orchestration remain there | Discovery does not import the audit facade or make advisory requests |
 | `acp_adapter/` | editor protocol surface | `server.ForecastACPAgent`, `content` converters, and `history` replay; `HermesACPAgent` remains an import alias | Protocol transport wraps the forecast runtime without replacing the ledger |
-| `tui_gateway/` | surface (RPC) | `@rpc_validated` handlers; carved `*_rpc.py` families | `run_agent` (ratchet); imports `forecasting` one-way (clean) |
-| `agent/`, `gateway/`, `superforecasting_agent/runtime/` | upstream-shared runtime | — | `run_agent` (ratchet — the inverted entry-script edge) |
+| `tui_gateway/` | surface (RPC) | `@rpc_validated` handlers; carved `*_rpc.py` families | `run_agent` (forbidden); imports `forecasting` one-way (clean) |
+| `agent/`, `gateway/`, `superforecasting_agent/runtime/` | upstream-shared runtime | — | `run_agent` (forbidden; use `agent.runtime`) |
 
-**`run_agent.py` / `cli.py` are top-level modules, not packages** (the inverted
-`* → run_agent` edge is frozen at 20 direct importers; burn down opportunistically
-by hoisting the imported name into `agent/`).
+**`agent/runtime.py` owns `AIAgent` and runtime state.** `run_agent.py` is a
+compatibility executable/module alias; no application package may import it.
+The entrypoint import contract has no exceptions and includes cron and ACP.
+`cli.py` remains a presentation entrypoint; the TUI host cannot import it.
+The isolated legacy slash worker still uses classic CLI dispatch for commands
+that have not yet migrated to application services.
+
+`runtime.interactive_config.read_cli_config` reads shared settings without
+modifying the process. `load_cli_config` explicitly applies environment bridges
+for classic CLI startup. TUI personality lookup uses the read-only operation.
 
 ### Source and recovery ownership
 

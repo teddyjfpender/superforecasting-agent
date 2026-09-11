@@ -112,3 +112,19 @@ def test_build_agent_resolves_when_runtime_none(monkeypatch):
     # credential_context feeds the resolver (per-tenant seam) and the resolved key is used
     assert calls["explicit_api_key"] == "tenant-key" and calls["requested"] == "anthropic"
     assert captured["api_key"] == "resolved"
+
+
+def test_factory_and_legacy_import_share_runtime_state(monkeypatch):
+    from agent import runtime
+    import run_agent
+
+    captured = {}
+
+    def fake_agent(**kwargs):
+        captured.update(kwargs)
+        return captured
+
+    monkeypatch.setattr(run_agent, 'AIAgent', fake_agent)
+    assert runtime.AIAgent is fake_agent
+    result = af.build_agent({'provider': 'fixture'}, model='fixture-model')
+    assert result == {'provider': 'fixture', 'model': 'fixture-model'}

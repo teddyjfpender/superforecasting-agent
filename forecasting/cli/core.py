@@ -7215,7 +7215,7 @@ def _run_update_agent(
         supplemental=supplemental,
     )
     enabled_toolsets = _toolsets_for_stage(stage)
-    from run_agent import AIAgent
+    from agent.runtime import AIAgent
 
     agent = AIAgent(
         model=model or "",

@@ -58,7 +58,7 @@ def _ra():
     directly here those patches would not reach us.  Looking them up
     through ``run_agent`` on every call preserves the patch contract.
     """
-    import run_agent
+    from agent import runtime as run_agent
     return run_agent
 
 

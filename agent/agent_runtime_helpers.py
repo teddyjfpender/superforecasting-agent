@@ -52,7 +52,7 @@ logger = logging.getLogger(__name__)
 
 def _ra():
     """Lazy ``run_agent`` reference for test-patch routing."""
-    import run_agent
+    from agent import runtime as run_agent
     return run_agent
 
 

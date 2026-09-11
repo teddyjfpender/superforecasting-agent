@@ -322,6 +322,8 @@ select = ["PLW1514"]
 root_packages = [
     "forecasting",
     "protocol",
+    "cron",
+    "acp_adapter",
     "tui_gateway",
     "tools",
     "agent",
@@ -356,33 +358,12 @@ allow_indirect_imports = "true"
 
 # ── Tier 2: ratchets (frozen lists — shrink only) ────────────────────────────
 [[tool.importlinter.contracts]]
-name = "nothing imports the run_agent entry script (inverted edge; burn down)"
+name = "products and services never import the run_agent entry script"
 type = "forbidden"
-source_modules = ["forecasting", "tools", "agent", "gateway", "tui_gateway", "superforecasting_agent", "cli"]
+source_modules = ["forecasting", "tools", "agent", "gateway", "tui_gateway", "superforecasting_agent", "cli", "cron", "acp_adapter"]
 forbidden_modules = ["run_agent"]
 allow_indirect_imports = "true"
-ignore_imports = [
-    "agent.agent_factory -> run_agent",
-    "agent.agent_init -> run_agent",
-    "agent.agent_runtime_helpers -> run_agent",
-    "agent.background_review -> run_agent",
-    "agent.chat_completion_helpers -> run_agent",
-    "agent.codex_runtime -> run_agent",
-    "agent.conversation_loop -> run_agent",
-    "agent.curator -> run_agent",
-    "agent.system_prompt -> run_agent",
-    "agent.tool_executor -> run_agent",
-    "agent.transports.codex -> run_agent",
-    "forecasting.cli.benchmarks -> run_agent",
-    "forecasting.cli.core -> run_agent",
-    "forecasting.jobs.types.task -> run_agent",
-    "forecasting.market_model -> run_agent",
-    "gateway.platforms.api_server -> run_agent",
-    "gateway.platforms.feishu_comment -> run_agent",
-    "gateway.run -> run_agent",
-    "tools.delegate_tool -> run_agent",
-    "tui_gateway.server -> run_agent",
-]
+
 
 [[tool.importlinter.contracts]]
 name = "forecasting↛superforecasting_agent.runtime (kernel seam; ratchet)"
@@ -450,4 +431,11 @@ name = "forecast application operations do not import product entrypoints"
 type = "forbidden"
 source_modules = ["forecasting.application"]
 forbidden_modules = ["forecasting.cli", "forecasting.interfaces", "forecasting.dashboard", "tui_gateway", "gateway", "cli", "superforecasting_agent.runtime.main"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "TUI host never imports classic CLI presentation"
+type = "forbidden"
+source_modules = ["tui_gateway.server"]
+forbidden_modules = ["cli"]
 allow_indirect_imports = true

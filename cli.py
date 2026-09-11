@@ -405,7 +405,7 @@ from rich.text import Text as _RichText
 import fire
 
 # Import the agent and tool systems
-from run_agent import AIAgent
+from agent.runtime import AIAgent
 from superforecasting_agent.tooling.runtime import get_tool_definitions, get_toolset_for_tool
 
 # Extracted CLI modules (Phase 3)
@@ -8326,7 +8326,7 @@ class ForecastCLI:
         # rich-text editors (Google Docs, Word, etc.).  Lone surrogates are invalid
         # UTF-8 and crash JSON serialization in the OpenAI SDK.
         if isinstance(message, str):
-            from run_agent import _sanitize_surrogates
+            from agent.runtime import _sanitize_surrogates
             message = _sanitize_surrogates(message)
 
         # Add user message to history
@@ -10062,7 +10062,7 @@ class ForecastCLI:
                 event.app.invalidate()
             if pasted_text:
                 # Sanitize surrogate characters (e.g. from Word/Google Docs paste) before writing
-                from run_agent import _sanitize_surrogates
+                from agent.runtime import _sanitize_surrogates
                 pasted_text = _sanitize_surrogates(pasted_text)
                 line_count = pasted_text.count('\n')
                 buf = event.current_buffer

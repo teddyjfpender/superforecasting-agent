@@ -121,3 +121,30 @@ capability negotiation, distribution separation and broad qualification remain
 open. The personality lookup still imports classic CLI configuration; its loader
 also bridges environment settings, so removing that edge requires preserving
 configuration semantics rather than merely changing the import target.
+
+
+Runtime ownership migration:
+
+- `agent/runtime.py` now owns `AIAgent`; `run_agent.py` is a compatibility
+  executable and module alias. CLI, TUI, gateway, tools, forecasting workers,
+  cron and ACP import the library owner. Legacy patches address the same module
+  state. Repository-relative environment loading retains its original root.
+- Removed every exception from the forbidden entrypoint-import contract and
+  extended coverage to cron/ACP. Added a direct classic-CLI import prohibition
+  for the TUI host. The isolated slash worker remains a legacy adapter.
+- Separated read-only interactive configuration from explicit environment
+  bridging. Personality lookup uses shared defaults and profile precedence
+  without importing CLI or changing terminal/provider environment settings.
+- Verification: 3,529 runtime/agent/bootstrap/provider tests passed, six skipped;
+  41 configuration and provider tests passed. Python quality and all eight import
+  contracts pass. Broader final qualification and push remain pending.
+
+This removes specific ownership inversions, not all presentation/runtime coupling.
+Agent library initialization still loads process environment and the historical
+standalone diagnostic main remains exported by the runtime. Explicit host startup,
+shared session ownership, remaining slash dispatch, protocol negotiation and
+independent distributions still need implementation/qualification.
+
+Gateway qualification after the runtime move: 184 tests passed, including all
+local real-desk lifecycle cases and legacy/factory shared-state compatibility.
+The six warnings report Python forkpty use from the dashboard test host.

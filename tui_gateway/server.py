@@ -2438,9 +2438,16 @@ def _render_personality_prompt(value) -> str:
 
 def _available_personalities(cfg: dict | None = None) -> dict:
     try:
-        from cli import load_cli_config
+        from superforecasting_agent.runtime.interactive_config import read_cli_config
 
-        return (load_cli_config().get("agent") or {}).get("personalities", {}) or {}
+        ignore_config = next((os.environ[name] for name in (
+            "SUPERFORECASTING_AGENT_IGNORE_USER_CONFIG", "FORECAST_IGNORE_USER_CONFIG",
+            "HERMES_IGNORE_USER_CONFIG",
+        ) if name in os.environ), "") == "1"
+        settings = read_cli_config(
+            _hermes_home, Path(__file__).resolve().parents[1] / "cli-config.yaml", ignore_config,
+        )
+        return (settings.get("agent") or {}).get("personalities", {}) or {}
     except Exception:
         try:
             from superforecasting_agent.runtime.config import load_config as _load_full_cfg
@@ -2653,7 +2660,7 @@ def _session_runtime(sid: str) -> dict:
 
 
 def _make_agent(sid: str, key: str, session_id: str | None = None):
-    from run_agent import AIAgent
+    from agent.runtime import AIAgent
     from superforecasting_agent.runtime.runtime_provider import resolve_runtime_provider
 
     cfg = _load_cfg()
@@ -4456,7 +4463,7 @@ def _(rid, params: dict) -> dict:
     def run():
         session_tokens = _set_session_context(task_id)
         try:
-            from run_agent import AIAgent
+            from agent.runtime import AIAgent
 
             result = AIAgent(
                 **_background_agent_kwargs(session["agent"], task_id)

@@ -572,7 +572,7 @@ class SessionManager:
         if self._agent_factory is not None:
             return self._agent_factory()
 
-        from run_agent import AIAgent
+        from agent.runtime import AIAgent
         from superforecasting_agent.runtime.config import load_config
         from superforecasting_agent.runtime.runtime_provider import resolve_runtime_provider
 

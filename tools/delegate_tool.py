@@ -945,7 +945,7 @@ def _build_child_agent(
     routing subagents to a different provider:model pair (e.g. cheap/fast
     model on OpenRouter while the parent runs on Nous Portal).
     """
-    from run_agent import AIAgent
+    from agent.runtime import AIAgent
     import uuid as _uuid
 
     # ── Role resolution ─────────────────────────────────────────────────

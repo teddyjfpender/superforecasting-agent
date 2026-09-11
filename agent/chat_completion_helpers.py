@@ -142,7 +142,7 @@ def _ra():
     ``patch("run_agent.cleanup_vm")`` / ``patch("run_agent.cleanup_browser")``
     that target symbols imported into ``run_agent``'s namespace.
     """
-    import run_agent
+    from agent import runtime as run_agent
     return run_agent
 
 

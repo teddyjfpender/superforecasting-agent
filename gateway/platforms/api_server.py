@@ -1168,7 +1168,7 @@ class APIServerAdapter(BasePlatformAdapter):
         providers (e.g. Honcho) can scope their per-chat state correctly
         — matching the semantics of the native gateway's ``session_key``.
         """
-        from run_agent import AIAgent
+        from agent.runtime import AIAgent
         from gateway.run import (
             _first_max_iterations_env,
             _load_gateway_config,

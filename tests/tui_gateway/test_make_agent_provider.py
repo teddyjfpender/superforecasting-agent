@@ -224,7 +224,7 @@ def test_make_agent_tolerates_null_personalities_with_active_personality():
     with (
         patch("tui_gateway.server._load_cfg", return_value=cfg),
         patch("tui_gateway.server._get_db", return_value=MagicMock()),
-        patch("cli.load_cli_config", return_value={"agent": {"personalities": None}}),
+        patch("superforecasting_agent.runtime.interactive_config.read_cli_config", return_value={"agent": {"personalities": None}}),
         patch(
             "superforecasting_agent.runtime.runtime_provider.resolve_runtime_provider",
             return_value=fake_runtime,

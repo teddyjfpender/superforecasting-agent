@@ -1650,7 +1650,7 @@ def _run_llm_review(prompt: str) -> Dict[str, Any]:
         "error": None,
     }
     try:
-        from run_agent import AIAgent
+        from agent.runtime import AIAgent
     except Exception as e:
         result_meta["error"] = f"AIAgent import failed: {e}"
         result_meta["summary"] = result_meta["error"]

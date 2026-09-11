@@ -569,7 +569,7 @@ def _backtest_agent_protocol_runner(args: argparse.Namespace):
         captured_runner.resolved_agent_model = args.agent_model or None
         return captured_runner
 
-    from run_agent import AIAgent
+    from agent.runtime import AIAgent
 
     # Closed-book replay: the agent must have NO tool that can reach the now-known
     # outcome, so a historical question cannot be answered by fetching/reading it.

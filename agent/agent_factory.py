@@ -1,9 +1,8 @@
 """The single resolve->construct path for an AIAgent.
 
-Every surface (TUI gateway, CLI, delegation, and the new Slack/voice/meet surfaces)
-spawns agents through ``build_agent()`` so the resolve-runtime-provider -> map ->
-construct pattern lives in ONE place — and so a per-tenant credential context has a
-single seam to thread through (``credential_context``).
+Migrated surfaces spawn agents through ``build_agent()`` so the
+resolve-runtime-provider -> map -> construct pattern has one owner. A per-tenant
+credential context has a single seam to thread through (``credential_context``).
 
 ADDITIVE by design: this wraps, and never replaces, ``AIAgent`` / ``init_agent``. The
 constructor and its 30+ kwargs are unchanged; existing call sites keep working and are
@@ -43,9 +42,9 @@ def _validate_provider_model(provider: str | None, model: str) -> None:
 
 
 def _aiagent_cls():
-    """Indirection so callers/tests can construct without importing run_agent eagerly
-    (run_agent is heavy) and so the class is patchable in tests."""
-    from run_agent import AIAgent
+    """Indirection so callers/tests can construct without importing the runtime eagerly
+    (agent.runtime is heavy) and so the class is patchable in tests."""
+    from agent.runtime import AIAgent
 
     return AIAgent
 

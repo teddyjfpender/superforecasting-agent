@@ -1,0 +1,3040 @@
+#!/usr/bin/env python3
+"""
+AI Agent Runner with Tool Calling
+
+This module provides a clean, standalone agent that can execute AI models
+with tool calling capabilities. It handles the conversation loop, tool execution,
+and response management.
+
+Features:
+- Automatic tool calling loop until completion
+- Configurable model parameters
+- Error handling and recovery
+- Message history management
+- Support for multiple model providers
+
+Usage:
+    from agent.runtime import AIAgent
+    
+    agent = AIAgent(base_url="http://localhost:30000/v1", model="claude-opus-4-20250514")
+    response = agent.run_conversation("Tell me about the latest Python updates")
+"""
+
+# IMPORTANT: superforecasting_agent.bootstrap must be the very first import — UTF-8 stdio
+# on Windows.  No-op on POSIX.  See superforecasting_agent.bootstrap.py for full rationale.
+try:
+    import superforecasting_agent.bootstrap  # noqa: F401
+except ModuleNotFoundError:
+    # Graceful fallback when superforecasting_agent.bootstrap isn't registered in the venv
+    # yet — happens during partial ``superforecasting-agent update`` where
+    # git-reset landed new code but ``uv pip install -e .`` didn't finish.
+    # Missing bootstrap means UTF-8 stdio setup is skipped on Windows; POSIX
+    # is unaffected.
+    pass
+
+import concurrent.futures
+import contextvars
+import copy
+import json
+import logging
+logger = logging.getLogger("run_agent")
+import os
+import random
+import re
+import ssl
+import sys
+import time
+import threading
+from types import SimpleNamespace
+import urllib.request
+import uuid
+from typing import List, Dict, Any, Optional
+from urllib.parse import urlparse, parse_qs, urlunparse
+# NOTE: `from openai import OpenAI` is deliberately NOT at module top — the
+# SDK pulls ~240 ms of imports. We expose `OpenAI` as a thin proxy object
+# that imports the SDK on first call/isinstance check. This preserves:
+#   (a) the single in-module `OpenAI(**client_kwargs)` call site at
+#       _create_openai_client, and
+#   (b) `patch("run_agent.OpenAI", ...)` test patterns used by ~28 test files.
+#
+# NOTE: `fire` is ONLY used in the `__main__` block below (for running
+# run_agent.py directly as a CLI) — it is NOT needed for library usage.
+# It is imported there, not here, so that importing run_agent from a
+# daemon thread (e.g. curator's forked review agent) never fails with
+# ModuleNotFoundError on broken/partial installs where `fire` isn't present.
+from datetime import datetime
+from pathlib import Path
+
+from superforecasting_agent.constants import get_agent_home
+
+# OpenAI lazy proxy + safe stdio + proxy URL helpers — see agent/process_bootstrap.py.
+# `OpenAI` is re-exported here so `patch("run_agent.OpenAI", ...)` in tests works.
+from agent.process_bootstrap import (
+    OpenAI,
+    _OpenAIProxy,
+    _load_openai_cls,
+    _SafeWriter,
+    _install_safe_stdio,
+    _get_proxy_from_env,
+    _get_proxy_for_base_url,
+)
+from agent.iteration_budget import IterationBudget
+
+
+from superforecasting_agent.runtime.env_loader import load_hermes_dotenv
+from superforecasting_agent.runtime.timeouts import (
+    get_provider_request_timeout,
+    get_provider_stale_timeout,
+)
+
+_hermes_home = get_agent_home()
+_project_env = Path(__file__).resolve().parents[1] / '.env'
+_loaded_env_paths = load_hermes_dotenv(hermes_home=_hermes_home, project_env=_project_env)
+if _loaded_env_paths:
+    for _env_path in _loaded_env_paths:
+        logger.info("Loaded environment variables from %s", _env_path)
+else:
+    logger.info("No .env file found. Using system environment variables.")
+
+
+# Import our tool system
+from superforecasting_agent.tooling.runtime import (
+    get_tool_definitions,
+    get_toolset_for_tool,
+    handle_function_call,
+    check_toolset_requirements,
+)
+from tools.terminal_tool import cleanup_vm, get_active_env, is_persistent_env
+from tools.terminal_tool import (
+    set_approval_callback as _set_approval_callback,
+    set_sudo_password_callback as _set_sudo_password_callback,
+    _get_approval_callback,
+    _get_sudo_password_callback,
+)
+from tools.tool_result_storage import maybe_persist_tool_result, enforce_turn_budget
+from tools.interrupt import set_interrupt as _set_interrupt
+from tools.browser_tool import cleanup_browser
+
+
+# Agent internals extracted to agent/ package for modularity
+from agent.memory_manager import StreamingContextScrubber, build_memory_context_block, sanitize_context
+from agent.think_scrubber import StreamingThinkScrubber
+from agent.retry_utils import jittered_backoff
+from agent.error_classifier import classify_api_error, FailoverReason
+from agent.redact import redact_sensitive_text
+from agent.prompt_builder import (
+    DEFAULT_AGENT_IDENTITY, PLATFORM_HINTS,
+    MEMORY_GUIDANCE, SESSION_SEARCH_GUIDANCE, SKILLS_GUIDANCE,
+    HERMES_AGENT_HELP_GUIDANCE,
+    KANBAN_GUIDANCE,
+    build_nous_subscription_prompt,
+)
+from agent.model_metadata import (
+    fetch_model_metadata,
+    estimate_tokens_rough, estimate_messages_tokens_rough, estimate_request_tokens_rough,
+    get_next_probe_tier, parse_context_limit_from_error,
+    parse_available_output_tokens_from_error,
+    save_context_length, is_local_endpoint,
+    query_ollama_num_ctx,
+)
+from agent.context_compressor import ContextCompressor
+from agent.subdirectory_hints import SubdirectoryHintTracker
+from agent.prompt_caching import apply_anthropic_cache_control
+from agent.prompt_builder import build_skills_system_prompt, build_context_files_prompt, build_environment_hints, load_soul_md, TOOL_USE_ENFORCEMENT_GUIDANCE, TOOL_USE_ENFORCEMENT_MODELS, GOOGLE_MODEL_OPERATIONAL_GUIDANCE, OPENAI_MODEL_EXECUTION_GUIDANCE
+from agent.usage_pricing import estimate_usage_cost, normalize_usage
+from agent.codex_responses_adapter import (
+    _derive_responses_function_call_id as _codex_derive_responses_function_call_id,
+    _deterministic_call_id as _codex_deterministic_call_id,
+    _split_responses_tool_id as _codex_split_responses_tool_id,
+    _summarize_user_message_for_log,
+)
+from agent.display import (
+    ForecastSpinner, build_tool_preview as _build_tool_preview,
+    get_cute_tool_message as _get_cute_tool_message_impl,
+    _detect_tool_failure,
+    get_tool_emoji as _get_tool_emoji,
+)
+from agent.tool_guardrails import (
+    ToolCallGuardrailConfig,
+    ToolCallGuardrailController,
+    ToolGuardrailDecision,
+    append_toolguard_guidance,
+    toolguard_synthetic_result,
+)
+from agent.tool_result_classification import (
+    FILE_MUTATING_TOOL_NAMES as _FILE_MUTATING_TOOLS,
+    file_mutation_result_landed,
+)
+from agent.trajectory import (
+    convert_scratchpad_to_think, has_incomplete_scratchpad,
+    save_trajectory as _save_trajectory_to_file,
+)
+from agent.message_sanitization import (
+    _SURROGATE_RE,
+    _sanitize_surrogates,
+    _sanitize_structure_surrogates,
+    _sanitize_messages_surrogates,
+    _escape_invalid_chars_in_json_strings,
+    _repair_tool_call_arguments,
+    _strip_non_ascii,
+    _sanitize_messages_non_ascii,
+    _sanitize_tools_non_ascii,
+    _strip_images_from_messages,
+    _sanitize_structure_non_ascii,
+)
+from agent.tool_dispatch_helpers import (
+    _NEVER_PARALLEL_TOOLS,
+    _PARALLEL_SAFE_TOOLS,
+    _PATH_SCOPED_TOOLS,
+    _DESTRUCTIVE_PATTERNS,
+    _REDIRECT_OVERWRITE,
+    _is_destructive_command,
+    _should_parallelize_tool_batch,
+    _extract_parallel_scope_path,
+    _paths_overlap,
+    _is_multimodal_tool_result,
+    _multimodal_text_summary,
+    _append_subdir_hint_to_multimodal,
+    _extract_file_mutation_targets,
+    _extract_error_preview,
+    _trajectory_normalize_msg,
+)
+from superforecasting_agent.storage.files import atomic_json_write
+from superforecasting_agent.urls import (
+    base_url_host_matches,
+    base_url_hostname,
+    normalize_proxy_url,
+)
+from superforecasting_agent.environment import (
+    env_var_alias_float,
+    env_var_alias_value,
+    env_var_enabled,
+)
+from superforecasting_agent.runtime.config import cfg_get
+
+
+
+_MAX_TOOL_WORKERS = 8
+_API_TIMEOUT_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_API_TIMEOUT",
+    "FORECAST_API_TIMEOUT",
+    "HERMES_API_TIMEOUT",
+)
+_API_CALL_STALE_TIMEOUT_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_API_CALL_STALE_TIMEOUT",
+    "FORECAST_API_CALL_STALE_TIMEOUT",
+    "HERMES_API_CALL_STALE_TIMEOUT",
+)
+
+# Guard so the OpenRouter metadata pre-warm thread is only spawned once per
+# process, not once per AIAgent instantiation.  Without this, long-running
+# gateway processes leak one OS thread per incoming message and eventually
+# exhaust the system thread limit (RuntimeError: can't start new thread).
+_openrouter_prewarm_done = threading.Event()
+
+# =========================================================================
+# Large tool result handler — save oversized output to temp file
+# =========================================================================
+
+
+# =========================================================================
+# Qwen Portal headers — mimics QwenCode CLI for portal.qwen.ai compatibility.
+# Extracted as a module-level helper so both __init__ and
+# _apply_client_headers_for_base_url can share it.
+# =========================================================================
+_QWEN_CODE_VERSION = "0.14.1"
+
+
+def _routermint_headers() -> dict:
+    """Return the User-Agent RouterMint needs to avoid Cloudflare 1010 blocks."""
+    from superforecasting_agent.runtime import __version__ as _HERMES_VERSION
+
+    return {
+        "User-Agent": f"SuperforecastingAgent/{_HERMES_VERSION}",
+    }
+
+
+def _pool_may_recover_from_rate_limit(
+    pool, *, provider: str | None = None, base_url: str | None = None
+) -> bool:
+    """Decide whether to wait for credential-pool rotation instead of falling back.
+
+    The existing pool-rotation path requires the pool to (1) exist and (2) have
+    at least one entry not currently in exhaustion cooldown.  But rotation is
+    only meaningful when the pool has more than one entry.
+
+    With a single-credential pool (common for Gemini OAuth, Vertex service
+    accounts, and any "one personal key" configuration), the primary entry
+    just 429'd and there is nothing to rotate to.  Waiting for the pool
+    cooldown to expire means retrying against the same exhausted quota — the
+    daily-quota 429 will recur immediately, and the retry budget is burned.
+
+    Additionally, Google CloudCode / Gemini CLI rate limits are ACCOUNT-level
+    throttles — even a multi-entry pool shares the same quota window, so
+    rotation won't recover.  Skip straight to the fallback for those (#13636).
+
+    In those cases we must fall back to the configured ``fallback_model``
+    instead.  Returns True only when rotation has somewhere to go.
+
+    See issues #11314 and #13636.
+    """
+    if pool is None:
+        return False
+    if not pool.has_available():
+        return False
+    # CloudCode / Gemini CLI quotas are account-wide — all pool entries share
+    # the same throttle window, so rotation can't recover.  Prefer fallback.
+    if provider == "google-gemini-cli" or str(base_url or "").startswith("cloudcode-pa://"):
+        return False
+    return len(pool.entries()) > 1
+
+
+def _qwen_portal_headers() -> dict:
+    """Return default HTTP headers required by Qwen Portal API."""
+    import platform as _plat
+
+    _ua = f"QwenCode/{_QWEN_CODE_VERSION} ({_plat.system().lower()}; {_plat.machine()})"
+    return {
+        "User-Agent": _ua,
+        "X-DashScope-CacheControl": "enable",
+        "X-DashScope-UserAgent": _ua,
+        "X-DashScope-AuthType": "qwen-oauth",
+    }
+
+
+class _StreamErrorEvent(Exception):
+    """Synthesized provider error surfaced from a Responses ``error`` SSE frame.
+
+    Some Codex-style Responses backends (xAI for subscription/quota
+    failures, custom relays under malformed-tool-call conditions) emit a
+    standalone ``type=error`` frame instead of routing the failure
+    through ``response.failed`` or returning an HTTP 4xx.  The fallback
+    streaming path raises this exception so ``_summarize_api_error`` and
+    ``_extract_api_error_context`` see a familiar ``.body`` /
+    ``.status_code`` shape and the entitlement detector can match the
+    underlying provider message ("do not have an active Grok
+    subscription", etc.).
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: Optional[str] = None,
+        param: Optional[str] = None,
+        status_code: Optional[int] = None,
+    ) -> None:
+        super().__init__(message)
+        self.message = message
+        self.code = code
+        self.param = param
+        self.status_code = status_code
+        # OpenAI SDK-shaped body so _extract_api_error_context /
+        # _summarize_api_error / classify_api_error all pick it up.
+        self.body: Dict[str, Any] = {
+            "error": {
+                "message": message,
+                "code": code,
+                "param": param,
+                "type": "error",
+            }
+        }
+
+
+class AIAgent:
+    """
+    AI Agent with tool calling capabilities.
+
+    This class manages the conversation flow, tool execution, and response handling
+    for AI models that support function calling.
+    """
+
+    _TOOL_CALL_ARGUMENTS_CORRUPTION_MARKER = (
+        "[superforecasting-agent: tool call arguments were corrupted in this session and "
+        "have been dropped to keep the conversation alive. See issue #15236.]"
+    )
+
+    @property
+    def base_url(self) -> str:
+        return self._base_url
+
+    @base_url.setter
+    def base_url(self, value: str) -> None:
+        self._base_url = value
+        self._base_url_lower = value.lower() if value else ""
+        self._base_url_hostname = base_url_hostname(value)
+
+    def __init__(
+        self,
+        base_url: str = None,
+        api_key: str = None,
+        provider: str = None,
+        api_mode: str = None,
+        acp_command: str = None,
+        acp_args: list[str] | None = None,
+        command: str = None,
+        args: list[str] | None = None,
+        model: str = "",
+        max_iterations: int = 90,  # Default tool-calling iterations (shared with subagents)
+        tool_delay: float = 1.0,
+        enabled_toolsets: List[str] = None,
+        disabled_toolsets: List[str] = None,
+        save_trajectories: bool = False,
+        verbose_logging: bool = False,
+        quiet_mode: bool = False,
+        ephemeral_system_prompt: str = None,
+        log_prefix_chars: int = 100,
+        log_prefix: str = "",
+        providers_allowed: List[str] = None,
+        providers_ignored: List[str] = None,
+        providers_order: List[str] = None,
+        provider_sort: str = None,
+        provider_require_parameters: bool = False,
+        provider_data_collection: str = None,
+        openrouter_min_coding_score: Optional[float] = None,
+        session_id: str = None,
+        tool_progress_callback: callable = None,
+        tool_start_callback: callable = None,
+        tool_complete_callback: callable = None,
+        thinking_callback: callable = None,
+        reasoning_callback: callable = None,
+        clarify_callback: callable = None,
+        step_callback: callable = None,
+        stream_delta_callback: callable = None,
+        interim_assistant_callback: callable = None,
+        tool_gen_callback: callable = None,
+        status_callback: callable = None,
+        max_tokens: int = None,
+        reasoning_config: Dict[str, Any] = None,
+        reasoning_summary: str = "detailed",
+        service_tier: str = None,
+        request_overrides: Dict[str, Any] = None,
+        prefill_messages: List[Dict[str, Any]] = None,
+        platform: str = None,
+        user_id: str = None,
+        user_name: str = None,
+        chat_id: str = None,
+        chat_name: str = None,
+        chat_type: str = None,
+        thread_id: str = None,
+        gateway_session_key: str = None,
+        skip_context_files: bool = False,
+        load_soul_identity: bool = False,
+        skip_memory: bool = False,
+        session_db=None,
+        parent_session_id: str = None,
+        iteration_budget: "IterationBudget" = None,
+        fallback_model: Dict[str, Any] = None,
+        credential_pool=None,
+        checkpoints_enabled: bool = False,
+        checkpoint_max_snapshots: int = 20,
+        checkpoint_max_total_size_mb: int = 500,
+        checkpoint_max_file_size_mb: int = 10,
+        pass_session_id: bool = False,
+    ):
+        """Forwarder — see ``agent.agent_init.init_agent``."""
+        from agent.agent_init import init_agent
+        init_agent(
+            self,
+            base_url=base_url,
+            api_key=api_key,
+            provider=provider,
+            api_mode=api_mode,
+            acp_command=acp_command,
+            acp_args=acp_args,
+            command=command,
+            args=args,
+            model=model,
+            max_iterations=max_iterations,
+            tool_delay=tool_delay,
+            enabled_toolsets=enabled_toolsets,
+            disabled_toolsets=disabled_toolsets,
+            save_trajectories=save_trajectories,
+            verbose_logging=verbose_logging,
+            quiet_mode=quiet_mode,
+            ephemeral_system_prompt=ephemeral_system_prompt,
+            log_prefix_chars=log_prefix_chars,
+            log_prefix=log_prefix,
+            providers_allowed=providers_allowed,
+            providers_ignored=providers_ignored,
+            providers_order=providers_order,
+            provider_sort=provider_sort,
+            provider_require_parameters=provider_require_parameters,
+            provider_data_collection=provider_data_collection,
+            openrouter_min_coding_score=openrouter_min_coding_score,
+            session_id=session_id,
+            tool_progress_callback=tool_progress_callback,
+            tool_start_callback=tool_start_callback,
+            tool_complete_callback=tool_complete_callback,
+            thinking_callback=thinking_callback,
+            reasoning_callback=reasoning_callback,
+            clarify_callback=clarify_callback,
+            step_callback=step_callback,
+            stream_delta_callback=stream_delta_callback,
+            interim_assistant_callback=interim_assistant_callback,
+            tool_gen_callback=tool_gen_callback,
+            status_callback=status_callback,
+            max_tokens=max_tokens,
+            reasoning_config=reasoning_config,
+            reasoning_summary=reasoning_summary,
+            service_tier=service_tier,
+            request_overrides=request_overrides,
+            prefill_messages=prefill_messages,
+            platform=platform,
+            user_id=user_id,
+            user_name=user_name,
+            chat_id=chat_id,
+            chat_name=chat_name,
+            chat_type=chat_type,
+            thread_id=thread_id,
+            gateway_session_key=gateway_session_key,
+            skip_context_files=skip_context_files,
+            load_soul_identity=load_soul_identity,
+            skip_memory=skip_memory,
+            session_db=session_db,
+            parent_session_id=parent_session_id,
+            iteration_budget=iteration_budget,
+            fallback_model=fallback_model,
+            credential_pool=credential_pool,
+            checkpoints_enabled=checkpoints_enabled,
+            checkpoint_max_snapshots=checkpoint_max_snapshots,
+            checkpoint_max_total_size_mb=checkpoint_max_total_size_mb,
+            checkpoint_max_file_size_mb=checkpoint_max_file_size_mb,
+            pass_session_id=pass_session_id,
+        )
+
+    def _get_session_db_for_recall(self):
+        """Return a SessionDB for recall, lazily creating it if an entrypoint forgot.
+
+        Most frontends pass ``session_db`` into ``AIAgent`` explicitly, but recall
+        is important enough that a missing constructor argument should degrade by
+        opening the default state DB instead of making the advertised
+        ``session_search`` tool unusable.
+        """
+        if self._session_db is not None:
+            return self._session_db
+        try:
+            from superforecasting_agent.storage.session import SessionDB
+
+            self._session_db = SessionDB()
+            return self._session_db
+        except Exception as exc:
+            logger.debug("SessionDB unavailable for recall", exc_info=True)
+            return None
+
+    def _ensure_db_session(self) -> None:
+        """Create session DB row on first use. Disables _session_db on failure."""
+        if self._session_db_created or not self._session_db:
+            return
+        try:
+            self._session_db.create_session(
+                session_id=self.session_id,
+                source=self.platform or os.environ.get("HERMES_SESSION_SOURCE", "cli"),
+                model=self.model,
+                model_config=self._session_init_model_config,
+                system_prompt=self._cached_system_prompt,
+                user_id=None,
+                parent_session_id=self._parent_session_id,
+            )
+            self._session_db_created = True
+        except Exception as e:
+            # Transient failure (e.g. SQLite lock). Keep _session_db alive —
+            # _session_db_created stays False so next run_conversation() retries.
+            logger.warning(
+                "Session DB creation failed (will retry next turn): %s", e
+            )
+
+    def reset_session_state(self):
+        """Reset all session-scoped token counters to 0 for a fresh session.
+        
+        This method encapsulates the reset logic for all session-level metrics
+        including:
+        - Token usage counters (input, output, total, prompt, completion)
+        - Cache read/write tokens
+        - API call count
+        - Reasoning tokens
+        - Estimated cost tracking
+        - Context compressor internal counters
+        
+        The method safely handles optional attributes (e.g., context compressor)
+        using ``hasattr`` checks.
+        
+        This keeps the counter reset logic DRY and maintainable in one place
+        rather than scattering it across multiple methods.
+        """
+        # Token usage counters
+        self.session_total_tokens = 0
+        self.session_input_tokens = 0
+        self.session_output_tokens = 0
+        self.session_prompt_tokens = 0
+        self.session_completion_tokens = 0
+        self.session_cache_read_tokens = 0
+        self.session_cache_write_tokens = 0
+        self.session_reasoning_tokens = 0
+        self.session_api_calls = 0
+        self.session_estimated_cost_usd = 0.0
+        self.session_cost_status = "unknown"
+        self.session_cost_source = "none"
+        
+        # Turn counter (added after reset_session_state was first written — #2635)
+        self._user_turn_count = 0
+
+        # Context engine reset (works for both built-in compressor and plugins)
+        if hasattr(self, "context_compressor") and self.context_compressor:
+            self.context_compressor.on_session_reset()
+
+    def _ensure_lmstudio_runtime_loaded(self, config_context_length: Optional[int] = None) -> None:
+        """
+        Preload the LM Studio model with at least the runtime's minimum context.
+        """
+        if (self.provider or "").strip().lower() != "lmstudio":
+            return
+        try:
+            from agent.model_metadata import MINIMUM_CONTEXT_LENGTH
+            from superforecasting_agent.runtime.models import ensure_lmstudio_model_loaded
+            if config_context_length is None:
+                config_context_length = getattr(self, "_config_context_length", None)
+            target_ctx = max(config_context_length or 0, MINIMUM_CONTEXT_LENGTH)
+            loaded_ctx = ensure_lmstudio_model_loaded(
+                self.model, self.base_url, getattr(self, "api_key", ""), target_ctx,
+            )
+            if loaded_ctx:
+                # Push into the live compressor so the status bar reflects the
+                # real loaded ctx the moment the load resolves, instead of
+                # holding the previous model's value (or "ctx --") through the
+                # next render tick.
+                cc = getattr(self, "context_compressor", None)
+                if cc is not None:
+                    cc.update_model(
+                        model=self.model,
+                        context_length=loaded_ctx,
+                        base_url=self.base_url,
+                        api_key=getattr(self, "api_key", ""),
+                        provider=self.provider,
+                        api_mode=self.api_mode,
+                    )
+        except Exception as err:
+            logger.debug("LM Studio preload skipped: %s", err)
+
+    def switch_model(self, new_model, new_provider, api_key='', base_url='', api_mode=''):
+        """Forwarder — see ``agent.agent_runtime_helpers.switch_model``."""
+        from agent.agent_runtime_helpers import switch_model
+        return switch_model(self, new_model, new_provider, api_key, base_url, api_mode)
+
+    from agent.status_output import _safe_print as _safe_print
+
+    from agent.status_output import _vprint as _vprint
+
+    from agent.status_output import _should_start_quiet_spinner as _should_start_quiet_spinner
+
+    from agent.status_output import _should_emit_quiet_tool_messages as _should_emit_quiet_tool_messages
+
+    from agent.status_output import _emit_status as _emit_status
+
+    from agent.status_output import _emit_warning as _emit_warning
+
+    # ── Buffered retry/fallback status ───────────────────────────────
+    # Retry and fallback chains were flooding the CLI/gateway with status
+    # noise that users found confusing: a single transient 429 could produce
+    # 10+ "Provider/Endpoint/Retrying in 5s..." lines before the request
+    # eventually succeeded.  The buffered helpers below capture these
+    # status messages instead of emitting them immediately.  They are
+    # flushed (shown to the user) ONLY when every retry and fallback has
+    # been exhausted; on success they are silently dropped.  Backend logs
+    # (agent.log) are unaffected — every individual emission site still
+    # writes to ``logging.warning`` / ``logging.info`` for diagnosis.
+
+    from agent.status_output import _buffer_status as _buffer_status
+
+    from agent.status_output import _buffer_vprint as _buffer_vprint
+
+    from agent.status_output import _clear_status_buffer as _clear_status_buffer
+
+    from agent.status_output import _flush_status_buffer as _flush_status_buffer
+
+    # Stream-diagnostic class header preserved for backward compat —
+    # actual list lives in ``agent.stream_diag.STREAM_DIAG_HEADERS``.
+    from agent.stream_diag import STREAM_DIAG_HEADERS as _STREAM_DIAG_HEADERS  # noqa: E402
+
+    @staticmethod
+    def _stream_diag_init() -> Dict[str, Any]:
+        """Forwarder — see ``agent.stream_diag.stream_diag_init``."""
+        from agent.stream_diag import stream_diag_init
+        return stream_diag_init()
+
+    def _stream_diag_capture_response(
+        self, diag: Dict[str, Any], http_response: Any
+    ) -> None:
+        """Forwarder — see ``agent.stream_diag.stream_diag_capture_response``."""
+        from agent.stream_diag import stream_diag_capture_response
+        stream_diag_capture_response(self, diag, http_response)
+
+    @staticmethod
+    def _flatten_exception_chain(error: BaseException) -> str:
+        """Forwarder — see ``agent.stream_diag.flatten_exception_chain``."""
+        from agent.stream_diag import flatten_exception_chain
+        return flatten_exception_chain(error)
+
+    from agent.api_errors import _is_provider_stream_parse_error as _is_provider_stream_parse_error
+
+    def _log_stream_retry(
+        self,
+        *,
+        kind: str,
+        error: BaseException,
+        attempt: int,
+        max_attempts: int,
+        mid_tool_call: bool,
+        diag: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Forwarder — see ``agent.stream_diag.log_stream_retry``."""
+        from agent.stream_diag import log_stream_retry
+        log_stream_retry(
+            self, kind=kind, error=error, attempt=attempt,
+            max_attempts=max_attempts, mid_tool_call=mid_tool_call, diag=diag,
+        )
+
+    def _emit_stream_drop(
+        self,
+        *,
+        error: BaseException,
+        attempt: int,
+        max_attempts: int,
+        mid_tool_call: bool,
+        diag: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Forwarder — see ``agent.stream_diag.emit_stream_drop``."""
+        from agent.stream_diag import emit_stream_drop
+        emit_stream_drop(
+            self, error=error, attempt=attempt, max_attempts=max_attempts,
+            mid_tool_call=mid_tool_call, diag=diag,
+        )
+
+    from agent.api_errors import _emit_auxiliary_failure as _emit_auxiliary_failure
+
+    def _current_main_runtime(self) -> Dict[str, str]:
+        """Return the live main runtime for session-scoped auxiliary routing."""
+        runtime = {
+            "model": getattr(self, "model", "") or "",
+            "provider": getattr(self, "provider", "") or "",
+            "base_url": getattr(self, "base_url", "") or "",
+            "api_key": getattr(self, "api_key", "") or "",
+            "api_mode": getattr(self, "api_mode", "") or "",
+        }
+        commit_policy = getattr(self, "forecast_commit_policy", "") or ""
+        if commit_policy:
+            runtime["forecast_commit_policy"] = commit_policy
+        return runtime
+
+    def _check_compression_model_feasibility(self) -> None:
+        """Forwarder — see ``agent.conversation_compression.check_compression_model_feasibility``."""
+        from agent.conversation_compression import check_compression_model_feasibility
+        check_compression_model_feasibility(self)
+
+    def _replay_compression_warning(self) -> None:
+        """Forwarder — see ``agent.conversation_compression.replay_compression_warning``."""
+        from agent.conversation_compression import replay_compression_warning
+        replay_compression_warning(self)
+
+    def _is_direct_openai_url(self, base_url: str = None) -> bool:
+        """Return True when a base URL targets OpenAI's native API."""
+        if base_url is not None:
+            hostname = base_url_hostname(base_url)
+        else:
+            hostname = getattr(self, "_base_url_hostname", "") or base_url_hostname(
+                getattr(self, "_base_url_lower", "")
+            )
+        return hostname == "api.openai.com"
+
+    def _is_azure_openai_url(self, base_url: str = None) -> bool:
+        """Return True when a base URL targets Azure OpenAI.
+
+        Azure OpenAI exposes an OpenAI-compatible endpoint at
+        ``{resource}.openai.azure.com/openai/v1`` that accepts the
+        standard ``openai`` Python client.  Unlike api.openai.com it
+        does NOT support the Responses API — gpt-5.x models are served
+        on the regular ``/chat/completions`` path — so routing decisions
+        must treat Azure separately from direct OpenAI.
+        """
+        if base_url is not None:
+            url = str(base_url).lower()
+        else:
+            url = getattr(self, "_base_url_lower", "") or ""
+        return "openai.azure.com" in url
+
+    def _is_github_copilot_url(self, base_url: str = None) -> bool:
+        """Return True when a base URL targets GitHub Copilot's OpenAI-compatible API."""
+        if base_url is not None:
+            hostname = base_url_hostname(base_url)
+        else:
+            hostname = getattr(self, "_base_url_hostname", "") or base_url_hostname(
+                getattr(self, "_base_url_lower", "")
+            )
+        return hostname == "api.githubcopilot.com"
+
+    def _resolved_api_call_timeout(self) -> float:
+        """Resolve the effective per-call request timeout in seconds.
+
+        Priority:
+          1. ``providers.<id>.models.<model>.timeout_seconds`` (per-model override)
+          2. ``providers.<id>.request_timeout_seconds`` (provider-wide)
+          3. ``SUPERFORECASTING_AGENT_API_TIMEOUT`` / ``FORECAST_API_TIMEOUT``
+             env var (``HERMES_API_TIMEOUT`` remains a legacy alias)
+          4. 1800.0s default
+
+        Used by OpenAI-wire chat completions (streaming and non-streaming) so
+        the per-provider config knob wins over the 1800s default.  Without this
+        helper, the hardcoded API timeout fallback would always be
+        passed as a per-call ``timeout=`` kwarg, overriding the client-level
+        timeout the AIAgent.__init__ path configured.
+        """
+        cfg = get_provider_request_timeout(self.provider, self.model)
+        if cfg is not None:
+            return cfg
+        return env_var_alias_float(_API_TIMEOUT_ENV_NAMES, 1800.0)
+
+    def _resolved_api_call_stale_timeout_base(self) -> tuple[float, bool]:
+        """Resolve the base non-stream stale timeout and whether it is implicit.
+
+        Priority:
+          1. ``providers.<id>.models.<model>.stale_timeout_seconds``
+          2. ``providers.<id>.stale_timeout_seconds``
+          3. ``SUPERFORECASTING_AGENT_API_CALL_STALE_TIMEOUT`` /
+             ``FORECAST_API_CALL_STALE_TIMEOUT`` env var
+             (``HERMES_API_CALL_STALE_TIMEOUT`` remains a legacy alias)
+          4. 90.0s default (time-to-first-byte for non-streaming / Codex
+             internal-streaming requests; lowered from 300s in May 2026 so
+             fallback providers kick in faster when upstream providers
+             stall).  The detector still scales up for large contexts in
+             ``_compute_non_stream_stale_timeout``.
+
+        Returns ``(timeout_seconds, uses_implicit_default)`` so the caller can
+        preserve legacy behaviors that only apply when the user has *not*
+        explicitly configured a stale timeout, such as auto-disabling the
+        detector for local endpoints.
+        """
+        # Instance override (set by long-running background runs like Market
+        # Models, where a 90s time-to-first-byte ceiling is too aggressive for a
+        # deep synthesis call after multi-step research / delegation). Treated as
+        # explicit so the local-endpoint auto-disable still does not apply.
+        override = getattr(self, "_api_call_stale_timeout_override", None)
+        if override is not None and float(override) > 0:
+            return float(override), False
+
+        cfg = get_provider_stale_timeout(self.provider, self.model)
+        if cfg is not None:
+            return cfg, False
+
+        env_timeout = env_var_alias_value(_API_CALL_STALE_TIMEOUT_ENV_NAMES)
+        if env_timeout is not None:
+            return float(env_timeout), False
+
+        return 90.0, True
+
+    def _compute_non_stream_stale_timeout(self, api_payload: Any) -> float:
+        """Compute the effective non-stream stale timeout for this request.
+
+        Accepts either the full ``api_kwargs`` dict (Chat Completions or
+        Responses API) or a legacy ``messages`` list.  Context-size scaling
+        applies the same way to both shapes via
+        :func:`agent.chat_completion_helpers.estimate_request_context_tokens`.
+        """
+        stale_base, uses_implicit_default = self._resolved_api_call_stale_timeout_base()
+        base_url = getattr(self, "_base_url", None) or self.base_url or ""
+        if uses_implicit_default and base_url and is_local_endpoint(base_url):
+            return float("inf")
+
+        from agent.chat_completion_helpers import estimate_request_context_tokens
+        est_tokens = estimate_request_context_tokens(api_payload)
+        if est_tokens > 100_000:
+            return max(stale_base, 240.0)
+        if est_tokens > 50_000:
+            return max(stale_base, 150.0)
+        return stale_base
+
+    def _is_openrouter_url(self) -> bool:
+        """Return True when the base URL targets OpenRouter."""
+        return base_url_host_matches(self._base_url_lower, "openrouter.ai")
+
+    def _anthropic_prompt_cache_policy(
+        self,
+        *,
+        provider: Optional[str] = None,
+        base_url: Optional[str] = None,
+        api_mode: Optional[str] = None,
+        model: Optional[str] = None,
+    ) -> tuple[bool, bool]:
+        """Forwarder — see ``agent.agent_runtime_helpers.anthropic_prompt_cache_policy``."""
+        from agent.agent_runtime_helpers import anthropic_prompt_cache_policy
+        return anthropic_prompt_cache_policy(self, provider=provider, base_url=base_url, api_mode=api_mode, model=model)
+
+    @staticmethod
+    def _model_requires_responses_api(model: str) -> bool:
+        """Return True for models that require the Responses API path.
+
+        GPT-5.x models are rejected on /v1/chat/completions by both
+        OpenAI and OpenRouter (error: ``unsupported_api_for_model``).
+        Detect these so the correct api_mode is set regardless of
+        which provider is serving the model.
+        """
+        m = model.lower()
+        # Strip vendor prefix (e.g. "openai/gpt-5.4" → "gpt-5.4")
+        if "/" in m:
+            m = m.rsplit("/", 1)[-1]
+        return m.startswith("gpt-5")
+
+    @staticmethod
+    def _provider_model_requires_responses_api(
+        model: str,
+        *,
+        provider: Optional[str] = None,
+    ) -> bool:
+        """Return True when this provider/model pair should use Responses API."""
+        normalized_provider = (provider or "").strip().lower()
+        # Nous serves GPT-5.x models via its OpenAI-compatible chat
+        # completions endpoint; its /v1/responses endpoint returns 404.
+        if normalized_provider == "nous":
+            return False
+        if normalized_provider == "copilot":
+            try:
+                from superforecasting_agent.runtime.models import _should_use_copilot_responses_api
+                return _should_use_copilot_responses_api(model)
+            except Exception:
+                # Fall back to the generic GPT-5 rule if Copilot-specific
+                # logic is unavailable for any reason.
+                pass
+        return AIAgent._model_requires_responses_api(model)
+
+    def _max_tokens_param(self, value: int) -> dict:
+        """Return the correct max tokens kwarg for the current provider.
+
+        OpenAI's newer models (gpt-4o, o-series, gpt-5+) require
+        'max_completion_tokens'. Azure OpenAI also requires
+        'max_completion_tokens' for gpt-5.x models served via the
+        OpenAI-compatible endpoint. OpenRouter, local models, and older
+        OpenAI models use 'max_tokens'.
+        """
+        if self._is_direct_openai_url() or self._is_azure_openai_url() or self._is_github_copilot_url():
+            return {"max_completion_tokens": value}
+        return {"max_tokens": value}
+
+    def _has_content_after_think_block(self, content: str) -> bool:
+        """
+        Check if content has actual text after any reasoning/thinking blocks.
+
+        This detects cases where the model only outputs reasoning but no actual
+        response, which indicates an incomplete generation that should be retried.
+        Must stay in sync with _strip_think_blocks() tag variants.
+
+        Args:
+            content: The assistant message content to check
+
+        Returns:
+            True if there's meaningful content after think blocks, False otherwise
+        """
+        if not content:
+            return False
+
+        # Remove all reasoning tag variants (must match _strip_think_blocks)
+        cleaned = self._strip_think_blocks(content)
+
+        # Check if there's any non-whitespace content remaining
+        return bool(cleaned.strip())
+
+    def _strip_think_blocks(self, content: str) -> str:
+        """Forwarder — see ``agent.agent_runtime_helpers.strip_think_blocks``."""
+        from agent.agent_runtime_helpers import strip_think_blocks
+        return strip_think_blocks(self, content)
+
+    @staticmethod
+    def _has_natural_response_ending(content: str) -> bool:
+        """Heuristic: does visible assistant text look intentionally finished?"""
+        if not content:
+            return False
+        stripped = content.rstrip()
+        if not stripped:
+            return False
+        if stripped.endswith("```"):
+            return True
+        if stripped.endswith('^'):
+            return True
+        last = stripped[-1]
+        if last in '.!?:)"\']}。！？：）】」』》^':
+            return True
+        # Emoji ranges (Misc Symbols, Dingbats, Emoticons, Supplemental, etc.)
+        if ord(last) >= 0x1F300:
+            return True
+        return False
+
+    def _is_ollama_glm_backend(self) -> bool:
+        """Detect the narrow backend family affected by Ollama/GLM stop misreports."""
+        model_lower = (self.model or "").lower()
+        provider_lower = (self.provider or "").lower()
+        if "glm" not in model_lower and provider_lower != "zai":
+            return False
+        if "ollama" in self._base_url_lower or ":11434" in self._base_url_lower:
+            return True
+        return bool(self.base_url and is_local_endpoint(self.base_url))
+
+    def _should_treat_stop_as_truncated(
+        self,
+        finish_reason: str,
+        assistant_message,
+        messages: Optional[list] = None,
+    ) -> bool:
+        """Detect conservative stop->length misreports for Ollama-hosted GLM models."""
+        if finish_reason != "stop" or self.api_mode != "chat_completions":
+            return False
+        if not self._is_ollama_glm_backend():
+            return False
+        if not any(
+            isinstance(msg, dict) and msg.get("role") == "tool"
+            for msg in (messages or [])
+        ):
+            return False
+        if assistant_message is None or getattr(assistant_message, "tool_calls", None):
+            return False
+
+        content = getattr(assistant_message, "content", None)
+        if not isinstance(content, str):
+            return False
+
+        visible_text = self._strip_think_blocks(content).strip()
+        if not visible_text:
+            return False
+        if len(visible_text) < 20 or not re.search(r"\s", visible_text):
+            return False
+
+        return not self._has_natural_response_ending(visible_text)
+
+    def _looks_like_codex_intermediate_ack(
+        self,
+        user_message: str,
+        assistant_content: str,
+        messages: List[Dict[str, Any]],
+    ) -> bool:
+        """Forwarder — see ``agent.agent_runtime_helpers.looks_like_codex_intermediate_ack``."""
+        from agent.agent_runtime_helpers import looks_like_codex_intermediate_ack
+        return looks_like_codex_intermediate_ack(self, user_message, assistant_content, messages)
+
+    def _extract_reasoning(self, assistant_message) -> Optional[str]:
+        """Forwarder — see ``agent.agent_runtime_helpers.extract_reasoning``."""
+        from agent.agent_runtime_helpers import extract_reasoning
+        return extract_reasoning(self, assistant_message)
+
+    def _cleanup_task_resources(self, task_id: str) -> None:
+        """Forwarder — see ``agent.chat_completion_helpers.cleanup_task_resources``."""
+        from agent.chat_completion_helpers import cleanup_task_resources
+        return cleanup_task_resources(self, task_id)
+
+    # ------------------------------------------------------------------
+    # Background memory/skill review — prompts live in agent.background_review
+    # ------------------------------------------------------------------
+    from agent.background_review import (
+        _MEMORY_REVIEW_PROMPT,
+        _SKILL_REVIEW_PROMPT,
+        _COMBINED_REVIEW_PROMPT,
+    )
+
+    @staticmethod
+    def _summarize_background_review_actions(
+        review_messages: List[Dict],
+        prior_snapshot: List[Dict],
+    ) -> List[str]:
+        """Forwarder — see ``agent.background_review.summarize_background_review_actions``."""
+        from agent.background_review import summarize_background_review_actions
+        return summarize_background_review_actions(review_messages, prior_snapshot)
+
+    def _spawn_background_review(
+        self,
+        messages_snapshot: List[Dict],
+        review_memory: bool = False,
+        review_skills: bool = False,
+    ) -> None:
+        """Spawn the background memory/skill review thread.
+
+        Thin wrapper — the heavy lifting lives in
+        ``agent.background_review.spawn_background_review_thread`` which
+        returns the thread target.  ``threading.Thread`` is constructed
+        here so existing tests that patch ``run_agent.threading.Thread``
+        keep working.
+        """
+        from agent.background_review import spawn_background_review_thread
+        target, _prompt = spawn_background_review_thread(
+            self,
+            messages_snapshot,
+            review_memory=review_memory,
+            review_skills=review_skills,
+        )
+        t = threading.Thread(target=target, daemon=True, name="bg-review")
+        t.start()
+
+    def _build_memory_write_metadata(
+        self,
+        *,
+        write_origin: Optional[str] = None,
+        execution_context: Optional[str] = None,
+        task_id: Optional[str] = None,
+        tool_call_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Forwarder — see ``agent.background_review.build_memory_write_metadata``."""
+        from agent.background_review import build_memory_write_metadata
+        return build_memory_write_metadata(
+            self,
+            write_origin=write_origin,
+            execution_context=execution_context,
+            task_id=task_id,
+            tool_call_id=tool_call_id,
+        )
+
+    from agent.session_persistence import _apply_persist_user_message_override as _apply_persist_user_message_override
+
+    from agent.session_persistence import _persist_session as _persist_session
+
+    from agent.session_persistence import _drop_trailing_empty_response_scaffolding as _drop_trailing_empty_response_scaffolding
+
+    def _repair_message_sequence(self, messages: List[Dict]) -> int:
+        """Forwarder — see ``agent.agent_runtime_helpers.repair_message_sequence``."""
+        from agent.agent_runtime_helpers import repair_message_sequence
+        return repair_message_sequence(self, messages)
+
+    from agent.session_persistence import _flush_messages_to_session_db as _flush_messages_to_session_db
+
+    from agent.session_persistence import _get_messages_up_to_last_assistant as _get_messages_up_to_last_assistant
+
+    def _format_tools_for_system_message(self) -> str:
+        """Forwarder — see ``agent.system_prompt.format_tools_for_system_message``."""
+        from agent.system_prompt import format_tools_for_system_message
+        return format_tools_for_system_message(self)
+
+    def _convert_to_trajectory_format(self, messages: List[Dict[str, Any]], user_query: str, completed: bool) -> List[Dict[str, Any]]:
+        """Forwarder — see ``agent.agent_runtime_helpers.convert_to_trajectory_format``."""
+        from agent.agent_runtime_helpers import convert_to_trajectory_format
+        return convert_to_trajectory_format(self, messages, user_query, completed)
+
+    def _save_trajectory(self, messages: List[Dict[str, Any]], user_query: str, completed: bool):
+        """
+        Save conversation trajectory to JSONL file.
+        
+        Args:
+            messages (List[Dict]): Complete message history
+            user_query (str): Original user query
+            completed (bool): Whether the conversation completed successfully
+        """
+        if not self.save_trajectories:
+            return
+        
+        trajectory = self._convert_to_trajectory_format(messages, user_query, completed)
+        _save_trajectory_to_file(trajectory, self.model, completed)
+
+    from agent.api_errors import _is_entitlement_failure as _is_entitlement_failure
+    _is_entitlement_failure = staticmethod(_is_entitlement_failure)
+
+    from agent.api_errors import _summarize_api_error as _summarize_api_error
+    _summarize_api_error = staticmethod(_summarize_api_error)
+
+    from agent.api_errors import _mask_api_key_for_logs as _mask_api_key_for_logs
+
+    from agent.api_errors import _clean_error_message as _clean_error_message
+
+    @staticmethod
+    def _extract_api_error_context(error: Exception) -> Dict[str, Any]:
+        """Forwarder — see ``agent.agent_runtime_helpers.extract_api_error_context``."""
+        from agent.agent_runtime_helpers import extract_api_error_context
+        return extract_api_error_context(error)
+
+    def _usage_summary_for_api_request_hook(self, response: Any) -> Optional[Dict[str, Any]]:
+        """Token buckets for ``post_api_request`` plugins (no raw ``response`` object)."""
+        if response is None:
+            return None
+        raw_usage = getattr(response, "usage", None)
+        if not raw_usage:
+            return None
+        from dataclasses import asdict
+
+        cu = normalize_usage(raw_usage, provider=self.provider, api_mode=self.api_mode)
+        summary = asdict(cu)
+        summary.pop("raw_usage", None)
+        summary["prompt_tokens"] = cu.prompt_tokens
+        summary["total_tokens"] = cu.total_tokens
+        return summary
+
+    def _dump_api_request_debug(
+        self,
+        api_kwargs: Dict[str, Any],
+        *,
+        reason: str,
+        error: Optional[Exception] = None,
+    ) -> Optional[Path]:
+        """Forwarder — see ``agent.agent_runtime_helpers.dump_api_request_debug``."""
+        from agent.agent_runtime_helpers import dump_api_request_debug
+        return dump_api_request_debug(self, api_kwargs, reason=reason, error=error)
+
+    from agent.session_persistence import _clean_session_content as _clean_session_content
+    _clean_session_content = staticmethod(_clean_session_content)
+
+    from agent.session_persistence import _redact_message_content as _redact_message_content
+    _redact_message_content = staticmethod(_redact_message_content)
+
+    from agent.session_persistence import _save_session_log as _save_session_log
+
+    def interrupt(self, message: str = None) -> None:
+        """
+        Request the agent to interrupt its current tool-calling loop.
+        
+        Call this from another thread (e.g., input handler, message receiver)
+        to gracefully stop the agent and process a new message.
+        
+        Also signals long-running tool executions (e.g. terminal commands)
+        to terminate early, so the agent can respond immediately.
+        
+        Args:
+            message: Optional new message that triggered the interrupt.
+                     If provided, the agent will include this in its response context.
+        
+        Example (CLI):
+            # In a separate input thread:
+            if user_typed_something:
+                agent.interrupt(user_input)
+        
+        Example (Messaging):
+            # When new message arrives for active session:
+            if session_has_running_agent:
+                running_agent.interrupt(new_message.text)
+        """
+        self._interrupt_requested = True
+        self._interrupt_message = message
+        # Signal all tools to abort any in-flight operations immediately.
+        # Scope the interrupt to this agent's execution thread so other
+        # agents running in the same process (gateway) are not affected.
+        if self._execution_thread_id is not None:
+            _set_interrupt(True, self._execution_thread_id)
+            self._interrupt_thread_signal_pending = False
+        else:
+            # The interrupt arrived before run_conversation() finished
+            # binding the agent to its execution thread. Defer the tool-level
+            # interrupt signal until startup completes instead of targeting
+            # the caller thread by mistake.
+            self._interrupt_thread_signal_pending = True
+        # Fan out to concurrent-tool worker threads.  Those workers run tools
+        # on their own tids (ThreadPoolExecutor workers), so `is_interrupted()`
+        # inside a tool only sees an interrupt when their specific tid is in
+        # the `_interrupted_threads` set.  Without this propagation, an
+        # already-running concurrent tool (e.g. a terminal command hung on
+        # network I/O) never notices the interrupt and has to run to its own
+        # timeout.  See `_run_tool` for the matching entry/exit bookkeeping.
+        # `getattr` fallback covers test stubs that build AIAgent via
+        # object.__new__ and skip __init__.
+        _tracker = getattr(self, "_tool_worker_threads", None)
+        _tracker_lock = getattr(self, "_tool_worker_threads_lock", None)
+        if _tracker is not None and _tracker_lock is not None:
+            with _tracker_lock:
+                _worker_tids = list(_tracker)
+            for _wtid in _worker_tids:
+                try:
+                    _set_interrupt(True, _wtid)
+                except Exception:
+                    pass
+        # Propagate interrupt to any running child agents (subagent delegation)
+        with self._active_children_lock:
+            children_copy = list(self._active_children)
+        for child in children_copy:
+            try:
+                child.interrupt(message)
+            except Exception as e:
+                logger.debug("Failed to propagate interrupt to child agent: %s", e)
+        if not self.quiet_mode:
+            print("\n⚡ Interrupt requested" + (f": '{message[:40]}...'" if message and len(message) > 40 else f": '{message}'" if message else ""))
+
+    def clear_interrupt(self) -> None:
+        """Clear any pending interrupt request and the per-thread tool interrupt signal."""
+        self._interrupt_requested = False
+        self._interrupt_message = None
+        self._interrupt_thread_signal_pending = False
+        if self._execution_thread_id is not None:
+            _set_interrupt(False, self._execution_thread_id)
+        # Also clear any concurrent-tool worker thread bits.  Tracked
+        # workers normally clear their own bit on exit, but an explicit
+        # clear here guarantees no stale interrupt can survive a turn
+        # boundary and fire on a subsequent, unrelated tool call that
+        # happens to get scheduled onto the same recycled worker tid.
+        # `getattr` fallback covers test stubs that build AIAgent via
+        # object.__new__ and skip __init__.
+        _tracker = getattr(self, "_tool_worker_threads", None)
+        _tracker_lock = getattr(self, "_tool_worker_threads_lock", None)
+        if _tracker is not None and _tracker_lock is not None:
+            with _tracker_lock:
+                _worker_tids = list(_tracker)
+            for _wtid in _worker_tids:
+                try:
+                    _set_interrupt(False, _wtid)
+                except Exception:
+                    pass
+        # A hard interrupt supersedes any pending /steer — the steer was
+        # meant for the agent's next tool-call iteration, which will no
+        # longer happen. Drop it instead of surprising the user with a
+        # late injection on the post-interrupt turn.
+        _steer_lock = getattr(self, "_pending_steer_lock", None)
+        if _steer_lock is not None:
+            with _steer_lock:
+                self._pending_steer = None
+
+    def steer(self, text: str) -> bool:
+        """
+        Inject a user message into the next tool result without interrupting.
+
+        Unlike interrupt(), this does NOT stop the current tool call. The
+        text is stashed and the agent loop appends it to the LAST tool
+        result's content once the current tool batch finishes. The model
+        sees the steer as part of the tool output on its next iteration.
+
+        Thread-safe: callable from gateway/CLI/TUI threads. Multiple calls
+        before the drain point concatenate with newlines.
+
+        Args:
+            text: The user text to inject. Empty strings are ignored.
+
+        Returns:
+            True if the steer was accepted, False if the text was empty.
+        """
+        if not text or not text.strip():
+            return False
+        cleaned = text.strip()
+        _lock = getattr(self, "_pending_steer_lock", None)
+        if _lock is None:
+            # Test stubs that built AIAgent via object.__new__ skip __init__.
+            # Fall back to direct attribute set; no concurrent callers expected
+            # in those stubs.
+            existing = getattr(self, "_pending_steer", None)
+            self._pending_steer = (existing + "\n" + cleaned) if existing else cleaned
+            return True
+        with _lock:
+            if self._pending_steer:
+                self._pending_steer = self._pending_steer + "\n" + cleaned
+            else:
+                self._pending_steer = cleaned
+        return True
+
+    def _drain_pending_steer(self) -> Optional[str]:
+        """Return the pending steer text (if any) and clear the slot.
+
+        Safe to call from the agent execution thread after appending tool
+        results. Returns None when no steer is pending.
+        """
+        _lock = getattr(self, "_pending_steer_lock", None)
+        if _lock is None:
+            text = getattr(self, "_pending_steer", None)
+            self._pending_steer = None
+            return text
+        with _lock:
+            text = self._pending_steer
+            self._pending_steer = None
+        return text
+
+    def _record_file_mutation_result(
+        self,
+        tool_name: str,
+        args: Dict[str, Any],
+        result: Any,
+        is_error: bool,
+    ) -> None:
+        """Record a ``write_file`` / ``patch`` outcome for the turn-end verifier.
+
+        On failure, store ``{path: {error_preview, tool}}`` entries.  On
+        success, remove any prior failure entries for the same paths (the
+        model recovered within the turn).  Silently no-ops if the per-turn
+        state dict hasn't been initialised yet (e.g. a tool dispatched
+        outside ``run_conversation``).
+        """
+        if tool_name not in _FILE_MUTATING_TOOLS:
+            return
+        state = getattr(self, "_turn_failed_file_mutations", None)
+        if state is None:
+            return
+        targets = _extract_file_mutation_targets(tool_name, args)
+        if not targets:
+            return
+        landed = file_mutation_result_landed(tool_name, result)
+        if is_error and not landed:
+            preview = _extract_error_preview(result)
+            for path in targets:
+                # Keep the FIRST error we saw for a given path unless we
+                # later see success.  A repeated failure with a different
+                # message shouldn't silently overwrite the original.
+                if path not in state:
+                    state[path] = {
+                        "tool": tool_name,
+                        "error_preview": preview,
+                    }
+        else:
+            for path in targets:
+                state.pop(path, None)
+
+    def _file_mutation_verifier_enabled(self) -> bool:
+        """Check whether the per-turn file-mutation verifier footer is on.
+
+        Config path: ``display.file_mutation_verifier`` (bool, default True).
+        Fork-native file-mutation verifier env aliases override config. Exposed
+        as a method so tests can patch a single seam without reaching into
+        the private ``_turn_failed_file_mutations`` state dict.
+        """
+        try:
+            import os as _os
+            for _env_name in (
+                "SUPERFORECASTING_AGENT_FILE_MUTATION_VERIFIER",
+                "FORECAST_FILE_MUTATION_VERIFIER",
+                "HERMES_FILE_MUTATION_VERIFIER",
+            ):
+                env = _os.environ.get(_env_name)
+                if env is not None:
+                    return env.strip().lower() not in {"0", "false", "no", "off"}
+            # Read from the persisted config.yaml so gateway and CLI share
+            # the same setting.  Import lazily to avoid a startup-time cycle.
+            try:
+                from superforecasting_agent.runtime.config import load_config as _load_config
+                _cfg = _load_config() or {}
+            except Exception:
+                _cfg = {}
+            _display = _cfg.get("display") if isinstance(_cfg, dict) else None
+            if isinstance(_display, dict) and "file_mutation_verifier" in _display:
+                return bool(_display.get("file_mutation_verifier"))
+        except Exception:
+            pass
+        return True  # safe default: verifier on
+
+    # Bare absolute / home / Windows-drive file paths in a footer line.
+    # Anchors mirror the gateway's ``extract_local_files`` bare-path
+    # detector so that anything the gateway WOULD auto-attach is wrapped
+    # in inline-code backticks here first (the extractor skips paths inside
+    # `code` spans).  Defense-in-depth: even if a future error message
+    # echoes a credential path (config.yaml, .env, auth.json) into the
+    # user-facing footer, it can never be matched as a deliverable bare
+    # path and silently uploaded to a messaging channel (#35584).
+    _FOOTER_PATH_RE = re.compile(
+        r"(?<![/:\w.`])(?:~/|/|[A-Za-z]:[/\\])(?:[\w.\-]+[/\\])*[\w.\-]+\.[\w]+",
+    )
+
+    @classmethod
+    def _neutralize_footer_paths(cls, text: str) -> str:
+        """Wrap bare file paths in backticks so they aren't auto-delivered.
+
+        The gateway's ``extract_local_files`` scans response text for bare
+        absolute/home paths ending in a deliverable extension and uploads
+        any that exist on disk as native attachments — but it explicitly
+        skips paths inside inline-code (`` `...` ``) spans.  Backticking
+        every path the footer renders defeats that auto-detection while
+        keeping the path fully human-readable.  Paths already wrapped in a
+        backtick (the negative lookbehind excludes a preceding `` ` ``) are
+        left untouched so we never double-wrap.
+        """
+        if not text:
+            return text
+        return cls._FOOTER_PATH_RE.sub(lambda m: f"`{m.group(0)}`", text)
+
+    @classmethod
+    def _format_file_mutation_failure_footer(cls, failed: Dict[str, Dict[str, Any]]) -> str:
+        """Render the per-turn failed-mutation dict as a user-facing footer.
+
+        Displays up to 10 paths with their first error preview, then a
+        count of any additional failures.  Returns an empty string when
+        the dict is empty so callers can concatenate unconditionally.
+
+        Every file path that reaches the user-facing text — both the bullet
+        path and any path echoed inside the tool's error preview — is
+        backtick-wrapped via ``_neutralize_footer_paths`` so the gateway's
+        bare-path media extractor can never auto-attach a protected file
+        (e.g. ``~/.hermes/config.yaml``) to a messaging channel (#35584).
+        """
+        if not failed:
+            return ""
+        lines = [
+            "⚠️ File-mutation verifier: "
+            f"{len(failed)} file(s) were NOT modified this turn despite any "
+            "wording above that may suggest otherwise. Run `git status` or "
+            "`read_file` to confirm."
+        ]
+        shown = 0
+        for path, info in failed.items():
+            if shown >= 10:
+                break
+            preview = (info.get("error_preview") or "").strip()
+            tool = info.get("tool") or "patch"
+            if preview:
+                lines.append(f"  • `{path}` — [{tool}] {preview}")
+            else:
+                lines.append(f"  • `{path}` — [{tool}] failed")
+            shown += 1
+        remaining = len(failed) - shown
+        if remaining > 0:
+            lines.append(f"  • … and {remaining} more")
+        # Neutralize any path the preview text echoed (the bullet path is
+        # already backticked above; the lookbehind keeps it from being
+        # double-wrapped).
+        return cls._neutralize_footer_paths("\n".join(lines))
+
+    def _apply_pending_steer_to_tool_results(self, messages: list, num_tool_msgs: int) -> None:
+        """Forwarder — see ``agent.agent_runtime_helpers.apply_pending_steer_to_tool_results``."""
+        from agent.agent_runtime_helpers import apply_pending_steer_to_tool_results
+        return apply_pending_steer_to_tool_results(self, messages, num_tool_msgs)
+
+    def _touch_activity(self, desc: str) -> None:
+        """Update the last-activity timestamp and description (thread-safe)."""
+        self._last_activity_ts = time.time()
+        self._last_activity_desc = desc
+
+    def _capture_rate_limits(self, http_response: Any) -> None:
+        """Parse x-ratelimit-* headers from an HTTP response and cache the state.
+
+        Called after each streaming API call.  The httpx Response object is
+        available on the OpenAI SDK Stream via ``stream.response``.
+        """
+        if http_response is None:
+            return
+        headers = getattr(http_response, "headers", None)
+        if not headers:
+            return
+        try:
+            from agent.rate_limit_tracker import parse_rate_limit_headers
+            state = parse_rate_limit_headers(headers, provider=self.provider)
+            if state is not None:
+                self._rate_limit_state = state
+        except Exception:
+            pass  # Never let header parsing break the agent loop
+
+    def get_rate_limit_state(self):
+        """Return the last captured RateLimitState, or None."""
+        return self._rate_limit_state
+
+    def _check_openrouter_cache_status(self, http_response: Any) -> None:
+        """Read X-OpenRouter-Cache-Status from response headers and log it.
+
+        Increments ``_or_cache_hits`` on HIT so callers can report savings.
+        """
+        if http_response is None:
+            return
+        headers = getattr(http_response, "headers", None)
+        if not headers:
+            return
+        try:
+            status = headers.get("x-openrouter-cache-status")
+            if not status:
+                return
+            if status.upper() == "HIT":
+                self._or_cache_hits += 1
+                logger.info("OpenRouter response cache HIT (total: %d)", self._or_cache_hits)
+            else:
+                logger.debug("OpenRouter response cache %s", status.upper())
+        except Exception:
+            pass  # Never let header parsing break the agent loop
+
+    def get_activity_summary(self) -> dict:
+        """Return a snapshot of the agent's current activity for diagnostics.
+
+        Called by the gateway timeout handler to report what the agent was doing
+        when it was killed, and by the periodic "still working" notifications.
+        """
+        elapsed = time.time() - self._last_activity_ts
+        return {
+            "last_activity_ts": self._last_activity_ts,
+            "last_activity_desc": self._last_activity_desc,
+            "seconds_since_activity": round(elapsed, 1),
+            "current_tool": self._current_tool,
+            "api_call_count": self._api_call_count,
+            "max_iterations": self.max_iterations,
+            "budget_used": self.iteration_budget.used,
+            "budget_max": self.iteration_budget.max_total,
+        }
+
+    from agent.session_lifecycle import shutdown_memory_provider as shutdown_memory_provider
+
+    from agent.session_lifecycle import commit_memory_session as commit_memory_session
+
+    from agent.session_lifecycle import _sync_external_memory_for_turn as _sync_external_memory_for_turn
+
+    from agent.session_lifecycle import release_clients as release_clients
+
+    from agent.session_lifecycle import close as close
+
+    def _hydrate_todo_store(self, history: List[Dict[str, Any]]) -> None:
+        """
+        Recover todo state from conversation history.
+        
+        The gateway creates a fresh AIAgent per message, so the in-memory
+        TodoStore is empty. We scan the history for the most recent todo
+        tool response and replay it to reconstruct the state.
+        """
+        # Walk history backwards to find the most recent todo tool response
+        last_todo_response = None
+        for msg in reversed(history):
+            if msg.get("role") != "tool":
+                continue
+            content = msg.get("content", "")
+            # Quick check: todo responses contain "todos" key
+            if '"todos"' not in content:
+                continue
+            try:
+                data = json.loads(content)
+                if "todos" in data and isinstance(data["todos"], list):
+                    last_todo_response = data["todos"]
+                    break
+            except (json.JSONDecodeError, TypeError):
+                continue
+        
+        if last_todo_response:
+            # Replay the items into the store (replace mode)
+            self._todo_store.write(last_todo_response, merge=False)
+            if not self.quiet_mode:
+                self._vprint(f"{self.log_prefix}📋 Restored {len(last_todo_response)} todo item(s) from history")
+        _set_interrupt(False)
+
+    @property
+    def is_interrupted(self) -> bool:
+        """Check if an interrupt has been requested."""
+        return self._interrupt_requested
+
+
+
+
+
+
+
+
+
+
+    def _build_system_prompt_parts(self, system_message: str = None) -> Dict[str, str]:
+        """Forwarder — see ``agent.system_prompt.build_system_prompt_parts``."""
+        from agent.system_prompt import build_system_prompt_parts
+        return build_system_prompt_parts(self, system_message=system_message)
+
+    def _build_system_prompt(self, system_message: str = None) -> str:
+        """Forwarder — see ``agent.system_prompt.build_system_prompt``."""
+        from agent.system_prompt import build_system_prompt
+        return build_system_prompt(self, system_message=system_message)
+
+    @staticmethod
+    def _get_tool_call_id_static(tc) -> str:
+        """Extract call ID from a tool_call entry (dict or object)."""
+        if isinstance(tc, dict):
+            return tc.get("call_id", "") or tc.get("id", "") or ""
+        return getattr(tc, "call_id", "") or getattr(tc, "id", "") or ""
+
+    @staticmethod
+    def _get_tool_call_name_static(tc) -> str:
+        """Extract function name from a tool_call entry (dict or object).
+
+        Gemini's OpenAI-compatibility endpoint requires every `role: tool`
+        message to carry the matching function name. OpenAI/Anthropic/ollama
+        tolerate its absence, so the field is best-effort: callers fall back
+        to "" and the message still works elsewhere.
+        """
+        if isinstance(tc, dict):
+            fn = tc.get("function")
+            if isinstance(fn, dict):
+                return fn.get("name", "") or ""
+            return ""
+        fn = getattr(tc, "function", None)
+        return getattr(fn, "name", "") or ""
+
+    _VALID_API_ROLES = frozenset({"system", "user", "assistant", "tool", "function", "developer"})
+
+    @staticmethod
+    def _sanitize_api_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Forwarder — see ``agent.agent_runtime_helpers.sanitize_api_messages``."""
+        from agent.agent_runtime_helpers import sanitize_api_messages
+        return sanitize_api_messages(messages)
+
+    @staticmethod
+    def _is_thinking_only_assistant(msg: Dict[str, Any]) -> bool:
+        """Return True if ``msg`` is an assistant turn whose only payload is reasoning.
+
+        "Thinking-only" means the model emitted reasoning (``reasoning`` or
+        ``reasoning_content``) but no visible text and no tool_calls. When sent
+        back to providers that convert reasoning into thinking blocks (native
+        Anthropic, OpenRouter Anthropic, third-party Anthropic-compatible
+        gateways), the resulting message has only thinking blocks — which
+        Anthropic rejects with HTTP 400 "The final block in an assistant
+        message cannot be `thinking`."
+
+        Symmetric with Claude Code's ``filterOrphanedThinkingOnlyMessages``
+        (src/utils/messages.ts). We drop the whole turn from the API copy
+        rather than fabricating stub text — the message log (UI transcript)
+        keeps the reasoning block; only the wire copy is cleaned.
+        """
+        if not isinstance(msg, dict) or msg.get("role") != "assistant":
+            return False
+        if msg.get("tool_calls"):
+            return False
+        # Does it have any actual output?
+        content = msg.get("content")
+        if isinstance(content, str):
+            if content.strip():
+                return False
+        elif isinstance(content, list):
+            for block in content:
+                if not isinstance(block, dict):
+                    if block:  # non-empty non-dict string etc.
+                        return False
+                    continue
+                btype = block.get("type")
+                if btype in {"thinking", "redacted_thinking"}:
+                    continue
+                if btype == "text":
+                    text = block.get("text", "")
+                    if isinstance(text, str) and text.strip():
+                        return False
+                    continue
+                # tool_use, image, document, etc. — real payload
+                return False
+        elif content is not None and content != "":
+            return False
+        # Content is empty-ish. Is there reasoning to make it thinking-only?
+        reasoning = msg.get("reasoning_content") or msg.get("reasoning")
+        if isinstance(reasoning, str) and reasoning.strip():
+            return True
+        # reasoning_details list form
+        rd = msg.get("reasoning_details")
+        if isinstance(rd, list) and rd:
+            return True
+        return False
+
+    @staticmethod
+    def _drop_thinking_only_and_merge_users(
+        messages: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Forwarder — see ``agent.agent_runtime_helpers.drop_thinking_only_and_merge_users``."""
+        from agent.agent_runtime_helpers import drop_thinking_only_and_merge_users
+        return drop_thinking_only_and_merge_users(messages)
+
+    @staticmethod
+    def _cap_delegate_task_calls(tool_calls: list) -> list:
+        """Truncate excess delegate_task calls to max_concurrent_children.
+
+        The delegate_tool caps the task list inside a single call, but the
+        model can emit multiple separate delegate_task tool_calls in one
+        turn.  This truncates the excess, preserving all non-delegate calls.
+
+        Returns the original list if no truncation was needed.
+        """
+        from tools.delegate_tool import _get_max_concurrent_children
+        max_children = _get_max_concurrent_children()
+        delegate_count = sum(1 for tc in tool_calls if tc.function.name == "delegate_task")
+        if delegate_count <= max_children:
+            return tool_calls
+        kept_delegates = 0
+        truncated = []
+        for tc in tool_calls:
+            if tc.function.name == "delegate_task":
+                if kept_delegates < max_children:
+                    truncated.append(tc)
+                    kept_delegates += 1
+            else:
+                truncated.append(tc)
+        logger.warning(
+            "Truncated %d excess delegate_task call(s) to enforce "
+            "max_concurrent_children=%d limit",
+            delegate_count - max_children, max_children,
+        )
+        return truncated
+
+    @staticmethod
+    def _deduplicate_tool_calls(tool_calls: list) -> list:
+        """Remove duplicate (tool_name, arguments) pairs within a single turn.
+
+        Only the first occurrence of each unique pair is kept.
+        Returns the original list if no duplicates were found.
+        """
+        seen: set = set()
+        unique: list = []
+        for tc in tool_calls:
+            key = (tc.function.name, tc.function.arguments)
+            if key not in seen:
+                seen.add(key)
+                unique.append(tc)
+            else:
+                logger.warning("Removed duplicate tool call: %s", tc.function.name)
+        return unique if len(unique) < len(tool_calls) else tool_calls
+
+    def _repair_tool_call(self, tool_name: str) -> str | None:
+        """Forwarder — see ``agent.agent_runtime_helpers.repair_tool_call``."""
+        from agent.agent_runtime_helpers import repair_tool_call
+        return repair_tool_call(self, tool_name)
+
+    def _invalidate_system_prompt(self):
+        """Forwarder — see ``agent.system_prompt.invalidate_system_prompt``."""
+        from agent.system_prompt import invalidate_system_prompt
+        invalidate_system_prompt(self)
+
+    @staticmethod
+    def _deterministic_call_id(fn_name: str, arguments: str, index: int = 0) -> str:
+        """Generate a deterministic call_id from tool call content.
+
+        Used as a fallback when the API doesn't provide a call_id.
+        Deterministic IDs prevent cache invalidation — random UUIDs would
+        make every API call's prefix unique, breaking OpenAI's prompt cache.
+        """
+        return _codex_deterministic_call_id(fn_name, arguments, index)
+
+    @staticmethod
+    def _split_responses_tool_id(raw_id: Any) -> tuple[Optional[str], Optional[str]]:
+        """Split a stored tool id into (call_id, response_item_id)."""
+        return _codex_split_responses_tool_id(raw_id)
+
+    def _derive_responses_function_call_id(
+        self,
+        call_id: str,
+        response_item_id: Optional[str] = None,
+    ) -> str:
+        """Build a valid Responses `function_call.id` (must start with `fc_`)."""
+        return _codex_derive_responses_function_call_id(call_id, response_item_id)
+
+    from agent.openai_clients import _thread_identity as _thread_identity
+
+    from agent.openai_clients import _client_log_context as _client_log_context
+
+    from agent.openai_clients import _openai_client_lock as _openai_client_lock
+
+    from agent.openai_clients import _is_openai_client_closed as _is_openai_client_closed
+    _is_openai_client_closed = staticmethod(_is_openai_client_closed)
+
+    from agent.openai_clients import _build_keepalive_http_client as _build_keepalive_http_client
+    _build_keepalive_http_client = staticmethod(_build_keepalive_http_client)
+
+    def _create_openai_client(self, client_kwargs: dict, *, reason: str, shared: bool) -> Any:
+        """Forwarder — see ``agent.agent_runtime_helpers.create_openai_client``."""
+        from agent.agent_runtime_helpers import create_openai_client
+        return create_openai_client(self, client_kwargs, reason=reason, shared=shared)
+
+    @staticmethod
+    def _force_close_tcp_sockets(client: Any) -> int:
+        """Forwarder — see ``agent.agent_runtime_helpers.force_close_tcp_sockets``."""
+        from agent.agent_runtime_helpers import force_close_tcp_sockets
+        return force_close_tcp_sockets(client)
+
+    from agent.openai_clients import _close_openai_client as _close_openai_client
+
+    from agent.openai_clients import _replace_primary_openai_client as _replace_primary_openai_client
+
+    from agent.openai_clients import _ensure_primary_openai_client as _ensure_primary_openai_client
+
+    def _cleanup_dead_connections(self) -> bool:
+        """Forwarder — see ``agent.agent_runtime_helpers.cleanup_dead_connections``."""
+        from agent.agent_runtime_helpers import cleanup_dead_connections
+        return cleanup_dead_connections(self)
+
+    from agent.openai_clients import _api_kwargs_have_image_parts as _api_kwargs_have_image_parts
+    _api_kwargs_have_image_parts = staticmethod(_api_kwargs_have_image_parts)
+
+    from agent.openai_clients import _copilot_headers_for_request as _copilot_headers_for_request
+
+    from agent.openai_clients import _create_request_openai_client as _create_request_openai_client
+
+    from agent.openai_clients import _close_request_openai_client as _close_request_openai_client
+
+    def _run_codex_stream(self, api_kwargs: dict, client: Any = None, on_first_delta: callable = None):
+        """Forwarder — see ``agent.codex_runtime.run_codex_stream``."""
+        from agent.codex_runtime import run_codex_stream
+        return run_codex_stream(self, api_kwargs, client, on_first_delta)
+
+    def _run_codex_create_stream_fallback(self, api_kwargs: dict, client: Any = None):
+        """Forwarder — see ``agent.codex_runtime.run_codex_create_stream_fallback``."""
+        from agent.codex_runtime import run_codex_create_stream_fallback
+        return run_codex_create_stream_fallback(self, api_kwargs, client)
+
+    from agent.credential_recovery import _try_refresh_codex_client_credentials as _try_refresh_codex_client_credentials
+
+    from agent.credential_recovery import _try_refresh_nous_client_credentials as _try_refresh_nous_client_credentials
+
+    from agent.credential_recovery import _try_refresh_copilot_client_credentials as _try_refresh_copilot_client_credentials
+
+    from agent.credential_recovery import _try_refresh_anthropic_client_credentials as _try_refresh_anthropic_client_credentials
+
+    def _apply_client_headers_for_base_url(self, base_url: str) -> None:
+        from agent.auxiliary_client import (
+            _AI_GATEWAY_HEADERS,
+            build_nvidia_nim_headers,
+            build_or_headers,
+        )
+
+        if base_url_host_matches(base_url, "openrouter.ai"):
+            self._client_kwargs["default_headers"] = build_or_headers()
+        elif base_url_host_matches(base_url, "ai-gateway.vercel.sh"):
+            self._client_kwargs["default_headers"] = dict(_AI_GATEWAY_HEADERS)
+        elif base_url_host_matches(base_url, "integrate.api.nvidia.com"):
+            self._client_kwargs["default_headers"] = build_nvidia_nim_headers(base_url)
+        elif base_url_host_matches(base_url, "api.routermint.com"):
+            self._client_kwargs["default_headers"] = _routermint_headers()
+        elif base_url_host_matches(base_url, "api.githubcopilot.com"):
+            from superforecasting_agent.runtime.models import copilot_default_headers
+
+            self._client_kwargs["default_headers"] = copilot_default_headers()
+        elif base_url_host_matches(base_url, "api.kimi.com"):
+            self._client_kwargs["default_headers"] = {"User-Agent": "claude-code/0.1.0"}
+        elif base_url_host_matches(base_url, "portal.qwen.ai"):
+            self._client_kwargs["default_headers"] = _qwen_portal_headers()
+        elif base_url_host_matches(base_url, "chatgpt.com"):
+            from agent.auxiliary_client import _codex_agent_headers
+            self._client_kwargs["default_headers"] = _codex_agent_headers(
+                self._client_kwargs.get("api_key", "")
+            )
+        else:
+            # No URL-specific headers — check profile.default_headers before clearing.
+            _ph_headers = None
+            try:
+                from providers import get_provider_profile as _gpf2
+                _ph2 = _gpf2(self.provider)
+                if _ph2 and _ph2.default_headers:
+                    _ph_headers = dict(_ph2.default_headers)
+            except Exception:
+                pass
+            if _ph_headers:
+                self._client_kwargs["default_headers"] = _ph_headers
+            else:
+                self._client_kwargs.pop("default_headers", None)
+
+    from agent.credential_recovery import _swap_credential as _swap_credential
+
+    def _recover_with_credential_pool(
+        self,
+        *,
+        status_code: Optional[int],
+        has_retried_429: bool,
+        classified_reason: Optional[FailoverReason] = None,
+        error_context: Optional[Dict[str, Any]] = None,
+    ) -> tuple[bool, bool]:
+        """Forwarder — see ``agent.agent_runtime_helpers.recover_with_credential_pool``."""
+        from agent.agent_runtime_helpers import recover_with_credential_pool
+        return recover_with_credential_pool(self, status_code=status_code, has_retried_429=has_retried_429, classified_reason=classified_reason, error_context=error_context)
+
+    def _credential_pool_may_recover_rate_limit(self) -> bool:
+        """Whether a rate-limit retry should wait for same-provider credentials."""
+        pool = self._credential_pool
+        if pool is None:
+            return False
+        if (
+            self.provider == "google-gemini-cli"
+            or str(getattr(self, "base_url", "")).startswith("cloudcode-pa://")
+        ):
+            # CloudCode/Gemini quota windows are usually account-level throttles.
+            # Prefer the configured fallback immediately instead of waiting out
+            # Retry-After while a pooled OAuth credential may still appear usable.
+            return False
+        return pool.has_available()
+
+    def _anthropic_messages_create(self, api_kwargs: dict):
+        if self.api_mode == "anthropic_messages":
+            self._try_refresh_anthropic_client_credentials()
+        return self._anthropic_client.messages.create(**api_kwargs)
+
+    def _rebuild_anthropic_client(self) -> None:
+        """Rebuild the Anthropic client after an interrupt or stale call.
+
+        Handles both direct Anthropic and Bedrock-hosted Anthropic models
+        correctly — rebuilding with the Bedrock SDK when provider is bedrock,
+        rather than always falling back to build_anthropic_client() which
+        requires a direct Anthropic API key.
+
+        Honors ``self._oauth_1m_beta_disabled`` (set by the reactive recovery
+        path when an OAuth subscription rejects the 1M-context beta) so the
+        rebuilt client carries the reduced beta set.
+        """
+        _drop_1m = bool(getattr(self, "_oauth_1m_beta_disabled", False))
+        if getattr(self, "provider", None) == "bedrock":
+            from agent.anthropic_adapter import build_anthropic_bedrock_client
+            region = getattr(self, "_bedrock_region", "us-east-1") or "us-east-1"
+            self._anthropic_client = build_anthropic_bedrock_client(region)
+        else:
+            from agent.anthropic_adapter import build_anthropic_client
+            self._anthropic_client = build_anthropic_client(
+                self._anthropic_api_key,
+                getattr(self, "_anthropic_base_url", None),
+                timeout=get_provider_request_timeout(self.provider, self.model),
+                drop_context_1m_beta=_drop_1m,
+            )
+
+    def _interruptible_api_call(self, api_kwargs: dict):
+        """Forwarder — see ``agent.chat_completion_helpers.interruptible_api_call``."""
+        from agent.chat_completion_helpers import interruptible_api_call
+        return interruptible_api_call(self, api_kwargs)
+
+    # ── Unified streaming API call ─────────────────────────────────────────
+
+    def _reset_stream_delivery_tracking(self) -> None:
+        """Reset tracking for text delivered during the current model response."""
+        # Flush any benign partial-tag tail held by the think scrubber
+        # first (#17924): an innocent '<' at the end of the stream that
+        # turned out not to be a tag prefix should reach the UI.  Then
+        # flush the context scrubber.  Order matters — the think
+        # scrubber's output feeds into the context scrubber's state.
+        think_scrubber = getattr(self, "_stream_think_scrubber", None)
+        if think_scrubber is not None:
+            think_tail = think_scrubber.flush()
+            if think_tail:
+                # Route the tail through the context scrubber too so a
+                # memory-context span straddling the final boundary is
+                # still caught.
+                ctx_scrubber = getattr(self, "_stream_context_scrubber", None)
+                if ctx_scrubber is not None:
+                    think_tail = ctx_scrubber.feed(think_tail)
+                if think_tail:
+                    callbacks = [cb for cb in (self.stream_delta_callback, self._stream_callback) if cb is not None]
+                    for cb in callbacks:
+                        try:
+                            cb(think_tail)
+                        except Exception:
+                            pass
+                    self._record_streamed_assistant_text(think_tail)
+        # Flush any benign partial-tag tail held by the context scrubber so it
+        # reaches the UI before we clear state for the next model call.  If
+        # the scrubber is mid-span, flush() drops the orphaned content.
+        scrubber = getattr(self, "_stream_context_scrubber", None)
+        if scrubber is not None:
+            tail = scrubber.flush()
+            if tail:
+                callbacks = [cb for cb in (self.stream_delta_callback, self._stream_callback) if cb is not None]
+                for cb in callbacks:
+                    try:
+                        cb(tail)
+                    except Exception:
+                        pass
+                self._record_streamed_assistant_text(tail)
+        self._current_streamed_assistant_text = ""
+
+    def _record_streamed_assistant_text(self, text: str) -> None:
+        """Accumulate visible assistant text emitted through stream callbacks."""
+        if isinstance(text, str) and text:
+            self._current_streamed_assistant_text = (
+                getattr(self, "_current_streamed_assistant_text", "") + text
+            )
+
+    @staticmethod
+    def _normalize_interim_visible_text(text: str) -> str:
+        if not isinstance(text, str):
+            return ""
+        return re.sub(r"\s+", " ", text).strip()
+
+    def _interim_content_was_streamed(self, content: str) -> bool:
+        visible_content = self._normalize_interim_visible_text(
+            self._strip_think_blocks(content or "")
+        )
+        if not visible_content:
+            return False
+        streamed = self._normalize_interim_visible_text(
+            self._strip_think_blocks(getattr(self, "_current_streamed_assistant_text", "") or "")
+        )
+        return bool(streamed) and streamed == visible_content
+
+    def _emit_interim_assistant_message(self, assistant_msg: Dict[str, Any]) -> None:
+        """Surface a real mid-turn assistant commentary message to the UI layer."""
+        cb = getattr(self, "interim_assistant_callback", None)
+        if cb is None or not isinstance(assistant_msg, dict):
+            return
+        content = assistant_msg.get("content")
+        visible = self._strip_think_blocks(content or "").strip()
+        if not visible or visible == "(empty)":
+            return
+        already_streamed = self._interim_content_was_streamed(visible)
+        try:
+            cb(visible, already_streamed=already_streamed)
+        except Exception:
+            logger.debug("interim_assistant_callback error", exc_info=True)
+
+    def _fire_stream_delta(self, text: str) -> None:
+        """Fire all registered stream delta callbacks (display + TTS)."""
+        # If a tool iteration set the break flag, prepend a single paragraph
+        # break before the first real text delta.  This prevents the original
+        # problem (text concatenation across tool boundaries) without stacking
+        # blank lines when multiple tool iterations run back-to-back.
+        if getattr(self, "_stream_needs_break", False) and text and text.strip():
+            self._stream_needs_break = False
+            text = "\n\n" + text
+            prepended_break = True
+        else:
+            prepended_break = False
+        if isinstance(text, str):
+            # Suppress reasoning/thinking blocks via the stateful
+            # scrubber (#17924).  Earlier versions ran _strip_think_blocks
+            # per-delta here, which destroyed downstream state machines
+            # when a tag was split across deltas (e.g. MiniMax-M2.7
+            # sends '<think>' and its content as separate deltas —
+            # regex case 2 erased the first delta, so the CLI/gateway
+            # state machine never saw the open tag and leaked the
+            # reasoning content as regular response text).
+            think_scrubber = getattr(self, "_stream_think_scrubber", None)
+            if think_scrubber is not None:
+                text = think_scrubber.feed(text or "")
+            else:
+                # Defensive: legacy callers without the scrubber attribute.
+                text = self._strip_think_blocks(text or "")
+            # Then feed through the stateful context scrubber so memory-context
+            # spans split across chunks cannot leak to the UI (#5719).
+            scrubber = getattr(self, "_stream_context_scrubber", None)
+            if scrubber is not None:
+                text = scrubber.feed(text)
+            else:
+                # Defensive: legacy callers without the scrubber attribute.
+                text = sanitize_context(text)
+            # Only strip leading newlines on the first delta — mid-stream "\n" is legitimate markdown.
+            if not prepended_break and not getattr(
+                self, "_current_streamed_assistant_text", ""
+            ):
+                text = text.lstrip("\n")
+        if not text:
+            return
+        callbacks = [cb for cb in (self.stream_delta_callback, self._stream_callback) if cb is not None]
+        delivered = False
+        for cb in callbacks:
+            try:
+                cb(text)
+                delivered = True
+            except Exception:
+                pass
+        if delivered:
+            self._record_streamed_assistant_text(text)
+
+    def _fire_reasoning_delta(self, text: str) -> None:
+        """Fire reasoning callback if registered."""
+        cb = self.reasoning_callback
+        if cb is not None:
+            try:
+                cb(text)
+            except Exception:
+                pass
+
+    def _fire_tool_gen_started(self, tool_name: str) -> None:
+        """Notify display layer that the model is generating tool call arguments.
+
+        Fires once per tool name when the streaming response begins producing
+        tool_call / tool_use tokens.  Gives the TUI a chance to show a spinner
+        or status line so the user isn't staring at a frozen screen while a
+        large tool payload (e.g. a 45 KB write_file) is being generated.
+        """
+        cb = self.tool_gen_callback
+        if cb is not None:
+            try:
+                cb(tool_name)
+            except Exception:
+                pass
+
+    def _has_stream_consumers(self) -> bool:
+        """Return True if any streaming consumer is registered."""
+        return (
+            self.stream_delta_callback is not None
+            or getattr(self, "_stream_callback", None) is not None
+        )
+
+    def _interruptible_streaming_api_call(
+        self, api_kwargs: dict, *, on_first_delta: callable = None
+    ):
+        """Forwarder — see ``agent.chat_completion_helpers.interruptible_streaming_api_call``."""
+        from agent.chat_completion_helpers import interruptible_streaming_api_call
+        return interruptible_streaming_api_call(self, api_kwargs, on_first_delta=on_first_delta)
+
+    def _try_activate_fallback(self, reason: "FailoverReason | None" = None) -> bool:
+        """Forwarder — see ``agent.chat_completion_helpers.try_activate_fallback``."""
+        from agent.chat_completion_helpers import try_activate_fallback
+        return try_activate_fallback(self, reason)
+
+    # ── Per-turn primary restoration ─────────────────────────────────────
+
+    def _restore_primary_runtime(self) -> bool:
+        """Forwarder — see ``agent.agent_runtime_helpers.restore_primary_runtime``."""
+        from agent.agent_runtime_helpers import restore_primary_runtime
+        return restore_primary_runtime(self)
+
+    def _try_recover_primary_transport(
+        self, api_error: Exception, *, retry_count: int, max_retries: int,
+    ) -> bool:
+        """Forwarder — see ``agent.agent_runtime_helpers.try_recover_primary_transport``."""
+        from agent.agent_runtime_helpers import try_recover_primary_transport
+        return try_recover_primary_transport(self, api_error, retry_count=retry_count, max_retries=max_retries)
+
+    from agent.image_preprocessing import _content_has_image_parts as _content_has_image_parts
+    _content_has_image_parts = staticmethod(_content_has_image_parts)
+
+    from agent.image_preprocessing import _materialize_data_url_for_vision as _materialize_data_url_for_vision
+    _materialize_data_url_for_vision = staticmethod(_materialize_data_url_for_vision)
+
+    from agent.image_preprocessing import _describe_image_for_anthropic_fallback as _describe_image_for_anthropic_fallback
+
+    from agent.image_preprocessing import _model_supports_vision as _model_supports_vision
+
+    from agent.image_preprocessing import _preprocess_anthropic_content as _preprocess_anthropic_content
+
+    def _get_transport(self, api_mode: str = None):
+        """Return the cached transport for the given (or current) api_mode.
+
+        Lazy-initializes on first call per api_mode. Returns None if no
+        transport is registered for the mode.
+        """
+        mode = api_mode or self.api_mode
+        cache = getattr(self, "_transport_cache", None)
+        if cache is None:
+            cache = {}
+            self._transport_cache = cache
+        t = cache.get(mode)
+        if t is None:
+            from agent.transports import get_transport
+            t = get_transport(mode)
+            cache[mode] = t
+        return t
+
+    from agent.image_preprocessing import _prepare_anthropic_messages_for_api as _prepare_anthropic_messages_for_api
+
+    from agent.image_preprocessing import _prepare_messages_for_non_vision_model as _prepare_messages_for_non_vision_model
+
+    from agent.image_preprocessing import _tool_result_content_for_active_model as _tool_result_content_for_active_model
+
+    def _try_shrink_image_parts_in_messages(self, api_messages: list) -> bool:
+        """Forwarder — see ``agent.conversation_compression.try_shrink_image_parts_in_messages``."""
+        from agent.conversation_compression import try_shrink_image_parts_in_messages
+        return try_shrink_image_parts_in_messages(api_messages)
+
+    def _try_strip_image_parts_from_tool_messages(self, api_messages: list) -> bool:
+        """Downgrade list-type tool messages to text summaries in-place.
+
+        Recovery path for providers that reject list-type tool message content
+        (e.g. Xiaomi MiMo's 400 "text is not set"; see issue #27344).  Walks
+        ``api_messages`` for any ``role: "tool"`` message whose ``content`` is
+        a list containing image parts, replaces the content with the existing
+        text part(s) (or a minimal placeholder if none survive), and records
+        the active (provider, model) in ``self._no_list_tool_content_models``
+        so subsequent ``_tool_result_content_for_active_model`` calls in this
+        session preemptively downgrade screenshots without a round-trip.
+
+        Returns True when at least one tool message was downgraded — the
+        caller (the 400 recovery branch in ``agent.conversation_loop``) uses
+        this to decide whether to retry the API call with the modified
+        history or surface the original error.
+        """
+        if not isinstance(api_messages, list):
+            return False
+
+        # Record (provider, model) so we don't relearn this lesson.
+        key = (
+            (getattr(self, "provider", "") or "").strip().lower(),
+            (getattr(self, "model", "") or "").strip(),
+        )
+        if not hasattr(self, "_no_list_tool_content_models"):
+            self._no_list_tool_content_models = set()
+        if key[1]:  # only record when we actually have a model id
+            self._no_list_tool_content_models.add(key)
+
+        changed = False
+        for msg in api_messages:
+            if not isinstance(msg, dict) or msg.get("role") != "tool":
+                continue
+            content = msg.get("content")
+            if not isinstance(content, list):
+                continue
+
+            # Salvage any text parts so the model still sees some signal.
+            text_parts: List[str] = []
+            had_image = False
+            for part in content:
+                if not isinstance(part, dict):
+                    if isinstance(part, str) and part.strip():
+                        text_parts.append(part.strip())
+                    continue
+                ptype = part.get("type")
+                if ptype == "image_url" or ptype == "input_image":
+                    had_image = True
+                    continue
+                if ptype in {"text", "input_text"}:
+                    text = str(part.get("text") or "").strip()
+                    if text:
+                        text_parts.append(text)
+
+            if not had_image:
+                # List-type content but no image parts — leave alone (some
+                # providers reject ANY list content, but stripping a
+                # text-only list doesn't reduce ambiguity; let the caller
+                # surface the original error if this turns out to be the
+                # case).
+                continue
+
+            if text_parts:
+                msg["content"] = "\n\n".join(text_parts)
+            else:
+                msg["content"] = (
+                    "[image content removed — provider does not accept "
+                    "list-type tool message content]"
+                )
+            changed = True
+
+        return changed
+
+    def _anthropic_preserve_dots(self) -> bool:
+        """True when using an anthropic-compatible endpoint that preserves dots in model names.
+        Alibaba/DashScope keeps dots (e.g. qwen3.5-plus).
+        MiniMax keeps dots (e.g. MiniMax-M2.7).
+        Xiaomi MiMo keeps dots (e.g. mimo-v2.5, mimo-v2.5-pro).
+        OpenCode Go/Zen keeps dots for non-Claude models (e.g. minimax-m2.5-free).
+        ZAI/Zhipu keeps dots (e.g. glm-4.7, glm-5.1).
+        AWS Bedrock uses dotted inference-profile IDs
+        (e.g. ``global.anthropic.claude-opus-4-7``,
+        ``us.anthropic.claude-sonnet-4-5-20250929-v1:0``) and rejects
+        the hyphenated form with
+        ``HTTP 400 The provided model identifier is invalid``.
+        Regression for #11976; mirrors the opencode-go fix for #5211
+        (commit f77be22c), which extended this same allowlist."""
+        if (getattr(self, "provider", "") or "").lower() in {
+            "alibaba", "minimax", "minimax-cn",
+            "opencode-go", "opencode-zen",
+            "zai", "bedrock",
+            "xiaomi",
+        }:
+            return True
+        base = (getattr(self, "base_url", "") or "").lower()
+        return (
+            "dashscope" in base
+            or "aliyuncs" in base
+            or "minimax" in base
+            or "opencode.ai/zen/" in base
+            or "bigmodel.cn" in base
+            or "xiaomimimo.com" in base
+            # AWS Bedrock runtime endpoints — defense-in-depth when
+            # ``provider`` is unset but ``base_url`` still names Bedrock.
+            or "bedrock-runtime." in base
+        )
+
+    def _is_qwen_portal(self) -> bool:
+        """Return True when the base URL targets Qwen Portal."""
+        return base_url_host_matches(self._base_url_lower, "portal.qwen.ai")
+
+    def _qwen_prepare_chat_messages(self, api_messages: list) -> list:
+        prepared = copy.deepcopy(api_messages)
+        if not prepared:
+            return prepared
+
+        for msg in prepared:
+            if not isinstance(msg, dict):
+                continue
+            content = msg.get("content")
+            if isinstance(content, str):
+                msg["content"] = [{"type": "text", "text": content}]
+            elif isinstance(content, list):
+                # Normalize: convert bare strings to text dicts, keep dicts as-is.
+                # deepcopy already created independent copies, no need for dict().
+                normalized_parts = []
+                for part in content:
+                    if isinstance(part, str):
+                        normalized_parts.append({"type": "text", "text": part})
+                    elif isinstance(part, dict):
+                        normalized_parts.append(part)
+                if normalized_parts:
+                    msg["content"] = normalized_parts
+
+        # Inject cache_control on the last part of the system message.
+        for msg in prepared:
+            if isinstance(msg, dict) and msg.get("role") == "system":
+                content = msg.get("content")
+                if isinstance(content, list) and content and isinstance(content[-1], dict):
+                    content[-1]["cache_control"] = {"type": "ephemeral"}
+                break
+
+        return prepared
+
+    def _qwen_prepare_chat_messages_inplace(self, messages: list) -> None:
+        """In-place variant — mutates an already-copied message list."""
+        if not messages:
+            return
+
+        for msg in messages:
+            if not isinstance(msg, dict):
+                continue
+            content = msg.get("content")
+            if isinstance(content, str):
+                msg["content"] = [{"type": "text", "text": content}]
+            elif isinstance(content, list):
+                normalized_parts = []
+                for part in content:
+                    if isinstance(part, str):
+                        normalized_parts.append({"type": "text", "text": part})
+                    elif isinstance(part, dict):
+                        normalized_parts.append(part)
+                if normalized_parts:
+                    msg["content"] = normalized_parts
+
+        for msg in messages:
+            if isinstance(msg, dict) and msg.get("role") == "system":
+                content = msg.get("content")
+                if isinstance(content, list) and content and isinstance(content[-1], dict):
+                    content[-1]["cache_control"] = {"type": "ephemeral"}
+                break
+
+    def _build_api_kwargs(self, api_messages: list) -> dict:
+        """Forwarder — see ``agent.chat_completion_helpers.build_api_kwargs``."""
+        from agent.chat_completion_helpers import build_api_kwargs
+        return build_api_kwargs(self, api_messages)
+
+    def _supports_reasoning_extra_body(self) -> bool:
+        """Return True when reasoning extra_body is safe to send for this route/model.
+
+        OpenRouter forwards unknown extra_body fields to upstream providers.
+        Some providers/routes reject `reasoning` with 400s, so gate it to
+        known reasoning-capable model families and direct Nous Portal.
+        """
+        if base_url_host_matches(self._base_url_lower, "nousresearch.com"):
+            return True
+        if base_url_host_matches(self._base_url_lower, "ai-gateway.vercel.sh"):
+            return True
+        if (
+            base_url_host_matches(self._base_url_lower, "models.github.ai")
+            or base_url_host_matches(self._base_url_lower, "api.githubcopilot.com")
+        ):
+            try:
+                from superforecasting_agent.runtime.models import github_model_reasoning_efforts
+
+                return bool(github_model_reasoning_efforts(self.model))
+            except Exception:
+                return False
+        if (self.provider or "").strip().lower() == "lmstudio":
+            opts = self._lmstudio_reasoning_options_cached()
+            # "off-only" (or absent) means no real reasoning capability.
+            return any(opt and opt != "off" for opt in opts)
+        if "openrouter" not in self._base_url_lower:
+            return False
+        if "api.mistral.ai" in self._base_url_lower:
+            return False
+
+        model = (self.model or "").lower()
+        reasoning_model_prefixes = (
+            "deepseek/",
+            "anthropic/",
+            "openai/",
+            "x-ai/",
+            "google/gemini-2",
+            "google/gemma-4",
+            "qwen/qwen3",
+            "tencent/hy3-preview",
+            "xiaomi/",
+        )
+        return any(model.startswith(prefix) for prefix in reasoning_model_prefixes)
+
+    def _lmstudio_reasoning_options_cached(self) -> list[str]:
+        """Probe LM Studio's published reasoning ``allowed_options`` once per
+        (model, base_url). The list (e.g. ``["off","on"]`` or
+        ``["off","minimal","low"]``) is needed both for the supports-reasoning
+        gate and for clamping the emitted ``reasoning_effort`` so toggle-style
+        models don't 400 on ``high``. Cache is keyed on (model, base_url) so
+        ``/model`` swaps and base-URL changes don't reuse a stale list.
+        Non-empty results are cached permanently (model capabilities don't
+        change). Empty results (transient probe failure OR genuinely
+        non-reasoning model) are cached with a 60-second TTL to avoid an
+        HTTP round-trip on every turn while still retrying reasonably soon.
+        """
+        import time as _time
+
+        cache = getattr(self, "_lm_reasoning_opts_cache", None)
+        if cache is None:
+            cache = self._lm_reasoning_opts_cache = {}
+        key = (self.model, self.base_url)
+        cached = cache.get(key)
+        if cached is not None:
+            opts, ts = cached
+            # Non-empty → permanent. Empty → 60s TTL.
+            if opts or (_time.monotonic() - ts) < 60:
+                return opts
+        try:
+            from superforecasting_agent.runtime.models import lmstudio_model_reasoning_options
+            opts = lmstudio_model_reasoning_options(
+                self.model, self.base_url, getattr(self, "api_key", ""),
+            )
+        except Exception:
+            opts = []
+        cache[key] = (opts, _time.monotonic())
+        return opts
+
+    def _resolve_lmstudio_summary_reasoning_effort(self) -> Optional[str]:
+        """Resolve a safe top-level ``reasoning_effort`` for LM Studio.
+
+        The iteration-limit summary path calls ``chat.completions.create()``
+        directly, bypassing the transport. Share the helper so the two paths
+        can't drift on effort resolution and clamping.
+        """
+        from agent.lmstudio_reasoning import resolve_lmstudio_effort
+        return resolve_lmstudio_effort(
+            self.reasoning_config,
+            self._lmstudio_reasoning_options_cached(),
+        )
+
+    def _github_models_reasoning_extra_body(self) -> dict | None:
+        """Format reasoning payload for GitHub Models/OpenAI-compatible routes."""
+        try:
+            from superforecasting_agent.runtime.models import github_model_reasoning_efforts
+        except Exception:
+            return None
+
+        supported_efforts = github_model_reasoning_efforts(self.model)
+        if not supported_efforts:
+            return None
+
+        if self.reasoning_config and isinstance(self.reasoning_config, dict):
+            if self.reasoning_config.get("enabled") is False:
+                return None
+            requested_effort = str(
+                self.reasoning_config.get("effort", "medium")
+            ).strip().lower()
+        else:
+            requested_effort = "medium"
+
+        if requested_effort == "xhigh" and "high" in supported_efforts:
+            requested_effort = "high"
+        elif requested_effort not in supported_efforts:
+            if requested_effort == "minimal" and "low" in supported_efforts:
+                requested_effort = "low"
+            elif "medium" in supported_efforts:
+                requested_effort = "medium"
+            else:
+                requested_effort = supported_efforts[0]
+
+        return {"effort": requested_effort}
+
+    def _build_assistant_message(self, assistant_message, finish_reason: str) -> dict:
+        """Forwarder — see ``agent.chat_completion_helpers.build_assistant_message``."""
+        from agent.chat_completion_helpers import build_assistant_message
+        return build_assistant_message(self, assistant_message, finish_reason)
+
+    def _needs_thinking_reasoning_pad(self) -> bool:
+        """Return True when the active provider enforces reasoning_content echo-back.
+
+        DeepSeek v4 thinking and Kimi / Moonshot thinking both reject replays
+        of assistant tool-call messages that omit ``reasoning_content`` (refs
+        #15250, #17400). Xiaomi MiMo thinking mode has the same requirement.
+
+        Result cached on the AIAgent instance keyed by (provider, model,
+        base_url); invalidated whenever ``switch_model()`` /
+        ``_try_activate_fallback()`` mutate any of those. This is hot — the
+        agent loop hits ~16 invocations per turn, each of which would
+        otherwise re-run ~5 ``base_url_host_matches`` (and therefore
+        ``urlparse``) calls under it. Caching drops the per-turn cost from
+        ~5us × 16 = ~80us to <1us.
+        """
+        key = (self.provider, self.model, getattr(self, "_base_url_lower", self.base_url))
+        cached = getattr(self, "_thinking_pad_cache", None)
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        result = (
+            self._needs_deepseek_tool_reasoning()
+            or self._needs_kimi_tool_reasoning()
+            or self._needs_mimo_tool_reasoning()
+        )
+        self._thinking_pad_cache = (key, result)
+        return result
+
+    def _needs_kimi_tool_reasoning(self) -> bool:
+        """Return True when the current provider is Kimi / Moonshot thinking mode.
+
+        Kimi ``/coding`` and Moonshot thinking mode both require
+        ``reasoning_content`` on every assistant tool-call message; omitting
+        it causes the next replay to fail with HTTP 400.
+
+        Detection is host-driven, not model-name-driven: aggregators like
+        OpenRouter that re-export Kimi/Moonshot models speak their own
+        protocol and reject ``reasoning_content`` echoes. We only enable the
+        kimi-reasoning replay when the request actually targets a
+        kimi/moonshot endpoint or the dedicated kimi-coding provider.
+        """
+        return (
+            self.provider in {"kimi-coding", "kimi-coding-cn"}
+            or base_url_host_matches(self.base_url, "api.kimi.com")
+            or base_url_host_matches(self.base_url, "moonshot.ai")
+            or base_url_host_matches(self.base_url, "moonshot.cn")
+        )
+
+    def _needs_deepseek_tool_reasoning(self) -> bool:
+        """Return True when the current provider is DeepSeek thinking mode.
+
+        DeepSeek V4 thinking mode requires ``reasoning_content`` on every
+        assistant tool-call turn; omitting it causes HTTP 400 when the
+        message is replayed in a subsequent API request (#15250).
+        """
+        provider = (self.provider or "").lower()
+        model = (self.model or "").lower()
+        return (
+            provider == "deepseek"
+            or "deepseek" in model
+            or base_url_host_matches(self.base_url, "api.deepseek.com")
+        )
+
+    def _needs_mimo_tool_reasoning(self) -> bool:
+        """Return True when the current provider is Xiaomi MiMo thinking mode.
+
+        MiMo thinking mode requires ``reasoning_content`` on every assistant
+        tool-call message when replaying history; omitting it causes HTTP 400.
+        Refs: https://platform.xiaomimimo.com/docs/zh-CN/usage-guide/passing-back-reasoning_content
+        """
+        provider = (self.provider or "").lower()
+        model = (self.model or "").lower()
+        return (
+            provider == "xiaomi"
+            or "mimo" in model
+            or base_url_host_matches(self.base_url, "api.xiaomimimo.com")
+            or base_url_host_matches(self.base_url, "xiaomimimo.com")
+        )
+
+    def _copy_reasoning_content_for_api(self, source_msg: dict, api_msg: dict) -> None:
+        """Forwarder — see ``agent.agent_runtime_helpers.copy_reasoning_content_for_api``."""
+        from agent.agent_runtime_helpers import copy_reasoning_content_for_api
+        return copy_reasoning_content_for_api(self, source_msg, api_msg)
+
+    @staticmethod
+    def _sanitize_tool_calls_for_strict_api(api_msg: dict) -> dict:
+        """Strip Codex Responses API fields from tool_calls for strict providers.
+
+        Providers like Mistral, Fireworks, and other strict OpenAI-compatible APIs
+        validate the Chat Completions schema and reject unknown fields (call_id,
+        response_item_id) with 400 or 422 errors. These fields are preserved in
+        the internal message history — this method only modifies the outgoing
+        API copy.
+
+        Creates new tool_call dicts rather than mutating in-place, so the
+        original messages list retains call_id/response_item_id for Codex
+        Responses API compatibility (e.g. if the session falls back to a
+        Codex provider later).
+
+        Fields stripped: call_id, response_item_id
+        """
+        tool_calls = api_msg.get("tool_calls")
+        if not isinstance(tool_calls, list):
+            return api_msg
+        _STRIP_KEYS = {"call_id", "response_item_id"}
+        api_msg["tool_calls"] = [
+            {k: v for k, v in tc.items() if k not in _STRIP_KEYS}
+            if isinstance(tc, dict) else tc
+            for tc in tool_calls
+        ]
+        return api_msg
+
+    @staticmethod
+    def _sanitize_tool_call_arguments(
+        messages: list,
+        *,
+        logger=None,
+        session_id: str = None,
+    ) -> int:
+        """Forwarder — see ``agent.agent_runtime_helpers.sanitize_tool_call_arguments``."""
+        from agent.agent_runtime_helpers import sanitize_tool_call_arguments
+        return sanitize_tool_call_arguments(messages, logger=logger, session_id=session_id)
+
+    def _should_sanitize_tool_calls(self) -> bool:
+        """Determine if tool_calls need sanitization for strict APIs.
+
+        Codex Responses API uses fields like call_id and response_item_id
+        that are not part of the standard Chat Completions schema. These
+        fields must be stripped when calling any other API to avoid
+        validation errors (400 Bad Request).
+
+        Returns:
+            bool: True if sanitization is needed (non-Codex API), False otherwise.
+        """
+        return self.api_mode != "codex_responses"
+
+    def _compress_context(self, messages: list, system_message: str, *, approx_tokens: int = None, task_id: str = "default", focus_topic: str = None, force: bool = False) -> tuple:
+        """Forwarder — see ``agent.conversation_compression.compress_context``.
+
+        ``force=True`` is passed by the manual ``/compress`` slash command
+        so users can bypass the summary-failure cooldown after an
+        auto-compress abort.  Auto-compress callers use the default
+        ``force=False``.
+        """
+        from agent.conversation_compression import compress_context
+        return compress_context(
+            self, messages, system_message,
+            approx_tokens=approx_tokens, task_id=task_id, focus_topic=focus_topic,
+            force=force,
+        )
+
+    def _set_tool_guardrail_halt(self, decision: ToolGuardrailDecision) -> None:
+        """Record the first guardrail decision that should stop this turn."""
+        if decision.should_halt and self._tool_guardrail_halt_decision is None:
+            self._tool_guardrail_halt_decision = decision
+
+    def _toolguard_controlled_halt_response(self, decision: ToolGuardrailDecision) -> str:
+        tool = decision.tool_name or "a tool"
+        return (
+            f"I stopped retrying {tool} because it hit the tool-call guardrail "
+            f"({decision.code}) after {decision.count} repeated non-progressing "
+            "attempts. The last tool result explains the blocker; the next step is "
+            "to change strategy instead of repeating the same call."
+        )
+
+    def _append_guardrail_observation(
+        self,
+        tool_name: str,
+        function_args: dict,
+        function_result: str,
+        *,
+        failed: bool,
+    ) -> str:
+        decision = self._tool_guardrails.after_call(
+            tool_name,
+            function_args,
+            function_result,
+            failed=failed,
+        )
+        if decision.action in {"warn", "halt"}:
+            function_result = append_toolguard_guidance(function_result, decision)
+        if decision.should_halt:
+            self._set_tool_guardrail_halt(decision)
+        return function_result
+
+    def _guardrail_block_result(self, decision: ToolGuardrailDecision) -> str:
+        self._set_tool_guardrail_halt(decision)
+        return toolguard_synthetic_result(decision)
+
+    def _execute_tool_calls(self, assistant_message, messages: list, effective_task_id: str, api_call_count: int = 0) -> None:
+        """Execute tool calls from the assistant message and append results to messages.
+
+        Dispatches to concurrent execution only for batches that look
+        independent: read-only tools may always share the parallel path, while
+        file reads/writes may do so only when their target paths do not overlap.
+        """
+        tool_calls = assistant_message.tool_calls
+
+        # Allow _vprint during tool execution even with stream consumers
+        self._executing_tools = True
+        try:
+            if not _should_parallelize_tool_batch(tool_calls):
+                return self._execute_tool_calls_sequential(
+                    assistant_message, messages, effective_task_id, api_call_count
+                )
+
+            return self._execute_tool_calls_concurrent(
+                assistant_message, messages, effective_task_id, api_call_count
+            )
+        finally:
+            self._executing_tools = False
+
+    def _dispatch_delegate_task(self, function_args: dict) -> str:
+        """Single call site for delegate_task dispatch.
+
+        New DELEGATE_TASK_SCHEMA fields only need to be added here to reach all
+        invocation paths (concurrent, sequential, inline).
+        """
+        from tools.delegate_tool import delegate_task as _delegate_task
+        return _delegate_task(
+            goal=function_args.get("goal"),
+            context=function_args.get("context"),
+            toolsets=function_args.get("toolsets"),
+            tasks=function_args.get("tasks"),
+            max_iterations=function_args.get("max_iterations"),
+            acp_command=function_args.get("acp_command"),
+            acp_args=function_args.get("acp_args"),
+            role=function_args.get("role"),
+            parent_agent=self,
+        )
+
+    def _invoke_tool(self, function_name: str, function_args: dict, effective_task_id: str,
+                     tool_call_id: Optional[str] = None, messages: list = None,
+                     pre_tool_block_checked: bool = False) -> str:
+        """Forwarder — see ``agent.agent_runtime_helpers.invoke_tool``."""
+        from agent.agent_runtime_helpers import invoke_tool
+        return invoke_tool(self, function_name, function_args, effective_task_id, tool_call_id, messages, pre_tool_block_checked)
+
+    @staticmethod
+    def _wrap_verbose(label: str, text: str, indent: str = "     ") -> str:
+        """Word-wrap verbose tool output to fit the terminal width.
+
+        Splits *text* on existing newlines and wraps each line individually,
+        preserving intentional line breaks (e.g. pretty-printed JSON).
+        Returns a ready-to-print string with *label* on the first line and
+        continuation lines indented.
+        """
+        import shutil as _shutil
+        import textwrap as _tw
+        cols = _shutil.get_terminal_size((120, 24)).columns
+        wrap_width = max(40, cols - len(indent))
+        out_lines: list[str] = []
+        for raw_line in text.split("\n"):
+            if len(raw_line) <= wrap_width:
+                out_lines.append(raw_line)
+            else:
+                wrapped = _tw.wrap(raw_line, width=wrap_width,
+                                   break_long_words=True,
+                                   break_on_hyphens=False)
+                out_lines.extend(wrapped or [raw_line])
+        body = ("\n" + indent).join(out_lines)
+        return f"{indent}{label}{body}"
+
+    def _execute_tool_calls_concurrent(self, assistant_message, messages: list, effective_task_id: str, api_call_count: int = 0) -> None:
+        """Forwarder — see ``agent.tool_executor.execute_tool_calls_concurrent``."""
+        from agent.tool_executor import execute_tool_calls_concurrent
+        return execute_tool_calls_concurrent(self, assistant_message, messages, effective_task_id, api_call_count)
+
+    def _execute_tool_calls_sequential(self, assistant_message, messages: list, effective_task_id: str, api_call_count: int = 0) -> None:
+        """Forwarder — see ``agent.tool_executor.execute_tool_calls_sequential``."""
+        from agent.tool_executor import execute_tool_calls_sequential
+        return execute_tool_calls_sequential(self, assistant_message, messages, effective_task_id, api_call_count)
+
+    def _handle_max_iterations(self, messages: list, api_call_count: int) -> str:
+        """Forwarder — see ``agent.chat_completion_helpers.handle_max_iterations``."""
+        from agent.chat_completion_helpers import handle_max_iterations
+        return handle_max_iterations(self, messages, api_call_count)
+
+    def _loop_should_continue(self, messages: list, api_call_count: int) -> bool:
+        """Forwarder — see ``agent.chat_completion_helpers.loop_should_continue``.
+
+        The per-iteration gate: keeps looping under the soft cap, and turns a
+        soft-cap breach into a checkpoint-continuation instead of a hard stop.
+        """
+        from agent.chat_completion_helpers import loop_should_continue
+        return loop_should_continue(self, messages, api_call_count)
+
+    def run_conversation(
+        self,
+        user_message: str,
+        system_message: str = None,
+        conversation_history: List[Dict[str, Any]] = None,
+        task_id: str = None,
+        stream_callback: Optional[callable] = None,
+        persist_user_message: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Forwarder — see ``agent.conversation_loop.run_conversation``."""
+        from agent.conversation_loop import run_conversation
+        return run_conversation(self, user_message, system_message, conversation_history, task_id, stream_callback, persist_user_message)
+
+    def chat(self, message: str, stream_callback: Optional[callable] = None) -> str:
+        """
+        Simple chat interface that returns just the final response.
+
+        Args:
+            message (str): User message
+            stream_callback: Optional callback invoked with each text delta during streaming.
+
+        Returns:
+            str: Final assistant response
+        """
+        result = self.run_conversation(message, stream_callback=stream_callback)
+        return result["final_response"]
+
+    def _run_codex_app_server_turn(
+        self,
+        *,
+        user_message: str,
+        original_user_message: Any,
+        messages: List[Dict[str, Any]],
+        effective_task_id: str,
+        should_review_memory: bool = False,
+    ) -> Dict[str, Any]:
+        """Forwarder — see ``agent.codex_runtime.run_codex_app_server_turn``."""
+        from agent.codex_runtime import run_codex_app_server_turn
+        return run_codex_app_server_turn(self, user_message=user_message, original_user_message=original_user_message, messages=messages, effective_task_id=effective_task_id, should_review_memory=should_review_memory)
+
+def main(
+    query: str = None,
+    model: str = "",
+    api_key: str = None,
+    base_url: str = "",
+    max_turns: int = 10,
+    enabled_toolsets: str = None,
+    disabled_toolsets: str = None,
+    list_tools: bool = False,
+    save_trajectories: bool = False,
+    save_sample: bool = False,
+    verbose: bool = False,
+    log_prefix_chars: int = 20
+):
+    """
+    Main function for running the agent directly.
+
+    Args:
+        query (str): Natural language query for the agent. Defaults to Python 3.13 example.
+        model (str): Model name to use (OpenRouter format: provider/model). Defaults to anthropic/claude-sonnet-4.6.
+        api_key (str): API key for authentication. Uses OPENROUTER_API_KEY env var if not provided.
+        base_url (str): Base URL for the model API. Defaults to https://openrouter.ai/api/v1
+        max_turns (int): Maximum number of API call iterations. Defaults to 10.
+        enabled_toolsets (str): Comma-separated list of toolsets to enable. Supports predefined
+                              toolsets (e.g., "research", "development", "safe").
+                              Multiple toolsets can be combined: "web,vision"
+        disabled_toolsets (str): Comma-separated list of toolsets to disable (e.g., "terminal")
+        list_tools (bool): Just list available tools and exit
+        save_trajectories (bool): Save conversation trajectories to JSONL files (appends to trajectory_samples.jsonl). Defaults to False.
+        save_sample (bool): Save a single trajectory sample to a UUID-named JSONL file for inspection. Defaults to False.
+        verbose (bool): Enable verbose logging for debugging. Defaults to False.
+        log_prefix_chars (int): Number of characters to show in log previews for tool calls/responses. Defaults to 20.
+
+    Toolset Examples:
+        - "research": Web search, extract, crawl + vision tools
+    """
+    print("🤖 AI Agent with Tool Calling")
+    print("=" * 50)
+    
+    # Handle tool listing
+    if list_tools:
+        from superforecasting_agent.tooling.runtime import get_all_tool_names, get_available_toolsets
+        from superforecasting_agent.tooling.toolsets import get_all_toolsets, get_toolset_info
+        
+        print("📋 Available Tools & Toolsets:")
+        print("-" * 50)
+        
+        # Show new toolsets system
+        print("\n🎯 Predefined Toolsets (New System):")
+        print("-" * 40)
+        all_toolsets = get_all_toolsets()
+        
+        # Group by category
+        basic_toolsets = []
+        composite_toolsets = []
+        scenario_toolsets = []
+        
+        for name, toolset in all_toolsets.items():
+            info = get_toolset_info(name)
+            if info:
+                entry = (name, info)
+                if name in {"web", "terminal", "vision", "creative", "reasoning"}:
+                    basic_toolsets.append(entry)
+                elif name in {"research", "development", "analysis", "content_creation", "full_stack"}:
+                    composite_toolsets.append(entry)
+                else:
+                    scenario_toolsets.append(entry)
+        
+        # Print basic toolsets
+        print("\n📌 Basic Toolsets:")
+        for name, info in basic_toolsets:
+            tools_str = ', '.join(info['resolved_tools']) if info['resolved_tools'] else 'none'
+            print(f"  • {name:15} - {info['description']}")
+            print(f"    Tools: {tools_str}")
+        
+        # Print composite toolsets
+        print("\n📂 Composite Toolsets (built from other toolsets):")
+        for name, info in composite_toolsets:
+            includes_str = ', '.join(info['includes']) if info['includes'] else 'none'
+            print(f"  • {name:15} - {info['description']}")
+            print(f"    Includes: {includes_str}")
+            print(f"    Total tools: {info['tool_count']}")
+        
+        # Print scenario-specific toolsets
+        print("\n🎭 Scenario-Specific Toolsets:")
+        for name, info in scenario_toolsets:
+            print(f"  • {name:20} - {info['description']}")
+            print(f"    Total tools: {info['tool_count']}")
+        
+        
+        # Show legacy toolset compatibility
+        print("\n📦 Legacy Toolsets (for backward compatibility):")
+        legacy_toolsets = get_available_toolsets()
+        for name, info in legacy_toolsets.items():
+            status = "✅" if info["available"] else "❌"
+            print(f"  {status} {name}: {info['description']}")
+            if not info["available"]:
+                print(f"    Requirements: {', '.join(info['requirements'])}")
+        
+        # Show individual tools
+        all_tools = get_all_tool_names()
+        print(f"\n🔧 Individual Tools ({len(all_tools)} available):")
+        for tool_name in sorted(all_tools):
+            toolset = get_toolset_for_tool(tool_name)
+            print(f"  📌 {tool_name} (from {toolset})")
+        
+        print("\n💡 Usage Examples:")
+        print("  # Use predefined toolsets")
+        print("  python run_agent.py --enabled_toolsets=research --query='search for Python news'")
+        print("  python run_agent.py --enabled_toolsets=development --query='debug this code'")
+        print("  python run_agent.py --enabled_toolsets=safe --query='analyze without terminal'")
+        print("  ")
+        print("  # Combine multiple toolsets")
+        print("  python run_agent.py --enabled_toolsets=web,vision --query='analyze website'")
+        print("  ")
+        print("  # Disable toolsets")
+        print("  python run_agent.py --disabled_toolsets=terminal --query='no command execution'")
+        print("  ")
+        print("  # Run with trajectory saving enabled")
+        print("  python run_agent.py --save_trajectories --query='your question here'")
+        return
+    
+    # Parse toolset selection arguments
+    enabled_toolsets_list = None
+    disabled_toolsets_list = None
+    
+    if enabled_toolsets:
+        enabled_toolsets_list = [t.strip() for t in enabled_toolsets.split(",")]
+        print(f"🎯 Enabled toolsets: {enabled_toolsets_list}")
+    
+    if disabled_toolsets:
+        disabled_toolsets_list = [t.strip() for t in disabled_toolsets.split(",")]
+        print(f"🚫 Disabled toolsets: {disabled_toolsets_list}")
+    
+    if save_trajectories:
+        print("💾 Trajectory saving: ENABLED")
+        print("   - Successful conversations → trajectory_samples.jsonl")
+        print("   - Failed conversations → failed_trajectories.jsonl")
+    
+    # Initialize agent with provided parameters
+    try:
+        agent = AIAgent(
+            base_url=base_url,
+            model=model,
+            api_key=api_key,
+            max_iterations=max_turns,
+            enabled_toolsets=enabled_toolsets_list,
+            disabled_toolsets=disabled_toolsets_list,
+            save_trajectories=save_trajectories,
+            verbose_logging=verbose,
+            log_prefix_chars=log_prefix_chars
+        )
+    except RuntimeError as e:
+        print(f"❌ Failed to initialize agent: {e}")
+        return
+    
+    # Use provided query or default to Python 3.13 example
+    if query is None:
+        user_query = (
+            "Tell me about the latest developments in Python 3.13 and what new features "
+            "developers should know about. Please search for current information and try it out."
+        )
+    else:
+        user_query = query
+    
+    print(f"\n📝 User Query: {user_query}")
+    print("\n" + "=" * 50)
+    
+    # Run conversation
+    result = agent.run_conversation(user_query)
+    
+    print("\n" + "=" * 50)
+    print("📋 CONVERSATION SUMMARY")
+    print("=" * 50)
+    print(f"✅ Completed: {result['completed']}")
+    print(f"📞 API Calls: {result['api_calls']}")
+    print(f"💬 Messages: {len(result['messages'])}")
+    
+    if result['final_response']:
+        print("\n🎯 FINAL RESPONSE:")
+        print("-" * 30)
+        print(result['final_response'])
+    
+    # Save sample trajectory to UUID-named file if requested
+    if save_sample:
+        sample_id = str(uuid.uuid4())[:8]
+        sample_filename = f"sample_{sample_id}.json"
+        
+        # Convert messages to trajectory format (same as superforecasting_agent.trajectories.batch)
+        trajectory = agent._convert_to_trajectory_format(
+            result['messages'], 
+            user_query, 
+            result['completed']
+        )
+        
+        entry = {
+            "conversations": trajectory,
+            "timestamp": datetime.now().isoformat(),
+            "model": model,
+            "completed": result['completed'],
+            "query": user_query
+        }
+        
+        try:
+            with open(sample_filename, "w", encoding="utf-8") as f:
+                # Pretty-print JSON with indent for readability
+                f.write(json.dumps(entry, ensure_ascii=False, indent=2))
+            print(f"\n💾 Sample trajectory saved to: {sample_filename}")
+        except Exception as e:
+            print(f"\n⚠️ Failed to save sample: {e}")
+    
+    print("\n👋 Agent execution completed!")
+
+
+if __name__ == "__main__":
+    import fire
+    fire.Fire(main)
