@@ -344,7 +344,7 @@ name = "protocol is a pure kernel (imports nothing app-side)"
 type = "forbidden"
 source_modules = ["protocol"]
 forbidden_modules = ["forecasting", "tools", "agent", "gateway", "tui_gateway", "superforecasting_agent", "run_agent", "cli"]
-allow_indirect_imports = "true"
+allow_indirect_imports = false
 
 [[tool.importlinter.contracts]]
 name = "forecasting.ledger never imports forecasting.cli"
@@ -449,4 +449,4 @@ name = "session application services do not import presentation or transport"
 type = "forbidden"
 source_modules = ["superforecasting_agent.application"]
 forbidden_modules = ["cli", "run_agent", "tui_gateway", "gateway", "superforecasting_agent.runtime.main", "superforecasting_agent.runtime.session_browser"]
-allow_indirect_imports = true
+allow_indirect_imports = false

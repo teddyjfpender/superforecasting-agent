@@ -590,9 +590,9 @@ def _change_my_mind_coverage(
     if not active_model:
         try:
             from superforecasting_agent.runtime.config import load_config
-            from forecasting.cli import _resolve_active_model_id
+            from forecasting.quorum_autorun import resolve_active_model_id
 
-            active_model = _resolve_active_model_id(load_config().get("model"))
+            active_model = resolve_active_model_id(load_config().get("model"))
         except Exception:
             active_model = None
     if not active_model:

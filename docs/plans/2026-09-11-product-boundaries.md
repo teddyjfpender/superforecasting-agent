@@ -366,3 +366,19 @@ Frozen-commit regression qualification (`386f83ced`):
   presentation through research model lookup, scheduled/reforecast runner
   construction, ledger distribution rendering and runtime setup dependencies.
   These paths need owner corrections rather than additional ignore lists.
+
+Indirect boundary enforcement:
+
+- Protocol and session application contracts now reject indirect forbidden
+  imports. Two isolated package fixtures load the actual shipped contract
+  definitions, pass with an allowed intermediate module, then insert that
+  module's CLI dependency and verify a nonzero lint command exit with the exact
+  transitive path. No production files are modified by these probes.
+- Research adequacy and nightly forecast model lookup use the existing shared
+  resolver directly instead of importing the CLI alias. Regression checks block
+  presentation imports and verify configured model identity reaches both runners
+  for bare-string, current mapping and legacy mapping configuration.
+- The 36 existing research/nightly tests and three new model-lookup cases pass;
+  both negative import probes pass. Shared Python quality and all nine contracts
+  pass. The other seven contracts still permit indirect imports; the strict
+  forecast application audit is not claimed complete.

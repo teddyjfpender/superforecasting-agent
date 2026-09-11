@@ -335,9 +335,9 @@ def build_informed_market_forecaster(
         try:
             from superforecasting_agent.runtime.config import load_config
 
-            from forecasting.cli import _resolve_active_model_id
+            from forecasting.quorum_autorun import resolve_active_model_id
 
-            model = _resolve_active_model_id(load_config().get("model"))
+            model = resolve_active_model_id(load_config().get("model"))
         except Exception:  # noqa: BLE001 — leave model unset; the factory may still default it
             model = model or None
 
