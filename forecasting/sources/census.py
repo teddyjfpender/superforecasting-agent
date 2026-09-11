@@ -97,16 +97,18 @@ def _census_records_from_payload(payload: object, *, dataset: str, endpoint: str
     if not isinstance(payload, list) or not payload or not isinstance(payload[0], list):
         raise ValidationError("census data response must be a two-dimensional array with a header row")
     headers = [str(header) for header in payload[0]]
+    if len(set(headers)) != len(headers):
+        raise ValidationError("census response contains duplicate columns")
     if not headers:
         raise ValidationError("census data response has an empty header row")
     dataset_year = _census_dataset_year(dataset)
     observation_date = f"{dataset_year}-12-31" if dataset_year is not None else None
-    published_at = f"{observation_date}T00:00:00Z" if observation_date else None
+    published_at = None  # Dataset year is not the publication date.
     source_url = _census_public_source_url(endpoint)
     records: list[CensusRecord] = []
     for index, raw_row in enumerate(payload[1:]):
-        if not isinstance(raw_row, list):
-            continue
+        if not isinstance(raw_row, list) or len(raw_row) != len(headers):
+            raise ValidationError("census response row does not match header width")
         row = {header: raw_row[position] if position < len(raw_row) else None for position, header in enumerate(headers)}
         geography = {
             key: str(value)

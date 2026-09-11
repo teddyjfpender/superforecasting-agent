@@ -2879,13 +2879,8 @@ class GatewayRunner:
         except Exception:
             pass
 
-        value = raw.lower()
-        if not value or value in {"normal", "default", "standard", "off", "none"}:
-            return None
-        if value in {"fast", "priority", "on"}:
-            return "priority"
-        logger.warning("Unknown service_tier '%s', ignoring", raw)
-        return None
+        from superforecasting_agent.constants import parse_service_tier
+        return parse_service_tier(raw)
 
     @staticmethod
     def _load_show_reasoning() -> bool:
@@ -6415,7 +6410,7 @@ class GatewayRunner:
             self._restart_detached = detached_restart
             self._restart_via_service = service_restart
         if self._stop_task is not None:
-            await self._stop_task
+            await asyncio.shield(self._stop_task)
             return
 
         async def _stop_impl() -> None:
@@ -6701,9 +6696,11 @@ class GatewayRunner:
                 _phase_elapsed(),
             )
 
-            from gateway.status import remove_pid_file, release_gateway_runtime_lock
-            remove_pid_file()
-            release_gateway_runtime_lock()
+            from gateway.status import remove_pid_file, release_gateway_runtime_lock, gateway_runtime_lock_owner
+            owner = getattr(self, "_runtime_lock_owner", None)
+            if owner is not None and gateway_runtime_lock_owner() is owner:
+                remove_pid_file()
+                release_gateway_runtime_lock(owner=owner)
 
             # Write a clean-shutdown marker so the next startup knows this
             # wasn't a crash.  suspend_recently_active() only needs to run
@@ -6742,7 +6739,7 @@ class GatewayRunner:
             logger.info("Gateway stopped (total teardown %.2fs)", _phase_elapsed())
 
         self._stop_task = asyncio.create_task(_stop_impl())
-        await self._stop_task
+        await asyncio.shield(self._stop_task)
 
     async def wait_for_shutdown(self) -> None:
         """Wait for shutdown signal."""
@@ -12602,16 +12599,13 @@ class GatewayRunner:
             status = t("gateway.fast.status_fast") if self._service_tier == "priority" else t("gateway.fast.status_normal")
             return t("gateway.fast.status", mode=status)
 
-        if args in {"fast", "on"}:
-            self._service_tier = "priority"
-            saved_value = "fast"
-            label = t("gateway.fast.label_fast")
-        elif args in {"normal", "off"}:
-            self._service_tier = None
-            saved_value = "normal"
-            label = t("gateway.fast.label_normal")
-        else:
-            return t("gateway.fast.unknown_arg", arg=args)
+        from superforecasting_agent.constants import parse_fast_mode_command
+        try:
+            saved_value = parse_fast_mode_command(args, current_fast=self._service_tier == "priority")
+        except ValueError as exc:
+            return str(exc)
+        self._service_tier = "priority" if saved_value == "fast" else None
+        label = t("gateway.fast.label_fast" if saved_value == "fast" else "gateway.fast.label_normal")
 
         if _save_config_key("agent.service_tier", saved_value):
             return t("gateway.fast.saved", label=label)
@@ -19026,8 +19020,13 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
                 "PID file race lost to another gateway instance. Exiting."
             )
             return False
-        atexit.register(remove_pid_file)
-        atexit.register(release_gateway_runtime_lock)
+        from gateway.status import gateway_runtime_lock_owner
+        runner._runtime_lock_owner = gateway_runtime_lock_owner()
+        def release_owned_runtime():
+            if gateway_runtime_lock_owner() is runner._runtime_lock_owner:
+                remove_pid_file()
+                release_gateway_runtime_lock(owner=runner._runtime_lock_owner)
+        atexit.register(release_owned_runtime)
 
         # Only the process that owns the gateway runtime lock may reconcile runs.
         # Doing this in GatewayRunner.__init__ would let a losing second process

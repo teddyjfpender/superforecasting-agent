@@ -48,9 +48,9 @@ def load_treasury_records(
         records = [
             record
             for record in records
-            if (timestamp_to_datetime(record.published_at) or since_dt) >= since_dt
+            if (timestamp_to_datetime(_treasury_date_to_iso(record.record_date)) or since_dt) >= since_dt
         ]
-    records.sort(key=lambda item: item.published_at)
+    records.sort(key=lambda item: item.record_date)
     return records[-limit:]
 
 
@@ -102,14 +102,9 @@ def _treasury_records_from_payload(
     for index, row in enumerate(rows):
         if not isinstance(row, dict):
             continue
-        raw_date = _first_present(
-            row.get(date_field),
-            row.get("record_date"),
-            row.get("effective_date"),
-            row.get("auction_date"),
-            row.get("reporting_date"),
-            row.get("calendar_date"),
-        )
+        raw_date = row.get(date_field)
+        if raw_date is None:
+            raise ValidationError("treasury response is missing requested date field")
         record_date = _optional_str(raw_date)
         if not record_date:
             continue
@@ -126,7 +121,7 @@ def _treasury_records_from_payload(
                 value=value if value is not None else (_optional_str(raw_value) if raw_value is not None else None),
                 value_field=selected_field,
                 value_label=label,
-                published_at=published_at,
+                published_at=None,
                 source_url=endpoint,
                 source_name="U.S. Treasury Fiscal Data",
                 entry_id=f"{dataset}:{record_date}:{index}",
@@ -138,17 +133,15 @@ def _treasury_records_from_payload(
 
 def _treasury_value(row: dict[str, object], *, date_field: str, value_field: str | None) -> tuple[str | None, object | None]:
     if value_field:
-        return value_field, row.get(value_field)
+        if value_field not in row:
+            raise ValidationError("treasury response is missing requested value field")
+        return value_field, row[value_field]
     ignored = {date_field, "record_date", "effective_date", "auction_date", "reporting_date", "calendar_date"}
-    for key, value in row.items():
-        if key in ignored or value in (None, ""):
-            continue
-        if _optional_float(value) is not None:
-            return str(key), value
-    for key, value in row.items():
-        if key not in ignored and value not in (None, ""):
-            return str(key), value
-    return None, None
+    candidates = [(str(key), value) for key, value in row.items()
+                  if key not in ignored and value not in (None, "") and _optional_float(value) is not None]
+    if len(candidates) > 1:
+        raise ValidationError("treasury measurement is ambiguous; specify --value-field")
+    return candidates[0] if candidates else (None, None)
 
 
 def _treasury_date_to_iso(value: str) -> str | None:

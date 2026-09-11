@@ -7,7 +7,7 @@ from urllib.parse import quote, urlencode
 
 from forecasting.models import ValidationError
 from .economic_records import WorldBankObservation, ImfDataMapperObservation
-from .dates import _fred_date, _fred_date_to_iso
+from .dates import _fred_date
 from .values import _first_present, _optional_float, _optional_str
 
 def load_worldbank_observations(
@@ -26,6 +26,12 @@ def load_worldbank_observations(
     since_date = _worldbank_since_date(since) if since else None
     endpoint = _worldbank_endpoint(country, indicator, api_base_url=api_base_url, per_page=max(limit, 100))
     payload = _read_json_endpoint(endpoint, "worldbank observations")
+    observations = _worldbank_observations_from_payload(payload, country=country, indicator=indicator, since_date=since_date)
+    return observations[-limit:]
+
+
+def _worldbank_observations_from_payload(payload, *, country, indicator, since_date=None):
+    """Pure parser: country and indicator identities are response requirements."""
     if not isinstance(payload, list) or len(payload) < 2 or not isinstance(payload[1], list):
         raise ValidationError("worldbank observations response must be a metadata/data array")
 
@@ -45,11 +51,13 @@ def load_worldbank_observations(
         value = _optional_float(raw_value)
         country_payload = row.get("country")
         indicator_payload = row.get("indicator")
-        row_country = _optional_str(country_payload.get("id")) if isinstance(country_payload, dict) else country
+        row_country = _optional_str(country_payload.get("id")) if isinstance(country_payload, dict) else None
         row_country_name = _optional_str(country_payload.get("value")) if isinstance(country_payload, dict) else None
-        row_indicator = _optional_str(indicator_payload.get("id")) if isinstance(indicator_payload, dict) else indicator
+        row_indicator = _optional_str(indicator_payload.get("id")) if isinstance(indicator_payload, dict) else None
         row_indicator_name = _optional_str(indicator_payload.get("value")) if isinstance(indicator_payload, dict) else None
-        observation_iso = _fred_date_to_iso(observation_date)
+        identities = {row_country, _optional_str(row.get("countryiso3code"))}
+        if country.upper() not in {code.upper() for code in identities if code} or row_indicator != indicator:
+            raise ValidationError("worldbank response does not match requested country/indicator")
         observations.append(
             WorldBankObservation(
                 country=row_country or country,
@@ -58,7 +66,7 @@ def load_worldbank_observations(
                 indicator_name=row_indicator_name,
                 observation_date=observation_date.isoformat(),
                 value=value if value is not None else str(raw_value),
-                published_at=observation_iso,
+                published_at=None,
                 source_url=f"https://data.worldbank.org/indicator/{quote(row_indicator or indicator)}?locations={quote(row_country or country)}",
                 source_name="World Bank",
                 entry_id=f"{row_country or country}:{row_indicator or indicator}:{year}",
@@ -66,7 +74,7 @@ def load_worldbank_observations(
             )
         )
     observations.sort(key=lambda item: item.observation_date)
-    return observations[-limit:]
+    return observations
 
 
 def load_imf_datamapper_observations(
@@ -85,6 +93,12 @@ def load_imf_datamapper_observations(
     since_date = _worldbank_since_date(since) if since else None
     endpoint = _imf_endpoint(indicator, country, api_base_url=api_base_url)
     payload = _read_json_endpoint(endpoint, "imf datamapper observations")
+    observations = _imf_observations_from_payload(payload, indicator=indicator, country=country, endpoint=endpoint, since_date=since_date)
+    return observations[-limit:]
+
+
+def _imf_observations_from_payload(payload, *, indicator, country, endpoint, since_date=None):
+    """Pure parser; DataMapper vintages do not establish first release times."""
     values = _imf_values_for(payload, indicator=indicator, country=country)
     country_name = _imf_metadata_label(payload, "countries", country)
     indicator_name = _imf_metadata_label(payload, "indicators", indicator)
@@ -99,7 +113,6 @@ def load_imf_datamapper_observations(
         if raw_value in (None, ""):
             continue
         value = _optional_float(raw_value)
-        observation_iso = _fred_date_to_iso(observation_date)
         observations.append(
             ImfDataMapperObservation(
                 indicator=indicator,
@@ -108,7 +121,7 @@ def load_imf_datamapper_observations(
                 country_name=country_name,
                 observation_date=observation_date.isoformat(),
                 value=value if value is not None else str(raw_value),
-                published_at=observation_iso,
+                published_at=None,
                 source_url=endpoint,
                 source_name="IMF DataMapper",
                 entry_id=f"{indicator}:{country}:{year}",
@@ -116,7 +129,7 @@ def load_imf_datamapper_observations(
             )
         )
     observations.sort(key=lambda item: item.observation_date)
-    return observations[-limit:]
+    return observations
 
 
 def _worldbank_source_parts(source: str) -> tuple[str, str]:
@@ -193,8 +206,7 @@ def _imf_values_for(payload: object, *, indicator: str, country: str) -> dict:
     values = payload.get("values")
     if not isinstance(values, dict):
         raise ValidationError("imf datamapper response must include a values object")
-    if _imf_year_value_mapping(values):
-        return values
+    # A bare year/value mapping proves neither indicator nor country.
     indicator_values = _dict_value_case_insensitive(values, indicator)
     if isinstance(indicator_values, dict):
         country_values = _dict_value_case_insensitive(indicator_values, country)

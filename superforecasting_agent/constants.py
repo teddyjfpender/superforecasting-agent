@@ -341,6 +341,32 @@ def get_subprocess_home() -> str | None:
 VALID_REASONING_EFFORTS = ("minimal", "low", "medium", "high", "xhigh")
 
 
+def parse_service_tier(raw) -> str | None:
+    """Canonical persisted fast-mode aliases for CLI, gateway and TUI."""
+    value = str(raw or "").strip().lower()
+    if not value or value in {"normal", "default", "standard", "off", "none"}:
+        return None
+    if value in {"fast", "priority", "on"}:
+        return "priority"
+    import logging
+    logging.getLogger(__name__).warning("Unknown service_tier '%s', ignoring", raw)
+    return None
+
+
+def parse_fast_mode_command(raw: str, *, current_fast: bool) -> str:
+    """Return status/fast/normal; an empty command never changes settings."""
+    value = raw.strip().lower()
+    if value in {"", "status"}:
+        return "status"
+    if value == "toggle":
+        return "normal" if current_fast else "fast"
+    if value in {"fast", "on"}:
+        return "fast"
+    if value in {"normal", "off"}:
+        return "normal"
+    raise ValueError(f"unknown fast mode: {raw}")
+
+
 def parse_reasoning_effort(effort: str) -> dict | None:
     """Parse a reasoning effort level into a config dict.
 

@@ -2682,6 +2682,7 @@ export interface SessionCreateInfo {
   config_warning?: string
   credential_warning?: string
   cwd?: string
+  durable_session_id?: string
   fast?: boolean
   lazy?: boolean
   mcp_servers?: McpServerStatus[]
@@ -2728,6 +2729,7 @@ export interface SessionHistoryResponse {
 export interface SessionInfo {
   build?: BuildInfoPayload
   cwd?: string
+  durable_session_id?: string
   fast?: boolean
   lazy?: boolean
   mcp_servers?: McpServerStatus[]
@@ -2749,6 +2751,7 @@ export interface SessionInfo {
 export interface SessionInfoPayload {
   build?: BuildInfoPayload
   cwd: string
+  durable_session_id?: string
   fast: boolean
   model: string
   profile_name: string

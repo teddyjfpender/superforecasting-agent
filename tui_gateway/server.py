@@ -1443,10 +1443,13 @@ def _resolve_startup_runtime() -> tuple[str, str | None]:
 
 
 def _write_config_key(key_path: str, value):
-    cfg = _load_cfg()
-    from superforecasting_agent.storage.files import set_nested
-    set_nested(cfg, key_path, value)
-    _save_cfg(cfg)
+    """Merge a single setting into the latest profile, preserving user comments."""
+    global _cfg_cache, _cfg_mtime, _cfg_path
+    from superforecasting_agent.storage.files import atomic_roundtrip_yaml_update
+
+    atomic_roundtrip_yaml_update(_hermes_home / "config.yaml", key_path, value)
+    with _cfg_lock:
+        _cfg_cache = _cfg_mtime = _cfg_path = None
 
 
 _STATUSBAR_MODES = frozenset({"off", "top", "bottom"})
@@ -1485,16 +1488,8 @@ def _load_reasoning_config() -> dict | None:
 
 
 def _load_service_tier() -> str | None:
-    raw = (
-        str((_load_cfg().get("agent") or {}).get("service_tier", "") or "")
-        .strip()
-        .lower()
-    )
-    if not raw or raw in {"normal", "default", "standard", "off", "none"}:
-        return None
-    if raw in {"fast", "priority", "on"}:
-        return "priority"
-    return None
+    from superforecasting_agent.constants import parse_service_tier
+    return parse_service_tier((_load_cfg().get("agent") or {}).get("service_tier"))
 
 
 def _load_show_reasoning() -> bool:
@@ -1958,6 +1953,8 @@ def _sync_session_key_after_compress(
         except Exception:
             pass
 
+    _emit("session.info", sid, _session_info(agent))
+
 
 def _get_usage(agent) -> dict:
     g = lambda k, fb=None: getattr(agent, k, 0) or (getattr(agent, fb, 0) if fb else 0)
@@ -2091,6 +2088,7 @@ def _session_info(agent) -> dict:
         reasoning_effort = str(reasoning_config.get("effort", "") or "")
     service_tier = getattr(agent, "service_tier", None) or ""
     info: dict = {
+        "durable_session_id": getattr(agent, "session_id", None) or "",
         "model": getattr(agent, "model", ""),
         "reasoning_effort": reasoning_effort,
         "service_tier": service_tier,
@@ -2931,6 +2929,7 @@ def _(rid, params: dict) -> dict:
         {
             "session_id": sid,
             "info": {
+                "durable_session_id": key,
                 "model": _resolve_model(),
                 "tools": {},
                 "skills": {},
@@ -4665,20 +4664,13 @@ def _(rid, params: dict) -> dict:
         else:
             current_fast = _load_service_tier() == "priority"
 
-        if raw in {"status"}:
-            return _ok(
-                rid,
-                {"key": key, "value": "fast" if current_fast else "normal"},
-            )
-
-        if raw in {"", "toggle"}:
-            nv = "normal" if current_fast else "fast"
-        elif raw in {"fast", "on"}:
-            nv = "fast"
-        elif raw in {"normal", "off"}:
-            nv = "normal"
-        else:
-            return _err(rid, 4002, f"unknown fast mode: {value}")
+        from superforecasting_agent.constants import parse_fast_mode_command
+        try:
+            nv = parse_fast_mode_command(raw, current_fast=current_fast)
+        except ValueError as exc:
+            return _err(rid, 4002, str(exc))
+        if nv == "status":
+            return _ok(rid, {"key": key, "value": "fast" if current_fast else "normal"})
 
         overrides = None
         if nv == "fast":

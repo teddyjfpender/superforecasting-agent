@@ -126,7 +126,7 @@ CASES: list[tuple[type, dict, bool]] = [
     # A cold-cache / offline gateway.ready: the version alone, nothing resolved.
     (GatewayReady, {"build": {"version": "0.19.0"}}, True),
     (GatewayReady, {}, True),
-    (SessionInfo, {"model": "anthropic/claude-sonnet-4", "reasoning_effort": "", "service_tier": "",
+    (SessionInfo, {"durable_session_id": "saved-session-123", "model": "anthropic/claude-sonnet-4", "reasoning_effort": "", "service_tier": "",
                    "fast": False, "cwd": "/x", "version": "1.2.3", "release_date": "2026-07-04",
                    "update_behind": None, "update_command": "", "profile_name": "default",
                    "usage": {"input_tokens": 10}, "tools": {}, "skills": {},

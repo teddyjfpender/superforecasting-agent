@@ -4,6 +4,22 @@ This is the follow-up list from the September 2026 repository cleanup. Completed
 work and verification are recorded in the [cleanup review](docs/plans/2026-09-10-cleanup-review.md)
 and its linked work log. These items are not claims of known production failures.
 
+## Runtime ownership and real desk follow-up (September 11)
+
+See [investigation, changes and evidence limits](docs/plans/2026-09-11-runtime-ownership.md).
+
+- [x] Fix SDK pipe double-close with deterministic descriptor-reuse regression.
+- [x] Protect gateway lock leases from stale cleanup and shield shared shutdown
+  from a cancelled waiter.
+- [x] Exercise real Ink, gateway, dashboard transport and SQLite together with
+  local failure providers; fix temporary-versus-durable session ID recovery.
+- [x] Remove fabricated publication times from remaining economic ingestion;
+  reject wrong identities, ambiguous fields and malformed rows, with pure parsers.
+- [x] Share service-tier/fast-command semantics and TUI atomic setting updates.
+- [ ] Conclusively attribute the historical native TLS crash. Native GDB experiment
+  and core-capture workflow are implemented; original OpenSSL/CA hashes were not
+  preserved. A clean experiment or synthetic abort is not an SSL root cause.
+
 ## Completed reliability follow-up (September 10)
 
 See [verification and reproduction](docs/plans/2026-09-10-forecast-reliability.md).

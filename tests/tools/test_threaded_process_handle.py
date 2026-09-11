@@ -1,5 +1,6 @@
 """Tests for _ThreadedProcessHandle — the adapter for SDK backends."""
 
+import os
 import threading
 import time
 
@@ -142,3 +143,48 @@ class TestStdoutPipe:
         output = handle.stdout.read()
         assert "世界" in output
         assert "🌍" in output
+
+
+def test_cleanup_does_not_close_reused_worker_descriptor(monkeypatch):
+    """A finished worker's descriptor can belong to another component."""
+    allocated = []
+    real_pipe = os.pipe
+
+    def capture_pipe():
+        pair = real_pipe()
+        allocated.append(pair)
+        return pair
+
+    monkeypatch.setattr(os, "pipe", capture_pipe)
+    handle = _ThreadedProcessHandle(lambda: ("done", 0))
+    handle.wait(timeout=5)
+    assert handle.poll() == 0
+    old_writer = allocated[0][1]
+    replacement = os.open(os.devnull, os.O_WRONLY)
+    try:
+        # Reuse the exact descriptor, independently of allocator order.
+        if replacement != old_writer:
+            os.dup2(replacement, old_writer)
+        handle.close()
+        handle.close()
+        assert os.write(old_writer, b"still owned") == 11
+    finally:
+        os.close(old_writer)
+        if replacement != old_writer:
+            os.close(replacement)
+
+
+def test_cleanup_before_worker_finishes_keeps_writer_owned():
+    release = threading.Event()
+    handle = _ThreadedProcessHandle(lambda: (release.wait(5) and "done", 0))
+    handle.close()
+    replacement = os.open(os.devnull, os.O_WRONLY)
+    try:
+        release.set()
+        handle.wait(timeout=5)
+        assert handle.poll() == 0
+        handle.close()
+        assert os.write(replacement, b"safe") == 4
+    finally:
+        release.set()
+        os.close(replacement)

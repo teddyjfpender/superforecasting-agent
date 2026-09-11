@@ -967,3 +967,32 @@ class TestReadProcessCmdlinePsFallback:
         )
         result = status._read_process_cmdline(12345)
         assert "superforecasting_agent/runtime/main.py" in result
+
+
+def test_stale_shutdown_cannot_release_a_new_runtime(tmp_path, monkeypatch):
+    monkeypatch.setenv('HERMES_HOME', str(tmp_path))
+    assert status.acquire_gateway_runtime_lock()
+    old = status.gateway_runtime_lock_owner()
+    status.release_gateway_runtime_lock(owner=old)
+    assert status.acquire_gateway_runtime_lock()
+    current = status.gateway_runtime_lock_owner()
+    try:
+        status.release_gateway_runtime_lock(owner=old)
+        assert status.gateway_runtime_lock_owner() is current
+        assert status.is_gateway_runtime_lock_active()
+    finally:
+        status.release_gateway_runtime_lock(owner=current)
+
+
+def test_failed_lock_record_write_does_not_leak_descriptor(tmp_path, monkeypatch):
+    import pytest
+    monkeypatch.setenv('HERMES_HOME', str(tmp_path))
+    opened = []
+    def fail(handle):
+        opened.append(handle)
+        raise OSError('disk full')
+    monkeypatch.setattr(status, '_write_gateway_lock_record', fail)
+    with pytest.raises(OSError, match='disk full'):
+        status.acquire_gateway_runtime_lock()
+    assert opened[0].closed
+    assert status.gateway_runtime_lock_owner() is None

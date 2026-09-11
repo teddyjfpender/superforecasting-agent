@@ -1,0 +1,62 @@
+name: Native TLS investigation
+on:
+  push:
+    branches: [codex/learning-settlement-runtime]
+    paths:
+      - scripts/investigate_native_tls.py
+      - .github/workflows/native-tls-investigation.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  investigate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # 8.2.0
+        with:
+          version: '0.10.9'
+      - name: Install original Python distribution and native debugger
+        run: |
+          uv python install 3.11.15
+          sudo apt-get update
+          sudo apt-get install -y gdb
+      - name: Run separate hypotheses with native capture
+        run: |
+          ulimit -c unlimited
+          uv run --no-project --python 3.11.15 python scripts/investigate_native_tls.py
+      - name: Preserve native evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: native-tls-results
+          path: native-tls-results/
+          retention-days: 14
+
+  local-desk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # 8.2.0
+        with:
+          version: '0.10.9'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Install engineering test prerequisites
+        run: |
+          uv venv .venv --python 3.11.15
+          uv pip install --python .venv -e ".[all,dev]"
+          npm ci --prefix ui-tui
+          npm run build --prefix ui-tui
+      - name: Exercise real desk against local providers
+        run: scripts/run_tests.sh tests/runtime_cli/test_local_desk_lifecycle.py
+      - name: Preserve test results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: local-desk-results
+          path: .test-results/
+          retention-days: 14

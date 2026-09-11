@@ -90,6 +90,7 @@ class SessionInfo(WireModel):
 
     TS_NAME = "SessionInfoPayload"
 
+    durable_session_id: str | None = wire_optional()
     model: str
     reasoning_effort: str
     service_tier: str

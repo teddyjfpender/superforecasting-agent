@@ -17,6 +17,7 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from superforecasting_agent.constants import get_agent_home
@@ -35,6 +36,7 @@ _IS_WINDOWS = sys.platform == "win32"
 _UNSET = object()
 _GATEWAY_LOCK_FILENAME = "gateway.lock"
 _gateway_lock_handle = None
+_gateway_lock_guard = threading.RLock()
 # Windows byte-range locks are mandatory for other readers. Lock a byte well
 # past the JSON payload so runtime status / PID readers can still read the file
 # while another process holds the mutual-exclusion lock.
@@ -436,32 +438,43 @@ def acquire_gateway_runtime_lock() -> bool:
     process dies abruptly, the OS releases the lock automatically.
     """
     global _gateway_lock_handle
-    if _gateway_lock_handle is not None:
+    with _gateway_lock_guard:
+        if _gateway_lock_handle is not None:
+            return Path(_gateway_lock_handle.name) == _get_gateway_lock_path()
+        path = _get_gateway_lock_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handle = open(path, "a+", encoding="utf-8")
+        try:
+            if not _try_acquire_file_lock(handle):
+                handle.close()
+                return False
+            _write_gateway_lock_record(handle)
+        except BaseException:
+            handle.close()
+            raise
+        _gateway_lock_handle = handle
         return True
 
-    path = _get_gateway_lock_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    handle = open(path, "a+", encoding="utf-8")
-    if not _try_acquire_file_lock(handle):
-        handle.close()
-        return False
-    _write_gateway_lock_record(handle)
-    _gateway_lock_handle = handle
-    return True
+
+def gateway_runtime_lock_owner():
+    """Opaque lease identity for cleanup by the acquiring runtime only."""
+    with _gateway_lock_guard:
+        return _gateway_lock_handle
 
 
-def release_gateway_runtime_lock() -> None:
-    """Release the gateway runtime lock when owned by this process."""
+def release_gateway_runtime_lock(*, owner=_UNSET) -> None:
+    """Release an owned lease; stale cleanup cannot release a newer lease."""
     global _gateway_lock_handle
-    handle = _gateway_lock_handle
-    if handle is None:
-        return
-    _gateway_lock_handle = None
-    _release_file_lock(handle)
-    try:
-        handle.close()
-    except OSError:
-        pass
+    with _gateway_lock_guard:
+        handle = _gateway_lock_handle
+        if handle is None or (owner is not _UNSET and owner is not handle):
+            return
+        _gateway_lock_handle = None
+        _release_file_lock(handle)
+        try:
+            handle.close()
+        except OSError:
+            pass
 
 
 def is_gateway_runtime_lock_active(lock_path: Optional[Path] = None) -> bool:

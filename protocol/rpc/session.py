@@ -55,6 +55,7 @@ class SessionInfo(WireModel):
 
     TS_NAME = "SessionInfo"
 
+    durable_session_id: str | None = wire_optional()
     model: str
     skills: dict[str, list[str]]
     tools: dict[str, list[str]]

@@ -706,7 +706,7 @@ export function useMainApp(gw: GatewayClient) {
         detail: info.reason,
         max: info.max,
         nextRetryMs: info.delayMs,
-        sid: getUiState().sid
+        sid: getUiState().info?.durable_session_id || getUiState().sid
       })
       patchUiState({
         busy: false,

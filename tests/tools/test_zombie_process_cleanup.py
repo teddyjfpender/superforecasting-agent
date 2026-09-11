@@ -302,3 +302,24 @@ class TestDelegationCleanup:
         child.close.assert_called_once()
         assert child not in parent._active_children
         assert result["status"] == "error"
+
+
+def test_cancelled_stop_waiter_does_not_cancel_shared_cleanup():
+    import asyncio
+    from gateway.run import GatewayRunner
+    async def exercise():
+        runner = object.__new__(GatewayRunner)
+        finish = asyncio.Event()
+        runner._stop_task = asyncio.create_task(finish.wait())
+        waiter = asyncio.create_task(runner.stop())
+        await asyncio.sleep(0)
+        waiter.cancel()
+        try:
+            await waiter
+        except asyncio.CancelledError:
+            pass
+        assert not runner._stop_task.cancelled()
+        finish.set()
+        await runner.stop()
+        assert runner._stop_task.done()
+    asyncio.run(exercise())

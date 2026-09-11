@@ -28,6 +28,7 @@ import type { GatewayEventHandlerContext } from './interfaces.js'
 import { raisePrompt } from './overlayStore.js'
 import { turnController } from './turnController.js'
 import { getUiState, patchUiState } from './uiStore.js'
+import { writeActiveSessionFile } from './useSessionLifecycle.js'
 import { isWarningsRunActive } from './warningsRunStore.js'
 
 const NO_PROVIDER_RE = /\bNo (?:LLM|inference) provider configured\b/i
@@ -509,6 +510,10 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         return
       case WireEvent.SESSION_INFO: {
         const info = ev.payload
+
+        if (info.durable_session_id) {
+          writeActiveSessionFile(info.durable_session_id)
+        }
 
         // session.info lands after the background update check has usually
         // finished, so it UPGRADES a cold-cache "version only" build into a real

@@ -287,13 +287,9 @@ def _parse_reasoning_summary_config(raw: str) -> str:
 
 def _parse_service_tier_config(raw: str) -> str | None:
     """Parse a persisted service-tier preference into a Responses API value."""
-    value = str(raw or "").strip().lower()
-    if not value or value in {"normal", "default", "standard", "off", "none"}:
-        return None
-    if value in {"fast", "priority", "on"}:
-        return "priority"
-    logger.warning("Unknown service_tier '%s', ignoring", raw)
-    return None
+    from superforecasting_agent.constants import parse_service_tier
+    return parse_service_tier(raw)
+
 
 def load_cli_config() -> Dict[str, Any]:
     """Load interactive settings using this CLI's active home and project root."""
@@ -6547,20 +6543,15 @@ class ForecastCLI:
             _cprint(f"  {_DIM}Usage: /fast [normal|fast|status]{_RST}")
             return
 
-        arg = parts[1].strip().lower()
-
-        if arg in {"fast", "on"}:
-            self.service_tier = "priority"
-            saved_value = "fast"
-            label = "FAST"
-        elif arg in {"normal", "off"}:
-            self.service_tier = None
-            saved_value = "normal"
-            label = "NORMAL"
-        else:
-            _cprint(f"  {_DIM}Unknown argument: {arg}{_RST}")
-            _cprint(f"  {_DIM}Usage: /fast [normal|fast|status]{_RST}")
+        from superforecasting_agent.constants import parse_fast_mode_command
+        try:
+            saved_value = parse_fast_mode_command(parts[1], current_fast=self.service_tier == "priority")
+        except ValueError as exc:
+            _cprint(f"  {_DIM}{exc}{_RST}")
+            _cprint(f"  {_DIM}Usage: /fast [normal|fast|status|toggle]{_RST}")
             return
+        self.service_tier = "priority" if saved_value == "fast" else None
+        label = saved_value.upper()
 
         self.agent = None  # Force agent re-init with new service-tier config
         if save_config_value("agent.service_tier", saved_value):
