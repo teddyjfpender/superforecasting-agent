@@ -105,20 +105,26 @@ def main():
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=True)
     import _ssl
+    # python-build-standalone can embed _ssl in the interpreter itself.
+    ssl_extension = getattr(_ssl, '__file__', None)
+    ssl_binary = ssl_extension or sys.executable
     report = {
         'python': sys.version, 'executable': sys.executable,
         'platform': platform.platform(), 'libc': platform.libc_ver(),
-        'openssl': ssl.OPENSSL_VERSION, 'ssl_extension': _ssl.__file__,
+        'openssl': ssl.OPENSSL_VERSION, 'ssl_extension': ssl_extension,
+        'ssl_binary': ssl_binary,
         'runner_image': os.environ.get('ImageVersion'),
         'original_runner_image': '20260907.300.1',
         'original_bundle_hash': None,
         'certificate_paths': ssl.get_default_verify_paths()._asdict(),
         'sha256': {}, 'cases': [],
     }
-    for name, path in [('python', sys.executable), ('ssl', _ssl.__file__), ('ca', args.cafile)]:
+    for name, path in [('python', sys.executable), ('ssl', ssl_binary), ('ca', args.cafile)]:
         report['sha256'][name] = hashlib.sha256(Path(path).read_bytes()).hexdigest()
     (out / 'ca-certificates.crt').write_bytes(Path(args.cafile).read_bytes())
-    (out / 'linked-libraries.txt').write_text(subprocess.check_output(['ldd', _ssl.__file__], text=True))
+    (out / 'package-versions.txt').write_text(subprocess.check_output(
+        ['dpkg-query', '-W', 'libc6', 'openssl', 'ca-certificates', 'gdb'], text=True))
+    (out / 'linked-libraries.txt').write_text(subprocess.check_output(['ldd', ssl_binary], text=True))
     # Exceptions in worker threads must fail the case, rather than print a
     # traceback and let the interpreter report success.
     child_home = out / 'isolated-home'
