@@ -273,15 +273,8 @@ filterwarnings = [
     # Python 3.13 path uses the maintained audioop-lts compatibility package.
     "ignore:'audioop' is deprecated and slated for removal in Python 3.13:DeprecationWarning:discord.player",
 ]
-# pytest-timeout: per-test 60s hard cap with thread method.
-# Discovered May 2026: the suite reliably hangs at ~96% on full runs even
-# though every individual test completes in <30s. Root cause is leaked
-# threads / atexit handlers accumulating across thousands of tests until
-# something deadlocks at session teardown. Adding pytest-timeout (with
-# thread method, which forces an interrupt into the test thread) breaks
-# the deadlock — the suite then completes cleanly. The 60s cap is large
-# enough that no legitimate test trips it; if a test exceeds it that's a
-# real bug worth surfacing as a Timeout failure.
+# pytest-timeout is the single deadline owner. CLI --timeout overrides this
+# default, and explicitly marked lifecycle/soak tests can declare larger budgets.
 addopts = "-m 'not integration' -n auto --timeout=30 --timeout-method=signal"
 
 [tool.ty.environment]

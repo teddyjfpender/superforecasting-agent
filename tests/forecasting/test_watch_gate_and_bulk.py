@@ -17,7 +17,11 @@ from forecasting.ledger import ForecastLedger
 
 
 @pytest.fixture()
-def ledger(tmp_path):
+def ledger(tmp_path, monkeypatch):
+    # Gate/dispatch tests must not wait for DNS on deliberately fictitious URLs.
+    monkeypatch.setattr(
+        ForecastLedger, "_url_source_signature", lambda self, source: "fixture:" + source
+    )
     led = ForecastLedger(tmp_path / "test.db")
     from forecasting.ledger import allow_ledger_writes
 

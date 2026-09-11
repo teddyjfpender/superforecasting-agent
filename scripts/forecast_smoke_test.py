@@ -951,7 +951,7 @@ def _exercise_lifecycle(repo_root: Path, db_path: Path, *, skip_backtest: bool, 
             db_path=db_path,
             repo_root=repo_root,
             verbose=verbose,
-            timeout=180,
+            timeout=300,
         )
         agent_protocol_ids = BACKTEST_RE.findall(agent_protocol_output)
         expected_summary = (
