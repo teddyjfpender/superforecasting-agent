@@ -74,3 +74,25 @@ First extraction in progress:
 Hygiene audit finding: `ui-tui/eslint.config.mjs` defines five custom rules as
 no-ops. Determine their intended enforcement and replace or remove misleading
 rule declarations as part of the gate work; do not describe them as protection.
+
+Shared quality workflow (`d5469e48c`):
+
+- `python3 scripts/dev.py bootstrap` completed with exit 0 in a fresh local clone
+  at `/tmp/forecast-product-bootstrap-20260911`, using its own `.venv` and
+  `ui-tui/node_modules`. It built Ink, installed hooks, and passed all quality
+  commands. The verification clone is clean afterward.
+- Pre-commit/pre-push and `.github/workflows/product-quality.yml` call the same
+  implementation. CI execution and native Windows bootstrap remain to verify.
+- Missing-tool and failed-linter subprocess regressions pass; the pipeline fails
+  closed. Six tests passed across those checks and application RPC parity.
+- Injecting `import forecasting.cli` into the actual application package in the
+  verification clone made the new import contract fail. The probe was restored.
+- TUI lint passes after six existing gateway-client formatting findings were
+  fixed. Five unused no-op custom rule declarations were removed; they were not
+  active protections and should not have been advertised as such.
+
+Still outstanding: actual Ink command migration, shared config/session and agent
+construction ownership, fuller dependency-boundary cleanup, host/capability
+negotiation, minimal independent package profiles, and full final qualification.
+The two implementation commits are local pending the required full-suite push
+qualification; this does not mark any of the five deliverables complete.
