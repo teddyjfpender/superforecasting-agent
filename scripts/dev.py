@@ -76,19 +76,53 @@ def bootstrap() -> None:
     check()
 
 
+def check_snapshot(ref: str | None = None) -> None:
+    """Require the files checked in place to match the index or pushed tree.
+
+    This deliberately does not stash user changes or reuse an editable virtual
+    environment in a temporary tree (which can import the original checkout).
+    """
+
+    def git(*args: str) -> bytes:
+        return subprocess.check_output(("git", *args), cwd=ROOT)
+
+    if git("diff", "--name-only", "-z"):
+        raise RuntimeError(
+            "Unstaged tracked changes would make checks differ from the commit. "
+            "Stage the intended changes or set aside the remaining work first."
+        )
+    if git("ls-files", "--others", "--exclude-standard", "-z"):
+        raise RuntimeError(
+            "Untracked files can affect imports and checks. "
+            "Track, ignore, or move them before running commit/push gates."
+        )
+    if ref is not None:
+        tree = git("rev-parse", "--verify", ref + "^{tree}").strip()
+        if tree != git("write-tree").strip():
+            raise RuntimeError(
+                "The pushed tree differs from the checked index. "
+                "Check out that commit with a clean index before pushing it."
+            )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("bootstrap", "check"))
+    parser.add_argument("command", choices=("bootstrap", "check", "snapshot"))
     parser.add_argument(
         "--python-only",
         action="store_true",
         help="Check Python/contracts without requiring Node",
     )
+    parser.add_argument("--ref", help="Pushed commit whose tree must match the index")
     args = parser.parse_args()
+    if args.ref and args.command != "snapshot":
+        parser.error("--ref applies to snapshot only")
     if args.command == "bootstrap" and args.python_only:
         parser.error("--python-only applies to check, not bootstrap")
     try:
-        if args.command == "bootstrap":
+        if args.command == "snapshot":
+            check_snapshot(args.ref)
+        elif args.command == "bootstrap":
             bootstrap()
         else:
             check(python_only=args.python_only)

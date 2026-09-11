@@ -215,3 +215,9 @@ check_quality() {
   _py="$(hook_python)" || return 1
   ( cd "$HOOKS_REPO_ROOT" && "$_py" scripts/dev.py check "$@" )
 }
+
+# In-place tools must inspect the same tree being committed or pushed.
+check_snapshot() {
+  _py="$(hook_python)" || return 1
+  ( cd "$HOOKS_REPO_ROOT" && "$_py" scripts/dev.py snapshot "$@" )
+}

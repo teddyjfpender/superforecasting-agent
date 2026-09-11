@@ -260,3 +260,18 @@ Abandoned startup ownership:
 - The deterministic close-during-build regression waits for agent disposal and
   verifies that initialization waiters receive the closed-session error. This
   is startup cleanup; active-turn draining and complete host ownership remain open.
+
+Commit-content hygiene:
+
+- Shared snapshot admission checks require in-place quality tools to inspect
+  the staged tree for commits and each submitted tree for pushes. Unstaged or
+  untracked non-ignored files fail closed; ignored toolchains remain supported.
+  Hooks repeat admission after checks and never stash or rewrite user changes.
+- Pre-push no longer ignores all refs after the first: every submitted tree is
+  admitted, and every remote baseline participates in changed-domain checks.
+- Six workflow tests pass, including real Git fixtures for a staged bug hidden
+  by an unstaged fix, a different pushed tree, untracked import shadowing, and
+  actual pre-push rejection of a mismatching second ref before quality execution.
+- This intentionally requires matching in-place contents; automatic isolated
+  snapshot validation is not claimed. CONTRIBUTING documents the partial-staging
+  constraint. Shared Python quality and shell syntax checks pass.

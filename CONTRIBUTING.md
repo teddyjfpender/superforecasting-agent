@@ -165,9 +165,17 @@ callers, no drift.
 
 | Hook | Speed | Gates |
 |------|-------|-------|
-| **pre-commit** | fast (<10s) | ruff on changed `.py` files; protocol codegen staleness; wire-drift (generated.ts/dist without a `protocol/` change); `tsc --noEmit` when `ui-tui/` is staged |
+| **pre-commit** | fast | Index/worktree agreement; shared Python quality and import/protocol checks; wire drift; TUI lint/types when staged |
 | **commit-msg** | instant | message shape `type(scope): subject`; a WHY-body for `feat`/`refactor`; the oversize / `MOVES-ONLY` gate |
-| **pre-push** | bounded (~2-3min) | targeted `pytest` for the changed python domains; `vitest --changed` when `ui-tui/` is touched; codegen staleness again |
+| **pre-push** | depends on changed domains | Every pushed tree must match the index/worktree; shared quality gates; targeted Python tests and changed TUI tests |
+
+Hooks run tools in place and require the checked files to match the submitted
+index (commit) or every submitted commit tree (push), before and after checks.
+Unstaged tracked changes and untracked non-ignored files block these checks;
+stage the intended work or set other work aside yourself. Hooks never stash or
+rewrite your files. Partial staging with remaining edits requires a separate
+checkout for validation. Push different product trees from their corresponding
+clean checkouts. Ignored dependency/build directories remain supported.
 
 ### The escape hatch (visible, never silent)
 

@@ -8,6 +8,8 @@ _DIR="$(cd "$(dirname "$0")" && pwd)"
 
 if hook_honor_global_skip "pre-commit"; then exit 0; fi
 
+check_snapshot || exit 1
+
 rc=0
 quality_args=(--python-only)
 if git diff --cached --name-only | grep -Eq '^ui-tui/'; then
@@ -24,6 +26,7 @@ if ! check_quality "${quality_args[@]}"; then
   rc=1
 fi
 if ! check_drift cached; then rc=1; fi
+if ! check_snapshot; then rc=1; fi
 if [ "$rc" -ne 0 ]; then
   hook_warn "pre-commit blocked the commit. The hook staged/unstaged nothing."
 fi
