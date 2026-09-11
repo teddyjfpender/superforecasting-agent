@@ -407,12 +407,9 @@ def _remaining_required_environment_names(
 
 
 def _gateway_setup_hint() -> str:
-    try:
-        from gateway.platforms.base import GATEWAY_SECRET_CAPTURE_UNSUPPORTED_MESSAGE
+    from superforecasting_agent.constants import REMOTE_SECRET_ENTRY_HINT
 
-        return GATEWAY_SECRET_CAPTURE_UNSUPPORTED_MESSAGE
-    except Exception:
-        return f"Secure secret entry is not available. Load this skill in the local CLI to be prompted, or add the key to {display_agent_home()}/.env manually."
+    return REMOTE_SECRET_ENTRY_HINT
 
 
 def _build_setup_note(

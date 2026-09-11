@@ -568,3 +568,9 @@ def get_active_profile_name() -> str:
         pass
 
     return "custom"
+
+
+REMOTE_SECRET_ENTRY_HINT = (
+    "Secure secret entry is not supported over messaging. "
+    "Load this skill in the local CLI to be prompted, or add the key to the active agent-home .env manually."
+)

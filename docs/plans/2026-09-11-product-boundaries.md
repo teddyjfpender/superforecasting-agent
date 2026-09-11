@@ -634,3 +634,27 @@ Shared platform registration:
   The latest broader audit narrows remaining gateway dependencies to image caching,
   a secret-entry hint constant, and host-PID liveness checks. These are shared
   infrastructure concerns still awaiting extraction; host lifecycle remains open.
+
+Complete transitive presentation exclusion for forecast application services:
+
+- Shared PID liveness checks now live in `superforecasting_agent.processes`, used
+  by process tracking, browser cleanup, MCP cleanup and gateway status. The Windows
+  ctypes fallback now declares pointer-width arguments for wait/close calls as
+  well as the OpenProcess return type; tests exercise a handle above 32 bits and
+  verify exactly one close, no signal call and inaccessible/missing PID behavior.
+- Local image bytes are cached by `superforecasting_agent.storage.media`, using
+  the active profile on each call. Messaging retains its compatible cache wrapper;
+  MCP no longer imports messaging dependencies or silently drops images solely
+  because that package is unavailable. The remote secret-entry hint has a shared
+  constant owner as well.
+- 261 process/gateway/media tests passed (two skipped), followed by 23 native-call,
+  MCP image, isolated-import and boundary tests. An old MCP test compared against
+  a gateway cache path frozen under a previous test profile; it now checks the
+  actual current profile path. Cross-profile caching is verified in a fresh process.
+- The full application contract now rejects indirect imports of CLI, command
+  interfaces, dashboard, TUI gateway, messaging gateway and runtime main. The
+  broader audit passes without exclusions for those presentation packages.
+  Shared quality passes with twenty contracts; process/media owners are included
+  in strict lint/format/types. A full regression run is next before publishing
+  this batch. Host resource lifetime, remote serving, release/installer assembly
+  and cross-platform product qualification still require completion.
