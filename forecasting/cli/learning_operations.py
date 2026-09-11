@@ -8,6 +8,12 @@ from forecasting.cli import core as _core
 
 
 def register(sub):
+    domain = sub.add_parser('domain', help='Correct semantic domain with preserved history')
+    domain.add_argument('id')
+    domain.add_argument('--domain', required=True)
+    domain.add_argument('--expected-domain', required=True, help='Current domain, or empty string for unknown')
+    domain.add_argument('--reason', required=True)
+    domain.set_defaults(_forecast_handler=handle_domain)
     trial = sub.add_parser('trial', help='Prospective paired learning evaluations; never changes live probabilities')
     commands = trial.add_subparsers(dest='trial_action', required=True)
     create = commands.add_parser('create', help='Freeze a cohort, evidence, lessons, model and evaluation policy')
@@ -110,3 +116,14 @@ def _handle_facts(args):
                 context={'_fact_cutoff': args.cutoff}, ledger=ledger)[1]} for lesson in _in_scope_lessons(ledger, q)],
             'next_action': 'Bind missing facts to an explicit source URL, JSON value pointer and observation timestamp. Refresh expired evidence; never assert peak passage from the clock alone.'}
     print(json.dumps(report, indent=2))
+
+
+def handle_domain(args):
+    def operation(args):
+        from dataclasses import asdict
+        from forecasting.domains import set_question_domain
+        ledger = _core._ledger(args)
+        qid = _core._resolve_question_id(ledger, args.id)
+        print(json.dumps(asdict(set_question_domain(ledger, qid, domain=args.domain,
+            expected_domain=args.expected_domain or None, reason=args.reason)), indent=2))
+    return _run_operation(operation, args)
