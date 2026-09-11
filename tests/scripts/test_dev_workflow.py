@@ -127,3 +127,42 @@ def test_pre_push_checks_second_ref_before_running_quality(snapshot_repo):
     assert result.returncode != 0
     assert "pushed tree differs" in result.stderr
     assert "Missing" not in result.stderr  # Never reached the missing linter.
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Git hooks execute with POSIX bash")
+def test_changed_fixture_is_not_collected_as_a_test(snapshot_repo):
+    root, git, _ = snapshot_repo
+    target = root / "tests/runtime_cli/test_local_desk_lifecycle.py"
+    target.parent.mkdir(parents=True)
+    target.write_text("def test_lifecycle(): pass\n", encoding="utf-8")
+    helper = root / "tests/fixtures/runtime/local_desk_gateway.py"
+    helper.parent.mkdir(parents=True)
+    helper.write_text("raise RuntimeError('executable fixture')\n", encoding="utf-8")
+    git("add", "tests")
+    git("commit", "-qm", "fixture")
+    base = git("rev-parse", "HEAD")
+    helper.write_text("raise RuntimeError('changed executable fixture')\n", encoding="utf-8")
+    git("add", "tests")
+    git("commit", "-qm", "change fixture")
+    checks = SOURCE.parents[1] / ".githooks/lib/checks.sh"
+    result = subprocess.run(
+        ["bash", "-c", 'source "$1"; py_test_targets "$2" HEAD', "fixture", str(checks), base],
+        cwd=root, env={**os.environ, "HOOKS_REPO_ROOT": str(root)},
+        capture_output=True, text=True, check=True,
+    )
+    assert result.stdout.splitlines() == ["tests/runtime_cli/test_local_desk_lifecycle.py"]
+
+
+def test_local_desk_fixture_import_does_not_modify_runtime(monkeypatch):
+    import runpy
+    import socket
+    from tui_gateway import server
+
+    monkeypatch.delenv("FORECAST_TEST_GATEWAY_PID", raising=False)
+    connect, make_agent = socket.socket.connect, server._make_agent
+    setup_status, get_db = server._methods["setup.status"], server._get_db
+    runpy.run_path(str(SOURCE.parents[1] / "tests/fixtures/runtime/local_desk_gateway.py"))
+    assert socket.socket.connect is connect
+    assert server._make_agent is make_agent
+    assert server._methods["setup.status"] is setup_status
+    assert server._get_db is get_db

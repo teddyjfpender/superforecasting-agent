@@ -179,8 +179,16 @@ py_test_targets() {
   while IFS= read -r _f; do
     [ -z "$_f" ] && continue
     case "$_f" in
-      tests/*)                                  _raw="$_raw
+      tests/fixtures/runtime/*)                 _raw="$_raw
+tests/runtime_cli/test_local_desk_lifecycle.py" ;;
+      tests/test_*.py|tests/*/test_*.py|tests/*_test.py|tests/*/*_test.py)
+        _raw="$_raw
 $_f" ;;
+      tests/*)
+        # Helpers and conftests are not test entrypoints. Collect their directory
+        # using pytest's normal discovery instead of executing arbitrary scripts.
+        _raw="$_raw
+$(dirname "$_f")" ;;
       forecasting/*|tools/forecast_actions/*)   _raw="$_raw
 tests/forecasting
 tests/application" ;;

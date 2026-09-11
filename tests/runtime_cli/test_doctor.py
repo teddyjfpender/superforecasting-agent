@@ -5,6 +5,7 @@ import sys
 import types
 import io
 import contextlib
+import importlib
 from argparse import Namespace
 from types import SimpleNamespace
 
@@ -173,8 +174,8 @@ class TestHonchoDoctorConfigDetection:
         fake_config = SimpleNamespace(enabled=True, api_key="***")
 
         monkeypatch.setattr(
-            "plugins.memory.honcho.client.HonchoClientConfig.from_global_config",
-            lambda: fake_config,
+            importlib.import_module("plugins.memory.honcho.client").HonchoClientConfig,
+            "from_global_config", lambda: fake_config,
         )
 
         assert doctor._honcho_is_configured_for_doctor()
@@ -183,8 +184,8 @@ class TestHonchoDoctorConfigDetection:
         fake_config = SimpleNamespace(enabled=True, api_key="")
 
         monkeypatch.setattr(
-            "plugins.memory.honcho.client.HonchoClientConfig.from_global_config",
-            lambda: fake_config,
+            importlib.import_module("plugins.memory.honcho.client").HonchoClientConfig,
+            "from_global_config", lambda: fake_config,
         )
 
         assert not doctor._honcho_is_configured_for_doctor()

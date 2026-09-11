@@ -455,3 +455,30 @@ Distribution interpretation ownership:
   scope. All twelve import contracts pass, including strict transitive isolation
   for the interpreter and direct dashboard exclusion for ledger/distribution
   checks. Broader indirect application/runtime dependencies remain open.
+
+Full qualification and hook isolation:
+
+- At frozen source commit `6cc777605`, the full Python runner passed 30,546 tests
+  with 148 skipped and 58 warnings. JUnit:
+  `.test-results/pytest-20260911T192733Z-99681.xml`. No excluded integration suite
+  or native Windows PTY claim is implied by that run.
+- A fresh backend wheel built from that commit passed the independent profile
+  verifier alongside the unchanged terminal wheel: backend create/update/resolve/
+  score without Node, actual installed terminal negotiation/scoring/exit, companion
+  discovery and optional web-host construction. Logs and wheels are retained at
+  `/tmp/forecast-profiles-6cc777605*`; remote-network lifecycle remains open.
+- The first push was rejected by its Python hook subset (9 failures, 4 collection
+  errors). The target mapper explicitly passed a standalone local-gateway fixture
+  to pytest. Importing it modified sockets and gateway handlers before failing on
+  its required subprocess environment, contaminating later tests. The ordinary
+  full runner had correctly never collected that non-test executable.
+- Hook selection now maps runtime fixture changes to the real lifecycle tests;
+  general test helpers use normal directory discovery. The gateway fixture's
+  modifications and execution are guarded by `main`, so accidental imports cannot
+  mutate the host. Regression tests exercise both actual Git target selection and
+  fixture import isolation. Two doctor mocks now address the imported plugin class
+  directly instead of relying on cached parent-package attributes.
+- The affected subset, including explicit fixture collection and all local real
+  desk cases, passed 309 tests. Shared Python quality and shell syntax pass. The
+  first push's 558 changed-TUI tests also passed; the rejected push did not update
+  the remote branch. Push qualification must be retried with the corrected hook.
