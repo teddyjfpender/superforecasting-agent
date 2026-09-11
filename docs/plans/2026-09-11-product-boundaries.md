@@ -1002,3 +1002,22 @@ Live session registry ownership (isolated follow-up):
   real-child tests prove forced-kill reaping, concurrent repeated close and reader
   construction failure cleanup. These isolated changes are not yet part of the
   primary full regression running on `66df97c89`; full qualification is pending.
+
+Retryable resource disposal (isolated follow-up):
+
+- Session retirement now includes resource disposal after durable finalization.
+  The host retains the registry entry when notification unregister, agent close
+  or slash-worker close fails. Successful steps are recorded by resource identity
+  and are not repeated on retry; all independent resource steps are attempted.
+- Once disposal starts, pending cleanup blocks session use and replacement.
+  A failed durable write still permits ordinary use because disposal has not yet
+  begun. Explicit close errors identify retryable cleanup instead of returning a
+  false successful close for partially released resources.
+- Shutdown attempts every session, reports incomplete cleanup without closing
+  the shared database, and permits a subsequent cleanup retry. New startup remains
+  blocked until prior registry/database ownership is fully relinquished.
+- Focused failure-injection tests prove retained membership, no use after partial
+  disposal, failed-step-only retries, and database lifetime across failed shutdown.
+  The current AIAgent resource implementation still contains internally swallowed
+  cleanup failures; this host layer can only retain failures propagated by owned
+  resources. That lower-level ownership/diagnostic audit remains unfinished.

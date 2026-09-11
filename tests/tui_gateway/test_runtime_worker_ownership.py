@@ -136,3 +136,26 @@ def test_thread_construction_failure_does_not_leak_admission(monkeypatch):
         workers.start(lambda: None, name='cannot-start')
     workers.stop()
     assert workers.drain(0)
+
+
+def test_shutdown_disposal_failure_retains_registry_and_database_for_retry(monkeypatch):
+    from tui_gateway import server
+    calls = []
+    def close_agent():
+        calls.append('agent')
+        if calls.count('agent') == 1:
+            raise OSError('injected close failure')
+    server._sessions['runtime'] = {
+        'session_key': 'durable', 'agent': SimpleNamespace(close=close_agent),
+        'slash_worker': SimpleNamespace(close=lambda: calls.append('worker')),
+    }
+    monkeypatch.setattr(server._session_store, '_connection', SimpleNamespace(close=lambda: calls.append('db')))
+    monkeypatch.setattr(server, '_notify_session_boundary', lambda *args: None)
+    assert not server.shutdown_runtime(1)
+    assert 'runtime' in server._sessions
+    assert calls == ['agent', 'worker']
+    with pytest.raises(RuntimeError, match='incomplete'):
+        server.start_runtime()
+    assert server.shutdown_runtime(1)
+    assert calls == ['agent', 'worker', 'agent', 'db']
+    assert not server._sessions

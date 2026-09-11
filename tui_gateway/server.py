@@ -296,7 +296,7 @@ try:
 except (ValueError, TypeError):
     _rpc_pool_workers = 4
 from superforecasting_agent.hosting.workers import HostStopping, RuntimeWorkers
-from superforecasting_agent.hosting.sessions import SessionBusy, finalize_session, in_use, replacement, use_session
+from superforecasting_agent.hosting.sessions import SessionBusy, dispose_session, finalize_session, in_use, replacement, use_session
 
 _pool = RuntimeWorkers(max_workers=_rpc_pool_workers)
 _host_lifecycle_lock = threading.Lock()
@@ -841,15 +841,24 @@ def shutdown_runtime(timeout: float = 5.0) -> bool:
             logger.error("runtime shutdown incomplete: workers still own resources")
             return False
         db = _session_store.current
+        cleanup_failed = False
         for sid, session in list(_sessions.items()):
-            if session.get("turn_id") and db is not None:
-                from tui_gateway import turn_journal
-                # Workers have relinquished the receipt. Terminal records remain
-                # immutable; an unfinished receipt now has a truthful end state,
-                # even if another lifetime starts in this same process.
-                turn_journal.transition(db, session["turn_id"], "interrupted")
-            _close_runtime_session(sid, mark_ended=False, drained=True)
-        _session_store.close()
+            try:
+                if session.get("turn_id") and db is not None:
+                    from tui_gateway import turn_journal
+                    # Drained workers have relinquished the unfinished receipt.
+                    turn_journal.transition(db, session["turn_id"], "interrupted")
+                _close_runtime_session(sid, mark_ended=False, drained=True)
+            except Exception:
+                cleanup_failed = True
+                logger.exception("runtime session cleanup incomplete: %s", sid)
+        if cleanup_failed:
+            return False
+        try:
+            _session_store.close()
+        except Exception:
+            logger.exception("runtime session store cleanup incomplete")
+            return False
         return True
 
 
@@ -3092,7 +3101,7 @@ def _(rid, params: dict) -> dict:
             if replace_lock is None:
                 replace_lock = contextlib.nullcontext()
             with replace_lock:
-                if in_use(replace_session) or replace_session.get("_closing"):
+                if in_use(replace_session) or replace_session.get("_closing") or replace_session.get("_cleanup_pending"):
                     return _err(
                         rid,
                         4009,
@@ -3519,31 +3528,20 @@ def _(rid, params: dict) -> dict:
 
 
 def _close_runtime_session(sid: str, *, mark_ended: bool = True, reserved: bool = False, drained: bool = False) -> bool:
-    session = _sessions.retire(
-        sid, lambda session: _finalize_session(session, mark_ended=mark_ended),
-        reserved=reserved, drained=drained,
-    )
+    def finish(session: dict) -> None:
+        _finalize_session(session, mark_ended=mark_ended)
+
+        def release_notifications() -> None:
+            from tools.approval import unregister_gateway_notify
+
+            unregister_gateway_notify(session["session_key"])
+
+        dispose_session(session, release_notifications=release_notifications)
+
+    session = _sessions.retire(sid, finish, reserved=reserved, drained=drained)
     if session is None:
         return False
     _session_toggles.pop(session.get("session_key", ""), None)
-    try:
-        from tools.approval import unregister_gateway_notify
-
-        unregister_gateway_notify(session["session_key"])
-    except Exception:
-        pass
-    try:
-        agent = session.get("agent")
-        if agent and hasattr(agent, "close"):
-            agent.close()
-    except Exception:
-        pass
-    try:
-        worker = session.get("slash_worker")
-        if worker:
-            worker.close()
-    except Exception:
-        pass
     return True
 
 

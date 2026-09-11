@@ -107,3 +107,23 @@ def test_finalizer_retries_durable_failure_without_early_hooks():
     for _ in range(2):
         finalize_session(session, end_session=end, notify=lambda *args: events.append('hook'), end_reason='close', mark_ended=True)
     assert events == ['ended', 'memory', 'hook']
+
+
+def test_partial_disposal_blocks_use_and_retries_only_failed_resource(monkeypatch):
+    from tui_gateway import server
+    calls = []
+    def close_agent():
+        calls.append('agent')
+        if calls.count('agent') == 1:
+            raise OSError('injected client close failure')
+    session, _ = register_session(server, monkeypatch,
+        agent=SimpleNamespace(close=close_agent),
+        slash_worker=SimpleNamespace(close=lambda: calls.append('worker')))
+    result = request(server, 'session.close')
+    assert 'client close failure' in result['error']['message']
+    assert server._sessions['runtime'] is session
+    assert session['_cleanup_pending'] and session['_finalized']
+    with pytest.raises(SessionBusy, match='cleanup is pending'), use_session(session):
+        pytest.fail('partially disposed session accepted work')
+    assert request(server, 'session.close')['result']['closed'] is True
+    assert calls == ['agent', 'worker', 'agent']

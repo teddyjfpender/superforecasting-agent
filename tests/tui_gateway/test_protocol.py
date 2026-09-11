@@ -281,7 +281,7 @@ def test_sess_missing(server):
 
 
 def test_sess_found(server):
-    server._sessions["abc"] = {"agent": MagicMock()}
+    server._sessions["abc"] = {"agent": MagicMock(), "session_key": "test-session"}
     s, err = server._sess({"session_id": "abc"}, "r1")
 
     assert s is not None

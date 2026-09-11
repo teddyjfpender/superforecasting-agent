@@ -32,6 +32,8 @@ def in_use(session: MutableMapping[str, Any], *, reserved: bool = False) -> bool
 def use_session(session: MutableMapping[str, Any]) -> Iterator[None]:
     lock = session.setdefault("history_lock", threading.Lock())
     with lock:
+        if session.get("_cleanup_pending"):
+            raise SessionBusy("session cleanup is pending; retry closing the session")
         if session.get("_closing") or session.get("_replacing"):
             raise SessionBusy("session is closing or being replaced")
         session["_active_calls"] = session.get("_active_calls", 0) + 1
@@ -65,7 +67,12 @@ def replacement(session: MutableMapping[str, Any]) -> Iterator[None]:
     """Reserve an idle session until its replacement is ready or fails."""
     lock = session.setdefault("history_lock", threading.Lock())
     with lock:
-        if session.get("_closing") or session.get("_replacing") or in_use(session):
+        if (
+            session.get("_closing")
+            or session.get("_replacing")
+            or session.get("_cleanup_pending")
+            or in_use(session)
+        ):
             raise SessionBusy(
                 "session is busy; cancel or finish active work before replacing"
             )
@@ -119,3 +126,39 @@ def finalize_session(
         except Exception:
             logger.exception("Finalization hook failed for session %s", session_id)
         session["_finalized"] = True
+
+
+def dispose_session(
+    session: MutableMapping[str, Any], *, release_notifications: Callable[[], None]
+) -> None:
+    """Dispose owned resources before registry retirement, retaining failed steps.
+
+    Completed resources are not closed again on retry. Once disposal starts the
+    runtime cannot accept more work, even when only one cleanup step fails.
+    """
+    with session.setdefault("history_lock", threading.Lock()):
+        session["_cleanup_pending"] = True
+    errors: list[str] = []
+    if not session.get("_notifications_released"):
+        try:
+            release_notifications()
+            session["_notifications_released"] = True
+        except Exception as exc:
+            errors.append(f"notifications: {exc}")
+    disposed = session.setdefault("_disposed_resources", {})
+    for name in ("agent", "slash_worker"):
+        resource = session.get(name)
+        if resource is None or disposed.get(name) is resource:
+            continue
+        try:
+            if hasattr(resource, "close"):
+                resource.close()
+            disposed[name] = resource
+        except Exception as exc:
+            errors.append(f"{name}: {exc}")
+    if errors:
+        raise RuntimeError(
+            "Session cleanup incomplete; retry close: " + "; ".join(errors)
+        )
+    with session["history_lock"]:
+        session["_cleanup_pending"] = False
