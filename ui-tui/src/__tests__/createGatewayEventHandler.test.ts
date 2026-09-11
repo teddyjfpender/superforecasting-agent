@@ -72,6 +72,37 @@ describe('createGatewayEventHandler', () => {
     }
   })
 
+  it('rejects duplicate and stale identified turn frames across retries', () => {
+    resetUiState()
+    turnController.fullReset()
+    const appended: Msg[] = []
+    const onEvent = createGatewayEventHandler(buildCtx(appended))
+    onEvent({ type: 'message.start', payload: { turn_id: 'old' } } as any)
+    onEvent({ type: 'message.complete', payload: { turn_id: 'old', text: 'first', status: 'complete' } } as any)
+    onEvent({ type: 'message.start', payload: { turn_id: 'new' } } as any)
+    onEvent({ type: 'message.complete', payload: { turn_id: 'old', text: 'stale' } } as any)
+    expect(getUiState().busy).toBe(true)
+    onEvent({
+      type: 'message.complete',
+      payload: { turn_id: 'new', text: 'retry failed', status: 'error', durable_status: 'error' }
+    } as any)
+    expect(getUiState().status).toBe('turn failed · ready to retry')
+    onEvent({ type: 'message.start', payload: { turn_id: 'new' } } as any)
+    expect(getUiState().busy).toBe(false)
+    expect(appended.some(m => m.text === 'stale')).toBe(false)
+  })
+
+  it('reports failed durable storage instead of a saved completion', () => {
+    resetUiState()
+    turnController.fullReset()
+    const onEvent = createGatewayEventHandler(buildCtx([]))
+    onEvent({
+      type: 'message.complete',
+      payload: { text: 'answer', status: 'complete', durable_status: 'unavailable' }
+    } as any)
+    expect(getUiState().status).toBe('recovery state not saved')
+  })
+
   beforeEach(() => {
     resetOverlayState()
     resetUiState()
@@ -125,7 +156,11 @@ describe('createGatewayEventHandler', () => {
 
     // API call #1's usage folded server-side, shipped on the first tool.complete.
     onEvent({
-      payload: { name: 'web_search', tool_id: 'tc_1', usage: { calls: 6, input: 108_000, output: 21_000, total: 950_000 } },
+      payload: {
+        name: 'web_search',
+        tool_id: 'tc_1',
+        usage: { calls: 6, input: 108_000, output: 21_000, total: 950_000 }
+      },
       type: 'tool.complete'
     } as never)
 
@@ -253,9 +288,7 @@ describe('createGatewayEventHandler', () => {
       type: 'review.summary'
     } as any)
 
-    expect(ctx.system.sys).toHaveBeenCalledWith(
-      "💾 Self-improvement review: Skill 'hermes-release' patched"
-    )
+    expect(ctx.system.sys).toHaveBeenCalledWith("💾 Self-improvement review: Skill 'hermes-release' patched")
   })
 
   it('ignores review.summary events with empty or missing text', () => {
@@ -910,12 +943,7 @@ describe('createGatewayEventHandler', () => {
         title: 'Ensemble'
       },
       {
-        rows: [
-          [
-            'bt_fixture001',
-            'src forecast-engine  agent 0.080000  edge +0.020  replay only'
-          ]
-        ],
+        rows: [['bt_fixture001', 'src forecast-engine  agent 0.080000  edge +0.020  replay only']],
         title: 'Backtests'
       }
     ])
@@ -1442,7 +1470,10 @@ describe('createGatewayEventHandler', () => {
         setWarningsRunActive(true)
 
         for (let i = 0; i < 130; i += 1) {
-          onEvent({ payload: { line: `LedgerNotFoundError: no active autopilot policy #${i}` }, type: 'gateway.stderr' } as any)
+          onEvent({
+            payload: { line: `LedgerNotFoundError: no active autopilot policy #${i}` },
+            type: 'gateway.stderr'
+          } as any)
         }
 
         vi.advanceTimersByTime(1000)

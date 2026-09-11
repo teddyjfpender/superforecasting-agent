@@ -635,6 +635,10 @@ def _close_session_databases(_hermetic_environment, monkeypatch):
     yield
     for database in reversed(databases):
         database.close()
+    # The runtime singleton must not retain a handle this fixture just closed.
+    server = sys.modules.get("tui_gateway.server")
+    if server is not None and any(getattr(server, "_db", None) is db for db in databases):
+        server._db = None
 
 
 # ── Module-level state reset ───────────────────────────────────────────────

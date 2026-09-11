@@ -311,7 +311,9 @@ export interface DelegationStatusResponse {
 }
 
 export interface ErrorPayload {
+  durable_status?: string
   message: string
+  turn_id?: string
 }
 
 export interface EvidenceShareBody {
@@ -2238,20 +2240,26 @@ export interface McpServerStatus {
 }
 
 export interface MessageCompletePayload {
+  durable_status?: string
   reasoning?: string
   rendered?: string
   status: string
   text: string
+  turn_id?: string
   usage: Record<string, unknown>
   warning?: string
 }
 
 export interface MessageDeltaPayload {
+  durable_status?: string
   rendered?: string
   text?: string
+  turn_id?: string
 }
 
 export interface MessageStartPayload {
+  durable_status?: string
+  turn_id?: string
 }
 
 export interface ModelOptionProvider {
@@ -2762,6 +2770,7 @@ export interface SessionInterruptRequest {
 
 export interface SessionInterruptResponse {
   ok?: boolean
+  status?: string
 }
 
 export interface SessionListItem {
@@ -2800,6 +2809,7 @@ export interface SessionResumeResponse {
   info?: SessionInfo
   message_count?: number
   messages: GatewayTranscriptMessage[]
+  recovery?: Record<string, unknown>
   resumed?: string
   session_id: string
 }

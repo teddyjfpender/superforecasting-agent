@@ -97,7 +97,13 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
   const { appendMessage, panel, setHistoryItems } = ctx.transcript
   const { setInput } = ctx.composer
   const { submitRef } = ctx.submission
-  const { setProcessing: setVoiceProcessing, setRecording: setVoiceRecording, setSpeaking: setVoiceSpeaking, setVoiceEnabled } = ctx.voice
+
+  const {
+    setProcessing: setVoiceProcessing,
+    setRecording: setVoiceRecording,
+    setSpeaking: setVoiceSpeaking,
+    setVoiceEnabled
+  } = ctx.voice
 
   let pendingThinkingStatus = ''
   let thinkingStatusTimer: null | ReturnType<typeof setTimeout> = null
@@ -279,8 +285,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
   const pullContestedCount = () => {
     rpc<{ contested?: unknown[]; count?: number }>('forecast.triage.contested', { limit: 200 })
       .then(r => {
-        const count =
-          typeof r?.count === 'number' ? r.count : Array.isArray(r?.contested) ? r.contested.length : 0
+        const count = typeof r?.count === 'number' ? r.count : Array.isArray(r?.contested) ? r.contested.length : 0
 
         patchUiState({ forecastContestedCount: Math.max(0, count) })
       })
@@ -448,11 +453,43 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
       })
   }
 
+  let currentTurnId: string | null = null
+  const finishedTurnIds = new Set<string>()
+
   return (ev: GatewayEvent) => {
     const sid = getUiState().sid
 
     if (ev.session_id && sid && ev.session_id !== sid && !ev.type.startsWith('gateway.')) {
       return
+    }
+
+    const turnId = (ev.payload as { turn_id?: string } | undefined)?.turn_id
+
+    if (
+      turnId &&
+      (
+        [WireEvent.MESSAGE_START, WireEvent.MESSAGE_DELTA, WireEvent.MESSAGE_COMPLETE, WireEvent.ERROR] as string[]
+      ).includes(ev.type)
+    ) {
+      if (finishedTurnIds.has(turnId)) {
+        return
+      }
+
+      if (ev.type === WireEvent.MESSAGE_START) {
+        currentTurnId = turnId
+      } else if (currentTurnId && turnId !== currentTurnId) {
+        return
+      }
+
+      if (ev.type === WireEvent.MESSAGE_COMPLETE || ev.type === WireEvent.ERROR) {
+        finishedTurnIds.add(turnId)
+
+        // Only recent transport duplicates need retaining; old sessions use
+        // a different handler and session identity.
+        if (finishedTurnIds.size > 64) {
+          finishedTurnIds.delete(finishedTurnIds.values().next().value!)
+        }
+      }
     }
 
     switch (ev.type) {
@@ -973,7 +1010,13 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
           }
         }
 
-        setStatus('ready')
+        setStatus(
+          ev.payload?.durable_status === 'unavailable'
+            ? 'recovery state not saved'
+            : ev.payload?.status === 'error'
+              ? 'turn failed · ready to retry'
+              : 'ready'
+        )
 
         if (ev.payload?.usage) {
           patchUiState(state => ({ ...state, usage: { ...state.usage, ...ev.payload!.usage } }))

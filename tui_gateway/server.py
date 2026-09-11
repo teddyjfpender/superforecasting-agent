@@ -860,7 +860,39 @@ def write_json(obj: dict) -> bool:
     return (current_transport() or _stdio_transport).write(obj)
 
 
+def _turn_recovery(db, session_key, *, recover=False):
+    from tui_gateway import turn_journal
+    if not callable(getattr(db, "_execute_write", None)):
+        return None
+    result = turn_journal.latest(db, session_key, recover=recover)
+    return result if isinstance(result, dict) else None
+
+
 def _emit(event: str, sid: str, payload: dict | None = None):
+    session = _sessions.get(sid, {})
+    turn_id = session.get("turn_id")
+    if turn_id and event in ("message.start", "message.delta", "message.complete", "error"):
+        payload = dict(payload or {})
+        if payload.get("turn_id", turn_id) != turn_id:
+            return
+        payload["turn_id"] = turn_id
+        try:
+            from tui_gateway import turn_journal
+            status = "error" if event == "error" else payload.get("status", "running")
+            receipt = turn_journal.transition(_get_db(), turn_id, status,
+                delta=payload.get("text", "") if event == "message.delta" else None,
+                text=(payload.get("text") or None) if event == "message.complete" else None,
+                error=payload.get("message") if event == "error" else None)
+            if event in ("message.start", "message.delta") and receipt["status"] in turn_journal.TERMINAL:
+                return
+            payload["durable_status"] = receipt["status"]
+        except Exception:
+            logger.exception("Turn receipt could not be persisted")
+            payload["durable_status"] = "unavailable"
+            payload["warning"] = "Turn recovery state could not be saved; keep this response before exiting."
+    elif session.get("turn_persistence_unavailable") and event in ("message.start", "message.delta", "message.complete", "error"):
+        payload = {**(payload or {}), "durable_status": "unavailable",
+                   "warning": "Session storage is unavailable; keep this response before exiting."}
     params = {"type": event, "session_id": sid}
     if payload is not None:
         params["payload"] = payload
@@ -1218,11 +1250,15 @@ def _load_cfg() -> dict:
         with _cfg_lock:
             if _cfg_cache is not None and _cfg_mtime == mtime and _cfg_path == p:
                 return copy.deepcopy(_cfg_cache)
-        if p.exists():
-            with open(p, encoding="utf-8") as f:
-                data = yaml.safe_load(f) or {}
-        else:
+        from superforecasting_agent.runtime.config import _ConfigSnapshot, _config_revision
+        revision = _config_revision(p)
+        data = yaml.safe_load(p.read_text(encoding="utf-8")) if p.exists() else {}
+        if data is None:
             data = {}
+        if not isinstance(data, dict):
+            raise ValueError("Configuration root must be a mapping")
+        data = _ConfigSnapshot(data)
+        data._path, data._revision = p.resolve(), revision
         with _cfg_lock:
             _cfg_cache = copy.deepcopy(data)
             _cfg_mtime = mtime
@@ -1235,11 +1271,15 @@ def _load_cfg() -> dict:
 
 def _save_cfg(cfg: dict):
     global _cfg_cache, _cfg_mtime, _cfg_path
-    import yaml
+    from superforecasting_agent.runtime.config import _ConfigSnapshot, _config_revision
+    from superforecasting_agent.storage.files import atomic_yaml_write, yaml_update_lock
 
     path = _hermes_home / "config.yaml"
-    with open(path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(cfg, f)
+    with yaml_update_lock(path):
+        if not isinstance(cfg, _ConfigSnapshot) or cfg._path != path.resolve() or cfg._revision != _config_revision(path):
+            raise ValueError("Configuration changed; reload before saving")
+        atomic_yaml_write(path, dict(cfg))
+        cfg._revision = _config_revision(path)
     with _cfg_lock:
         _cfg_cache = copy.deepcopy(cfg)
         _cfg_path = path
@@ -1404,13 +1444,8 @@ def _resolve_startup_runtime() -> tuple[str, str | None]:
 
 def _write_config_key(key_path: str, value):
     cfg = _load_cfg()
-    current = cfg
-    keys = key_path.split(".")
-    for key in keys[:-1]:
-        if key not in current or not isinstance(current.get(key), dict):
-            current[key] = {}
-        current = current[key]
-    current[keys[-1]] = value
+    from superforecasting_agent.storage.files import set_nested
+    set_nested(cfg, key_path, value)
     _save_cfg(cfg)
 
 
@@ -1910,6 +1945,10 @@ def _sync_session_key_after_compress(
         # session_key on the new continuation id so downstream lookups
         # don't keep targeting the ended row.
         session["session_key"] = new_session_id
+
+    if session.get("turn_id"):
+        from tui_gateway import turn_journal
+        turn_journal.reanchor(_get_db(), session["turn_id"], new_session_id)
 
     if clear_pending_title:
         session["pending_title"] = None
@@ -3038,6 +3077,9 @@ def _(rid, params: dict) -> dict:
         )
         if active_sid is not None:
             return _err(rid, 4010, "session is already active")
+        recovery = _turn_recovery(db, target, recover=True)
+        if recovery and recovery.get("owner_active"):
+            return _err(rid, 4010, "session turn is still owned by a running gateway")
         if replace_session:
             replace_lock = replace_session.get("history_lock")
             if replace_lock is None:
@@ -3092,6 +3134,7 @@ def _(rid, params: dict) -> dict:
                 "message_count": len(messages),
                 "messages": messages,
                 "info": _session_info(agent),
+                "recovery": recovery,
             },
         )
 
@@ -3270,7 +3313,11 @@ def _(rid, params: dict) -> dict:
             f"Agent Running: {'Yes' if session.get('running') else 'No'}",
         ]
     )
-    return _ok(rid, {"output": "\n".join(lines)})
+    from tui_gateway import turn_journal
+    recovery = _turn_recovery(db, key) if db is not None else None
+    if isinstance(recovery, dict):
+        lines.append(f"Durable turn: {recovery['status']}")
+    return _ok(rid, {"output": "\n".join(lines), "recovery": recovery})
 
 
 # The warning-automode background job + the generic jobs.* runtime RPCs live in
@@ -3554,10 +3601,14 @@ def _(rid, params: dict) -> dict:
 
 @rpc_validated("session.interrupt")
 def _(rid, params: dict) -> dict:
-    session, err = _sess(params, rid)
+    session, err = _sess_nowait(params, rid)
     if err:
         return err
-    if hasattr(session["agent"], "interrupt"):
+    session["cancel_requested"] = True
+    if session.get("turn_id"):
+        from tui_gateway import turn_journal
+        turn_journal.transition(_get_db(), session["turn_id"], "cancelling")
+    if hasattr(session.get("agent"), "interrupt"):
         session["agent"].interrupt()
     # Scope the pending-prompt release to THIS session.  A global
     # _clear_pending() would collaterally cancel clarify/sudo/secret
@@ -3570,7 +3621,7 @@ def _(rid, params: dict) -> dict:
         resolve_gateway_approval(session["session_key"], "deny", resolve_all=True)
     except Exception:
         pass
-    return _ok(rid, {"status": "interrupted"})
+    return _ok(rid, {"status": "cancelling" if session.get("running") else "interrupted"})
 
 
 # ── Delegation: subagent tree observability + controls ───────────────
@@ -3690,6 +3741,15 @@ def _(rid, params: dict) -> dict:
             return _err(rid, 4009, "session busy")
         session["running"] = True
 
+    try:
+        from tui_gateway import turn_journal
+        db = _get_db()
+        session["turn_id"] = turn_journal.start(db, session["session_key"], text) if db is not None else None
+    except Exception as exc:
+        with session["history_lock"]:
+            session["running"] = False
+        return _err(rid, 5000, f"Cannot preserve turn for recovery: {exc}")
+    session["cancel_requested"] = False
     _start_agent_build(sid, session)
 
     def run_after_agent_ready() -> None:
@@ -3704,6 +3764,11 @@ def _(rid, params: dict) -> dict:
                     )
                 },
             )
+            with session["history_lock"]:
+                session["running"] = False
+            return
+        if session.get("cancel_requested"):
+            _emit("message.complete", sid, {"text": "", "status": "interrupted", "usage": {}})
             with session["history_lock"]:
                 session["running"] = False
             return
@@ -3852,6 +3917,14 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
         images = list(session.get("attached_images", []))
         session["attached_images"] = []
     agent = session["agent"]
+    from tui_gateway import turn_journal
+    db = _get_db()
+    if db is not None:
+        receipt = _turn_recovery(db, session["session_key"])
+        if not session.get("turn_id") or not receipt or receipt["status"] in turn_journal.TERMINAL:
+            session["turn_id"] = turn_journal.start(db, session["session_key"], text)
+    session["turn_persistence_unavailable"] = db is None
+    turn_id = session.get("turn_id")
     _emit("message.start", sid)
 
     def run():
@@ -3957,7 +4030,7 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
                     run_message = _enrich_with_attached_images(prompt, images)
 
             def _stream(delta):
-                payload = {"text": delta}
+                payload = {"text": delta, "turn_id": turn_id}
                 if streamer and (r := streamer.feed(delta)) is not None:
                     payload["rendered"] = r
                 _emit("message.delta", sid, payload)
@@ -4032,7 +4105,7 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
                 raw = str(result)
                 status = "complete"
 
-            payload = {"text": raw, "usage": _get_usage(agent), "status": status}
+            payload = {"text": raw, "usage": _get_usage(agent), "status": status, "turn_id": turn_id}
             if last_reasoning:
                 payload["reasoning"] = last_reasoning
             if status_note:
@@ -4150,7 +4223,7 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
                     logger.warning("voice TTS skipped: superforecasting_agent.runtime.voice unavailable")
                 except Exception as e:
                     logger.warning("voice TTS dispatch failed: %s", e)
-        except Exception as e:
+        except BaseException as e:
             import traceback
 
             trace = traceback.format_exc()
@@ -4167,7 +4240,7 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
             print(
                 f"[gateway-turn] {type(e).__name__}: {e}", file=sys.stderr, flush=True
             )
-            _emit("error", sid, {"message": str(e)})
+            _emit("error", sid, {"message": str(e), "turn_id": turn_id})
         finally:
             try:
                 if approval_token is not None:

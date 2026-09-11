@@ -150,7 +150,7 @@ CASES: list[tuple[type, dict, bool]] = [
     (ReasoningAvailable, {"text": "block"}, True),
     (StatusUpdate, {"kind": "process", "text": "reforecasting…"}, False),
     (StatusUpdate, {"kind": "goal", "text": "✓ done"}, False),
-    (ErrorEvent, {"message": "agent init failed: boom"}, False),
+    (ErrorEvent, {"message": "agent init failed: boom"}, True),
     (BrowserProgress, {"message": "loaded", "level": "info"}, True),
     # ── tools ────────────────────────────────────────────────────────────────
     (ToolProgress, {"name": "web_search", "preview": "querying…"}, True),

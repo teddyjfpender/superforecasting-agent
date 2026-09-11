@@ -2023,7 +2023,10 @@ def test_session_create_drops_pending_title_on_valueerror(monkeypatch):
     }
 
     server._sessions["sid"] = session
-    monkeypatch.setattr(server, "_get_db", lambda: _FakeDB())
+    from superforecasting_agent.storage.session import SessionDB
+    db = SessionDB()
+    monkeypatch.setattr(db, "set_session_title", _FakeDB().set_session_title)
+    monkeypatch.setattr(server, "_get_db", lambda: db)
     monkeypatch.setattr(server, "_emit", lambda *a, **kw: None)
     monkeypatch.setattr(server, "make_stream_renderer", lambda cols: None)
     monkeypatch.setattr(server, "render_message", lambda raw, cols: None)

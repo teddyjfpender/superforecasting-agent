@@ -134,6 +134,7 @@ class SessionResumeResponse(WireModel):
     info: SessionInfo | None = wire_optional()
     message_count: int | None = wire_optional()
     resumed: str | None = wire_optional()
+    recovery: dict | None = wire_optional()
 
 
 # ── session.list ───────────────────────────────────────────────────────────────
@@ -354,6 +355,7 @@ class SessionInterruptRequest(WireModel):
 
 class SessionInterruptResponse(WireModel):
     TS_NAME = "SessionInterruptResponse"
+    status: str | None = wire_optional()
 
     ok: bool | None = wire_optional()
 

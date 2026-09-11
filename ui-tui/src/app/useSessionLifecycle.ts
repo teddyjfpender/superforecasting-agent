@@ -246,35 +246,44 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
 
         const previousSid = getUiState().sid
 
-        gw
-          .request<SessionResumeResponse>('session.resume', {
-            cols: colsRef.current,
-            replace_session_id: previousSid,
-            session_id: id
-          })
-            .then(raw => {
-              const r = asRpcResult<SessionResumeResponse>(raw)
+        gw.request<SessionResumeResponse>('session.resume', {
+          cols: colsRef.current,
+          replace_session_id: previousSid,
+          session_id: id
+        })
+          .then(raw => {
+            const r = asRpcResult<SessionResumeResponse>(raw)
 
-              if (!r) {
-                return failed('invalid response: session.resume')
+            if (!r) {
+              return failed('invalid response: session.resume')
+            }
+
+            resetSession()
+            setSessionStartedAt(Date.now())
+
+            const resumed = toTranscriptMessages(r.messages)
+            const recovery = r.recovery
+
+            setHistoryItems(r.info ? [introMsg(r.info), ...resumed] : resumed)
+
+            if (recovery && recovery.status !== 'complete') {
+              sys(`Previous turn: ${String(recovery.status)}. Its recovery receipt is retained in the session store.`)
+
+              if (typeof recovery.partial_text === 'string' && recovery.partial_text) {
+                sys(`Recovered partial response (not a completed answer):\n${recovery.partial_text}`)
               }
+            }
 
-              resetSession()
-              setSessionStartedAt(Date.now())
-
-              const resumed = toTranscriptMessages(r.messages)
-
-              setHistoryItems(r.info ? [introMsg(r.info), ...resumed] : resumed)
-              writeActiveSessionFile(r.resumed ?? r.session_id)
-              patchUiState({
-                info: r.info ?? null,
-                sid: r.session_id,
-                status: 'ready',
-                usage: usageFrom(r.info ?? null)
-              })
-              setTimeout(() => scrollRef.current?.scrollToBottom(), 0)
+            writeActiveSessionFile(r.resumed ?? r.session_id)
+            patchUiState({
+              info: r.info ?? null,
+              sid: r.session_id,
+              status: 'ready',
+              usage: usageFrom(r.info ?? null)
             })
-            .catch((e: Error) => failed(e.message))
+            setTimeout(() => scrollRef.current?.scrollToBottom(), 0)
+          })
+          .catch((e: Error) => failed(e.message))
       })
     },
     [colsRef, gw, panel, resetSession, rpc, scrollRef, setHistoryItems, setSessionStartedAt, sys]
