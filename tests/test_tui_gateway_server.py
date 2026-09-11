@@ -491,7 +491,7 @@ def test_network_market_rpcs_are_routed_to_thread_pool():
 
 
 def test_forecast_theses_returns_standalone_thesis_list(monkeypatch):
-    import forecasting.dashboard as dashboard_module
+    from forecasting.application import aggregate_summaries as dashboard_module
 
     monkeypatch.setattr(
         dashboard_module, "build_thesis_summary",

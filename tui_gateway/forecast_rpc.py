@@ -286,7 +286,7 @@ def _(rid, params: dict) -> dict:
     # Standalone thesis master list (health / score / delta / coverage / members) for a
     # dedicated thesis dashboard — without shipping the whole forecast workspace.
     try:
-        from forecasting.dashboard import build_factor_summary, build_thesis_summary
+        from forecasting.application.aggregate_summaries import build_factor_summary, build_thesis_summary
         from forecasting.ledger import ForecastLedger
 
         ledger = ForecastLedger()  # one ledger for both scans (avoid a double schema-init)

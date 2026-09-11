@@ -128,7 +128,7 @@ def forecast_complementarity(args: dict[str, Any], ledger) -> str:
     return tool_result(success=True, forecast_complementarity=report)
 
 def thesis_dashboard(args: dict[str, Any], ledger) -> str:
-    from forecasting.dashboard import build_factor_summary, build_thesis_summary
+    from forecasting.application.aggregate_summaries import build_factor_summary, build_thesis_summary
 
     return tool_result(
         success=True,

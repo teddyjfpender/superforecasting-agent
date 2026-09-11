@@ -582,3 +582,21 @@ Shared tool selection and combined configuration updates:
 - Dashboard summaries and gateway dependencies still fail the broader transitive
   audit and retain their existing direct exclusions. Complete host/session lifetime
   ownership and remote installed-product qualification remain unfinished.
+
+Shared aggregate summaries:
+
+- Thesis/factor summary reads now belong to `forecasting.application.aggregate_summaries`.
+  The real TUI RPC, CLI thesis report and forecasting tool consume that owner;
+  dashboard exports remain compatible and workspace/chart rendering stays there.
+  Existing summary fields, event headline precedence, sensitivities and withheld
+  states are retained. Invalid summary limits fail before querying storage.
+- 125 thesis/event/tool tests passed, followed by 251 application/factor/CLI/RPC
+  and import-boundary tests. The new tool isolation fixture initially failed the
+  ledger's scoreability admission; giving it explicit aggregate resolution criteria
+  fixed the fixture without relaxing the validator.
+- Shared Python quality and eighteen import contracts pass. The application
+  contract now rejects indirect dashboard imports too. The broader strict audit
+  finds only gateway dependencies: shared session context, platform registry,
+  notification/status and scoped resource-lock helpers still have gateway owners.
+  Those need ownership correction, alongside independent host lifetime and remote
+  installed-product qualification; the overall architecture goal remains open.
