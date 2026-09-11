@@ -159,7 +159,7 @@ class Platform(Enum):
         # Runtime-registered plugins (e.g. user-installed, discovered after
         # the enum was defined).
         try:
-            from gateway.platform_registry import platform_registry
+            from superforecasting_agent.platform_registry import platform_registry
             if platform_registry.is_registered(value):
                 pseudo = object.__new__(cls)
                 pseudo._value_ = value
@@ -524,7 +524,7 @@ class GatewayConfig:
 
         # Plugin-registered platforms
         try:
-            from gateway.platform_registry import platform_registry
+            from superforecasting_agent.platform_registry import platform_registry
             entry = platform_registry.get(platform.value)
             if entry:
                 if entry.is_connected is not None:
@@ -789,7 +789,7 @@ def load_gateway_config() -> GatewayConfig:
             try:
                 from superforecasting_agent.runtime.plugins import discover_plugins
                 discover_plugins()  # idempotent
-                from gateway.platform_registry import platform_registry as _pr
+                from superforecasting_agent.platform_registry import platform_registry as _pr
             except Exception as e:
                 logger.debug("plugin discovery skipped: %s", e)
                 _pr = None
@@ -1894,7 +1894,7 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
     try:
         from superforecasting_agent.runtime.plugins import discover_plugins
         discover_plugins()  # idempotent
-        from gateway.platform_registry import platform_registry
+        from superforecasting_agent.platform_registry import platform_registry
         for entry in platform_registry.plugin_entries():
             try:
                 if not entry.check_fn():

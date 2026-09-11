@@ -248,7 +248,7 @@ class WebhookAdapter(BasePlatformAdapter):
         _is_known_platform = deliver_type in _BUILTIN_DELIVER_PLATFORMS
         if not _is_known_platform:
             try:
-                from gateway.platform_registry import platform_registry
+                from superforecasting_agent.platform_registry import platform_registry
                 _is_known_platform = platform_registry.is_registered(deliver_type)
             except Exception:
                 pass

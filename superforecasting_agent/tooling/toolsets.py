@@ -122,7 +122,7 @@ def resolve_toolset(name: str, visited: Set[str] = None) -> List[str]:
         if name.startswith("hermes-"):
             platform_name = name[len("hermes-"):]
             try:
-                from gateway.platform_registry import platform_registry
+                from superforecasting_agent.platform_registry import platform_registry
                 if platform_registry.is_registered(platform_name):
                     plugin_tools = set(_CORE_TOOLS)
                     try:

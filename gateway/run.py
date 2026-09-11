@@ -4550,7 +4550,7 @@ class GatewayRunner:
         _plugin_allowed_vars: tuple = ()
         _plugin_allow_all_vars: tuple = ()
         try:
-            from gateway.platform_registry import platform_registry
+            from superforecasting_agent.platform_registry import platform_registry
             _plugin_allowed_vars = tuple(
                 e.allowed_users_env for e in platform_registry.plugin_entries()
                 if e.allowed_users_env
@@ -6766,7 +6766,7 @@ class GatewayRunner:
 
         # ── Plugin-registered platforms (checked first) ───────────────────
         try:
-            from gateway.platform_registry import platform_registry
+            from superforecasting_agent.platform_registry import platform_registry
             if platform_registry.is_registered(platform.value):
                 adapter = platform_registry.create_adapter(platform.value, config)
                 if adapter is not None:
@@ -7067,7 +7067,7 @@ class GatewayRunner:
         # Plugin platforms: check the registry for auth env var names
         if source.platform not in platform_env_map:
             try:
-                from gateway.platform_registry import platform_registry
+                from superforecasting_agent.platform_registry import platform_registry
                 entry = platform_registry.get(source.platform.value)
                 if entry:
                     if entry.allowed_users_env:
@@ -14497,7 +14497,7 @@ class GatewayRunner:
         # Plugin platforms with allow_update_command=True are also allowed
         if platform not in _allowed:
             try:
-                from gateway.platform_registry import platform_registry
+                from superforecasting_agent.platform_registry import platform_registry
                 entry = platform_registry.get(platform.value)
                 if not entry or not entry.allow_update_command:
                     return t("gateway.update.platform_not_messaging")
@@ -15330,7 +15330,7 @@ class GatewayRunner:
             # registered in the platform registry.
             if platform.value not in _BUILTIN_PLATFORM_VALUES:
                 try:
-                    from gateway.platform_registry import platform_registry
+                    from superforecasting_agent.platform_registry import platform_registry
                     if not platform_registry.is_registered(platform.value):
                         raise ValueError(platform_name)
                 except Exception:

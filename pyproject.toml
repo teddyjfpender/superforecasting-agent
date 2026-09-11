@@ -520,3 +520,10 @@ type = "forbidden"
 source_modules = ["superforecasting_agent.session_context"]
 forbidden_modules = ["superforecasting_agent.runtime", "gateway", "tui_gateway", "cli", "agent", "tools"]
 allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "platform registration is independent of messaging transports"
+type = "forbidden"
+source_modules = ["superforecasting_agent.platform_registry"]
+forbidden_modules = ["superforecasting_agent.runtime", "gateway", "tui_gateway", "cli", "agent", "tools"]
+allow_indirect_imports = false

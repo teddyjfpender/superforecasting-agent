@@ -253,7 +253,7 @@ def build_session_context_prompt(
     _is_pii_safe = context.source.platform in _PII_SAFE_PLATFORMS
     if not _is_pii_safe:
         try:
-            from gateway.platform_registry import platform_registry
+            from superforecasting_agent.platform_registry import platform_registry
             entry = platform_registry.get(context.source.platform.value)
             if entry and entry.pii_safe:
                 _is_pii_safe = True

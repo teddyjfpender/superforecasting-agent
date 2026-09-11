@@ -446,7 +446,7 @@ def show_status(args):
 
     # Plugin-registered platforms
     try:
-        from gateway.platform_registry import platform_registry
+        from superforecasting_agent.platform_registry import platform_registry
         for entry in platform_registry.plugin_entries():
             configured = entry.check_fn()
             status_str = "configured" if configured else "not configured"

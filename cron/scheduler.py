@@ -253,7 +253,7 @@ def _plugin_cron_env_var(platform_name: str) -> str:
     try:
         from superforecasting_agent.runtime.plugins import discover_plugins
         discover_plugins()  # idempotent
-        from gateway.platform_registry import platform_registry
+        from superforecasting_agent.platform_registry import platform_registry
         entry = platform_registry.get(platform_name.lower())
         if entry and entry.cron_deliver_env_var:
             return entry.cron_deliver_env_var
@@ -337,7 +337,7 @@ def _iter_home_target_platforms():
     try:
         from superforecasting_agent.runtime.plugins import discover_plugins
         discover_plugins()  # idempotent
-        from gateway.platform_registry import platform_registry
+        from superforecasting_agent.platform_registry import platform_registry
         for entry in platform_registry.plugin_entries():
             if entry.cron_deliver_env_var and entry.name not in _HOME_TARGET_ENV_VARS:
                 yield entry.name

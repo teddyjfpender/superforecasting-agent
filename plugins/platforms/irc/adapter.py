@@ -128,7 +128,7 @@ class IRCAdapter(BasePlatformAdapter):
         max_msg = extra.get("max_message_length")
         if max_msg is None:
             try:
-                from gateway.platform_registry import platform_registry
+                from superforecasting_agent.platform_registry import platform_registry
                 entry = platform_registry.get("irc")
                 if entry and entry.max_message_length:
                     max_msg = entry.max_message_length

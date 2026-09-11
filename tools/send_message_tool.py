@@ -520,7 +520,7 @@ async def _send_via_adapter(
     platform_name = platform.value if hasattr(platform, "value") else str(platform)
     entry = None
     try:
-        from gateway.platform_registry import platform_registry
+        from superforecasting_agent.platform_registry import platform_registry
         entry = platform_registry.get(platform_name)
     except Exception:
         entry = None
@@ -608,7 +608,7 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
     # Check plugin registry for max_message_length
     if platform not in _MAX_LENGTHS:
         try:
-            from gateway.platform_registry import platform_registry
+            from superforecasting_agent.platform_registry import platform_registry
             entry = platform_registry.get(platform.value)
             if entry and entry.max_message_length > 0:
                 _MAX_LENGTHS[platform] = entry.max_message_length

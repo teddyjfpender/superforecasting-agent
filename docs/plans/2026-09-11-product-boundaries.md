@@ -618,3 +618,19 @@ Shared session context ownership:
   in strict lint/format/type scope and has a transitive no-host/no-presentation
   contract. Remaining application-to-gateway edges involve platform registration,
   scoped locks/status and MCP progress callbacks; independent hosting remains open.
+
+Shared platform registration:
+
+- `superforecasting_agent.platform_registry` owns platform metadata, registration
+  and deferred factory callbacks. Prompt/tool policy, plugin discovery, cron and
+  gateway consumers import it directly; the legacy module aliases the same owner
+  so registrations and overrides cannot split into separate singleton registries.
+- 207 registry/plugin/tool-selection tests and 260 ownership/cron/messaging/import
+  tests passed. A fresh-process probe blocks gateway imports and factory/check
+  callbacks while registering, reading and removing metadata; compatibility tests
+  verify shared class/module/singleton identity.
+- Shared Python quality and twenty import contracts pass. Platform registration
+  participates in strict lint/format/types and a transitive no-transport contract.
+  The latest broader audit narrows remaining gateway dependencies to image caching,
+  a secret-entry hint constant, and host-PID liveness checks. These are shared
+  infrastructure concerns still awaiting extraction; host lifecycle remains open.
