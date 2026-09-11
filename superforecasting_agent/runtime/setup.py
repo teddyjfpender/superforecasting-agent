@@ -827,9 +827,8 @@ def setup_model_provider(config: dict, *, quick: bool = False):
     # changes with stale values (#4172). Refresh the dict in place so callers
     # that keep the same object see every section the shared model picker may
     # have changed (model, custom_providers, auxiliary, provider metadata, etc.).
-    _refreshed = load_config()
-    config.clear()
-    config.update(_refreshed)
+    from superforecasting_agent.runtime.config import reload_config_in_place
+    reload_config_in_place(config)
 
     # Derive the selected provider for downstream steps (vision setup).
     selected_provider = None

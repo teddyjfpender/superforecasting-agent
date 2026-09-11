@@ -503,11 +503,11 @@ def _isolated_update_check():
     """Contain native SSL crashes and enforce an outer wall-clock deadline."""
     try:
         result = subprocess.run(
-            [sys.executable, '-m', 'superforecasting_agent.runtime.update_probe'],
+            [sys.executable, '-X', 'faulthandler', '-m', 'superforecasting_agent.runtime.update_probe'],
             capture_output=True, text=True, timeout=20, check=False,
         )
         if result.returncode != 0:
-            logger.debug('Update probe exited with status %s', result.returncode)
+            logger.warning('Update probe failed: returncode=%s interpreter=%s; forecast session retained', result.returncode, sys.executable)
             return None
         receipt = json.loads(result.stdout)
         behind = receipt['behind']
@@ -517,7 +517,8 @@ def _isolated_update_check():
         if isinstance(latest, str):
             _record_latest_version(latest)
         return behind
-    except (OSError, subprocess.TimeoutExpired, ValueError, KeyError, TypeError):
+    except (OSError, subprocess.TimeoutExpired, ValueError, KeyError, TypeError) as exc:
+        logger.debug("Update probe failed (%s); status remains unknown", type(exc).__name__)
         return None
 
 

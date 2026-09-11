@@ -239,3 +239,32 @@ def test_update_probe_transfers_only_valid_result(monkeypatch):
     monkeypatch.setattr(banner.subprocess, 'run', lambda *a, **kw: SimpleNamespace(returncode=0, stdout='{"behind":2,"latest_version":"0.23.0"}'))
     assert banner._isolated_update_check() == 2
     assert banner._latest_version == '0.23.0'
+
+
+def test_real_probe_timeout_reaps_child(tmp_path, monkeypatch):
+    import subprocess
+    import sys
+    import superforecasting_agent.runtime.banner as banner
+    run = subprocess.run
+    pidfile = tmp_path / 'pid'
+    script = 'import os,sys,time; open(sys.argv[1], "w").write(str(os.getpid())); time.sleep(30)'
+    def stalled_probe(*args, **kwargs):
+        return run([sys.executable, '-c', script, str(pidfile)], capture_output=True, text=True, timeout=.5)
+    monkeypatch.setattr(banner.subprocess, 'run', stalled_probe)
+    assert banner._isolated_update_check() is None
+    if os.name == 'posix':
+        with pytest.raises(ProcessLookupError):
+            os.kill(int(pidfile.read_text()), 0)
+
+
+@pytest.mark.skipif(os.name != 'posix', reason='POSIX signal exit semantics')
+def test_real_signalled_probe_does_not_kill_parent(monkeypatch):
+    import subprocess
+    import sys
+    import superforecasting_agent.runtime.banner as banner
+    run = subprocess.run
+    def crashed_probe(*args, **kwargs):
+        return run([sys.executable, '-c', 'import os,signal; os.kill(os.getpid(), signal.SIGTERM)'],
+                   capture_output=True, text=True, timeout=2)
+    monkeypatch.setattr(banner.subprocess, 'run', crashed_probe)
+    assert banner._isolated_update_check() is None

@@ -35,7 +35,8 @@ def persist_model_selection(path, *, model, provider, base_url=None, api_mode=No
         managed_error('save configuration')
         return False
     from superforecasting_agent.runtime.config import _CONFIG_LOCK
-    with _CONFIG_LOCK:
+    from superforecasting_agent.storage.files import yaml_update_lock
+    with _CONFIG_LOCK, yaml_update_lock(path):
         return _persist_model_selection(path, model=model, provider=provider, base_url=base_url, api_mode=api_mode)
 
 
@@ -51,7 +52,9 @@ def _persist_model_selection(path, *, model, provider, base_url, api_mode):
         codec = None
     path = Path(path)
     raw = path.read_text(encoding='utf-8') if path.exists() else ''
-    cfg = (codec.load(raw) if codec else yaml.safe_load(raw)) or {}
+    cfg = codec.load(raw) if codec else yaml.safe_load(raw)
+    if cfg is None:
+        cfg = {}
     current = model_section(cfg)
     selected = model_section({'model': {'default': model, 'provider': provider, 'base_url': base_url or '', 'api_mode': api_mode}})
     if not selected['default'] or not selected['provider']:

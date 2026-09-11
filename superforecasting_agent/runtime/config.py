@@ -3445,54 +3445,8 @@ def get_missing_env_vars(required_only: bool = False) -> List[Dict[str, Any]]:
 
 
 def _set_nested(config, dotted_key: str, value):
-    """Set a value at an arbitrarily nested dotted key path.
-
-    Supports both dict and list navigation:
-      _set_nested(c, "a.b.c", 1)     → c["a"]["b"]["c"] = 1
-      _set_nested(c, "a.0.b", 1)     → c["a"][0]["b"] = 1
-      _set_nested(c, "providers.1", "x") → c["providers"][1] = "x"
-
-    Intermediate dicts are created on demand.  List indices are parsed
-    from numeric path segments; the referenced index must already exist
-    (we do not grow lists — the user is navigating into structure they
-    wrote themselves).  If a segment targets a non-container leaf
-    (scalar), the leaf is replaced with a fresh dict so the write can
-    proceed — this preserves the pre-existing behavior for bare scalar
-    overrides (e.g. setting ``a.b.c`` where ``a.b`` was previously a
-    string).
-
-    Guards against #17876: before this fix the code unconditionally
-    replaced any non-dict value (including lists) with ``{}``, silently
-    destroying list-typed config like ``custom_providers`` whenever a
-    caller used an indexed path.
-    """
-    parts = dotted_key.split(".")
-    current = config
-    for part in parts[:-1]:
-        if isinstance(current, list):
-            try:
-                idx = int(part)
-            except (TypeError, ValueError):
-                raise TypeError(
-                    f"Cannot navigate into list at key {dotted_key!r}: "
-                    f"segment {part!r} is not a numeric index"
-                )
-            current = current[idx]
-        elif isinstance(current, dict):
-            existing = current.get(part)
-            # Preserve dicts and lists; replace missing/scalar with a fresh dict.
-            if part not in current or not isinstance(existing, (dict, list)):
-                current[part] = {}
-            current = current[part]
-        else:
-            raise TypeError(
-                f"Cannot navigate into {type(current).__name__} at key {dotted_key!r}"
-            )
-    last = parts[-1]
-    if isinstance(current, list):
-        current[int(last)] = value
-    else:
-        current[last] = value
+    from superforecasting_agent.storage.files import set_nested
+    return set_nested(config, dotted_key, value)
 
 
 def get_missing_config_fields() -> List[Dict[str, Any]]:
@@ -5077,6 +5031,20 @@ def read_raw_config() -> Dict[str, Any]:
         return data
 
 
+class _ConfigSnapshot(dict):
+    """A mutable load result carrying the disk revision it may replace."""
+
+
+def _config_revision(path):
+    import hashlib
+    return hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None
+
+
+# Preserve compatibility for callers that serialize a loaded mapping directly.
+yaml.SafeDumper.add_representer(_ConfigSnapshot, yaml.representer.SafeRepresenter.represent_dict)
+yaml.Dumper.add_representer(_ConfigSnapshot, yaml.representer.SafeRepresenter.represent_dict)
+
+
 def load_config() -> Dict[str, Any]:
     """Load configuration from ~/.superforecasting-agent/config.yaml.
 
@@ -5095,7 +5063,26 @@ def load_config() -> Dict[str, Any]:
     entirely, with ``FORECAST_IGNORE_USER_CONFIG`` and
     ``HERMES_IGNORE_USER_CONFIG`` retained as compatibility aliases.
     """
-    return _load_config_impl(want_deepcopy=True)
+    with _CONFIG_LOCK:
+        path = get_config_path().resolve()
+        revision = _config_revision(path)
+        config = _ConfigSnapshot(_load_config_impl(want_deepcopy=True))
+        config._path = path
+        # A concurrent replacement during the read conservatively forces reload
+        # before saving. Reading a managed/read-only config requires no lock file.
+        config._revision = revision
+        return config
+
+
+def reload_config_in_place(config):
+    """Replace a wizard's mapping with a fresh snapshot, including its revision."""
+    refreshed = load_config()
+    config.clear()
+    config.update(refreshed)
+    if isinstance(config, _ConfigSnapshot):
+        config._path = refreshed._path
+        config._revision = refreshed._revision
+    return config
 
 
 def load_config_readonly() -> Dict[str, Any]:
@@ -5266,15 +5253,24 @@ _COMMENTED_SECTIONS = """
 
 
 def save_config(config: Dict[str, Any]):
-    """Save configuration to the active agent-home config.yaml."""
-    with _CONFIG_LOCK:
-        if is_managed():
-            managed_error("save configuration")
-            return
+    """Save configuration, refusing stale loaded snapshots and malformed files."""
+    if is_managed():
+        managed_error("save configuration")
+        return
+    from superforecasting_agent.storage.files import yaml_update_lock
+    with _CONFIG_LOCK, yaml_update_lock(get_config_path()):
         from superforecasting_agent.storage.files import atomic_yaml_write
 
         ensure_hermes_home()
         config_path = get_config_path()
+        if isinstance(config, _ConfigSnapshot) and (
+            config._path != config_path.resolve() or config._revision != _config_revision(config_path)
+        ):
+            raise ValueError("Configuration changed since it was loaded; reload before saving to preserve concurrent edits")
+        if config_path.exists():
+            raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+            if raw is not None and not isinstance(raw, dict):
+                raise ValueError("Configuration root must be a mapping; refusing to overwrite it")
         current_normalized = _normalize_root_model_keys(_normalize_max_turns_config(config))
         normalized = current_normalized
         raw_existing = _normalize_root_model_keys(_normalize_max_turns_config(read_raw_config()))
@@ -5306,6 +5302,8 @@ def save_config(config: Dict[str, Any]):
             extra_content="".join(parts) if parts else None,
         )
         _secure_file(config_path)
+        if isinstance(config, _ConfigSnapshot):
+            config._revision = _config_revision(config_path)
         _LAST_EXPANDED_CONFIG_BY_PATH[str(config_path)] = copy.deepcopy(current_normalized)
 
 
@@ -5976,14 +5974,6 @@ def set_config_value(key: str, value: str):
     # Read the raw user config (not merged with defaults) to avoid
     # dumping all default values back to the file
     config_path = get_config_path()
-    user_config = {}
-    if config_path.exists():
-        try:
-            with open(config_path, encoding="utf-8") as f:
-                user_config = yaml.safe_load(f) or {}
-        except Exception:
-            user_config = {}
-    
     # Handle nested keys (e.g., "tts.provider") including numeric list
     # indices (e.g., "custom_providers.0.api_key").  Delegates to
     # _set_nested which preserves list-typed nodes; before #17876 the
@@ -5999,13 +5989,10 @@ def set_config_value(key: str, value: str):
     elif value.replace('.', '', 1).isdigit():
         value = float(value)
 
-    _set_nested(user_config, key, value)
-    
-    # Write only user config back (not the full merged defaults)
-    ensure_hermes_home()
-    from superforecasting_agent.storage.files import atomic_yaml_write
-    atomic_yaml_write(config_path, user_config, sort_keys=False)
-    
+    from superforecasting_agent.storage.files import atomic_roundtrip_yaml_update
+    with _CONFIG_LOCK:
+        atomic_roundtrip_yaml_update(config_path, key, value)
+
     # Keep .env in sync for keys that terminal_tool reads directly from env vars.
     # config.yaml is authoritative, but terminal_tool only reads TERMINAL_ENV etc.
     _config_to_env_sync = {

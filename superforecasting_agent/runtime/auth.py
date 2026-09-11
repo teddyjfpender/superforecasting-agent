@@ -958,75 +958,11 @@ _auth_lock_holder = threading.local()
 
 
 @contextmanager
-def _file_lock(
-    lock_path: Path,
-    holder: threading.local,
-    timeout_seconds: float,
-    timeout_message: str,
-):
-    """Cross-process advisory flock helper.
-
-    Reentrant per-thread via ``holder.depth``. Falls back to a depth-only
-    guard when neither ``fcntl`` nor ``msvcrt`` is available (rare).
-    Callers supply their own ``threading.local`` so independent locks
-    (e.g. profile auth.json vs shared Nous store) don't share reentrancy
-    state — that would let one lock's reentrant acquisition silently skip
-    the other's kernel-level flock.
-    """
-    if getattr(holder, "depth", 0) > 0:
-        holder.depth += 1
-        try:
-            yield
-        finally:
-            holder.depth -= 1
-        return
-
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-
-    if fcntl is None and msvcrt is None:
-        holder.depth = 1
-        try:
-            yield
-        finally:
-            holder.depth = 0
-        return
-
-    # On Windows, msvcrt.locking needs the file to have content and the
-    # file pointer at position 0. Ensure the lock file has at least 1 byte.
-    if msvcrt and (not lock_path.exists() or lock_path.stat().st_size == 0):
-        lock_path.write_text(" ", encoding="utf-8")
-
-    with lock_path.open("r+" if msvcrt else "a+", encoding="utf-8") as lock_file:
-        deadline = time.monotonic() + max(1.0, timeout_seconds)
-        while True:
-            try:
-                if fcntl:
-                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                else:
-                    lock_file.seek(0)
-                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
-                break
-            except (BlockingIOError, OSError, PermissionError):
-                if time.monotonic() >= deadline:
-                    raise TimeoutError(timeout_message)
-                time.sleep(0.05)
-
-        holder.depth = 1
-        try:
-            yield
-        finally:
-            holder.depth = 0
-            if fcntl:
-                try:
-                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-                except (OSError, IOError):
-                    pass
-            elif msvcrt:
-                try:
-                    lock_file.seek(0)
-                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
-                except (OSError, IOError):
-                    pass
+def _file_lock(lock_path, holder, timeout_seconds, timeout_message):
+    from superforecasting_agent.storage.locking import file_lock
+    with file_lock(lock_path, holder, timeout_seconds, timeout_message,
+                   posix=fcntl, windows=msvcrt):
+        yield
 
 
 @contextmanager

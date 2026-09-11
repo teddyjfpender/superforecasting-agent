@@ -365,6 +365,31 @@ describe('GatewayClient websocket attach mode', () => {
     gw.kill()
   })
 
+  it('ignores late events and replies from a replaced transport', async () => {
+    process.env.HERMES_TUI_GATEWAY_URL = 'ws://gateway-old.test/api/ws'
+    const gw = new GatewayClient()
+    gw.start()
+    const old = FakeWebSocket.instances[0]!
+    old.open()
+    gw.drain()
+    const events: unknown[] = []
+    gw.on('event', event => events.push(event))
+    process.env.HERMES_TUI_GATEWAY_URL = 'ws://gateway-new.test/api/ws'
+    const pending = gw.request('session.resume', { session_id: 'saved' })
+    const current = FakeWebSocket.instances[1]!
+    current.open()
+    await vi.waitFor(() => expect(current.sent.length).toBeGreaterThan(0))
+    const { id } = JSON.parse(current.sent[0]!)
+    old.message(JSON.stringify({ method: 'event', params: { type: 'gateway.ready', payload: {} } }))
+    old.message(JSON.stringify({ id, result: { session_id: 'wrong' } }))
+    current.message(JSON.stringify({ id, result: { session_id: 'saved' } }))
+    await expect(pending).resolves.toEqual({ session_id: 'saved' })
+    expect(events).toEqual([])
+    gw.kill()
+    current.message(JSON.stringify({ method: 'event', params: { type: 'gateway.ready', payload: {} } }))
+    expect(events).toEqual([])
+  })
+
   it('redacts query string secrets in attach failure logs and events', () => {
     process.env.HERMES_TUI_GATEWAY_URL = 'ws://gateway.test/api/ws?token=hunter2&channel=secret'
     delete (globalThis as { WebSocket?: unknown }).WebSocket

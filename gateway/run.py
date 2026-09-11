@@ -11258,10 +11258,8 @@ class GatewayRunner:
 
         if args in {"none", "default", "neutral"}:
             try:
-                if "agent" not in config or not isinstance(config.get("agent"), dict):
-                    config["agent"] = {}
-                config["agent"]["system_prompt"] = ""
-                atomic_yaml_write(config_path, config)
+                from superforecasting_agent.storage.files import atomic_roundtrip_yaml_update
+                atomic_roundtrip_yaml_update(config_path, "agent.system_prompt", "")
             except Exception as e:
                 return t("gateway.personality.save_failed", error=str(e))
             self._ephemeral_system_prompt = ""
@@ -11271,10 +11269,8 @@ class GatewayRunner:
 
             # Write to config.yaml, same pattern as CLI save_config_value.
             try:
-                if "agent" not in config or not isinstance(config.get("agent"), dict):
-                    config["agent"] = {}
-                config["agent"]["system_prompt"] = new_prompt
-                atomic_yaml_write(config_path, config)
+                from superforecasting_agent.storage.files import atomic_roundtrip_yaml_update
+                atomic_roundtrip_yaml_update(config_path, "agent.system_prompt", new_prompt)
             except Exception as e:
                 return t("gateway.personality.save_failed", error=str(e))
 

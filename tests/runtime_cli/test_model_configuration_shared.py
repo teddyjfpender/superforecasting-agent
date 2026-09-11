@@ -36,3 +36,23 @@ def test_profile_and_diagnostics_share_legacy_provider_precedence(tmp_path):
     (tmp_path / 'config.yaml').write_text(yaml.safe_dump(config))
     assert _read_config_model(tmp_path) == ('example', 'auto')
     assert _get_model_and_provider(config) == ('example', 'auto')
+
+
+def test_stale_full_config_save_cannot_overwrite_a_model_switch(tmp_path, monkeypatch):
+    from superforecasting_agent.runtime import config
+    monkeypatch.setenv('HERMES_HOME', str(tmp_path))
+    monkeypatch.setattr(config, 'get_config_path', lambda: tmp_path/'config.yaml')
+    path = tmp_path/'config.yaml'
+    path.write_text('model: original\n')
+    stale = config.load_config()
+    persist_model_selection(path, model='new-model', provider='custom')
+    stale['display']['skin'] = 'mono'
+    with pytest.raises(ValueError, match='reload before saving'):
+        config.save_config(stale)
+    assert yaml.safe_load(path.read_text())['model']['default'] == 'new-model'
+    fresh = config.load_config()
+    fresh['display']['skin'] = 'mono'
+    config.save_config(fresh)
+    fresh['display']['skin'] = 'slate'
+    config.save_config(fresh)
+    assert yaml.safe_load(path.read_text())['display']['skin'] == 'slate'
