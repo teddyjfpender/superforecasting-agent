@@ -1105,21 +1105,11 @@ def _start_agent_build(sid: str, session: dict) -> None:
     ready = session.get("agent_ready")
     if ready is None:
         return
-    lock = session.setdefault("agent_build_lock", threading.Lock())
-    with lock:
-        with session.setdefault("history_lock", threading.Lock()):
-            if session.get("_closing"):
-                session["agent_error"] = "session is closing"
-                ready.set()
-                return
-            if ready.is_set() or session.get("agent_build_started"):
-                return
-            session["agent_build_started"] = True
     key = session["session_key"]
 
-    def _build() -> None:
+    def _build(ready: threading.Event) -> None:
         current = _host.sessions.get(sid)
-        if current is None:
+        if current is not session:
             session["agent_error"] = "session closed during agent initialization"
             ready.set()
             return
@@ -1151,6 +1141,7 @@ def _start_agent_build(sid: str, session: dict) -> None:
                     key, lambda data: _emit("approval.request", sid, data)
                 )
                 notify_registered = True
+                current.pop("_build_notifications_released", None)
                 load_permanent_allowlist()
             except Exception:
                 pass
@@ -1168,9 +1159,11 @@ def _start_agent_build(sid: str, session: dict) -> None:
                 info["config_warning"] = cfg_warn
                 logger.warning(cfg_warn)
             _emit("session.info", sid, info)
-        except Exception as e:
-            current["agent_error"] = str(e)
-            _emit("error", sid, {"message": f"agent init failed: {e}"})
+        except BaseException as e:
+            current["agent_error"] = str(e) or type(e).__name__
+            _emit("error", sid, {"message": f"agent init failed: {current['agent_error']}"})
+            if not isinstance(e, Exception):
+                raise
         finally:
             if _host.sessions.get(sid) is not current:
                 current["agent_error"] = "session closed during agent initialization"
@@ -1191,7 +1184,12 @@ def _start_agent_build(sid: str, session: dict) -> None:
                         pass
             ready.set()
 
-    _host.workers.start(_build, name="forecast-agent-build")
+    from superforecasting_agent.hosting.builds import start_build
+
+    start_build(
+        session, build=_build,
+        start=lambda build: _host.workers.start(build, name="forecast-agent-build"),
+    )
 
 
 def _sess_nowait(params, rid):
@@ -5725,40 +5723,34 @@ def _refresh_session_credentials_after_auth(sid: str, provider: str) -> bool:
     # /model running-guard rather than risk a torn client swap.
     if session.get("running"):
         return False
+    from superforecasting_agent.hosting.builds import retry_build
+
+    def cleanup_failed_build():
+        # Keep each completed cleanup step across retries. Only a failed build
+        # uses these markers; normal session disposal has its own owner.
+        stop = session.get("_notif_stop")
+        if stop is not None:
+            stop.set()
+        if not session.get("_build_notifications_released"):
+            from tools.approval import unregister_gateway_notify
+            unregister_gateway_notify(session["session_key"])
+            session["_build_notifications_released"] = True
+        failed_agent = session.get("agent")
+        if failed_agent is not None:
+            failed_agent.close()
+            session["agent"] = None
+
+    try:
+        status = retry_build(
+            session, cleanup=cleanup_failed_build,
+            start=lambda: _start_agent_build(sid, session),
+        )
+    except Exception as exc:
+        logger.warning("post-auth agent rebuild could not start: %s", exc)
+        return False
+    if status != "ready":
+        return status == "started"
     agent = session.get("agent")
-    if not agent:
-        # A new TUI session starts building its agent shortly after the shell
-        # appears. When Codex is not authenticated yet that build completes
-        # with ``agent_error`` and ``agent_ready`` stays set. Merely writing
-        # fresh tokens cannot revive it: later prompts see the completed event
-        # and replay the cached pre-auth error. Reset the one-shot build state
-        # and retry against the credentials that were just persisted.
-        ready = session.get("agent_ready")
-        if ready is None:
-            return False
-        if session.get("agent_build_started") and not ready.is_set():
-            # Finish this recovery before auth.poll reports success. Otherwise
-            # an immediately submitted prompt can race the old failing build,
-            # observe its cached error, and miss the scheduled retry.
-            if not ready.wait(timeout=30.0):
-                return False
-            agent = session.get("agent")
-            if agent:
-                return _refresh_agent_credentials_after_auth(sid, provider)
-        if not session.get("agent_build_started"):
-            session["agent_error"] = None
-            _start_agent_build(sid, session)
-            return True
-        lock = session.setdefault("agent_build_lock", threading.Lock())
-        with lock:
-            current_ready = session.get("agent_ready")
-            if current_ready is None or not current_ready.is_set():
-                return False
-            session["agent_error"] = None
-            session["agent_ready"] = threading.Event()
-            session["agent_build_started"] = False
-        _start_agent_build(sid, session)
-        return True
     try:
         from superforecasting_agent.hosting.credentials import refresh_credentials
         from superforecasting_agent.runtime.runtime_provider import resolve_runtime_provider

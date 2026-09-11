@@ -605,3 +605,10 @@ type = "forbidden"
 source_modules = ["superforecasting_agent.hosting.commands"]
 forbidden_modules = ["gateway", "tui_gateway", "cli", "superforecasting_agent.runtime", "agent", "tools"]
 allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "deferred build ownership never imports presentation or agent construction"
+type = "forbidden"
+source_modules = ["superforecasting_agent.hosting.builds"]
+forbidden_modules = ["gateway", "tui_gateway", "cli", "superforecasting_agent.runtime", "agent", "tools"]
+allow_indirect_imports = false

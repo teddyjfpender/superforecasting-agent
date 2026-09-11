@@ -1258,3 +1258,23 @@ Configured command admission and TUI execution routing:
 - Final verification: 55 focused command/boundary tests passed; strict Python
   lint, formatting and types passed; all 31 import contracts and protocol drift
   checks passed. Full push qualification remains separate.
+
+
+### Deferred build admission and recovery
+
+- The host now owns initialization admission and failed-build retry decisions.
+  Rejected worker startup records a completed error instead of leaving the session
+  permanently busy. Each admitted callback receives its own completion event.
+- Sign-in recovery checks initialization errors before treating an attached agent
+  as healthy. Failed partial agents are closed before replacement; failed close
+  retains the agent and error for another retry. Notification release is not
+  repeated after success.
+- Cleanup callbacks run outside the history lock, while the caller's session-use
+  reservation prevents close/replacement. Concurrent starts admit only one build.
+- 257 initialization/auth/gateway tests passed. A final 26-test run covers the host
+  state transitions, partial-agent sign-in recovery, and negative import contracts.
+  Strict Python checks pass, including all 32 import contracts.
+- Construction and notification wiring still belong to the RPC adapter; broader
+  agent-internal cleanup and compatibility command migration remain unfinished.
+  The primary branch's full push gate runs separately and does not include this
+  isolated follow-up.

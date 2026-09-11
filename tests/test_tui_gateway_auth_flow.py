@@ -178,6 +178,7 @@ def test_auth_success_retries_agent_build_that_failed_before_sign_in(monkeypatch
     old_ready.set()
     started = {}
     session = {
+        "session_key": "sid_failed_auth",
         "agent": None,
         "agent_error": "No Codex credentials stored",
         "agent_ready": old_ready,
