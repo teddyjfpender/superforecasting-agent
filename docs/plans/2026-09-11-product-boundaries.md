@@ -2840,3 +2840,21 @@ managed policy, scalar types, preservation of unrelated settings and concurrent
 writer behavior. Shared Python quality checks and all 48 import contracts passed.
 The broader CLI test run and the primary checkout's previous full push gate are
 still running; this increment is not yet qualified by an integrated full-suite run.
+
+
+### Provider identity without catalog initialization
+
+Provider alias normalization now belongs to configuration/providers.py. The runtime
+model module re-exports the same alias table and operation for compatibility;
+models.dev metadata lookup and the TUI provider inspection consume the independent
+owner. Pure identity resolution no longer initializes catalog discovery or credentials.
+Provider availability and default-model selection still require further extraction.
+
+180 existing model/metadata tests and 85 identity tests passed, including alias
+normalization and fresh-process import isolation. Shared Python quality checks and
+all 48 import contracts passed. The configuration package's existing transitive
+contract and directory-wide strict lint/format/type scope cover the new module.
+
+The earlier integrated batch pushed successfully at 5de4af1cc after 31,157 Python
+tests passed (148 skipped), followed by the terminal gate. The two subsequent
+configuration commits are integrated and their full push gate is running separately.

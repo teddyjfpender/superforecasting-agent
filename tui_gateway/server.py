@@ -4687,7 +4687,8 @@ def _(rid, params: dict) -> dict:
     key = params.get("key", "")
     if key == "provider":
         try:
-            from superforecasting_agent.runtime.models import list_available_providers, normalize_provider
+            from superforecasting_agent.runtime.models import list_available_providers
+            from superforecasting_agent.configuration.providers import normalize_provider
 
             model = _resolve_model()
             parts = model.split("/", 1)

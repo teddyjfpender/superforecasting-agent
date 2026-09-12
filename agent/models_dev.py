@@ -511,7 +511,7 @@ def list_provider_models(provider: str) -> List[str]:
 
     Returns an empty list if the provider is unknown or has no data.
     """
-    from superforecasting_agent.runtime.models import normalize_provider
+    from superforecasting_agent.configuration.providers import normalize_provider
     provider = normalize_provider(provider) or provider
     
     models = _get_provider_models(provider)
