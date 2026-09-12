@@ -16,6 +16,29 @@ import time
 from pathlib import Path
 from typing import Any
 
+# Run inside the installed backend interpreter, outside the source checkout.
+NUMERICAL_FALLBACK_CHECK = """
+import builtins
+original_import = builtins.__import__
+attempted_install = []
+def isolated_import(name, *args, **kwargs):
+    if name == 'tools.lazy_deps':
+        attempted_install.append(name)
+        raise AssertionError('numerical operation imported package installer')
+    if name.split('.')[0] in {'numpy', 'scipy', 'statsmodels'}:
+        raise ImportError('optional backend deliberately unavailable')
+    return original_import(name, *args, **kwargs)
+builtins.__import__ = isolated_import
+from forecasting import bayes_toolkit as bayes, market_compute as market
+assert bayes.ensure_industry_backends() == {'numpy': False, 'scipy': False}
+assert abs(bayes.normal_cdf(0) - 0.5) < 1e-12
+assert market.ensure_econometrics()['statsmodels'] is False
+result = market.compute('ols', {'x': [0, 1, 2, 3], 'y': [1, 3, 5, 7]})
+assert result['ok'], result
+assert abs(result['block']['coeffs'][0]['value'] - 2) < 1e-9, result
+assert attempted_install == [], attempted_install
+"""
+
 
 def verify_installed_terminal(
     terminal_python: Path,
@@ -341,6 +364,10 @@ def main() -> None:
                 })
             )
         backend_run("-c", "import forecasting.application.reviews")
+        backend_run("-c", NUMERICAL_FALLBACK_CHECK)
+        print(
+            "Backend: numerical fallback passed without optional libraries or installer access."
+        )
         resolved = forecast(
             "resolve", question, "--outcome", "true", "--source", "Fixture completion"
         )
