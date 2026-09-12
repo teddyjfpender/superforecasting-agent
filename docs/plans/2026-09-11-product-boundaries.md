@@ -4915,3 +4915,10 @@ passed. A local 80-key warm-read comparison measured 3.18 ms (old metadata cache
 and 14.13 ms (content-correct reader) per 1,000 calls, medians of five runs. Parsing
 remains cached; the measured extra read cost is about 11 microseconds per call.
 These timings are local evidence, not a portable performance guarantee.
+
+The metadata batch's full push gate stopped on one auxiliary-client fixture that
+still replaced the legacy auth module's registry (31,890 other tests passed,
+148 skipped). The fixture now replaces the shared metadata owner actually read by
+the auxiliary router; its prohibition on implicit Anthropic fallback is retained.
+All 174 auxiliary-client checks pass. The integrated batch still requires the
+full push gate; the failed run did not publish changes.

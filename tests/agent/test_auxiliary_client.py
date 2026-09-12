@@ -1315,7 +1315,7 @@ def test_resolve_api_key_provider_skips_unconfigured_anthropic(monkeypatch):
         return None, None
 
     monkeypatch.setattr("agent.auxiliary_client._try_anthropic", mock_try_anthropic)
-    monkeypatch.setattr("superforecasting_agent.runtime.auth.PROVIDER_REGISTRY", fake_registry)
+    monkeypatch.setattr("superforecasting_agent.configuration.authentication.PROVIDER_REGISTRY", fake_registry)
     monkeypatch.setattr(
         "superforecasting_agent.runtime.auth.is_provider_explicitly_configured",
         lambda pid: False,
