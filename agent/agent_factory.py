@@ -11,6 +11,8 @@ migrated incrementally.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 # The runtime-provider dict keys (resolve_runtime_provider) that map onto AIAgent
@@ -62,7 +64,9 @@ def resolve_and_map_runtime(
     multi-tenant caller can resolve secrets per tenant without touching process globals.
     Keys whose runtime value is None are dropped (so the AIAgent default applies)."""
     if runtime is None:
-        from superforecasting_agent.runtime.runtime_provider import resolve_runtime_provider
+        from superforecasting_agent.runtime.runtime_provider import (
+            resolve_runtime_provider,
+        )
 
         ctx = credential_context or {}
         config_options = {"config": configuration} if configuration is not None else {}
@@ -115,3 +119,21 @@ def build_agent(
         agent_kwargs.setdefault(kwarg, value)
     _validate_provider_model(agent_kwargs.get("provider"), model)
     return _aiagent_cls()(model=model, **agent_kwargs)
+
+
+@contextmanager
+def managed_agent(**kwargs: Any) -> Iterator[Any]:
+    """Own a newly constructed agent through a complete unit of conversation work.
+
+    Cleanup happens in the calling thread after work exits, never while a timed-out
+    worker is still using the agent. Close failures propagate with the original
+    exception as context. Minimal injected agents without a close method remain
+    supported; production AIAgent supplies explicit resource cleanup.
+    """
+    agent = build_agent(**kwargs)
+    try:
+        yield agent
+    finally:
+        close = getattr(agent, "close", None)
+        if callable(close):
+            close()

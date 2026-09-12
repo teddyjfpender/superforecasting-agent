@@ -1326,14 +1326,14 @@ def make_aiagent_runner(
         toolsets = resolve_panelist_toolsets(evidence_cutoff)
 
     def _call(model: str, system: str, user: str) -> str:
-        from agent.agent_factory import build_agent
+        from agent.agent_factory import managed_agent
 
         # FIX A: a rebuilt connected panel dispatches ``provider:model`` ids so each
         # panelist runs on ITS provider's native model. Split the leading known-
         # provider token and route it explicitly; a bare/OpenRouter id (no known
         # prefix) keeps ``requested_provider`` and auto-resolves as before.
         provider_prefix, bare_model = _split_provider_model(model)
-        agent = build_agent(
+        with managed_agent(
             model=bare_model,
             requested_provider=provider_prefix or requested_provider,
             enabled_toolsets=list(toolsets),
@@ -1343,21 +1343,21 @@ def make_aiagent_runner(
             skip_context_files=True,
             load_soul_identity=False,
             platform="cli",
-        )
-        result = agent.run_conversation(user, system_message=system)
-        if not isinstance(result, dict):
-            return str(result or "")
-        # HONEST ERROR SURFACING. When the agent run FAILED (a non-retryable 400
-        # model-not-supported, a 429 quota-exhaustion, etc.) the loop sets
-        # ``failed``/``error`` and leaves ``final_response`` either None or an error
-        # BANNER carrying no JSON. Passing that straight to the JSON parser masks the
-        # real cause behind a misleading "response is empty" / "did not contain a JSON
-        # object" — the exact two symptoms the live quorum surfaced. Raise the REAL
-        # error so run_quorum records the panelist's honest, actionable failure reason.
-        if result.get("failed") or result.get("error"):
-            detail = str(result.get("error") or "").strip()
-            raise RuntimeError(detail or "model call failed with no response")
-        return _assemble_response_text(result)
+        ) as agent:
+            result = agent.run_conversation(user, system_message=system)
+            if not isinstance(result, dict):
+                return str(result or "")
+            # HONEST ERROR SURFACING. When the agent run FAILED (a non-retryable 400
+            # model-not-supported, a 429 quota-exhaustion, etc.) the loop sets
+            # ``failed``/``error`` and leaves ``final_response`` either None or an error
+            # BANNER carrying no JSON. Passing that straight to the JSON parser masks the
+            # real cause behind a misleading "response is empty" / "did not contain a JSON
+            # object" — the exact two symptoms the live quorum surfaced. Raise the REAL
+            # error so run_quorum records the panelist's honest, actionable failure reason.
+            if result.get("failed") or result.get("error"):
+                detail = str(result.get("error") or "").strip()
+                raise RuntimeError(detail or "model call failed with no response")
+            return _assemble_response_text(result)
 
     def _call_two_turn(
         model: str,
@@ -1370,10 +1370,10 @@ def make_aiagent_runner(
         SAME conversation with the reconcile follow-up — so the anchor reaches the
         model only in turn 2 and the blind research is not paid for twice."""
 
-        from agent.agent_factory import build_agent
+        from agent.agent_factory import managed_agent
 
         provider_prefix, bare_model = _split_provider_model(model)
-        agent = build_agent(
+        with managed_agent(
             model=bare_model,
             requested_provider=provider_prefix or requested_provider,
             enabled_toolsets=list(toolsets),
@@ -1383,26 +1383,26 @@ def make_aiagent_runner(
             skip_context_files=True,
             load_soul_identity=False,
             platform="cli",
-        )
-        r1 = agent.run_conversation(blind_user, system_message=system)
-        if not isinstance(r1, dict):
-            blind_text = str(r1 or "")
-            history: Any = None
-        else:
-            if r1.get("failed") or r1.get("error"):
-                detail = str(r1.get("error") or "").strip()
-                raise RuntimeError(detail or "blind turn failed with no response")
-            blind_text = _assemble_response_text(r1)
-            history = r1.get("messages")
-        # Only NOW does the anchor enter (build_reconcile parses the blind text, may raise).
-        reconcile_user = build_reconcile(blind_text)
-        r2 = agent.run_conversation(reconcile_user, conversation_history=history)
-        if not isinstance(r2, dict):
-            return blind_text, str(r2 or "")
-        if r2.get("failed") or r2.get("error"):
-            detail = str(r2.get("error") or "").strip()
-            raise RuntimeError(detail or "reconcile turn failed with no response")
-        return blind_text, _assemble_response_text(r2)
+        ) as agent:
+            r1 = agent.run_conversation(blind_user, system_message=system)
+            if not isinstance(r1, dict):
+                blind_text = str(r1 or "")
+                history: Any = None
+            else:
+                if r1.get("failed") or r1.get("error"):
+                    detail = str(r1.get("error") or "").strip()
+                    raise RuntimeError(detail or "blind turn failed with no response")
+                blind_text = _assemble_response_text(r1)
+                history = r1.get("messages")
+            # Only NOW does the anchor enter (build_reconcile parses the blind text, may raise).
+            reconcile_user = build_reconcile(blind_text)
+            r2 = agent.run_conversation(reconcile_user, conversation_history=history)
+            if not isinstance(r2, dict):
+                return blind_text, str(r2 or "")
+            if r2.get("failed") or r2.get("error"):
+                detail = str(r2.get("error") or "").strip()
+                raise RuntimeError(detail or "reconcile turn failed with no response")
+            return blind_text, _assemble_response_text(r2)
 
     def _run_with_timeout(model: str, fn: "Callable[[], Any]") -> Any:
         if not timeout or timeout <= 0:

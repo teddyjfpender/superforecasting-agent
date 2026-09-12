@@ -3527,3 +3527,19 @@ an anonymous custom endpoint.
 Four regressions failed before the fix; all 132 focused parser/quorum/default
 configuration tests passed afterward. The previous aggregator test now asserts
 actual supported routing: unprefixed models or explicit aggregator-prefixed IDs.
+
+
+### Quorum agent lifetime
+
+Panel calls built agents without closing them. Shared scoped construction now
+closes after a successful/failed call or the complete blind/reconcile pair. It
+uses the owning worker thread, so a timeout never disposes resources underneath
+an active model call; when the call eventually exits, cleanup runs. Close errors
+propagate with the original conversation exception as context. Lightweight
+injected agents lacking a close method remain compatible.
+
+Eight cleanup regressions failed before the change. Afterward 99 focused runner,
+provider syntax and quorum tests passed, including timeout ownership and cleanup
+error context. The agent factory now joins strict lint/format/type scope, and all
+52 import contracts pass. This establishes normal scoped cleanup, not forced
+cancellation or retry ownership for a close that itself fails.

@@ -636,3 +636,14 @@ explicit provider. Named custom endpoints require their exact identity in suppli
 provider details. Bare IDs keep implicit routing. Injected legacy ID-only provider
 rows remain supported; explicitly false or malformed authentication flags cannot
 approve a pinned entry.
+
+
+### Scoped panel agent construction
+
+`agent.agent_factory.managed_agent` owns construction through final close for
+one complete conversation unit. Quorum single-turn and blind/reconcile execution
+use it, closing after both turns or an error. Cleanup runs in the worker that
+uses the agent; timeout reporting does not close a still-active call. The agent
+factory now has mandatory lint, format and type checks. Failed close propagates
+with original error context; forced interruption and retained failed-close retry
+ownership remain separate runtime work.
