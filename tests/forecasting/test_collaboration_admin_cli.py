@@ -244,3 +244,48 @@ def test_trace_retention_and_access_audit_never_emit_private_content(tmp_path, c
     )
     with pytest.raises(Exception, match="--yes"):
         destructive.func(destructive)
+
+
+def test_link_publishes_one_complete_configuration(tmp_path, monkeypatch):
+    from contextlib import contextmanager
+    import yaml
+    from superforecasting_agent.storage import files
+
+    monkeypatch.setattr(collaboration_admin, 'get_agent_home', lambda: tmp_path)
+    path = tmp_path / 'config.yaml'
+    path.write_text('# operator setting\ndisplay:\n  skin: mono\n', encoding='utf-8')
+    writes = []
+    original = files._atomic_text_writer
+    @contextmanager
+    def record(target):
+        with original(target) as stream:
+            yield stream
+        writes.append(yaml.safe_load(path.read_text(encoding='utf-8')))
+    monkeypatch.setattr(files, '_atomic_text_writer', record)
+    collaboration_admin._save_link(repository='owner/repo', workspace_id='workspace', default_branch='main', ledger_path=tmp_path / 'ledger.db')
+    assert len(writes) == 1
+    result = writes[0]
+    assert result['display']['skin'] == 'mono'
+    assert result['collaboration']['repository'] == {'slug': 'owner/repo', 'workspace_id': 'workspace', 'default_branch': 'main'}
+    assert result['collaboration']['enabled'] is True
+    assert result['collaboration']['github']['enabled'] is True
+    assert result['env']['FORECAST_LEDGER_DB'] == str(tmp_path / 'ledger.db')
+    assert '# operator setting' in path.read_text(encoding='utf-8')
+
+
+def test_link_edit_failure_does_not_publish_partial_settings(tmp_path, monkeypatch):
+    from superforecasting_agent.storage import configuration
+
+    monkeypatch.setattr(collaboration_admin, 'get_agent_home', lambda: tmp_path)
+    path = tmp_path / 'config.yaml'
+    before = 'collaboration:\n  repository:\n    slug: old/repo\n'
+    path.write_text(before, encoding='utf-8')
+    original = configuration.set_nested
+    def interrupted(config, key, value):
+        if key == 'collaboration.repository.workspace_id':
+            raise OSError('injected interrupted link edit')
+        original(config, key, value)
+    monkeypatch.setattr(configuration, 'set_nested', interrupted)
+    with pytest.raises(OSError, match='interrupted link edit'):
+        collaboration_admin._save_link(repository='new/repo', workspace_id='new', default_branch='main')
+    assert path.read_text(encoding='utf-8') == before

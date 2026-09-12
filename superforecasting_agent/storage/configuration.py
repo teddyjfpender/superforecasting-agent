@@ -13,9 +13,11 @@ import yaml
 
 from superforecasting_agent.storage.files import (
     ConfigSnapshot,
+    atomic_roundtrip_yaml_mutate,
     atomic_roundtrip_yaml_update,
     atomic_yaml_write,
     config_revision,
+    set_nested,
     yaml_update_lock,
 )
 
@@ -85,6 +87,18 @@ class ProfileConfiguration:
             config._revision = config_revision(path)
         with self._lock:
             self._snapshot = copy.deepcopy(config)
+            self.last_error = None
+
+    def update_many(self, path: Path, changes: dict[str, Any]) -> None:
+        """Publish a related set of fields together against the latest contents."""
+
+        def mutate(config: dict) -> None:
+            for key, value in changes.items():
+                set_nested(config, key, value)
+
+        atomic_roundtrip_yaml_mutate(path, mutate)
+        with self._lock:
+            self._snapshot = None
             self.last_error = None
 
     def update(self, path: Path, key: str, value: Any) -> None:

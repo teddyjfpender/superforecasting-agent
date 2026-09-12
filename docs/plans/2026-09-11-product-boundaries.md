@@ -2698,3 +2698,24 @@ an isolated real config.yaml to establish model and batch-limit selection, rejec
 calls to either CLI configuration loader and verify that the profile acquires no
 new files or content changes. Existing market-arm/model tests now patch the shared
 reader. All 46 import contracts and shared Python quality checks pass.
+
+
+### Collaboration links publish as one configuration mutation
+
+ProfileConfiguration.update_many uses the existing locked round-trip mutation
+primitive to publish related fields together. Collaboration linking now writes
+repository identity, workspace, branch, enable flags and optional ledger path in
+one replacement rather than five or six separately visible writes. It reads values
+through the independent configuration owner and no longer imports runtime config;
+five forecasting-to-runtime exceptions remain.
+
+14 focused collaboration/configuration tests and the shared Python quality gates
+passed. New tests observe exactly one complete publication preserving unrelated
+settings/comments, and inject a failure after several in-memory field edits to
+prove the original file is unchanged. No new locking or YAML implementation was
+introduced.
+
+The pending native-command push stopped: its PTY tests selected an older packaged
+bundle, and a Bayes test's captured output was disturbed while a bg-review thread
+from earlier work remained alive. Artifact freshness and background review cleanup
+need correction before the next full gate; these are not passing-push claims.
