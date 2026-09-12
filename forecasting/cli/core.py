@@ -7128,7 +7128,7 @@ def _cmd_pipeline(args: argparse.Namespace) -> None:
     ledger = _ledger(args)
     args.id = _resolve_question_id(ledger, args.id)
     if getattr(args, "refresh", False):
-        from tools.forecasting_tool import fetch_watched_source_payloads
+        from forecasting.sources.watched import fetch_watched_source_payloads
 
         refresh = ledger.refresh_forecast(
             args.id,

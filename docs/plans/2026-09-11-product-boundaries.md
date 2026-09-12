@@ -4610,3 +4610,19 @@ Validation: 157 refresh, tool, CLI resolution, job and boundary tests passed;
 shared quality checks passed. Fresh-process acquisition succeeds with execution
 and ledger imports blocked. Both new owners have transitive import gates and
 strict lint/format/type coverage. Eleven frozen forecast-to-tool edges remain.
+
+### Question candidate ownership and complete pipeline refresh routing
+
+Moved duplicate-candidate ranking and its thresholds into a read-only application
+owner shared by CLI onboarding and the tool surfaces. Removed the corresponding
+frozen tool import; ten direct forecast-to-tool exceptions remain. Matching uses
+the existing search semantics, and creation/force-new policy is unchanged.
+
+The caller audit also found core pipeline refresh still importing the tool's
+watched-source export. It now calls the source owner directly. Its old test only
+asserted that some snapshot existed, which could pass without refreshing. The
+regression now requires a new snapshot ID and changed probability.
+
+Validation: 57 refresh, question-spec and full-chain tests passed, including CLI
+and tool duplicate routing and explicit duplicate creation. Shared quality checks
+passed; the new application file automatically receives directory-wide gates.

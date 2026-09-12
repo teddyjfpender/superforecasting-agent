@@ -27,6 +27,11 @@ from forecasting.models import ForecastingError, OutcomeSpace, utc_now_iso
 from forecasting.pm import PMService
 from forecasting.protocol import build_protocol_messages
 from forecasting.search import match_to_dict, search_forecasts
+from forecasting.application.question_reuse import (
+    DUPLICATE_WARN_SCORE as _DUPLICATE_WARN_SCORE,
+    DUPLICATE_SCORE_FLOOR as _DUPLICATE_SCORE_FLOOR,
+    find_possible_duplicates as _find_possible_duplicates,
+)
 from forecasting.source_planner import SourceRecommendation, plan_sources_for_question
 from forecasting.source_search import capture_watched_text_candidates, search_watched_text_sources
 from forecasting.sources.evidence import (
@@ -1215,33 +1220,6 @@ def check_forecasting_requirements() -> bool:
     return True
 
 
-# Duplicate-detection thresholds over the search ranker's integer scores. The floor
-# keeps a single trivial token hit from surfacing as a "duplicate"; the higher warn
-# threshold is roughly a title-substring-level match (the ranker gives title weight
-# 18, ×3 for substring containment) and only nudges — it never blocks a commit.
-_DUPLICATE_SCORE_FLOOR = 18
-_DUPLICATE_WARN_SCORE = 54
-
-
-def _find_possible_duplicates(ledger: Any, title: str, *, limit: int = 5) -> list[dict[str, Any]]:
-    """Rank existing active questions against a draft title and return the top few
-    above a sane score floor. Pure reuse of the forecast search ranker — no new
-    subsystem. Empty when the title is blank/trivial or nothing scores."""
-    title = (title or "").strip()
-    if not title:
-        return []
-    matches = search_forecasts(ledger, title, status="active", limit=limit)
-    out: list[dict[str, Any]] = []
-    for match in matches:
-        if match.score < _DUPLICATE_SCORE_FLOOR:
-            continue
-        out.append({
-            "id": match.question.id,
-            "title": match.question.title,
-            "score": match.score,
-            "status": match.question.status,
-        })
-    return out
 
 
 # One process-wide PMService so its TTL caches persist across pm_query calls

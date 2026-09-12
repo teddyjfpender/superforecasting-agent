@@ -808,3 +808,12 @@ one source error without discarding successful peers. It never writes the ledger
 fetching, execution or persistence imports. `sources/filters.py` owns shared filter
 normalization. Transitive import gates enforce both boundaries; each extracted
 module has strict lint, formatting and type coverage.
+
+### Question reuse candidates
+
+`forecasting/application/question_reuse.py` owns candidate ranking and the shared
+warning threshold for question creation/onboarding. It reuses forecast search,
+reads active questions and returns ranked candidates without writing the ledger.
+CLI onboarding imports it directly; tool compatibility exports preserve existing
+callers. A title match is still a heuristic, not proof of equivalent resolution
+criteria. Routing/force-new decisions remain with creation orchestration.

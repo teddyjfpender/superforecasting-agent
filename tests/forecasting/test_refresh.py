@@ -373,13 +373,15 @@ def test_cli_pipeline_refresh_runs_then_renders_status(tmp_path, capsys, monkeyp
     monkeypatch.setattr("forecasting.sources.watched.fetch_watched_source_payloads", lambda specs, **k: _market_fetcher(0.72)(specs))
     ledger = _ledger(tmp_path)
     q = _market_question(ledger)
+    previous_id = ledger.get_current_snapshot(q.id).forecast_id
     parser = _parser()
     args = parser.parse_args(["forecast", "--db", str(tmp_path / "refresh.db"), "pipeline", q.id, "--refresh"])
     args.func(args)
     out = capsys.readouterr().out
     assert out.startswith("refresh:")
     assert "stages:" in out
-    assert ledger.get_current_snapshot(q.id).forecast_id  # committed snapshot is current
+    assert ledger.get_current_snapshot(q.id).forecast_id != previous_id
+    assert _current_p(ledger, q.id) != pytest.approx(0.55)
 
 
 def test_tool_refresh_forecast_action(tmp_path, monkeypatch):

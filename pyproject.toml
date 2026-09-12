@@ -389,7 +389,6 @@ allow_indirect_imports = "true"
 ignore_imports = [
     "forecasting.cli.connect_admin -> tools.slack_tool",
     "forecasting.cli.core -> tools.forecasting_tool",
-    "forecasting.cli.questions_admin -> tools.forecasting_tool",
     "forecasting.cli.slack_admin -> tools.forecast_actions.share",
     "forecasting.cli.slack_admin -> tools.slack_tool",
     "forecasting.cli.triage_calibration -> tools.forecasting_tool",

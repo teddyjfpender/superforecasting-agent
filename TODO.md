@@ -48,6 +48,8 @@ changes, tests and their limits. The previous checklist is preserved in the
   active background agents.
 - [ ] Reduce the remaining frozen domain-to-runtime/tool import exceptions.
   Move a capability and its tests together; directory moves alone are insufficient.
+  Question candidate matching now has one read-only application owner shared by
+  CLI and tool creation paths; ten direct forecast-to-tool exceptions remain.
   Shared defaults/normalization and read-only profile access are now independent.
   Ledger scoring/snapshot settings, hook policy and estimate-first policy use them;
   scheduler, worker and research readers use the same owner. Quorum command reads and writes now use independent configuration and installation
