@@ -95,6 +95,10 @@ def branch_session(
     return title
 
 
+class EmptySessionTitle(ValueError):
+    """The title contains no printable content after storage normalization."""
+
+
 def set_session_title(db: SessionDB, session_id: str, title: str) -> tuple[str, bool]:
     """Return the canonical title and whether it awaits session creation.
 
@@ -105,7 +109,7 @@ def set_session_title(db: SessionDB, session_id: str, title: str) -> tuple[str, 
         raise ValueError("session title must be text")
     clean = db.sanitize_title(title)
     if not clean:
-        raise ValueError(
+        raise EmptySessionTitle(
             "Title is empty after cleanup. Please use printable characters."
         )
     if db.set_session_title(session_id, clean):
@@ -114,3 +118,12 @@ def set_session_title(db: SessionDB, session_id: str, title: str) -> tuple[str, 
     if existing:
         return existing.get("title") or clean, False
     return clean, True
+
+
+def reconcile_session_title(
+    db: SessionDB, session_id: str, pending_title: str | None
+) -> tuple[str, bool]:
+    """Apply a queued title if possible; propagate failures without losing it."""
+    if pending_title:
+        return set_session_title(db, session_id, pending_title)
+    return db.get_session_title(session_id) or "", False

@@ -51,3 +51,40 @@ def test_pending_titles_obey_uniqueness_and_cannot_clear_existing_title(db):
         set_session_title(db, 's1', '\x00')
     assert db.get_session_title('s1') == 'Reserved'
     assert db.get_session('missing') is None
+
+
+@pytest.mark.parametrize('exists', [False, True])
+def test_title_read_reconciles_historical_raw_pending_value(db, monkeypatch, exists):
+    from tui_gateway import server
+
+    if exists:
+        db.create_session('s1', source='tui')
+    session = {'session_key': 's1', 'pending_title': 'Forecast\x00   desk'}
+    monkeypatch.setattr(server, '_sess_nowait', lambda *_: (session, None))
+    monkeypatch.setattr(server, '_get_db', lambda: db)
+    response = server.handle_request({'id': 1, 'method': 'session.title', 'params': {'session_id': 's1'}})
+    assert response['result'] == {'title': 'Forecast desk', 'session_key': 's1'}
+    assert session['pending_title'] == (None if exists else 'Forecast desk')
+    assert db.get_session_title('s1') == ('Forecast desk' if exists else None)
+
+
+def test_title_reconciliation_failure_retains_pending_value_for_retry(db, monkeypatch):
+    from tui_gateway import server
+
+    db.create_session('s1', source='tui')
+    session = {'session_key': 's1', 'pending_title': 'Pending title'}
+    monkeypatch.setattr(server, '_sess_nowait', lambda *_: (session, None))
+    monkeypatch.setattr(server, '_get_db', lambda: db)
+    original = db.set_session_title
+    def failing(*_):
+        raise OSError('injected write failure')
+    monkeypatch.setattr(db, 'set_session_title', failing)
+    request = {'id': 1, 'method': 'session.title', 'params': {'session_id': 's1'}}
+    response = server.handle_request(request)
+    assert response['error']['code'] == 5007
+    assert session['pending_title'] == 'Pending title'
+    assert db.get_session_title('s1') is None
+    monkeypatch.setattr(db, 'set_session_title', original)
+    assert server.handle_request(request)['result']['title'] == 'Pending title'
+    assert session['pending_title'] is None
+    assert db.get_session_title('s1') == 'Pending title'

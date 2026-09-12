@@ -356,3 +356,27 @@ class TestNewInHelp:
         new_line = next((line for line in lines if line.startswith("`/new ")), None)
         assert new_line is not None
         assert "[name]" in new_line
+
+
+@pytest.mark.asyncio
+async def test_title_reports_session_creation_failure_without_attempting_write():
+    db = MagicMock()
+    db.get_session.return_value = None
+    db.create_session.side_effect = OSError('injected session creation failure')
+    result = await _make_runner(db)._handle_title_command(_make_event('/title Example'))
+    assert 'injected session creation failure' in result
+    db.set_session_title.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_existing_untitled_session_does_not_trigger_creation(tmp_path):
+    from superforecasting_agent.storage.session import SessionDB
+    db = SessionDB(db_path=tmp_path / 'state.db')
+    try:
+        db.create_session('test_session_123', 'telegram')
+        with patch.object(db, 'create_session', side_effect=AssertionError('recreated existing session')):
+            result = await _make_runner(db)._handle_title_command(_make_event('/title Example'))
+        assert 'Example' in result
+        assert db.get_session_title('test_session_123') == 'Example'
+    finally:
+        db.close()

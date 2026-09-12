@@ -13367,33 +13367,26 @@ class GatewayRunner:
 
         # Ensure session exists in SQLite DB (it may only exist in session_store
         # if this is the first command in a new session)
-        existing_title = self._session_db.get_session_title(session_id)
-        if existing_title is None:
-            # Session doesn't exist in DB yet — create it
+        if self._session_db.get_session(session_id) is None:
             try:
                 self._session_db.create_session(
                     session_id=session_id,
                     source=source.platform.value if source.platform else "unknown",
                     user_id=source.user_id,
                 )
-            except Exception:
-                pass  # Session might already exist, ignore errors
+            except Exception as exc:
+                return t("gateway.shared.warn_passthrough", error=exc)
 
         title_arg = event.get_command_args().strip()
         if title_arg:
-            # Sanitize the title before setting
+            from superforecasting_agent.application.sessions import EmptySessionTitle, set_session_title
             try:
-                sanitized = self._session_db.sanitize_title(title_arg)
-            except ValueError as e:
-                return t("gateway.shared.warn_passthrough", error=e)
-            if not sanitized:
-                return t("gateway.title.empty_after_clean")
-            # Set the title
-            try:
-                if self._session_db.set_session_title(session_id, sanitized):
-                    return t("gateway.title.set_to", title=sanitized)
-                else:
+                sanitized, pending = set_session_title(self._session_db, session_id, title_arg)
+                if pending:
                     return t("gateway.title.not_found")
+                return t("gateway.title.set_to", title=sanitized)
+            except EmptySessionTitle:
+                return t("gateway.title.empty_after_clean")
             except ValueError as e:
                 return t("gateway.shared.warn_passthrough", error=e)
         else:

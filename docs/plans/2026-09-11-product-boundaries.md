@@ -2663,3 +2663,21 @@ exercise the actual CLI and RPC handlers against SQLite for persisted and pendin
 titles, response/storage parity, conflicting names and control-only input. Shared
 Python quality gates and 46 import contracts passed. Read-side pending-title
 reconciliation and messaging's translated title presentation remain separate paths.
+
+
+### Pending-title reconciliation preserves failures and canonical values
+
+Messaging now consumes the same title-setting operation as CLI and TUI, translating
+its empty-title error through the existing localized message. It checks session
+existence directly rather than mistaking an untitled row for an absent session,
+and reports session-creation failures before attempting a title write.
+
+The session.title read path delegates queued-title reconciliation to the application
+owner. Historical raw pending values are normalized before being reported or saved.
+Storage errors now return an RPC error instead of a success-shaped fallback; the
+pending value remains intact for retry and is cleared only after successful storage.
+
+483 focused application-title, messaging-title and TUI gateway tests passed. Tests
+prove canonical pending/persisted reads, injected write failure followed by successful
+retry, no write after failed messaging session creation, and no attempt to recreate
+an existing untitled session. Python quality gates and all 46 import contracts passed.

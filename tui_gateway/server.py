@@ -2968,32 +2968,16 @@ def _(rid, params: dict) -> dict:
         return _db_unavailable_error(rid, code=5007)
     key = session["session_key"]
     if "title" not in params:
-        fallback = session.get("pending_title") or ""
+        from superforecasting_agent.application.sessions import reconcile_session_title
+
         try:
-            resolved_title = db.get_session_title(key) or ""
-            if fallback:
-                if db.set_session_title(key, fallback):
-                    session["pending_title"] = None
-                    resolved_title = fallback
-                else:
-                    existing_row = db.get_session(key)
-                    existing_title = ((existing_row or {}).get("title") or "").strip()
-                    if existing_title == fallback:
-                        session["pending_title"] = None
-                        resolved_title = fallback
-                    elif not resolved_title:
-                        resolved_title = fallback
-            elif resolved_title:
-                session["pending_title"] = None
-        except Exception:
-            resolved_title = fallback
-        return _ok(
-            rid,
-            {
-                "title": resolved_title,
-                "session_key": key,
-            },
-        )
+            title, pending = reconcile_session_title(db, key, session.get("pending_title"))
+            session["pending_title"] = title if pending else None
+            return _ok(rid, {"title": title, "session_key": key})
+        except ValueError as exc:
+            return _err(rid, 4022, str(exc))
+        except Exception as exc:
+            return _err(rid, 5007, str(exc))
     title = (params.get("title", "") or "").strip()
     if not title:
         return _err(rid, 4021, "title required")
