@@ -32,11 +32,7 @@ from superforecasting_agent.runtime.secret_prompt import masked_secret_prompt
 
 logger = logging.getLogger(__name__)
 _PRIMARY_CLI = "superforecasting-agent"
-_IGNORE_USER_CONFIG_ENV_NAMES = (
-    "SUPERFORECASTING_AGENT_IGNORE_USER_CONFIG",
-    "FORECAST_IGNORE_USER_CONFIG",
-    "HERMES_IGNORE_USER_CONFIG",
-)
+from superforecasting_agent.profile_paths import ignore_user_config_requested as _ignore_user_config_requested
 
 
 def _first_present_env(names: tuple[str, ...], default: str = "") -> tuple[str, str]:
@@ -51,9 +47,6 @@ def _env_flag_exact_one(names: tuple[str, ...]) -> bool:
     _name, value = _first_present_env(names)
     return value == "1"
 
-
-def _ignore_user_config_requested() -> bool:
-    return _env_flag_exact_one(_IGNORE_USER_CONFIG_ENV_NAMES)
 
 # Track which (config_path, mtime_ns, size) tuples we've already warned about
 # so concurrent CLI/gateway loads of a broken config.yaml don't spam stderr

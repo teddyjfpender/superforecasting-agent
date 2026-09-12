@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -94,3 +95,15 @@ def resolve_profile_env(profile_name: str) -> str:
         )
 
     return str(profile_dir)
+
+
+def ignore_user_config_requested() -> bool:
+    """Resolve the canonical opt-out flag before its compatibility aliases."""
+    for name in (
+        "SUPERFORECASTING_AGENT_IGNORE_USER_CONFIG",
+        "FORECAST_IGNORE_USER_CONFIG",
+        "HERMES_IGNORE_USER_CONFIG",
+    ):
+        if name in os.environ:
+            return os.environ[name] == "1"
+    return False

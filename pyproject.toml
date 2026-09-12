@@ -378,7 +378,6 @@ forbidden_modules = ["superforecasting_agent.runtime"]
 allow_indirect_imports = "true"
 ignore_imports = [
     "forecasting.api_keys -> superforecasting_agent.runtime.env_loader",
-    "forecasting.appconfig -> superforecasting_agent.runtime.config",
     "forecasting.cli.collaboration_admin -> superforecasting_agent.runtime.config",
     "forecasting.cli.core -> superforecasting_agent.runtime.config",
     "forecasting.cli.core -> superforecasting_agent.runtime.env_loader",
@@ -617,4 +616,12 @@ name = "toolset inventory never imports presentation"
 type = "forbidden"
 source_modules = ["superforecasting_agent.tooling.inventory"]
 forbidden_modules = ["gateway", "tui_gateway", "cli"]
+allow_indirect_imports = false
+
+
+[[tool.importlinter.contracts]]
+name = "shared configuration storage never imports runtime or presentation"
+type = "forbidden"
+source_modules = ["superforecasting_agent.storage.configuration"]
+forbidden_modules = ["superforecasting_agent.runtime", "gateway", "tui_gateway", "cli"]
 allow_indirect_imports = false

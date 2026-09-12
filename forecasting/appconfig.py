@@ -16,7 +16,7 @@ Precedence (lowest → highest):
 
 * **registry default** — the declared fallback for a known key (``REGISTRY``).
 * **config file** — the ``env:`` section of the agent-home ``config.yaml``
-  (``superforecasting_agent.runtime.config.read_raw_config()``). We *extend* the file the system
+  (``superforecasting_agent.storage.configuration.ProfileConfiguration``). We *extend* the file the system
   already reads; we do not invent a second one. A flat ``ENV_NAME: value`` map
   under ``env:`` lets an operator pin a value in the config instead of the
   shell.
@@ -312,7 +312,7 @@ class AppConfig:
     ) -> None:
         self._environ_override = environ
         self._config_override = config_file
-        self._config_cache: dict[str, Any] | None = None
+        self._config_reader = None
         self._overrides: dict[str, str] = {}
         self.registry = dict(REGISTRY if registry is None else registry)
 
@@ -325,24 +325,27 @@ class AppConfig:
     def _config_env(self) -> dict[str, Any]:
         if self._config_override is not None:
             return dict(self._config_override)
-        if self._config_cache is not None:
-            return self._config_cache
         data: dict[str, Any] = {}
         try:  # lazy — avoid an import cycle and the yaml read cost at import time
-            from superforecasting_agent.runtime.config import read_raw_config
+            from superforecasting_agent.constants import get_agent_home
+            from superforecasting_agent.profile_paths import ignore_user_config_requested
+            from superforecasting_agent.storage.configuration import ProfileConfiguration
 
-            raw = read_raw_config()
+            if ignore_user_config_requested():
+                return {}
+            if self._config_reader is None:
+                self._config_reader = ProfileConfiguration()
+            raw = self._config_reader.load(get_agent_home() / "config.yaml")
             section = raw.get("env") if isinstance(raw, dict) else None
             if isinstance(section, dict):
                 data = {str(k): v for k, v in section.items()}
         except Exception:  # pragma: no cover — config file is best-effort
             data = {}
-        self._config_cache = data
         return data
 
     def reload(self) -> None:
         """Drop the cached config-file layer so the next read re-reads it."""
-        self._config_cache = None
+        self._config_reader = None
 
     # ── overrides ────────────────────────────────────────────────────────────
 

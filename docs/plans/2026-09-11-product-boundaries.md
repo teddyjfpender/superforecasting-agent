@@ -1597,3 +1597,21 @@ contract forbidding CLI/gateway/TUI presentation dependencies. Validation:
 (`/tmp/forecast-shared-inventory-qualified-tests.log`), including CLI/native
 record parity and no-worker admission. Python quality passed with all 33 import
 contracts (`/tmp/forecast-shared-inventory-final-quality.log`).
+
+### Shared configuration storage without a domain-to-CLI import
+
+Moved the existing path/content-aware ProfileConfiguration implementation to
+`storage/configuration.py`; the hosting module re-exports it for compatibility,
+and the host still owns its instance. Forecast AppConfig now consumes that
+storage implementation directly instead of retaining an unversioned config-file
+layer or importing runtime CLI configuration. Same-instance reads observe profile
+changes, preserved-timestamp content edits and deleted files. The canonical
+ignore-user-config flag and aliases share one resolver in profile_paths, reused
+by runtime configuration and the domain loader.
+
+Removed the AppConfig-to-runtime exception from the import ratchet. Shared
+configuration storage has its own transitive no-runtime/no-presentation contract,
+strict lint/format/type coverage and an injected-forbidden-import regression.
+Validation: 67 configuration/flag/ownership/contract tests passed
+(`/tmp/forecast-domain-config-qualified-tests.log`). Python quality passed with
+34 contracts (`/tmp/forecast-domain-config-final-quality.log`).
