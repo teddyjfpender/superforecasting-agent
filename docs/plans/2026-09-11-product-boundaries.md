@@ -2824,3 +2824,19 @@ uses the runtime setter and remains a follow-up.
 loads no runtime or consumers. Shared Python quality checks and all 48 import
 contracts passed. This increment has not yet undergone its integrated full-suite
 push gate; the preceding batch is still running in the primary checkout.
+
+
+### Quorum configuration no longer imports CLI configuration
+
+Quorum overview, execution and configuration inspection now consume the independent
+normalized profile reader. Configuration writes use the shared atomic profile owner
+and installation admission, with scalar interpretation shared with the general CLI
+setter. Managed refusal and failed publication exit without printing success; extra
+arguments are rejected rather than ignored. Existing panel validation remains before
+publication. The domain-to-runtime exception for quorum_panel is removed (four remain).
+
+32 focused quorum and configuration-writer tests passed, covering failed writes,
+managed policy, scalar types, preservation of unrelated settings and concurrent
+writer behavior. Shared Python quality checks and all 48 import contracts passed.
+The broader CLI test run and the primary checkout's previous full push gate are
+still running; this increment is not yet qualified by an integrated full-suite run.

@@ -50,3 +50,44 @@ def test_default_policy_publishes_both_fields_together(profile, monkeypatch, cap
     assert writes[0]['quorum'] == {'default_enabled': True, 'default_scope': 'first_only'}
     assert writes[0]['display']['skin'] == 'mono'
     assert 'enabled' in capsys.readouterr().out
+
+
+def test_config_managed_refusal_preserves_profile(profile, monkeypatch, capsys):
+    from forecasting.cli.quorum_panel import _quorum_config
+    monkeypatch.setenv('SUPERFORECASTING_AGENT_MANAGED', 'homebrew')
+    before = profile.read_bytes()
+    with pytest.raises(SystemExit, match='managed by Homebrew'):
+        _quorum_config(['set', 'model_timeout', '45'])
+    assert profile.read_bytes() == before
+    assert '✓' not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize('value,expected', [('45', 45), ('0.5', 0.5), ('off', False), ('frontier', 'frontier')])
+def test_config_scalar_persistence_preserves_unrelated_settings(profile, value, expected):
+    from forecasting.cli.quorum_panel import _quorum_config
+    _quorum_config(['set', 'preset', value])
+    saved = yaml.safe_load(profile.read_text(encoding='utf-8'))
+    assert saved['quorum']['preset'] == expected
+    assert type(saved['quorum']['preset']) is type(expected)
+    assert saved['display']['skin'] == 'mono'
+
+
+def test_config_write_failure_never_reports_success(profile, monkeypatch, capsys):
+    from forecasting.cli.quorum_panel import _quorum_config
+    from superforecasting_agent.storage.configuration import ProfileConfiguration
+    def fail(*args):
+        raise OSError('disk unavailable')
+    monkeypatch.setattr(ProfileConfiguration, 'update', fail)
+    before = profile.read_bytes()
+    with pytest.raises(SystemExit, match='disk unavailable'):
+        _quorum_config(['set', 'model_timeout', '45'])
+    assert profile.read_bytes() == before
+    assert '✓' not in capsys.readouterr().out
+
+
+def test_config_rejects_trailing_arguments(profile):
+    from forecasting.cli.quorum_panel import _quorum_config
+    before = profile.read_bytes()
+    with pytest.raises(SystemExit, match='<key> <value>'):
+        _quorum_config(['set', 'model_timeout', '45', 'ignored'])
+    assert profile.read_bytes() == before

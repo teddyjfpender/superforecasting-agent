@@ -4198,15 +4198,8 @@ def set_config_value(key: str, value: str):
     # _set_nested which preserves list-typed nodes; before #17876 the
     # inline navigation here silently overwrote lists with dicts.
 
-    # Convert value to appropriate type
-    if value.lower() in {'true', 'yes', 'on'}:
-        value = True
-    elif value.lower() in {'false', 'no', 'off'}:
-        value = False
-    elif value.isdigit():
-        value = int(value)
-    elif value.replace('.', '', 1).isdigit():
-        value = float(value)
+    from superforecasting_agent.configuration import parse_setting_value
+    value = parse_setting_value(value)
 
     from superforecasting_agent.storage.files import atomic_roundtrip_yaml_update
     with _CONFIG_LOCK:

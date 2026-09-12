@@ -378,7 +378,6 @@ forbidden_modules = ["superforecasting_agent.runtime"]
 allow_indirect_imports = "true"
 ignore_imports = [
     "forecasting.cli.core -> superforecasting_agent.runtime.env_loader",
-    "forecasting.cli.quorum_panel -> superforecasting_agent.runtime.config",
     "forecasting.jobs.__main__ -> superforecasting_agent.runtime.plugins",
     "forecasting.market_nightly_forecaster -> superforecasting_agent.runtime.plugins",
     "forecasting.quorum.panels -> superforecasting_agent.runtime.models",

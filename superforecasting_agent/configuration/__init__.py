@@ -198,3 +198,16 @@ def resolve_config(user_config: Dict[str, Any]) -> Dict[str, Any]:
     return _expand_env_vars(
         _normalize_root_model_keys(_normalize_max_turns_config(config))
     )
+
+
+def parse_setting_value(value: str) -> str | bool | int | float:
+    """Interpret command-line scalars with the established configuration syntax."""
+    if value.lower() in {"true", "yes", "on"}:
+        return True
+    if value.lower() in {"false", "no", "off"}:
+        return False
+    if value.isdigit():
+        return int(value)
+    if value.replace(".", "", 1).isdigit():
+        return float(value)
+    return value
