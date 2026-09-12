@@ -3013,3 +3013,18 @@ Shared Python quality checks and all 49 import contracts passed. This broadens s
 coverage without suppressions; inherited packages outside the scope remain separate.
 The previous primary integrated push is still running and is not evidence for this
 new increment.
+
+
+### Environment-line parsing separated from startup orchestration
+
+Environment repair now accepts its known-key catalog as an explicit input in the
+strict configuration package. The runtime wrapper supplies the existing credential
+catalog, preserving load/save compatibility and collision handling. This separates
+parsing from I/O and discovery without copying the catalog or removing sanitization.
+The attempted full loader move was reverted after inspection exposed that dependency;
+the forecast-to-runtime loader exception remains until catalog ownership is extracted.
+
+86 loader/credential tests, three on-load repair tests and three pure-parser fixtures
+passed. Shared Python quality gates and 49 import contracts passed. The curator host
+and state batch pushed successfully at 430c4a8b7; later state validation, strict tooling
+and parser changes require the next integrated full gate.
