@@ -301,3 +301,38 @@ def test_real_desk_native_background_stop_preserves_session(local_desk, monkeypa
         until(ws, lambda out: receipt(home) and receipt(home)['id'] != before['id'] and receipt(home)['status'] == 'complete', screen=screen)
         assert receipt(home)['session_id'] == before['session_id']
         ws.close(code=1000)
+
+
+def test_real_desk_delegation_pause_isolated_after_new_session(local_desk, monkeypatch):
+    from tests.tui_pty.vt import VTScreen
+
+    client, home, _ = local_desk
+    monkeypatch.setenv('FORECAST_TEST_FORBID_CLASSIC_WORKER', '1')
+    monkeypatch.setenv('FORECAST_TEST_DELEGATION_AUDIT', '1')
+    monkeypatch.setenv('SUPERFORECASTING_AGENT_TUI_NO_CONFIRM', '1')
+    screen = VTScreen(rows=45, cols=160)
+    with client.websocket_connect('/api/pty?token=local-engineering&channel=delegation-pause') as ws:
+        ws.send_text('\x1b[RESIZE:160;45]')
+        until(ws, lambda out: b'local-fixture' in out, screen=screen)
+        ws.send_text('/agents pause\r')
+        until(ws, lambda out: b'delegation' in out and b'paused' in out, screen=screen)
+        ws.send_text('/new\r')
+        until(ws, lambda out: b'new forecast session started' in out, screen=screen)
+        ws.send_text('/agents status\r')
+        until(ws, lambda out: b'delegation' in out and b'active' in out, screen=screen)
+        ws.send_text('/agents pause\r')
+        until(ws, lambda out: b'delegation' in out and b'paused' in out, screen=screen)
+        ws.send_text('/agents resume\r')
+        until(ws, lambda out: b'delegation' in out and b'resumed' in out, screen=screen)
+        events = [json.loads(line) for line in (home / 'delegation-pause.jsonl').read_text(encoding='utf-8').splitlines()]
+        assert len(events) == 3
+        first, second, resumed = events
+        assert first['owner'] and second['owner'] and first['owner'] != second['owner']
+        assert first['paused_sessions'] == [first['owner']]
+        assert second['paused_sessions'] == sorted([first['owner'], second['owner']])
+        assert resumed['owner'] == second['owner']
+        assert resumed['paused_sessions'] == [first['owner']]
+        ws.send_text('complete after scoped pause\r')
+        until(ws, lambda out: receipt(home) and receipt(home)['status'] == 'complete', screen=screen)
+        assert receipt(home)['partial_text'] == 'durable fixture prefix'
+        ws.close(code=1000)

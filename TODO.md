@@ -44,6 +44,8 @@ Tool inventory and /tools list now use shared views without building an agent or
 - [ ] Qualify delegation dashboard controls with rendered nested-work and reconnect
   exercises. Status, pause and interruption now require the current session owner;
   nested children inherit the root owner and stale client replies are discarded.
+  A real-terminal pause/new-session/resume exercise now verifies distinct backend
+  pause owners and successful continued conversation.
   Ink /stop consumes the shared session-scoped operation, and legacy process.stop
   rejects missing session ownership. Pause flags remain process-lifetime state.
 - [ ] Audit lower-level agent cleanup for concrete resource ownership.

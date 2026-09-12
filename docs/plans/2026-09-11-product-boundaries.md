@@ -4037,3 +4037,15 @@ detector completed without reported findings. Tests cover cross-session denial,
 scoped/global pause interaction, nested pause admission, boolean validation and
 client handoff state. A rendered nested-work/reconnect exercise remains; pause is
 in-memory and interruption is cooperative, not a forced-termination guarantee.
+
+
+### Rendered delegation pause and session handoff
+
+A new real-Ink test pauses one session, creates a new session, verifies the client
+no longer displays the previous pause, pauses/resumes the new session, and then
+completes a turn. The test fixture audits calls to the real pause implementation:
+its recorded owner keys prove that resuming the second session leaves the first
+session's pause intact. Classic worker construction is forbidden throughout.
+The test passed on macOS through the dashboard WebSocket/PTY, stdio gateway and
+SQLite; Python quality gates passed. This qualifies pause handoff, not rendered
+nested-child interruption or cross-platform reconnects.

@@ -30,6 +30,18 @@ def main():
 
     home = Path(os.environ['SUPERFORECASTING_AGENT_HOME'])
 
+    if os.environ.get('FORECAST_TEST_DELEGATION_AUDIT') == '1':
+        from tools import delegate_tool
+        original_pause = delegate_tool.set_spawn_paused
+        def audited_pause(paused, *, session_key=None):
+            result = original_pause(paused, session_key=session_key)
+            with delegate_tool._spawn_pause_lock:
+                paused_sessions = sorted(delegate_tool._spawn_paused_sessions)
+            with (home / 'delegation-pause.jsonl').open('a', encoding='utf-8') as stream:
+                stream.write(json.dumps({'owner': session_key, 'paused': result, 'paused_sessions': paused_sessions}) + '\n')
+            return result
+        delegate_tool.set_spawn_paused = audited_pause
+
     def lifetime(event, identity):
         with (home / 'agent-lifetime.jsonl').open('a', encoding='utf-8') as stream:
             stream.write(json.dumps({'event': event, 'agent': identity}) + '\n')
