@@ -3249,3 +3249,16 @@ The startup batch's full push gate remains running in the primary checkout.
   passed, including automatic hosting strict coverage and import contracts.
 - This closes duplicate creation. It does not yet gate cleanup or process-wide
   endpoint transitions against an allocation already in flight.
+
+### Browser allocation and cleanup coordination
+
+- Browser creation and task cleanup now share `browser_session_lifecycle`
+  admission. Primary and `::local` sidecar keys share a task group, so cleanup
+  waits for in-flight sidecar allocation before capturing resources to close.
+  Unrelated task groups remain independent.
+- A deterministic test holds sidecar creation inside the provider adapter,
+  requests parent cleanup, verifies cleanup has not returned early, then releases
+  allocation and proves the newly owned sidecar is closed and removed.
+- Verification: 31 creation/cleanup/hybrid/replacement tests passed; shared Python
+  quality gates passed. Endpoint-wide transitions and active browser commands
+  still need admission coordination; this change covers allocation and cleanup.

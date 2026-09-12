@@ -1732,9 +1732,9 @@ def _get_session_info(task_id: Optional[str] = None) -> Dict[str, str]:
     if task_id is None:
         task_id = "default"
 
-    from superforecasting_agent.hosting.browser_sessions import browser_session_creation
+    from superforecasting_agent.hosting.browser_sessions import browser_session_lifecycle
 
-    with browser_session_creation(task_id):
+    with browser_session_lifecycle(task_id.removesuffix(_LOCAL_SUFFIX)):
         return _get_or_create_session_info(task_id)
 
 
@@ -3442,6 +3442,14 @@ def cleanup_browser(task_id: Optional[str] = None) -> None:
     if task_id is None:
         task_id = "default"
 
+    from superforecasting_agent.hosting.browser_sessions import browser_session_lifecycle
+
+    with browser_session_lifecycle(task_id.removesuffix(_LOCAL_SUFFIX)):
+        _cleanup_browser_for_task(task_id)
+
+
+def _cleanup_browser_for_task(task_id: str) -> None:
+    """Clean primary/sidecar resources while holding their shared admission."""
     # Expand to the full set of session keys to reap. For a bare task_id
     # that includes the cloud/primary key + the local sidecar if one exists.
     if _is_local_sidecar_key(task_id):
