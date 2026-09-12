@@ -1997,3 +1997,19 @@ Validation: 73 learning-trial, censoring and CRPS tests passed, including a sour
 mutation regression that excludes frozen pairs without altering their records.
 The shared quality workflow passed. This focused evidence does not replace the
 required integrated full-suite push gate.
+
+### CLI construction through the shared agent factory
+
+Both classic CLI foreground and background paths now use `build_agent`, removing
+two copies of provider-to-constructor field mapping. The CLI imports the runtime
+class only for type checking. UI callbacks and session initialization retain their
+existing owners. Background CLI construction now forwards the resolved credential
+pool, which its previous hand-written mapping omitted. Foreground construction
+now applies the same incompatible-provider/model rejection as the TUI.
+
+The CLI and factory tests passed (795 tests); shared quality checks passed.
+Regression coverage exercises callable credentials, ACP arguments, credential
+pool identity, explicit empty tool/reasoning selections, borrowed session storage,
+and rejection before constructing an incompatible Codex agent. Background callback
+coverage now also checks credential-pool forwarding. This extraction does not
+complete foreground configuration assembly or eliminate the legacy slash worker.

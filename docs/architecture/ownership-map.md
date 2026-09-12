@@ -484,3 +484,9 @@ construction using the inherited resolved runtime, without resolving a new accou
 with requested startup skills for CLI and TUI. The existing skill loader owns
 lookup and usage tracking; product adapters supply parsed skill names and session
 identity. Missing skills fail before model construction.
+
+Classic CLI foreground and background construction also uses
+`agent.agent_factory.build_agent`. Resolved provider fields, ACP command arguments
+and credential pools share the TUI mapping and provider/model validation. The CLI
+still owns its presentation callbacks and session initialization; full foreground
+configuration assembly and legacy slash-worker removal remain unfinished.

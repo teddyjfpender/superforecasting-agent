@@ -42,7 +42,7 @@ from urllib.parse import unquote, urlparse
 from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import TYPE_CHECKING, List, Dict, Any, Optional
 from superforecasting_agent.runtime.model_env import inference_provider_env
 from superforecasting_agent.runtime.assistant_text import (
     _strip_reasoning_tags as _strip_reasoning_tags,
@@ -405,7 +405,10 @@ from rich.text import Text as _RichText
 import fire
 
 # Import the agent and tool systems
-from agent.runtime import AIAgent
+from agent.agent_factory import build_agent
+
+if TYPE_CHECKING:
+    from agent.runtime import AIAgent
 from superforecasting_agent.tooling.runtime import get_tool_definitions, get_toolset_for_tool
 
 # Extracted CLI modules (Phase 3)
@@ -3092,15 +3095,9 @@ class ForecastCLI:
             forecast_system_prompt = build_forecast_chat_system_prompt(
                 self.system_prompt
             )
-            self.agent = AIAgent(
+            self.agent = build_agent(
+                runtime=runtime,
                 model=effective_model,
-                api_key=runtime.get("api_key"),
-                base_url=runtime.get("base_url"),
-                provider=runtime.get("provider"),
-                api_mode=runtime.get("api_mode"),
-                acp_command=runtime.get("command"),
-                acp_args=runtime.get("args"),
-                credential_pool=runtime.get("credential_pool"),
                 max_iterations=self.max_turns,
                 enabled_toolsets=self.enabled_toolsets,
                 disabled_toolsets=self.disabled_toolsets,
@@ -5951,14 +5948,9 @@ class ForecastCLI:
             except Exception:
                 pass
             try:
-                bg_agent = AIAgent(
+                bg_agent = build_agent(
+                    runtime=turn_route["runtime"],
                     model=turn_route["model"],
-                    api_key=turn_route["runtime"].get("api_key"),
-                    base_url=turn_route["runtime"].get("base_url"),
-                    provider=turn_route["runtime"].get("provider"),
-                    api_mode=turn_route["runtime"].get("api_mode"),
-                    acp_command=turn_route["runtime"].get("command"),
-                    acp_args=turn_route["runtime"].get("args"),
                     max_iterations=self.max_turns,
                     enabled_toolsets=self.enabled_toolsets,
                     quiet_mode=True,

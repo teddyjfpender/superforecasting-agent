@@ -14,8 +14,7 @@ from __future__ import annotations
 from typing import Any
 
 # The runtime-provider dict keys (resolve_runtime_provider) that map onto AIAgent
-# constructor kwargs, and the kwarg each becomes. Mirrors the canonical mapping in
-# tui_gateway/server.py:_make_agent and cli.py:ChatSession.refresh.
+# constructor kwargs. CLI and TUI construction both use this mapping.
 _RUNTIME_TO_KWARG: dict[str, str] = {
     "provider": "provider",
     "base_url": "base_url",

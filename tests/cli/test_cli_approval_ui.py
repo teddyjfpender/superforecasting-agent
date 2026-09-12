@@ -305,9 +305,12 @@ class TestCliApprovalUi:
         """
         cli = _make_background_cli_stub()
         seen = {}
+        pool = object()
+        cli._resolve_turn_agent_config.return_value["runtime"]["credential_pool"] = pool
 
         class FakeAgent:
             def __init__(self, **kwargs):
+                seen["construction"] = kwargs
                 self._print_fn = None
                 self.thinking_callback = None
 
@@ -326,7 +329,7 @@ class TestCliApprovalUi:
                     "failed": False,
                 }
 
-        with patch.object(cli_module, "AIAgent", FakeAgent), \
+        with patch("agent.agent_factory._aiagent_cls", return_value=FakeAgent), \
              patch.object(cli_module, "_cprint"), \
              patch.object(cli_module, "ChatConsole") as chat_console:
             chat_console.return_value.print = MagicMock()
@@ -336,6 +339,9 @@ class TestCliApprovalUi:
             while cli._background_tasks and time.time() < deadline:
                 time.sleep(0.01)
 
+        assert seen["construction"]["credential_pool"] is pool
+        assert seen["construction"]["enabled_toolsets"] == []
+        assert seen["construction"]["reasoning_config"] == {}
         assert seen["approval"].__self__ is cli
         assert seen["approval"].__func__ is HermesCLI._approval_callback
         assert seen["sudo"].__self__ is cli
