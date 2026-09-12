@@ -496,3 +496,9 @@ parsing, invocation and textual results for classic CLI and native TUI dispatch.
 It uses the existing cron tool/storage operations and returns text without global
 stdout redirection. Neither an agent nor a classic CLI worker is needed. Tool
 failures remain visible; the transport must not replay a command after execution.
+
+`agent/session_lifecycle.py` retains child-agent handles whose release/full close
+fails. Cleanup reports incomplete disposal to the host after attempting independent
+resources. Retries operate on those exact handles; task-ID cleanup remains once per
+parent owner. Reentrant child disposal is guarded independently from the parent's
+resource lock, so callbacks cannot replay an in-flight batch.

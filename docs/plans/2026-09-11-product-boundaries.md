@@ -2028,3 +2028,19 @@ pause/resume/run/remove, pre-execution handoff, one execution per invocation,
 invalid-input exclusion and storage-error reporting without dispatcher retry.
 150 focused command and cron-tool tests passed. Shared quality checks passed before
 the final list-error guard; the commit gate checks the final staged snapshot.
+
+### Retained child-agent cleanup ownership
+
+Agent eviction and shutdown previously cleared active-child handles and swallowed
+failures from both release and full close. The lifecycle owner now retains exact
+failed child handles and reports incomplete disposal after attempting the other
+resources. The hosting session disposer therefore keeps the parent pending rather
+than declaring it disposed. A later close retries only those child handles and
+never repeats task-ID terminal/browser/process cleanup. Reentrant callbacks cannot
+replay in-flight child cleanup, and duplicate child references are disposed once.
+
+358 lifecycle/runtime tests passed, including host disposal retry, failed eviction,
+sibling continuation, reentrancy, and a replacement terminal environment surviving
+the old parent's retry. Shared quality checks passed. This fixes child ownership;
+SDK client-close failure retention and terminal/browser cleanup failure ownership
+remain separate open work. It does not attribute the historical native crash.

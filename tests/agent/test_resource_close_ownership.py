@@ -1,6 +1,8 @@
 """An old agent must not reclaim replacement resources on repeated close."""
 
 import threading
+
+import pytest
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -205,3 +207,92 @@ def test_concurrent_rebuild_survives_eviction_cleanup():
         eviction.result(timeout=3)
     assert agent.client is replacement
     assert closed == [original]
+
+
+def test_failed_child_close_retries_handle_without_reaping_replacement(monkeypatch):
+    from tools import process_registry
+
+    agent = make_agent()
+    child = Mock()
+    child.close.side_effect = [OSError('temporary cleanup failure'), None]
+    agent._active_children = [child]
+    kill = Mock()
+    monkeypatch.setattr(process_registry.process_registry, 'kill_all', kill)
+    original, replacement = Mock(), Mock()
+    monkeypatch.setattr(terminal_tool, '_active_environments', {agent.session_id: original})
+    monkeypatch.setattr(session_lifecycle, 'cleanup_browser', Mock())
+    with pytest.raises(RuntimeError, match='cleanup incomplete'):
+        session_lifecycle.close(agent)
+    assert agent._pending_child_closes == [child]
+    terminal_tool._active_environments[agent.session_id] = replacement
+    session_lifecycle.close(agent)
+    assert agent._pending_child_closes == []
+    assert child.close.call_count == 2
+    kill.assert_called_once()
+    replacement.cleanup.assert_not_called()
+    session_lifecycle.close(agent)
+    assert child.close.call_count == 2
+
+
+def test_failed_child_eviction_retains_handle_for_full_shutdown(monkeypatch):
+    from tools import process_registry
+
+    agent = make_agent()
+    child = Mock()
+    child.release_clients.side_effect = OSError('eviction failure')
+    child.close.side_effect = [OSError('close failure'), None]
+    agent._active_children = [child]
+    with pytest.raises(RuntimeError, match='cleanup incomplete'):
+        session_lifecycle.release_clients(agent)
+    assert agent._pending_child_closes == [child]
+    monkeypatch.setattr(process_registry.process_registry, 'kill_all', Mock())
+    monkeypatch.setattr(session_lifecycle, 'cleanup_vm', Mock())
+    monkeypatch.setattr(session_lifecycle, 'cleanup_browser', Mock())
+    session_lifecycle.close(agent)
+    assert agent._pending_child_closes == []
+    child.release_clients.assert_called_once()
+    assert child.close.call_count == 2
+
+
+def test_child_cleanup_failure_does_not_skip_siblings_or_repeat_on_reentry(monkeypatch):
+    from tools import process_registry
+
+    agent = make_agent()
+    first, second = Mock(), Mock()
+    def fail():
+        session_lifecycle.close(agent)
+        raise OSError('cleanup failure')
+    first.close.side_effect = fail
+    second.close.side_effect = lambda: session_lifecycle.close(agent)
+    agent._active_children = [first, second, first]
+    monkeypatch.setattr(process_registry.process_registry, 'kill_all', Mock())
+    monkeypatch.setattr(session_lifecycle, 'cleanup_vm', Mock())
+    monkeypatch.setattr(session_lifecycle, 'cleanup_browser', Mock())
+    with pytest.raises(RuntimeError, match='cleanup incomplete'):
+        session_lifecycle.close(agent)
+    first.close.assert_called_once()
+    second.close.assert_called_once()
+    assert agent._pending_child_closes == [first]
+
+
+def test_host_retains_agent_until_failed_child_disposal_succeeds(monkeypatch):
+    from superforecasting_agent.hosting.sessions import dispose_session
+    from tools import process_registry
+
+    agent = make_agent()
+    child = Mock()
+    child.close.side_effect = [OSError('temporary disposal failure'), None]
+    agent._active_children = [child]
+    agent.close = lambda: session_lifecycle.close(agent)
+    session = {'agent': agent}
+    monkeypatch.setattr(process_registry.process_registry, 'kill_all', Mock())
+    monkeypatch.setattr(session_lifecycle, 'cleanup_vm', Mock())
+    monkeypatch.setattr(session_lifecycle, 'cleanup_browser', Mock())
+    with pytest.raises(RuntimeError, match='Session cleanup incomplete'):
+        dispose_session(session, release_notifications=lambda: None)
+    assert session['_cleanup_pending']
+    assert 'agent' not in session['_disposed_resources']
+    dispose_session(session, release_notifications=lambda: None)
+    assert not session['_cleanup_pending']
+    assert session['_disposed_resources']['agent'] is agent
+    assert child.close.call_count == 2

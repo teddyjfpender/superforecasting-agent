@@ -1,5 +1,6 @@
 """Memory session boundaries, client eviction, and full task shutdown."""
 
+import logging
 import threading
 from typing import Any
 
@@ -9,6 +10,7 @@ from tools.terminal_tool import cleanup_vm
 
 # Only partially constructed agents lack their own lock.
 _partial_agent_close_lock = threading.RLock()
+logger = logging.getLogger(__name__)
 
 
 def shutdown_memory_provider(self, messages: list | None = None) -> None:
@@ -141,25 +143,11 @@ def release_clients(self) -> None:
         if getattr(self, "_resources_closed", False):
             return
         _release_clients(self)
+        _require_children_disposed(self)
 
 
 def _release_clients(self) -> None:
-    # Close active child agents (per-turn; no cross-turn persistence).
-    try:
-        with self._active_children_lock:
-            children = list(self._active_children)
-            self._active_children.clear()
-        for child in children:
-            try:
-                child.release_clients()
-            except Exception:
-                # Fall back to full close on children; they're per-turn.
-                try:
-                    child.close()
-                except Exception:
-                    pass
-    except Exception:
-        pass
+    _close_children(self, release_only=True)
 
     # Close the OpenAI/httpx client to release sockets immediately.
     try:
@@ -168,6 +156,55 @@ def _release_clients(self) -> None:
             self._close_openai_client(client, reason="cache_evict", shared=True)
     except Exception:
         pass
+
+
+def _close_children(self, *, release_only: bool, collect_active: bool = True) -> None:
+    """Dispose captured children; failed handles stay owned for a later retry.
+
+    The caller holds the resource-close lock. Detach the pending batch before
+    callbacks so a reentrant parent close cannot repeat an in-flight disposal.
+    """
+    if getattr(self, "_child_cleanup_running", False):
+        return
+    self._child_cleanup_running = True
+    try:
+        children = list(getattr(self, "_pending_child_closes", []))
+        self._pending_child_closes = []
+        if collect_active:
+            lock = getattr(self, "_active_children_lock", _partial_agent_close_lock)
+            with lock:
+                active = getattr(self, "_active_children", [])
+                children.extend(active)
+                active.clear()
+        seen: set[int] = set()
+        for child in children:
+            if id(child) in seen:
+                continue
+            seen.add(id(child))
+            try:
+                if release_only:
+                    try:
+                        child.release_clients()
+                        continue
+                    except Exception:
+                        # Per-turn children may be fully closed on failed eviction.
+                        pass
+                child.close()
+            except Exception:
+                self._pending_child_closes.append(child)
+                logger.warning(
+                    "Child agent cleanup failed; retaining handle for retry",
+                    exc_info=True,
+                )
+    finally:
+        self._child_cleanup_running = False
+
+
+def _require_children_disposed(self) -> None:
+    if not getattr(self, "_child_cleanup_running", False) and getattr(
+        self, "_pending_child_closes", []
+    ):
+        raise RuntimeError("Child agent cleanup incomplete; retry close")
 
 
 def close(self) -> None:
@@ -185,11 +222,15 @@ def close(self) -> None:
     """
     with getattr(self, "_resource_close_lock", _partial_agent_close_lock):
         if getattr(self, "_resources_closed", False):
+            # Retry only retained object handles, never session/task-ID lookups.
+            _close_children(self, release_only=False, collect_active=False)
+            _require_children_disposed(self)
             return
         # Claim once before callbacks: teardown may re-enter close(). A later
         # agent can reuse this session ID, so repeated cleanup is destructive.
         self._resources_closed = True
         _close_resources(self)
+        _require_children_disposed(self)
 
 
 def _close_resources(self) -> None:
@@ -215,18 +256,8 @@ def _close_resources(self) -> None:
     except Exception:
         pass
 
-    # 4. Close active child agents
-    try:
-        with self._active_children_lock:
-            children = list(self._active_children)
-            self._active_children.clear()
-        for child in children:
-            try:
-                child.close()
-            except Exception:
-                pass
-    except Exception:
-        pass
+    # 4. Close active children, retaining exact handles if disposal fails.
+    _close_children(self, release_only=False)
 
     # 5. Close the OpenAI/httpx client
     try:
