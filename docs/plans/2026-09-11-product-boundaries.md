@@ -2241,3 +2241,26 @@ case proves disabled servers remain excluded using supplied settings.
 646 TUI/gateway tests and the shared quality workflow passed. Provider credential
 resolution and configuration reads inside agent construction remain separate
 paths; this change does not establish a fully frozen provider build.
+
+### One configuration per runtime provider resolution
+
+The shared provider resolver now captures one normalized configuration and passes
+its model section through provider selection, endpoint resolution, Azure and pool
+mapping. Named custom provider lookup and Bedrock region/guardrail settings use
+the same configuration. Empty supplied model dictionaries no longer trigger an
+implicit reload. Callers may also supply a normalized configuration explicitly;
+the resolver copies it before use. Credential stores and token refresh remain live.
+
+Regression tests forbid a second profile load across local, named-custom and
+Bedrock branches, and forbid any load when supplying configuration. Existing
+provider/status fixtures now accept the explicit snapshot argument while retaining
+their behavioral assertions. The focused 403-test run and shared quality workflow
+passed. This resolves consistency inside provider selection; connecting the raw
+host snapshot requires shared normalization of defaults and environment references,
+and agent-internal configuration reads still need a separate audit.
+
+The expanded CLI/runtime run completed with 5,506 passes, 11 skips and three
+failures from additional string-targeted test doubles rejecting the new snapshot
+keyword. After updating those doubles, both affected modules passed all 205 tests;
+their Copilot response-mode and Ollama credential-isolation assertions are unchanged.
+The full integrated push gate remains required for this increment.

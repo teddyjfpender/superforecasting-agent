@@ -36,7 +36,7 @@ def test_show_status_displays_configured_dict_model_and_provider_label(monkeypat
         lambda: {"model": {"default": "anthropic/claude-sonnet-4", "provider": "anthropic"}},
         raising=False,
     )
-    monkeypatch.setattr(status_mod, "resolve_requested_provider", lambda requested=None: "anthropic", raising=False)
+    monkeypatch.setattr(status_mod, "resolve_requested_provider", lambda requested=None, **_snapshot: "anthropic", raising=False)
     monkeypatch.setattr(status_mod, "resolve_provider", lambda requested=None, **kwargs: "anthropic", raising=False)
     monkeypatch.setattr(status_mod, "provider_label", lambda provider: "Anthropic", raising=False)
 
@@ -52,7 +52,7 @@ def test_show_status_displays_legacy_string_model_and_custom_endpoint(monkeypatc
 
     _patch_common_status_deps(monkeypatch, status_mod, tmp_path, openai_base_url="http://localhost:8080/v1")
     monkeypatch.setattr(status_mod, "load_config", lambda: {"model": "qwen3:latest"}, raising=False)
-    monkeypatch.setattr(status_mod, "resolve_requested_provider", lambda requested=None: "auto", raising=False)
+    monkeypatch.setattr(status_mod, "resolve_requested_provider", lambda requested=None, **_snapshot: "auto", raising=False)
     monkeypatch.setattr(status_mod, "resolve_provider", lambda requested=None, **kwargs: "openrouter", raising=False)
     monkeypatch.setattr(status_mod, "provider_label", lambda provider: "Custom endpoint" if provider == "custom" else provider, raising=False)
 
@@ -74,7 +74,7 @@ def test_show_status_reports_managed_nous_features(monkeypatch, capsys, tmp_path
         lambda: {"model": {"default": "claude-opus-4-6", "provider": "nous"}},
         raising=False,
     )
-    monkeypatch.setattr(status_mod, "resolve_requested_provider", lambda requested=None: "nous", raising=False)
+    monkeypatch.setattr(status_mod, "resolve_requested_provider", lambda requested=None, **_snapshot: "nous", raising=False)
     monkeypatch.setattr(status_mod, "resolve_provider", lambda requested=None, **kwargs: "nous", raising=False)
     monkeypatch.setattr(status_mod, "provider_label", lambda provider: "Nous Portal", raising=False)
     monkeypatch.setattr(
@@ -114,7 +114,7 @@ def test_show_status_hides_nous_subscription_section_when_feature_flag_is_off(mo
         lambda: {"model": {"default": "claude-opus-4-6", "provider": "nous"}},
         raising=False,
     )
-    monkeypatch.setattr(status_mod, "resolve_requested_provider", lambda requested=None: "nous", raising=False)
+    monkeypatch.setattr(status_mod, "resolve_requested_provider", lambda requested=None, **_snapshot: "nous", raising=False)
     monkeypatch.setattr(status_mod, "resolve_provider", lambda requested=None, **kwargs: "nous", raising=False)
     monkeypatch.setattr(status_mod, "provider_label", lambda provider: "Nous Portal", raising=False)
 
@@ -140,7 +140,7 @@ def test_show_status_reports_empty_lmstudio_listing_as_reachable(monkeypatch, ca
         },
         raising=False,
     )
-    monkeypatch.setattr(status_mod, "resolve_requested_provider", lambda requested=None: "lmstudio", raising=False)
+    monkeypatch.setattr(status_mod, "resolve_requested_provider", lambda requested=None, **_snapshot: "lmstudio", raising=False)
     monkeypatch.setattr(status_mod, "resolve_provider", lambda requested=None, **kwargs: "lmstudio", raising=False)
     monkeypatch.setattr(status_mod, "provider_label", lambda provider: "LM Studio", raising=False)
     monkeypatch.setattr(

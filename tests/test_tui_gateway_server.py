@@ -3919,7 +3919,7 @@ def test_apply_model_switch_away_from_dead_codex_no_agent(monkeypatch):
 
     monkeypatch.setattr(rp, "resolve_runtime_provider", _dead_codex_resolver)
     monkeypatch.setattr(
-        rp, "resolve_requested_provider", lambda requested=None: "openai-codex"
+        rp, "resolve_requested_provider", lambda requested=None, **_snapshot: "openai-codex"
     )
     monkeypatch.setattr(ms, "switch_model", _fake_switch_model)
     monkeypatch.setattr(server, "_store_session_toggle", lambda *a, **k: None)

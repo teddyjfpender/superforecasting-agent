@@ -704,7 +704,7 @@ class TestRuntimeProviderResolution:
         monkeypatch.setattr("superforecasting_agent.runtime.copilot_auth._try_gh_cli_token", lambda: "gho_cli_secret")
         monkeypatch.setattr(
             "superforecasting_agent.runtime.runtime_provider._get_model_config",
-            lambda: {"provider": "copilot", "default": "gpt-5.4"},
+            lambda **_snapshot: {"provider": "copilot", "default": "gpt-5.4"},
         )
         monkeypatch.setattr(
             "superforecasting_agent.runtime.models.fetch_github_model_catalog",

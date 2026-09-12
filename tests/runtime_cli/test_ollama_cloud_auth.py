@@ -37,7 +37,7 @@ class TestOllamaCloudCredentials:
         }
         monkeypatch.setattr(
             "superforecasting_agent.runtime.runtime_provider._get_model_config",
-            lambda: mock_config.get("model", {}),
+            lambda **_snapshot: mock_config.get("model", {}),
         )
 
         from superforecasting_agent.runtime.runtime_provider import resolve_runtime_provider
@@ -61,7 +61,7 @@ class TestOllamaCloudCredentials:
         }
         monkeypatch.setattr(
             "superforecasting_agent.runtime.runtime_provider._get_model_config",
-            lambda: mock_config.get("model", {}),
+            lambda **_snapshot: mock_config.get("model", {}),
         )
 
         from superforecasting_agent.runtime.runtime_provider import resolve_runtime_provider
