@@ -1301,7 +1301,6 @@ from agent.skill_commands import (
     scan_skill_commands,
     get_skill_commands,
     build_skill_invocation_message,
-    build_preloaded_skills_prompt,
 )
 from agent.skill_bundles import (
     get_skill_bundles,
@@ -11407,18 +11406,11 @@ def main(
     )
 
     if parsed_skills:
-        skills_prompt, loaded_skills, missing_skills = build_preloaded_skills_prompt(
-            parsed_skills,
-            task_id=cli.session_id,
+        from agent.startup_prompt import prepare_startup_prompt
+
+        cli.system_prompt, cli.preloaded_skills = prepare_startup_prompt(
+            cli.system_prompt, parsed_skills, session_id=cli.session_id,
         )
-        if missing_skills:
-            missing_display = ", ".join(missing_skills)
-            raise ValueError(f"Unknown skill(s): {missing_display}")
-        if skills_prompt:
-            cli.system_prompt = "\n\n".join(
-                part for part in (cli.system_prompt, skills_prompt) if part
-            ).strip()
-            cli.preloaded_skills = loaded_skills
 
     # Inject worktree context into agent's system prompt
     if wt_info:

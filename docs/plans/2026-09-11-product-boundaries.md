@@ -1962,3 +1962,17 @@ The inheritance owner is in strict quality scope, and a transitive contract keep
 it independent of construction, runtime, transport and tool implementations. All
 39 import contracts and shared Python quality checks passed. Foreground startup
 configuration/prompt assembly still needs further ownership separation.
+
+
+### Shared startup skill assembly
+
+`agent/startup_prompt.py` owns prompt validation, startup-skill loading, missing
+skill rejection and prompt concatenation. CLI preload and TUI foreground startup
+now consume that policy; adapters keep environment/flag parsing and the existing
+forecast protocol wrapper. Skill loading retains the active session identity,
+and empty skill lists avoid touching the loader. The CLI tests patch the skill
+loader at its actual owner rather than an imported presentation alias.
+
+Validation: 234 shared startup/CLI/gateway tests passed. The new module is in
+strict lint/format/type scope and all shared Python quality checks passed.
+Foreground provider/configuration option assembly remains in the TUI adapter.

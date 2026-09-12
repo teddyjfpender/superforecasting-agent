@@ -476,3 +476,11 @@ contracts prohibit runtime, agent, tools and presentation dependencies.
 host defaults. Empty selections are meaningful; mutable configuration is copied.
 Adapters supply session identity/storage and defaults. `agent.agent_factory` owns
 construction using the inherited resolved runtime, without resolving a new account.
+
+
+### Startup prompt assembly
+
+`agent/startup_prompt.py` owns validation and combination of a system prompt
+with requested startup skills for CLI and TUI. The existing skill loader owns
+lookup and usage tracking; product adapters supply parsed skill names and session
+identity. Missing skills fail before model construction.

@@ -79,8 +79,7 @@ def test_main_applies_preloaded_skills_to_system_prompt(monkeypatch):
 
     monkeypatch.setattr(cli_mod, "ForecastCLI", fake_cli)
     monkeypatch.setattr(
-        cli_mod,
-        "build_preloaded_skills_prompt",
+        "agent.skill_commands.build_preloaded_skills_prompt",
         lambda skills, task_id=None: ("skill prompt", ["hermes-agent-dev", "github-auth"], []),
     )
 
@@ -97,8 +96,7 @@ def test_main_raises_for_unknown_preloaded_skill(monkeypatch):
 
     monkeypatch.setattr(cli_mod, "ForecastCLI", lambda **kwargs: _DummyCLI(**kwargs))
     monkeypatch.setattr(
-        cli_mod,
-        "build_preloaded_skills_prompt",
+        "agent.skill_commands.build_preloaded_skills_prompt",
         lambda skills, task_id=None: ("", [], ["missing-skill"]),
     )
 

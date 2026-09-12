@@ -2583,21 +2583,12 @@ def _make_agent(sid: str, key: str, session_id: str | None = None):
 
     cfg = _load_cfg()
     agent_cfg = cfg.get("agent") or {}
-    system_prompt = (agent_cfg.get("system_prompt", "") or "").strip()
-    startup_skills = _parse_tui_skills_env()
-    if startup_skills:
-        from agent.skill_commands import build_preloaded_skills_prompt
+    from agent.startup_prompt import prepare_startup_prompt
 
-        skills_prompt, _loaded_skills, missing_skills = build_preloaded_skills_prompt(
-            startup_skills,
-            task_id=session_id or key,
-        )
-        if missing_skills:
-            raise ValueError(f"Unknown skill(s): {', '.join(missing_skills)}")
-        if skills_prompt:
-            system_prompt = "\n\n".join(
-                part for part in (system_prompt, skills_prompt) if part
-            ).strip()
+    system_prompt, _loaded_skills = prepare_startup_prompt(
+        agent_cfg.get("system_prompt"), _parse_tui_skills_env(),
+        session_id=session_id or key,
+    )
     model, requested_provider = _resolve_startup_runtime()
     from agent.agent_factory import build_agent
     from forecasting.protocol import build_forecast_chat_system_prompt
