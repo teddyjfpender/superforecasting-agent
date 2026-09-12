@@ -173,15 +173,8 @@ def models_reachable(models: Sequence[str], available: set[str] | None) -> bool:
 # resolve_connected_panel rebuilds a preset's panel from the user's ACTUALLY-authed
 # providers — each provider's own default model, dispatched natively via the
 # ``provider:model`` runner split — and falls back to an HONESTLY-labeled
-# single-provider self-fusion when only one provider is reachable. It NEVER names a
-# model the user cannot call.
-
-# Aggregator providers serve many vendors' models under one key, so the hardcoded
-# preset ids ARE callable when one is authed — no rebuild needed (OpenRouter/Nous/
-# Vercel become "just another provider IF a key exists").
-_AGGREGATOR_PROVIDER_SLUGS = frozenset({"openrouter", "nous", "ai-gateway"})
-# Provider slugs that are not a distinct model source for panel diversity.
-_NON_PANEL_PROVIDER_SLUGS = frozenset({"custom"})
+# single-provider self-fusion when only one provider is detected. Selection rules
+# live in forecasting.panel_selection; discovery here is not a callability probe.
 
 
 def available_providers_detail() -> list[dict[str, Any]] | None:
@@ -257,9 +250,9 @@ def resolve_connected_panel(
         reachable: ``active_model`` sampled ``samples`` times, with the HONEST label
         "1 provider connected -> self-fusion; multi-model needs a second provider".
 
-    Never names a model the user cannot call: a rebuilt multi-provider panel uses
-    each provider's OWN default model, and the self-fusion fallback uses the active
-    model routed through its active provider.
+    A rebuilt panel uses provider-native defaults. Credential detection does not
+    prove quota, model access, or successful inference; execution must still report
+    provider failures.
     """
 
     detail = (
@@ -267,85 +260,21 @@ def resolve_connected_panel(
         if providers is not None
         else available_providers_detail()
     )
-    base = {
-        "rebuilt": False,
-        "self_fusion": False,
-        "models": None,
-        "judge": None,
-        "label": None,
-        "providers_used": [],
-    }
-    if detail is None:
-        # Unknown provider picture — fail open, keep the preset verbatim.
-        return base
+    from forecasting.panel_selection import select_connected_panel
 
-    authed = {str(p.get("id")) for p in detail}
-    base["providers_used"] = sorted(authed)
-    # An aggregator key serves the hardcoded preset ids as-is — no rebuild.
-    if authed & _AGGREGATOR_PROVIDER_SLUGS:
-        return base
-
-    # Distinct native providers, canonical order, each with its own default model.
-    pairs: list[tuple[str, str]] = []
-    seen: set[str] = set()
-    for row in detail:
-        slug = str(row.get("id"))
-        if slug in _NON_PANEL_PROVIDER_SLUGS or slug in _AGGREGATOR_PROVIDER_SLUGS:
-            continue
-        if slug in seen:
-            continue
-        model = _provider_default_model(slug)
-        if not model:
-            continue
-        seen.add(slug)
-        pairs.append((slug, f"{slug}:{model}"))
-
-    if len(pairs) >= 2:
-        want = max(2, min(preset_model_count(preset, samples=samples), len(pairs)))
-        chosen = pairs[:want]
-        models = [qm for _, qm in chosen]
-        active_norm = (active_provider or "").strip().lower()
-        judge = next(
-            (qm for slug, qm in chosen if slug == active_norm), models[0]
-        )
-        label = (
-            f"{len(chosen)} providers connected -> multi-model panel: "
-            + ", ".join(slug for slug, _ in chosen)
-        )
-        return {
-            "rebuilt": True,
-            "self_fusion": False,
-            "models": models,
-            "judge": judge,
-            "label": label,
-            "providers_used": [slug for slug, _ in chosen],
-        }
-
-    # ZERO usable providers: the docstring's contract — nothing usable was
-    # found -> rebuilt=False (fail-open, preset verbatim). Claiming
-    # "1 provider connected" here would be a lie, and self-fusing an active
-    # model with no live provider behind it reproduces the empty-response
-    # failure this function exists to prevent.
-    if not pairs and not authed:
-        return base
-
-    # Exactly 1 native provider reachable — honest single-provider self-fusion.
-    if active_model:
-        n = max(1, int(samples))
-        label = (
-            "1 provider connected -> self-fusion; multi-model needs a second provider"
-        )
-        return {
-            "rebuilt": True,
-            "self_fusion": True,
-            "models": [active_model] * n,
-            "judge": active_model,
-            "label": label,
-            "providers_used": [pairs[0][0]] if pairs else sorted(authed),
-        }
-
-    # Nothing usable to rebuild with (no aggregator, <2 providers, no active model).
-    return base
+    if detail is not None:
+        detail = [
+            {**row, "default_model": _provider_default_model(str(row["id"]))}
+            for row in detail
+            if row.get("id") and row.get("authenticated", True) is True
+        ]
+    return select_connected_panel(
+        detail,
+        panel_size=preset_model_count(preset, samples=samples),
+        active_model=active_model,
+        active_provider=active_provider,
+        samples=samples,
+    )
 
 
 # ── Operator-pinned panel (QUORUM_PANEL_MODELS) ──────────────────────────────

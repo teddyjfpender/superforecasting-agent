@@ -28,7 +28,7 @@ changes, tests and their limits. The previous checklist is preserved in the
   Shared defaults/normalization and read-only profile access are now independent.
   Ledger scoring/snapshot settings, hook policy and estimate-first policy use them;
   scheduler, worker and research readers use the same owner. Quorum command reads and writes now use independent configuration and installation
-  owners. Startup environment loading is now independent too. Remaining exceptions
+  owners. Startup environment loading is now independent too. Connected-panel selection rules now run on supplied provider snapshots in a pure forecasting module; discovery remains in the adapter. Remaining exceptions
   are plugin discovery and quorum model construction.
 
 Already implemented: shared forecast review/resolution/scoring, command catalog

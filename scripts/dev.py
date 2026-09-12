@@ -50,6 +50,7 @@ STRICT_PYTHON = (
     "superforecasting_agent/platform_registry.py",
     "superforecasting_agent/session_context.py",
     "forecasting/application",
+    "forecasting/panel_selection.py",
     "forecasting/distribution_summary.py",
     "forecasting/distribution_parameters.py",
     "forecasting/__init__.py",

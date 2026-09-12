@@ -3957,3 +3957,20 @@ tests passed. Shared lint, format, type, import, protocol and TUI quality gates
 passed. Regressions assert malformed inputs do not load or save configuration or
 reset a session, and direct shared-operation calls preserve the input snapshot.
 This closes input coercion; it does not remove remaining classic worker commands.
+
+
+### Connected-panel policy separated from discovery
+
+forecasting.panel_selection now owns provider deduplication, aggregator handling,
+panel size, judge choice and self-fusion selection. The existing quorum adapter
+supplies a provider snapshot with native default IDs; the rules perform no
+credential lookup or model discovery. Explicitly unauthenticated or malformed
+authentication statuses no longer influence connected-panel selection, consistent
+with pinned-panel validation. Missing status remains compatible with existing
+authenticated-row callers. Credential presence is not proof of quota or model access.
+
+All 121 panel/quorum/autonomy tests passed, including blocked-discovery policy
+tests and adapter coverage proving unauthenticated rows trigger no default lookup.
+Python quality gates passed with strict coverage for the new owner and 56 enforced
+import contracts. The existing runtime dependency exception remains honest: the
+quorum discovery adapter still uses the runtime catalog and credential inventory.

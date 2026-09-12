@@ -735,3 +735,10 @@ type = "forbidden"
 source_modules = ["superforecasting_agent.application.retry", "superforecasting_agent.application.history"]
 forbidden_modules = ["superforecasting_agent.storage", "superforecasting_agent.runtime", "agent", "tools", "forecasting", "cli", "gateway", "tui_gateway"]
 allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "panel selection owns rules without runtime discovery or presentation"
+type = "forbidden"
+source_modules = ["forecasting.panel_selection"]
+forbidden_modules = ["superforecasting_agent.runtime", "tui_gateway", "cli", "gateway", "agent", "tools", "forecasting.quorum"]
+allow_indirect_imports = "true"
