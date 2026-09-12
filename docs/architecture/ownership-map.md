@@ -786,3 +786,13 @@ and aggregator credentials cannot satisfy an explicit different provider route.
 Configured panelists and judge are validated together against one captured
 provider snapshot. The import prohibition on runtime and presentation is
 transitive. Discovery remains in the quorum adapter pending further extraction.
+
+### Subprocess output descriptor ownership
+
+`superforecasting_agent/processes.py::private_process_output` owns parent-side
+stdout/stderr descriptors across allocation and spawning. Both normal browser
+commands and temporary Chrome fallback use it. Each descriptor is registered
+for cleanup immediately; a second-open failure cannot leak the first. Children
+retain their inherited descriptors independently after the parent closes its
+copies. This addresses a reproduced allocation leak, not the historical native
+SSL or late bad-file-descriptor incident.

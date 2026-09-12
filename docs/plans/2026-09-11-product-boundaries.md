@@ -4580,3 +4580,18 @@ Validation: 356 process/browser tests passed, 22 optional cases skipped; shared
 quality checks passed. Fake signal tests cover zero, negative IDs and permission
 failure without signaling actual processes. Positive PID validation is not proof
 of process identity: PID reuse and confirmed termination remain open work.
+
+### Partial browser output allocation cleanup
+
+Failure injection reproduced a stdout descriptor leak when stderr creation
+failed in both browser launch paths (two negative controls failed; spawn-error
+controls already passed). Both paths now use a shared process-output context
+manager backed by ExitStack, registering each descriptor before allocating the
+next. The owner preserves private file permissions and the existing file-backed
+output strategy needed for daemonized children.
+
+Validation: 360 process/browser tests passed, 22 optional cases skipped; shared
+quality checks passed. Test teardown compares descriptor file identities before
+closing leaked fixtures so it cannot close another component's reused handle.
+This is a confirmed allocation leak; it does not establish the cause of either
+historical native crash.
