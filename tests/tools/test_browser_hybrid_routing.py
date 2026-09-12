@@ -189,6 +189,7 @@ class TestCleanupHybridSessions:
 
         def _fake_cleanup_one(key):
             reaped.append(key)
+            browser_tool._active_sessions.pop(key, None)
 
         monkeypatch.setattr(browser_tool, "_cleanup_single_browser_session", _fake_cleanup_one)
         monkeypatch.setattr(
@@ -215,6 +216,7 @@ class TestCleanupHybridSessions:
 
         def _fake_cleanup_one(key):
             reaped.append(key)
+            browser_tool._active_sessions.pop(key, None)
 
         monkeypatch.setattr(browser_tool, "_cleanup_single_browser_session", _fake_cleanup_one)
         monkeypatch.setattr(
@@ -233,6 +235,7 @@ class TestCleanupHybridSessions:
 
         def _fake_cleanup_one(key):
             reaped.append(key)
+            browser_tool._active_sessions.pop(key, None)
 
         monkeypatch.setattr(browser_tool, "_cleanup_single_browser_session", _fake_cleanup_one)
         monkeypatch.setattr(

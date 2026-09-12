@@ -63,7 +63,7 @@ class TestBrowserCleanup:
 
         assert "task-1" not in browser_tool._active_sessions
         assert "task-1" not in browser_tool._session_last_activity
-        mock_stop.assert_called_once_with("task-1")
+        mock_stop.assert_called_once_with("task-1", session_info={"session_name": "sess-1", "bb_session_id": None})
         mock_run.assert_called_once_with(
             "task-1",
             "close",

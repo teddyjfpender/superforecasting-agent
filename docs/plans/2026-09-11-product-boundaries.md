@@ -3210,3 +3210,17 @@ The startup batch's full push gate remains running in the primary checkout.
   and the browser guide were refreshed with the explicit-empty semantics.
 - Remaining: task admission during process-wide transitions and exact ownership
   for browser sessions, recordings and cloud resources.
+
+### Browser replacement tracking during cleanup
+
+- Recording-stop requests now use the same captured browser session handle as
+  the close request. Completion removes recording/session/activity tracking only
+  when the captured resource still owns that task entry. The last-active routing
+  pointer is preserved when a replacement primary or sidecar remains live.
+- A deterministic regression publishes a replacement while the old recording
+  stop is in flight and proves both cleanup commands target the old handle while
+  all replacement tracking survives. Hybrid-cleanup fakes now perform the actual
+  removal they previously only claimed to simulate.
+- Verification: 55 cleanup/recording/hybrid tests passed; shared Python quality
+  gates passed. This fixes delayed completion ownership, not admission across
+  all browser operations or cloud-provider disposal failure recovery.

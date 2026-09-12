@@ -3033,13 +3033,14 @@ def _maybe_start_recording(task_id: str):
         logger.debug("Auto-recording setup failed: %s", e)
 
 
-def _maybe_stop_recording(task_id: str):
+def _maybe_stop_recording(task_id: str, *, session_info=None):
     """Stop recording if one is active for this session."""
     with _cleanup_lock:
         if task_id not in _recording_sessions:
             return
     try:
-        result = _run_browser_command(task_id, "record", ["stop"])
+        kwargs = {"_session_info": session_info} if session_info is not None else {}
+        result = _run_browser_command(task_id, "record", ["stop"], **kwargs)
         if result.get("success"):
             path = result.get("data", {}).get("path", "")
             logger.info("Saved browser recording for session %s: %s", task_id, path)
@@ -3047,7 +3048,8 @@ def _maybe_stop_recording(task_id: str):
         logger.debug("Could not stop recording for %s: %s", task_id, e)
     finally:
         with _cleanup_lock:
-            _recording_sessions.discard(task_id)
+            if session_info is None or _active_sessions.get(task_id) is session_info:
+                _recording_sessions.discard(task_id)
 
 
 def browser_get_images(task_id: Optional[str] = None) -> str:
@@ -3455,7 +3457,9 @@ def cleanup_browser(task_id: Optional[str] = None) -> None:
     # Drop the last-active pointer only when the bare task is being cleaned
     # (i.e. not when we're only reaping a sidecar mid-task).
     if not _is_local_sidecar_key(task_id):
-        _last_active_session_key.pop(bare_task_id, None)
+        with _cleanup_lock:
+            if bare_task_id not in _active_sessions and f"{bare_task_id}{_LOCAL_SUFFIX}" not in _active_sessions:
+                _last_active_session_key.pop(bare_task_id, None)
 
 
 def _cleanup_single_browser_session(task_id: str) -> None:
@@ -3489,7 +3493,7 @@ def _cleanup_single_browser_session(task_id: str) -> None:
         logger.debug("Found session for task %s: bb_session_id=%s", task_id, bb_session_id)
 
         # Stop auto-recording before closing (saves the file)
-        _maybe_stop_recording(task_id)
+        _maybe_stop_recording(task_id, session_info=session_info)
 
         # Try to close via agent-browser first (needs session in _active_sessions)
         try:
@@ -3500,8 +3504,11 @@ def _cleanup_single_browser_session(task_id: str) -> None:
 
         # Now remove from tracking under lock
         with _cleanup_lock:
-            _active_sessions.pop(task_id, None)
-            _session_last_activity.pop(task_id, None)
+            # Close completion belongs to the captured resource, not any later
+            # session published under the same task identifier.
+            if _active_sessions.get(task_id) is session_info:
+                _active_sessions.pop(task_id, None)
+                _session_last_activity.pop(task_id, None)
 
         # Cloud mode: close the cloud browser session via provider API.
         # Local sidecars have bb_session_id=None so this no-ops for them.
