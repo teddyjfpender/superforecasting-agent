@@ -66,7 +66,7 @@ def test_auth_start_returns_code_and_url(monkeypatch):
 
 
 def test_auth_flow_success_persists_tokens(monkeypatch):
-    import superforecasting_agent.runtime.auth as auth_mod
+    import superforecasting_agent.credentials.auth as auth_mod
     import superforecasting_agent.runtime.codex_device_flow as flow
 
     saved = {}
@@ -134,7 +134,7 @@ def test_auth_success_refreshes_live_agent_credentials(monkeypatch):
         flow, "exchange_device_code",
         lambda ac, cv, **kw: {"tokens": {"access_token": "fresh_at", "refresh_token": "rt"}},
     )
-    monkeypatch.setattr("superforecasting_agent.runtime.auth._save_codex_tokens", lambda *a, **k: None)
+    monkeypatch.setattr("superforecasting_agent.credentials.auth._save_codex_tokens", lambda *a, **k: None)
     fresh_pool = object()
     monkeypatch.setattr(
         "superforecasting_agent.runtime.runtime_provider.resolve_runtime_provider",
@@ -224,7 +224,7 @@ def test_auth_poll_reports_terminal_status_once(monkeypatch):
         flow, "exchange_device_code",
         lambda ac, cv, **kw: {"tokens": {"access_token": "at", "refresh_token": "rt"}},
     )
-    monkeypatch.setattr("superforecasting_agent.runtime.auth._save_codex_tokens", lambda *a, **k: None)
+    monkeypatch.setattr("superforecasting_agent.credentials.auth._save_codex_tokens", lambda *a, **k: None)
 
     assert "result" in _start()
     assert _wait_status("success")["status"] == "success"

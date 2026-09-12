@@ -3897,7 +3897,7 @@ def test_config_set_model_allowed_when_idle(monkeypatch):
 
 def _dead_codex_resolver(*, requested=None, target_model=None, **_kw):
     """resolve_runtime_provider stub: the current (codex) provider is dead."""
-    from superforecasting_agent.runtime.auth import AuthError
+    from superforecasting_agent.credentials.auth import AuthError
 
     if requested in {None, "", "openai-codex"}:
         raise AuthError(
@@ -4006,7 +4006,7 @@ def test_switch_model_to_dead_codex_returns_teaching_error(monkeypatch):
     """Switching TO an unauthenticated provider surfaces the teaching error
     naming that provider — the target's creds are validated, not the source's."""
     import superforecasting_agent.runtime.runtime_provider as rp
-    from superforecasting_agent.runtime.auth import AuthError
+    from superforecasting_agent.credentials.auth import AuthError
     from superforecasting_agent.runtime.model_switch import switch_model
 
     def _resolve(*, requested=None, target_model=None, **_kw):
@@ -6277,7 +6277,7 @@ def test_make_agent_resolves_provider_from_captured_raw_profile(monkeypatch):
     monkeypatch.setattr(credential_pool, "read_credential_pool", lambda provider: [])
     pool_writes = []
     monkeypatch.setattr(credential_pool, "write_credential_pool", lambda provider, entries: pool_writes.append(entries))
-    monkeypatch.setattr("superforecasting_agent.runtime.auth.is_source_suppressed", lambda *args: False)
+    monkeypatch.setattr("superforecasting_agent.credentials.auth.is_source_suppressed", lambda *args: False)
     accesses = []
     def reject_profile_read():
         import traceback

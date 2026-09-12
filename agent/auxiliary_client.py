@@ -520,7 +520,7 @@ def _codex_account_id_from_store() -> Optional[str]:
     Returns ``None`` on any error (never raises).
     """
     try:
-        from superforecasting_agent.runtime.auth import _read_codex_tokens
+        from superforecasting_agent.credentials.auth import _read_codex_tokens
         data = _read_codex_tokens() or {}
         tokens = data.get("tokens", {}) or {}
         acct = _extract_chatgpt_account_id(tokens.get("access_token") or "")
@@ -1374,7 +1374,7 @@ def _resolve_nous_runtime_api(*, force_refresh: bool = False) -> Optional[tuple[
     or the credential pool.
     """
     try:
-        from superforecasting_agent.runtime.auth import (
+        from superforecasting_agent.credentials.auth import (
             NOUS_INFERENCE_AUTH_MODE_AUTO,
             NOUS_INFERENCE_AUTH_MODE_LEGACY,
             resolve_nous_runtime_credentials,
@@ -1414,7 +1414,7 @@ def _resolve_xai_oauth_for_aux() -> Optional[Tuple[str, str]]:
     with xAI Grok OAuth.
     """
     try:
-        from superforecasting_agent.runtime.auth import (
+        from superforecasting_agent.credentials.auth import (
             DEFAULT_XAI_OAUTH_BASE_URL,
             _xai_validate_inference_base_url,
         )
@@ -1441,7 +1441,7 @@ def _resolve_xai_oauth_for_aux() -> Optional[Tuple[str, str]]:
         logger.debug("Auxiliary xAI OAuth pool credential resolution failed: %s", exc)
 
     try:
-        from superforecasting_agent.runtime.auth import resolve_xai_oauth_runtime_credentials
+        from superforecasting_agent.credentials.auth import resolve_xai_oauth_runtime_credentials
 
         creds = resolve_xai_oauth_runtime_credentials()
     except Exception as exc:
@@ -1471,7 +1471,7 @@ def _read_codex_access_token() -> Optional[str]:
             return token
 
     try:
-        from superforecasting_agent.runtime.auth import _read_codex_tokens
+        from superforecasting_agent.credentials.auth import _read_codex_tokens
         data = _read_codex_tokens()
         tokens = data.get("tokens", {})
         access_token = tokens.get("access_token")
@@ -1508,7 +1508,7 @@ def _resolve_api_key_provider() -> Tuple[Optional[OpenAI], Optional[str]]:
         from superforecasting_agent.configuration.authentication import (
             PROVIDER_REGISTRY,
         )
-        from superforecasting_agent.runtime.auth import (
+        from superforecasting_agent.credentials.auth import (
             resolve_api_key_provider_credentials,
         )
     except ImportError:
@@ -1523,7 +1523,7 @@ def _resolve_api_key_provider() -> Tuple[Optional[OpenAI], Optional[str]]:
             # Without this gate, Claude Code credentials get silently used
             # as auxiliary fallback when the user's primary provider fails.
             try:
-                from superforecasting_agent.runtime.auth import is_provider_explicitly_configured
+                from superforecasting_agent.credentials.auth import is_provider_explicitly_configured
                 if not is_provider_explicitly_configured("anthropic"):
                     continue
             except ImportError:
@@ -2074,7 +2074,7 @@ def _try_azure_foundry(
     """
     try:
         from superforecasting_agent.runtime.runtime_provider import _resolve_azure_foundry_runtime
-        from superforecasting_agent.runtime.auth import AuthError
+        from superforecasting_agent.credentials.auth import AuthError
         from superforecasting_agent.runtime.config import load_config
     except ImportError:
         return None, None
@@ -2791,7 +2791,7 @@ def _refresh_provider_credentials(provider: str) -> bool:
     normalized = _normalize_aux_provider(provider)
     try:
         if normalized == "openai-codex":
-            from superforecasting_agent.runtime.auth import resolve_codex_runtime_credentials
+            from superforecasting_agent.credentials.auth import resolve_codex_runtime_credentials
 
             creds = resolve_codex_runtime_credentials(force_refresh=True)
             if not str(creds.get("api_key", "") or "").strip():
@@ -2799,7 +2799,7 @@ def _refresh_provider_credentials(provider: str) -> bool:
             _evict_cached_clients(normalized)
             return True
         if normalized == "nous":
-            from superforecasting_agent.runtime.auth import (
+            from superforecasting_agent.credentials.auth import (
                 NOUS_INFERENCE_AUTH_MODE_LEGACY,
                 resolve_nous_runtime_credentials,
             )
@@ -2814,7 +2814,8 @@ def _refresh_provider_credentials(provider: str) -> bool:
             _evict_cached_clients(normalized)
             return True
         if normalized == "anthropic":
-            from agent.anthropic_adapter import read_claude_code_credentials, _refresh_oauth_token, resolve_anthropic_token
+            from superforecasting_agent.credentials.anthropic import read_claude_code_credentials
+            from agent.anthropic_adapter import _refresh_oauth_token, resolve_anthropic_token
 
             creds = read_claude_code_credentials()
             token = _refresh_oauth_token(creds) if isinstance(creds, dict) and creds.get("refreshToken") else None
@@ -3171,7 +3172,7 @@ def _to_async_client(sync_client, model: str, is_vision: bool = False):
     if base_url_host_matches(sync_base_url, "openrouter.ai"):
         async_kwargs["default_headers"] = build_or_headers()
     elif base_url_host_matches(sync_base_url, "api.githubcopilot.com"):
-        from superforecasting_agent.runtime.copilot_auth import copilot_request_headers
+        from superforecasting_agent.credentials.copilot import copilot_request_headers
 
         async_kwargs["default_headers"] = copilot_request_headers(
             is_agent_turn=True, is_vision=is_vision
@@ -3437,7 +3438,7 @@ def resolve_provider_client(
             if base_url_host_matches(custom_base, "api.kimi.com"):
                 extra["default_headers"] = {"User-Agent": "claude-code/0.1.0"}
             elif base_url_host_matches(custom_base, "api.githubcopilot.com"):
-                from superforecasting_agent.runtime.copilot_auth import copilot_request_headers
+                from superforecasting_agent.credentials.copilot import copilot_request_headers
                 extra["default_headers"] = copilot_request_headers(
                     is_agent_turn=True, is_vision=is_vision
                 )
@@ -3619,7 +3620,7 @@ def resolve_provider_client(
         from superforecasting_agent.configuration.authentication import (
             PROVIDER_REGISTRY,
         )
-        from superforecasting_agent.runtime.auth import (
+        from superforecasting_agent.credentials.auth import (
             resolve_api_key_provider_credentials,
             resolve_external_process_provider_credentials,
         )
@@ -3683,7 +3684,7 @@ def resolve_provider_client(
         if base_url_host_matches(base_url, "api.kimi.com"):
             headers["User-Agent"] = "claude-code/0.1.0"
         elif base_url_host_matches(base_url, "api.githubcopilot.com"):
-            from superforecasting_agent.runtime.copilot_auth import copilot_request_headers
+            from superforecasting_agent.credentials.copilot import copilot_request_headers
 
             headers.update(copilot_request_headers(
                 is_agent_turn=True, is_vision=is_vision

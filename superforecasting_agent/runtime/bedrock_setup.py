@@ -6,11 +6,8 @@ def _model_flow_bedrock_api_key(config, region, current_model=""):
     For developers who don't have an AWS account but received a Bedrock API Key
     from their AWS admin. Works like any OpenAI-compatible endpoint.
     """
-    from superforecasting_agent.runtime.auth import (
-        _prompt_model_selection,
-        _save_model_choice,
-        deactivate_provider,
-    )
+    from superforecasting_agent.credentials.auth import deactivate_provider
+    from superforecasting_agent.runtime.auth import _prompt_model_selection, _save_model_choice
     from superforecasting_agent.runtime.config import (
         load_config,
         save_config,
@@ -95,11 +92,8 @@ def _model_flow_bedrock(config, current_model=""):
     Auth is handled by the AWS SDK default credential chain (env vars, profile,
     instance role), so no API key prompt is needed.
     """
-    from superforecasting_agent.runtime.auth import (
-        _prompt_model_selection,
-        _save_model_choice,
-        deactivate_provider,
-    )
+    from superforecasting_agent.credentials.auth import deactivate_provider
+    from superforecasting_agent.runtime.auth import _prompt_model_selection, _save_model_choice
     from superforecasting_agent.runtime.config import load_config, save_config
     from superforecasting_agent.runtime.models import _PROVIDER_MODELS
 

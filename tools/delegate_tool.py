@@ -2734,7 +2734,7 @@ def _resolve_delegation_credentials(cfg: dict, parent_agent) -> dict:
         # Context-aware auth hint: inside the gateway/TUI the user must use the
         # in-TUI `/auth` slash command, not the shell command (see
         # superforecasting_agent.runtime.auth._auth_command_hint).
-        from superforecasting_agent.runtime.auth import _auth_command_hint
+        from superforecasting_agent.credentials.auth import _auth_command_hint
 
         raise ValueError(
             f"Delegation provider '{configured_provider}' resolved but has no API key. "

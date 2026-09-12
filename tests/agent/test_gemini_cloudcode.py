@@ -1157,19 +1157,19 @@ class TestGeminiHttpErrorParsing:
 
 class TestProviderRegistration:
     def test_registry_entry(self):
-        from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY
+        from superforecasting_agent.credentials.auth import PROVIDER_REGISTRY
 
         assert "google-gemini-cli" in PROVIDER_REGISTRY
         assert PROVIDER_REGISTRY["google-gemini-cli"].auth_type == "oauth_external"
 
     def test_google_gemini_alias_still_goes_to_api_key_gemini(self):
         """Regression guard: don't shadow the existing google-gemini → gemini alias."""
-        from superforecasting_agent.runtime.auth import resolve_provider
+        from superforecasting_agent.credentials.auth import resolve_provider
 
         assert resolve_provider("google-gemini") == "gemini"
 
     def test_runtime_provider_raises_when_not_logged_in(self):
-        from superforecasting_agent.runtime.auth import AuthError
+        from superforecasting_agent.credentials.auth import AuthError
         from superforecasting_agent.runtime.runtime_provider import resolve_runtime_provider
 
         with pytest.raises(AuthError) as exc_info:
@@ -1220,14 +1220,14 @@ class TestProviderRegistration:
 
 class TestAuthStatus:
     def test_not_logged_in(self):
-        from superforecasting_agent.runtime.auth import get_auth_status
+        from superforecasting_agent.credentials.auth import get_auth_status
 
         s = get_auth_status("google-gemini-cli")
         assert s["logged_in"] is False
 
     def test_logged_in_reports_email_and_project(self):
         from agent.google_oauth import GoogleCredentials, save_credentials
-        from superforecasting_agent.runtime.auth import get_auth_status
+        from superforecasting_agent.credentials.auth import get_auth_status
 
         save_credentials(GoogleCredentials(
             access_token="tok", refresh_token="rt",

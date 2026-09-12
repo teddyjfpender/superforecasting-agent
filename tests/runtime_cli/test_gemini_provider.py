@@ -4,7 +4,7 @@ import os
 import pytest
 from unittest.mock import patch, MagicMock
 
-from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY, resolve_provider, resolve_api_key_provider_credentials
+from superforecasting_agent.credentials.auth import PROVIDER_REGISTRY, resolve_provider, resolve_api_key_provider_credentials
 from superforecasting_agent.runtime.models import _PROVIDER_MODELS, _PROVIDER_LABELS, _PROVIDER_ALIASES, normalize_provider
 from superforecasting_agent.runtime.model_normalize import normalize_model_for_provider, detect_vendor
 from agent.model_metadata import get_model_context_length

@@ -371,7 +371,7 @@ def test_setup_copilot_acp_skips_same_provider_pool_step(tmp_path, monkeypatch):
     monkeypatch.setattr("superforecasting_agent.runtime.setup.prompt_choice", fake_prompt_choice)
     monkeypatch.setattr("superforecasting_agent.runtime.setup.prompt_yes_no", fake_prompt_yes_no)
     monkeypatch.setattr("superforecasting_agent.runtime.setup.prompt", lambda *args, **kwargs: "")
-    monkeypatch.setattr("superforecasting_agent.runtime.auth.get_active_provider", lambda: None)
+    monkeypatch.setattr("superforecasting_agent.credentials.auth.get_active_provider", lambda: None)
     monkeypatch.setattr("agent.auxiliary_client.get_available_vision_backends", lambda: [])
 
     setup_model_provider(config)

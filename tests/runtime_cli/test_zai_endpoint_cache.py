@@ -1,6 +1,6 @@
 """Endpoint discovery persists metadata without changing credential ownership."""
 
-from superforecasting_agent.runtime import auth
+from superforecasting_agent.credentials import auth
 from superforecasting_agent.storage.auth import load_auth_store, save_auth_store
 
 

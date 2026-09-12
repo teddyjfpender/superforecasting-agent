@@ -5195,7 +5195,7 @@ def _(rid, params: dict) -> dict:
 # thread; auth.poll reports pending/success/failure.
 def _run_codex_device_poll(owner, attempt, grant) -> None:
     from superforecasting_agent.runtime import codex_device_flow as flow
-    from superforecasting_agent.runtime.auth import _save_codex_tokens
+    from superforecasting_agent.credentials.auth import _save_codex_tokens
 
     owner.run(
         attempt,
@@ -5396,7 +5396,7 @@ def _(rid, params: dict) -> dict:
         from superforecasting_agent.configuration.authentication import (
             PROVIDER_REGISTRY,
         )
-        from superforecasting_agent.runtime.auth import clear_provider_auth
+        from superforecasting_agent.credentials.auth import clear_provider_auth
         from superforecasting_agent.runtime.config import remove_env_value
 
         slug = (params.get("slug") or "").strip()

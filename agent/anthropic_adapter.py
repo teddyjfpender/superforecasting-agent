@@ -10,6 +10,8 @@ Auth supports:
   - Claude Code credentials (~/.claude.json or ~/.claude/.credentials.json) → Bearer auth
 """
 
+import superforecasting_agent.credentials.anthropic as credential_service
+
 import copy
 import json
 import logging
@@ -52,7 +54,7 @@ def _get_anthropic_sdk():
             _anthropic_sdk = None
     return _anthropic_sdk
 
-logger = logging.getLogger(__name__)
+from superforecasting_agent.credentials.anthropic import logger as logger
 
 THINKING_BUDGET = {"xhigh": 32000, "high": 16000, "medium": 8000, "low": 4000}
 # Hermes effort → Anthropic adaptive-thinking effort (output_config.effort).
@@ -283,45 +285,18 @@ _OAUTH_ONLY_BETAS = [
 # Without these, Anthropic's infrastructure intermittently 500s OAuth traffic.
 # The version must stay reasonably current — Anthropic rejects OAuth requests
 # when the spoofed user-agent version is too far behind the actual release.
-_CLAUDE_CODE_VERSION_FALLBACK = "2.1.74"
-_claude_code_version_cache: Optional[str] = None
+from superforecasting_agent.credentials.anthropic import _CLAUDE_CODE_VERSION_FALLBACK as _CLAUDE_CODE_VERSION_FALLBACK
+from superforecasting_agent.credentials.anthropic import _claude_code_version_cache as _claude_code_version_cache
 
 
-def _detect_claude_code_version() -> str:
-    """Detect the installed Claude Code version, fall back to a static constant.
-
-    Anthropic's OAuth infrastructure validates the user-agent version and may
-    reject requests with a version that's too old.  Detecting dynamically means
-    users who keep Claude Code updated never hit stale-version 400s.
-    """
-    import subprocess as _sp
-
-    for cmd in ("claude", "claude-code"):
-        try:
-            result = _sp.run(
-                [cmd, "--version"],
-                capture_output=True, text=True, timeout=5,
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                # Output is like "2.1.74 (Claude Code)" or just "2.1.74"
-                version = result.stdout.strip().split()[0]
-                if version and version[0].isdigit():
-                    return version
-        except Exception:
-            pass
-    return _CLAUDE_CODE_VERSION_FALLBACK
+from superforecasting_agent.credentials.anthropic import _detect_claude_code_version as _detect_claude_code_version
 
 
 _CLAUDE_CODE_SYSTEM_PREFIX = "You are Claude Code, Anthropic's official CLI for Claude."
 _MCP_TOOL_PREFIX = "mcp_"
 
 
-def _get_claude_code_version() -> str:
-    """Lazily detect the installed Claude Code version when OAuth headers need it."""
-    global _claude_code_version_cache
-    if _claude_code_version_cache is None:
-        _claude_code_version_cache = _detect_claude_code_version()
-    return _claude_code_version_cache
+from superforecasting_agent.credentials.anthropic import _get_claude_code_version as _get_claude_code_version
 
 
 def _is_oauth_token(key: str) -> bool:
@@ -746,7 +721,7 @@ def build_anthropic_client(
         kwargs["auth_token"] = api_key
         kwargs["default_headers"] = {
             "anthropic-beta": ",".join(all_betas),
-            "user-agent": f"claude-cli/{_get_claude_code_version()} (external, cli)",
+            "user-agent": f"claude-cli/{credential_service._get_claude_code_version()} (external, cli)",
             "x-app": "cli",
         }
     else:
@@ -797,105 +772,10 @@ def build_anthropic_bedrock_client(region: str):
     )
 
 
-def _read_claude_code_credentials_from_keychain() -> Optional[Dict[str, Any]]:
-    """Read Claude Code OAuth credentials from the macOS Keychain.
-
-    Claude Code >=2.1.114 stores credentials in the macOS Keychain under the
-    service name "Claude Code-credentials" rather than (or in addition to)
-    the JSON file at ~/.claude/.credentials.json.
-
-    The password field contains a JSON string with the same claudeAiOauth
-    structure as the JSON file.
-
-    Returns dict with {accessToken, refreshToken?, expiresAt?} or None.
-    """
-    if platform.system() != "Darwin":
-        return None
-
-    try:
-        # Read the "Claude Code-credentials" generic password entry
-        result = subprocess.run(
-            ["security", "find-generic-password",
-             "-s", "Claude Code-credentials",
-             "-w"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        logger.debug("Keychain: security command not available or timed out")
-        return None
-
-    if result.returncode != 0:
-        logger.debug("Keychain: no entry found for 'Claude Code-credentials'")
-        return None
-
-    raw = result.stdout.strip()
-    if not raw:
-        return None
-
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        logger.debug("Keychain: credentials payload is not valid JSON")
-        return None
-
-    oauth_data = data.get("claudeAiOauth")
-    if oauth_data and isinstance(oauth_data, dict):
-        access_token = oauth_data.get("accessToken", "")
-        if access_token:
-            return {
-                "accessToken": access_token,
-                "refreshToken": oauth_data.get("refreshToken", ""),
-                "expiresAt": oauth_data.get("expiresAt", 0),
-                "source": "macos_keychain",
-            }
-
-    return None
+from superforecasting_agent.credentials.anthropic import _read_claude_code_credentials_from_keychain as _read_claude_code_credentials_from_keychain
 
 
-def read_claude_code_credentials() -> Optional[Dict[str, Any]]:
-    """Read refreshable Claude Code OAuth credentials.
-
-    Checks two sources in order:
-      1. macOS Keychain (Darwin only) — "Claude Code-credentials" entry
-      2. ~/.claude/.credentials.json file
-
-    This intentionally excludes ~/.claude.json primaryApiKey. Opencode's
-    subscription flow is OAuth/setup-token based with refreshable credentials,
-    and native direct Anthropic provider usage should follow that path rather
-    than auto-detecting Claude's first-party managed key.
-
-    Returns dict with {accessToken, refreshToken?, expiresAt?} or None.
-    """
-    # Try macOS Keychain first (covers Claude Code >=2.1.114), but only when
-    # using the real OS home. Tests and isolated runtimes often monkeypatch
-    # Path.home() to a synthetic directory; in that mode reading the host
-    # user's keychain would leak credentials across the isolation boundary.
-    if Path.home() == Path("~").expanduser():
-        kc_creds = _read_claude_code_credentials_from_keychain()
-        if kc_creds:
-            return kc_creds
-
-    # Fall back to JSON file
-    cred_path = Path.home() / ".claude" / ".credentials.json"
-    if cred_path.exists():
-        try:
-            data = json.loads(cred_path.read_text(encoding="utf-8"))
-            oauth_data = data.get("claudeAiOauth")
-            if oauth_data and isinstance(oauth_data, dict):
-                access_token = oauth_data.get("accessToken", "")
-                if access_token:
-                    return {
-                        "accessToken": access_token,
-                        "refreshToken": oauth_data.get("refreshToken", ""),
-                        "expiresAt": oauth_data.get("expiresAt", 0),
-                        "source": "claude_code_credentials_file",
-                    }
-        except (json.JSONDecodeError, OSError, IOError) as e:
-            logger.debug("Failed to read ~/.claude/.credentials.json: %s", e)
-
-    return None
+from superforecasting_agent.credentials.anthropic import read_claude_code_credentials as read_claude_code_credentials
 
 
 def read_claude_managed_key() -> Optional[str]:
@@ -927,68 +807,7 @@ def is_claude_code_token_valid(creds: Dict[str, Any]) -> bool:
     return now_ms < (expires_at - 60_000)
 
 
-def refresh_anthropic_oauth_pure(refresh_token: str, *, use_json: bool = False) -> Dict[str, Any]:
-    """Refresh an Anthropic OAuth token without mutating local credential files."""
-    import time
-    import urllib.parse
-    import urllib.request
-
-    if not refresh_token:
-        raise ValueError("refresh_token is required")
-
-    client_id = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-    if use_json:
-        data = json.dumps({
-            "grant_type": "refresh_token",
-            "refresh_token": refresh_token,
-            "client_id": client_id,
-        }).encode()
-        content_type = "application/json"
-    else:
-        data = urllib.parse.urlencode({
-            "grant_type": "refresh_token",
-            "refresh_token": refresh_token,
-            "client_id": client_id,
-        }).encode()
-        content_type = "application/x-www-form-urlencoded"
-
-    token_endpoints = [
-        "https://platform.claude.com/v1/oauth/token",
-        "https://console.anthropic.com/v1/oauth/token",
-    ]
-    last_error = None
-    for endpoint in token_endpoints:
-        req = urllib.request.Request(
-            endpoint,
-            data=data,
-            headers={
-                "Content-Type": content_type,
-                "User-Agent": f"claude-cli/{_get_claude_code_version()} (external, cli)",
-            },
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                result = json.loads(resp.read().decode())
-        except Exception as exc:
-            last_error = exc
-            logger.debug("Anthropic token refresh failed at %s: %s", endpoint, exc)
-            continue
-
-        access_token = result.get("access_token", "")
-        if not access_token:
-            raise ValueError("Anthropic refresh response was missing access_token")
-        next_refresh = result.get("refresh_token", refresh_token)
-        expires_in = result.get("expires_in", 3600)
-        return {
-            "access_token": access_token,
-            "refresh_token": next_refresh,
-            "expires_at_ms": int(time.time() * 1000) + (expires_in * 1000),
-        }
-
-    if last_error is not None:
-        raise last_error
-    raise ValueError("Anthropic token refresh failed")
+from superforecasting_agent.credentials.anthropic import refresh_anthropic_oauth_pure as refresh_anthropic_oauth_pure
 
 
 def _refresh_oauth_token(creds: Dict[str, Any]) -> Optional[str]:
@@ -999,8 +818,8 @@ def _refresh_oauth_token(creds: Dict[str, Any]) -> Optional[str]:
         return None
 
     try:
-        refreshed = refresh_anthropic_oauth_pure(refresh_token, use_json=False)
-        _write_claude_code_credentials(
+        refreshed = credential_service.refresh_anthropic_oauth_pure(refresh_token, use_json=False)
+        credential_service._write_claude_code_credentials(
             refreshed["access_token"],
             refreshed["refresh_token"],
             refreshed["expires_at_ms"],
@@ -1012,54 +831,12 @@ def _refresh_oauth_token(creds: Dict[str, Any]) -> Optional[str]:
         return None
 
 
-def _write_claude_code_credentials(
-    access_token: str,
-    refresh_token: str,
-    expires_at_ms: int,
-    *,
-    scopes: Optional[list] = None,
-) -> None:
-    """Write refreshed credentials back to ~/.claude/.credentials.json.
-
-    The optional *scopes* list (e.g. ``["user:inference", "user:profile", ...]``)
-    is persisted so that Claude Code's own auth check recognises the credential
-    as valid.  Claude Code >=2.1.81 gates on the presence of ``"user:inference"``
-    in the stored scopes before it will use the token.
-    """
-    cred_path = Path.home() / ".claude" / ".credentials.json"
-    try:
-        # Read existing file to preserve other fields
-        existing = {}
-        if cred_path.exists():
-            existing = json.loads(cred_path.read_text(encoding="utf-8"))
-
-        oauth_data: Dict[str, Any] = {
-            "accessToken": access_token,
-            "refreshToken": refresh_token,
-            "expiresAt": expires_at_ms,
-        }
-        if scopes is not None:
-            oauth_data["scopes"] = scopes
-        elif "claudeAiOauth" in existing and "scopes" in existing["claudeAiOauth"]:
-            # Preserve previously-stored scopes when the refresh response
-            # does not include a scope field.
-            oauth_data["scopes"] = existing["claudeAiOauth"]["scopes"]
-
-        existing["claudeAiOauth"] = oauth_data
-
-        cred_path.parent.mkdir(parents=True, exist_ok=True)
-        _tmp_cred = cred_path.with_suffix(".tmp")
-        _tmp_cred.write_text(json.dumps(existing, indent=2), encoding="utf-8")
-        _tmp_cred.replace(cred_path)
-        # Restrict permissions (credentials file)
-        cred_path.chmod(0o600)
-    except (OSError, IOError) as e:
-        logger.debug("Failed to write refreshed credentials: %s", e)
+from superforecasting_agent.credentials.anthropic import _write_claude_code_credentials as _write_claude_code_credentials
 
 
 def _resolve_claude_code_token_from_credentials(creds: Optional[Dict[str, Any]] = None) -> Optional[str]:
     """Resolve a token from Claude Code credential files, refreshing if needed."""
-    creds = creds or read_claude_code_credentials()
+    creds = creds or credential_service.read_claude_code_credentials()
     if creds and is_claude_code_token_valid(creds):
         logger.debug("Using Claude Code credentials (auto-detected)")
         return creds["accessToken"]
@@ -1106,7 +883,7 @@ def resolve_anthropic_token() -> Optional[str]:
 
     Returns the token string or None.
     """
-    creds = read_claude_code_credentials()
+    creds = credential_service.read_claude_code_credentials()
 
     # 1. Superforecasting Agent-managed OAuth/setup token env var
     token = os.getenv("ANTHROPIC_TOKEN", "").strip()
@@ -1165,7 +942,7 @@ def run_oauth_setup_token() -> Optional[str]:
         return None
 
     # Check if credentials were saved to Claude Code's config files
-    creds = read_claude_code_credentials()
+    creds = credential_service.read_claude_code_credentials()
     if creds and is_claude_code_token_valid(creds):
         return creds["accessToken"]
 
@@ -1186,19 +963,10 @@ _OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 _OAUTH_TOKEN_URL = "https://console.anthropic.com/v1/oauth/token"
 _OAUTH_REDIRECT_URI = "https://console.anthropic.com/oauth/code/callback"
 _OAUTH_SCOPES = "org:create_api_key user:profile user:inference"
-_OAUTH_FILE_ENV_NAMES = (
-    "SUPERFORECASTING_AGENT_OAUTH_FILE",
-    "FORECAST_OAUTH_FILE",
-    "HERMES_OAUTH_FILE",
-)
+from superforecasting_agent.credentials.anthropic import _OAUTH_FILE_ENV_NAMES as _OAUTH_FILE_ENV_NAMES
 
 
-def get_hermes_oauth_file() -> Path:
-    """Return the Anthropic PKCE credential file path."""
-    override = env_var_alias_value(_OAUTH_FILE_ENV_NAMES)
-    if override:
-        return Path(override).expanduser()
-    return get_agent_home() / ".anthropic_oauth.json"
+from superforecasting_agent.credentials.anthropic import get_hermes_oauth_file as get_hermes_oauth_file
 
 
 _HERMES_OAUTH_FILE = get_hermes_oauth_file()
@@ -1295,7 +1063,7 @@ def run_hermes_oauth_login_pure() -> Optional[Dict[str, Any]]:
             data=exchange_data,
             headers={
                 "Content-Type": "application/json",
-                "User-Agent": f"claude-cli/{_get_claude_code_version()} (external, cli)",
+                "User-Agent": f"claude-cli/{credential_service._get_claude_code_version()} (external, cli)",
             },
             method="POST",
         )
@@ -1322,17 +1090,7 @@ def run_hermes_oauth_login_pure() -> Optional[Dict[str, Any]]:
     }
 
 
-def read_hermes_oauth_credentials() -> Optional[Dict[str, Any]]:
-    """Read forecast-home OAuth credentials from .anthropic_oauth.json."""
-    oauth_file = get_hermes_oauth_file()
-    if oauth_file.exists():
-        try:
-            data = json.loads(oauth_file.read_text(encoding="utf-8"))
-            if data.get("accessToken"):
-                return data
-        except (json.JSONDecodeError, OSError, IOError) as e:
-            logger.debug("Failed to read Superforecasting Agent OAuth credentials: %s", e)
-    return None
+from superforecasting_agent.credentials.anthropic import read_hermes_oauth_credentials as read_hermes_oauth_credentials
 
 
 # ---------------------------------------------------------------------------

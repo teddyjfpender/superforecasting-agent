@@ -377,7 +377,6 @@ source_modules = ["forecasting"]
 forbidden_modules = ["superforecasting_agent.runtime"]
 allow_indirect_imports = "true"
 ignore_imports = [
-    "forecasting.quorum.panels -> superforecasting_agent.runtime.models",
 ]
 
 [[tool.importlinter.contracts]]
@@ -861,3 +860,10 @@ name = "AWS discovery never imports execution or presentation"
 type = "forbidden"
 source_modules = ["superforecasting_agent.hosting.aws_credentials"]
 forbidden_modules = ["agent", "tools", "superforecasting_agent.runtime", "cli", "gateway", "tui_gateway"]
+
+
+[[tool.importlinter.contracts]]
+name = "credential services never import runtime or presentation"
+type = "forbidden"
+source_modules = ["superforecasting_agent.credentials"]
+forbidden_modules = ["superforecasting_agent.runtime", "cli", "tui_gateway", "gateway", "forecasting.cli"]

@@ -92,7 +92,7 @@ def test_read_nous_access_token_refreshes_expiring_cached_token(tmp_path, monkey
         }
     }))
     monkeypatch.setattr(
-        "superforecasting_agent.runtime.auth.resolve_nous_access_token",
+        "superforecasting_agent.credentials.auth.resolve_nous_access_token",
         lambda refresh_skew_seconds=120: "fresh-token",
     )
 

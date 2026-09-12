@@ -73,7 +73,7 @@ def _enable_managed_nous_tools(monkeypatch):
     the *source* modules that the reimported modules will import from — both
     superforecasting_agent.runtime.auth and superforecasting_agent.runtime.models — so the function body returns True.
     """
-    monkeypatch.setattr("superforecasting_agent.runtime.auth.get_nous_auth_status", lambda: {"logged_in": True})
+    monkeypatch.setattr("superforecasting_agent.credentials.auth.get_nous_auth_status", lambda: {"logged_in": True})
     monkeypatch.setattr("superforecasting_agent.runtime.models.check_nous_free_tier", lambda: False)
 
 

@@ -40,14 +40,14 @@ class TestManagedNousToolsEnabled:
 
     def test_disabled_when_not_logged_in(self, monkeypatch):
         monkeypatch.setattr(
-            "superforecasting_agent.runtime.auth.get_nous_auth_status",
+            "superforecasting_agent.credentials.auth.get_nous_auth_status",
             lambda: {},
         )
         assert managed_nous_tools_enabled() is False
 
     def test_disabled_for_free_tier(self, monkeypatch):
         monkeypatch.setattr(
-            "superforecasting_agent.runtime.auth.get_nous_auth_status",
+            "superforecasting_agent.credentials.auth.get_nous_auth_status",
             lambda: {"logged_in": True},
         )
         monkeypatch.setattr(
@@ -58,7 +58,7 @@ class TestManagedNousToolsEnabled:
 
     def test_enabled_for_paid_subscriber(self, monkeypatch):
         monkeypatch.setattr(
-            "superforecasting_agent.runtime.auth.get_nous_auth_status",
+            "superforecasting_agent.credentials.auth.get_nous_auth_status",
             lambda: {"logged_in": True},
         )
         monkeypatch.setattr(
@@ -70,7 +70,7 @@ class TestManagedNousToolsEnabled:
     def test_returns_false_on_exception(self, monkeypatch):
         """Should never crash — returns False on any exception."""
         monkeypatch.setattr(
-            "superforecasting_agent.runtime.auth.get_nous_auth_status",
+            "superforecasting_agent.credentials.auth.get_nous_auth_status",
             _raise_import,
         )
         assert managed_nous_tools_enabled() is False

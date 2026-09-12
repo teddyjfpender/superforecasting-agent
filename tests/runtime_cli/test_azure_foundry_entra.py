@@ -298,7 +298,7 @@ class TestResolveAzureFoundryRuntimeApiKey:
         assert runtime["base_url"] == "https://r.services.ai.azure.com/anthropic"
 
     def test_missing_api_key_raises_with_entra_hint(self, monkeypatch):
-        from superforecasting_agent.runtime.auth import AuthError
+        from superforecasting_agent.credentials.auth import AuthError
         from superforecasting_agent.runtime.runtime_provider import _resolve_azure_foundry_runtime
         monkeypatch.delenv("AZURE_FOUNDRY_API_KEY", raising=False)
         with pytest.raises(AuthError) as exc_info:
@@ -325,10 +325,10 @@ class TestAzureFoundryAuthStatus:
     def test_entra_status_does_not_mint_token(self, monkeypatch, tmp_path):
         """Structural check — must return logged_in=True based on
         importable + config, never call get_bearer_token_provider."""
-        from superforecasting_agent.runtime import auth as _auth
+        from superforecasting_agent.credentials import auth as _auth
         # Force load_config to return our entra config.
         monkeypatch.setattr(
-            "superforecasting_agent.runtime.config.load_config",
+            "superforecasting_agent.credentials.environment.load_config",
             lambda: {
                 "model": {
                     "provider": "azure-foundry",
@@ -341,7 +341,7 @@ class TestAzureFoundryAuthStatus:
         # token provider — if the code path tried to mint, the SDK
         # missing would raise.
         monkeypatch.setattr(
-            "agent.azure_identity_adapter.has_azure_identity_installed",
+            "superforecasting_agent.credentials.azure.has_azure_identity_installed",
             lambda: True,
         )
         info = _auth._get_azure_foundry_auth_status()
@@ -351,9 +351,9 @@ class TestAzureFoundryAuthStatus:
         assert info["scope"].endswith("/.default")
 
     def test_entra_status_reports_missing_package(self, monkeypatch):
-        from superforecasting_agent.runtime import auth as _auth
+        from superforecasting_agent.credentials import auth as _auth
         monkeypatch.setattr(
-            "superforecasting_agent.runtime.config.load_config",
+            "superforecasting_agent.credentials.environment.load_config",
             lambda: {
                 "model": {
                     "provider": "azure-foundry",
@@ -363,7 +363,7 @@ class TestAzureFoundryAuthStatus:
             },
         )
         monkeypatch.setattr(
-            "agent.azure_identity_adapter.has_azure_identity_installed",
+            "superforecasting_agent.credentials.azure.has_azure_identity_installed",
             lambda: False,
         )
         info = _auth._get_azure_foundry_auth_status()
@@ -372,9 +372,9 @@ class TestAzureFoundryAuthStatus:
         assert "azure-identity" in info["hint"]
 
     def test_api_key_status_uses_env_var(self, monkeypatch):
-        from superforecasting_agent.runtime import auth as _auth
+        from superforecasting_agent.credentials import auth as _auth
         monkeypatch.setattr(
-            "superforecasting_agent.runtime.config.load_config",
+            "superforecasting_agent.credentials.environment.load_config",
             lambda: {
                 "model": {
                     "provider": "azure-foundry",
@@ -389,9 +389,9 @@ class TestAzureFoundryAuthStatus:
         assert info["logged_in"] is True
 
     def test_api_key_status_false_when_missing(self, monkeypatch):
-        from superforecasting_agent.runtime import auth as _auth
+        from superforecasting_agent.credentials import auth as _auth
         monkeypatch.setattr(
-            "superforecasting_agent.runtime.config.load_config",
+            "superforecasting_agent.credentials.environment.load_config",
             lambda: {
                 "model": {
                     "provider": "azure-foundry",

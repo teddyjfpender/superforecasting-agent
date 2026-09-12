@@ -49,7 +49,7 @@ class TestGeminiSetupFreeTierBlock:
             "superforecasting_agent.runtime.auth._prompt_model_selection",
             return_value="gemini-2.5-flash",
         ), patch(
-            "superforecasting_agent.runtime.auth.deactivate_provider",
+            "superforecasting_agent.credentials.auth.deactivate_provider",
         ), patch("builtins.input", return_value=""):
             _model_flow_api_key_provider(load_config(), "gemini", "old-model")
 
@@ -82,7 +82,7 @@ class TestGeminiSetupFreeTierBlock:
             "superforecasting_agent.runtime.auth._prompt_model_selection",
             return_value="gemini-2.5-flash",
         ), patch(
-            "superforecasting_agent.runtime.auth.deactivate_provider",
+            "superforecasting_agent.credentials.auth.deactivate_provider",
         ), patch("builtins.input", return_value=""):
             _model_flow_api_key_provider(load_config(), "gemini", "old-model")
 
@@ -111,7 +111,7 @@ class TestGeminiSetupFreeTierBlock:
             "superforecasting_agent.runtime.auth._prompt_model_selection",
             return_value="gemini-2.5-flash",
         ), patch(
-            "superforecasting_agent.runtime.auth.deactivate_provider",
+            "superforecasting_agent.credentials.auth.deactivate_provider",
         ), patch("builtins.input", return_value=""):
             _model_flow_api_key_provider(load_config(), "gemini", "old-model")
 
@@ -138,7 +138,7 @@ class TestGeminiSetupFreeTierBlock:
             "superforecasting_agent.runtime.auth._prompt_model_selection",
             return_value="deepseek-chat",
         ), patch(
-            "superforecasting_agent.runtime.auth.deactivate_provider",
+            "superforecasting_agent.credentials.auth.deactivate_provider",
         ), patch("builtins.input", return_value=""):
             _model_flow_api_key_provider(load_config(), "deepseek", "old-model")
 

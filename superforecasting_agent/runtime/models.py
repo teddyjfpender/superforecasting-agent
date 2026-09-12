@@ -309,7 +309,7 @@ def check_nous_free_tier() -> bool:
             return cached_result
 
     try:
-        from superforecasting_agent.runtime.auth import get_provider_auth_state, resolve_nous_runtime_credentials
+        from superforecasting_agent.credentials.auth import get_provider_auth_state, resolve_nous_runtime_credentials
 
         # Ensure we have a fresh token (triggers refresh if needed)
         resolve_nous_runtime_credentials(min_key_ttl_seconds=60)
@@ -404,7 +404,7 @@ def fetch_nous_recommended_models(
 def _resolve_nous_portal_url() -> str:
     """Best-effort lookup of the Portal base URL the user is authed against."""
     try:
-        from superforecasting_agent.runtime.auth import (
+        from superforecasting_agent.credentials.auth import (
             DEFAULT_NOUS_PORTAL_URL,
             get_provider_auth_state,
         )
@@ -936,7 +936,7 @@ def _resolve_nous_pricing_credentials() -> tuple[str, str]:
     look broken ("No free models currently available").
     """
     try:
-        from superforecasting_agent.runtime.auth import resolve_nous_runtime_credentials
+        from superforecasting_agent.credentials.auth import resolve_nous_runtime_credentials
         creds = resolve_nous_runtime_credentials()
         if creds:
             return (creds.get("api_key", ""), creds.get("base_url", ""))
@@ -1035,54 +1035,7 @@ def _fetch_novita_pricing(
 
 
 
-def list_available_providers() -> list[dict[str, Any]]:
-    """Return info about all providers the user could use with ``provider:model``.
-
-    Each dict has ``id``, ``label``, and ``aliases``.
-    Checks credential configuration, not quota or successful inference.
-    Raises when any provider cannot be inspected: this boolean inventory must
-    never turn a partial discovery failure into proof of disconnection.
-
-    Derives the provider list from :data:`CANONICAL_PROVIDERS` (single
-    source of truth shared with ``superforecasting-agent model``, ``/model``,
-    etc.).
-    """
-    # Derive display order from canonical list + custom
-    provider_order = [p.slug for p in CANONICAL_PROVIDERS] + ["custom"]
-
-    # Build reverse alias map
-    aliases_for: dict[str, list[str]] = {}
-    for alias, canonical in _PROVIDER_ALIASES.items():
-        aliases_for.setdefault(canonical, []).append(alias)
-
-    result = []
-    for pid in provider_order:
-        label = _PROVIDER_LABELS.get(pid, pid)
-        alias_list = aliases_for.get(pid, [])
-        # Check if this provider has credentials available
-        has_creds = False
-        try:
-            from superforecasting_agent.configuration.authentication import (
-                has_usable_secret,
-            )
-            from superforecasting_agent.runtime.auth import get_auth_status
-            if pid == "custom":
-                custom_base_url = _get_custom_base_url() or ""
-                has_creds = bool(custom_base_url.strip())
-            elif pid == "openrouter":
-                has_creds = has_usable_secret(os.getenv("OPENROUTER_API_KEY", ""))
-            else:
-                status = get_auth_status(pid)
-                has_creds = bool(status.get("logged_in") or status.get("configured"))
-        except Exception as exc:
-            raise RuntimeError(f"Credential discovery unavailable for provider {pid}") from exc
-        result.append({
-            "id": pid,
-            "label": label,
-            "aliases": alias_list,
-            "authenticated": has_creds,
-        })
-    return result
+from superforecasting_agent.credentials.catalog import list_available_providers as list_available_providers
 
 
 def parse_model_input(raw: str, current_provider: str) -> tuple[str, str]:
@@ -1106,17 +1059,7 @@ def parse_model_input(raw: str, current_provider: str) -> tuple[str, str]:
     return provider or current_provider, model
 
 
-def _get_custom_base_url() -> str:
-    """Get the custom endpoint base_url from config.yaml."""
-    try:
-        from superforecasting_agent.runtime.config import load_config
-        config = load_config()
-        model_cfg = config.get("model", {})
-        if isinstance(model_cfg, dict):
-            return str(model_cfg.get("base_url", "")).strip()
-    except Exception:
-        pass
-    return ""
+from superforecasting_agent.credentials.catalog import _get_custom_base_url as _get_custom_base_url
 
 
 def curated_models_for_provider(
@@ -1450,7 +1393,7 @@ def _resolve_copilot_catalog_api_key() -> str:
     later valid entry is reachable when an earlier one is unsupported.
     """
     try:
-        from superforecasting_agent.runtime.auth import resolve_api_key_provider_credentials
+        from superforecasting_agent.credentials.auth import resolve_api_key_provider_credentials
 
         creds = resolve_api_key_provider_credentials("copilot")
         api_key = str(creds.get("api_key") or "").strip()
@@ -1460,8 +1403,8 @@ def _resolve_copilot_catalog_api_key() -> str:
         pass
 
     try:
-        from superforecasting_agent.runtime.auth import read_credential_pool
-        from superforecasting_agent.runtime.copilot_auth import (
+        from superforecasting_agent.credentials.auth import read_credential_pool
+        from superforecasting_agent.credentials.copilot import (
             exchange_copilot_token,
             validate_copilot_token,
         )
@@ -1578,7 +1521,7 @@ def provider_model_ids(provider: Optional[str], *, force_refresh: bool = False) 
         # or the endpoint is unreachable.
         access_token = None
         try:
-            from superforecasting_agent.runtime.auth import resolve_codex_runtime_credentials
+            from superforecasting_agent.credentials.auth import resolve_codex_runtime_credentials
 
             creds = resolve_codex_runtime_credentials(refresh_if_expiring=True)
             access_token = creds.get("api_key")
@@ -1599,7 +1542,7 @@ def provider_model_ids(provider: Optional[str], *, force_refresh: bool = False) 
     if normalized == "nous":
         # Try live Nous Portal /models endpoint
         try:
-            from superforecasting_agent.runtime.auth import fetch_nous_models, resolve_nous_runtime_credentials
+            from superforecasting_agent.credentials.auth import fetch_nous_models, resolve_nous_runtime_credentials
             creds = resolve_nous_runtime_credentials()
             if creds:
                 live = fetch_nous_models(api_key=creds.get("api_key", ""), inference_base_url=creds.get("base_url", ""))
@@ -1615,7 +1558,7 @@ def provider_model_ids(provider: Optional[str], *, force_refresh: bool = False) 
             return manifest_ids
     if normalized == "stepfun":
         try:
-            from superforecasting_agent.runtime.auth import resolve_api_key_provider_credentials
+            from superforecasting_agent.credentials.auth import resolve_api_key_provider_credentials
 
             creds = resolve_api_key_provider_credentials("stepfun")
             api_key = str(creds.get("api_key") or "").strip()
@@ -1651,7 +1594,7 @@ def provider_model_ids(provider: Optional[str], *, force_refresh: bool = False) 
                 pass
     if normalized == "gmi":
         try:
-            from superforecasting_agent.runtime.auth import resolve_api_key_provider_credentials
+            from superforecasting_agent.credentials.auth import resolve_api_key_provider_credentials
 
             creds = resolve_api_key_provider_credentials("gmi")
             api_key = str(creds.get("api_key") or "").strip()
@@ -1705,7 +1648,7 @@ def provider_model_ids(provider: Optional[str], *, force_refresh: bool = False) 
     # Replaces per-provider copy-paste blocks (stepfun, gmi, zai, etc.).
     try:
         from providers import get_provider_profile
-        from superforecasting_agent.runtime.auth import resolve_api_key_provider_credentials
+        from superforecasting_agent.credentials.auth import resolve_api_key_provider_credentials
 
         _p = get_provider_profile(normalized)
         if _p and _p.auth_type == "api_key" and _p.base_url:
@@ -2024,7 +1967,7 @@ def copilot_default_headers() -> dict[str, str]:
     Copilot CLI send on every request.
     """
     try:
-        from superforecasting_agent.runtime.copilot_auth import copilot_request_headers
+        from superforecasting_agent.credentials.copilot import copilot_request_headers
         return copilot_request_headers(is_agent_turn=True)
     except ImportError:
         return {
@@ -2194,7 +2137,7 @@ def _lmstudio_fetch_raw_models(
             payload = json.loads(resp.read().decode())
     except urllib.error.HTTPError as exc:
         if exc.code in {401, 403}:
-            from superforecasting_agent.runtime.auth import AuthError
+            from superforecasting_agent.credentials.auth import AuthError
             raise AuthError(
                 f"LM Studio rejected the request with HTTP {exc.code}.",
                 provider="lmstudio",
@@ -2985,7 +2928,7 @@ def validate_requested_model(
         }
 
     if normalized == "lmstudio":
-        from superforecasting_agent.runtime.auth import AuthError
+        from superforecasting_agent.credentials.auth import AuthError
         # Use probe_lmstudio_models so we can distinguish None (unreachable
         # / malformed response) from [] (reachable, but no chat-capable models
         # are loaded). fetch_lmstudio_models collapses both to [].

@@ -3,7 +3,8 @@ from unittest.mock import Mock
 
 
 def test_setup_ollama_cloud_passes_force_refresh(monkeypatch):
-    from superforecasting_agent.runtime import auth, config, main, models
+    from superforecasting_agent.credentials import auth
+    from superforecasting_agent.runtime import config, main, models
 
     provider = auth.PROVIDER_REGISTRY["ollama-cloud"]
     if provider.base_url_env_var:

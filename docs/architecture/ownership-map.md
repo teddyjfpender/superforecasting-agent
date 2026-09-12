@@ -1054,3 +1054,24 @@ boundary excludes runtime, agent, tool and presentation modules. Importing it
 loads no SDK or installer. Explicit discovery can consult the installed SDK
 credential chain; it is not a passive or verified-access guarantee. Optional SDK
 installation belongs to actual Converse or Anthropic Bedrock client construction.
+
+
+### Credential services
+
+`superforecasting_agent/credentials/` owns credential discovery, token refresh,
+auth-store locking, provider availability inventory and external credential-file
+adapters. `auth.py` holds shared OAuth state and compatibility exports; `oauth/` separates
+provider refresh, store, status, callback, policy and routing operations; `catalog.py`
+provides the inventory used by quorum and model selection. `anthropic.py`,
+`copilot.py` and `azure.py` separate credential operations from inference SDK
+construction. `environment.py` reads shared profile storage without CLI startup.
+`configuration/provider_validation.py` owns supplied-value provider normalization
+and diagnostics; runtime adapters retain configuration-loading policy.
+
+Interactive login/prompt/configuration commands remain in `runtime/auth.py` and
+`runtime/copilot_auth.py`, with compatibility exports for inherited callers.
+Their internal service calls address the actual owner, preserving one mutable
+cache/lock owner. Forecasting imports neither runtime auth nor runtime model
+inventory. A transitive import rule prohibits credentials from importing runtime,
+classic CLI, TUI gateway, messaging gateway or forecast CLI. The full credential
+package is covered by strict Python lint, formatting and type checks.

@@ -290,14 +290,14 @@ class TestResolveVisionMainFirst:
         ), patch(
             "agent.auxiliary_client.OpenAI",
         ) as mock_openai, patch(
-            "superforecasting_agent.runtime.auth.resolve_api_key_provider_credentials",
+            "superforecasting_agent.credentials.auth.resolve_api_key_provider_credentials",
             return_value={
                 "provider": "copilot",
                 "api_key": "copilot-api-token",
                 "base_url": "https://api.githubcopilot.com",
             },
         ), patch(
-            "superforecasting_agent.runtime.copilot_auth.copilot_request_headers",
+            "superforecasting_agent.credentials.copilot.copilot_request_headers",
             side_effect=fake_headers,
         ):
             mock_client = MagicMock()
@@ -327,14 +327,14 @@ class TestResolveVisionMainFirst:
         with patch(
             "agent.auxiliary_client.OpenAI",
         ) as mock_openai, patch(
-            "superforecasting_agent.runtime.auth.resolve_api_key_provider_credentials",
+            "superforecasting_agent.credentials.auth.resolve_api_key_provider_credentials",
             return_value={
                 "provider": "copilot",
                 "api_key": "copilot-api-token",
                 "base_url": "https://api.githubcopilot.com",
             },
         ), patch(
-            "superforecasting_agent.runtime.copilot_auth.copilot_request_headers",
+            "superforecasting_agent.credentials.copilot.copilot_request_headers",
             side_effect=fake_headers,
         ):
             mock_client = MagicMock()

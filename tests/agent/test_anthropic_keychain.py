@@ -6,10 +6,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from agent.anthropic_adapter import (
-    _read_claude_code_credentials_from_keychain,
-    read_claude_code_credentials,
-)
+from superforecasting_agent.credentials.anthropic import _read_claude_code_credentials_from_keychain, read_claude_code_credentials
 
 
 class TestReadClaudeCodeCredentialsFromKeychain:

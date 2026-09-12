@@ -8,25 +8,8 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 from agent.prompt_caching import apply_anthropic_cache_control
-from agent.anthropic_adapter import (
-    _is_azure_anthropic_endpoint,
-    _is_oauth_token,
-    _refresh_oauth_token,
-    _to_plain_data,
-    _write_claude_code_credentials,
-    build_anthropic_client,
-    build_anthropic_bedrock_client,
-    build_anthropic_kwargs,
-    convert_messages_to_anthropic,
-    convert_tools_to_anthropic,
-    get_hermes_oauth_file,
-    is_claude_code_token_valid,
-    normalize_model_name,
-    read_claude_code_credentials,
-    read_hermes_oauth_credentials,
-    resolve_anthropic_token,
-    run_oauth_setup_token,
-)
+from superforecasting_agent.credentials.anthropic import _write_claude_code_credentials, get_hermes_oauth_file, read_claude_code_credentials, read_hermes_oauth_credentials
+from agent.anthropic_adapter import _is_azure_anthropic_endpoint, _is_oauth_token, _refresh_oauth_token, _to_plain_data, build_anthropic_client, build_anthropic_bedrock_client, build_anthropic_kwargs, convert_messages_to_anthropic, convert_tools_to_anthropic, is_claude_code_token_valid, normalize_model_name, resolve_anthropic_token, run_oauth_setup_token
 from agent.transports import get_transport
 
 
@@ -224,7 +207,7 @@ class TestReadClaudeCodeCredentials:
     @pytest.fixture(autouse=True)
     def no_keychain(self, monkeypatch):
         monkeypatch.setattr(
-            "agent.anthropic_adapter._read_claude_code_credentials_from_keychain",
+            "superforecasting_agent.credentials.anthropic._read_claude_code_credentials_from_keychain",
             lambda: None,
         )
 

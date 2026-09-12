@@ -1012,7 +1012,7 @@ def _resolve_runtime_agent_kwargs() -> dict:
         format_runtime_provider_error,
     )
     from superforecasting_agent.runtime.model_env import inference_provider_env
-    from superforecasting_agent.runtime.auth import AuthError, is_rate_limited_auth_error
+    from superforecasting_agent.credentials.auth import AuthError, is_rate_limited_auth_error
 
     try:
         runtime = resolve_runtime_provider(

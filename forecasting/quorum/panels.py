@@ -97,7 +97,7 @@ def quorum_auto_indicated(
 def available_provider_slugs() -> set[str] | None:
     """Authenticated LLM-provider slugs, or ``None`` when detection is unavailable.
 
-    Reuses the same :func:`superforecasting_agent.runtime.models.list_available_providers` seam the
+    Reuses the same :func:`superforecasting_agent.credentials.catalog.list_available_providers` seam the
     ``/model`` picker uses (which itself checks ``get_auth_status`` / the
     ``OPENROUTER_API_KEY``). Returning ``None`` on any failure is the FAIL-OPEN
     signal: an unknown provider picture must never spuriously downgrade a panel to
@@ -105,7 +105,7 @@ def available_provider_slugs() -> set[str] | None:
     """
 
     try:
-        from superforecasting_agent.runtime.models import list_available_providers
+        from superforecasting_agent.credentials.catalog import list_available_providers
 
         slugs = {
             str(p.get("id"))
@@ -180,7 +180,7 @@ def models_reachable(models: Sequence[str], available: set[str] | None) -> bool:
 def available_providers_detail() -> list[dict[str, Any]] | None:
     """Authenticated-provider detail rows, or ``None`` when detection is unavailable.
 
-    Reuses the same :func:`superforecasting_agent.runtime.models.list_available_providers` seam as
+    Reuses the same :func:`superforecasting_agent.credentials.catalog.list_available_providers` seam as
     :func:`available_provider_slugs` but keeps the ORDER + labels (so the panel is
     built deterministically from the canonical provider order). ``None`` on any
     failure is the FAIL-OPEN signal — an unknown provider picture must never
@@ -188,7 +188,7 @@ def available_providers_detail() -> list[dict[str, Any]] | None:
     """
 
     try:
-        from superforecasting_agent.runtime.models import list_available_providers
+        from superforecasting_agent.credentials.catalog import list_available_providers
 
         rows = [
             dict(p) for p in list_available_providers() if p.get("authenticated")

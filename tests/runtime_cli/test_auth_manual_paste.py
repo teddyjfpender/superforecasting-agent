@@ -236,7 +236,7 @@ def test_xai_loopback_login_manual_paste_skips_http_server(monkeypatch):
     + stubbed token endpoint.
     """
     monkeypatch.setattr(
-        auth_mod, "_xai_oauth_discovery",
+        auth_mod.credential_service, "_xai_oauth_discovery",
         lambda *_a, **_k: {
             "authorization_endpoint": "https://auth.x.ai/oauth2/authorize",
             "token_endpoint": "https://auth.x.ai/oauth2/token",
@@ -250,7 +250,7 @@ def test_xai_loopback_login_manual_paste_skips_http_server(monkeypatch):
         )
 
     monkeypatch.setattr(
-        auth_mod, "_xai_start_callback_server", _server_must_not_be_called
+        auth_mod.credential_service, "_xai_start_callback_server", _server_must_not_be_called
     )
 
     captured_state: dict = {}
@@ -277,7 +277,7 @@ def test_xai_loopback_login_manual_paste_skips_http_server(monkeypatch):
         return original_build(**kwargs)
 
     monkeypatch.setattr(
-        auth_mod, "_xai_oauth_build_authorize_url", _capture_state
+        auth_mod.credential_service, "_xai_oauth_build_authorize_url", _capture_state
     )
 
     def _fake_token_post(*_a, **_k):
@@ -308,7 +308,7 @@ def test_xai_loopback_login_manual_paste_state_mismatch_raises(monkeypatch):
     must not be a CSRF bypass.
     """
     monkeypatch.setattr(
-        auth_mod, "_xai_oauth_discovery",
+        auth_mod.credential_service, "_xai_oauth_discovery",
         lambda *_a, **_k: {
             "authorization_endpoint": "https://auth.x.ai/oauth2/authorize",
             "token_endpoint": "https://auth.x.ai/oauth2/token",
@@ -333,7 +333,7 @@ def test_xai_loopback_login_manual_paste_state_mismatch_raises(monkeypatch):
 def test_xai_loopback_login_manual_paste_missing_code_raises(monkeypatch):
     """Empty paste must surface as ``xai_code_missing``, not crash."""
     monkeypatch.setattr(
-        auth_mod, "_xai_oauth_discovery",
+        auth_mod.credential_service, "_xai_oauth_discovery",
         lambda *_a, **_k: {
             "authorization_endpoint": "https://auth.x.ai/oauth2/authorize",
             "token_endpoint": "https://auth.x.ai/oauth2/token",
@@ -346,7 +346,7 @@ def test_xai_loopback_login_manual_paste_missing_code_raises(monkeypatch):
         captured["state"] = kw["state"]
         return original_build(**kw)
 
-    monkeypatch.setattr(auth_mod, "_xai_oauth_build_authorize_url", _capture)
+    monkeypatch.setattr(auth_mod.credential_service, "_xai_oauth_build_authorize_url", _capture)
     monkeypatch.setattr(
         auth_mod, "_prompt_manual_callback_paste",
         lambda _ru: {
@@ -372,7 +372,7 @@ def test_ssh_hint_mentions_manual_paste_for_non_ssh_remotes(monkeypatch):
     """Users on Cloud Shell / Codespaces have no real SSH client; the
     hint must point them at the new ``--manual-paste`` flag instead
     of leaving them stuck on the ``ssh -L`` recipe."""
-    monkeypatch.setattr(auth_mod, "_is_remote_session", lambda: True)
+    monkeypatch.setattr(auth_mod.credential_service, "_is_remote_session", lambda: True)
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         auth_mod._print_loopback_ssh_hint(

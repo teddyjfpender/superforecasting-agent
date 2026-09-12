@@ -7,7 +7,7 @@ from typing import Any, Optional
 import httpx
 
 from agent.anthropic_adapter import _is_oauth_token, resolve_anthropic_token
-from superforecasting_agent.runtime.auth import _read_codex_tokens, resolve_codex_runtime_credentials
+from superforecasting_agent.credentials.auth import _read_codex_tokens, resolve_codex_runtime_credentials
 from superforecasting_agent.runtime.runtime_provider import resolve_runtime_provider
 
 

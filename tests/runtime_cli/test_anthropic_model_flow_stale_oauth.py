@@ -30,7 +30,7 @@ class TestStaleOAuthTokenDetection:
 
         # No valid Claude Code credentials available (expired, no refresh token)
         monkeypatch.setattr(
-            "agent.anthropic_adapter.read_claude_code_credentials",
+            "superforecasting_agent.credentials.anthropic.read_claude_code_credentials",
             lambda: {
                 "accessToken": "expired-cc-token",
                 "refreshToken": "",          # No refresh — can't recover
@@ -80,7 +80,7 @@ class TestStaleOAuthTokenDetection:
         save_env_value("ANTHROPIC_TOKEN", "")
 
         monkeypatch.setattr(
-            "agent.anthropic_adapter.read_claude_code_credentials",
+            "superforecasting_agent.credentials.anthropic.read_claude_code_credentials",
             lambda: None,   # No CC creds
         )
         monkeypatch.setattr(
@@ -116,7 +116,7 @@ class TestStaleOAuthTokenDetection:
 
         # Valid Claude Code credentials with refresh token
         monkeypatch.setattr(
-            "agent.anthropic_adapter.read_claude_code_credentials",
+            "superforecasting_agent.credentials.anthropic.read_claude_code_credentials",
             lambda: {
                 "accessToken": "valid-cc-token",
                 "refreshToken": "valid-refresh",

@@ -53,7 +53,7 @@ def test_removed_login_command_points_to_fork_native_replacements(capsys):
 
 
 def test_auth_docs_urls_are_repo_local():
-    import superforecasting_agent.runtime.auth as auth
+    import superforecasting_agent.credentials.auth as auth
 
     assert auth.XAI_OAUTH_DOCS_URL == "website/docs/guides/xai-grok-oauth.md"
     assert auth.OAUTH_OVER_SSH_DOCS_URL == "website/docs/guides/oauth-over-ssh.md"
@@ -62,7 +62,7 @@ def test_auth_docs_urls_are_repo_local():
 
 
 def test_xai_pkce_local_error_uses_fork_native_product_name():
-    from superforecasting_agent.runtime.auth import _xai_oauth_exchange_code_for_tokens
+    from superforecasting_agent.credentials.auth import _xai_oauth_exchange_code_for_tokens
 
     with pytest.raises(AuthError) as exc:
         _xai_oauth_exchange_code_for_tokens(

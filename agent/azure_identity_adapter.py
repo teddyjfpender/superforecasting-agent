@@ -31,11 +31,12 @@ Requires: ``azure-identity`` (optional dependency — only needed when
 
 from __future__ import annotations
 
+import superforecasting_agent.credentials.azure as credential_service
+
 import functools
 import logging
 import os
 import threading
-from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -48,7 +49,7 @@ logger = logging.getLogger(__name__)
 # resource management and is rejected for inference by newer
 # resources — users with that requirement override via
 # ``model.entra.scope`` in config.yaml.
-SCOPE_AI_AZURE_DEFAULT = "https://ai.azure.com/.default"
+from superforecasting_agent.credentials.azure import SCOPE_AI_AZURE_DEFAULT as SCOPE_AI_AZURE_DEFAULT
 
 # ---------------------------------------------------------------------------
 # Lazy SDK import — only loaded when the Entra path is actually used.
@@ -57,16 +58,7 @@ SCOPE_AI_AZURE_DEFAULT = "https://ai.azure.com/.default"
 _AZURE_IDENTITY_FEATURE = "provider.azure_identity"
 
 
-def has_azure_identity_installed() -> bool:
-    """Return True if `azure-identity` can be imported right now.
-
-    Cheap check — does not walk the credential chain.
-    """
-    try:
-        import azure.identity  # noqa: F401
-        return True
-    except Exception:
-        return False
+from superforecasting_agent.credentials.azure import has_azure_identity_installed as has_azure_identity_installed
 
 
 def _require_azure_identity():
@@ -119,59 +111,10 @@ def reset_credential_cache() -> None:
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
-class EntraIdentityConfig:
-    """Serializable Entra ID config.
-
-    Captures the agent-managed Entra knobs we need outside Azure SDK
-    environment configuration. Everything else
-    (tenant ID, service principal secret, federated token file, sovereign
-    cloud authority, etc.) flows through azure-identity's standard
-    ``AZURE_*`` env vars — see the Bedrock pattern in
-    ``superforecasting_agent/runtime/runtime_provider.py:1310-1377`` for the analogous
-    "let the SDK read env" approach.
-
-    ``scope`` is Microsoft's documented Foundry inference audience. Almost
-    everyone uses the default; sovereign-cloud / non-standard tenants can
-    override via ``model.entra.scope``. Identity selection (user-assigned
-    managed identity, workload identity, service principal, tenant, authority)
-    stays in the standard Azure SDK env vars such as ``AZURE_CLIENT_ID``.
-
-    ``exclude_interactive_browser`` is kept as an internal constructor knob
-    so probes stay non-interactive by default. It is not written by the setup
-    wizard.
-
-    The dataclass is frozen so it's hashable for ``functools.lru_cache``
-    keying, and serializable across multiprocessing boundaries (workers
-    rebuild the credential inside their own process).
-    """
-
-    scope: str = SCOPE_AI_AZURE_DEFAULT
-    exclude_interactive_browser: bool = True
-
-    def __post_init__(self) -> None:
-        scope = str(self.scope or "").strip() or SCOPE_AI_AZURE_DEFAULT
-        object.__setattr__(self, "scope", scope)
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "scope": self.scope,
-            "exclude_interactive_browser": self.exclude_interactive_browser,
-        }
-
-    @classmethod
-    def from_dict(cls, data: Optional[Dict[str, Any]],
-                  *, default_scope: Optional[str] = None) -> "EntraIdentityConfig":
-        data = data or {}
-        scope = str(data.get("scope") or "").strip() or default_scope or SCOPE_AI_AZURE_DEFAULT
-        exclude_browser = bool(data.get("exclude_interactive_browser", True))
-        return cls(
-            scope=scope,
-            exclude_interactive_browser=exclude_browser,
-        )
+from superforecasting_agent.credentials.azure import EntraIdentityConfig as EntraIdentityConfig
 
 
-def _build_default_credential(config: EntraIdentityConfig) -> Any:
+def _build_default_credential(config: credential_service.EntraIdentityConfig) -> Any:
     """Construct a ``DefaultAzureCredential`` for ``config``.
 
     Only Hermes-selected knobs are passed as kwargs. Everything else
@@ -191,7 +134,7 @@ def _build_default_credential(config: EntraIdentityConfig) -> Any:
 
 
 @functools.lru_cache(maxsize=1)
-def build_credential(config: EntraIdentityConfig) -> Any:
+def build_credential(config: credential_service.EntraIdentityConfig) -> Any:
     """Return the cached ``DefaultAzureCredential`` for ``config``.
 
     Hermes processes use exactly one Entra config at a time (the
@@ -214,7 +157,7 @@ def build_credential(config: EntraIdentityConfig) -> Any:
 
 def build_token_provider(scope: Optional[str] = None,
                          *,
-                         config: Optional[EntraIdentityConfig] = None,
+                         config: Optional[credential_service.EntraIdentityConfig] = None,
                          base_url: Optional[str] = None,
                          exclude_interactive_browser: bool = True,
                          ) -> Callable[[], str]:
@@ -245,7 +188,7 @@ def build_token_provider(scope: Optional[str] = None,
     """
     ai = _require_azure_identity()
     if config is None:
-        config = EntraIdentityConfig(
+        config = credential_service.EntraIdentityConfig(
             scope=scope or SCOPE_AI_AZURE_DEFAULT,
             exclude_interactive_browser=exclude_interactive_browser,
         )
@@ -260,7 +203,7 @@ def build_token_provider(scope: Optional[str] = None,
 
 def has_azure_identity_credentials(scope: Optional[str] = None,
                                    *,
-                                   config: Optional[EntraIdentityConfig] = None,
+                                   config: Optional[credential_service.EntraIdentityConfig] = None,
                                    timeout_seconds: float = 10.0,
                                    allow_install: bool = True,
                                    **overrides: Any) -> bool:
@@ -280,7 +223,7 @@ def has_azure_identity_credentials(scope: Optional[str] = None,
     NOT used by ``is_provider_configured()`` — that path is structural
     only (no token mint), so CLI startup doesn't pay this latency.
     """
-    if not has_azure_identity_installed():
+    if not credential_service.has_azure_identity_installed():
         if not allow_install:
             return False
         try:
@@ -290,7 +233,7 @@ def has_azure_identity_credentials(scope: Optional[str] = None,
             return False
     if config is None:
         effective_scope = (scope or "").strip() or SCOPE_AI_AZURE_DEFAULT
-        config = EntraIdentityConfig(scope=effective_scope, **overrides)
+        config = credential_service.EntraIdentityConfig(scope=effective_scope, **overrides)
 
     result = {"ok": False}
 
@@ -312,7 +255,7 @@ def has_azure_identity_credentials(scope: Optional[str] = None,
     return bool(result.get("ok"))
 
 
-def describe_active_credential(config: Optional[EntraIdentityConfig] = None,
+def describe_active_credential(config: Optional[credential_service.EntraIdentityConfig] = None,
                                *,
                                scope: Optional[str] = None,
                                timeout_seconds: float = 10.0,
@@ -337,7 +280,7 @@ def describe_active_credential(config: Optional[EntraIdentityConfig] = None,
     ``AZURE_LOG_LEVEL=DEBUG``.
     """
     info: Dict[str, Any] = {"ok": False}
-    if not has_azure_identity_installed():
+    if not credential_service.has_azure_identity_installed():
         if not allow_install:
             info["error"] = "azure-identity not installed"
             info["hint"] = (
@@ -358,7 +301,7 @@ def describe_active_credential(config: Optional[EntraIdentityConfig] = None,
 
     if config is None:
         effective_scope = (scope or "").strip() or SCOPE_AI_AZURE_DEFAULT
-        config = EntraIdentityConfig(scope=effective_scope, **overrides)
+        config = credential_service.EntraIdentityConfig(scope=effective_scope, **overrides)
 
     info["scope"] = config.scope
     # Tenant / authority / service-principal config flow through the

@@ -13,7 +13,8 @@ from superforecasting_agent.storage import files
 def test_wrapper_failure_closes_descriptor_and_preserves_target(
     tmp_path, monkeypatch, writer
 ):
-    from superforecasting_agent.runtime import auth, config
+    from superforecasting_agent.credentials import auth
+    from superforecasting_agent.runtime import config
 
     output = tmp_path / "output"
     output.mkdir()

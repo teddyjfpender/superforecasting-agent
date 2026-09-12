@@ -215,7 +215,7 @@ def _api_kwargs_have_image_parts(api_kwargs: dict) -> bool:
 
 
 def _copilot_headers_for_request(self, *, is_vision: bool) -> dict:
-    from superforecasting_agent.runtime.copilot_auth import copilot_request_headers
+    from superforecasting_agent.credentials.copilot import copilot_request_headers
 
     return copilot_request_headers(is_agent_turn=True, is_vision=is_vision)
 

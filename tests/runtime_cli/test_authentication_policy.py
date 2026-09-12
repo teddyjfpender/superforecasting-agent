@@ -2,7 +2,8 @@
 
 import pytest
 
-from superforecasting_agent.runtime import auth, config
+from superforecasting_agent.credentials import auth, environment
+from superforecasting_agent.runtime import config
 
 
 @pytest.mark.parametrize("placeholder", ["changeme", "your_api_key", "***", "   "])
@@ -15,14 +16,14 @@ def test_anthropic_inspection_skips_placeholder_before_fallback(
     }
     for key in auth.PROVIDER_REGISTRY["anthropic"].api_key_env_vars:
         monkeypatch.delenv(key, raising=False)
-    monkeypatch.setattr(config, "get_env_value", values.get)
+    monkeypatch.setattr(environment, "get_env_value", values.get)
     assert auth.get_anthropic_key() == "valid-fallback-token"
 
 
 def test_anthropic_inspection_does_not_report_placeholder_as_configured(monkeypatch):
     for key in auth.PROVIDER_REGISTRY["anthropic"].api_key_env_vars:
         monkeypatch.delenv(key, raising=False)
-    monkeypatch.setattr(config, "get_env_value", lambda key: "changeme")
+    monkeypatch.setattr(environment, "get_env_value", lambda key: "changeme")
     assert auth.get_anthropic_key() == ""
 
 

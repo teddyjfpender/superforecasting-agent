@@ -187,7 +187,7 @@ def auth_add_command(args) -> None:
     # Matches the Codex device_code re-link pattern that predates this.
     if not provider.startswith(CUSTOM_POOL_PREFIX):
         try:
-            from superforecasting_agent.runtime.auth import (
+            from superforecasting_agent.credentials.auth import (
                 _load_auth_store,
                 unsuppress_credential_source,
             )
@@ -494,7 +494,7 @@ def auth_remove_command(args) -> None:
     # user-facing output here so every source behaves identically from
     # the user's perspective.
     from agent.credential_sources import find_removal_step
-    from superforecasting_agent.runtime.auth import suppress_credential_source
+    from superforecasting_agent.credentials.auth import suppress_credential_source
 
     step = find_removal_step(provider, removed.source)
     if step is None:
@@ -587,12 +587,8 @@ def _interactive_auth() -> None:
             _cfg_provider = str(_model_cfg.get("provider") or "").strip().lower()
             _cfg_auth_mode = str(_model_cfg.get("auth_mode") or "").strip().lower()
             if _cfg_provider == "azure-foundry" and _cfg_auth_mode == "entra_id":
-                from agent.azure_identity_adapter import (
-                    EntraIdentityConfig,
-                    SCOPE_AI_AZURE_DEFAULT,
-                    describe_active_credential,
-                    has_azure_identity_installed,
-                )
+                from superforecasting_agent.credentials.azure import EntraIdentityConfig, has_azure_identity_installed
+                from agent.azure_identity_adapter import SCOPE_AI_AZURE_DEFAULT, describe_active_credential
                 _base_url = str(_model_cfg.get("base_url") or "").strip()
                 _entra = _model_cfg.get("entra") or {}
                 if not isinstance(_entra, dict):

@@ -61,7 +61,7 @@ def _enter_existing_install_patches(stack, **extra):
         ("superforecasting_agent.runtime.setup.load_config", {"return_value": {}}),
         ("superforecasting_agent.runtime.setup.save_config", {}),
         ("superforecasting_agent.runtime.setup.get_env_value", {"return_value": None}),
-        ("superforecasting_agent.runtime.auth.get_active_provider", {"return_value": "openrouter"}),
+        ("superforecasting_agent.credentials.auth.get_active_provider", {"return_value": "openrouter"}),
         ("superforecasting_agent.runtime.setup._print_setup_summary", {}),
         ("superforecasting_agent.runtime.setup._offer_openclaw_migration", {"return_value": False}),
     ]:
@@ -81,7 +81,7 @@ def _enter_fresh_install_patches(stack, **extra):
         ("superforecasting_agent.runtime.config.is_managed", {"return_value": False}),
         ("superforecasting_agent.runtime.setup.load_config", {"return_value": {}}),
         ("superforecasting_agent.runtime.setup.save_config", {}),
-        ("superforecasting_agent.runtime.auth.get_active_provider", {"return_value": None}),
+        ("superforecasting_agent.credentials.auth.get_active_provider", {"return_value": None}),
         ("superforecasting_agent.runtime.setup.get_env_value", {"return_value": None}),
         ("superforecasting_agent.runtime.setup._offer_openclaw_migration", {"return_value": False}),
     ]:

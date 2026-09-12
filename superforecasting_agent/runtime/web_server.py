@@ -1419,11 +1419,7 @@ def _anthropic_oauth_status() -> Dict[str, Any]:
     The dashboard reports the highest-priority source that's actually present.
     """
     try:
-        from agent.anthropic_adapter import (
-            read_hermes_oauth_credentials,
-            read_claude_code_credentials,
-            get_hermes_oauth_file,
-        )
+        from superforecasting_agent.credentials.anthropic import read_hermes_oauth_credentials, read_claude_code_credentials, get_hermes_oauth_file
     except ImportError:
         read_claude_code_credentials = None  # type: ignore
         read_hermes_oauth_credentials = None  # type: ignore
@@ -1483,7 +1479,7 @@ def _claude_code_only_status() -> Dict[str, Any]:
     even when they also have a separate runtime-managed PKCE login.
     """
     try:
-        from agent.anthropic_adapter import read_claude_code_credentials
+        from superforecasting_agent.credentials.anthropic import read_claude_code_credentials
         creds = read_claude_code_credentials()
     except Exception:
         creds = None
@@ -1669,7 +1665,7 @@ async def disconnect_oauth_provider(provider_id: str, request: Request):
     # want to undo a disconnect.
     if provider_id in {"anthropic", "claude-code"}:
         try:
-            from agent.anthropic_adapter import get_hermes_oauth_file
+            from superforecasting_agent.credentials.anthropic import get_hermes_oauth_file
             oauth_file = get_hermes_oauth_file()
             if oauth_file.exists():
                 oauth_file.unlink()
@@ -1677,7 +1673,7 @@ async def disconnect_oauth_provider(provider_id: str, request: Request):
             pass
         # Also clear the credential pool entry if present.
         try:
-            from superforecasting_agent.runtime.auth import clear_provider_auth
+            from superforecasting_agent.credentials.auth import clear_provider_auth
             clear_provider_auth("anthropic")
         except Exception:
             pass
@@ -1685,7 +1681,7 @@ async def disconnect_oauth_provider(provider_id: str, request: Request):
         return {"ok": True, "provider": provider_id}
 
     try:
-        from superforecasting_agent.runtime.auth import clear_provider_auth
+        from superforecasting_agent.credentials.auth import clear_provider_auth
         cleared = clear_provider_auth(provider_id)
         _log.info("oauth/disconnect: %s (cleared=%s)", provider_id, cleared)
         return {"ok": bool(cleared), "provider": provider_id}
@@ -1782,7 +1778,7 @@ def _save_anthropic_oauth_creds(access_token: str, refresh_token: str, expires_a
     Mirrors what auth_commands.add_command does so the dashboard flow leaves
     the system in the same state as ``superforecasting-agent auth add anthropic``.
     """
-    from agent.anthropic_adapter import get_hermes_oauth_file
+    from superforecasting_agent.credentials.anthropic import get_hermes_oauth_file
     oauth_file = get_hermes_oauth_file()
     payload = {
         "accessToken": access_token,
@@ -1964,7 +1960,7 @@ async def _start_device_code_flow(provider_id: str) -> Dict[str, Any]:
         from superforecasting_agent.configuration.authentication import (
             PROVIDER_REGISTRY,
         )
-        from superforecasting_agent.runtime.auth import (
+        from superforecasting_agent.credentials.auth import (
             _nous_device_scope_with_env_override,
             _request_nous_device_code_with_scope_fallback,
         )
@@ -2058,7 +2054,7 @@ async def _start_device_code_flow(provider_id: str) -> Dict[str, Any]:
         # flow; the PKCE bit (verifier + challenge from
         # _minimax_pkce_pair) is a security extension that binds the
         # token exchange to the original session.
-        from superforecasting_agent.runtime.auth import (
+        from superforecasting_agent.credentials.auth import (
             _minimax_pkce_pair,
             _minimax_request_user_code,
             MINIMAX_OAUTH_CLIENT_ID,
@@ -2132,7 +2128,7 @@ async def _start_device_code_flow(provider_id: str) -> Dict[str, Any]:
 
 def _nous_poller(session_id: str) -> None:
     """Background poller that drives a Nous device-code flow to completion."""
-    from superforecasting_agent.runtime.auth import (
+    from superforecasting_agent.credentials.auth import (
         NOUS_INFERENCE_AUTH_MODE_FRESH,
         _poll_for_token,
         refresh_nous_oauth_from_state,
@@ -2184,7 +2180,7 @@ def _nous_poller(session_id: str) -> None:
             force_refresh=False,
             inference_auth_mode=NOUS_INFERENCE_AUTH_MODE_FRESH,
         )
-        from superforecasting_agent.runtime.auth import persist_nous_credentials
+        from superforecasting_agent.credentials.auth import persist_nous_credentials
         persist_nous_credentials(full_state)
         with _oauth_sessions_lock:
             sess["status"] = "approved"
@@ -2207,7 +2203,7 @@ def _minimax_poller(session_id: str) -> None:
     path leaves the system in the same state as
     ``superforecasting-agent auth add minimax-oauth``.
     """
-    from superforecasting_agent.runtime.auth import (
+    from superforecasting_agent.credentials.auth import (
         _minimax_poll_token,
         _minimax_resolve_token_expiry_unix,
         _minimax_save_auth_state,
@@ -2296,7 +2292,7 @@ def _codex_full_login_worker(session_id: str) -> None:
     """
     try:
         import httpx
-        from superforecasting_agent.runtime.auth import (
+        from superforecasting_agent.credentials.auth import (
             CODEX_OAUTH_CLIENT_ID,
             CODEX_OAUTH_TOKEN_URL,
             DEFAULT_CODEX_BASE_URL,
@@ -2385,7 +2381,7 @@ def _codex_full_login_worker(session_id: str) -> None:
         # only credential_pool.openai-codex and never set active_provider, so
         # a fresh install resolved provider "auto" to nothing and reported
         # "No inference provider configured" despite a successful login.
-        from superforecasting_agent.runtime.auth import _save_codex_tokens
+        from superforecasting_agent.credentials.auth import _save_codex_tokens
 
         _save_codex_tokens({
             "access_token": access_token,

@@ -108,7 +108,7 @@ class TestReadCodexAccessToken:
 
         valid_jwt = "eyJhbGciOiJSUzI1NiJ9.eyJleHAiOjk5OTk5OTk5OTl9.sig"
         with patch("agent.auxiliary_client._select_pool_entry", return_value=(True, None)), \
-             patch("superforecasting_agent.runtime.auth._read_codex_tokens", return_value={
+             patch("superforecasting_agent.credentials.auth._read_codex_tokens", return_value={
                  "tokens": {"access_token": valid_jwt, "refresh_token": "refresh"}
              }):
             result = _read_codex_access_token()
@@ -232,7 +232,7 @@ class TestResolveXaiOAuthForAux:
         because the singleton auth-store entry is absent.
         """
         from agent.credential_pool import AUTH_TYPE_OAUTH, PooledCredential, load_pool
-        from superforecasting_agent.runtime.auth import DEFAULT_XAI_OAUTH_BASE_URL
+        from superforecasting_agent.credentials.auth import DEFAULT_XAI_OAUTH_BASE_URL
 
         hermes_home = tmp_path / "hermes"
         hermes_home.mkdir(parents=True, exist_ok=True)
@@ -264,7 +264,7 @@ class TestResolveXaiOAuthForAux:
 
     def test_pool_backed_credentials_honor_base_url_env_override(self, tmp_path, monkeypatch):
         from agent.credential_pool import AUTH_TYPE_OAUTH, PooledCredential, load_pool
-        from superforecasting_agent.runtime.auth import DEFAULT_XAI_OAUTH_BASE_URL
+        from superforecasting_agent.credentials.auth import DEFAULT_XAI_OAUTH_BASE_URL
 
         hermes_home = tmp_path / "hermes"
         hermes_home.mkdir(parents=True, exist_ok=True)
@@ -649,7 +649,7 @@ class TestGetTextAuxiliaryClient:
         with (
             patch("agent.auxiliary_client.load_pool", return_value=_Pool()),
             patch("agent.auxiliary_client.OpenAI"),
-            patch("superforecasting_agent.runtime.auth._read_codex_tokens", side_effect=AssertionError("legacy codex store should not run")),
+            patch("superforecasting_agent.credentials.auth._read_codex_tokens", side_effect=AssertionError("legacy codex store should not run")),
         ):
             from agent.auxiliary_client import _build_codex_client
 
@@ -1294,7 +1294,7 @@ class TestTryMainAgentModelFallback:
 def test_resolve_api_key_provider_skips_unconfigured_anthropic(monkeypatch):
     """_resolve_api_key_provider must not try anthropic when user never configured it."""
     from collections import OrderedDict
-    from superforecasting_agent.runtime.auth import ProviderConfig
+    from superforecasting_agent.credentials.auth import ProviderConfig
 
     # Build a minimal registry with only "anthropic" so the loop is guaranteed
     # to reach it without being short-circuited by earlier providers.
@@ -1317,7 +1317,7 @@ def test_resolve_api_key_provider_skips_unconfigured_anthropic(monkeypatch):
     monkeypatch.setattr("agent.auxiliary_client._try_anthropic", mock_try_anthropic)
     monkeypatch.setattr("superforecasting_agent.configuration.authentication.PROVIDER_REGISTRY", fake_registry)
     monkeypatch.setattr(
-        "superforecasting_agent.runtime.auth.is_provider_explicitly_configured",
+        "superforecasting_agent.credentials.auth.is_provider_explicitly_configured",
         lambda pid: False,
     )
 
@@ -1878,17 +1878,17 @@ class TestAuxiliaryAuthRefreshRetry:
 
         with (
             patch("agent.auxiliary_client._client_cache", {cache_key: (stale_client, "claude-haiku-4-5-20251001", None)}),
-            patch("agent.anthropic_adapter.read_claude_code_credentials", return_value={
+            patch("superforecasting_agent.credentials.anthropic.read_claude_code_credentials", return_value={
                 "accessToken": "expired-token",
                 "refreshToken": "refresh-token",
                 "expiresAt": 0,
             }),
-            patch("agent.anthropic_adapter.refresh_anthropic_oauth_pure", return_value={
+            patch("superforecasting_agent.credentials.anthropic.refresh_anthropic_oauth_pure", return_value={
                 "access_token": "fresh-token",
                 "refresh_token": "refresh-token-2",
                 "expires_at_ms": 9999999999999,
             }) as mock_refresh_oauth,
-            patch("agent.anthropic_adapter._write_claude_code_credentials") as mock_write,
+            patch("superforecasting_agent.credentials.anthropic._write_claude_code_credentials") as mock_write,
         ):
             from agent.auxiliary_client import _refresh_provider_credentials
 

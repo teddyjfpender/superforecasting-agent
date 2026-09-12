@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from superforecasting_agent.runtime.auth import (
+from superforecasting_agent.credentials.auth import (
     AuthError,
     DEFAULT_QWEN_BASE_URL,
     QWEN_ACCESS_TOKEN_REFRESH_SKEW_SECONDS,
@@ -26,6 +26,14 @@ from superforecasting_agent.runtime.auth import (
     resolve_qwen_runtime_credentials,
     get_qwen_auth_status,
 )
+
+
+@pytest.fixture(autouse=True)
+def isolated_external_qwen_home(tmp_path, monkeypatch):
+    """Never let a broken credential-path mock overwrite a user's Qwen login."""
+    home = tmp_path / "external-home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
 
 
 # ---------------------------------------------------------------------------
@@ -69,7 +77,7 @@ def qwen_env(tmp_path, monkeypatch):
     """Redirect _qwen_cli_auth_path to tmp_path/.qwen/oauth_creds.json."""
     creds_path = tmp_path / ".qwen" / "oauth_creds.json"
     monkeypatch.setattr(
-        "superforecasting_agent.runtime.auth._qwen_cli_auth_path", lambda: creds_path
+        "superforecasting_agent.credentials.auth._qwen_cli_auth_path", lambda: creds_path
     )
     for key in (
         "SUPERFORECASTING_AGENT_QWEN_BASE_URL",
@@ -198,7 +206,7 @@ def test_refresh_qwen_cli_tokens_success(qwen_env):
         "expires_in": 7200,
     }
 
-    with patch("superforecasting_agent.runtime.auth.httpx") as mock_httpx:
+    with patch("superforecasting_agent.credentials.auth.httpx") as mock_httpx:
         mock_httpx.post.return_value = resp
         result = _refresh_qwen_cli_tokens(tokens)
 
@@ -218,7 +226,7 @@ def test_refresh_qwen_cli_tokens_preserves_old_refresh_if_not_in_response(qwen_e
         "expires_in": 3600,
     }
 
-    with patch("superforecasting_agent.runtime.auth.httpx") as mock_httpx:
+    with patch("superforecasting_agent.credentials.auth.httpx") as mock_httpx:
         mock_httpx.post.return_value = resp
         result = _refresh_qwen_cli_tokens(tokens)
 
@@ -239,7 +247,7 @@ def test_refresh_qwen_cli_tokens_http_error(qwen_env):
     resp.status_code = 401
     resp.text = "unauthorized"
 
-    with patch("superforecasting_agent.runtime.auth.httpx") as mock_httpx:
+    with patch("superforecasting_agent.credentials.auth.httpx") as mock_httpx:
         mock_httpx.post.return_value = resp
         with pytest.raises(AuthError) as exc:
             _refresh_qwen_cli_tokens(tokens)
@@ -249,7 +257,7 @@ def test_refresh_qwen_cli_tokens_http_error(qwen_env):
 def test_refresh_qwen_cli_tokens_network_error(qwen_env):
     tokens = _make_qwen_tokens()
 
-    with patch("superforecasting_agent.runtime.auth.httpx") as mock_httpx:
+    with patch("superforecasting_agent.credentials.auth.httpx") as mock_httpx:
         mock_httpx.post.side_effect = ConnectionError("timeout")
         with pytest.raises(AuthError) as exc:
             _refresh_qwen_cli_tokens(tokens)
@@ -263,7 +271,7 @@ def test_refresh_qwen_cli_tokens_invalid_json_response(qwen_env):
     resp.status_code = 200
     resp.json.side_effect = ValueError("bad json")
 
-    with patch("superforecasting_agent.runtime.auth.httpx") as mock_httpx:
+    with patch("superforecasting_agent.credentials.auth.httpx") as mock_httpx:
         mock_httpx.post.return_value = resp
         with pytest.raises(AuthError) as exc:
             _refresh_qwen_cli_tokens(tokens)
@@ -277,7 +285,7 @@ def test_refresh_qwen_cli_tokens_missing_access_token_in_response(qwen_env):
     resp.status_code = 200
     resp.json.return_value = {"something": "but no access_token"}
 
-    with patch("superforecasting_agent.runtime.auth.httpx") as mock_httpx:
+    with patch("superforecasting_agent.credentials.auth.httpx") as mock_httpx:
         mock_httpx.post.return_value = resp
         with pytest.raises(AuthError) as exc:
             _refresh_qwen_cli_tokens(tokens)
@@ -292,7 +300,7 @@ def test_refresh_qwen_cli_tokens_default_expires_in(qwen_env):
     resp.status_code = 200
     resp.json.return_value = {"access_token": "new"}
 
-    with patch("superforecasting_agent.runtime.auth.httpx") as mock_httpx:
+    with patch("superforecasting_agent.credentials.auth.httpx") as mock_httpx:
         mock_httpx.post.return_value = resp
         result = _refresh_qwen_cli_tokens(tokens)
 
@@ -311,7 +319,7 @@ def test_refresh_qwen_cli_tokens_saves_to_disk(qwen_env):
         "expires_in": 3600,
     }
 
-    with patch("superforecasting_agent.runtime.auth.httpx") as mock_httpx:
+    with patch("superforecasting_agent.credentials.auth.httpx") as mock_httpx:
         mock_httpx.post.return_value = resp
         _refresh_qwen_cli_tokens(tokens)
 
@@ -346,7 +354,7 @@ def test_resolve_qwen_runtime_credentials_triggers_refresh(qwen_env):
     refreshed = _make_qwen_tokens(access_token="refreshed-at")
 
     with patch(
-        "superforecasting_agent.runtime.auth._refresh_qwen_cli_tokens", return_value=refreshed
+        "superforecasting_agent.credentials.auth._refresh_qwen_cli_tokens", return_value=refreshed
     ) as mock_refresh:
         creds = resolve_qwen_runtime_credentials()
     mock_refresh.assert_called_once()
@@ -360,7 +368,7 @@ def test_resolve_qwen_runtime_credentials_force_refresh(qwen_env):
     refreshed = _make_qwen_tokens(access_token="force-refreshed")
 
     with patch(
-        "superforecasting_agent.runtime.auth._refresh_qwen_cli_tokens", return_value=refreshed
+        "superforecasting_agent.credentials.auth._refresh_qwen_cli_tokens", return_value=refreshed
     ) as mock_refresh:
         creds = resolve_qwen_runtime_credentials(force_refresh=True)
     mock_refresh.assert_called_once()

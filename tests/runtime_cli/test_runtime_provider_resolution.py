@@ -271,7 +271,7 @@ def test_resolve_provider_alias_qwen(monkeypatch):
 
 def test_qwen_oauth_auto_fallthrough_on_auth_failure(monkeypatch):
     """When requested_provider is 'auto' and Qwen creds fail, fall through."""
-    from superforecasting_agent.runtime.auth import AuthError
+    from superforecasting_agent.credentials.auth import AuthError
 
     monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "qwen-oauth")
     monkeypatch.setattr(
@@ -1466,13 +1466,13 @@ def test_named_custom_provider_anthropic_api_mode(monkeypatch):
 
 def test_resolve_provider_custom_returns_custom():
     """resolve_provider('custom') must return 'custom', not 'openrouter'."""
-    from superforecasting_agent.runtime.auth import resolve_provider
+    from superforecasting_agent.credentials.auth import resolve_provider
     assert resolve_provider("custom") == "custom"
 
 
 def test_resolve_provider_openrouter_unchanged():
     """resolve_provider('openrouter') must still return 'openrouter'."""
-    from superforecasting_agent.runtime.auth import resolve_provider
+    from superforecasting_agent.credentials.auth import resolve_provider
     assert resolve_provider("openrouter") == "openrouter"
 
 
@@ -1483,7 +1483,7 @@ def test_resolve_provider_lmstudio_returns_lmstudio(monkeypatch):
     'custom' before the PROVIDER_REGISTRY lookup, bypassing the first-class
     LM Studio provider entirely at runtime.
     """
-    from superforecasting_agent.runtime.auth import resolve_provider
+    from superforecasting_agent.credentials.auth import resolve_provider
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     assert resolve_provider("lmstudio") == "lmstudio"
@@ -1542,7 +1542,7 @@ def test_custom_provider_no_key_gets_placeholder(monkeypatch):
 
 def test_auto_detected_nous_auth_failure_falls_through_to_openrouter(monkeypatch):
     """When auto-detect picks Nous but credentials are revoked, fall through to OpenRouter."""
-    from superforecasting_agent.runtime.auth import AuthError
+    from superforecasting_agent.credentials.auth import AuthError
 
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-or-key")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -1573,7 +1573,7 @@ def test_auto_detected_nous_auth_failure_falls_through_to_openrouter(monkeypatch
 
 def test_auto_detected_codex_auth_failure_falls_through_to_openrouter(monkeypatch):
     """When auto-detect picks Codex but credentials are revoked, fall through to OpenRouter."""
-    from superforecasting_agent.runtime.auth import AuthError
+    from superforecasting_agent.credentials.auth import AuthError
 
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-or-key")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -1600,7 +1600,7 @@ def test_auto_detected_codex_auth_failure_falls_through_to_openrouter(monkeypatc
 
 def test_explicit_nous_auth_failure_still_raises(monkeypatch):
     """When user explicitly requests Nous and auth fails, the error should propagate."""
-    from superforecasting_agent.runtime.auth import AuthError
+    from superforecasting_agent.credentials.auth import AuthError
     import pytest
 
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-or-key")
@@ -2307,7 +2307,7 @@ class TestTencentTokenhubRuntimeResolution:
 
 def test_minimax_oauth_runtime_returns_anthropic_messages_mode(monkeypatch):
     """resolve_runtime_provider for minimax-oauth must return api_mode='anthropic_messages'."""
-    from superforecasting_agent.runtime.auth import MINIMAX_OAUTH_GLOBAL_INFERENCE
+    from superforecasting_agent.credentials.auth import MINIMAX_OAUTH_GLOBAL_INFERENCE
 
     monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "minimax-oauth")
     monkeypatch.setattr(rp, "_get_model_config", lambda **_snapshot: {"provider": "minimax-oauth"})
@@ -2330,7 +2330,7 @@ def test_minimax_oauth_runtime_returns_anthropic_messages_mode(monkeypatch):
         "source": "oauth",
     }
 
-    import superforecasting_agent.runtime.auth as auth_mod
+    import superforecasting_agent.credentials.auth as auth_mod
     monkeypatch.setattr(auth_mod, "resolve_minimax_oauth_runtime_credentials",
                         lambda **k: fake_creds)
 
@@ -2343,7 +2343,7 @@ def test_minimax_oauth_runtime_returns_anthropic_messages_mode(monkeypatch):
 
 def test_minimax_oauth_runtime_uses_inference_base_url(monkeypatch):
     """Base URL returned by resolve_runtime_provider should match the OAuth credentials."""
-    from superforecasting_agent.runtime.auth import MINIMAX_OAUTH_CN_INFERENCE
+    from superforecasting_agent.credentials.auth import MINIMAX_OAUTH_CN_INFERENCE
 
     monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "minimax-oauth")
     monkeypatch.setattr(rp, "_get_model_config", lambda **_snapshot: {"provider": "minimax-oauth"})
@@ -2358,7 +2358,7 @@ def test_minimax_oauth_runtime_uses_inference_base_url(monkeypatch):
         "source": "oauth",
     }
 
-    import superforecasting_agent.runtime.auth as auth_mod
+    import superforecasting_agent.credentials.auth as auth_mod
     monkeypatch.setattr(auth_mod, "resolve_minimax_oauth_runtime_credentials",
                         lambda **k: fake_creds)
 

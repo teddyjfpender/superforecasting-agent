@@ -670,7 +670,7 @@ def test_clear_provider_auth_removes_provider_pool_entries(tmp_path, monkeypatch
         },
     )
 
-    from superforecasting_agent.runtime.auth import clear_provider_auth
+    from superforecasting_agent.credentials.auth import clear_provider_auth
 
     assert clear_provider_auth("anthropic") is True
 
@@ -1120,7 +1120,7 @@ def test_unsuppress_credential_source_clears_marker(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
     _write_auth_store(tmp_path, {"version": 1})
 
-    from superforecasting_agent.runtime.auth import suppress_credential_source, unsuppress_credential_source, is_source_suppressed
+    from superforecasting_agent.credentials.auth import suppress_credential_source, unsuppress_credential_source, is_source_suppressed
 
     suppress_credential_source("openai-codex", "device_code")
     assert is_source_suppressed("openai-codex", "device_code") is True
@@ -1139,7 +1139,7 @@ def test_unsuppress_credential_source_returns_false_when_absent(tmp_path, monkey
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
     _write_auth_store(tmp_path, {"version": 1})
 
-    from superforecasting_agent.runtime.auth import unsuppress_credential_source
+    from superforecasting_agent.credentials.auth import unsuppress_credential_source
 
     assert unsuppress_credential_source("openai-codex", "device_code") is False
     assert unsuppress_credential_source("nonexistent", "whatever") is False
@@ -1150,7 +1150,7 @@ def test_unsuppress_credential_source_preserves_other_markers(tmp_path, monkeypa
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
     _write_auth_store(tmp_path, {"version": 1})
 
-    from superforecasting_agent.runtime.auth import (
+    from superforecasting_agent.credentials.auth import (
         suppress_credential_source,
         unsuppress_credential_source,
         is_source_suppressed,
@@ -1327,7 +1327,7 @@ def test_seed_from_singletons_respects_codex_suppression(tmp_path, monkeypatch):
             "refresh_token": "would-be-reimported",
         }
 
-    monkeypatch.setattr("superforecasting_agent.runtime.auth._import_codex_cli_tokens", _fake_import)
+    monkeypatch.setattr("superforecasting_agent.credentials.auth._import_codex_cli_tokens", _fake_import)
 
     from agent.credential_pool import _seed_from_singletons
 
@@ -1458,7 +1458,7 @@ def test_auth_add_clears_env_suppression_for_provider(tmp_path, monkeypatch):
     )
 
     from types import SimpleNamespace
-    from superforecasting_agent.runtime.auth import is_source_suppressed
+    from superforecasting_agent.credentials.auth import is_source_suppressed
     from superforecasting_agent.runtime.auth_commands import auth_add_command
 
     assert is_source_suppressed("xai", "env:XAI_API_KEY") is True
@@ -1582,7 +1582,7 @@ def test_seed_from_singletons_respects_qwen_suppression(tmp_path, monkeypatch):
         "suppressed_sources": {"qwen-oauth": ["qwen-cli"]},
     }))
 
-    import superforecasting_agent.runtime.auth as ha
+    import superforecasting_agent.credentials.auth as ha
     monkeypatch.setattr(ha, "resolve_qwen_runtime_credentials", lambda **kw: {
         "api_key": "tok", "source": "qwen-cli", "base_url": "https://q",
     })
@@ -1611,10 +1611,10 @@ def test_seed_from_singletons_respects_hermes_pkce_suppression(tmp_path, monkeyp
 
     # Stub the readers so only hermes_pkce is "available"; claude_code returns None
     import agent.anthropic_adapter as aa
-    monkeypatch.setattr(aa, "read_hermes_oauth_credentials", lambda: {
+    monkeypatch.setattr(aa.credential_service, "read_hermes_oauth_credentials", lambda: {
         "accessToken": "tok", "refreshToken": "r", "expiresAt": 9999999999000,
     })
-    monkeypatch.setattr(aa, "read_claude_code_credentials", lambda: None)
+    monkeypatch.setattr(aa.credential_service, "read_claude_code_credentials", lambda: None)
 
     from agent.credential_pool import _seed_from_singletons
     entries = []
@@ -1752,7 +1752,7 @@ def test_auth_remove_copilot_suppresses_all_variants(tmp_path, monkeypatch):
     )
 
     from types import SimpleNamespace
-    from superforecasting_agent.runtime.auth import is_source_suppressed
+    from superforecasting_agent.credentials.auth import is_source_suppressed
     from superforecasting_agent.runtime.auth_commands import auth_remove_command
 
     auth_remove_command(SimpleNamespace(provider="copilot", target="1"))
@@ -1784,7 +1784,7 @@ def test_auth_add_clears_all_suppressions_including_non_env(tmp_path, monkeypatc
     )
 
     from types import SimpleNamespace
-    from superforecasting_agent.runtime.auth import is_source_suppressed
+    from superforecasting_agent.credentials.auth import is_source_suppressed
     from superforecasting_agent.runtime.auth_commands import auth_add_command
 
     auth_add_command(SimpleNamespace(
@@ -1825,7 +1825,7 @@ def test_auth_remove_codex_manual_device_code_suppresses_canonical(tmp_path, mon
     )
 
     from types import SimpleNamespace
-    from superforecasting_agent.runtime.auth import is_source_suppressed
+    from superforecasting_agent.credentials.auth import is_source_suppressed
     from superforecasting_agent.runtime.auth_commands import auth_remove_command
 
     auth_remove_command(SimpleNamespace(provider="openai-codex", target="1"))

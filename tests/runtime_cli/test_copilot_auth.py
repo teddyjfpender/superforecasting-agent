@@ -85,7 +85,7 @@ class TestResolveToken:
         monkeypatch.delenv("COPILOT_GITHUB_TOKEN", raising=False)
         monkeypatch.delenv("GH_TOKEN", raising=False)
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
-        with patch("superforecasting_agent.runtime.copilot_auth._try_gh_cli_token", return_value="gho_from_cli"):
+        with patch("superforecasting_agent.credentials.copilot._try_gh_cli_token", return_value="gho_from_cli"):
             token, source = resolve_copilot_token()
         assert token == "gho_from_cli"
         assert source == "gh auth token"
@@ -95,7 +95,7 @@ class TestResolveToken:
         monkeypatch.delenv("COPILOT_GITHUB_TOKEN", raising=False)
         monkeypatch.delenv("GH_TOKEN", raising=False)
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
-        with patch("superforecasting_agent.runtime.copilot_auth._try_gh_cli_token", return_value="ghp_classic"):
+        with patch("superforecasting_agent.credentials.copilot._try_gh_cli_token", return_value="ghp_classic"):
             with pytest.raises(ValueError, match="classic PAT"):
                 resolve_copilot_token()
 
@@ -104,7 +104,7 @@ class TestResolveToken:
         monkeypatch.delenv("COPILOT_GITHUB_TOKEN", raising=False)
         monkeypatch.delenv("GH_TOKEN", raising=False)
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
-        with patch("superforecasting_agent.runtime.copilot_auth._try_gh_cli_token", return_value=None):
+        with patch("superforecasting_agent.credentials.copilot._try_gh_cli_token", return_value=None):
             token, source = resolve_copilot_token()
         assert token == ""
         assert source == ""
@@ -190,14 +190,14 @@ class TestEnvVarOrder:
     """PROVIDER_REGISTRY has correct env var order."""
 
     def test_copilot_env_vars_include_copilot_github_token(self):
-        from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY
+        from superforecasting_agent.credentials.auth import PROVIDER_REGISTRY
         copilot = PROVIDER_REGISTRY["copilot"]
         assert "COPILOT_GITHUB_TOKEN" in copilot.api_key_env_vars
         # COPILOT_GITHUB_TOKEN should be first
         assert copilot.api_key_env_vars[0] == "COPILOT_GITHUB_TOKEN"
 
     def test_copilot_env_vars_order_matches_docs(self):
-        from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY
+        from superforecasting_agent.credentials.auth import PROVIDER_REGISTRY
         copilot = PROVIDER_REGISTRY["copilot"]
         assert copilot.api_key_env_vars == (
             "COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"

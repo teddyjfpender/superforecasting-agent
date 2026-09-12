@@ -8,7 +8,7 @@ from pathlib import Path
 from superforecasting_agent.paths import get_install_root
 from typing import Dict, Iterable, Optional, Set
 
-from superforecasting_agent.runtime.auth import get_nous_auth_status
+from superforecasting_agent.credentials.auth import get_nous_auth_status
 from superforecasting_agent.runtime.config import get_env_value, load_config
 from tools.managed_tool_gateway import is_managed_tool_gateway_ready
 from superforecasting_agent.environment import is_truthy_value

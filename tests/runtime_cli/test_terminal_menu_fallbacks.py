@@ -82,7 +82,7 @@ def test_named_custom_provider_model_picker_falls_back_on_terminalmenu_runtime_e
         types.SimpleNamespace(TerminalMenu=_BrokenTerminalMenu),
     )
     monkeypatch.setattr("superforecasting_agent.runtime.models.fetch_api_models", lambda *args, **kwargs: ["model-a", "model-b"])
-    monkeypatch.setattr("superforecasting_agent.runtime.auth.deactivate_provider", lambda: None)
+    monkeypatch.setattr("superforecasting_agent.credentials.auth.deactivate_provider", lambda: None)
 
     cfg = load_config()
     save_config(cfg)

@@ -4,7 +4,7 @@ import types
 
 import pytest
 
-from superforecasting_agent.runtime.auth import (
+from superforecasting_agent.credentials.auth import (
     PROVIDER_REGISTRY,
     resolve_provider,
     get_api_key_provider_status,

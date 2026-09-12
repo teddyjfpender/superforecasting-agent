@@ -2,11 +2,8 @@
 
 def _run_anthropic_oauth_flow(save_env_value):
     """Run the Claude OAuth setup-token flow. Returns True if credentials were saved."""
-    from agent.anthropic_adapter import (
-        run_oauth_setup_token,
-        read_claude_code_credentials,
-        is_claude_code_token_valid,
-    )
+    from superforecasting_agent.credentials.anthropic import read_claude_code_credentials
+    from agent.anthropic_adapter import run_oauth_setup_token, is_claude_code_token_valid
     from superforecasting_agent.runtime.config import (
         save_anthropic_oauth_token,
         use_anthropic_claude_code_credentials,
@@ -95,11 +92,8 @@ def _run_anthropic_oauth_flow(save_env_value):
 
 def _model_flow_anthropic(config, current_model=""):
     """Flow for Anthropic provider — OAuth subscription, API key, or Claude Code creds."""
-    from superforecasting_agent.runtime.auth import (
-        _prompt_model_selection,
-        _save_model_choice,
-        deactivate_provider,
-    )
+    from superforecasting_agent.credentials.auth import deactivate_provider
+    from superforecasting_agent.runtime.auth import _prompt_model_selection, _save_model_choice
     from superforecasting_agent.runtime.config import (
         save_env_value,
         load_config,
@@ -109,16 +103,13 @@ def _model_flow_anthropic(config, current_model=""):
     from superforecasting_agent.runtime.models import _PROVIDER_MODELS
 
     # Check ALL credential sources
-    from superforecasting_agent.runtime.auth import get_anthropic_key
+    from superforecasting_agent.credentials.auth import get_anthropic_key
 
     existing_key = get_anthropic_key()
     cc_available = False
     try:
-        from agent.anthropic_adapter import (
-            read_claude_code_credentials,
-            is_claude_code_token_valid,
-            _is_oauth_token,
-        )
+        from superforecasting_agent.credentials.anthropic import read_claude_code_credentials
+        from agent.anthropic_adapter import is_claude_code_token_valid, _is_oauth_token
 
         cc_creds = read_claude_code_credentials()
         if cc_creds and is_claude_code_token_valid(cc_creds):

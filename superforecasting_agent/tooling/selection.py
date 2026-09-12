@@ -105,7 +105,7 @@ def _xai_credentials_present() -> bool:
     gates schema registration if creds later expire or get revoked.
     """
     try:
-        from superforecasting_agent.runtime.auth import _read_xai_oauth_tokens
+        from superforecasting_agent.credentials.auth import _read_xai_oauth_tokens
 
         _read_xai_oauth_tokens()
         return True

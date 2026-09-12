@@ -14,14 +14,14 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from superforecasting_agent.constants import OPENROUTER_BASE_URL
-from superforecasting_agent.runtime.config import get_env_value, load_env
+from superforecasting_agent.credentials.environment import get_env_value, load_env
 from superforecasting_agent.storage.credential_policy import (
     is_borrowed_credential_source,
     sanitize_borrowed_credential_payload,
 )
-import superforecasting_agent.runtime.auth as auth_mod
+import superforecasting_agent.credentials.auth as auth_mod
 from superforecasting_agent.configuration.authentication import PROVIDER_REGISTRY
-from superforecasting_agent.runtime.auth import (
+from superforecasting_agent.credentials.auth import (
     CODEX_ACCESS_TOKEN_REFRESH_SKEW_SECONDS,
     DEFAULT_AGENT_KEY_MIN_TTL_SECONDS,
     _auth_store_lock,
@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 def _load_config_safe() -> Optional[dict]:
     """Load config.yaml, returning None on any error."""
     try:
-        from superforecasting_agent.runtime.config import load_config
+        from superforecasting_agent.credentials.environment import load_config
 
         return load_config()
     except Exception:
@@ -304,7 +304,7 @@ def _iter_custom_providers(config: Optional[dict] = None):
     if not isinstance(custom_providers, list):
         # Fall back to the v12+ providers dict via the compatibility layer
         try:
-            from superforecasting_agent.runtime.config import get_compatible_custom_providers
+            from superforecasting_agent.configuration.provider_validation import get_compatible_custom_providers
 
             custom_providers = get_compatible_custom_providers(config)
         except Exception:
@@ -463,7 +463,7 @@ class CredentialPool:
         if self.provider != "anthropic" or entry.source != "claude_code":
             return entry
         try:
-            from agent.anthropic_adapter import read_claude_code_credentials
+            from superforecasting_agent.credentials.anthropic import read_claude_code_credentials
             creds = read_claude_code_credentials()
             if not creds:
                 return entry
@@ -779,7 +779,7 @@ class CredentialPool:
 
         try:
             if self.provider == "anthropic":
-                from agent.anthropic_adapter import refresh_anthropic_oauth_pure
+                from superforecasting_agent.credentials.anthropic import refresh_anthropic_oauth_pure
 
                 refreshed = refresh_anthropic_oauth_pure(
                     entry.refresh_token,
@@ -796,7 +796,7 @@ class CredentialPool:
                 # see the latest tokens.
                 if entry.source == "claude_code":
                     try:
-                        from agent.anthropic_adapter import _write_claude_code_credentials
+                        from superforecasting_agent.credentials.anthropic import _write_claude_code_credentials
                         _write_claude_code_credentials(
                             refreshed["access_token"],
                             refreshed["refresh_token"],
@@ -866,7 +866,7 @@ class CredentialPool:
                 if synced.refresh_token != entry.refresh_token:
                     logger.debug("Retrying refresh with synced token from credentials file")
                     try:
-                        from agent.anthropic_adapter import refresh_anthropic_oauth_pure
+                        from superforecasting_agent.credentials.anthropic import refresh_anthropic_oauth_pure
                         refreshed = refresh_anthropic_oauth_pure(
                             synced.refresh_token,
                             use_json=synced.source.endswith("hermes_pkce"),
@@ -883,7 +883,7 @@ class CredentialPool:
                         self._replace_entry(synced, updated)
                         self._persist()
                         try:
-                            from agent.anthropic_adapter import _write_claude_code_credentials
+                            from superforecasting_agent.credentials.anthropic import _write_claude_code_credentials
                             _write_claude_code_credentials(
                                 refreshed["access_token"],
                                 refreshed["refresh_token"],
@@ -1495,7 +1495,7 @@ def _seed_from_singletons(provider: str, entries: List[PooledCredential]) -> Tup
     # `superforecasting-agent auth remove <provider> <N>` is stable across all
     # source types.
     try:
-        from superforecasting_agent.runtime.auth import is_source_suppressed as _is_suppressed
+        from superforecasting_agent.credentials.auth import is_source_suppressed as _is_suppressed
     except ImportError:
         def _is_suppressed(_p, _s):  # type: ignore[misc]
             return False
@@ -1507,13 +1507,13 @@ def _seed_from_singletons(provider: str, entries: List[PooledCredential]) -> Tup
         # Without this gate, auxiliary client fallback chains silently read
         # ~/.claude/.credentials.json without user consent.  See PR #4210.
         try:
-            from superforecasting_agent.runtime.auth import is_provider_explicitly_configured
+            from superforecasting_agent.credentials.auth import is_provider_explicitly_configured
             if not is_provider_explicitly_configured("anthropic"):
                 return changed, active_sources
         except ImportError:
             pass
 
-        from agent.anthropic_adapter import read_claude_code_credentials, read_hermes_oauth_credentials
+        from superforecasting_agent.credentials.anthropic import read_claude_code_credentials, read_hermes_oauth_credentials
 
         for source_name, creds in (
             ("hermes_pkce", read_hermes_oauth_credentials()),
@@ -1603,7 +1603,7 @@ def _seed_from_singletons(provider: str, entries: List[PooledCredential]) -> Tup
         # env vars (COPILOT_GITHUB_TOKEN / GH_TOKEN).  They don't live in
         # the auth store or credential pool, so we resolve them here.
         try:
-            from superforecasting_agent.runtime.copilot_auth import resolve_copilot_token, get_copilot_api_token
+            from superforecasting_agent.credentials.copilot import resolve_copilot_token, get_copilot_api_token
             token, source = resolve_copilot_token()
             if token:
                 api_token = get_copilot_api_token(token)
@@ -1633,7 +1633,7 @@ def _seed_from_singletons(provider: str, entries: List[PooledCredential]) -> Tup
         # Use refresh_if_expiring=False to avoid network calls during
         # pool loading / provider discovery.
         try:
-            from superforecasting_agent.runtime.auth import resolve_qwen_runtime_credentials
+            from superforecasting_agent.credentials.auth import resolve_qwen_runtime_credentials
             creds = resolve_qwen_runtime_credentials(refresh_if_expiring=False)
             token = creds.get("api_key", "")
             if token:
@@ -1666,7 +1666,7 @@ def _seed_from_singletons(provider: str, entries: List[PooledCredential]) -> Tup
         # always refreshes on expiry, so instead read raw state here to avoid
         # surprise network calls during provider discovery.
         try:
-            from superforecasting_agent.runtime.auth import get_provider_auth_state
+            from superforecasting_agent.credentials.auth import get_provider_auth_state
             state = get_provider_auth_state("minimax-oauth")
             if state and state.get("access_token"):
                 source_name = "oauth"
@@ -1747,7 +1747,7 @@ def _seed_from_singletons(provider: str, entries: List[PooledCredential]) -> Tup
         tokens = state.get("tokens") if isinstance(state, dict) else None
         if isinstance(tokens, dict) and tokens.get("access_token"):
             active_sources.add("loopback_pkce")
-            from superforecasting_agent.runtime.auth import DEFAULT_XAI_OAUTH_BASE_URL
+            from superforecasting_agent.credentials.auth import DEFAULT_XAI_OAUTH_BASE_URL
 
             base_url = DEFAULT_XAI_OAUTH_BASE_URL
             changed |= _upsert_entry(
@@ -1788,14 +1788,14 @@ def _seed_from_env(provider: str, entries: List[PooledCredential]) -> Tuple[bool
     # Without this gate the removal is silently undone on the next
     # load_pool() call whenever the var is still exported by the shell.
     try:
-        from superforecasting_agent.runtime.auth import is_source_suppressed as _is_source_suppressed
+        from superforecasting_agent.credentials.auth import is_source_suppressed as _is_source_suppressed
     except ImportError:
         def _is_source_suppressed(_p, _s):  # type: ignore[misc]
             return False
 
     def _secret_source_for_env(env_var: str) -> Optional[str]:
         try:
-            from superforecasting_agent.runtime.env_loader import get_secret_source
+            from superforecasting_agent.startup_environment import get_secret_source
             source_label = get_secret_source(env_var)
         except Exception:
             source_label = None
@@ -1916,7 +1916,7 @@ def _seed_custom_pool(pool_key: str, entries: List[PooledCredential], *, config:
 
     # Shared suppression gate — same pattern as _seed_from_env/_seed_from_singletons.
     try:
-        from superforecasting_agent.runtime.auth import is_source_suppressed as _is_suppressed
+        from superforecasting_agent.credentials.auth import is_source_suppressed as _is_suppressed
     except ImportError:
         def _is_suppressed(_p, _s):  # type: ignore[misc]
             return False

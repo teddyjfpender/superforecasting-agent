@@ -370,7 +370,7 @@ from superforecasting_agent.runtime.session_browser import _relative_time as _re
 def _has_any_provider_configured() -> bool:
     """Check if at least one inference provider is usable."""
     from superforecasting_agent.runtime.config import get_env_path, get_agent_home, load_config
-    from superforecasting_agent.runtime.auth import get_auth_status
+    from superforecasting_agent.credentials.auth import get_auth_status
 
     # Determine whether Hermes itself has been explicitly configured (model
     # in config that isn't the hardcoded default). Used below to gate external
@@ -465,10 +465,8 @@ def _has_any_provider_configured() -> bool:
     # being installed doesn't mean the user wants Hermes to use their tokens.
     if _has_hermes_config:
         try:
-            from agent.anthropic_adapter import (
-                read_claude_code_credentials,
-                is_claude_code_token_valid,
-            )
+            from superforecasting_agent.credentials.anthropic import read_claude_code_credentials
+            from agent.anthropic_adapter import is_claude_code_token_valid
 
             creds = read_claude_code_credentials()
             if creds and (
@@ -1885,7 +1883,7 @@ def select_provider_and_model(args=None):
     provider picker, credential prompting, model selection, and config
     persistence.
     """
-    from superforecasting_agent.runtime.auth import (
+    from superforecasting_agent.credentials.auth import (
         resolve_provider,
         AuthError,
         format_auth_error,
@@ -2529,11 +2527,8 @@ def _prompt_provider_choice(choices, *, default=0):
 def _model_flow_openrouter(config, current_model=""):
     """OpenRouter provider: ensure API key, then pick model."""
     from superforecasting_agent.configuration.authentication import ProviderConfig
-    from superforecasting_agent.runtime.auth import (
-        _prompt_model_selection,
-        _save_model_choice,
-        deactivate_provider,
-    )
+    from superforecasting_agent.credentials.auth import deactivate_provider
+    from superforecasting_agent.runtime.auth import _prompt_model_selection, _save_model_choice
     from superforecasting_agent.runtime.config import get_env_value
 
     # Route through _prompt_api_key so users can replace a stale/broken key
@@ -2589,11 +2584,8 @@ def _model_flow_openrouter(config, current_model=""):
 def _model_flow_ai_gateway(config, current_model=""):
     """Vercel AI Gateway provider: ensure API key, then pick model with pricing."""
     from superforecasting_agent.configuration.authentication import PROVIDER_REGISTRY
-    from superforecasting_agent.runtime.auth import (
-        _prompt_model_selection,
-        _save_model_choice,
-        deactivate_provider,
-    )
+    from superforecasting_agent.credentials.auth import deactivate_provider
+    from superforecasting_agent.runtime.auth import _prompt_model_selection, _save_model_choice
     from superforecasting_agent.runtime.config import get_env_value
 
     # Route through _prompt_api_key so users can replace a stale/broken key
@@ -2655,14 +2647,8 @@ _DEFAULT_QWEN_PORTAL_MODELS = [
 
 def _model_flow_qwen_oauth(_config, current_model=""):
     """Qwen OAuth provider: reuse local Qwen CLI login, then pick model."""
-    from superforecasting_agent.runtime.auth import (
-        get_qwen_auth_status,
-        resolve_qwen_runtime_credentials,
-        _prompt_model_selection,
-        _save_model_choice,
-        _update_config_for_provider,
-        DEFAULT_QWEN_BASE_URL,
-    )
+    from superforecasting_agent.credentials.auth import get_qwen_auth_status, resolve_qwen_runtime_credentials, DEFAULT_QWEN_BASE_URL
+    from superforecasting_agent.runtime.auth import _prompt_model_selection, _save_model_choice, _update_config_for_provider
     from superforecasting_agent.runtime.models import fetch_api_models
 
     status = get_qwen_auth_status()
@@ -2699,16 +2685,8 @@ def _model_flow_qwen_oauth(_config, current_model=""):
 def _model_flow_minimax_oauth(config, current_model="", args=None):
     """MiniMax OAuth provider: ensure logged in, then pick model."""
     from superforecasting_agent.configuration.authentication import PROVIDER_REGISTRY
-    from superforecasting_agent.runtime.auth import (
-        get_provider_auth_state,
-        _prompt_model_selection,
-        _save_model_choice,
-        _update_config_for_provider,
-        resolve_minimax_oauth_runtime_credentials,
-        AuthError,
-        format_auth_error,
-        _login_minimax_oauth,
-    )
+    from superforecasting_agent.credentials.auth import get_provider_auth_state, resolve_minimax_oauth_runtime_credentials, AuthError, format_auth_error
+    from superforecasting_agent.runtime.auth import _prompt_model_selection, _save_model_choice, _update_config_for_provider, _login_minimax_oauth
 
     state = get_provider_auth_state("minimax-oauth")
     if not state or not state.get("access_token"):
@@ -2755,14 +2733,8 @@ def _model_flow_google_gemini_cli(_config, current_model=""):
       4. Prompt user to pick a model.
       5. Save to the active agent-home config.yaml.
     """
-    from superforecasting_agent.runtime.auth import (
-        DEFAULT_GEMINI_CLOUDCODE_BASE_URL,
-        get_gemini_oauth_auth_status,
-        resolve_gemini_oauth_runtime_credentials,
-        _prompt_model_selection,
-        _save_model_choice,
-        _update_config_for_provider,
-    )
+    from superforecasting_agent.credentials.auth import DEFAULT_GEMINI_CLOUDCODE_BASE_URL, get_gemini_oauth_auth_status, resolve_gemini_oauth_runtime_credentials
+    from superforecasting_agent.runtime.auth import _prompt_model_selection, _save_model_choice, _update_config_for_provider
     from superforecasting_agent.runtime.models import _PROVIDER_MODELS
 
     print()
@@ -2826,7 +2798,8 @@ def _model_flow_custom(config):
     Automatically saves the endpoint to ``custom_providers`` in config.yaml
     so it appears in the provider menu on subsequent runs.
     """
-    from superforecasting_agent.runtime.auth import _save_model_choice, deactivate_provider
+    from superforecasting_agent.credentials.auth import deactivate_provider
+    from superforecasting_agent.runtime.auth import _save_model_choice
     from superforecasting_agent.runtime.config import get_env_value, load_config, save_config
     from superforecasting_agent.runtime.secret_prompt import masked_secret_prompt
 
@@ -3128,7 +3101,8 @@ def _model_flow_named_custom(config, provider_info):
     If a model was previously saved, it is pre-selected in the menu.
     Falls back to the saved model if probing fails.
     """
-    from superforecasting_agent.runtime.auth import _save_model_choice, deactivate_provider
+    from superforecasting_agent.credentials.auth import deactivate_provider
+    from superforecasting_agent.runtime.auth import _save_model_choice
     from superforecasting_agent.runtime.config import load_config, save_config
     from superforecasting_agent.runtime.models import fetch_api_models
 
@@ -3402,12 +3376,8 @@ def _prompt_reasoning_effort_selection(efforts, current_effort=""):
 def _model_flow_copilot(config, current_model=""):
     """GitHub Copilot flow using env vars, gh CLI, or OAuth device code."""
     from superforecasting_agent.configuration.authentication import PROVIDER_REGISTRY
-    from superforecasting_agent.runtime.auth import (
-        _prompt_model_selection,
-        _save_model_choice,
-        deactivate_provider,
-        resolve_api_key_provider_credentials,
-    )
+    from superforecasting_agent.credentials.auth import deactivate_provider, resolve_api_key_provider_credentials
+    from superforecasting_agent.runtime.auth import _prompt_model_selection, _save_model_choice
     from superforecasting_agent.runtime.config import save_env_value, load_config, save_config
     from superforecasting_agent.runtime.models import (
         fetch_api_models,
@@ -3474,7 +3444,7 @@ def _model_flow_copilot(config, current_model=""):
                 return
             # Validate token type
             try:
-                from superforecasting_agent.runtime.copilot_auth import validate_copilot_token
+                from superforecasting_agent.credentials.copilot import validate_copilot_token
 
                 valid, msg = validate_copilot_token(new_key)
                 if not valid:
@@ -3593,14 +3563,8 @@ def _model_flow_copilot(config, current_model=""):
 def _model_flow_copilot_acp(config, current_model=""):
     """GitHub Copilot ACP flow using the local Copilot CLI."""
     from superforecasting_agent.configuration.authentication import PROVIDER_REGISTRY
-    from superforecasting_agent.runtime.auth import (
-        _prompt_model_selection,
-        _save_model_choice,
-        deactivate_provider,
-        get_external_process_provider_status,
-        resolve_api_key_provider_credentials,
-        resolve_external_process_provider_credentials,
-    )
+    from superforecasting_agent.credentials.auth import deactivate_provider, get_external_process_provider_status, resolve_api_key_provider_credentials, resolve_external_process_provider_credentials
+    from superforecasting_agent.runtime.auth import _prompt_model_selection, _save_model_choice
     from superforecasting_agent.runtime.models import (
         fetch_github_model_catalog,
         normalize_copilot_model_id,
@@ -3716,12 +3680,8 @@ def _model_flow_kimi(config, current_model=""):
     No manual base URL prompt — endpoint is determined by key prefix.
     """
     from superforecasting_agent.configuration.authentication import PROVIDER_REGISTRY
-    from superforecasting_agent.runtime.auth import (
-        KIMI_CODE_BASE_URL,
-        _prompt_model_selection,
-        _save_model_choice,
-        deactivate_provider,
-    )
+    from superforecasting_agent.credentials.auth import KIMI_CODE_BASE_URL, deactivate_provider
+    from superforecasting_agent.runtime.auth import _prompt_model_selection, _save_model_choice
     from superforecasting_agent.runtime.config import (
         get_env_value,
         save_env_value,
@@ -3812,7 +3772,7 @@ def _infer_stepfun_region(base_url: str) -> str:
 
 
 def _stepfun_base_url_for_region(region: str) -> str:
-    from superforecasting_agent.runtime.auth import (
+    from superforecasting_agent.credentials.auth import (
         STEPFUN_STEP_PLAN_CN_BASE_URL,
         STEPFUN_STEP_PLAN_INTL_BASE_URL,
     )
@@ -3827,11 +3787,8 @@ def _stepfun_base_url_for_region(region: str) -> str:
 def _model_flow_stepfun(config, current_model=""):
     """StepFun Step Plan flow with region-specific endpoints."""
     from superforecasting_agent.configuration.authentication import PROVIDER_REGISTRY
-    from superforecasting_agent.runtime.auth import (
-        _prompt_model_selection,
-        _save_model_choice,
-        deactivate_provider,
-    )
+    from superforecasting_agent.credentials.auth import deactivate_provider
+    from superforecasting_agent.runtime.auth import _prompt_model_selection, _save_model_choice
     from superforecasting_agent.runtime.config import (
         get_env_value,
         save_env_value,

@@ -252,7 +252,7 @@ class TestEntraIdentityConfig:
     must round-trip through dict cleanly and never lose fields."""
 
     def test_to_dict_round_trip(self):
-        from agent.azure_identity_adapter import EntraIdentityConfig
+        from superforecasting_agent.credentials.azure import EntraIdentityConfig
         cfg = EntraIdentityConfig(
             scope="https://ai.azure.com/.default",
             exclude_interactive_browser=False,
@@ -261,7 +261,7 @@ class TestEntraIdentityConfig:
         assert rebuilt == cfg
 
     def test_from_dict_handles_empty_strings(self):
-        from agent.azure_identity_adapter import EntraIdentityConfig
+        from superforecasting_agent.credentials.azure import EntraIdentityConfig
         cfg = EntraIdentityConfig.from_dict({
             "scope": "",
             "client_id": None,
@@ -273,7 +273,7 @@ class TestEntraIdentityConfig:
         """Old config.yaml that still has model.entra.client_id /
         tenant_id / authority should not crash from_dict — those values
         are now read from AZURE_* env vars by azure-identity directly."""
-        from agent.azure_identity_adapter import EntraIdentityConfig
+        from superforecasting_agent.credentials.azure import EntraIdentityConfig
         cfg = EntraIdentityConfig.from_dict({
             "tenant_id": "legacy-tenant",
             "authority": "https://login.partner.microsoftonline.cn",
@@ -285,12 +285,12 @@ class TestEntraIdentityConfig:
         assert not hasattr(cfg, "authority")
 
     def test_constructor_normalizes_empty_scope(self):
-        from agent.azure_identity_adapter import EntraIdentityConfig
+        from superforecasting_agent.credentials.azure import EntraIdentityConfig
         cfg = EntraIdentityConfig(scope="")
         assert cfg.scope.endswith("/.default")
 
     def test_from_dict_default_scope_override(self):
-        from agent.azure_identity_adapter import EntraIdentityConfig
+        from superforecasting_agent.credentials.azure import EntraIdentityConfig
         cfg = EntraIdentityConfig.from_dict(
             {"scope": ""},
             default_scope="https://custom.example/.default",
@@ -299,7 +299,7 @@ class TestEntraIdentityConfig:
 
     def test_dataclass_is_frozen(self):
         # Frozen dataclasses are hashable / safe to pass through caches.
-        from agent.azure_identity_adapter import EntraIdentityConfig
+        from superforecasting_agent.credentials.azure import EntraIdentityConfig
         cfg = EntraIdentityConfig()
         with pytest.raises((AttributeError, Exception)):
             setattr(cfg, "scope", "mutated")
@@ -365,7 +365,8 @@ class TestBuildCredential:
         browser auth. Tenant / authority / service principal config
         flow through the standard ``AZURE_*`` env vars (read by
         azure-identity directly), not Hermes config kwargs."""
-        from agent.azure_identity_adapter import EntraIdentityConfig, build_credential
+        from superforecasting_agent.credentials.azure import EntraIdentityConfig
+        from agent.azure_identity_adapter import build_credential
         cred = build_credential(EntraIdentityConfig())
         kwargs = fake_azure_identity.last_credential_kwargs
         # Default config should produce empty kwargs — SDK uses its own
@@ -378,13 +379,15 @@ class TestBuildCredential:
         ``exclude_interactive_browser=False``, the SDK kwarg is set to
         False. Without the opt-in we don't pass the kwarg at all (SDK
         default is True / browser excluded)."""
-        from agent.azure_identity_adapter import EntraIdentityConfig, build_credential
+        from superforecasting_agent.credentials.azure import EntraIdentityConfig
+        from agent.azure_identity_adapter import build_credential
         build_credential(EntraIdentityConfig(exclude_interactive_browser=False))
         kwargs = fake_azure_identity.last_credential_kwargs
         assert kwargs["exclude_interactive_browser_credential"] is False
 
     def test_credential_is_cached_per_config(self, fake_azure_identity):
-        from agent.azure_identity_adapter import EntraIdentityConfig, build_credential
+        from superforecasting_agent.credentials.azure import EntraIdentityConfig
+        from agent.azure_identity_adapter import build_credential
         cfg = EntraIdentityConfig(scope="s1")
         c1 = build_credential(cfg)
         c2 = build_credential(cfg)
@@ -392,18 +395,16 @@ class TestBuildCredential:
         assert fake_azure_identity.credential_count == 1
 
     def test_distinct_configs_get_distinct_credentials(self, fake_azure_identity):
-        from agent.azure_identity_adapter import EntraIdentityConfig, build_credential
+        from superforecasting_agent.credentials.azure import EntraIdentityConfig
+        from agent.azure_identity_adapter import build_credential
         c1 = build_credential(EntraIdentityConfig(scope="s1"))
         c2 = build_credential(EntraIdentityConfig(scope="s2"))
         assert c1 is not c2
         assert fake_azure_identity.credential_count == 2
 
     def test_reset_cache_invalidates(self, fake_azure_identity):
-        from agent.azure_identity_adapter import (
-            EntraIdentityConfig,
-            build_credential,
-            reset_credential_cache,
-        )
+        from superforecasting_agent.credentials.azure import EntraIdentityConfig
+        from agent.azure_identity_adapter import build_credential, reset_credential_cache
         cfg = EntraIdentityConfig(scope="x")
         c1 = build_credential(cfg)
         reset_credential_cache()
@@ -440,10 +441,8 @@ class TestBuildTokenProvider:
         assert fake_azure_identity.last_scope == "https://override.example/.default"
 
     def test_config_object_wins_over_kwargs(self, fake_azure_identity):
-        from agent.azure_identity_adapter import (
-            EntraIdentityConfig,
-            build_token_provider,
-        )
+        from superforecasting_agent.credentials.azure import EntraIdentityConfig
+        from agent.azure_identity_adapter import build_token_provider
         cfg = EntraIdentityConfig(scope="cfg-scope")
         build_token_provider(scope="ignored", config=cfg)
         assert fake_azure_identity.last_scope == "cfg-scope"
@@ -500,7 +499,7 @@ class TestRequireAzureIdentityMissing:
 class TestHasAzureIdentityCredentials:
     def test_returns_false_when_package_missing_and_install_disabled(self, monkeypatch):
         from agent import azure_identity_adapter as _adapter
-        monkeypatch.setattr(_adapter, "has_azure_identity_installed", lambda: False)
+        monkeypatch.setattr(_adapter.credential_service, "has_azure_identity_installed", lambda: False)
         assert _adapter.has_azure_identity_credentials(
             "https://x/.default", allow_install=False,
         ) is False
@@ -517,7 +516,7 @@ class TestHasAzureIdentityCredentials:
         def _fake_install():
             installed["called"] = True
             # After install, pretend the package is now importable.
-            monkeypatch.setattr(_adapter, "has_azure_identity_installed", lambda: True)
+            monkeypatch.setattr(_adapter.credential_service, "has_azure_identity_installed", lambda: True)
             return SimpleNamespace(
                 DefaultAzureCredential=lambda **kw: SimpleNamespace(
                     kwargs=kw,
@@ -526,7 +525,7 @@ class TestHasAzureIdentityCredentials:
                 get_bearer_token_provider=lambda c, s: lambda: "x",
             )
 
-        monkeypatch.setattr(_adapter, "has_azure_identity_installed", lambda: False)
+        monkeypatch.setattr(_adapter.credential_service, "has_azure_identity_installed", lambda: False)
         monkeypatch.setattr(_adapter, "_require_azure_identity", _fake_install)
 
         # Provide a credential factory so the probe proceeds after install.
@@ -560,7 +559,7 @@ class TestHasAzureIdentityCredentials:
             return _Cred()
 
         monkeypatch.setattr(_adapter, "build_credential", _failing_credential)
-        monkeypatch.setattr(_adapter, "has_azure_identity_installed", lambda: True)
+        monkeypatch.setattr(_adapter.credential_service, "has_azure_identity_installed", lambda: True)
         assert _adapter.has_azure_identity_credentials("https://x/.default", timeout_seconds=0.5) is False
 
     def test_returns_false_on_timeout(self, monkeypatch):
@@ -580,7 +579,7 @@ class TestHasAzureIdentityCredentials:
             return _Cred()
 
         monkeypatch.setattr(_adapter, "build_credential", _slow_credential)
-        monkeypatch.setattr(_adapter, "has_azure_identity_installed", lambda: True)
+        monkeypatch.setattr(_adapter.credential_service, "has_azure_identity_installed", lambda: True)
         try:
             assert _adapter.has_azure_identity_credentials(
                 "https://x/.default", timeout_seconds=0.1
@@ -597,7 +596,7 @@ class TestHasAzureIdentityCredentials:
 class TestDescribeActiveCredential:
     def test_reports_not_installed(self, monkeypatch):
         from agent import azure_identity_adapter as _adapter
-        monkeypatch.setattr(_adapter, "has_azure_identity_installed", lambda: False)
+        monkeypatch.setattr(_adapter.credential_service, "has_azure_identity_installed", lambda: False)
         info = _adapter.describe_active_credential(
             scope="https://x/.default", allow_install=False,
         )
@@ -609,7 +608,7 @@ class TestDescribeActiveCredential:
         """When lazy install is allowed but fails (e.g. lazy installs
         disabled), the diagnostic surfaces the failure as the error."""
         from agent import azure_identity_adapter as _adapter
-        monkeypatch.setattr(_adapter, "has_azure_identity_installed", lambda: False)
+        monkeypatch.setattr(_adapter.credential_service, "has_azure_identity_installed", lambda: False)
 
         def _fail_install():
             raise ImportError("simulated: lazy installs disabled")
@@ -656,7 +655,7 @@ class TestDescribeActiveCredential:
             return _Cred()
 
         monkeypatch.setattr(_adapter, "build_credential", _failing_credential)
-        monkeypatch.setattr(_adapter, "has_azure_identity_installed", lambda: True)
+        monkeypatch.setattr(_adapter.credential_service, "has_azure_identity_installed", lambda: True)
         info = _adapter.describe_active_credential(scope="https://x/.default", timeout_seconds=0.5)
         assert info["ok"] is False
         assert "auth failed" in info.get("error", "")

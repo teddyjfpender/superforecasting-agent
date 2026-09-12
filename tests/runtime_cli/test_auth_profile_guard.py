@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from superforecasting_agent.runtime import auth
+from superforecasting_agent.credentials import auth
 
 
 @pytest.mark.parametrize("home_name", [".superforecasting-agent", ".hermes"])

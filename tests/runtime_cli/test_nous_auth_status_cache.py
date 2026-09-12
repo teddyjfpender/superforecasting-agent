@@ -32,7 +32,7 @@ def test_get_nous_auth_status_caches_consecutive_calls(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     _seed_auth_file(tmp_path)
 
-    from superforecasting_agent.runtime import auth as auth_mod
+    from superforecasting_agent.credentials import auth as auth_mod
 
     auth_mod.invalidate_nous_auth_status_cache()
 
@@ -64,7 +64,7 @@ def test_get_nous_auth_status_invalidates_on_auth_file_mtime(tmp_path, monkeypat
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     auth_path = _seed_auth_file(tmp_path)
 
-    from superforecasting_agent.runtime import auth as auth_mod
+    from superforecasting_agent.credentials import auth as auth_mod
 
     auth_mod.invalidate_nous_auth_status_cache()
 
@@ -95,7 +95,7 @@ def test_invalidate_nous_auth_status_cache_forces_recompute(tmp_path, monkeypatc
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     _seed_auth_file(tmp_path)
 
-    from superforecasting_agent.runtime import auth as auth_mod
+    from superforecasting_agent.credentials import auth as auth_mod
 
     auth_mod.invalidate_nous_auth_status_cache()
 
@@ -125,7 +125,7 @@ def test_get_nous_auth_status_caches_failure_path(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     _seed_auth_file(tmp_path)
 
-    from superforecasting_agent.runtime import auth as auth_mod
+    from superforecasting_agent.credentials import auth as auth_mod
 
     auth_mod.invalidate_nous_auth_status_cache()
 
@@ -148,7 +148,7 @@ def test_get_nous_auth_status_caches_failure_path(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("create_file", [True, False])
 def test_status_cache_does_not_cross_profiles_with_same_timestamp(tmp_path, monkeypatch, create_file):
-    from superforecasting_agent.runtime import auth as auth_mod
+    from superforecasting_agent.credentials import auth as auth_mod
 
     paths = [tmp_path / name / "auth.json" for name in ("one", "two")]
     for path in paths:

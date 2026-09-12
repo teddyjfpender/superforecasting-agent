@@ -48,7 +48,7 @@ def _restore_tool_and_agent_modules():
 def _enable_managed_nous_tools(monkeypatch):
     """Patch the source modules so managed_nous_tools_enabled() returns True
     even after tool modules are dynamically reloaded."""
-    monkeypatch.setattr("superforecasting_agent.runtime.auth.get_nous_auth_status", lambda: {"logged_in": True})
+    monkeypatch.setattr("superforecasting_agent.credentials.auth.get_nous_auth_status", lambda: {"logged_in": True})
     monkeypatch.setattr("superforecasting_agent.runtime.models.check_nous_free_tier", lambda: False)
 
 

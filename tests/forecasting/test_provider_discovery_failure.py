@@ -4,7 +4,8 @@ import pytest
 
 from forecasting.quorum import panels
 from superforecasting_agent.configuration.provider_catalog import ProviderEntry
-from superforecasting_agent.runtime import auth, models
+from superforecasting_agent.credentials import auth
+from superforecasting_agent.credentials import catalog as models
 
 
 @pytest.fixture

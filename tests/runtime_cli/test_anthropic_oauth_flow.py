@@ -10,7 +10,7 @@ def test_run_anthropic_oauth_flow_prefers_claude_code_credentials(tmp_path, monk
         lambda: "sk-ant-oat01-from-claude-setup",
     )
     monkeypatch.setattr(
-        "agent.anthropic_adapter.read_claude_code_credentials",
+        "superforecasting_agent.credentials.anthropic.read_claude_code_credentials",
         lambda: {
             "accessToken": "cc-access-token",
             "refreshToken": "cc-refresh-token",
@@ -37,7 +37,7 @@ def test_run_anthropic_oauth_flow_prefers_claude_code_credentials(tmp_path, monk
 def test_run_anthropic_oauth_flow_manual_token_still_persists(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     monkeypatch.setattr("agent.anthropic_adapter.run_oauth_setup_token", lambda: None)
-    monkeypatch.setattr("agent.anthropic_adapter.read_claude_code_credentials", lambda: None)
+    monkeypatch.setattr("superforecasting_agent.credentials.anthropic.read_claude_code_credentials", lambda: None)
     monkeypatch.setattr("agent.anthropic_adapter.is_claude_code_token_valid", lambda creds: False)
     monkeypatch.setattr("builtins.input", lambda _prompt="": "sk-ant-oat01-manual-token")
     monkeypatch.setattr(

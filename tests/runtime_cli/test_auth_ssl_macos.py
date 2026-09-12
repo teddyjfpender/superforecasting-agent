@@ -21,7 +21,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from superforecasting_agent.runtime.auth import _default_verify, _resolve_verify
+from superforecasting_agent.credentials.auth import _default_verify, _resolve_verify
 
 
 @pytest.fixture

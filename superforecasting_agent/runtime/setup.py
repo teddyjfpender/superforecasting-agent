@@ -1138,7 +1138,7 @@ def _xai_oauth_logged_in_for_setup() -> bool:
     through the model command's xAI Grok OAuth flow.
     """
     try:
-        from superforecasting_agent.runtime.auth import get_xai_oauth_auth_status
+        from superforecasting_agent.credentials.auth import get_xai_oauth_auth_status
 
         return bool(get_xai_oauth_auth_status().get("logged_in"))
     except Exception:
@@ -1152,13 +1152,8 @@ def _run_xai_oauth_login_from_setup() -> bool:
     to whatever the user picked next, e.g. Edge TTS).
     """
     try:
-        from superforecasting_agent.runtime.auth import (
-            DEFAULT_XAI_OAUTH_BASE_URL,
-            _is_remote_session,
-            _save_xai_oauth_tokens,
-            _update_config_for_provider,
-            _xai_oauth_loopback_login,
-        )
+        from superforecasting_agent.credentials.auth import DEFAULT_XAI_OAUTH_BASE_URL, _is_remote_session, _save_xai_oauth_tokens
+        from superforecasting_agent.runtime.auth import _update_config_for_provider, _xai_oauth_loopback_login
     except Exception as exc:
         print_warning(f"xAI Grok OAuth helpers unavailable: {exc}")
         return False
@@ -2797,7 +2792,7 @@ def _model_section_has_credentials(config: dict) -> bool:
         ``OPENAI_API_KEY`` / ``OPENROUTER_API_KEY`` values through OpenRouter.
     """
     try:
-        from superforecasting_agent.runtime.auth import get_active_provider
+        from superforecasting_agent.credentials.auth import get_active_provider
         if get_active_provider():
             return True
     except Exception:
@@ -3261,7 +3256,7 @@ def run_setup_wizard(args):
         return
 
     # Check if this is an existing installation with a provider configured
-    from superforecasting_agent.runtime.auth import get_active_provider
+    from superforecasting_agent.credentials.auth import get_active_provider
 
     active_provider = get_active_provider()
     is_existing = (

@@ -1195,7 +1195,7 @@ def list_authenticated_providers(
         os.environ.get("LM_API_KEY") or os.environ.get("LM_BASE_URL") or current_provider.strip().lower() == "lmstudio"
     ):
         from superforecasting_agent.runtime.models import fetch_lmstudio_models
-        from superforecasting_agent.runtime.auth import AuthError
+        from superforecasting_agent.credentials.auth import AuthError
         is_current_lmstudio = current_provider.strip().lower() == "lmstudio"
         lm_base = (
             os.environ.get("LM_BASE_URL")
@@ -1244,7 +1244,7 @@ def list_authenticated_providers(
         has_creds = any(os.environ.get(ev) for ev in env_vars)
         if not has_creds:
             try:
-                from superforecasting_agent.runtime.auth import _load_auth_store
+                from superforecasting_agent.credentials.auth import _load_auth_store
                 store = _load_auth_store()
                 if store and store.get("credential_pool", {}).get(hermes_id):
                     has_creds = True
@@ -1322,7 +1322,7 @@ def list_authenticated_providers(
         # OAuth via external credential files).
         if not has_creds:
             try:
-                from superforecasting_agent.runtime.auth import _load_auth_store
+                from superforecasting_agent.credentials.auth import _load_auth_store
                 store = _load_auth_store()
                 providers_store = store.get("providers", {})
                 if store and (pid in providers_store or hermes_slug in providers_store):
@@ -1350,10 +1350,7 @@ def list_authenticated_providers(
         # configured.
         if not has_creds and hermes_slug == "anthropic":
             try:
-                from agent.anthropic_adapter import (
-                    read_claude_code_credentials,
-                    read_hermes_oauth_credentials,
-                )
+                from superforecasting_agent.credentials.anthropic import read_claude_code_credentials, read_hermes_oauth_credentials
                 hermes_creds = read_hermes_oauth_credentials()
                 cc_creds = read_claude_code_credentials()
                 if (hermes_creds and hermes_creds.get("accessToken")) or \
@@ -1427,7 +1424,7 @@ def list_authenticated_providers(
         # Also check auth store and credential pool
         if not _cp_has_creds:
             try:
-                from superforecasting_agent.runtime.auth import _load_auth_store
+                from superforecasting_agent.credentials.auth import _load_auth_store
                 _cp_store = _load_auth_store()
                 _cp_providers_store = _cp_store.get("providers", {})
                 if _cp_store and _cp.slug in _cp_providers_store:

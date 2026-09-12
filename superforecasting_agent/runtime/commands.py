@@ -882,7 +882,7 @@ def _lmstudio_completion_models() -> list[str]:
     # Gate: don't probe 127.0.0.1 on every keystroke for users who don't use LM Studio.
     if not (os.environ.get("LM_API_KEY") or os.environ.get("LM_BASE_URL")):
         try:
-            from superforecasting_agent.runtime.auth import _load_auth_store
+            from superforecasting_agent.credentials.auth import _load_auth_store
             store = _load_auth_store() or {}
             if "lmstudio" not in (store.get("providers") or {}) \
                and "lmstudio" not in (store.get("credential_pool") or {}):

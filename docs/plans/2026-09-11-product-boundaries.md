@@ -5094,3 +5094,54 @@ still retain handles for retry. The regression holds the underlying connection
 after collecting the lease and verifies it was explicitly closed, then verifies
 exclusive home admission. The focused admission/goal/websocket/TUI selection
 passed 287 tests. Full integrated verification remains required.
+
+### Credential-owner extraction in progress (2026-09-12)
+
+The isolated worktree now separates 150 credential/discovery/refresh functions
+from 20 interactive login/configuration functions. Direct noninteractive imports
+route to `superforecasting_agent.credentials.auth`; the inherited auth module
+retains interactive functions and explicit compatibility exports. Credential
+file/configuration reads now use shared read-only storage, and Nous environment
+aliases have a configuration owner. This is unfinished work: Copilot and config
+validation dependencies remain, and an initial 112-test selection reached 107
+passes with five mixed-interface mock ownership failures before the latest read
+changes. No complete boundary or full-suite claim applies to this extraction.
+Main separately contains the committed profile finalization fix, still to be
+integrated into this worktree before final verification. Do not discard either.
+
+
+The credential extraction now has no runtime/presentation dependency: 76 import
+contracts pass, including the new transitive credentials prohibition and removal
+of the last direct forecast-to-runtime exception. Credential/provider tests
+passed 2,533 with two skips; strict Python checks passed. The service import test
+also caught a bundled provider importing runtime solely for version metadata;
+GMI now uses the public package version. The new package has directory-wide
+strict lint/format/type coverage, including its inherited OAuth implementation.
+Mixed interactive callers now invoke shared helper owners explicitly, and mocks
+follow those actual owners rather than stale compatibility aliases.
+
+A stale Qwen path mock in the early failed extraction test wrote fixture tokens
+to the external `.qwen/oauth_creds.json` path. The identified fixture payload was
+quarantined as `oauth_creds.json.codex-test-fixture-20260912T173707Z`; prior file
+existence could not be established. Qwen tests now isolate HOME independently of
+the credential-path mock. No successful full-suite or publication claim applies
+until this batch is integrated with main's restoration-finalization fix and the
+full push gate passes. Optional Anthropic/Bedrock tests used the exact SDK
+versions already pinned in pyproject.toml in the isolated worktree.
+
+
+The initial credential commit was blocked by the repository's 1,200-line added
+file gate. The oversized auth implementation is now split into fifteen
+provider/lifecycle leaves under `credentials/oauth/`; the auth facade retains
+shared mutable state and public exports. This follows the existing carve
+pattern: leaves address shared state and dependencies explicitly through the
+facade, preserving its compatibility/monkeypatch semantics. The facade's late
+imports are documented and suppress only E402 there because provider defaults
+require initialized shared constants. No hook was bypassed and the mixed batch
+is not labeled MOVES-ONLY.
+
+A mechanical AST comparison verified all 149 moved function bodies, normalizing
+only explicit facade references, global declarations and no-op pass statements.
+The post-split provider/credential selection again passed 2,533 tests with two
+skips. Strict checks and all 76 import contracts pass. Full integration and
+artifact verification remain outstanding.

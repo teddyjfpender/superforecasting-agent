@@ -6,7 +6,7 @@ from superforecasting_agent.runtime.nous_subscription import NousFeatureState, N
 
 
 def _patch_common_status_deps(monkeypatch, status_mod, tmp_path, *, openai_base_url=""):
-    import superforecasting_agent.runtime.auth as auth_mod
+    import superforecasting_agent.credentials.auth as auth_mod
 
     monkeypatch.setattr(status_mod, "get_env_path", lambda: tmp_path / ".env", raising=False)
     monkeypatch.setattr(status_mod, "get_agent_home", lambda: tmp_path, raising=False)

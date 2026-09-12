@@ -7,7 +7,7 @@ import threading
 from typing import FrozenSet, Optional
 
 from agent.credential_pool import CredentialPool, PooledCredential, load_pool
-from superforecasting_agent.runtime.auth import DEFAULT_XAI_OAUTH_BASE_URL
+from superforecasting_agent.credentials.auth import DEFAULT_XAI_OAUTH_BASE_URL
 from superforecasting_agent.runtime.proxy.adapters.base import UpstreamAdapter, UpstreamCredential
 
 logger = logging.getLogger(__name__)

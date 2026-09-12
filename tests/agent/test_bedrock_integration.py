@@ -19,22 +19,22 @@ class TestProviderRegistry:
     """Verify Bedrock is registered in PROVIDER_REGISTRY."""
 
     def test_bedrock_in_registry(self):
-        from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY
+        from superforecasting_agent.credentials.auth import PROVIDER_REGISTRY
         assert "bedrock" in PROVIDER_REGISTRY
 
     def test_bedrock_auth_type_is_aws_sdk(self):
-        from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY
+        from superforecasting_agent.credentials.auth import PROVIDER_REGISTRY
         pconfig = PROVIDER_REGISTRY["bedrock"]
         assert pconfig.auth_type == "aws_sdk"
 
     def test_bedrock_has_no_api_key_env_vars(self):
         """Bedrock uses the AWS SDK credential chain, not API keys."""
-        from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY
+        from superforecasting_agent.credentials.auth import PROVIDER_REGISTRY
         pconfig = PROVIDER_REGISTRY["bedrock"]
         assert pconfig.api_key_env_vars == ()
 
     def test_bedrock_base_url_env_var(self):
-        from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY
+        from superforecasting_agent.credentials.auth import PROVIDER_REGISTRY
         pconfig = PROVIDER_REGISTRY["bedrock"]
         assert pconfig.base_url_env_var == "BEDROCK_BASE_URL"
 
@@ -93,26 +93,26 @@ class TestResolveProvider:
 
     def test_explicit_bedrock_resolves(self, monkeypatch):
         """When user explicitly requests 'bedrock', it should resolve."""
-        from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY
+        from superforecasting_agent.credentials.auth import PROVIDER_REGISTRY
         # bedrock is in the registry, so resolve_provider should return it
-        from superforecasting_agent.runtime.auth import resolve_provider
+        from superforecasting_agent.credentials.auth import resolve_provider
         result = resolve_provider("bedrock")
         assert result == "bedrock"
 
     def test_aws_alias_resolves_to_bedrock(self):
-        from superforecasting_agent.runtime.auth import resolve_provider
+        from superforecasting_agent.credentials.auth import resolve_provider
         result = resolve_provider("aws")
         assert result == "bedrock"
 
     def test_amazon_bedrock_alias_resolves(self):
-        from superforecasting_agent.runtime.auth import resolve_provider
+        from superforecasting_agent.credentials.auth import resolve_provider
         result = resolve_provider("amazon-bedrock")
         assert result == "bedrock"
 
     def test_auto_detect_with_aws_credentials(self, monkeypatch):
         """When AWS credentials are present and no other provider is configured,
         auto-detect should find bedrock."""
-        from superforecasting_agent.runtime.auth import resolve_provider
+        from superforecasting_agent.credentials.auth import resolve_provider
 
         # Clear all other provider env vars
         for var in ["OPENAI_API_KEY", "OPENROUTER_API_KEY", "ANTHROPIC_API_KEY",
@@ -124,7 +124,7 @@ class TestResolveProvider:
         monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY")
 
         # Mock the auth store to have no active provider
-        with patch("superforecasting_agent.runtime.auth._load_auth_store", return_value={}):
+        with patch("superforecasting_agent.credentials.auth._load_auth_store", return_value={}):
             result = resolve_provider("auto")
         assert result == "bedrock"
 
@@ -167,7 +167,7 @@ class TestRuntimeProvider:
         """When bedrock is auto-detected (not explicitly requested) and no
         credentials are found, runtime resolution should raise AuthError."""
         from superforecasting_agent.runtime.runtime_provider import resolve_runtime_provider
-        from superforecasting_agent.runtime.auth import AuthError
+        from superforecasting_agent.credentials.auth import AuthError
 
         # Clear all AWS env vars
         for var in ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_PROFILE",
@@ -178,12 +178,11 @@ class TestRuntimeProvider:
         # Mock both the provider resolution and boto3's credential chain
         mock_session = MagicMock()
         mock_session.get_credentials.return_value = None
+        sdk = MagicMock(get_session=MagicMock(return_value=mock_session))
         with patch("superforecasting_agent.runtime.runtime_provider.resolve_provider", return_value="bedrock"), \
              patch("superforecasting_agent.runtime.runtime_provider._get_model_config", return_value={"provider": "bedrock"}), \
              patch("superforecasting_agent.runtime.runtime_provider.resolve_requested_provider", return_value="auto"), \
-             patch.dict("sys.modules", {"botocore": MagicMock(), "botocore.session": MagicMock()}):
-            import botocore.session as _bs
-            _bs.get_session = MagicMock(return_value=mock_session)
+             patch.dict("sys.modules", {"botocore": MagicMock(session=sdk), "botocore.session": sdk}):
             with pytest.raises(AuthError, match="No AWS credentials"):
                 resolve_runtime_provider(requested="auto")
 

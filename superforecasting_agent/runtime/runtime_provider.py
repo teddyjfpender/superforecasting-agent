@@ -17,7 +17,7 @@ from superforecasting_agent.configuration.authentication import (
     PROVIDER_REGISTRY,
     has_usable_secret,
 )
-from superforecasting_agent.runtime.auth import (
+from superforecasting_agent.credentials.auth import (
     AuthError,
     DEFAULT_CODEX_BASE_URL,
     DEFAULT_QWEN_BASE_URL,
@@ -68,7 +68,7 @@ def _config_base_url_trustworthy_for_bare_custom(cfg_base_url: str, cfg_provider
     # is, otherwise a legit LAN/WireGuard ollama endpoint silently falls
     # through to OpenRouter.
     try:
-        from superforecasting_agent.runtime.auth import resolve_provider as _resolve_provider
+        from superforecasting_agent.credentials.auth import resolve_provider as _resolve_provider
 
         if _resolve_provider(cfg_provider_norm) == "custom":
             return True
@@ -664,7 +664,7 @@ def _resolve_named_custom_runtime(
     requested_norm = (requested_provider or "").strip().lower()
     if requested_norm and requested_norm != "custom":
         try:
-            from superforecasting_agent.runtime.auth import resolve_provider as _resolve_provider
+            from superforecasting_agent.credentials.auth import resolve_provider as _resolve_provider
 
             if _resolve_provider(requested_norm, config=config) == "custom":
                 requested_norm = "custom"
@@ -783,7 +783,7 @@ def _resolve_openrouter_runtime(
     # gate up the stack — alias-aware without duplicating the alias map.
     if requested_norm and requested_norm != "custom":
         try:
-            from superforecasting_agent.runtime.auth import resolve_provider as _resolve_provider
+            from superforecasting_agent.credentials.auth import resolve_provider as _resolve_provider
 
             if _resolve_provider(requested_norm, config=config) == "custom":
                 requested_norm = "custom"
@@ -986,11 +986,8 @@ def _resolve_azure_foundry_runtime(
             auth_mode = "api_key"
         else:
             try:
-                from agent.azure_identity_adapter import (
-                    EntraIdentityConfig,
-                    SCOPE_AI_AZURE_DEFAULT,
-                    build_token_provider,
-                )
+                from superforecasting_agent.credentials.azure import EntraIdentityConfig
+                from agent.azure_identity_adapter import SCOPE_AI_AZURE_DEFAULT, build_token_provider
             except Exception as exc:
                 raise AuthError(
                     "Azure Foundry Entra ID auth requires the 'azure-identity' "
@@ -1496,7 +1493,7 @@ def resolve_runtime_provider(
     if provider == "minimax-oauth":
         pconfig = PROVIDER_REGISTRY.get(provider)
         if pconfig and pconfig.auth_type == "oauth_minimax":
-            from superforecasting_agent.runtime.auth import resolve_minimax_oauth_runtime_credentials
+            from superforecasting_agent.credentials.auth import resolve_minimax_oauth_runtime_credentials
             creds = resolve_minimax_oauth_runtime_credentials()
             return {
                 "provider": provider,
