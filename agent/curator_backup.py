@@ -142,8 +142,8 @@ def _utc_id(now: Optional[datetime] = None) -> str:
 
 def _load_config() -> Dict[str, Any]:
     try:
-        from superforecasting_agent.runtime.config import load_config
-        cfg = load_config()
+        from superforecasting_agent.storage.configuration import read_configuration
+        cfg = read_configuration(get_agent_home() / "config.yaml")
     except Exception as e:
         logger.debug("Failed to load config for curator backup: %s", e)
         return {}

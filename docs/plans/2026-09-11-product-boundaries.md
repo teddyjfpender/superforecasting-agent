@@ -2941,3 +2941,13 @@ the storage lock, preserving concurrent pause changes and newer review summaries
 126 command/gateway tests passed, followed by 15 focused persistence-error, notice
 and state-owner tests after the acknowledgement fix. Shared Python quality gates
 passed. The primary integrated full push is still running on the preceding batch.
+
+
+### Curator configuration readers use independent profile storage
+
+Review policy, model binding input and backup policy now read the caller's explicit
+profile through shared read_configuration. They no longer call CLI configuration
+setup to inspect settings. The real-profile regression test forbids that old loader,
+checks non-default settings, and verifies unchanged bytes and directory contents.
+75 curator/backup/stream tests passed; shared Python quality gates passed. Provider
+credential resolution remains a runtime adapter and daemon lifetime remains separate.

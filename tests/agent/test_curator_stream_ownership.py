@@ -4,14 +4,15 @@ import sys
 import threading
 
 from agent import curator, runtime
-from superforecasting_agent.runtime import config, runtime_provider
+from superforecasting_agent.runtime import runtime_provider
+from superforecasting_agent.storage import configuration
 
 
 def test_background_curator_preserves_foreground_streams(monkeypatch, capsys):
     entered = threading.Event()
     release = threading.Event()
     closed = []
-    monkeypatch.setattr(config, 'load_config', lambda: {'model': {'default': 'fake', 'provider': 'custom'}})
+    monkeypatch.setattr(configuration, 'read_configuration', lambda path=None: {'model': {'default': 'fake', 'provider': 'custom'}})
     monkeypatch.setattr(runtime_provider, 'resolve_runtime_provider', lambda **kwargs: {'provider': 'custom'})
 
     class Review:

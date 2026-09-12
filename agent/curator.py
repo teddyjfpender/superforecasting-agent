@@ -108,8 +108,8 @@ def is_paused() -> bool:
 def _load_config() -> Dict[str, Any]:
     """Read curator.* config from the active agent home. Tolerates missing file."""
     try:
-        from superforecasting_agent.runtime.config import load_config
-        cfg = load_config()
+        from superforecasting_agent.storage.configuration import read_configuration
+        cfg = read_configuration(get_agent_home() / "config.yaml")
     except Exception as e:
         logger.debug("Failed to load config for curator: %s", e)
         return {}
@@ -1651,9 +1651,9 @@ def _run_llm_review(prompt: str) -> Dict[str, Any]:
     _resolved_provider = None
     _model_name = ""
     try:
-        from superforecasting_agent.runtime.config import load_config
+        from superforecasting_agent.storage.configuration import read_configuration
         from superforecasting_agent.runtime.runtime_provider import resolve_runtime_provider
-        _cfg = load_config()
+        _cfg = read_configuration(get_agent_home() / "config.yaml")
         _binding = _resolve_review_runtime(_cfg)
         _provider, _model_name = _binding.provider, _binding.model
         _rp = resolve_runtime_provider(
