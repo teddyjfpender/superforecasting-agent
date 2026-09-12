@@ -17,10 +17,9 @@ def main():
     socket.socket.connect = local_connect
 
     from tui_gateway import server
-    if os.environ.get('FORECAST_TEST_FORBID_CLASSIC_WORKER') == '1':
-        def forbidden_worker(*args, **kwargs):
-            raise AssertionError('classic worker construction forbidden in native command test')
-        server._SlashWorker = forbidden_worker
+    def forbidden_worker(*args, **kwargs):
+        raise AssertionError('classic worker construction forbidden in desk integration')
+    server._SlashWorker = forbidden_worker
     server.start_build_check = lambda: None
     if os.environ.get('FORECAST_TEST_STORE_FAILURE') == '1':
         server._get_db = lambda: None

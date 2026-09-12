@@ -4848,7 +4848,6 @@ _PENDING_INPUT_COMMANDS: frozenset[str] = frozenset(
         "queue",
         "q",
         "steer",
-        "plan",
         "goal",
         "subgoal",
         "learn",
@@ -5907,25 +5906,14 @@ def _(rid, params: dict) -> dict:
     if resolve_command(_cmd_base) is None:
         return _err(rid, 4011, f"unknown command: {_cmd_base}")
 
-    session, err = _sess(params, rid)
-    if err:
-        return err
+    from tui_gateway.command_routes import terminal_command_names
 
-    from superforecasting_agent.hosting.legacy_commands import use_worker
-
-    try:
-        with use_worker(session, lambda: _SlashWorker(
-            session["session_key"],
-            getattr(session.get("agent"), "model", _resolve_model()),
-        )) as worker:
-            output = worker.run(cmd)
-            warning = _mirror_slash_side_effects(params.get("session_id", ""), session, cmd)
-        payload = {"output": output or "(no output)"}
-        if warning:
-            payload["warning"] = warning
-        return _ok(rid, payload)
-    except Exception as e:
-        return _err(rid, 5030, str(e))
+    if _cmd_base in terminal_command_names():
+        return _command_handoff(
+            rid, f"/{_cmd_base} is owned by the terminal client; use its dedicated command handler",
+            dispatch="terminal",
+        )
+    return _err(rid, 5030, f"Native command handler missing: /{_cmd_base}")
 
 
 # ── Methods: voice ───────────────────────────────────────────────────

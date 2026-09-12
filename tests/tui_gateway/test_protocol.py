@@ -620,8 +620,8 @@ def test_slash_exec_handles_plugin_commands_in_live_gateway(server):
     assert worker.calls == []
 
 
-def test_slash_exec_plugin_lookup_failure_falls_back_to_worker(server):
-    """Plugin discovery failures must not break ordinary slash-worker commands."""
+def test_slash_exec_plugin_lookup_failure_keeps_terminal_ownership(server):
+    """Plugin discovery failures cannot divert terminal commands to a worker."""
     sid = "test-session"
 
     class Worker:
@@ -645,9 +645,8 @@ def test_slash_exec_plugin_lookup_failure_falls_back_to_worker(server):
             "params": {"command": "help", "session_id": sid},
         })
 
-    assert "error" not in resp
-    assert resp["result"] == {"output": "worker:help"}
-    assert worker.calls == ["help"]
+    assert resp["error"]["data"] == {"dispatch": "terminal", "execution_started": False}
+    assert worker.calls == []
 
 
 def test_slash_exec_plugin_handler_error_returns_output(server):
@@ -683,7 +682,7 @@ def test_slash_exec_plugin_handler_error_returns_output(server):
     assert worker.calls == []
 
 
-@pytest.mark.parametrize("cmd", ["retry", "queue hello", "q hello", "steer fix the test", "plan"])
+@pytest.mark.parametrize("cmd", ["retry", "queue hello", "q hello", "steer fix the test"])
 def test_slash_exec_rejects_pending_input_commands(server, cmd):
     """slash.exec must reject commands that use _pending_input in the CLI."""
     sid = "test-session"

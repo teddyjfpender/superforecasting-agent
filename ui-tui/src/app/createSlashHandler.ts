@@ -99,6 +99,10 @@ export function createSlashHandler(ctx: SlashHandlerContext): (cmd: string) => b
         }
 
         if (d.type === 'alias') {
+          if (d.target.toLowerCase() === parsed.name.toLowerCase() && !findSlashCommand(parsed.name)) {
+            return sys(`/${parsed.name} requires a terminal command handler unavailable in this client`)
+          }
+
           return handler(`/${d.target}${argTail}`)
         }
 

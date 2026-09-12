@@ -171,12 +171,12 @@ def test_plugin_command_does_not_construct_an_unrelated_agent(configure, monkeyp
     server._SlashWorker.assert_not_called()
 
 
-def test_native_known_legacy_command_hands_off_without_execution(configure, monkeypatch):
+def test_terminal_command_returns_to_client_without_execution(configure, monkeypatch):
     configure({})
     monkeypatch.setattr("superforecasting_agent.runtime.plugins.get_plugin_command_handler", lambda name: None)
     monkeypatch.setattr(import_module("agent.skill_commands"), "scan_skill_commands", lambda: {})
     response = dispatch("help")
-    assert response["error"]["data"] == {"dispatch": "slash.exec", "execution_started": False}
+    assert response["result"] == {"type": "alias", "target": "help"}
     server._start_agent_build.assert_not_called()
     server._SlashWorker.assert_not_called()
 
@@ -1284,3 +1284,21 @@ def test_plugin_deadline_retains_session_through_cleanup(configure, monkeypatch,
         server._SlashWorker.assert_not_called()
 
     asyncio.run(caller())
+
+
+def test_all_terminal_owned_commands_refuse_classic_execution(configure, monkeypatch):
+    from tui_gateway.command_routes import terminal_command_names
+
+    configure({})
+    monkeypatch.setattr(import_module('agent.skill_commands'), 'get_skill_commands', lambda: {})
+    for name in terminal_command_names():
+        response = slash(name)
+        assert response['error']['data'] == {'dispatch': 'terminal', 'execution_started': False}, name
+    server._SlashWorker.assert_not_called()
+    server._start_agent_build.assert_not_called()
+
+
+def test_terminal_alias_returns_its_canonical_client_handler(configure):
+    configure({})
+    assert dispatch('reset')['result'] == {'type': 'alias', 'target': 'new'}
+    server._SlashWorker.assert_not_called()

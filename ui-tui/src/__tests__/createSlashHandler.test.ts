@@ -1302,6 +1302,17 @@ describe('createSlashHandler', () => {
     expect(ctx.gateway.gw.request.mock.calls.map(call => call[0])).toEqual(['command.dispatch', 'slash.exec'])
   })
 
+  it('rejects a terminal handoff unsupported by this client without redispatching', async () => {
+    const ctx = buildCtx()
+    vi.mocked(ctx.gateway.gw.request).mockResolvedValue({ type: 'alias', target: 'future-command' })
+    createSlashHandler(ctx)('/future-command')
+    await Promise.resolve()
+    expect(ctx.gateway.gw.request).toHaveBeenCalledTimes(1)
+    expect(ctx.transcript.sys).toHaveBeenCalledWith(
+      '/future-command requires a terminal command handler unavailable in this client'
+    )
+  })
+
   it('dispatches command.dispatch with typed alias', async () => {
     const ctx = buildCtx({
       gateway: {

@@ -91,10 +91,12 @@ The formality layer of the modularization program
 compatibility executable/module alias; no application package may import it.
 The entrypoint import contract has no exceptions and includes cron and ACP.
 `cli.py` remains a presentation entrypoint; the TUI host cannot import it.
-The isolated legacy slash worker still uses classic CLI dispatch for commands
-that have not yet migrated to application services. Session creation and model
-changes do not start it. The host ownership helper serializes its use and retains
-a failed-cleanup handle before allowing replacement.
+TUI command execution no longer constructs or calls the classic slash worker.
+`command_routes.py` assigns native backend operations and terminal-owned commands;
+terminal commands redispatch to Ink or return an explicit pre-execution handoff.
+Cross-language parity requires a handler for every catalog command and fails if
+its Python catalog cannot load. Legacy worker classes/retirement helpers remain
+to be removed; they are no longer an execution fallback.
 
 `runtime.interactive_config.read_cli_config` reads shared settings without
 modifying the process. `load_cli_config` explicitly applies environment bridges

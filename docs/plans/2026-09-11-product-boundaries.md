@@ -4455,3 +4455,32 @@ The three original failure cases reproduced before the fix. All 287 plugin and
 TUI command/protocol tests pass afterward, including both RPC command surfaces
 rejecting session close during async cancellation cleanup and permitting it
 after completion. Failure never becomes a command redispatch.
+
+### Eliminate classic-worker command execution
+
+The complete catalog inventory found a native backend or Ink handler for every
+non-messaging command, including /new through the reset handler alias. Removed
+slash.exec's worker execution and its obsolete agent-initialization step.
+Terminal-owned requests now return a structured pre-execution handoff;
+command.dispatch redirects them to their canonical Ink handler using the existing
+alias response. Unknown native routes report a missing handler rather than
+creating a second classic runtime. The client stops an unsupported self-alias
+instead of recursively requesting it.
+
+The shared route inventory is checked against the actual Ink registry. Catalog
+load failures now fail the parity test instead of skipping it; every catalog
+command must have an owner. Tests verify terminal-only RPCs never build an agent
+or worker, canonical aliases still work, and plugin discovery failure cannot
+change ownership. All real desk lifecycle fixtures now prohibit worker creation.
+The old worker class, subprocess entrypoint, side-effect mirror and retirement
+helpers remain as removal work; they no longer implement command execution.
+
+The preceding snapshot batch passed its full gate: 31,764 Python tests with
+148 skipped, and remote branch codex/learning-settlement-runtime advanced to
+a3bef09ba. The plugin lifetime fix is integrated locally for the next batch.
+
+Validation: 838 backend/real-desk tests and 100 TUI routing tests passed, with a
+fresh terminal build and the shared quality workflow. The rendered lifecycle
+exercises run through the actual Ink/dashboard/local-provider/session database
+with classic-worker construction forbidden. This remains local POSIX evidence,
+not qualification of every supported remote platform.

@@ -9,8 +9,11 @@ changes, tests and their limits. The previous checklist is preserved in the
 
 ## 1. Finish application and product boundaries
 
-- [ ] Migrate remaining classic slash-worker commands to shared operations.
-  The TUI must not need a second classic CLI runtime to execute business behavior.
+- [ ] Remove the retired classic slash-worker implementation and cleanup scaffolding.
+  TUI command execution no longer constructs or calls it. Every catalog command
+  has a native backend or Ink owner, enforced by a cross-language parity test.
+  Terminal-only requests hand back to the client before agent construction.
+  The old worker class, side-effect mirror and retirement helpers remain to remove.
   Native handoff now uses host/session admission and the shared waiter: local timeouts now cancel only unclaimed pending work, and running/terminal gateway states cannot be overwritten by timeout. Attempt identity is now enforced on gateway transitions and CLI cancellation/waiting. Shared application observation/waiting returns durable outcomes on cancellation, and the CLI borrows host storage without opening a fallback connection; native progress/completion is verified through the real terminal with a simulated destination. Foreground/background admission now shares durable handoff validation, including reconnected sessions and read failures. A real terminal test now covers cancelling a claimed-transfer wait, retained-PTY dashboard reconnect, blocked source work and a new independent session. Interrupted gateway recovery and cross-platform handoff qualification remain to be completed.
   Preserve aliases, validation, error semantics and state ownership. Configured aliases already redispatch through the local TUI registry. Messaging-only commands now fail before worker construction; /whoami metadata no longer advertises unavailable terminal behavior. Snapshot
   listing, creation and pruning now share application/storage owners;
@@ -44,7 +47,7 @@ branching, native command handoffs before model initialization, shared goal-comm
 across configuration normalization, classic CLI, TUI and gateway environment bridges, shared configuration inspection
 (including live session settings and credential-safe reporting), shared toolset/insights/
 quota/platform inspection, curator operations and runtime selection, and lazy legacy worker admission.
-Tool inventory and /tools list now use shared views without building an agent or classic worker. Tool changes share strict name validation; malformed RPC input is rejected before configuration access or session reset. Native /agents, /tasks and /stop now use shared background operations; hosted inspection and cancellation select the current session in both process and delegation registries. The remaining /skills slash commands now call the same Skills Hub operations as the CLI, with isolated output and no classic worker. Nested update/import installs are explicitly non-interactive. Native /debug now uses shared diagnostics with request-local dump/output capture and no agent or worker construction. Footer inspection/mutation now uses a shared application owner across CLI, gateway and native TUI; toggles read the latest global value under the writer lock and preserve platform overrides. The legacy dispatcher remains for other commands.
+Tool inventory and /tools list now use shared views without building an agent or classic worker. Tool changes share strict name validation; malformed RPC input is rejected before configuration access or session reset. Native /agents, /tasks and /stop now use shared background operations; hosted inspection and cancellation select the current session in both process and delegation registries. The remaining /skills slash commands now call the same Skills Hub operations as the CLI, with isolated output and no classic worker. Nested update/import installs are explicitly non-interactive. Native /debug now uses shared diagnostics with request-local dump/output capture and no agent or worker construction. Footer inspection/mutation now uses a shared application owner across CLI, gateway and native TUI; toggles read the latest global value under the writer lock and preserve platform overrides. The classic-worker fallback is removed; terminal-owned commands return to Ink.
 
 ## 2. Finish resource ownership and recovery
 

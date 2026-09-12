@@ -652,4 +652,8 @@ def _(rid, params: dict) -> dict:
 
     if resolve_command(name) is None:
         return _err(rid, 4011, f"unknown command: {name}")
+    from tui_gateway.command_routes import terminal_command_names
+
+    if name in terminal_command_names():
+        return _ok(rid, {"type": "alias", "target": name})
     return _core._command_handoff(rid, f"not a quick/plugin/skill command: {name}", dispatch="slash.exec")
