@@ -4975,3 +4975,22 @@ the forecasting discovery exception remain open.
 workflow passed before the final null-only wire-model tightening; commit/push
 hooks recheck the final snapshot. The unreadable-profile test uses its own
 subdirectory because the hermetic fixture also creates a sibling test home.
+
+
+### Partial provider discovery is not disconnection
+
+Two negative-control tests reproduced provider-inspection exceptions being
+silently converted to `authenticated: false`. With another connected provider,
+quorum discovery incorrectly returned a singleton instead of unknown state.
+`list_available_providers` now raises with the failed provider's identity rather
+than publishing a partial boolean inventory. Both forecasting discovery adapters
+already translate unavailable discovery to unknown, retaining the requested
+panel rather than claiming a single-provider environment. A confirmed negative
+status still permits the existing single-provider fallback.
+
+This addresses raised inspection failures; provider-specific status functions
+that internally collapse errors remain part of the open credential-service
+extraction. Credential presence still does not prove quota or model access.
+60 focused discovery, panel-selection and autonomy checks passed before the
+expanded regression run and commit gates.
+The expanded catalog/quorum/jobs regression run passed all 216 tests.

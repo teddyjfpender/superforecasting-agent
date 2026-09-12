@@ -1035,11 +1035,13 @@ def _fetch_novita_pricing(
 
 
 
-def list_available_providers() -> list[dict[str, str]]:
+def list_available_providers() -> list[dict[str, Any]]:
     """Return info about all providers the user could use with ``provider:model``.
 
     Each dict has ``id``, ``label``, and ``aliases``.
-    Checks which providers have valid credentials configured.
+    Checks credential configuration, not quota or successful inference.
+    Raises when any provider cannot be inspected: this boolean inventory must
+    never turn a partial discovery failure into proof of disconnection.
 
     Derives the provider list from :data:`CANONICAL_PROVIDERS` (single
     source of truth shared with ``superforecasting-agent model``, ``/model``,
@@ -1072,8 +1074,8 @@ def list_available_providers() -> list[dict[str, str]]:
             else:
                 status = get_auth_status(pid)
                 has_creds = bool(status.get("logged_in") or status.get("configured"))
-        except Exception:
-            pass
+        except Exception as exc:
+            raise RuntimeError(f"Credential discovery unavailable for provider {pid}") from exc
         result.append({
             "id": pid,
             "label": label,
