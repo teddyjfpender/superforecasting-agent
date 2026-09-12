@@ -2719,3 +2719,23 @@ The pending native-command push stopped: its PTY tests selected an older package
 bundle, and a Bayes test's captured output was disturbed while a bg-review thread
 from earlier work remained alive. Artifact freshness and background review cleanup
 need correction before the next full gate; these are not passing-push claims.
+
+
+### Background review no longer redirects other requests' process streams
+
+The review worker replaced sys.stdout/sys.stderr with devnull during execution
+and exception cleanup. Those redirects are process-wide, so concurrent CLI output
+and test capture could be stolen or restored to stale streams. Both redirects are
+removed; the review fork retains quiet_mode and suppress_status_output. A real
+thread regression holds review execution and failing-review cleanup while the
+foreground writes to both streams, verifying stable stream identity and visible
+capture. This establishes the stream-ownership defect; it does not establish the
+original native SSL cause or finish review-thread shutdown ownership.
+
+Source-tree PTY tests now prefer ui-tui/dist over a leftover packaged artifact.
+The canonical test runner rebuilds that source bundle when npm and the local
+esbuild toolchain are available; backend-only installs retain the no-Node path.
+The command recovery test waits for command activity to finish, not just streamed
+Created text, before checking Ctrl+C exit. An initial combined run exposed that
+streaming-versus-completion distinction; after correction all 37 focused review,
+Bayes and native terminal recovery tests passed. Python quality gates passed.

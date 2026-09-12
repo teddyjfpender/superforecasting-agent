@@ -262,7 +262,9 @@ def test_native_command_watch_cancel_then_continue(tui_bundle, tui_env, tui_home
         assert "Running /kanban" not in session.screen.text()
         assert "Cancelling /kanban" not in session.screen.text()
         submit(session, '/kanban create "after native cancellation"')
-        session.wait_for(lambda s: "Created" in s.text(), timeout=15, what="successful command after cancellation")
+        session.wait_for(lambda s: "Created" in s.text() and "Running /kanban" not in s.text()
+                         and "Cancelling /kanban" not in s.text(), timeout=15,
+                         what="completed command after cancellation")
         with closing(sqlite3.connect(board)) as conn:
             assert conn.execute("SELECT COUNT(*) FROM tasks WHERE title=?", ("after native cancellation",)).fetchone()[0] == 1
         assert not requests, "native commands must not make model calls"

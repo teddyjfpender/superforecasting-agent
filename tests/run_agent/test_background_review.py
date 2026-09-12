@@ -241,3 +241,55 @@ def test_background_review_fork_skips_external_memory_plugins(monkeypatch):
         "the fork leaks harness prompts into the user's real memory "
         "namespace via on_turn_start / prefetch_all / sync_all."
     )
+
+
+def test_background_review_never_replaces_foreground_streams(monkeypatch, capsys):
+    """Hold a real review worker at run and cleanup while foreground output flows."""
+    import sys
+    import threading
+    from agent.background_review import _run_review_in_thread
+
+    entered = threading.Event()
+    proceed = threading.Event()
+    cleaning = threading.Event()
+    finish = threading.Event()
+    failures = []
+    streams = (sys.stdout, sys.stderr)
+
+    class FakeReviewAgent:
+        def __init__(self, **kwargs):
+            assert kwargs['quiet_mode'] is True
+            self._session_messages = []
+        def run_conversation(self, **kwargs):
+            entered.set()
+            assert proceed.wait(5)
+            raise RuntimeError('injected review failure')
+        def shutdown_memory_provider(self):
+            cleaning.set()
+            assert finish.wait(5)
+        def close(self):
+            pass
+
+    monkeypatch.setattr(run_agent_module, 'AIAgent', FakeReviewAgent)
+    agent = _bare_agent()
+    agent._emit_auxiliary_failure = lambda *args: failures.append(args)
+    worker = threading.Thread(target=_run_review_in_thread, args=(agent, [], 'review'))
+    worker.start()
+    try:
+        assert entered.wait(5)
+        assert (sys.stdout, sys.stderr) == streams
+        print('foreground during review')
+        assert 'foreground during review' in capsys.readouterr().out
+        proceed.set()
+        assert cleaning.wait(5)
+        assert (sys.stdout, sys.stderr) == streams
+        print('foreground during cleanup', file=sys.stderr)
+        assert 'foreground during cleanup' in capsys.readouterr().err
+    finally:
+        proceed.set()
+        finish.set()
+        worker.join(5)
+    assert not worker.is_alive()
+    assert len(failures) == 1
+    assert 'injected review failure' in str(failures[0][1])
+    assert (sys.stdout, sys.stderr) == streams
