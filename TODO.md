@@ -21,7 +21,7 @@ changes, tests and their limits. The previous checklist is preserved in the
   cover watch, resizing, Ctrl+C, gateway death/reconnect and continued command use.
   Extended remote-host command recovery remains to be qualified.
 - [ ] Finish separating agent construction from RPC orchestration. Deferred-build
-  admission/retry and notification polling/admission now belong to the host;
+  admission/retry, initialization completion and partial-agent retention, and notification polling/admission now belong to the host;
   protocol event delivery remains an adapter responsibility.
 - [ ] Reduce the remaining frozen domain-to-runtime/tool import exceptions.
   Move a capability and its tests together; directory moves alone are insufficient.

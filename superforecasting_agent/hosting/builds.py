@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 from collections.abc import Callable, MutableMapping
 from typing import Any, Literal
@@ -71,3 +72,36 @@ def retry_build(
             return "ready"
     start()
     return "started"
+
+
+def execute_build(
+    session: MutableMapping[str, Any],
+    ready: threading.Event,
+    *,
+    construct: Callable[[], Any],
+    initialize: Callable[[Any], None],
+    report_error: Callable[[str], None],
+) -> None:
+    """Complete an admitted build, retaining partial resources for retry cleanup.
+
+    start_build reserves the session until ready is set; registry retirement
+    cannot detach it during construction or adapter initialization. Publish the
+    exact agent before adapter setup so failed setup never loses its owner.
+    """
+    try:
+        agent = construct()
+        session["agent"] = agent
+        initialize(agent)
+    except BaseException as exc:
+        message = str(exc) or type(exc).__name__
+        session["agent_error"] = message
+        try:
+            report_error(message)
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "could not report agent initialization failure"
+            )
+        if not isinstance(exc, Exception):
+            raise
+    finally:
+        ready.set()

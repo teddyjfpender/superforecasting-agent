@@ -116,3 +116,74 @@ def test_sign_in_recovery_retires_partial_agent_before_starting_replacement(monk
     assert agent.close.call_count == 2
     release.assert_called_once_with("durable")
     restart.assert_called_once_with("runtime", session)
+
+
+@pytest.mark.parametrize('failure', [RuntimeError('setup failed'), KeyboardInterrupt()])
+def test_build_retains_partial_agent_and_finishes_even_if_reporting_fails(failure):
+    from superforecasting_agent.hosting.builds import execute_build
+
+    session = {}
+    ready = threading.Event()
+    agent = Mock()
+    report = Mock(side_effect=OSError('transport closed'))
+
+    def run():
+        execute_build(session, ready, construct=lambda: agent,
+                      initialize=Mock(side_effect=failure), report_error=report)
+
+    if isinstance(failure, Exception):
+        run()
+    else:
+        with pytest.raises(KeyboardInterrupt):
+            run()
+    assert ready.is_set()
+    assert session['agent'] is agent
+    assert session['agent_error'] == (str(failure) or type(failure).__name__)
+    agent.close.assert_not_called()
+    report.assert_called_once_with(session['agent_error'])
+
+
+def test_constructor_failure_finishes_without_initializing_adapter():
+    from superforecasting_agent.hosting.builds import execute_build
+
+    session = {}
+    ready = threading.Event()
+    initialize = Mock()
+    execute_build(session, ready, construct=Mock(side_effect=ValueError('invalid provider')),
+                  initialize=initialize, report_error=Mock())
+    assert ready.is_set()
+    assert session['agent_error'] == 'invalid provider'
+    assert 'agent' not in session
+    initialize.assert_not_called()
+
+
+def test_build_keeps_registry_owner_through_adapter_initialization():
+    from superforecasting_agent.hosting.builds import execute_build
+    from superforecasting_agent.hosting.registry import SessionRegistry
+    from superforecasting_agent.hosting.sessions import SessionBusy
+
+    registry = SessionRegistry()
+    ready = threading.Event()
+    session = {'agent_ready': ready}
+    registry.register('session', session)
+    agent = Mock()
+    callbacks = []
+    finalized = Mock()
+
+    def initialize(value):
+        assert value is session['agent'] is agent
+        with pytest.raises(SessionBusy):
+            registry.retire('session', finalized)
+        assert not ready.is_set()
+
+    start_build(session, start=callbacks.append,
+                build=lambda event: execute_build(session, event, construct=lambda: agent,
+                                                  initialize=initialize, report_error=Mock()))
+    with pytest.raises(SessionBusy):
+        registry.retire('session', finalized)
+    callbacks[0]()
+    assert ready.is_set()
+    assert not session.get('agent_error')
+    finalized.assert_not_called()
+    registry.retire('session', finalized)
+    finalized.assert_called_once_with(session)

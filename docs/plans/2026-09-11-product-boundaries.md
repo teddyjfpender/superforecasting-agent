@@ -3786,3 +3786,21 @@ mock: the CLI fixture restored the entire sys.modules dictionary after importing
 new child modules, leaving parent attributes behind. It now restores only its
 prompt-toolkit stubs; the combined test run passes without weakening provider
 validation. This finding does not attribute the historical SSL or SQLite incidents.
+
+
+### Host-owned initialization completion and partial-agent retention
+
+Deferred construction now completes through hosting.builds.execute_build. The
+host publishes the exact constructed agent before adapter initialization, retains
+it on setup failure, records the original failure even if transport reporting
+fails, and always signals readiness. Registry admission already prevents retirement
+while a build is queued or executing; the gateway's duplicate abandoned-agent
+cleanup was removed. Construction, callback wiring and protocol notices remain
+adapter responsibilities. This does not claim to extract provider-specific agent
+construction or failures internal to constructors before they return an object.
+
+All 252 focused build, registry and gateway tests passed. Deterministic cases cover
+queued and initializing retirement rejection, constructor failure, setup failure,
+KeyboardInterrupt, broken error transport and retained handles for existing retry
+cleanup. Shared quality gates passed with 55 import contracts; hosting remains
+under directory-wide strict lint, formatting and type checks.

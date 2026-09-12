@@ -1102,93 +1102,53 @@ def _start_agent_build(sid: str, session: dict) -> None:
     command that actually needs the agent), while retaining the same ready/error
     event contract for the frontend.
     """
-    ready = session.get("agent_ready")
-    if ready is None:
+    from superforecasting_agent.hosting.builds import execute_build, start_build
+
+    if session.get("agent_ready") is None:
         return
+    host = _host
     key = session["session_key"]
 
-    def _build(ready: threading.Event) -> None:
-        current = _host.sessions.get(sid)
-        if current is not session:
-            session["agent_error"] = "session closed during agent initialization"
-            ready.set()
-            return
-
-        agent = None
-        notify_registered = False
+    def construct():
+        if host.sessions.get(sid) is not session:
+            raise RuntimeError("session closed during agent initialization")
+        tokens = _set_session_context(key)
         try:
-            tokens = _set_session_context(key)
-            try:
-                agent = _make_agent(sid, key)
-            finally:
-                _clear_session_context(tokens)
-
-            if _host.sessions.get(sid) is not current:
-                current["agent_error"] = "session closed during agent initialization"
-                return
-
-            # Session DB row deferred to first run_conversation() call.
-            # pending_title applied post-first-message (see cli.exec handler).
-            current["agent"] = agent
-
-            try:
-                from tools.approval import (
-                    register_gateway_notify,
-                    load_permanent_allowlist,
-                )
-
-                register_gateway_notify(
-                    key, lambda data: _emit("approval.request", sid, data)
-                )
-                notify_registered = True
-                current.pop("_build_notifications_released", None)
-                load_permanent_allowlist()
-            except Exception:
-                pass
-
-            _wire_callbacks(sid)
-            _host.sessions[sid]["_notif_stop"] = _start_notification_poller(sid, _host.sessions[sid])
-            _notify_session_boundary("on_session_reset", key)
-
-            info = _session_info(agent)
-            warn = _probe_credentials(agent)
-            if warn:
-                info["credential_warning"] = warn
-            cfg_warn = _probe_config_health(_load_cfg())
-            if cfg_warn:
-                info["config_warning"] = cfg_warn
-                logger.warning(cfg_warn)
-            _emit("session.info", sid, info)
-        except BaseException as e:
-            current["agent_error"] = str(e) or type(e).__name__
-            _emit("error", sid, {"message": f"agent init failed: {current['agent_error']}"})
-            if not isinstance(e, Exception):
-                raise
+            return _make_agent(sid, key)
         finally:
-            if _host.sessions.get(sid) is not current:
-                current["agent_error"] = "session closed during agent initialization"
-                stop = current.get("_notif_stop")
-                if stop is not None:
-                    stop.set()
-                if agent is not None and hasattr(agent, "close"):
-                    try:
-                        agent.close()
-                    except Exception:
-                        logger.exception("failed to close abandoned agent for %s", sid)
-                if notify_registered:
-                    try:
-                        from tools.approval import unregister_gateway_notify
+            _clear_session_context(tokens)
 
-                        unregister_gateway_notify(key)
-                    except Exception:
-                        pass
-            ready.set()
+    def initialize(agent):
+        try:
+            from tools.approval import register_gateway_notify, load_permanent_allowlist
 
-    from superforecasting_agent.hosting.builds import start_build
+            register_gateway_notify(key, lambda data: _emit("approval.request", sid, data))
+            session.pop("_build_notifications_released", None)
+            load_permanent_allowlist()
+        except Exception:
+            pass
+
+        _wire_callbacks(sid)
+        session["_notif_stop"] = _start_notification_poller(sid, session)
+        _notify_session_boundary("on_session_reset", key)
+
+        info = _session_info(agent)
+        warn = _probe_credentials(agent)
+        if warn:
+            info["credential_warning"] = warn
+        cfg_warn = _probe_config_health(_load_cfg())
+        if cfg_warn:
+            info["config_warning"] = cfg_warn
+            logger.warning(cfg_warn)
+        _emit("session.info", sid, info)
 
     start_build(
-        session, build=_build,
-        start=lambda build: _host.workers.start(build, name="forecast-agent-build"),
+        session,
+        build=lambda ready: execute_build(
+            session, ready, construct=construct, initialize=initialize,
+            report_error=lambda message: _emit("error", sid, {"message": f"agent init failed: {message}"}),
+        ),
+        start=lambda build: host.workers.start(build, name="forecast-agent-build"),
     )
 
 
