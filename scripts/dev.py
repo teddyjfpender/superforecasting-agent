@@ -62,6 +62,13 @@ STRICT_PYTHON = (
 )
 
 
+# Inherited owners can adopt correctness checks before wholesale formatting/types.
+CORRECTNESS_PYTHON = (
+    "superforecasting_agent/runtime/kanban.py",
+    "superforecasting_agent/runtime/kanban_db.py",
+)
+
+
 def run(*command: str, cwd: Path = ROOT) -> None:
     print("+ " + " ".join(command), flush=True)
     subprocess.run(command, cwd=cwd, check=True)
@@ -86,6 +93,7 @@ def venv_tool(name: str) -> str:
 
 def check(*, python_only: bool = False) -> None:
     run(venv_tool("ruff"), "check", ".")
+    run(venv_tool("ruff"), "check", "--select", "E4,E7,E9,F", *CORRECTNESS_PYTHON)
     run(venv_tool("ruff"), "check", "--select", "E4,E7,E9,F,I", *STRICT_PYTHON)
     run(venv_tool("ruff"), "format", "--check", *STRICT_PYTHON)
     run(venv_tool("ty"), "check", *STRICT_PYTHON)

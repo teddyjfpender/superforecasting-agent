@@ -20,6 +20,7 @@ import os
 import shlex
 import sys
 import time
+import threading
 from pathlib import Path
 from typing import Any, Optional
 
@@ -1973,8 +1974,9 @@ def _cmd_archive(args: argparse.Namespace) -> int:
 def _cmd_tail(args: argparse.Namespace) -> int:
     last_id = 0
     _emit(f"Tailing events for {args.task_id}. Ctrl-C to stop.")
+    stop = getattr(args, "_stop_event", None) or threading.Event()
     try:
-        while True:
+        while not stop.is_set():
             with kb.connection() as conn:
                 events = kb.list_events(conn, args.task_id)
             for e in events:
@@ -1982,10 +1984,11 @@ def _cmd_tail(args: argparse.Namespace) -> int:
                     pl = f" {e.payload}" if e.payload else ""
                     _emit(f"[{_fmt_ts(e.created_at)}] {e.kind}{pl}", flush=True)
                     last_id = e.id
-            time.sleep(max(0.1, args.interval))
+            stop.wait(max(0.1, args.interval))
     except KeyboardInterrupt:
-        _emit("\n(stopped)")
-        return 0
+        pass
+    _emit("\n(stopped)")
+    return 0
 
 
 def _cmd_dispatch(args: argparse.Namespace) -> int:
@@ -2170,6 +2173,7 @@ def _cmd_daemon(args: argparse.Namespace) -> int:
             max_spawn=args.max,
             failure_limit=getattr(args, "failure_limit", kb.DEFAULT_SPAWN_FAILURE_LIMIT),
             on_tick=_on_tick,
+            stop_event=getattr(args, "_stop_event", None),
         )
     finally:
         if pidfile:
@@ -2196,8 +2200,9 @@ def _cmd_watch(args: argparse.Namespace) -> int:
         ).fetchone()
         cursor = int(row["m"])
 
+    stop = getattr(args, "_stop_event", None) or threading.Event()
     try:
-        while True:
+        while not stop.is_set():
             with kb.connection() as conn:
                 rows = conn.execute(
                     "SELECT e.id, e.task_id, e.kind, e.payload, e.created_at, "
@@ -2224,10 +2229,11 @@ def _cmd_watch(args: argparse.Namespace) -> int:
                     f"{r['kind']:18s} (@{r['assignee'] or '-'}){pl}",
                     flush=True,
                 )
-            time.sleep(max(0.1, args.interval))
+            stop.wait(max(0.1, args.interval))
     except KeyboardInterrupt:
-        _emit("\n(stopped)")
-        return 0
+        pass
+    _emit("\n(stopped)")
+    return 0
 
 
 def _cmd_stats(args: argparse.Namespace) -> int:
@@ -2586,13 +2592,13 @@ Read-only commands are safe while an agent is running.\
 """
 
 
-def run_slash(rest: str) -> str:
+def run_slash(rest: str, *, stop_event: threading.Event | None = None) -> str:
     """Capture only this invocation's output, leaving process streams alone."""
     with capture_output() as (buf_out, buf_err):
-        return _run_slash(rest, buf_out, buf_err)
+        return _run_slash(rest, buf_out, buf_err, stop_event)
 
 
-def _run_slash(rest, buf_out, buf_err) -> str:
+def _run_slash(rest, buf_out, buf_err, stop_event=None) -> str:
     """Execute a ``/kanban …`` string and return captured stdout/stderr.
 
     ``rest`` is everything after ``/kanban`` (may be empty).  Used from
@@ -2649,6 +2655,9 @@ def _run_slash(rest, buf_out, buf_err) -> str:
     except argparse.ArgumentError as exc:
         return f"⚠ /kanban usage error\n{_usage_for_error()}\n{exc}"
 
+    args._stop_event = stop_event
+    if stop_event is not None and stop_event.is_set():
+        return "(stopped)"
     try:
         kanban_command(args)
     except SystemExit:

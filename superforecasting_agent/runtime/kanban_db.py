@@ -4137,10 +4137,8 @@ def detect_stale_running(
     if stale_timeout_seconds <= 0:
         return []
 
-    import signal as _signal_mod
 
     now = int(time.time())
-    host_prefix = f"{_claimer_id().split(':', 1)[0]}:"
     reclaimed: list[str] = []
 
     rows = conn.execute(
@@ -4446,7 +4444,6 @@ def _record_task_failure(
         if row is None:
             return False
         failures = int(row["consecutive_failures"]) + 1
-        cur_status = row["status"]
 
         # Per-task override wins over both caller-supplied and default
         # thresholds. None (the common case) falls through.
@@ -5501,41 +5498,47 @@ def run_daemon(
     import signal
     import threading
 
+    owns_signals = stop_event is None
     if stop_event is None:
         stop_event = threading.Event()
 
     def _handle(_signum, _frame):
         stop_event.set()
 
-    # Install handlers only when running on the main thread — tests call
-    # this inline from worker threads and signal() would raise there.
-    if threading.current_thread() is threading.main_thread():
-        for sig_name in ("SIGINT", "SIGTERM"):
-            sig = getattr(signal, sig_name, None)
-            if sig is not None:
-                try:
-                    signal.signal(sig, _handle)
-                except (ValueError, OSError):
-                    pass
+    previous_handlers = {}
+    try:
+        # Embedded hosts supply cancellation and retain their signal ownership.
+        if owns_signals and threading.current_thread() is threading.main_thread():
+            for sig_name in ("SIGINT", "SIGTERM"):
+                sig = getattr(signal, sig_name, None)
+                if sig is not None:
+                    try:
+                        previous = signal.signal(sig, _handle)
+                        previous_handlers[sig] = previous
+                    except (ValueError, OSError):
+                        pass
 
-    while not stop_event.is_set():
-        try:
-            with contextlib.closing(connect()) as conn:
-                res = dispatch_once(
-                    conn,
-                    max_spawn=max_spawn,
-                    failure_limit=failure_limit,
-                )
-            if on_tick is not None:
-                try:
-                    on_tick(res)
-                except Exception:
-                    pass
-        except Exception:
-            # Don't let any single tick kill the daemon.
-            import traceback
-            traceback.print_exc()
-        stop_event.wait(timeout=interval)
+        while not stop_event.is_set():
+            try:
+                with contextlib.closing(connect()) as conn:
+                    res = dispatch_once(
+                        conn,
+                        max_spawn=max_spawn,
+                        failure_limit=failure_limit,
+                    )
+                if on_tick is not None:
+                    try:
+                        on_tick(res)
+                    except Exception:
+                        _log.exception("Kanban tick callback failed")
+            except Exception:
+                _log.exception("Kanban dispatcher tick failed")
+            stop_event.wait(timeout=interval)
+    finally:
+        for sig, previous in previous_handlers.items():
+            # Do not overwrite a successor component's handler during teardown.
+            if signal.getsignal(sig) is _handle:
+                signal.signal(sig, previous)
 
 
 # ---------------------------------------------------------------------------
@@ -5805,7 +5808,7 @@ def _to_epoch(val) -> Optional[int]:
         pass
     # ISO-8601 fallback (e.g. '2026-05-10T15:00:00Z')
     try:
-        from datetime import datetime, timezone
+        from datetime import datetime
         dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
         return int(dt.timestamp())
     except (ValueError, OSError):

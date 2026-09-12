@@ -2523,3 +2523,24 @@ capture failure. Shared quality checks passed before the final contract addition
 the commit gate verifies the resulting 46-contract tree. Native TUI Kanban routing
 remains unfinished: long-running daemon/watch operations need host lifetime and
 cancellation admission, not an unbounded call on an RPC worker.
+
+
+### Long-running command cancellation and signal ownership
+
+run_slash accepts an optional stop event. Watch and tail use interruptible waits;
+daemon passes cancellation into the existing dispatcher loop. Pre-cancelled
+commands do not initialize storage. Standalone daemon installs temporary signal
+handlers and restores only handlers it still owns, including when a tick is
+interrupted. Embedded calls with a supplied stop event never claim process signals.
+Tick errors use the module logger, preserving diagnostics without direct traceback
+writes from a background loop.
+
+567 Kanban tests passed with one skip; the final additional interrupted-tick
+regression passed in the focused CLI module run. Tests stop real watch/tail/daemon
+commands during one-hour waits and prove signal restoration and successor-handler
+preservation. Shared gates now run E4/E7/E9/F correctness lint on the two inherited
+Kanban modules; four unused imports/locals were removed to enable this without
+exceptions. Strict formatting/types remain scoped to extracted owners. All 46
+import contracts pass. Native host registration, UI cancellation and streaming
+remain the next integration work; cooperative loop support alone does not prove
+the complete TUI interaction.

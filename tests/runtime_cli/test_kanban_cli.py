@@ -616,3 +616,83 @@ def test_nested_command_capture_restores_outer_on_failure():
     assert outer.getvalue() == "outer-before\nouter-after\n"
     assert inner.getvalue() == "inner\n"
     assert explicit.getvalue() == "explicit\n"
+
+
+@pytest.mark.parametrize("command", ["watch --interval 3600", "tail missing --interval 3600", "daemon --force --interval 3600"])
+def test_long_running_commands_stop_without_waiting_for_poll_interval(kanban_home, command):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    waiting = threading.Event()
+    class ObservedStop(threading.Event):
+        def wait(self, timeout=None):
+            waiting.set()
+            return super().wait(timeout)
+
+    stop = ObservedStop()
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(kc.run_slash, command, stop_event=stop)
+        try:
+            assert waiting.wait(3), "command never reached its interruptible wait"
+        finally:
+            stop.set()
+        assert "stopped" in future.result(timeout=3)
+    assert kb._board_override.get() is None
+
+
+def test_cancelled_command_does_not_initialize_database(kanban_home, monkeypatch):
+    import threading
+
+    stop = threading.Event()
+    stop.set()
+    monkeypatch.setattr(kb, "init_db", lambda: pytest.fail("cancelled command initialized storage"))
+    assert kc.run_slash("create unused", stop_event=stop) == "(stopped)"
+
+
+def test_daemon_releases_only_its_owned_signal_handlers(kanban_home, monkeypatch):
+    import signal
+
+    original_int, original_term, successor = object(), object(), object()
+    handlers = {signal.SIGINT: original_int, signal.SIGTERM: original_term}
+    def install(sig, handler):
+        previous = handlers[sig]
+        handlers[sig] = handler
+        return previous
+    monkeypatch.setattr(signal, "signal", install)
+    monkeypatch.setattr(signal, "getsignal", handlers.__getitem__)
+    monkeypatch.setattr(kb, "dispatch_once", lambda *args, **kwargs: None)
+    def tick(result):
+        handlers[signal.SIGINT](signal.SIGINT, None)
+        handlers[signal.SIGTERM] = successor
+    kb.run_daemon(interval=0, on_tick=tick)
+    assert handlers[signal.SIGINT] is original_int
+    assert handlers[signal.SIGTERM] is successor
+
+
+def test_embedded_daemon_does_not_claim_process_signals(kanban_home, monkeypatch):
+    import signal
+    import threading
+
+    stop = threading.Event()
+    stop.set()
+    monkeypatch.setattr(signal, "signal", lambda *args: pytest.fail("embedded daemon replaced process signals"))
+    kb.run_daemon(stop_event=stop)
+
+
+def test_daemon_restores_signals_after_interrupted_tick(kanban_home, monkeypatch):
+    import signal
+
+    originals = {signal.SIGINT: object(), signal.SIGTERM: object()}
+    handlers = dict(originals)
+    def install(sig, handler):
+        previous = handlers[sig]
+        handlers[sig] = handler
+        return previous
+    def interrupted():
+        raise KeyboardInterrupt()
+    monkeypatch.setattr(signal, "signal", install)
+    monkeypatch.setattr(signal, "getsignal", handlers.__getitem__)
+    monkeypatch.setattr(kb, "connect", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        kb.run_daemon()
+    assert handlers == originals
