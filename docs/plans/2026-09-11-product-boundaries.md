@@ -3233,3 +3233,19 @@ The startup batch's full push gate remains running in the primary checkout.
   retaining all required native wording and forbidden compatibility-brand checks.
 - Focused metadata/plugin/connection/replacement verification: 207 passed,
   one skipped. This is not a successful full-suite or push claim.
+
+### Browser session creation admission
+
+- Reproduced duplicate cloud allocation for concurrent callers of one task: the
+  old cache double-check returned the winner but discarded the other allocated
+  resource without disposal. The new `hosting/browser_sessions.py` owner admits
+  one allocation per task, with cache recheck after waiting. Unrelated task
+  allocations remain independent; failed attempts release admission for retry.
+- Deterministic tests blocked one provider allocation, started a second caller,
+  and completed a different task before releasing the first. Before the fix this
+  allocated twice; afterward both callers receive the identical owned session.
+  Failed cloud plus failed local fallback can be retried successfully.
+- Verification: 36 creation/hybrid/CDP/cleanup tests passed; shared Python gates
+  passed, including automatic hosting strict coverage and import contracts.
+- This closes duplicate creation. It does not yet gate cleanup or process-wide
+  endpoint transitions against an allocation already in flight.

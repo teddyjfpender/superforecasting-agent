@@ -1732,6 +1732,14 @@ def _get_session_info(task_id: Optional[str] = None) -> Dict[str, str]:
     if task_id is None:
         task_id = "default"
 
+    from superforecasting_agent.hosting.browser_sessions import browser_session_creation
+
+    with browser_session_creation(task_id):
+        return _get_or_create_session_info(task_id)
+
+
+def _get_or_create_session_info(task_id: str) -> Dict[str, str]:
+    """Allocate while the caller owns this task's creation admission."""
     # Start the cleanup thread if not running (handles inactivity timeouts)
     _start_browser_cleanup_thread()
 
@@ -1793,11 +1801,7 @@ def _get_session_info(task_id: Optional[str] = None) -> Dict[str, str]:
                     session_info["fallback_provider"] = provider_name
 
     with _cleanup_lock:
-        # Double-check: another thread may have created a session while we
-        # were doing the network call. Use the existing one to avoid leaking
-        # orphan cloud sessions.
-        if task_id in _active_sessions:
-            return _active_sessions[task_id]
+        # Creation admission prevents duplicate provider allocation for this key.
         _active_sessions[task_id] = session_info
 
     # Lazy-start the CDP supervisor now that the session exists (if the
