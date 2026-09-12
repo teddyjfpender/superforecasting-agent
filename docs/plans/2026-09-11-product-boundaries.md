@@ -3042,3 +3042,17 @@ changed. Developer guidance now points additions at the owning module.
 182 catalog/metadata/loader/credential tests passed (one existing skip). Shared Python
 quality checks and 49 import contracts passed. Dynamic platform-plugin discovery
 still belongs to runtime setup; loader extraction must preserve that extension path.
+
+
+### Platform environment metadata without runtime discovery
+
+Platform declaration parsing and manifest file loading now have separate owners in
+configuration/plugin_environment.py and storage/plugin_environment.py. Runtime setup
+retains its idempotent compatibility injector and built-in entries win. File scanning
+is deterministic; malformed YAML, non-object manifests and malformed declarations
+cannot terminate discovery for later plugins. No plugin implementation is imported.
+
+27 metadata/loader/sanitizer tests passed, including malformed-first/valid-later
+fixtures and built-in precedence. Shared Python quality gates and all 50 import
+contracts passed. This supplies the remaining independent metadata reader needed
+for startup-loader extraction; the loader itself still uses its runtime path.

@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 STRICT_PYTHON = (
     "superforecasting_agent/storage/snapshots.py",
     "superforecasting_agent/storage/curator_state.py",
+    "superforecasting_agent/storage/plugin_environment.py",
     "superforecasting_agent/configuration",
     "superforecasting_agent/storage/transcripts.py",
     "tools/environments/configuration.py",

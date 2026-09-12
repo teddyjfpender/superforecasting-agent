@@ -3198,62 +3198,11 @@ def _inject_platform_plugin_env_vars() -> None:
         return
     _platform_plugin_env_vars_injected = True
     try:
-        import yaml  # type: ignore
-
-        # Resolve the bundled plugins dir from this file's location so the
-        # injector works regardless of CWD.
-        repo_root = get_install_root()
-        platforms_dir = repo_root / "plugins" / "platforms"
-        if not platforms_dir.is_dir():
-            return
-        for child in platforms_dir.iterdir():
-            if not child.is_dir():
-                continue
-            manifest_path = child / "plugin.yaml"
-            if not manifest_path.exists():
-                manifest_path = child / "plugin.yml"
-            if not manifest_path.exists():
-                continue
-            try:
-                with open(manifest_path, "r", encoding="utf-8") as f:
-                    manifest = yaml.safe_load(f) or {}
-            except Exception:
-                continue
-            label = manifest.get("label") or manifest.get("name") or child.name
-            # Merge required + optional env var declarations.
-            entries = list(manifest.get("requires_env") or [])
-            entries.extend(manifest.get("optional_env") or [])
-            for entry in entries:
-                if isinstance(entry, str):
-                    name = entry
-                    meta: dict = {}
-                elif isinstance(entry, dict) and entry.get("name"):
-                    name = entry["name"]
-                    meta = entry
-                else:
-                    continue
-                if name in OPTIONAL_ENV_VARS:
-                    continue  # hardcoded entry wins (back-compat)
-                # Heuristic: anything named *TOKEN, *SECRET, *KEY, *PASSWORD
-                # is a password field unless explicitly overridden.
-                name_upper = name.upper()
-                is_secret = bool(meta.get("password") or meta.get("secret"))
-                if not is_secret and not meta.get("password") is False:
-                    is_secret = any(
-                        name_upper.endswith(suf)
-                        for suf in ("_TOKEN", "_SECRET", "_KEY", "_PASSWORD", "_JSON")
-                    )
-                OPTIONAL_ENV_VARS[name] = {
-                    "description": (
-                        meta.get("description")
-                        or f"{label} configuration"
-                    ),
-                    "prompt": meta.get("prompt") or name,
-                    "url": meta.get("url") or None,
-                    "password": is_secret,
-                    "category": meta.get("category") or "messaging",
-                }
-    except Exception:
+        from superforecasting_agent.storage.plugin_environment import read_platform_environment
+        entries = read_platform_environment(get_install_root() / "plugins" / "platforms")
+        for name, metadata in entries.items():
+            OPTIONAL_ENV_VARS.setdefault(name, metadata)
+    except OSError:
         pass
 
 
