@@ -5422,63 +5422,20 @@ class ForecastCLI:
         else:  # pragma: no cover - defensive (no live input loop)
             print("  /learn needs an active chat session to run.")
 
-    def _show_gateway_status(self):
-        """Show status of the gateway and connected messaging platforms."""
-        from gateway.config import load_gateway_config, Platform
-        
-        print()
-        print("+" + "-" * 60 + "+")
-        print("|" + " " * 15 + "(✿◠‿◠) Gateway Status" + " " * 17 + "|")
-        print("+" + "-" * 60 + "+")
-        print()
-        
+    def _show_gateway_status(self, command: str = "/platforms"):
+        """Render shared messaging configuration without claiming connectivity."""
+        from superforecasting_agent.runtime.platform_commands import platform_configuration_lines
+
+        parts = command.split(None, 1)
         try:
-            config = load_gateway_config()
-            
-            print("  Messaging Platform Configuration:")
-            print("  " + "-" * 55)
-            
-            platform_status = {
-                Platform.TELEGRAM: ("Telegram", "TELEGRAM_BOT_TOKEN"),
-                Platform.DISCORD: ("Discord", "DISCORD_BOT_TOKEN"),
-                Platform.SLACK: ("Slack", "SLACK_BOT_TOKEN"),
-                Platform.WHATSAPP: ("WhatsApp", "WHATSAPP_ENABLED"),
-            }
-            
-            for platform, (name, env_var) in platform_status.items():
-                pconfig = config.platforms.get(platform)
-                if pconfig and pconfig.enabled:
-                    home = config.get_home_channel(platform)
-                    home_str = f" → {home.name}" if home else ""
-                    print(f"    ✓ {name:<12} Enabled{home_str}")
-                else:
-                    print(f"    ○ {name:<12} Not configured ({env_var})")
-            
-            print()
-            print("  Session Reset Policy:")
-            print("  " + "-" * 55)
-            policy = config.default_reset_policy
-            print(f"    Mode: {policy.mode}")
-            print(f"    Daily reset at: {policy.at_hour}:00")
-            print(f"    Idle timeout: {policy.idle_minutes} minutes")
-            
-            print()
-            print("  To start the gateway:")
-            print("    python cli.py --gateway")
-            print()
-            print(f"  Configuration file: {display_agent_home()}/config.yaml")
-            print()
-            
-        except Exception as e:
-            print(f"  Error loading gateway config: {e}")
-            print()
-            print("  To configure the gateway:")
-            print("    1. Set environment variables:")
-            print("       TELEGRAM_BOT_TOKEN=your_token")
-            print("       DISCORD_BOT_TOKEN=your_token")
-            print(f"    2. Or configure settings in {display_agent_home()}/config.yaml")
-            print()
-    
+            lines = platform_configuration_lines(parts[1] if len(parts) > 1 else "")
+        except ValueError as exc:
+            lines = [str(exc)]
+        except Exception as exc:
+            lines = [f"Platform configuration unavailable: {exc}"]
+        for line in lines:
+            print(line)
+
     def process_command(self, command: str) -> bool:
         """
         Process a slash command.
@@ -5731,7 +5688,7 @@ class ForecastCLI:
         elif canonical == "learn":
             self._handle_learn_command(cmd_original)
         elif canonical == "platforms":
-            self._show_gateway_status()
+            self._show_gateway_status(cmd_original)
         elif canonical == "status":
             self._show_session_status()
         elif canonical == "statusbar":

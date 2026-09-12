@@ -266,7 +266,7 @@ COMMANDS: list[CommandDef] = [
     ),
     CommandDef(
         "platforms",
-        "Show optional gateway/messaging platform status",
+        "Show messaging configuration (not live connections)",
         "Compatibility",
         cli_only=True,
         aliases=("gateway",),

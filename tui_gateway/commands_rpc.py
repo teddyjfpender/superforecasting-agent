@@ -342,6 +342,16 @@ def _(rid, params: dict) -> dict:
     except Exception:
         pass
 
+    if name == "platforms":
+        from superforecasting_agent.runtime.platform_commands import platform_configuration_lines
+
+        try:
+            return _ok(rid, {"type": "exec", "output": "\n".join(platform_configuration_lines(arg))})
+        except ValueError as exc:
+            return _err(rid, 4004, str(exc))
+        except Exception as exc:
+            return _err(rid, 5017, f"Platform configuration unavailable: {exc}")
+
     if name == "gquota":
         from superforecasting_agent.runtime.quota_commands import google_quota_lines
 

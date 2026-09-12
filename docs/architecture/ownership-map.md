@@ -455,3 +455,11 @@ for compatibility; forecast refresh and numerical calls no longer invoke them.
 `runtime/quota_commands.py` owns `/gquota` validation and report construction for
 CLI and native TUI. Existing Google OAuth and Code Assist adapters own credentials
 and HTTP requests. This operation does not construct an agent or classic worker.
+
+
+### Messaging configuration inspection
+
+`runtime/platform_commands.py` owns `/platforms` report assembly and validation
+for CLI and native TUI. Gateway configuration owns loading and reset policy; the
+platform registry supplies labels. This report is configuration-only and never
+claims that enabled adapters are connected.

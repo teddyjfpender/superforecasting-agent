@@ -494,3 +494,43 @@ def test_google_quota_shared_with_cli_without_worker(configure, monkeypatch, sce
     assert slash("/gquota")["error"]["data"]["execution_started"] is False
     server._start_agent_build.assert_not_called()
     server._SlashWorker.assert_not_called()
+
+
+@pytest.mark.parametrize("scenario", ["configured", "invalid", "unavailable"])
+def test_platform_configuration_shared_with_cli(configure, monkeypatch, scenario):
+    from types import SimpleNamespace
+    from gateway.config import Platform
+    from cli import ForecastCLI
+
+    configure({})
+    monkeypatch.setattr("superforecasting_agent.platform_registry.platform_registry.get", lambda _: None)
+    config = SimpleNamespace(
+        platforms={Platform.MATRIX: SimpleNamespace(enabled=True),
+                   Platform.SIGNAL: SimpleNamespace(enabled=False)},
+        get_home_channel=lambda platform: SimpleNamespace(name="Review desk") if platform == Platform.MATRIX else None,
+        default_reset_policy=SimpleNamespace(mode="idle", at_hour=3, idle_minutes=60),
+    )
+    load = Mock(return_value=config)
+    if scenario == "unavailable":
+        load.side_effect = OSError("configuration unreadable")
+    monkeypatch.setattr("gateway.config.load_gateway_config", load)
+    arg = "unexpected" if scenario == "invalid" else ""
+    response = dispatch("platforms", arg)
+    rendered = []
+    monkeypatch.setitem(ForecastCLI._show_gateway_status.__globals__, "print", rendered.append)
+    ForecastCLI._show_gateway_status(None, "/platforms " + arg)
+    classic = "\n".join(rendered)
+    if scenario == "configured":
+        assert response["result"]["output"] == classic
+        assert "matrix: Enabled in configuration → Review desk" in classic
+        assert "signal: Disabled in configuration" in classic
+        assert "Live connections are not checked." in classic
+        assert "superforecasting-agent gateway" in classic
+        assert dispatch("gateway")["result"] == response["result"]
+    else:
+        assert response["error"]["message"] == classic
+        if scenario == "invalid":
+            load.assert_not_called()
+    assert slash("/platforms")["error"]["data"]["execution_started"] is False
+    server._start_agent_build.assert_not_called()
+    server._SlashWorker.assert_not_called()

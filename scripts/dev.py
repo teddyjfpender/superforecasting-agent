@@ -26,6 +26,7 @@ STRICT_PYTHON = (
     "superforecasting_agent/runtime/subgoal_commands.py",
     "superforecasting_agent/runtime/plugin_commands.py",
     "superforecasting_agent/runtime/quota_commands.py",
+    "superforecasting_agent/runtime/platform_commands.py",
     "forecasting/hooks/loader.py",
     "forecasting/hooks/dsl.py",
     "forecasting/hooks/store.py",

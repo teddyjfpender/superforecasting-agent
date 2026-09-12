@@ -1891,3 +1891,19 @@ Validation: 56 command/CLI tests passed, including successful, empty, signed-out
 provider-error and invalid-argument parity using fake providers. The new owner
 is in strict lint/format/type scope; all shared Python checks and 36 import
 contracts passed. No live credential-dependent quota request was performed.
+
+
+### Shared messaging configuration inspection
+
+`runtime/platform_commands.py` owns `/platforms` configuration reporting for
+classic CLI and native TUI, including the `/gateway` alias. It lists the platform
+catalog plus configured entries instead of four hard-coded integrations, and
+distinguishes enabled, disabled and absent configuration. The report explicitly
+does not claim live connectivity and uses the public gateway launch command.
+No adapter connection, agent build or classic worker is started by inspection.
+
+Validation: 205 command/catalog tests passed, including CLI/TUI report and
+validation/error parity and alias dispatch. Platform-label metadata is isolated
+in fixtures so unrelated registered plugins cannot alter expected labels. The
+new owner is covered by strict lint/format/type checks; all shared Python gates
+and 36 import contracts passed.
