@@ -4922,3 +4922,28 @@ still replaced the legacy auth module's registry (31,890 other tests passed,
 the auxiliary router; its prohibition on implicit Anthropic fallback is retained.
 All 174 auxiliary-client checks pass. The integrated batch still requires the
 full push gate; the failed run did not publish changes.
+
+
+### Credential storage policy and durable endpoint detection
+
+The preceding metadata/reader batch is verified on the remote at `02368c7c9`:
+31,900 Python tests passed, 148 skipped, with 66 warnings in the full push gate.
+
+Moved stored provider/pool policy and borrowed-secret sanitization to shared
+storage. The runtime delegates candidate overlay and provider updates; the agent
+policy module retains compatibility exports. A negative control reproduced raw
+borrowed credentials bypassing the pool-specific writer through `save_auth_store`.
+The actual file boundary now applies the shared policy, including nested secret
+fields, without rewriting caller-held credentials. Owned sources retain their
+existing behavior.
+
+A separate negative control reproduced repeated Z.AI endpoint probes: the old
+`_save_provider_state` helper updated only a dictionary, never the file. Detection
+now persists under the captured profile's lock after re-reading current state,
+without selecting Z.AI as the active provider. Tests cover an intervening writer,
+a profile replacement during the probe, repeat reads and optional cache failure.
+No live provider calls were used; this does not attribute the historical SSL crash.
+
+704 credential/provider/storage/boundary checks and the shared quality workflow
+passed (74 import contracts). The integrated commit still requires the full push
+gate. OAuth status/discovery extraction remains open.

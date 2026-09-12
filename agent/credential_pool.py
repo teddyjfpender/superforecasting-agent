@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from superforecasting_agent.constants import OPENROUTER_BASE_URL
 from superforecasting_agent.runtime.config import get_env_value, load_env
-from agent.credential_persistence import (
+from superforecasting_agent.storage.credential_policy import (
     is_borrowed_credential_source,
     sanitize_borrowed_credential_payload,
 )

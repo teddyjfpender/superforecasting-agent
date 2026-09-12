@@ -1014,3 +1014,26 @@ retaining active-profile selection and compatibility call sites. The storage
 reader has no execution/presentation dependency under a transitive contract.
 Token selection, OAuth refresh, environment application and credential writes
 remain distinct operations; this does not remove quorum's discovery exception.
+
+
+### Credential record selection and final persistence policy
+
+`storage/auth.py` owns provider-record updates and stored credential-pool overlay
+rules. Nonempty local lists shadow global candidates per provider; returned pool
+records are independent copies. Empty provider mappings remain present, and
+activation is an explicit mutation option. These are candidate records, not proof
+of usable credentials or permission to run inference. Profile selection and
+refresh remain runtime responsibilities.
+
+`storage/credential_policy.py` owns borrowed-source persistence rules; the former
+agent module is a compatibility export. Pool serialization and the final auth
+file writer both use this same policy. Direct store writes can no longer bypass
+it. Known secret-bearing fields are removed recursively from borrowed records;
+reference/status metadata remains. Manual and recognized provider-owned sources
+retain their existing persistence rules. Caller-held credential values are not
+rewritten by preparing the disk snapshot.
+
+Z.AI detection captures the profile path before probing and publishes only its
+cache metadata after re-reading under that profile's auth lock. It neither
+changes the active provider nor overwrites intervening metadata. Cache-write
+failure reports a diagnostic without discarding a successfully detected endpoint.

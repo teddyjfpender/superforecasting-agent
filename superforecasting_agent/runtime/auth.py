@@ -94,7 +94,7 @@ from superforecasting_agent.configuration.authentication import (
 )
 
 from superforecasting_agent.constants import OPENROUTER_BASE_URL
-from agent.credential_persistence import sanitize_borrowed_credential_payload
+from superforecasting_agent.storage.credential_policy import sanitize_borrowed_credential_payload
 from superforecasting_agent.storage.files import atomic_replace, owned_text_descriptor
 from superforecasting_agent.environment import env_var_alias_enabled, is_truthy_value
 
@@ -310,8 +310,11 @@ def _resolve_zai_base_url(api_key: str, default_url: str, env_override: str) -> 
     if not api_key:
         return default_url
 
+    from superforecasting_agent.storage.auth import load_auth_store, save_auth_store
+
     # Check provider-state cache for a previously-detected endpoint.
-    auth_store = _load_auth_store()
+    auth_file = _auth_file_path().absolute()
+    auth_store = load_auth_store(auth_file)
     state = _load_provider_state(auth_store, "zai") or {}
     cached = state.get("detected_endpoint")
     if isinstance(cached, dict) and cached.get("base_url"):
@@ -325,15 +328,29 @@ def _resolve_zai_base_url(api_key: str, default_url: str, env_override: str) -> 
     if detected and detected.get("base_url"):
         # Persist the detection result keyed on the API key hash.
         key_hash = hashlib.sha256(api_key.encode()).hexdigest()[:16]
-        state["detected_endpoint"] = {
+        metadata = {
             "base_url": detected["base_url"],
             "endpoint_id": detected.get("id", ""),
             "model": detected.get("model", ""),
             "label": detected.get("label", ""),
             "key_hash": key_hash,
         }
-        _save_provider_state(auth_store, "zai", state)
-        logger.info("Z.AI: auto-detected endpoint %s (%s)", detected["label"], detected["base_url"])
+        try:
+            # The probe runs outside the writer lock. Re-read the captured profile
+            # under its exact lock before publishing only this metadata field.
+            with _file_lock(
+                auth_file.with_suffix(".lock"), _auth_lock_holder,
+                AUTH_LOCK_TIMEOUT_SECONDS, "Timed out waiting for auth store lock",
+            ):
+                latest = load_auth_store(auth_file)
+                current = _load_provider_state(latest, "zai") or {}
+                current["detected_endpoint"] = metadata
+                _store_provider_state(latest, "zai", current, set_active=False)
+                save_auth_store(auth_file, latest)
+        except (OSError, TimeoutError) as exc:
+            # A cache failure must not discard a successfully discovered endpoint.
+            logger.warning("Z.AI: could not persist endpoint cache: %s", exc)
+        logger.info("Z.AI: auto-detected endpoint %s (%s)", detected.get("label", ""), detected["base_url"])
         return detected["base_url"]
 
     logger.debug("Z.AI: probe failed, falling back to default %s", default_url)
@@ -612,20 +629,13 @@ def _save_auth_store(auth_store: Dict[str, Any]) -> Path:
 
 
 def _load_provider_state(auth_store: Dict[str, Any], provider_id: str) -> Optional[Dict[str, Any]]:
-    providers = auth_store.get("providers")
-    if not isinstance(providers, dict):
-        return None
-    state = providers.get(provider_id)
-    return dict(state) if isinstance(state, dict) else None
+    from superforecasting_agent.storage.auth import provider_state
+
+    return provider_state(auth_store, provider_id)
 
 
 def _save_provider_state(auth_store: Dict[str, Any], provider_id: str, state: Dict[str, Any]) -> None:
-    providers = auth_store.setdefault("providers", {})
-    if not isinstance(providers, dict):
-        auth_store["providers"] = {}
-        providers = auth_store["providers"]
-    providers[provider_id] = state
-    auth_store["active_provider"] = provider_id
+    _store_provider_state(auth_store, provider_id, state)
 
 
 def _store_provider_state(
@@ -635,13 +645,9 @@ def _store_provider_state(
     *,
     set_active: bool = True,
 ) -> None:
-    providers = auth_store.setdefault("providers", {})
-    if not isinstance(providers, dict):
-        auth_store["providers"] = {}
-        providers = auth_store["providers"]
-    providers[provider_id] = state
-    if set_active:
-        auth_store["active_provider"] = provider_id
+    from superforecasting_agent.storage.auth import set_provider_state
+
+    set_provider_state(auth_store, provider_id, state, set_active=set_active)
 
 
 def mark_provider_active_if_unset(provider_id: str) -> None:
@@ -674,7 +680,7 @@ def get_auth_provider_display_name(provider_id: str) -> str:
     return SERVICE_PROVIDER_NAMES.get(normalized, provider_id)
 
 
-def read_credential_pool(provider_id: Optional[str] = None) -> Dict[str, Any]:
+def read_credential_pool(provider_id: Optional[str] = None) -> Dict[str, Any] | List[Any]:
     """Return the persisted credential pool, or one provider slice.
 
     In profile mode, the profile's credential pool is authoritative. If a
@@ -690,35 +696,10 @@ def read_credential_pool(provider_id: Optional[str] = None) -> Dict[str, Any]:
     Writes always go to the profile (``write_credential_pool`` is unchanged).
     See issue #18594 follow-up.
     """
-    auth_store = _load_auth_store()
-    pool = auth_store.get("credential_pool")
-    if not isinstance(pool, dict):
-        pool = {}
+    from superforecasting_agent.storage.auth import select_credential_pool
 
-    global_pool: Dict[str, Any] = {}
-    global_store = _load_global_auth_store()
-    maybe_global_pool = global_store.get("credential_pool") if global_store else None
-    if isinstance(maybe_global_pool, dict):
-        global_pool = maybe_global_pool
+    return select_credential_pool(_load_auth_store(), _load_global_auth_store(), provider_id)
 
-    if provider_id is None:
-        merged = dict(pool)
-        for gp_key, gp_entries in global_pool.items():
-            if not isinstance(gp_entries, list) or not gp_entries:
-                continue
-            # Per-provider shadowing: profile wins whenever it has ANY entries.
-            existing = merged.get(gp_key)
-            if isinstance(existing, list) and existing:
-                continue
-            merged[gp_key] = list(gp_entries)
-        return merged
-
-    provider_entries = pool.get(provider_id)
-    if isinstance(provider_entries, list) and provider_entries:
-        return list(provider_entries)
-    # Profile has no entries for this provider — fall back to global.
-    global_entries = global_pool.get(provider_id)
-    return list(global_entries) if isinstance(global_entries, list) else []
 
 
 def write_credential_pool(provider_id: str, entries: List[Dict[str, Any]]) -> Path:
