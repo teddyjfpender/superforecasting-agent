@@ -33,8 +33,10 @@ The legacy dispatcher itself remains.
   retries retain exact handles; failed SDK close remains pending because HTTPX
   can mark itself closed before transport disposal fails. Safe recovery of those
   transports and terminal/browser cleanup failures is still unfinished.
-- [ ] Consolidate the legacy goal database cache outside the TUI host. Native
-  TUI goals use host-owned storage; manager reads refresh and writes reject stale state.
+- [x] Remove the legacy global goal database cache. Standalone managers own
+  closable connections; TUI managers borrow host storage. Manager reads refresh
+  and writes reject stale state. Supply the existing CLI/gateway stores as a
+  further consolidation of host construction.
 - [ ] Extend installed remote-host/provider recovery exercises to longer sessions.
 
 Already implemented: host-owned workers, session registry/storage, profile

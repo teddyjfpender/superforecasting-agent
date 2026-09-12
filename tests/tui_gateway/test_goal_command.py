@@ -25,12 +25,7 @@ def hermes_home(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setenv("HERMES_HOME", str(home))
 
-    # Bust the goal-module DB cache so it re-resolves HERMES_HOME.
-    from superforecasting_agent.runtime import goals
-
-    goals._DB_CACHE.clear()
     yield home
-    goals._DB_CACHE.clear()
 
 
 @pytest.fixture()

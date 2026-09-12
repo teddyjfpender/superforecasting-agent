@@ -2123,3 +2123,23 @@ import-boundary mutation tests. Shared quality checks passed with the new mapper
 in strict lint/format/type scope and an additional forbidden-import contract.
 These tests use controllable constructors; they do not claim live qualification
 of external container services.
+
+### Remove the legacy global goal database cache
+
+The per-home `_DB_CACHE` had neither synchronized construction nor a close owner.
+It is removed. Standalone managers own a connection with explicit close/context
+support and a weak-finalizer fallback for legacy callers. Supplied host databases
+remain borrowed. Closed managers reject reuse; failed explicit closes retain the
+live finalizer/handle for retry. Failed initialization disposes owned storage only.
+Compatibility load/save helpers now close their short-lived connections.
+
+97 goal tests passed across standalone, classic CLI, gateway and TUI paths; shared
+quality checks passed. Failure injection now targets a manager's actual connection,
+not the removed singleton. Tests cover close retry, borrowed-storage preservation,
+initialization cleanup, compatibility-helper cleanup and existing stale-write/
+profile-boundary behavior. Explicitly supplying existing CLI/gateway stores remains
+worth doing to avoid unnecessary separate standalone connections in those hosts.
+
+The prior CLI/cron/cleanup batch pushed at `ce5d9f8db` after 30,981 tests passed
+(148 skipped, 58 warnings). Sandbox ownership/configuration and goal-store changes
+remain pending their integrated gate.

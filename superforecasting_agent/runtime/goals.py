@@ -34,6 +34,7 @@ import json
 import logging
 import re
 import time
+import weakref
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -204,37 +205,15 @@ def _meta_key(session_id: str) -> str:
     return f"goal:{session_id}"
 
 
-_DB_CACHE: Dict[str, Any] = {}
-
-
 def _get_session_db() -> Optional[Any]:
-    """Return a SessionDB instance for the current HERMES_HOME.
-
-    SessionDB has no built-in singleton, but opening a new connection per
-    /goal call would thrash the file. We cache one instance per
-    ``hermes_home`` path so profile switches still pick up the right DB.
-    Defensive against import/instantiation failures so tests and
-    non-standard launchers can still use the GoalManager.
-    """
+    """Open a standalone goal database; the caller owns its lifetime."""
     try:
-        from superforecasting_agent.constants import get_agent_home
         from superforecasting_agent.storage.session import SessionDB
 
-        home = str(get_agent_home())
+        return SessionDB()
     except Exception as exc:  # pragma: no cover
         logger.debug("GoalManager: SessionDB bootstrap failed (%s)", exc)
         return None
-
-    cached = _DB_CACHE.get(home)
-    if cached is not None:
-        return cached
-    try:
-        db = SessionDB()
-    except Exception as exc:  # pragma: no cover
-        logger.debug("GoalManager: SessionDB() raised (%s)", exc)
-        return None
-    _DB_CACHE[home] = db
-    return db
 
 
 def load_goal(session_id: str) -> Optional[GoalState]:
@@ -249,6 +228,8 @@ def load_goal(session_id: str) -> Optional[GoalState]:
     except Exception as exc:
         logger.debug("GoalManager: get_meta failed: %s", exc)
         return None
+    finally:
+        db.close()
     if not raw:
         return None
     try:
@@ -269,6 +250,8 @@ def save_goal(session_id: str, state: GoalState) -> None:
         db.set_meta(_meta_key(session_id), state.to_json())
     except Exception as exc:
         logger.debug("GoalManager: set_meta failed: %s", exc)
+    finally:
+        db.close()
 
 
 def clear_goal(session_id: str) -> None:
@@ -493,12 +476,43 @@ class GoalManager:
         self.session_id = session_id
         self.default_max_turns = int(default_max_turns or DEFAULT_MAX_TURNS)
         self._database = (database_provider or _get_session_db)()
+        self._owns_database = database_provider is None
+        self._closed = False
+        self._database_finalizer = None
         if self._database is None:
             raise RuntimeError("Goal storage is unavailable")
-        self._refresh()
+        try:
+            self._refresh()
+        except Exception:
+            if self._owns_database:
+                self._database.close()
+            raise
+        if self._owns_database:
+            # Compatibility callers can omit a context manager. There is no
+            # process-global cache retaining their abandoned connections.
+            self._database_finalizer = weakref.finalize(self, self._database.close)
+
+    def close(self) -> None:
+        """Close an owned store; borrowed host storage is never closed here."""
+        if self._closed:
+            return
+        if self._owns_database:
+            self._database.close()
+            self._database_finalizer.detach()
+        self._closed = True
+
+    def __enter__(self):
+        if self._closed:
+            raise RuntimeError("Goal manager is closed")
+        return self
+
+    def __exit__(self, *_exc):
+        self.close()
 
     def _refresh(self) -> None:
         """Read from this manager's bound database, never a replacement profile."""
+        if self._closed:
+            raise RuntimeError("Goal manager is closed")
         raw = self._database.get_meta(_meta_key(self.session_id))
         state = GoalState.from_json(raw) if raw else None
         self._expected_state = state.to_json() if state is not None else None
@@ -506,6 +520,8 @@ class GoalManager:
 
     def _persist(self, state: GoalState, *, expected_state: Optional[str] = None) -> None:
         """Reject stale manager writes, including verdicts from an older judge."""
+        if self._closed:
+            raise RuntimeError("Goal manager is closed")
         value = state.to_json()
         expected = self._expected_state if expected_state is None else expected_state
 

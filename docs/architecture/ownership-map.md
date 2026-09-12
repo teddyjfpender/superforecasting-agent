@@ -525,3 +525,12 @@ and file tools consume the same mapping, including backend images, cwd, timeout,
 SSH/local persistence and container options. Mutable container options are copied
 for each construction. The module has strict lint/format/type coverage and a
 transitive import contract forbidding dependencies on its runtime consumers.
+
+Goal managers no longer use a process-global database cache. A supplied database
+provider yields borrowed host storage; otherwise the standalone manager owns its
+connection and supports `close()` and context-manager use. Failed explicit close
+retains ownership for retry, and initialization failure closes only owned storage.
+A weak finalizer supports legacy callers that discard standalone managers without
+closing explicitly. Compatibility load/save helpers close their own short-lived
+connections. CLI/gateway callers can migrate to their existing host DB providers
+without changing goal validation or compare-and-swap behavior.
