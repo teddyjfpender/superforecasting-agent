@@ -410,3 +410,40 @@ def test_native_insights_uses_host_store_without_closing_it(configure, monkeypat
     assert slash("insights")["error"]["data"]["dispatch"] == "command.dispatch"
     server._SlashWorker.assert_not_called()
     server._start_agent_build.assert_not_called()
+
+
+def test_native_runtime_change_uses_host_config_and_preserves_live_agent(configure, monkeypatch, tmp_path):
+    import yaml
+
+    configure({})
+    path = tmp_path / "config.yaml"
+    path.write_text("model:\n  openai_runtime: codex_app_server\nother: retained\n", encoding="utf-8")
+    owner = server._host.configuration
+    monkeypatch.setattr(server, "_load_cfg", lambda: owner.load(path))
+    monkeypatch.setattr(server, "_save_cfg", lambda cfg: owner.save(path, cfg))
+    agent = object()
+    server._host.sessions["runtime"]["agent"] = agent
+    response = dispatch("codex-runtime", "off")
+    assert "Effective on next session" in response["result"]["output"]
+    assert yaml.safe_load(path.read_text(encoding="utf-8")) == {
+        "model": {"openai_runtime": "auto"}, "other": "retained",
+    }
+    assert server._host.sessions["runtime"]["agent"] is agent
+    assert slash("/codex-runtime off")["error"]["data"]["execution_started"] is False
+
+
+def test_native_runtime_rejects_invalid_args_before_save(configure, monkeypatch):
+    configure({})
+    save = Mock(side_effect=AssertionError("invalid runtime reached persistence"))
+    monkeypatch.setattr(server, "_save_cfg", save)
+    assert dispatch("codex-runtime", "off extra")["error"]["code"] == 4004
+    save.assert_not_called()
+
+
+def test_native_runtime_save_failure_does_not_fall_through(configure, monkeypatch):
+    configure({})
+    monkeypatch.setattr(server, "_load_cfg", lambda: {"model": {"openai_runtime": "codex_app_server"}})
+    monkeypatch.setattr(server, "_save_cfg", Mock(side_effect=OSError("disk full")))
+    response = dispatch("codex-runtime", "off")
+    assert response["error"]["code"] == 5017
+    assert "disk full" in response["error"]["message"]

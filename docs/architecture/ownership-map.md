@@ -407,3 +407,12 @@ for older clients. Error code/data and established older-host handoff messages
 are preserved. Timeouts, disconnects, execution/validation failures and stale
 sessions cannot trigger another execution. Plugin/skill handlers report owned
 failures directly instead of allowing fallthrough.
+
+
+### Runtime selection commands
+
+`runtime/codex_runtime_switch.py` owns runtime argument interpretation, binary
+readiness checks and change/migration results for CLI, messaging and native TUI.
+Consumers supply persistence. TUI supplies the host snapshot owner and preserves
+the current agent until a new session. Failed persistence leaves the caller
+snapshot unchanged; successful persistence retains its updated revision.

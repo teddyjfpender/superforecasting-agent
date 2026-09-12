@@ -342,6 +342,26 @@ def _(rid, params: dict) -> dict:
     except Exception:
         pass
 
+    if name == "codex-runtime":
+        from superforecasting_agent.runtime import codex_runtime_switch
+
+        value, errors = codex_runtime_switch.parse_args(arg)
+        if errors:
+            return _err(rid, 4004, "\n".join(errors))
+        try:
+            config = _core._load_cfg()
+            if _core._host.configuration.last_error:
+                return _err(rid, 5017, _core._host.configuration.last_error)
+            result = codex_runtime_switch.apply(
+                config, value,
+                persist_callback=_core._save_cfg if value is not None else None,
+            )
+            if not result.success:
+                return _err(rid, 5017, result.message)
+            return _ok(rid, {"type": "exec", "output": result.message})
+        except Exception as exc:
+            return _err(rid, 5017, str(exc))
+
     if name == "insights":
         from superforecasting_agent.application.insights import parse_insights_arguments
 

@@ -154,6 +154,7 @@ class TestApply:
         assert r.success is False
         assert "persist failed" in r.message
         assert "disk full" in r.message
+        assert cfg == {}  # Failed persistence cannot alter the caller snapshot.
 
     def test_enable_triggers_mcp_migration(self):
         """Enabling codex_app_server should auto-migrate Hermes mcp_servers
@@ -236,3 +237,33 @@ class TestApply:
                           return_value=(True, "0.130.0")) as bin_check:
             crs.apply(cfg, None)
         assert bin_check.call_count == 1
+
+
+def test_successful_save_preserves_snapshot_revision(tmp_path):
+    from superforecasting_agent.storage.configuration import ProfileConfiguration
+
+    path = tmp_path / "config.yaml"
+    path.write_text("model:\n  openai_runtime: codex_app_server\n", encoding="utf-8")
+    owner = ProfileConfiguration()
+    config = owner.load(path)
+    result = crs.apply(config, "auto", persist_callback=lambda value: owner.save(path, value))
+    assert result.success
+    config["unrelated"] = "retained"
+    owner.save(path, config)  # The successful callback's new revision is retained.
+    assert owner.load(path)["unrelated"] == "retained"
+
+
+def test_concurrent_profile_update_rejects_runtime_change(tmp_path):
+    from superforecasting_agent.storage.configuration import ProfileConfiguration
+
+    path = tmp_path / "config.yaml"
+    path.write_text("model:\n  openai_runtime: codex_app_server\n", encoding="utf-8")
+    owner = ProfileConfiguration()
+    config = owner.load(path)
+    owner.update(path, "unrelated", "concurrent edit")
+    result = crs.apply(config, "auto", persist_callback=lambda value: owner.save(path, value))
+    assert not result.success
+    assert config["model"]["openai_runtime"] == "codex_app_server"
+    current = owner.load(path)
+    assert current["model"]["openai_runtime"] == "codex_app_server"
+    assert current["unrelated"] == "concurrent edit"

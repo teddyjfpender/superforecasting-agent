@@ -1695,3 +1695,22 @@ historical voice RPC module; this change does not claim that module is decompose
 Validation: 26 focused summary and command-parser tests passed, including a real
 505-session SQLite history, empty history, source filtering, invalid inputs and
 post-failure writes through the same host store.
+
+
+### Native runtime selection and persistence failure semantics
+
+The TUI now dispatches `/codex-runtime` to the existing shared runtime-switch
+operation used by CLI and messaging. It uses the host configuration snapshot
+and revision-checked save, without constructing an agent or classic command
+worker. Changes explicitly apply to a new session; the current live agent is
+retained. Validation and persistence errors are terminal command errors, never
+a signal to execute through a second dispatcher.
+
+The shared switch now stages changes in a copied snapshot. A failed save leaves
+the caller configuration unchanged and skips migration. A successful save
+propagates the new snapshot revision, allowing subsequent writes. Real-file
+regressions cover stale saves preserving concurrent edits and subsequent writes
+after success. Existing migration behavior remains in its established owner.
+
+Validation: 82 runtime-switch/native-command tests passed; Python quality,
+35 import contracts and generated protocol checks passed.
