@@ -388,7 +388,6 @@ forbidden_modules = ["tools"]
 allow_indirect_imports = "true"
 ignore_imports = [
     "forecasting.cli.core -> tools.forecasting_tool",
-    "forecasting.cli.slack_admin -> tools.forecast_actions.share",
     "forecasting.cli.triage_calibration -> tools.forecasting_tool",
     "forecasting.supervisor_search -> tools.web_tools",
 ]

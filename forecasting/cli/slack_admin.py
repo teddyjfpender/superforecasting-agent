@@ -265,7 +265,7 @@ def _cmd_slack_share(args: argparse.Namespace) -> None:
     """`forecast slack share <question> --channel` — render + post the current
     forecast card over the same path as the ``share_forecast`` tool action."""
     from forecasting.ledger import ForecastLedger
-    from tools.forecast_actions.share import execute_share
+    from forecasting.application.sharing import execute_share
 
     ledger = ForecastLedger(getattr(args, "db", None))
     outcome = execute_share(

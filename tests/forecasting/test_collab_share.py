@@ -175,3 +175,32 @@ def test_cli_share_verb(seeded, monkeypatch, capsys):
     assert out["channel"] == "C777"
     assert out["event_type"] == "sfp.forecast.card"
     assert out["criteria_hash"] == criteria_hash(CRITERIA)
+
+
+def test_failed_overflow_upload_never_posts_a_dangling_card(seeded, monkeypatch):
+    from types import SimpleNamespace
+    db, qid = seeded
+    monkeypatch.setenv('FORECAST_POLICY_INTERACTIVE_NETWORK', 'auto')
+    card = SimpleNamespace(
+        file_content='large body', filename='card.json', event_type='forecast.card',
+        envelope=SimpleNamespace(body={'criteria_hash': 'fixture'}),
+        fallback_text='forecast', blocks=[], event_payload={'pointer': 'body'},
+    )
+    monkeypatch.setattr('forecasting.collab.cards.render_forecast_card', lambda *a, **k: card)
+    calls = []
+    def post(args):
+        calls.append(args)
+        return {'success': False, 'error': 'upload unavailable'} if args['action'] == 'upload_file' else {'success': True}
+    out = execute_share(ForecastLedger(db), qid, 'C123', identity=_identity(), poster=post)
+    assert [call['action'] for call in calls] == ['upload_file']
+    assert out['success'] is False and out['shared'] is False
+    assert out['upload_ok'] is False
+    assert 'upload' in out['error']
+
+
+@pytest.mark.parametrize('response', [{'ok': 'false'}, {'ok': True, 'success': False}, {'success': 1}])
+def test_share_does_not_treat_malformed_or_contradictory_status_as_success(seeded, monkeypatch, response):
+    db, qid = seeded
+    monkeypatch.setenv('FORECAST_POLICY_INTERACTIVE_NETWORK', 'auto')
+    out = execute_share(ForecastLedger(db), qid, 'C123', identity=_identity(), poster=lambda args: response)
+    assert out['shared'] is False and out['success'] is False

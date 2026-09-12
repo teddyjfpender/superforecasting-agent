@@ -4662,3 +4662,21 @@ claim that an environment token's workspace has been verified.
 Validation: 118 transport/tool/collaboration/notification/connection and boundary
 tests passed; shared quality checks passed. HTTP was replaced by fake transports;
 no Slack messages were sent and no live integration qualification is claimed.
+
+### Shared forecast-card operation
+
+Moved governed sharing out of the agent action module into the application layer,
+with CLI and tool adapters consuming the same policy and execution result. Removed
+the CLI-to-tool sharing exception; three direct forecast-to-tool edges remain.
+
+Failure injection reproduced posting a dangling metadata card after its overflow
+body upload failed. Sharing now stops on that failure and reports shared=false;
+boolean status is required and canonical failure cannot be overridden by an ok
+field. Existing policy ask/never paths still post nothing. A successful upload
+followed by a failed card post is not an atomic external transaction; automatic
+retry/deduplication is not introduced by this extraction.
+
+Validation: 30 sharing, card, CLI and multi-instance collaboration checks passed;
+shared quality checks passed. All posting used fake transports; no Slack messages
+were sent. Application lint/format/type and transitive product-boundary checks
+cover the new file automatically.

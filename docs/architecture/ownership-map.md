@@ -843,3 +843,13 @@ canonical `success` field. Explicit OAuth-store workspace lookups cannot fall
 through to a different entry, and non-string tokens are ignored. The existing
 SLACK_BOT_TOKEN environment override still takes precedence. A transitive import
 gate prevents the transport from importing agent execution or presentation.
+
+### Governed forecast sharing
+
+`forecasting/application/sharing.py` owns share policy resolution, current-card
+construction and ordered upload/post execution. CLI and agent action adapters use
+the same structured result. The tool only serializes the outcome. Policy refusal
+and approval-required states post nothing. An overflow body must upload
+successfully before its metadata card can be posted; malformed or contradictory
+transport status cannot report success. Network execution belongs to the Slack
+transport and remains injectable for deterministic tests.
