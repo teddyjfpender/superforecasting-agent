@@ -1776,7 +1776,10 @@ def _get_or_create_session_info(task_id: str) -> Dict[str, Any]:
                 # Validate cloud provider returned a usable session
                 if not session_info or not isinstance(session_info, dict):
                     raise ValueError(f"Cloud provider returned invalid session: {session_info!r}")
+                disposer = getattr(session_info, "close", None)
                 session_info = dict(session_info)
+                if callable(disposer):
+                    session_info["_close_cloud_session"] = disposer
                 session_info["_cloud_provider"] = provider
                 if session_info.get("cdp_url"):
                     # Some cloud providers (including Browser-Use v3) return an HTTP
@@ -3572,7 +3575,9 @@ def _cleanup_single_browser_session(task_id: str) -> None:
             provider = session_info.get("_cloud_provider")
             if provider is None:
                 raise RuntimeError("Cloud browser session has no recorded provider owner")
-            if provider.close_session(bb_session_id) is not True:
+            disposer = session_info.get("_close_cloud_session")
+            closed = disposer() if callable(disposer) else provider.close_session(bb_session_id)
+            if closed is not True:
                 raise RuntimeError("Cloud browser provider did not confirm session disposal")
             session_info["_cloud_closed"] = True
 

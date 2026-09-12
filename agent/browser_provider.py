@@ -39,12 +39,30 @@ which provider is in use.
 from __future__ import annotations
 
 import abc
+from collections.abc import Callable
 from typing import Any, Dict
 
 
 # ---------------------------------------------------------------------------
 # ABC
 # ---------------------------------------------------------------------------
+
+
+class BrowserSession(dict[str, object]):
+    """Serializable session metadata with a private, allocation-bound disposer.
+
+    Providers should capture credentials and endpoint identity during allocation.
+    The dispatcher retains ``close`` separately from metadata for retry. Ordinary
+    dictionary results remain supported for third-party provider compatibility,
+    using their creating provider's ``close_session`` method instead.
+    """
+
+    def __init__(self, metadata: dict[str, object], *, close: Callable[[], bool]):
+        super().__init__(metadata)
+        self._close = close
+
+    def close(self) -> bool:
+        return self._close()
 
 
 class BrowserProvider(abc.ABC):

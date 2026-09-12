@@ -33,7 +33,7 @@ from typing import Any, Dict
 
 import requests
 
-from agent.browser_provider import BrowserProvider
+from agent.browser_provider import BrowserProvider, BrowserSession
 
 logger = logging.getLogger(__name__)
 
@@ -80,12 +80,13 @@ class FirecrawlBrowserProvider(BrowserProvider):
     def create_session(self, task_id: str) -> Dict[str, object]:
         ttl = int(os.environ.get("FIRECRAWL_BROWSER_TTL", "300"))
 
+        base_url, headers = self._api_url(), dict(self._headers())
         body: Dict[str, object] = {"ttl": ttl}
 
         try:
             response = requests.post(
-                f"{self._api_url()}/v2/browser",
-                headers=self._headers(),
+                f"{base_url}/v2/browser",
+                headers=headers,
                 json=body,
                 timeout=30,
             )
@@ -105,18 +106,19 @@ class FirecrawlBrowserProvider(BrowserProvider):
 
         logger.info("Created Firecrawl browser session %s", session_name)
 
-        return {
+        return BrowserSession({
             "session_name": session_name,
             "bb_session_id": data["id"],
             "cdp_url": data["cdpUrl"],
             "features": {"firecrawl": True},
-        }
+        }, close=lambda session_id=data["id"]: self.close_session(session_id, _connection=(base_url, headers)))
 
-    def close_session(self, session_id: str) -> bool:
+    def close_session(self, session_id: str, *, _connection: tuple[str, Dict[str, str]] | None = None) -> bool:
         try:
+            base_url, headers = (self._api_url(), self._headers()) if _connection is None else _connection
             response = requests.delete(
-                f"{self._api_url()}/v2/browser/{session_id}",
-                headers=self._headers(),
+                f"{base_url}/v2/browser/{session_id}",
+                headers=headers,
                 timeout=10,
             )
             if response.status_code in {200, 201, 204}:

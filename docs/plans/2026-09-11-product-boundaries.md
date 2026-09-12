@@ -3355,3 +3355,19 @@ The startup batch's full push gate remains running in the primary checkout.
 - Remaining: bundled providers still reread credentials/endpoint configuration
   inside their close methods. Capturing the provider instance does not yet freeze
   its account/endpoint provenance. Local daemon disposal also remains best effort.
+
+
+### Cloud browser disposal provenance
+
+Bundled Browserbase, Browser Use and Firecrawl allocations now return ordinary
+serializable metadata with a private disposer capturing the allocation endpoint
+and credentials. The dispatcher retains that disposer through failed-close retries;
+configuration changes cannot redirect normal disposal to another account. Legacy
+providers returning plain dictionaries retain creating-provider compatibility.
+Credentials are not added to metadata or JSON exports. Emergency bulk cleanup
+and malformed allocation responses remain separate audit paths.
+
+Validation: 49 focused provider, managed-gateway, creation and disposal tests
+passed; shared Python lint/format/type, protocol and all 51 import contracts passed.
+Fixtures mutate credentials, endpoint and project after allocation and verify
+that disposal still targets the original identity.

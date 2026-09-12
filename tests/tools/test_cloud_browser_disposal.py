@@ -7,7 +7,8 @@ import pytest
 from tools import browser_tool as browser
 
 
-def test_failed_cloud_close_retains_creating_provider_and_blocks_reuse(monkeypatch):
+@pytest.mark.parametrize("bound_disposer", [False, True])
+def test_failed_cloud_close_retains_creating_provider_and_blocks_reuse(monkeypatch, bound_disposer):
     monkeypatch.setattr(browser, "_active_sessions", {})
     monkeypatch.setattr(browser, "_session_last_activity", {})
     monkeypatch.setattr(browser, "_start_browser_cleanup_thread", lambda: None)
@@ -23,7 +24,13 @@ def test_failed_cloud_close_retains_creating_provider_and_blocks_reuse(monkeypat
     def close(session_id):
         attempts.append(session_id)
         return len(attempts) > 1
-    original = SimpleNamespace(create_session=lambda task: {"session_name": "owned", "bb_session_id": "remote"}, close_session=close)
+    from agent.browser_provider import BrowserSession
+    def create(task):
+        metadata = {"session_name": "owned", "bb_session_id": "remote"}
+        return BrowserSession(metadata, close=lambda: close("remote")) if bound_disposer else metadata
+    def forbidden_close(session_id):
+        raise AssertionError("allocation-bound disposer must take precedence")
+    original = SimpleNamespace(create_session=create, close_session=forbidden_close if bound_disposer else close)
     monkeypatch.setattr(browser, "_get_cloud_provider", lambda: original)
     session = browser._get_session_info("task")
     def wrong_provider():

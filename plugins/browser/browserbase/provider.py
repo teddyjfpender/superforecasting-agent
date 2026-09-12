@@ -38,7 +38,7 @@ from typing import Any, Dict, Optional
 
 import requests
 
-from agent.browser_provider import BrowserProvider
+from agent.browser_provider import BrowserProvider, BrowserSession
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +92,7 @@ class BrowserbaseBrowserProvider(BrowserProvider):
     # ------------------------------------------------------------------
 
     def create_session(self, task_id: str) -> Dict[str, object]:
-        config = self._get_config()
+        config = dict(self._get_config())
 
         # Optional env-var knobs
         enable_proxies = os.environ.get("BROWSERBASE_PROXIES", "true").lower() != "false"
@@ -207,16 +207,16 @@ class BrowserbaseBrowserProvider(BrowserProvider):
             "Created Browserbase session %s with features: %s", session_name, feature_str
         )
 
-        return {
+        return BrowserSession({
             "session_name": session_name,
             "bb_session_id": session_data["id"],
             "cdp_url": session_data["connectUrl"],
             "features": features_enabled,
-        }
+        }, close=lambda session_id=session_data["id"]: self.close_session(session_id, _config=config))
 
-    def close_session(self, session_id: str) -> bool:
+    def close_session(self, session_id: str, *, _config: Dict[str, Any] | None = None) -> bool:
         try:
-            config = self._get_config()
+            config = self._get_config() if _config is None else _config
         except ValueError:
             logger.warning(
                 "Cannot close Browserbase session %s — missing credentials", session_id

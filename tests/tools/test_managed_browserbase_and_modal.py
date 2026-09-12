@@ -9,6 +9,8 @@ from unittest.mock import patch
 
 import pytest
 
+from agent.browser_provider import BrowserSession
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TOOLS_DIR = REPO_ROOT / "tools"
@@ -104,6 +106,7 @@ def _install_fake_tools_package():
 
     sys.modules["agent.browser_provider"] = types.SimpleNamespace(
         BrowserProvider=_StubBrowserProvider,
+        BrowserSession=BrowserSession,
     )
     sys.modules["agent.browser_registry"] = types.SimpleNamespace(
         get_provider=lambda name: None,
