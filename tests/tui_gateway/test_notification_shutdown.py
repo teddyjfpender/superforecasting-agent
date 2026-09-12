@@ -69,3 +69,30 @@ def test_foreign_notification_stays_with_its_session(monkeypatch, kind):
     assert server._route_async_completion(event, "owner") == "consume"
     run.assert_not_called()
     emit.assert_not_called()
+
+
+def test_status_display_failure_does_not_discard_notification(monkeypatch, caplog):
+    stop = threading.Event()
+    pending = queue.Queue()
+    pending.put({"type": "completion", "session_key": "owner", "session_id": "process",
+                 "command": "example", "exit_code": 0})
+    monkeypatch.setattr(process_registry, "completion_queue", pending)
+    monkeypatch.setattr(process_registry, "is_completion_consumed", lambda _: False)
+    monkeypatch.setattr(server, "_host", RuntimeHost())
+    emit = Mock(side_effect=OSError("display disconnected"))
+    monkeypatch.setattr(server, "_emit", emit)
+    session = {"session_key": "owner", "history_lock": threading.Lock()}
+    turns = []
+
+    def submit(rid, sid, current, text):
+        assert current is session
+        assert current["running"] is True
+        turns.append(text)
+        stop.set()
+
+    monkeypatch.setattr(server, "_run_prompt_submit", submit)
+    server._notification_poller_loop(stop, "runtime", session)
+    assert len(turns) == 1
+    assert "process" in turns[0]
+    assert emit.call_count == 1  # Only status; turn submission owns message.start.
+    assert "display disconnected" in caplog.text

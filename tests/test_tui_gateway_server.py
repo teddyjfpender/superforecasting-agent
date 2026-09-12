@@ -5827,6 +5827,8 @@ def test_notification_poller_delivers_completion(monkeypatch):
         assert len(status_calls) >= 1
         assert status_calls[0][2]["kind"] == "process"
 
+        assert len([a for a in emitted if a[0] == "message.start"]) == 1
+
         # Should have triggered an agent turn
         assert len(turns) == 1
         assert "[IMPORTANT: Background process proc_poller_test completed" in turns[0]

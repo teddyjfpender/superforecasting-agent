@@ -1796,3 +1796,17 @@ tests passed. The shared quality command keeps all 36 contracts and passes lint,
 format, types and generated protocol checks. Direct host tests cover reservation,
 dispatch failure and broken queue behavior without a transport. Queue durability
 and exact-once delivery across process death are not established by this change.
+
+
+### Notification display cannot own turn admission
+
+Removed the notification adapter's premature duplicate `message.start`. Turn
+submission owns the start event after establishing the turn receipt, so a
+notification no longer publishes a start against the previous turn identity.
+Status rendering is best-effort with diagnostics: a display exception cannot
+discard a queued notification before its admitted turn is submitted.
+
+Validation: 238 notification/host/server tests passed, including real turn
+submission emitting exactly one start and an injected status-display failure
+still submitting exactly one turn. Python quality and all 36 import contracts
+passed. This does not make the process-local notification queue durable.

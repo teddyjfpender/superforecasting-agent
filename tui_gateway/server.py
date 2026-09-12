@@ -3727,8 +3727,10 @@ def _notification_poller_loop(
 
     def dispatch(text: str) -> None:
         rid = f"__notif__{int(time.time() * 1000)}"
-        _emit("status.update", sid, {"kind": "process", "text": text})
-        _emit("message.start", sid)
+        try:
+            _emit("status.update", sid, {"kind": "process", "text": text})
+        except Exception:
+            logger.exception("Notification status display failed")
         _run_prompt_submit(rid, sid, session, text)
 
     poll_notifications(
