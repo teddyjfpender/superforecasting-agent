@@ -3512,3 +3512,18 @@ Four new cases failed before the fix. After extraction, 208 focused syntax, mode
 validation and quorum tests passed, including one- and two-turn agent construction
 receiving the named endpoint and bare model separately. Shared Python quality
 gates passed with 52 contracts.
+
+
+### Pinned provider preflight matches execution
+
+An unconditional aggregator shortcut accepted explicit `anthropic:model` pins
+with only OpenRouter connected, although execution requests Anthropic directly.
+Preflight also counted explicitly unauthenticated supplied catalog rows. Removed
+the shortcut for pinned validation and now honor explicit authentication flags.
+Unprefixed IDs retain automatic routing; legacy already-authenticated ID-only
+inputs remain supported. Exact named custom identities cannot be substituted by
+an anonymous custom endpoint.
+
+Four regressions failed before the fix; all 132 focused parser/quorum/default
+configuration tests passed afterward. The previous aggregator test now asserts
+actual supported routing: unprefixed models or explicit aggregator-prefixed IDs.

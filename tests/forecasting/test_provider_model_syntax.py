@@ -43,3 +43,27 @@ def test_named_endpoint_reaches_agent_construction_unchanged(monkeypatch, two_tu
     assert factory.call_args.kwargs['requested_provider'] == 'custom:local'
     assert factory.call_args.kwargs['model'] == 'qwen-model'
     assert factory.call_count == 1
+
+
+@pytest.mark.parametrize('provider', ['openrouter', 'nous', 'ai-gateway'])
+def test_aggregator_does_not_validate_an_explicit_different_provider(provider):
+    from forecasting.models import ValidationError
+
+    with pytest.raises(ValidationError, match='anthropic:fixture'):
+        validate_panel_models(['anthropic:fixture'], providers=[{'id': provider}])
+    validate_panel_models([f'{provider}:vendor/fixture', 'vendor/fixture'], providers=[{'id': provider}])
+
+
+def test_unauthenticated_catalog_row_cannot_validate_a_pinned_provider():
+    from forecasting.models import ValidationError
+
+    with pytest.raises(ValidationError, match='zai:fixture'):
+        validate_panel_models(['zai:fixture'], providers=[{'id': 'zai', 'authenticated': False}])
+
+
+def test_named_endpoint_requires_its_exact_provider_identity():
+    from forecasting.models import ValidationError
+
+    with pytest.raises(ValidationError, match='custom:local:fixture'):
+        validate_panel_models(['custom:local:fixture'], providers=[{'id': 'custom'}])
+    validate_panel_models(['custom:local:fixture'], providers=[{'id': 'custom:local'}])

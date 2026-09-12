@@ -384,8 +384,9 @@ def validate_panel_models(
     known provider prefix) routes through the active provider, so it is accepted
     (its reachability cannot be judged here). When the provider picture is UNKNOWN
     (detection unavailable) validation fails OPEN — the same fail-open contract the
-    rest of the module keeps — so a sandboxed/headless host is never blocked. An
-    aggregator key (OpenRouter/Nous/AI-Gateway) serves any id, so all entries pass.
+    rest of the module keeps — so a sandboxed/headless host is never blocked.
+    An explicit provider is binding even when an aggregator is connected: execution
+    requests that provider, rather than rerouting its model through the aggregator.
     """
 
     detail = (
@@ -395,9 +396,13 @@ def validate_panel_models(
     )
     if detail is None:
         return  # unknown provider picture — cannot prove non-callability, fail open
-    authed = {str(p.get("id")) for p in detail}
-    if authed & _AGGREGATOR_PROVIDER_SLUGS:
-        return  # a universal aggregator serves every pinned id
+    # Injected lists historically contain already-authenticated IDs without a
+    # status field. Honor that contract, but never accept an explicitly negative
+    # or malformed authentication status from a full catalog response.
+    authed = {
+        str(p["id"]) for p in detail
+        if p.get("id") and p.get("authenticated", True) is True
+    }
     bad: list[str] = []
     for entry in models:
         prefix, _bare = _split_provider_model(entry)

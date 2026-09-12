@@ -629,3 +629,10 @@ model commands and quorum agent construction consume the same pure policy.
 Callers supply their known-provider catalog and own implicit routing. Catalog
 discovery and credential availability remain runtime responsibilities; the quorum
 catalog dependency is not yet removed. Unknown prefixes remain part of the model.
+
+Quorum pinned-model preflight respects the same explicit provider identity used
+by agent construction. A connected aggregator does not authenticate a different
+explicit provider. Named custom endpoints require their exact identity in supplied
+provider details. Bare IDs keep implicit routing. Injected legacy ID-only provider
+rows remain supported; explicitly false or malformed authentication flags cannot
+approve a pinned entry.

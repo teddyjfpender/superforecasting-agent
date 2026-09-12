@@ -183,10 +183,10 @@ def test_configured_panel_fail_open_on_unknown_providers():
     assert got is not None and got["models"] == ["anything:x"]
 
 
-def test_validate_panel_models_aggregator_serves_all():
-    # An OpenRouter key serves any id, so every pinned entry passes.
+def test_validate_panel_models_aggregator_serves_unprefixed_or_own_entries():
+    # Provider-prefixed entries are binding; unprefixed IDs can use the aggregator.
     validate_panel_models(
-        ["anthropic:claude-opus-4-8", "foo:bar"], providers=[{"id": "openrouter"}]
+        ["openrouter:anthropic/claude-opus-4-8", "anthropic/claude-opus-4-8", "foo:bar"], providers=[{"id": "openrouter"}]
     )
 
 
