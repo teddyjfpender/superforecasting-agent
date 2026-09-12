@@ -53,6 +53,7 @@ from typing import Any, Callable, Dict, List, Optional, Set
 from superforecasting_agent.constants import get_agent_home
 from superforecasting_agent.environment import env_var_enabled
 from superforecasting_agent.configuration import cfg_get
+from superforecasting_agent.application.plugins import plugin_activation
 from superforecasting_agent.configuration.plugin_manifest import PluginManifest
 from superforecasting_agent.storage.plugin_manifests import read_plugin_manifest
 
@@ -886,86 +887,17 @@ class PluginManager:
         for manifest in winners.values():
             lookup_key = manifest.key or manifest.name
 
-            # Explicit disable always wins (matches on key or on legacy
-            # bare name for back-compat with existing user configs).
-            if lookup_key in disabled or manifest.name in disabled:
-                loaded = LoadedPlugin(manifest=manifest, enabled=False)
-                loaded.error = "disabled via config"
-                self._plugins[lookup_key] = loaded
-                logger.debug("Skipping disabled plugin '%s'", lookup_key)
-                continue
-
-            # The bundled Obsidian vault is core to the agent's workspace — it
-            # holds all notes/research under ~/.superforecasting-agent/docs/vault.
-            # Auto-load it so the agent always has scoped, vault-locked note tools
-            # without an opt-in step; an explicit ``plugins.disabled: [obsidian]``
-            # still turns it off (handled by the check above).
-            if manifest.source == "bundled" and manifest.name == "obsidian":
+            activation = plugin_activation(manifest, enabled=enabled, disabled=disabled)
+            if activation.load:
                 self._load_plugin(manifest)
-                continue
-
-            # Exclusive plugins (memory providers) have their own
-            # discovery/activation path. The general loader records the
-            # manifest for introspection but does not load the module.
-            if manifest.kind == "exclusive":
-                loaded = LoadedPlugin(manifest=manifest, enabled=False)
-                loaded.error = (
-                    "exclusive plugin — activate via <category>.provider config"
+            else:
+                self._plugins[lookup_key] = LoadedPlugin(
+                    manifest=manifest, enabled=activation.enabled, error=activation.reason,
                 )
-                self._plugins[lookup_key] = loaded
                 logger.debug(
-                    "Skipping '%s' (exclusive, handled by category discovery)",
-                    lookup_key,
+                    "Skipping '%s': %s", lookup_key,
+                    activation.reason or "handled by provider discovery",
                 )
-                continue
-
-            # Model provider plugins are loaded by providers/__init__.py
-            # (its own lazy discovery keyed off first get_provider_profile()
-            # call). We record the manifest here for introspection but do
-            # not import the module — a second import would create two
-            # ProviderProfile instances and break the "last writer wins"
-            # override semantics between bundled and user plugins.
-            if manifest.kind == "model-provider":
-                loaded = LoadedPlugin(manifest=manifest, enabled=True)
-                self._plugins[lookup_key] = loaded
-                logger.debug(
-                    "Skipping '%s' (model-provider, handled by providers/ discovery)",
-                    lookup_key,
-                )
-                continue
-
-            # Built-in backends auto-load — they ship with hermes and must
-            # just work. Selection among them (e.g. which image_gen backend
-            # services calls) is driven by ``<category>.provider`` config,
-            # enforced by the tool wrapper.
-            #
-            # Bundled platform plugins (gateway adapters like IRC) auto-load
-            # for the same reason: every bundled platform must be
-            # available out of the box without the user having to opt in.
-            if manifest.source == "bundled" and manifest.kind in {"backend", "platform"}:
-                self._load_plugin(manifest)
-                continue
-
-            # Everything else (standalone, user-installed backends,
-            # entry-point plugins) is opt-in via plugins.enabled.
-            # Accept both the path-derived key and the legacy bare name
-            # so existing configs keep working.
-            is_enabled = (
-                enabled is not None
-                and (lookup_key in enabled or manifest.name in enabled)
-            )
-            if not is_enabled:
-                loaded = LoadedPlugin(manifest=manifest, enabled=False)
-                loaded.error = (
-                    "not enabled in config (run `superforecasting-agent plugins enable {}` to activate)"
-                    .format(lookup_key)
-                )
-                self._plugins[lookup_key] = loaded
-                logger.debug(
-                    "Skipping '%s' (not in plugins.enabled)", lookup_key
-                )
-                continue
-            self._load_plugin(manifest)
 
         if manifests:
             logger.info(

@@ -3130,3 +3130,16 @@ The startup batch's full push gate remains running in the primary checkout.
 - Verification: 165 plugin/command/declaration tests passed; shared Python gates
   passed with all 51 contracts. This does not remove runtime discovery's remaining
   domain import exceptions.
+
+### Shared plugin activation policy
+
+- `application/plugins.py` owns activation decisions: explicit disable overrides,
+  bundled defaults, user/project/extension opt-in and delegated provider loading.
+  The runtime manager executes the decision and retains registration state.
+- Model-provider availability remains distinct from execution by the general
+  loader. Exclusive providers retain their separate category selection path.
+  Existing reasons, legacy bare-name matching and bundled defaults are preserved.
+- Verification: 203 focused tests passed, including disable precedence across
+  every source/kind, opt-in requirements and delegated loader behavior. Shared
+  Python quality gates passed; application directory strict checks and import
+  contracts automatically cover the new owner.
