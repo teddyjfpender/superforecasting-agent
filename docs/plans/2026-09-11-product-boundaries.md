@@ -3056,3 +3056,19 @@ cannot terminate discovery for later plugins. No plugin implementation is import
 fixtures and built-in precedence. Shared Python quality gates and all 50 import
 contracts passed. This supplies the remaining independent metadata reader needed
 for startup-loader extraction; the loader itself still uses its runtime path.
+
+
+### Startup environment loading is independent
+
+startup_environment.py now owns profile/project dotenv precedence, credential
+sanitization and credential-origin metadata. It uses the shared line parser, built-in
+catalog and platform-manifest reader without importing runtime configuration or
+executing plugins. The runtime env_loader path aliases the same module, preserving
+mutable warning/origin state and existing patch seams. The standalone forecast CLI
+uses the shared owner, removing its domain-to-runtime import exception (three remain).
+
+89 loader/credential tests passed, followed by 417 forecast CLI, metadata and startup
+owner tests (one existing skip). A fresh subprocess loads and repairs a plugin-defined
+credential while proving runtime configuration stays unimported. Shared quality
+checks and all 51 import contracts passed. The primary checkout is still running
+the prior batch's push gate; this extraction awaits integrated qualification.

@@ -377,7 +377,6 @@ source_modules = ["forecasting"]
 forbidden_modules = ["superforecasting_agent.runtime"]
 allow_indirect_imports = "true"
 ignore_imports = [
-    "forecasting.cli.core -> superforecasting_agent.runtime.env_loader",
     "forecasting.jobs.__main__ -> superforecasting_agent.runtime.plugins",
     "forecasting.market_nightly_forecaster -> superforecasting_agent.runtime.plugins",
     "forecasting.quorum.panels -> superforecasting_agent.runtime.models",
@@ -703,3 +702,9 @@ name = "platform environment metadata never loads runtime or plugin implementati
 type = "forbidden"
 source_modules = ["superforecasting_agent.storage.plugin_environment"]
 forbidden_modules = ["superforecasting_agent.runtime", "agent", "tools", "gateway", "tui_gateway", "cli"]
+
+[[tool.importlinter.contracts]]
+name = "startup environment loading never imports runtime or consumers"
+type = "forbidden"
+source_modules = ["superforecasting_agent.startup_environment"]
+forbidden_modules = ["superforecasting_agent.runtime", "agent", "tools", "forecasting", "cli", "gateway", "tui_gateway"]

@@ -44,6 +44,7 @@ STRICT_PYTHON = (
     "agent/session_lifecycle.py",
     "agent/review_lifecycle.py",
     "superforecasting_agent/installation.py",
+    "superforecasting_agent/startup_environment.py",
     "superforecasting_agent/profile_paths.py",
     "superforecasting_agent/hosting",
     "superforecasting_agent/processes.py",

@@ -2260,9 +2260,9 @@ def main(argv: list[str] | None = None, *, prog: str = CLI_SURFACE) -> None:
     # are active for subsequent invocations. Best-effort: a missing dotenv
     # dependency or unreadable file must not block the CLI.
     try:
-        from superforecasting_agent.runtime.env_loader import load_hermes_dotenv
+        from superforecasting_agent.startup_environment import load_forecast_dotenv
 
-        load_hermes_dotenv()
+        load_forecast_dotenv()
     except Exception:  # pragma: no cover — defensive
         pass
 
