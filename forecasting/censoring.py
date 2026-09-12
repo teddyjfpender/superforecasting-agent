@@ -66,8 +66,8 @@ def threshold_probability(payload, contract):
     if set(payload) <= gaussian_keys:
         if len(set(payload) & {'mean', 'expected', 'value', 'point'}) != 1 or len(set(payload) - {'mean', 'expected', 'value', 'point'}) != 1:
             raise ValidationError('Gaussian censoring requires exactly one mean and one standard deviation')
-        from forecasting.ledger.scoring import _crps_gaussian_params
-        mean, sd = _crps_gaussian_params(payload)
+        from forecasting.distribution_parameters import gaussian_parameters
+        mean, sd = gaussian_parameters(payload)
         if mean is None or sd is None or sd <= 0:
             raise ValidationError('Gaussian censoring requires finite mean and positive standard deviation')
         return .5 * math.erfc((threshold-mean)/(sd*math.sqrt(2)))

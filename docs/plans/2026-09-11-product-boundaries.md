@@ -1907,3 +1907,23 @@ validation/error parity and alias dispatch. Platform-label metadata is isolated
 in fixtures so unrelated registered plugins cannot alter expected labels. The
 new owner is covered by strict lint/format/type checks; all shared Python gates
 and 36 import contracts passed.
+
+
+### Enforce pure numerical dependencies through censoring
+
+Transitive contracts for Bayesian and Market Model computation exposed an
+indirect runtime dependency: models → censoring → ledger scoring → ledger core.
+Censoring only needed Gaussian moment extraction. That unchanged helper and its
+key lists now belong to `forecasting/distribution_parameters.py`, consumed by
+censoring and re-exported under existing private ledger names for compatibility.
+This removes ledger loading from pure censoring arithmetic without allowing
+explicit-tail declarations to fall back to Gaussian approximations.
+
+Validation: 126 scoring/censoring/numerical/import-boundary tests passed, one
+optional SciPy test skipped. The new helper is in strict quality scope, and all
+38 import contracts pass. Mutation tests prove both new transitive numerical
+contracts reject presentation dependencies through an intermediate module.
+
+The preceding integrated batch was pushed at `6100b9bce` after 30,936 Python
+tests passed and 148 skipped. This extraction and the later command/verifier
+follow-ups still require their integrated full gate.

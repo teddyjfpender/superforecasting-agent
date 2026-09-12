@@ -52,6 +52,11 @@ from collections import defaultdict
 from datetime import timedelta
 from typing import Any
 
+from forecasting.distribution_parameters import (
+    GAUSSIAN_MEAN_KEYS as _CRPS_MEAN_KEYS,
+    GAUSSIAN_SD_KEYS as _CRPS_SD_KEYS,
+    gaussian_parameters as _crps_gaussian_params,
+)
 from forecasting.ledger import core as _core
 from forecasting.models import (
     ForecastSnapshot,
@@ -1828,8 +1833,6 @@ def _normal_distribution_score(
 # 1/√π, the CRPS of a standard normal at its own mean's tail constant.
 _CRPS_INV_SQRT_PI = 1.0 / math.sqrt(math.pi)
 
-_CRPS_MEAN_KEYS = ("mean", "expected", "value", "point")
-_CRPS_SD_KEYS = ("sd", "std", "sigma", "stdev", "standard_deviation")
 
 
 def _crps_num_from_suffix(raw: Any) -> float | None:
@@ -1931,24 +1934,6 @@ def _crps_pmf_points(payload: dict[str, Any]) -> list[tuple[float, float]] | Non
         points.append((value, min(cumulative, 1.0)))
     return points
 
-
-def _crps_gaussian_params(payload: dict[str, Any]) -> tuple[float | None, float | None]:
-    """Extract (mean, sd) from the moment keys or an ``equivalent_normal_*``
-    summary — the inputs to the closed-form normal CRPS + the log score."""
-    def _first(keys: tuple[str, ...], prefix: str = "") -> float | None:
-        for key in keys:
-            value = payload.get(prefix + key)
-            if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
-                return float(value)
-        return None
-
-    mean = _first(_CRPS_MEAN_KEYS)
-    if mean is None:
-        mean = _first(("mean",), prefix="equivalent_normal_")
-    sd = _first(_CRPS_SD_KEYS)
-    if sd is None:
-        sd = _first(("sd",), prefix="equivalent_normal_")
-    return mean, sd
 
 
 def _crps_discrete(points: list[tuple[float, float]], outcome: float) -> float:

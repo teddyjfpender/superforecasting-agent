@@ -463,3 +463,8 @@ and HTTP requests. This operation does not construct an agent or classic worker.
 for CLI and native TUI. Gateway configuration owns loading and reset policy; the
 platform registry supplies labels. This report is configuration-only and never
 claims that enabled adapters are connected.
+
+`forecasting/distribution_parameters.py` owns pure Gaussian moment extraction
+shared by censoring and ledger scoring. Neither censoring arithmetic nor the
+numerical engines need ledger construction. Transitive numerical import
+contracts prohibit runtime, agent, tools and presentation dependencies.
