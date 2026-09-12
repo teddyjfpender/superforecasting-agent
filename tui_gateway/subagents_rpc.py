@@ -64,9 +64,25 @@ def register(server) -> None:
         getattr(server, kind)(name)(fn)
 
 
+def _session_owner(rid, params):
+    from tui_gateway import server
+
+    session, error = server._sess_nowait(params, rid)
+    if error:
+        return None, error
+    key = session.get("session_key")
+    if not key:
+        return None, _err(rid, 4004, "session has no delegation owner")
+    return key, None
+
+
 __all__ = ["register"]
 @rpc_validated("delegation.status")
 def _(rid, params: dict) -> dict:
+    session_key, error = _session_owner(rid, params)
+    if error:
+        return error
+
     from tools.delegate_tool import (
         is_spawn_paused,
         list_active_subagents,
@@ -80,16 +96,16 @@ def _(rid, params: dict) -> dict:
     try:
         from tools.async_delegation import list_async_delegations
 
-        async_delegations = list_async_delegations()
+        async_delegations = list_async_delegations(session_key=session_key)
     except Exception:
         async_delegations = []
 
     return _ok(
         rid,
         {
-            "active": list_active_subagents(),
+            "active": list_active_subagents(session_key=session_key),
             "async": async_delegations,
-            "paused": is_spawn_paused(),
+            "paused": is_spawn_paused(session_key=session_key),
             "max_spawn_depth": _get_max_spawn_depth(),
             "max_concurrent_children": _get_max_concurrent_children(),
             "max_async_children": _get_max_async_children(),
@@ -99,20 +115,30 @@ def _(rid, params: dict) -> dict:
 
 @rpc_validated("delegation.pause")
 def _(rid, params: dict) -> dict:
+    session_key, error = _session_owner(rid, params)
+    if error:
+        return error
+
     from tools.delegate_tool import set_spawn_paused
 
-    paused = bool(params.get("paused", True))
-    return _ok(rid, {"paused": set_spawn_paused(paused)})
+    paused = params.get("paused", True)
+    if not isinstance(paused, bool):
+        return _err(rid, 4004, "paused must be a boolean")
+    return _ok(rid, {"paused": set_spawn_paused(paused, session_key=session_key)})
 
 
 @rpc_validated("subagent.interrupt")
 def _(rid, params: dict) -> dict:
+    session_key, error = _session_owner(rid, params)
+    if error:
+        return error
+
     from tools.delegate_tool import interrupt_subagent
 
     subagent_id = str(params.get("subagent_id") or "").strip()
     if not subagent_id:
         return _err(rid, 4000, "subagent_id required")
-    ok = interrupt_subagent(subagent_id)
+    ok = interrupt_subagent(subagent_id, session_key=session_key)
     return _ok(rid, {"found": ok, "subagent_id": subagent_id})
 
 

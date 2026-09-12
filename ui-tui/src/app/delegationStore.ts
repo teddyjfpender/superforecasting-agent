@@ -2,11 +2,13 @@ import { atom } from 'nanostores'
 
 import type { DelegationStatusResponse } from '../gatewayTypes.js'
 
+import { $uiSessionId } from './uiStore.js'
+
 export interface DelegationState {
   // Last known caps from `delegation.status` RPC.  null until fetched.
   maxConcurrentChildren: null | number
   maxSpawnDepth: null | number
-  // True when spawning is globally paused (see tools/delegate_tool.py).
+  // Effective pause for the current session, including any global admin pause.
   paused: boolean
   // Monotonic clock of the last successful status fetch.
   updatedAt: null | number
@@ -27,6 +29,8 @@ export const patchDelegationState = (next: Partial<DelegationState>) =>
   $delegationState.set({ ...$delegationState.get(), ...next })
 
 export const resetDelegationState = () => $delegationState.set(buildState())
+
+$uiSessionId.listen(() => resetDelegationState())
 
 // ── Overlay accordion open-state ──────────────────────────────────────
 //

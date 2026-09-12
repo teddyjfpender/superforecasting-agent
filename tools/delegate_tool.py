@@ -149,6 +149,7 @@ _MAX_SPAWN_DEPTH_CAP = 3
 
 _spawn_pause_lock = threading.Lock()
 _spawn_paused: bool = False
+_spawn_paused_sessions: set[str] = set()
 
 _active_subagents_lock = threading.Lock()
 # subagent_id -> mutable record tracking the live child agent.  Stays only
@@ -156,21 +157,36 @@ _active_subagents_lock = threading.Lock()
 _active_subagents: Dict[str, Dict[str, Any]] = {}
 
 
-def set_spawn_paused(paused: bool) -> bool:
-    """Globally block/unblock new delegate_task spawns.
+def set_spawn_paused(paused: bool, *, session_key: str | None = None) -> bool:
+    """Block/unblock new spawns for a session, or globally when no scope is supplied.
 
     Active children keep running; only NEW calls to delegate_task fail fast
     with a "spawning paused" error until unblocked.  Returns the new state.
     """
     global _spawn_paused
     with _spawn_pause_lock:
+        if session_key is not None:
+            if paused:
+                _spawn_paused_sessions.add(session_key)
+            else:
+                _spawn_paused_sessions.discard(session_key)
+            return _spawn_paused or bool(paused)
         _spawn_paused = bool(paused)
         return _spawn_paused
 
 
-def is_spawn_paused() -> bool:
+def is_spawn_paused(*, session_key: str | None = None) -> bool:
     with _spawn_pause_lock:
-        return _spawn_paused
+        return _spawn_paused or (session_key is not None and session_key in _spawn_paused_sessions)
+
+
+def _delegation_session_key(agent) -> str:
+    """Preserve the root session owner through nested child runtimes."""
+    inherited = getattr(agent, "_delegation_owner_key", None)
+    if isinstance(inherited, str):
+        return inherited
+    session_id = getattr(agent, "session_id", None)
+    return session_id if isinstance(session_id, str) else ""
 
 
 def _register_subagent(record: Dict[str, Any]) -> None:
@@ -186,7 +202,7 @@ def _unregister_subagent(subagent_id: str) -> None:
         _active_subagents.pop(subagent_id, None)
 
 
-def interrupt_subagent(subagent_id: str) -> bool:
+def interrupt_subagent(subagent_id: str, *, session_key: str | None = None) -> bool:
     """Request that a single running subagent stop at its next iteration boundary.
 
     Does not hard-kill the worker thread (Python can't); sets the child's
@@ -196,7 +212,7 @@ def interrupt_subagent(subagent_id: str) -> bool:
     """
     with _active_subagents_lock:
         record = _active_subagents.get(subagent_id)
-    if not record:
+    if not record or (session_key is not None and record.get("session_key") != session_key):
         return False
     agent = record.get("agent")
     if agent is None:
@@ -209,7 +225,7 @@ def interrupt_subagent(subagent_id: str) -> bool:
     return True
 
 
-def list_active_subagents() -> List[Dict[str, Any]]:
+def list_active_subagents(*, session_key: str | None = None) -> List[Dict[str, Any]]:
     """Snapshot of the currently running subagent tree.
 
     Each record: {subagent_id, parent_id, depth, goal, model, started_at,
@@ -219,6 +235,7 @@ def list_active_subagents() -> List[Dict[str, Any]]:
         return [
             {k: v for k, v in r.items() if k != "agent"}
             for r in _active_subagents.values()
+            if session_key is None or r.get("session_key") == session_key
         ]
 
 
@@ -1672,6 +1689,7 @@ def _run_single_child(
     # target it by subagent_id (kill, pause, status queries).  Unregistered
     # in the finally block, even when the child raises.  Test doubles that
     # hand us a MagicMock don't carry stable ids; skip registration then.
+    child._delegation_owner_key = _delegation_session_key(parent_agent)
     _raw_sid = getattr(child, "_subagent_id", None)
     _subagent_id = _raw_sid if isinstance(_raw_sid, str) else None
     if _subagent_id:
@@ -1681,6 +1699,7 @@ def _run_single_child(
         _register_subagent(
             {
                 "subagent_id": _subagent_id,
+                "session_key": child._delegation_owner_key,
                 "parent_id": _parent_sid if isinstance(_parent_sid, str) else None,
                 "depth": _tui_depth,
                 "goal": goal,
@@ -2178,7 +2197,7 @@ def delegate_task(
     # Operator-controlled kill switch — lets the TUI freeze new fan-out
     # when a runaway tree is detected, without interrupting already-running
     # children.  Cleared via the matching `delegation.pause` RPC.
-    if is_spawn_paused():
+    if is_spawn_paused(session_key=_delegation_session_key(parent_agent)):
         return tool_error(
             "Delegation spawning is paused. Clear the pause via the TUI "
             "(`p` in /agents) or the `delegation.pause` RPC before retrying."

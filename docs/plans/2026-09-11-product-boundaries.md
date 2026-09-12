@@ -4016,3 +4016,24 @@ expectation exposed the process.stop bypass before the implementation was fixed.
 These are macOS local-provider results. Registry tests cover active work isolation;
 the rendered test covers the no-running-work path. Dashboard-wide delegation
 inspection and pause/cancel scoping still require a separate audit.
+
+
+### Delegation dashboard session ownership
+
+Delegation status, pause and single-child interruption now require an admitted
+live session and select its durable owner. Nested child registration inherits
+the root owner rather than the child's generated session ID. Pause admission
+consults that owner, while an explicit global administrator pause continues to
+block every session. Invalid boolean pause values fail before mutation. Existing
+registry callers can retain global scope by omitting the new keyword; RPC callers
+without a session now fail closed.
+
+Ink's dashboard, slash pause controls and event-driven refresh supply the current
+session ID. Old-session status/pause replies cannot overwrite the current state,
+and a session handoff resets cached pause/caps. The protocol includes the new
+request fields. All 214 Python delegation/protocol tests and 162 client tests
+passed, as did shared quality gates and the production build. The scoped design
+detector completed without reported findings. Tests cover cross-session denial,
+scoped/global pause interaction, nested pause admission, boolean validation and
+client handoff state. A rendered nested-work/reconnect exercise remains; pause is
+in-memory and interruption is cooperative, not a forced-termination guarantee.

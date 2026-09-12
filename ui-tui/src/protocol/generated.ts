@@ -314,6 +314,7 @@ export interface DelegationActiveEntry {
 
 export interface DelegationPauseRequest {
   paused: null | boolean
+  session_id?: string
 }
 
 export interface DelegationPauseResponse {
@@ -321,6 +322,7 @@ export interface DelegationPauseResponse {
 }
 
 export interface DelegationStatusRequest {
+  session_id?: string
 }
 
 export interface DelegationStatusResponse {
@@ -3150,6 +3152,7 @@ export interface SubagentEventPayload {
 }
 
 export interface SubagentInterruptRequest {
+  session_id?: string
   subagent_id: null | string
 }
 

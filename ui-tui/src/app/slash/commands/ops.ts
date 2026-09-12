@@ -299,11 +299,11 @@ export const opsCommands: SlashCommand[] = [
       if (sub === 'pause' || sub === 'resume' || sub === 'unpause') {
         const paused = sub === 'pause'
         ctx.gateway.gw
-          .request<DelegationPauseResponse>('delegation.pause', { paused })
-          .then(r => {
+          .request<DelegationPauseResponse>('delegation.pause', { paused, session_id: ctx.sid })
+          .then(ctx.guarded<DelegationPauseResponse>(r => {
             applyDelegationStatus({ paused: r?.paused })
             ctx.transcript.sys(`delegation · ${r?.paused ? 'paused' : 'resumed'}`)
-          })
+          }))
           .catch(ctx.guardedErr)
 
         return

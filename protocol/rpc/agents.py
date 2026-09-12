@@ -108,6 +108,8 @@ class AgentsActiveSummaryResponse(WireModel):
 class DelegationStatusRequest(WireModel):
     TS_NAME = "DelegationStatusRequest"
 
+    session_id: str | None = wire_optional()
+
 
 class DelegationActiveEntry(WireModel):
     TS_NAME = "DelegationActiveEntry"
@@ -134,6 +136,8 @@ class DelegationStatusResponse(WireModel):
 class DelegationPauseRequest(WireModel):
     TS_NAME = "DelegationPauseRequest"
 
+    session_id: str | None = wire_optional()
+
     paused: bool | None = None
 
 
@@ -145,6 +149,8 @@ class DelegationPauseResponse(WireModel):
 
 class SubagentInterruptRequest(WireModel):
     TS_NAME = "SubagentInterruptRequest"
+
+    session_id: str | None = wire_optional()
 
     subagent_id: str | None = None
 

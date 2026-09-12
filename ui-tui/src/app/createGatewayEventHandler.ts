@@ -187,8 +187,13 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
     }
 
     lastDelegationFetchAt = now
-    rpc<DelegationStatusResponse>('delegation.status', {})
-      .then(r => applyDelegationStatus(r))
+    const sessionId = getUiState().sid
+
+    if (!sessionId) {return}
+    rpc<DelegationStatusResponse>('delegation.status', { session_id: sessionId })
+      .then(r => {
+        if (getUiState().sid === sessionId) {applyDelegationStatus(r)}
+      })
       .catch(() => {})
   }
 

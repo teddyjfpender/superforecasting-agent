@@ -11,6 +11,7 @@ import {
 import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
 import { $spawnDiff, $spawnHistory, clearDiffPair, type SpawnSnapshot } from '../app/spawnHistoryStore.js'
 import { useTurnSelector } from '../app/turnStore.js'
+import { $uiSessionId, getUiState } from '../app/uiStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import type { DelegationPauseResponse, DelegationStatusResponse, SubagentInterruptResponse } from '../gatewayTypes.js'
 import { asRpcResult } from '../lib/rpc.js'
@@ -699,6 +700,7 @@ function DiffView({
 // ── Main overlay ─────────────────────────────────────────────────────
 
 export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: AgentsOverlayProps) {
+  const sessionId = useStore($uiSessionId)
   const liveSubagents = useTurnSelector(state => state.subagents)
   const delegation = useStore($delegationState)
   const history = useStore($spawnHistory)
@@ -787,10 +789,16 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
 
   useEffect(() => {
     // Warm caps + paused flag on open.
-    gw.request<DelegationStatusResponse>('delegation.status', {})
-      .then(r => applyDelegationStatus(asRpcResult<DelegationStatusResponse>(r)))
+    if (!sessionId) {return}
+    let cancelled = false
+    gw.request<DelegationStatusResponse>('delegation.status', { session_id: sessionId })
+      .then(r => {
+        if (!cancelled && getUiState().sid === sessionId) {applyDelegationStatus(asRpcResult<DelegationStatusResponse>(r))}
+      })
       .catch(() => {})
-  }, [gw])
+
+    return () => { cancelled = true }
+  }, [gw, sessionId])
 
   useEffect(() => {
     if (cursor >= rows.length) {
@@ -808,7 +816,7 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
     }
   }
 
-  const interrupt = (id: string) => gw.request<SubagentInterruptResponse>('subagent.interrupt', { subagent_id: id })
+  const interrupt = (id: string) => gw.request<SubagentInterruptResponse>('subagent.interrupt', { subagent_id: id, session_id: sessionId })
 
   const killOne = (id: string) =>
     guardLive(() => {
@@ -829,8 +837,9 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
 
   const togglePause = () =>
     guardLive(() => {
-      gw.request<DelegationPauseResponse>('delegation.pause', { paused: !delegation.paused })
+      gw.request<DelegationPauseResponse>('delegation.pause', { paused: !delegation.paused, session_id: sessionId })
         .then(raw => {
+          if (getUiState().sid !== sessionId) {return}
           const r = asRpcResult<DelegationPauseResponse>(raw)
           applyDelegationStatus({ paused: r?.paused })
           setFlash(r?.paused ? 'spawning paused' : 'spawning resumed')

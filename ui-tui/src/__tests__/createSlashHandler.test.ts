@@ -1621,3 +1621,11 @@ interface Ctx {
   transcript: ReturnType<typeof buildTranscript>
   voice: ReturnType<typeof buildVoice>
 }
+
+
+it('sends the current session owner with delegation pause', () => {
+  patchUiState({ sid: 'desk' })
+  const ctx = buildCtx()
+  expect(createSlashHandler(ctx)('/agents pause')).toBe(true)
+  expect(ctx.gateway.gw.request).toHaveBeenCalledWith('delegation.pause', { paused: true, session_id: 'desk' })
+})
