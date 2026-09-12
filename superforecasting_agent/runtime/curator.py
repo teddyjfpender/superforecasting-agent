@@ -670,7 +670,7 @@ def cli_main(
         return 0
     try:
         return int(fn(args, emit=emit, confirm=confirm) or 0)
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
         emit(f"curator: operation failed: {exc}")
         return 1
 

@@ -80,3 +80,36 @@ def test_notice_acknowledgement_preserves_newer_review_and_pause(tmp_path, monke
     state = curator.load_state()
     assert state['last_run_summary_shown_at'] == 'new-run'
     assert state['paused'] is True
+
+
+@pytest.mark.parametrize('contents', [b'{broken', b'[]', b'{"paused": "false"}', b'{"run_count": true}', b'{"run_count": -1}', b'\xff'])
+def test_invalid_existing_state_is_not_overwritten(tmp_path, contents):
+    path = tmp_path / '.curator_state'
+    path.write_bytes(contents)
+    with pytest.raises(ValueError):
+        curator_state.mutate_state(path, lambda state: state.update(paused=True))
+    assert path.read_bytes() == contents
+
+
+def test_review_rejects_corrupt_state_before_skill_mutations(tmp_path, monkeypatch):
+    from agent import curator
+    path = tmp_path / '.curator_state'
+    path.write_text('{broken', encoding='utf-8')
+    monkeypatch.setattr(curator, '_state_file', lambda: path)
+    def forbidden(**kwargs):
+        pytest.fail('automatic skill mutation ran before state admission')
+    monkeypatch.setattr(curator, 'apply_automatic_transitions', forbidden)
+    with pytest.raises(ValueError):
+        curator.run_curator_review(synchronous=True)
+    assert path.read_text(encoding='utf-8') == '{broken'
+
+
+def test_invalid_mutation_cannot_publish(tmp_path):
+    path = tmp_path / '.curator_state'
+    curator_state.save_state(path, {'paused': False})
+    before = path.read_bytes()
+    with pytest.raises(ValueError, match='boolean'):
+        curator_state.mutate_state(path, lambda state: state.update(paused='false'))
+    with pytest.raises(ValueError, match='integer'):
+        curator_state.save_state(path, {'run_count': True})
+    assert path.read_bytes() == before

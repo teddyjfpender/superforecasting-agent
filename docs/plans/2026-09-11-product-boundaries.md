@@ -2968,3 +2968,17 @@ failed child disposal and standalone CLI daemon ownership remain outstanding.
 
 The preceding integrated batch pushed at c5297474c with 31,257 Python tests passing
 and 148 skipped. Subsequent curator state and admission changes require a new full gate.
+
+
+### Curator state mutation rejects damaged inputs
+
+Curator state mutation now uses strict reads and validates both replacement and
+mutated state. Malformed JSON, invalid UTF-8, non-object roots, non-boolean paused
+values and invalid run counts cannot silently become default state and overwrite
+existing bytes. A review checks state before its first automatic skill mutation.
+Read-only compatibility inspection retains its existing default behavior.
+
+94 focused state/review/backup/command tests passed, including real review admission
+before skill mutation and invalid-publication preservation. Shared Python quality
+checks and all 49 import contracts passed. The previous integrated push is running;
+this increment still requires its full integrated gate.

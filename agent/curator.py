@@ -1374,6 +1374,9 @@ def run_curator_review(
     gets written and ``state.last_report_path`` still records it so users
     can read what the curator WOULD have done.
     """
+    from superforecasting_agent.storage.curator_state import load_state as read_state
+    # Refuse unreadable state before the first automatic skill mutation.
+    read_state(_state_file(), strict=True)
     start = datetime.now(timezone.utc)
     if dry_run:
         # Count candidates without mutating state.
