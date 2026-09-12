@@ -354,3 +354,27 @@ def test_settlement_ready_question_is_not_prospective_despite_future_close(trial
     assert 'resolution_already_known' in candidate['readiness_gaps']
     with pytest.raises(ValidationError, match='resolution information'):
         create_trial(ledger, assignments={q.id:'new-event'}, model='fixture', provider='fixture')
+
+
+def test_extracted_scoring_source_changes_invalidate_frozen_evaluation(trial_setup, monkeypatch):
+    """Moving a scoring helper must not make later edits invisible to provenance."""
+    from pathlib import Path
+    from forecasting import trial_contracts
+
+    ledger, questions, _, tid, now = trial_setup
+    run_trial(ledger, tid, runner=fixture_runner)
+    now[0] = '2026-10-02T00:00:00Z'
+    for question in questions:
+        ledger.resolve_question(question_id=question.id, outcome='yes')
+    assert len(trial_report(ledger, tid)['comparisons']) == 2
+    before = trial_records(ledger, tid)
+    source = Path(trial_contracts.__file__).with_name('distribution_parameters.py')
+    read_bytes = Path.read_bytes
+
+    def changed_source(path):
+        data = read_bytes(path)
+        return data + b'\n# unreviewed scoring implementation\n' if path == source else data
+
+    monkeypatch.setattr(Path, 'read_bytes', changed_source)
+    assert trial_report(ledger, tid)['exclusions'] == {'scoring_version_changed': 2}
+    assert trial_records(ledger, tid) == before

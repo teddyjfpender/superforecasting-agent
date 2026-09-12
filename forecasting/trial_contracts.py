@@ -9,7 +9,8 @@ from forecasting.json_validation import strict_json_loads
 
 # These modules own score computation, payload validation and frozen adjustments.
 EVALUATION_PATHS = ('ledger/scoring.py', 'ledger/core.py', 'models.py', 'learning.py',
-                    'censoring.py', 'json_validation.py', 'trial_evaluation.py', 'trial_contracts.py')
+                    'censoring.py', 'distribution_parameters.py', 'json_validation.py',
+                    'trial_evaluation.py', 'trial_contracts.py')
 
 
 def evaluation_identity():

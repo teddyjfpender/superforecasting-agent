@@ -1976,3 +1976,24 @@ loader at its actual owner rather than an imported presentation alias.
 Validation: 234 shared startup/CLI/gateway tests passed. The new module is in
 strict lint/format/type scope and all shared Python quality checks passed.
 Foreground provider/configuration option assembly remains in the TUI adapter.
+
+### Gaussian extraction and frozen trial compatibility
+
+The integrated full-suite gate rejected the numerical extraction: 30,945 tests
+passed, but reviewed legacy trial evaluation failed because the scoring source
+identity changed. This was a deterministic provenance mismatch, not an attributed
+runtime failure. The pre-extraction evaluation identity was
+`59b0b3e52d4ca62085d295d06bfe089f22e7270b429d875e6116be09fd1b2403`.
+
+Reviewed extraction `027b706b7`: the old and new Gaussian helper ASTs match after
+symbol renaming, and the ordered parameter-key constants match. The censoring
+change only redirects that helper import; explicit tail precedence is unchanged.
+The compatibility registry now records the reviewed transition, including packets
+created between extraction and this repair. No frozen trial data is rewritten.
+The extracted helper is included in evaluation source hashing, so subsequent
+unreviewed changes cannot silently reuse historical evaluation approval.
+
+Validation: 73 learning-trial, censoring and CRPS tests passed, including a source
+mutation regression that excludes frozen pairs without altering their records.
+The shared quality workflow passed. This focused evidence does not replace the
+required integrated full-suite push gate.
