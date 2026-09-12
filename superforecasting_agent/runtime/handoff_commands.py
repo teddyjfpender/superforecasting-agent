@@ -116,9 +116,9 @@ def _handle_handoff_command(self, cmd_original: str) -> bool:
 
     # Poll-block on terminal state. Tick every 0.5s; bail at ~60s.
     import time as _time
-    deadline = _time.time() + 60.0
+    deadline = _time.monotonic() + 60.0
     last_state = "pending"
-    while _time.time() < deadline:
+    while _time.monotonic() < deadline:
         try:
             state_row = self._session_db.get_handoff_state(self.session_id)
         except Exception:
@@ -143,11 +143,26 @@ def _handle_handoff_command(self, cmd_original: str) -> bool:
             return True
         _time.sleep(0.5)
 
-    # Timed out. Clear the pending flag so the user can retry.
+    # A local waiting deadline cannot revoke a transfer already owned by the gateway.
     try:
-        self._session_db.fail_handoff(self.session_id, "timed out waiting for gateway")
-    except Exception:
-        pass
-    _cprint("  Timed out waiting for the gateway. Is `superforecasting-agent gateway` running?")
-    _cprint("  Your CLI session is intact.")
+        cancelled = self._session_db.cancel_pending_handoff(
+            self.session_id, "timed out waiting for gateway"
+        )
+        state_row = self._session_db.get_handoff_state(self.session_id)
+    except Exception as exc:
+        _cprint(f"  Could not verify handoff state: {exc}. Check the gateway before retrying.")
+        return True
+    current = (state_row or {}).get("state")
+    if current == "completed":
+        _cprint(f"  Handoff complete. The session is now active on {platform_name}.")
+        self._should_exit = True
+        return False
+    if cancelled:
+        _cprint("  Timed out before gateway pickup; the pending handoff was cancelled.")
+    elif current == "running":
+        _cprint("  Gateway transfer is still running. The handoff remains owned by the gateway; do not retry yet.")
+    elif current == "failed":
+        _cprint(f"  Handoff failed: {(state_row or {}).get('error') or 'unknown error'}")
+    else:
+        _cprint("  Handoff state is unavailable. Check the gateway before retrying.")
     return True

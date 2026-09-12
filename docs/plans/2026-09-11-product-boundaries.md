@@ -4169,3 +4169,21 @@ concurrent toggles, malformed boolean configuration, read-only status, CLI/nativ
 TUI parity without worker construction, and gateway toggles with a platform
 override and deliberately stale reader snapshot. This configures the existing
 runtime metadata footer; it does not change Ink's distinct local status bar.
+
+
+### Preserve gateway ownership at handoff deadlines
+
+The handoff audit found that the CLI timeout unconditionally failed the session
+row, including running or completed transfers. That could enable a retry while
+the gateway still performed the original transfer. Storage now exposes atomic
+pending-only cancellation. Worker completion/failure require running state and
+cannot overwrite terminal results. The CLI uses a monotonic wait deadline and
+reports the durable result after its cancellation attempt; completion exits,
+running remains owned by the gateway, and only unclaimed work is cancelled.
+
+25 handoff/branch tests and shared quality gates passed. Tests cover competing
+claim/cancel operations, terminal preservation, rejected retries during running
+state, and CLI deadline messages without wall-clock sleeps. Existing handoff
+test fixtures now close their database handles. This is a prerequisite fix;
+native handoff command migration, attempt identity and recovery of a gateway that
+dies after claiming a handoff remain open.

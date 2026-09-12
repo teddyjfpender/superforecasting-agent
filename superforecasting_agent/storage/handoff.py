@@ -79,27 +79,45 @@ def claim_handoff(self, session_id: str) -> bool:
     return self._execute_write(_do)
 
 
-def complete_handoff(self, session_id: str) -> None:
-    """Mark a handoff as completed."""
+def complete_handoff(self, session_id: str) -> bool:
+    """Complete only a running handoff; preserve terminal results."""
 
     def _do(conn):
-        conn.execute(
+        cur = conn.execute(
             "UPDATE sessions SET handoff_state = 'completed', "
-            "handoff_error = NULL WHERE id = ?",
+            "handoff_error = NULL WHERE id = ? AND handoff_state = 'running'",
             (session_id,),
         )
 
-    self._execute_write(_do)
+        return cur.rowcount > 0
+
+    return self._execute_write(_do)
 
 
-def fail_handoff(self, session_id: str, error: str) -> None:
-    """Mark a handoff as failed and record the reason."""
+def fail_handoff(self, session_id: str, error: str) -> bool:
+    """Fail only a running handoff and preserve terminal results."""
 
     def _do(conn):
-        conn.execute(
+        cur = conn.execute(
             "UPDATE sessions SET handoff_state = 'failed', "
-            "handoff_error = ? WHERE id = ?",
+            "handoff_error = ? WHERE id = ? AND handoff_state = 'running'",
             (error[:500], session_id),
         )
 
-    self._execute_write(_do)
+        return cur.rowcount > 0
+
+    return self._execute_write(_do)
+
+
+def cancel_pending_handoff(self, session_id: str, error: str) -> bool:
+    """Cancel only unclaimed work; never revoke a gateway's running transfer."""
+
+    def _do(conn):
+        cur = conn.execute(
+            "UPDATE sessions SET handoff_state = 'failed', handoff_error = ? "
+            "WHERE id = ? AND handoff_state = 'pending'",
+            (error[:500], session_id),
+        )
+        return cur.rowcount > 0
+
+    return self._execute_write(_do)

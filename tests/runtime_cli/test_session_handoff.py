@@ -27,7 +27,11 @@ class TestHandoffStateDB:
         home = tmp_path / ".hermes"
         home.mkdir()
         monkeypatch.setenv("HERMES_HOME", str(home))
-        return SessionDB(db_path=home / "state.db")
+        db = SessionDB(db_path=home / "state.db")
+        try:
+            yield db
+        finally:
+            db.close()
 
     def _make_session(self, db, session_id, source="cli", title=None):
         """Insert a session row directly for testing."""
@@ -183,6 +187,53 @@ class TestHandoffStateDB:
         assert db.list_pending_handoffs() == []
 
 
+    def test_timeout_cannot_cancel_claimed_or_completed_transfer(self, db):
+        sid = 'timeout-race'
+        self._make_session(db, sid)
+        assert db.request_handoff(sid, 'telegram')
+        assert db.claim_handoff(sid)
+        assert not db.cancel_pending_handoff(sid, 'local deadline')
+        assert db.get_handoff_state(sid)['state'] == 'running'
+        assert not db.request_handoff(sid, 'discord')
+        assert db.complete_handoff(sid)
+        assert not db.cancel_pending_handoff(sid, 'late deadline')
+        assert not db.fail_handoff(sid, 'late worker failure')
+        assert db.get_handoff_state(sid)['state'] == 'completed'
+
+    def test_unclaimed_timeout_prevents_late_claim(self, db):
+        sid = 'unclaimed-timeout'
+        self._make_session(db, sid)
+        assert db.request_handoff(sid, 'telegram')
+        assert not db.complete_handoff(sid)
+        assert not db.fail_handoff(sid, 'not owned by worker')
+        assert db.cancel_pending_handoff(sid, 'local deadline')
+        assert not db.claim_handoff(sid)
+        assert db.get_handoff_state(sid)['error'] == 'local deadline'
+        assert db.request_handoff(sid, 'discord')
+
+    def test_claim_and_timeout_have_one_winner(self, db):
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Barrier
+
+        sid = 'claim-timeout-race'
+        self._make_session(db, sid)
+        assert db.request_handoff(sid, 'telegram')
+        barrier = Barrier(2)
+
+        def claim():
+            barrier.wait(timeout=5)
+            return db.claim_handoff(sid)
+
+        def cancel():
+            barrier.wait(timeout=5)
+            return db.cancel_pending_handoff(sid, 'deadline')
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            claimed, cancelled = pool.submit(claim), pool.submit(cancel)
+            assert claimed.result() != cancelled.result()
+        assert db.get_handoff_state(sid)['state'] in {'running', 'failed'}
+
+
 class TestHandoffCommandRegistration:
     """Slash-command surface checks."""
 
@@ -202,3 +253,37 @@ class TestHandoffCommandRegistration:
         assert cmd is not None
         assert cmd.cli_only is True
         assert "handoff" not in GATEWAY_KNOWN_COMMANDS
+
+
+@pytest.mark.parametrize('state,exit_expected,visible', [
+    ('running', False, 'still running'),
+    ('completed', True, 'Handoff complete'),
+    ('failed', False, 'pending handoff was cancelled'),
+])
+def test_cli_timeout_reports_durable_state(monkeypatch, capsys, state, exit_expected, visible):
+    import sys
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    import gateway.config as gateway_config
+    from superforecasting_agent.runtime import handoff_commands
+
+    config = SimpleNamespace(
+        platforms={gateway_config.Platform.TELEGRAM: SimpleNamespace(enabled=True)},
+        get_home_channel=lambda platform: SimpleNamespace(chat_id='fixture', name='home'),
+    )
+    monkeypatch.setattr(gateway_config, 'load_gateway_config', lambda: config)
+    monkeypatch.setattr(handoff_commands, '_cprint', print)
+    db = Mock()
+    db.get_session.return_value = {'title': 'fixture'}
+    db.request_handoff.return_value = True
+    db.cancel_pending_handoff.return_value = state == 'failed'
+    db.get_handoff_state.return_value = {'state': state}
+    shell = SimpleNamespace(session_id='fixture-session', _session_db=db, _agent_running=False, _should_exit=False)
+    ticks = iter([0.0, 61.0])
+    with monkeypatch.context() as patch_time:
+        patch_time.setitem(sys.modules, 'time', SimpleNamespace(monotonic=lambda: next(ticks)))
+        keep_running = handoff_commands._handle_handoff_command(shell, '/handoff telegram')
+    assert keep_running is not exit_expected
+    assert shell._should_exit is exit_expected
+    assert visible in capsys.readouterr().out
+    db.fail_handoff.assert_not_called()

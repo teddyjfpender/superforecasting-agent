@@ -409,3 +409,4 @@ class SessionDB:
     claim_handoff = _handoff.claim_handoff
     complete_handoff = _handoff.complete_handoff
     fail_handoff = _handoff.fail_handoff
+    cancel_pending_handoff = _handoff.cancel_pending_handoff
