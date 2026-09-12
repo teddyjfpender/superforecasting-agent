@@ -241,6 +241,10 @@ def _get_platform_tools(
 
     platform_toolsets = config.get("platform_toolsets") or {}
     toolset_names = platform_toolsets.get(platform)
+    if toolset_names == []:
+        # A saved empty selection is authoritative, including for newly
+        # discovered plugins, credential-based opt-ins and default MCP servers.
+        return set()
 
     if toolset_names is None or not isinstance(toolset_names, list):
         plat_info = PLATFORMS.get(platform)

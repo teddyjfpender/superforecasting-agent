@@ -1574,7 +1574,9 @@ def _load_enabled_toolsets() -> list[str] | None:
         )
         if fallback_notice is not None:
             print(fallback_notice, file=sys.stderr, flush=True)
-        return enabled or None
+        # An empty resolved selection means no tools; None means all tools.
+        # Do not widen an explicit empty platform selection at startup.
+        return enabled
     except Exception:
         if fallback_notice is not None:
             print(

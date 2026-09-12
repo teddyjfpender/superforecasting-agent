@@ -541,3 +541,8 @@ falls back to standalone database creation. CLI goal-manager reuse checks both
 session and database identity; rebinding closes only the old manager, not its
 borrowed connection. Gateway command lookup, queued-continuation checks and
 post-turn judging all use the same host store.
+
+Tool selection distinguishes absent configuration from a saved empty list.
+`tooling/selection.py` owns this policy: saved `[]` enables no tools, including
+implicit plugin/MCP/credential additions. TUI startup forwards the resolved list
+unchanged; it must not translate `[]` into the agent's `None` (all-tools) sentinel.

@@ -6273,3 +6273,30 @@ def test_on_tool_complete_ships_cumulative_usage_climbing_across_a_two_call_turn
     # Monotonic climb — the whole point: the liveness counter grows mid-turn.
     assert work_2 > work_1
     assert usage_2["calls"] == 2
+
+
+def test_empty_configured_toolsets_are_not_widened_to_all(monkeypatch):
+    monkeypatch.delenv('SUPERFORECASTING_AGENT_TUI_TOOLSETS', raising=False)
+    monkeypatch.delenv('HERMES_TUI_TOOLSETS', raising=False)
+    monkeypatch.setattr('superforecasting_agent.runtime.config.load_config',
+                        lambda: {'platform_toolsets': {'cli': []}, 'mcp_servers': {}})
+    assert server._load_enabled_toolsets() == []
+
+
+def test_make_agent_preserves_empty_configured_toolsets(monkeypatch):
+    loader = server._load_enabled_toolsets
+    _setup_make_agent_mocks(monkeypatch, {})
+    monkeypatch.setattr(server, '_load_enabled_toolsets', loader)
+    monkeypatch.delenv('SUPERFORECASTING_AGENT_TUI_TOOLSETS', raising=False)
+    monkeypatch.delenv('HERMES_TUI_TOOLSETS', raising=False)
+    monkeypatch.setattr('superforecasting_agent.runtime.config.load_config',
+                        lambda: {'platform_toolsets': {'cli': []}, 'mcp_servers': {}})
+    captured = {}
+
+    class Agent:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr('agent.agent_factory._aiagent_cls', lambda: Agent)
+    server._make_agent('runtime', 'durable')
+    assert captured['enabled_toolsets'] == []

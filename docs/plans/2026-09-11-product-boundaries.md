@@ -2158,3 +2158,19 @@ CLI session/database rebinding, preserve borrowed stores, and verify gateway
 command, queued-continuation and post-turn paths with unavailable host storage.
 Test runners now supply owned fixture databases rather than relying on the old
 global-cache behavior.
+
+### Preserve explicitly empty tool selections at startup
+
+Tracing TUI construction exposed two expansions of an explicitly empty selection.
+The shared resolver treated a saved empty platform list as an unconfigured platform,
+allowing new plugins/credential-based defaults to appear. The TUI then converted
+an empty resolved list to `None`, which means all tools to agent construction.
+The resolver now treats saved `[]` as authoritative (including implicit MCP/plugin
+additions), and the TUI forwards an empty resolved list unchanged. An absent setting
+still uses defaults; explicit `all` still retains its existing meaning.
+
+466 TUI/configuration/plugin/CLI tests passed after both fixes; shared quality
+checks passed. Construction regression coverage asserts `enabled_toolsets=[]`
+reaches the shared agent factory. Additional shared-resolver coverage supplies a
+new plugin, enabled MCP server and available xAI credentials and requires that
+an explicitly empty selection remain empty.

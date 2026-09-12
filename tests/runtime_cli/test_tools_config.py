@@ -1147,3 +1147,15 @@ def test_tools_command_guidance_is_fork_native(monkeypatch, capsys, tmp_path):
     assert "next 'superforecasting-agent' or gateway restart" in out
     assert "Hermes Tool Configuration" not in out
     assert "hermes-agent.nousresearch.com/docs/user-guide/features/tools" not in out
+
+
+def test_saved_empty_selection_disables_implicit_plugins_mcp_and_credentials(monkeypatch):
+    from superforecasting_agent.tooling import selection
+
+    monkeypatch.setattr(selection, '_get_plugin_toolset_keys', lambda: {'new-plugin'})
+    monkeypatch.setattr(selection, '_xai_credentials_present', lambda: True)
+    config = {
+        'platform_toolsets': {'cli': []},
+        'mcp_servers': {'new-mcp': {'command': 'fixture', 'enabled': True}},
+    }
+    assert selection._get_platform_tools(config, 'cli') == set()
