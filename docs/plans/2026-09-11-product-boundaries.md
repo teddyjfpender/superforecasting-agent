@@ -1565,3 +1565,19 @@ ownership follow-up.
 The integrated command/notification batch `cfcbbe136` passed 30,848 Python tests,
 148 skipped, 58 warnings in 590.25 seconds and pushed successfully
 (`/tmp/forecast-command-host-push.log`). Later goal changes require their own gate.
+
+### Stable tool inventory transport names and selection semantics
+
+Restored the public `toolsets.list` RPC, which had accidentally been renamed to
+`superforecasting_agent.tooling.toolsets.list` during module renaming. The latter
+remains an alias for clients that used it. Tool listing, summary listing and
+schema inspection now share session selection: deferred agents use configured
+toolsets, while an explicitly empty live selection remains empty rather than
+being displayed as all-enabled. None retains the existing unrestricted meaning.
+Inspection starts no model agent.
+
+Validation: 78 inventory/protocol tests passed
+(`/tmp/forecast-toolset-inventory-tests.log`), covering both transport names,
+pre-build configuration, empty selections, live selections and schema-resolution
+arguments. Python quality and all 32 import contracts passed
+(`/tmp/forecast-toolset-inventory-quality.log`).

@@ -44,17 +44,24 @@ def register(server) -> None:
 
 
 __all__ = ["register"]
+
+
+def _session_toolsets(params: dict):
+    """Use a live agent's selection, or configured selection before its build."""
+    session = _core._host.sessions.get(params.get("session_id", ""))
+    agent = session.get("agent") if session else None
+    if agent is not None:
+        return getattr(agent, "enabled_toolsets", None)
+    return _core._load_enabled_toolsets()
+
+
 @method("tools.list")
 def _(rid, params: dict) -> dict:
     try:
         from superforecasting_agent.tooling.toolsets import get_all_toolsets, get_toolset_info
 
-        session = _core._host.sessions.get(params.get("session_id", ""))
-        enabled = (
-            set(getattr(session["agent"], "enabled_toolsets", []) or [])
-            if session
-            else set(_core._load_enabled_toolsets() or [])
-        )
+        selection = _session_toolsets(params)
+        enabled = set(selection) if selection is not None else None
 
         items = []
         for name in sorted(get_all_toolsets().keys()):
@@ -66,7 +73,7 @@ def _(rid, params: dict) -> dict:
                     "name": name,
                     "description": info["description"],
                     "tool_count": info["tool_count"],
-                    "enabled": name in enabled if enabled else True,
+                    "enabled": enabled is None or name in enabled,
                     "tools": info["resolved_tools"],
                 }
             )
@@ -80,12 +87,7 @@ def _(rid, params: dict) -> dict:
     try:
         from superforecasting_agent.tooling.runtime import get_toolset_for_tool, get_tool_definitions
 
-        session = _core._host.sessions.get(params.get("session_id", ""))
-        enabled = (
-            getattr(session["agent"], "enabled_toolsets", None)
-            if session
-            else _core._load_enabled_toolsets()
-        )
+        enabled = _session_toolsets(params)
         tools = get_tool_definitions(enabled_toolsets=enabled, quiet_mode=True)
         sections = {}
 
@@ -179,17 +181,14 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5035, str(e))
 
 
+@method("toolsets.list")
 @method("superforecasting_agent.tooling.toolsets.list")
 def _(rid, params: dict) -> dict:
     try:
         from superforecasting_agent.tooling.toolsets import get_all_toolsets, get_toolset_info
 
-        session = _core._host.sessions.get(params.get("session_id", ""))
-        enabled = (
-            set(getattr(session["agent"], "enabled_toolsets", []) or [])
-            if session
-            else set(_core._load_enabled_toolsets() or [])
-        )
+        selection = _session_toolsets(params)
+        enabled = set(selection) if selection is not None else None
 
         items = []
         for name in sorted(get_all_toolsets().keys()):
@@ -201,7 +200,7 @@ def _(rid, params: dict) -> dict:
                     "name": name,
                     "description": info["description"],
                     "tool_count": info["tool_count"],
-                    "enabled": name in enabled if enabled else True,
+                    "enabled": enabled is None or name in enabled,
                 }
             )
         return _ok(rid, {"toolsets": items})
