@@ -45,6 +45,12 @@ def method(name: str):
 
 def register(server) -> None:
     """(Re-)register every carved command/cli.exec handler into ``server._methods``."""
+    global _core, _ok, _err, _TUI_EXTRA, _TUI_HIDDEN
+    _core = server
+    _ok = server._ok
+    _err = server._err
+    _TUI_EXTRA = server._TUI_EXTRA
+    _TUI_HIDDEN = server._TUI_HIDDEN
     for kind, name, fn in _REGISTRARS:
         getattr(server, kind)(name)(fn)
 

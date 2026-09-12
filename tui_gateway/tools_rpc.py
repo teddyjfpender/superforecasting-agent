@@ -39,6 +39,11 @@ def method(name: str):
 
 def register(server) -> None:
     """(Re-)register every carved tools/toolsets handler into ``server._methods``."""
+    global _core, _ok, _err, _reset_session_agent
+    _core = server
+    _ok = server._ok
+    _err = server._err
+    _reset_session_agent = server._reset_session_agent
     for kind, name, fn in _REGISTRARS:
         getattr(server, kind)(name)(fn)
 

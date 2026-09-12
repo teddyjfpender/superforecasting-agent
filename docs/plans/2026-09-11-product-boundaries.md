@@ -2190,3 +2190,23 @@ reports 41 kept import contracts and no broken contracts. The extraction require
 explicit optional-validator typing and narrowing MCP config before iteration.
 Foreground startup configuration assembly still has other adapter-owned pieces;
 this extraction does not mark that broader item complete.
+
+### Integrated gate repairs: live environment fixtures and RPC ownership
+
+The sandbox/goals push gate stopped with 3 failures, 30,996 passes and 148 skips.
+Two working-directory fixtures populated file adapters without registering a live
+environment, which the new ownership checks deliberately reject. Their fixtures
+now register the exact active environment and retain the original relative-path
+and stale-file warning assertions; cache and environment state restore on exit.
+
+The recurring empty-toolset display failure was specifically in TUI output. The
+tools RPC family retained its import-time server reference when registering into
+a different server module; its helper could therefore read another host/config.
+Command and tools registration now rebind their receiving server and imported
+callbacks/constants. A deterministic replacement-server regression fails on the
+old implementations (2 failing assertions) and passes after the fix. This proves
+the stale-registration mechanism; other RPC families still warrant the same audit.
+
+118 targeted registration, command, inventory, live-path and file-staleness tests
+passed. The shared quality workflow passed for the code changes. This is focused
+evidence; the repaired integrated batch still requires the full-suite push gate.
