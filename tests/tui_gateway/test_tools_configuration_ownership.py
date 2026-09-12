@@ -118,3 +118,55 @@ def test_failed_combined_tool_edit_preserves_callers_snapshot():
     with pytest.raises((AttributeError, TypeError)):
         change_tools(config, 'cli', ['memory', 'broken:read'], 'disable')
     assert config == before
+
+
+@pytest.mark.parametrize('names', [None, [], 'web', 42, {'web': True}, [42], [None],
+                                  [''], ['  '], ['web', False], ['fixture:'], [':read'],
+                                  ['fixture:  ']])
+def test_malformed_tool_names_fail_before_configuration_access(monkeypatch, names):
+    from unittest.mock import Mock
+    from superforecasting_agent.runtime import config
+    from superforecasting_agent.tooling.selection import change_tools
+    from tui_gateway import server, tools_rpc
+
+    snapshot = {'platform_toolsets': {'cli': ['web']}}
+    before = deepcopy(snapshot)
+    with pytest.raises(ValueError):
+        change_tools(snapshot, 'cli', names, 'disable')
+    assert snapshot == before
+    load, save, reset = Mock(), Mock(), Mock()
+    monkeypatch.setattr(config, 'load_config', load)
+    monkeypatch.setattr(config, 'save_config', save)
+    monkeypatch.setattr(tools_rpc, '_reset_session_agent', reset)
+    response = server.handle_request({'id': 1, 'method': 'tools.configure',
+                                     'params': {'action': 'disable', 'names': names}})
+    assert response['error']['code'] == 4018
+    load.assert_not_called()
+    save.assert_not_called()
+    reset.assert_not_called()
+
+
+@pytest.mark.parametrize('action', [None, [], {}, 42, True, 'typo'])
+def test_malformed_tool_action_is_a_validation_error(monkeypatch, action):
+    from unittest.mock import Mock
+    from superforecasting_agent.runtime import config
+    from superforecasting_agent.tooling.selection import change_tools
+    from tui_gateway import server
+
+    snapshot = {'platform_toolsets': {'cli': ['web']}}
+    before = deepcopy(snapshot)
+    with pytest.raises(ValueError, match='Unknown tools action'):
+        change_tools(snapshot, 'cli', ['web'], action)
+    assert snapshot == before
+    load = Mock()
+    monkeypatch.setattr(config, 'load_config', load)
+    response = server.handle_request({'id': 1, 'method': 'tools.configure',
+                                     'params': {'action': action, 'names': ['web']}})
+    assert response['error']['code'] == 4017
+    load.assert_not_called()
+
+
+def test_tool_names_normalize_without_coercion():
+    from superforecasting_agent.tooling.selection import normalize_tool_names
+
+    assert normalize_tool_names([' web ', 'web', 'fixture:read']) == ['web', 'fixture:read']

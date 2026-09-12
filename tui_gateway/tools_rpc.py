@@ -110,14 +110,17 @@ def _(rid, params: dict) -> dict:
 
 @rpc_validated("tools.configure")
 def _(rid, params: dict) -> dict:
-    action = str(params.get("action", "") or "").strip().lower()
-    targets = [
-        str(name).strip() for name in params.get("names", []) or [] if str(name).strip()
-    ]
-    if action not in {"disable", "enable"}:
+    from superforecasting_agent.tooling.selection import normalize_tool_names
+
+    action = params.get("action")
+    if isinstance(action, str):
+        action = action.strip().lower()
+    if not isinstance(action, str) or action not in {"disable", "enable"}:
         return _err(rid, 4017, f"unknown tools action: {action}")
-    if not targets:
-        return _err(rid, 4018, "names required")
+    try:
+        targets = normalize_tool_names(params.get("names"))
+    except ValueError as exc:
+        return _err(rid, 4018, str(exc))
 
     session = _core._host.sessions.get(params.get("session_id", ""))
     if params.get("session_id") and session is None:

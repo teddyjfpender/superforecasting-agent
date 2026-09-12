@@ -589,19 +589,31 @@ def apply_mcp_change(config: dict, targets: List[str], action: str) -> Set[str]:
     return failed_servers
 
 
+def normalize_tool_names(targets: object) -> list[str]:
+    """Validate raw command names before configuration access or mutation."""
+    if not isinstance(targets, list) or not targets:
+        raise ValueError("Tool names must be a nonempty list of nonempty strings")
+    names: list[str] = []
+    for name in targets:
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("Tool names must be a nonempty list of nonempty strings")
+        names.append(name.strip())
+    names = list(dict.fromkeys(names))
+    if any(
+        ":" in name and not all(part.strip() for part in name.split(":", 1))
+        for name in names
+    ):
+        raise ValueError("MCP targets must have server:tool form")
+    return names
+
+
 def change_tools(config: dict, platform: str, targets: List[str], action: str) -> dict:
     """Validate and apply one tool selection edit without persistence or reset."""
     from copy import deepcopy
 
-    if action not in {"enable", "disable"}:
+    if not isinstance(action, str) or action not in {"enable", "disable"}:
         raise ValueError(f"Unknown tools action: {action}")
-    if not targets or any(
-        not isinstance(name, str) or not name.strip() for name in targets
-    ):
-        raise ValueError("Tool names must be nonempty strings")
-    targets = list(dict.fromkeys(name.strip() for name in targets))
-    if any(":" in name and not all(name.split(":", 1)) for name in targets):
-        raise ValueError("MCP targets must have server:tool form")
+    targets = normalize_tool_names(targets)
     valid = {key for key, _, _ in CONFIGURABLE_TOOLSETS} | _get_plugin_toolset_keys()
     unknown = [name for name in targets if ":" not in name and name not in valid]
     restricted = [

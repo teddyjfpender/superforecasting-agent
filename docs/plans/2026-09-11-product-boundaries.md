@@ -3940,3 +3940,20 @@ scoped design detector reported no findings. An initial test-observer rows/colum
 mistake was corrected, and wrapped error text is compared as normalized whitespace.
 These are local-provider macOS PTY results, not Windows/Termux or real-provider
 qualification; the dashboard transport is exercised through FastAPI TestClient.
+
+
+### Strict tool-change input boundary
+
+The tools.configure RPC previously stringified each name, while change_tools
+accepted a bare string as an iterable. Both now use one name validator in the
+tooling owner. It requires a nonempty list of nonempty strings, strips and
+deduplicates valid names, and rejects incomplete MCP server:tool targets. The
+RPC validates before configuration access or reset admission; non-string actions
+produce a validation error rather than an unhashable-type failure. Existing
+RPC action/name error codes are retained.
+
+All 129 focused CLI, MCP configuration, gateway configuration and reset ownership
+tests passed. Shared lint, format, type, import, protocol and TUI quality gates
+passed. Regressions assert malformed inputs do not load or save configuration or
+reset a session, and direct shared-operation calls preserve the input snapshot.
+This closes input coercion; it does not remove remaining classic worker commands.
