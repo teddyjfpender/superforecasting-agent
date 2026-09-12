@@ -15,6 +15,8 @@ registry are reached via the ``_core.`` call-time hop. ``_reset_session_agent``
 """
 from __future__ import annotations
 
+from superforecasting_agent.hosting.sessions import SessionBusy
+
 import tui_gateway.server as _core
 from tui_gateway.server import _err, _ok, _reset_session_agent
 
@@ -117,6 +119,10 @@ def _(rid, params: dict) -> dict:
     if not targets:
         return _err(rid, 4018, "names required")
 
+    session = _core._host.sessions.get(params.get("session_id", ""))
+    if params.get("session_id") and session is None:
+        return _err(rid, 4001, "session not found")
+
     try:
         from superforecasting_agent.runtime.config import load_config, save_config
         from superforecasting_agent.tooling.selection import change_tools, _get_platform_tools
@@ -126,13 +132,19 @@ def _(rid, params: dict) -> dict:
         changed = result["changed"]
         unknown = result["unknown"] + result["restricted"]
         missing_servers = result["missing_servers"]
-        session = _core._host.sessions.get(params.get("session_id", ""))
         info = None
         if changed:
-            from contextlib import nullcontext
+            from contextlib import ExitStack
             from superforecasting_agent.hosting.sessions import replacement
 
-            with replacement(session) if session is not None else nullcontext():
+            with ExitStack() as reservation:
+                # Own admission rather than the dispatcher's ordinary use lease:
+                # that lease would make this request reject its own replacement.
+                with _core._host.sessions.lock:
+                    if _core._host.sessions.get(params.get("session_id", "")) is not session:
+                        raise SessionBusy("session changed before tool configuration could be applied")
+                    if session is not None:
+                        reservation.enter_context(replacement(session))
                 save_config(cfg)
                 if session is not None:
                     try:
@@ -157,6 +169,8 @@ def _(rid, params: dict) -> dict:
                 "unknown": unknown,
             },
         )
+    except SessionBusy:
+        raise
     except Exception as e:
         return _err(rid, 5035, str(e))
 

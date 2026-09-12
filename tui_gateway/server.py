@@ -1025,7 +1025,7 @@ def handle_request(req: dict) -> dict | None:
         return _err(rid, -32601, f"unknown method: {method}")
     session = _host.sessions.get(params.get("session_id")) if isinstance(params.get("session_id"), str) else None
     try:
-        if session is not None and method not in {"session.close", "session.resume", "session.branch_replace"}:
+        if session is not None and method not in {"session.close", "session.resume", "session.branch_replace", "tools.configure"}:
             with use_session(session):
                 return fn(rid, params)
         return fn(rid, params)

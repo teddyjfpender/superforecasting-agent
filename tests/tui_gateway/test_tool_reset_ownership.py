@@ -76,6 +76,92 @@ def test_busy_tool_change_never_saves_configuration(monkeypatch):
     monkeypatch.setattr(config, 'save_config', save)
     response = server.handle_request({'id': 1, 'method': 'tools.configure',
                                      'params': {'action': 'disable', 'names': ['web'], 'session_id': 'runtime'}})
-    assert 'error' in response
+    assert response['error']['code'] == 4009
     assert 'busy' in response['error']['message']
+    save.assert_not_called()
+
+
+@pytest.mark.parametrize('failure', ['save', 'construct', None])
+def test_rpc_distinguishes_saved_configuration_from_activation_failure(reset_case, monkeypatch, failure):
+    from copy import deepcopy
+    from superforecasting_agent.hosting.runtime import RuntimeHost
+    from superforecasting_agent.runtime import config
+
+    session, old, _, _, build = reset_case
+    host = RuntimeHost()
+    monkeypatch.setattr(server, '_host', host)
+    host.sessions.register('runtime', session)
+    durable = {'platform_toolsets': {'cli': ['web']}}
+    writes = []
+    monkeypatch.setattr(config, 'load_config', lambda: deepcopy(durable))
+
+    def save(value):
+        assert session['_replacing'] and session['running']
+        if failure == 'save':
+            raise OSError('disk unavailable')
+        durable.clear()
+        durable.update(deepcopy(value))
+        writes.append(deepcopy(value))
+
+    monkeypatch.setattr(config, 'save_config', save)
+    if failure == 'construct':
+        build.side_effect = RuntimeError('provider unavailable')
+    response = server.handle_request({'id': 1, 'method': 'tools.configure',
+                                     'params': {'action': 'disable', 'names': ['web'], 'session_id': 'runtime'}})
+    assert not session.get('running') and not session.get('_replacing'), response
+    if failure == 'save':
+        assert 'disk unavailable' in response['error']['message']
+        assert 'configuration saved' not in response['error']['message']
+        assert writes == []
+        old.close.assert_not_called()
+        build.assert_not_called()
+        assert durable['platform_toolsets']['cli'] == ['web']
+    elif failure == 'construct':
+        assert 'configuration saved, but session reset failed' in response['error']['message']
+        assert 'history preserved' in response['error']['message']
+        assert len(writes) == 1
+        assert 'web' not in durable['platform_toolsets']['cli']
+        old.close.assert_called_once()
+        assert session['agent_ready'].is_set()
+    else:
+        assert response['result']['reset'] is True
+        assert response['result']['changed'] == ['web']
+        assert len(writes) == 1
+        assert session['history'] == []
+    if failure:
+        assert session['history'] == [{'role': 'user', 'content': 'preserve'}]
+        assert session['history_version'] == 7
+
+
+def test_expired_session_tool_request_never_saves(monkeypatch):
+    from superforecasting_agent.hosting.runtime import RuntimeHost
+    from superforecasting_agent.runtime import config
+
+    monkeypatch.setattr(server, '_host', RuntimeHost())
+    save = Mock()
+    monkeypatch.setattr(config, 'save_config', save)
+    response = server.handle_request({'id': 1, 'method': 'tools.configure',
+                                     'params': {'action': 'disable', 'names': ['web'], 'session_id': 'gone'}})
+    assert response['error']['code'] == 4001
+    save.assert_not_called()
+
+
+def test_session_retirement_during_configuration_read_prevents_save(monkeypatch):
+    from superforecasting_agent.hosting.runtime import RuntimeHost
+    from superforecasting_agent.runtime import config
+
+    host = RuntimeHost()
+    monkeypatch.setattr(server, '_host', host)
+    host.sessions.register('runtime', {'history_lock': threading.Lock()})
+
+    def load():
+        host.sessions.retire('runtime', lambda session: None)
+        return {'platform_toolsets': {'cli': ['web']}}
+
+    monkeypatch.setattr(config, 'load_config', load)
+    save = Mock()
+    monkeypatch.setattr(config, 'save_config', save)
+    response = server.handle_request({'id': 1, 'method': 'tools.configure',
+                                     'params': {'action': 'disable', 'names': ['web'], 'session_id': 'runtime'}})
+    assert 'session changed' in response['error']['message']
     save.assert_not_called()

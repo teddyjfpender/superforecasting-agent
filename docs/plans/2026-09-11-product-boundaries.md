@@ -3901,3 +3901,19 @@ ownership and failed construction preserving history/error/readiness. Shared
 quality gates passed. The error distinguishes saved configuration from a failed
 active-session reset and directs close/recreate recovery. The save and reset are
 not one durable transaction; a rendered terminal recovery exercise remains needed.
+
+
+### Reset admission through the actual RPC dispatcher
+
+RPC-level success/failure tests caught the ordinary dispatcher use lease counting
+the reset request itself as active work. tools.configure now owns its replacement
+reservation, verifying session identity under the registry lock before saving.
+An expired session request cannot modify profile configuration. Busy admission
+retains the standard 4009 error; saved configuration followed by failed activation
+reports the partial outcome explicitly. Save failure leaves the old agent untouched.
+
+The expanded 261-test gateway/ownership run passed, followed by all nine reset
+RPC tests after preserving the busy error code. Shared quality checks passed.
+Tests reproduce retirement during configuration read, successful reset and save/
+construction failures through handle_request; they still do not substitute for
+rendered terminal recovery qualification.
