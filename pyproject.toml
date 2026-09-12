@@ -648,3 +648,9 @@ name = "market numerical domain never imports runtime or presentation"
 type = "forbidden"
 source_modules = ["forecasting.market_compute"]
 forbidden_modules = ["tools", "agent", "gateway", "tui_gateway", "cli", "superforecasting_agent.runtime"]
+
+[[tool.importlinter.contracts]]
+name = "background agent policy never imports runtime or presentation"
+type = "forbidden"
+source_modules = ["agent.background_options"]
+forbidden_modules = ["agent.runtime", "agent.agent_factory", "tools", "gateway", "tui_gateway", "cli", "superforecasting_agent.runtime"]

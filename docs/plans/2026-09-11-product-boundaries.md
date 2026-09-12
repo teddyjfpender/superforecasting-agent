@@ -1944,3 +1944,21 @@ This qualifies a fresh checkout on the current macOS host with prerequisite
 Python, uv and npm available; it does not prove bootstrap on untested platforms.
 The active TODO is reconciled with completed notification ownership and native
 inspection work; remaining construction and legacy-dispatch work stays open.
+
+
+### Shared background-agent inheritance and construction
+
+`agent/background_options.py` now owns background-agent option inheritance.
+The TUI supplies host defaults and storage; explicit empty toolsets and reasoning
+settings no longer fall back to configured defaults. Mutable tool selection,
+reasoning, provider lists and nested request overrides are copied so background
+work cannot mutate parent settings. Host database identity remains borrowed.
+Background construction now uses `agent.agent_factory.build_agent` with the
+parent's already-resolved settings, avoiding a second provider/account resolution.
+Unused eager runtime imports were removed from foreground construction.
+
+Validation: 229 background/gateway tests and 27 import-boundary tests passed.
+The inheritance owner is in strict quality scope, and a transitive contract keeps
+it independent of construction, runtime, transport and tool implementations. All
+39 import contracts and shared Python quality checks passed. Foreground startup
+configuration/prompt assembly still needs further ownership separation.

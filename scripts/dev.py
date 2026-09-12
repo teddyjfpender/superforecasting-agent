@@ -32,6 +32,7 @@ STRICT_PYTHON = (
     "forecasting/hooks/store.py",
     "superforecasting_agent/runtime/quick_commands.py",
     "agent/forecast_stage.py",
+    "agent/background_options.py",
     "agent/openai_clients.py",
     "agent/session_lifecycle.py",
     "superforecasting_agent/profile_paths.py",

@@ -2493,41 +2493,17 @@ def _parse_tui_skills_env() -> list[str]:
 
 
 def _background_agent_kwargs(agent, task_id: str) -> dict:
-    cfg = _load_cfg()
+    from agent.background_options import background_agent_options
 
-    return {
-        "base_url": getattr(agent, "base_url", None) or None,
-        "api_key": getattr(agent, "api_key", None) or None,
-        "provider": getattr(agent, "provider", None) or None,
-        "api_mode": getattr(agent, "api_mode", None) or None,
-        "acp_command": getattr(agent, "acp_command", None) or None,
-        "acp_args": getattr(agent, "acp_args", None) or None,
-        "model": getattr(agent, "model", None) or _resolve_model(),
-        "max_iterations": _cfg_max_turns(cfg, 25),
-        "enabled_toolsets": getattr(agent, "enabled_toolsets", None)
-        or _load_enabled_toolsets(),
-        "quiet_mode": True,
-        "verbose_logging": False,
-        "ephemeral_system_prompt": getattr(agent, "ephemeral_system_prompt", None)
-        or None,
-        "providers_allowed": getattr(agent, "providers_allowed", None),
-        "providers_ignored": getattr(agent, "providers_ignored", None),
-        "providers_order": getattr(agent, "providers_order", None),
-        "provider_sort": getattr(agent, "provider_sort", None),
-        "provider_require_parameters": getattr(
-            agent, "provider_require_parameters", False
-        ),
-        "provider_data_collection": getattr(agent, "provider_data_collection", None),
-        "openrouter_min_coding_score": getattr(agent, "openrouter_min_coding_score", None),
-        "session_id": task_id,
-        "reasoning_config": getattr(agent, "reasoning_config", None)
-        or _load_reasoning_config(),
-        "service_tier": getattr(agent, "service_tier", None) or _load_service_tier(),
-        "request_overrides": dict(getattr(agent, "request_overrides", {}) or {}),
+    return background_agent_options(agent, task_id, {
+        "model": _resolve_model(),
+        "max_iterations": _cfg_max_turns(_load_cfg(), 25),
+        "enabled_toolsets": _load_enabled_toolsets(),
+        "reasoning_config": _load_reasoning_config(),
+        "service_tier": _load_service_tier(),
         "platform": "tui",
         "session_db": _get_db(),
-        "fallback_model": getattr(agent, "_fallback_model", None),
-    }
+    })
 
 
 def _reset_session_agent(sid: str, session: dict) -> dict:
@@ -2604,8 +2580,6 @@ def _session_runtime(sid: str) -> dict:
 
 
 def _make_agent(sid: str, key: str, session_id: str | None = None):
-    from agent.runtime import AIAgent
-    from superforecasting_agent.runtime.runtime_provider import resolve_runtime_provider
 
     cfg = _load_cfg()
     agent_cfg = cfg.get("agent") or {}
@@ -4298,10 +4272,12 @@ def _(rid, params: dict) -> dict:
         session_tokens = _set_session_context(task_id)
         background_agent = None
         try:
-            from agent.runtime import AIAgent
+            from agent.agent_factory import build_agent
 
-            background_agent = AIAgent(
-                **_background_agent_kwargs(session["agent"], task_id)
+            # The parent already supplies resolved provider settings. Do not
+            # resolve a different account while constructing its background work.
+            background_agent = build_agent(
+                runtime={}, **_background_agent_kwargs(session["agent"], task_id)
             )
             with session["history_lock"]:
                 session.setdefault("_background_agents", {})[task_id] = background_agent

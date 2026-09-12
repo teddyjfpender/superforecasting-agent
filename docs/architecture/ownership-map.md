@@ -468,3 +468,11 @@ claims that enabled adapters are connected.
 shared by censoring and ledger scoring. Neither censoring arithmetic nor the
 numerical engines need ledger construction. Transitive numerical import
 contracts prohibit runtime, agent, tools and presentation dependencies.
+
+
+### Background agent inheritance
+
+`agent/background_options.py` owns inheritance from a parent agent plus explicit
+host defaults. Empty selections are meaningful; mutable configuration is copied.
+Adapters supply session identity/storage and defaults. `agent.agent_factory` owns
+construction using the inherited resolved runtime, without resolving a new account.
