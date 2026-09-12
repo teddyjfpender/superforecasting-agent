@@ -5703,7 +5703,29 @@ def _(rid, params: dict) -> dict:
     if definition is not None:
         _cmd_base = definition.name
 
-    if _cmd_base == "tools" and not _cmd_arg.strip():
+    tool_action = None
+    if _cmd_base == "tools":
+        import shlex
+
+        try:
+            tool_arguments = shlex.split(_cmd_arg)
+        except ValueError:
+            tool_arguments = _cmd_arg.split()
+        tool_action = tool_arguments[0] if tool_arguments else ""
+
+    if tool_action == "list":
+        from superforecasting_agent.application.tools import describe_tool_configuration
+        from superforecasting_agent.tooling.selection import _get_platform_tools
+
+        try:
+            config = _load_cfg()
+            enabled = _get_platform_tools(config, "cli", include_default_mcp_servers=False)
+            output = describe_tool_configuration(enabled, config.get("mcp_servers") or {}, platform="cli")
+            return _ok(rid, {"output": output})
+        except ValueError as exc:
+            return _err(rid, 4004, str(exc))
+
+    if tool_action is not None and tool_action not in {"list", "enable", "disable"}:
         from superforecasting_agent.application.tools import describe_tools
         from superforecasting_agent.tooling.inventory import session_toolset_selection
         from superforecasting_agent.tooling.runtime import get_tool_definitions, get_toolset_for_tool

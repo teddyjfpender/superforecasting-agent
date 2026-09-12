@@ -37,7 +37,7 @@ branching, native command handoffs before model initialization, shared goal-comm
 across configuration normalization, classic CLI, TUI and gateway environment bridges, shared configuration inspection
 (including live session settings and credential-safe reporting), shared toolset/insights/
 quota/platform inspection, curator operations and runtime selection, and lazy legacy worker admission.
-The bare /tools inventory now uses a shared formatter without building an agent or classic worker. /tools list and the legacy dispatcher still remain.
+Tool inventory and /tools list now use shared views without building an agent or classic worker. The legacy dispatcher remains for other commands.
 
 ## 2. Finish resource ownership and recovery
 

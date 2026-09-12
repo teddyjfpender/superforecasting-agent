@@ -3853,3 +3853,17 @@ All 125 focused command/view tests passed, including forbidden worker/model buil
 selection preservation, tool grouping/order and description truncation. Shared
 quality checks passed with 55 contracts. No terminal rendering or live provider
 availability claim is made by these mocked inventory tests.
+
+
+### Native saved tool-configuration listing
+
+The TUI now serves /tools list directly from saved profile configuration. CLI and
+TUI use a shared view of built-in/plugin toolsets and MCP filters. Disabled MCP
+servers no longer report all tools enabled, and simultaneous include/exclude
+filters are both shown. Invalid filter shapes produce a specific validation error.
+Argument selection preserves the classic CLI's quoted subcommand and trailing
+argument behavior; read-only tool-display fallbacks no longer need its worker.
+
+All 147 focused application, RPC and CLI tool-configuration tests passed, along
+with shared quality gates. This lists saved configuration, not verified live MCP
+connectivity. Tool mutation and other legacy command paths remain separate work.

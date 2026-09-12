@@ -1172,3 +1172,15 @@ def test_tools_view_uses_live_selection_without_classic_worker(configure, monkey
     definitions.assert_called_once_with(enabled_toolsets=[], quiet_mode=True)
     server._start_agent_build.assert_not_called()
     server._SlashWorker.assert_not_called()
+
+
+@pytest.mark.parametrize("command", ["tools list", "tools 'list'", "tools list ignored"] )
+def test_tools_list_reads_saved_configuration_without_build(configure, monkeypatch, command):
+    monkeypatch.setattr(server, '_load_cfg', lambda: {
+        'platform_toolsets': {'cli': []}, 'mcp_servers': {'disabled-source': {'enabled': False}},
+    })
+    result = slash(command)['result']['output']
+    assert 'Built-in toolsets (cli):' in result
+    assert 'disabled-source  disabled' in result
+    server._start_agent_build.assert_not_called()
+    server._SlashWorker.assert_not_called()
