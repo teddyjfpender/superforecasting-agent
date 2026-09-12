@@ -821,3 +821,67 @@ def test_snapshot_restore_admission_and_storage_failure_never_fall_through(confi
     create.assert_called_once()
     server._SlashWorker.assert_not_called()
     server._start_agent_build.assert_not_called()
+
+
+def test_native_kanban_uses_shared_operation_without_classic_worker(configure, monkeypatch, tmp_path):
+    from superforecasting_agent.runtime import kanban_db
+
+    configure({})
+    monkeypatch.setattr(kanban_db, "kanban_home", lambda: tmp_path)
+    result = slash('/kanban create "native task"')
+    assert "Created" in result["result"]["output"]
+    with kanban_db.connection() as db:
+        assert [task.title for task in kanban_db.list_tasks(db)] == ["native task"]
+    assert not server._host.sessions["runtime"].get("_command_stops")
+    server._SlashWorker.assert_not_called()
+    server._start_agent_build.assert_not_called()
+
+
+def test_async_native_watch_accepts_session_interrupt_and_preserves_transport(configure, monkeypatch, tmp_path):
+    import queue
+    import threading
+    from types import SimpleNamespace
+    from superforecasting_agent.runtime import kanban, kanban_db
+
+    configure({})
+    monkeypatch.setattr(kanban_db, "kanban_home", lambda: tmp_path)
+    started = threading.Event()
+    watch = kanban._cmd_watch
+    def watching(args):
+        started.set()
+        return watch(args)
+    monkeypatch.setattr(kanban, "_cmd_watch", watching)
+    responses = queue.Queue()
+    transport = SimpleNamespace(write=lambda value: responses.put(value) or True)
+    try:
+        assert server.dispatch({"id": 20, "method": "slash.exec", "params": {
+            "command": "kanban watch --interval 3600", "session_id": "runtime",
+        }}, transport) is None
+        assert started.wait(3)
+        response = server.dispatch({"id": 21, "method": "session.interrupt", "params": {
+            "session_id": "runtime",
+        }}, transport)
+        assert response["result"]["status"] == "cancelling"
+        finished = responses.get(timeout=3)
+        assert finished["id"] == 20
+        assert "stopped" in finished["result"]["output"]
+        assert not server._host.sessions["runtime"].get("_command_stops")
+    finally:
+        server._host.interrupt_commands(server._host.sessions["runtime"])
+        server._host.workers.stop()
+        assert server._host.workers.drain(3)
+    server._SlashWorker.assert_not_called()
+    server._start_agent_build.assert_not_called()
+
+
+def test_native_command_rejects_stopping_host_without_work(configure, monkeypatch):
+    from superforecasting_agent.runtime import kanban
+
+    configure({})
+    operation = Mock(side_effect=AssertionError("stopping host executed command"))
+    monkeypatch.setattr(kanban, "run_slash", operation)
+    server._host.workers.stop()
+    response = slash("kanban list")
+    assert response["error"] == {"code": 5030, "message": "runtime host is stopping"}
+    operation.assert_not_called()
+    assert server._host.workers.drain(0)

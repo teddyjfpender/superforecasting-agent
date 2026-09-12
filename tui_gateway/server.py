@@ -1033,6 +1033,8 @@ def handle_request(req: dict) -> dict | None:
         return fn(rid, params)
     except SessionBusy as exc:
         return _err(rid, 4009, str(exc))
+    except HostStopping:
+        return _err(rid, 5030, "runtime host is stopping")
 
 
 def dispatch(req: dict, transport: Optional[Transport] = None) -> dict | None:
@@ -3381,6 +3383,7 @@ def _(rid, params: dict) -> dict:
     if err:
         return err
     session["cancel_requested"] = True
+    commands_pending = _host.interrupt_commands(session)
     if session.get("turn_id"):
         from tui_gateway import turn_journal
         turn_journal.transition(_get_db(), session["turn_id"], "cancelling")
@@ -3397,7 +3400,7 @@ def _(rid, params: dict) -> dict:
         resolve_gateway_approval(session["session_key"], "deny", resolve_all=True)
     except Exception:
         pass
-    return _ok(rid, {"status": "cancelling" if session.get("running") else "interrupted"})
+    return _ok(rid, {"status": "cancelling" if session.get("running") or commands_pending else "interrupted"})
 
 
 # ── Delegation: subagent tree observability + controls ───────────────
@@ -5780,6 +5783,17 @@ def _(rid, params: dict) -> dict:
     definition = resolve_command(_cmd_base)
     if definition is not None:
         _cmd_base = definition.name
+
+    if _cmd_base == "kanban":
+        from superforecasting_agent.runtime.kanban import run_slash
+
+        try:
+            with _host.command(session) as stop:
+                return _ok(rid, {"output": run_slash(_cmd_arg, stop_event=stop)})
+        except ValueError as exc:
+            return _err(rid, 4004, str(exc))
+        except OSError as exc:
+            return _err(rid, 5017, str(exc))
 
     if _cmd_base in {"plugins", "toolsets", "profile", "bundles", "insights", "codex-runtime", "gquota", "platforms", "cron", "curator"}:
         return _command_handoff(rid, "native command: use command.dispatch")

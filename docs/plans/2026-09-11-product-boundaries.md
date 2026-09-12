@@ -2544,3 +2544,28 @@ exceptions. Strict formatting/types remain scoped to extracted owners. All 46
 import contracts pass. Native host registration, UI cancellation and streaming
 remain the next integration work; cooperative loop support alone does not prove
 the complete TUI interaction.
+
+
+### Native commands retain host and session ownership
+
+RuntimeHost.command admits work and reserves a registered session, retaining its
+exact stop event until the operation exits. Foreign sessions are rejected. Session
+interrupt sets only that session's command events; shutdown closes admission,
+cancels commands and drains them before session/database disposal. A post-register
+stop check closes the admission-versus-shutdown cancellation gap. Finishing one
+command cannot remove a newer command's event. Host-stopping errors share the same
+RPC code/message whether detected by outer dispatch or nested command admission.
+
+Kanban now uses the already-asynchronous slash.exec transport and shared run_slash
+operation, bypassing the classic CLI worker and model initialization. The real
+watch loop accepts an inline session.interrupt while its original response remains
+bound to the original transport. Session interruption reports cancelling until
+that command has released its ownership.
+
+686 gateway tests passed; the final admission/host-owner run passed 115 tests.
+Coverage includes durable native task creation, one-hour watch interruption,
+shutdown retaining resources until command exit, separate sessions, replacement
+handles, foreign sessions and shutdown during admission. Full UI streaming and
+visible cancellation remain unverified; this is backend integration evidence.
+The preceding command-context batch pushed after 31,100 tests passed with 148
+skips and 58 warnings.

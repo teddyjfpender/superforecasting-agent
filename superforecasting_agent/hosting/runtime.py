@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import logging
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from typing import Any
 
 from superforecasting_agent.hosting.configuration import ProfileConfiguration
 from superforecasting_agent.hosting.device_auth import DeviceSignIn
 from superforecasting_agent.hosting.registry import SessionRegistry
+from superforecasting_agent.hosting.sessions import use_session
 from superforecasting_agent.hosting.storage import SessionStore
 from superforecasting_agent.hosting.workers import RuntimeWorkers
 
@@ -32,6 +34,36 @@ class RuntimeHost:
         self.store = SessionStore()
         self.configuration = ProfileConfiguration()
         self.sign_in = DeviceSignIn()
+
+    @contextmanager
+    def command(self, session: dict[str, Any]) -> Iterator[threading.Event]:
+        """Retain command/session resources until cooperative work has finished."""
+        with self.workers.operation(), use_session(session):
+            if not any(current is session for current in self.sessions.values()):
+                raise ValueError("command session does not belong to this runtime host")
+            stop = threading.Event()
+            lock = session.setdefault("history_lock", threading.Lock())
+            with lock:
+                stops = session.setdefault("_command_stops", set())
+                stops.add(stop)
+            try:
+                # Shutdown may have passed its cancellation sweep just before
+                # registration. Closing admission must still cancel this call.
+                if self.workers.stopping:
+                    stop.set()
+                yield stop
+            finally:
+                with lock:
+                    stops.discard(stop)
+                    if not stops and session.get("_command_stops") is stops:
+                        session.pop("_command_stops", None)
+
+    def interrupt_commands(self, session: dict[str, Any]) -> int:
+        with session.setdefault("history_lock", threading.Lock()):
+            stops = tuple(session.get("_command_stops", ()))
+            for stop in stops:
+                stop.set()
+            return len(stops)
 
     def start(self, *, reset_services: Callable[[], None]) -> None:
         with self._lock:
@@ -73,6 +105,7 @@ class RuntimeHost:
                 logger.exception("failed to stop runtime services")
             for sid, session in self.sessions.items():
                 session["cancel_requested"] = True
+                self.interrupt_commands(session)
                 stop = session.get("_notif_stop")
                 if stop is not None:
                     stop.set()

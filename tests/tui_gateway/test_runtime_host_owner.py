@@ -85,3 +85,78 @@ def test_failed_restart_does_not_reopen_admission():
     assert host.workers is not old_workers
     assert not host.workers.stopping
     assert host.shutdown(0, **operations)
+
+
+def test_shutdown_retains_command_resources_until_operation_exits():
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    host = RuntimeHost()
+    session = {"session_key": "durable"}
+    host.sessions.register("runtime", session)
+    entered, release = threading.Event(), threading.Event()
+    stops = []
+    def command():
+        with host.command(session) as stop:
+            stops.append(stop)
+            entered.set()
+            assert release.wait(3)
+    operations = callbacks(host)
+    retire = operations["close_session"]
+    operations["close_session"] = Mock(side_effect=retire)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(command)
+        try:
+            assert entered.wait(3)
+            assert not host.shutdown(0, **operations)
+            assert stops[0].is_set()
+            assert session["_active_calls"] == 1
+            operations["close_session"].assert_not_called()
+        finally:
+            release.set()
+        future.result(timeout=3)
+    assert "_command_stops" not in session
+    assert host.shutdown(0, **operations)
+
+
+def test_command_cancellation_is_session_scoped_and_keeps_replacements():
+    host = RuntimeHost()
+    first, second = {}, {}
+    host.sessions.register("first", first)
+    host.sessions.register("second", second)
+    old = host.command(first)
+    old_stop = old.__enter__()
+    try:
+        with host.command(first) as newer, host.command(second) as unrelated:
+            old.__exit__(None, None, None)
+            assert host.interrupt_commands(first) == 1
+            assert newer.is_set()
+            assert not old_stop.is_set()
+            assert not unrelated.is_set()
+    finally:
+        old.__exit__(None, None, None)
+    assert not first.get("_command_stops")
+    assert not second.get("_command_stops")
+
+
+def test_shutdown_during_command_admission_cannot_miss_cancellation(monkeypatch):
+    host = RuntimeHost()
+    session = {}
+    host.sessions.register("runtime", session)
+    admit = host.workers._admit
+    def stop_after_admission():
+        admit()
+        host.workers.stop()
+    monkeypatch.setattr(host.workers, "_admit", stop_after_admission)
+    with host.command(session) as stop:
+        assert stop.is_set()
+    assert host.workers.drain(0)
+
+
+def test_commands_reject_foreign_session_ownership():
+    host = RuntimeHost()
+    with pytest.raises(ValueError, match="does not belong"):
+        with host.command({}):
+            pytest.fail("foreign session was admitted")
+    host.workers.stop()
+    assert host.workers.drain(0)

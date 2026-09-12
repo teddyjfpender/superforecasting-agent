@@ -13,7 +13,9 @@ changes, tests and their limits. The previous checklist is preserved in the
   The TUI must not need a second classic CLI runtime to execute business behavior.
   Preserve aliases, validation, error semantics and state ownership. Snapshot
   listing, creation and pruning now share application/storage owners;
-  host-coordinated live restoration remains to be implemented.
+  host-coordinated live restoration remains to be implemented. Kanban now runs
+  natively with host/session cancellation; long-command streaming and visible TUI
+  cancellation still need end-to-end interaction coverage.
 - [ ] Finish separating agent construction from RPC orchestration. Deferred-build
   admission/retry and notification polling/admission now belong to the host;
   protocol event delivery remains an adapter responsibility.
