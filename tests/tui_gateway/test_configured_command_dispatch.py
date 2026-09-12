@@ -1033,7 +1033,7 @@ def test_background_curator_remains_owned_until_review_finishes(configure, monke
     closed = []
     def close_session(sid, session, db):
         closed.append(sid)
-        host.sessions.pop(sid)
+        host.sessions.retire(sid, lambda _: None, drained=True)
     shutdown_args = dict(stop_services=lambda: None, release_prompts=lambda *args: None,
                          interrupt_delegations=lambda: None, close_session=close_session)
     try:

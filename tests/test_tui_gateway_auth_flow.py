@@ -17,6 +17,9 @@ from superforecasting_agent.runtime.codex_device_flow import DeviceCodeGrant
 from tui_gateway import server
 
 
+from tests.runtime_session_cleanup import retire_test_session
+
+
 def _start(params=None):
     return server.handle_request(
         {"id": "1", "method": "auth.start", "params": params or {}}
@@ -169,7 +172,7 @@ def test_auth_success_refreshes_live_agent_credentials(monkeypatch):
         assert switched["new_provider"] == "openai-codex"
         assert server._host.sessions["sid_auth"]["agent"]._credential_pool is fresh_pool
     finally:
-        server._host.sessions.pop("sid_auth", None)
+        retire_test_session(server, "sid_auth")
 
 
 def test_auth_success_retries_agent_build_that_failed_before_sign_in(monkeypatch):
@@ -202,7 +205,7 @@ def test_auth_success_retries_agent_build_that_failed_before_sign_in(monkeypatch
         assert session["agent_build_started"] is False
         assert started == {"sid": "sid_failed_auth", "session": session}
     finally:
-        server._host.sessions.pop("sid_failed_auth", None)
+        retire_test_session(server, "sid_failed_auth")
 
 
 def test_auth_poll_reports_terminal_status_once(monkeypatch):

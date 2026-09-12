@@ -3638,3 +3638,24 @@ Four new regressions failed before the fix. All 81 registry/build/branch/protoco
 tests passed afterward. This closes replacement admission, not raw mapping removal:
 inherited fixtures still use pop/clear and need migration before those bypasses
 can be removed from the owner API.
+
+
+### Explicit registry retirement and fixture ownership
+
+SessionRegistry now implements Mapping with collision-safe assignment, rather than
+MutableMapping. Generic pop/clear/popitem/update and direct deletion cannot detach
+an owned session. Production consumers already use register/retire. Inherited test
+cleanup now stops notification polling, observes worker quiescence and invokes
+shared resource disposal through retirement. Fixtures no longer rely on unowned
+mapping removal. Tests that patched mapping entries now register their test owner.
+
+The broader run exposed a provider fixture patching a stale parent-package module
+attribute rather than the module used by the factory's direct import. A deterministic
+regression reproduced the missed patch; the fixture now targets import_module's
+identity. The origin of the stale parent attribute remains unattributed.
+
+All 749 gateway, registry, worker, build, auth, lazy-session and session-toggle tests
+passed. Shared Python quality gates passed with 53 contracts. The preceding snapshot
+push failed one development-hook test (31,488 passed): an unexpected untracked file
+masked its intended second-ref rejection. That test's 11-test module passed in
+isolation; the historical file identity was not available from the retained output.

@@ -92,3 +92,14 @@ def test_mapping_assignment_cannot_orphan_an_inflight_build():
     replacement = {'session_key': 'replacement'}
     registry['runtime'] = replacement
     assert registry['runtime'] is replacement
+
+
+def test_registry_exposes_no_unfinalized_mapping_removal():
+    registry = SessionRegistry()
+    original = {'session_key': 'one'}
+    registry.register('runtime', original)
+    for method in ('pop', 'popitem', 'clear', 'update'):
+        assert not hasattr(registry, method)
+    with pytest.raises((TypeError, AttributeError)):
+        del registry['runtime']
+    assert registry['runtime'] is original

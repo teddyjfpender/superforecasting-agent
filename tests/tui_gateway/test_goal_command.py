@@ -18,6 +18,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
+from tests.runtime_session_cleanup import retire_test_sessions
+
+
 @pytest.fixture()
 def hermes_home(tmp_path, monkeypatch):
     home = tmp_path / ".hermes"
@@ -39,7 +42,7 @@ def server(hermes_home):
     ):
         mod = importlib.import_module("tui_gateway.server")
         yield mod
-        mod._host.sessions.clear()
+        retire_test_sessions(mod)
         mod._pending.clear()
         mod._answers.clear()
         mod._methods.clear()

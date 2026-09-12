@@ -21,6 +21,9 @@ _KEYS = [
 ]
 
 
+from tests.runtime_session_cleanup import retire_test_session
+
+
 @pytest.fixture(autouse=True)
 def _clean(monkeypatch):
     saved = {k: os.environ.get(k) for k in _KEYS}
@@ -91,7 +94,7 @@ def test_voice_session_key_resolves_from_params_then_event_sid():
         assert srv._voice_session_key({"session_id": "sidA"}) == "keyA"
         assert srv._voice_session_key({}) is None  # no session_id, no active voice sid
     finally:
-        srv._host.sessions.pop("sidA", None)
+        retire_test_session(srv, "sidA")
 
 
 def test_two_sessions_each_keep_their_own_voice_state():

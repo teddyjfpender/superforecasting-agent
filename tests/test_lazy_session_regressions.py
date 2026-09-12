@@ -21,6 +21,9 @@ import pytest
 # Helpers
 # ===========================================================================
 
+from tests.runtime_session_cleanup import retire_test_session
+
+
 def _make_session_db(tmp_path):
     """Create a real SessionDB for integration-style tests."""
     from superforecasting_agent.storage.session import SessionDB
@@ -286,7 +289,7 @@ class TestSyncSessionKeyAfterAutoCompress:
                 "session_key must be updated to match agent.session_id after compression"
             )
         finally:
-            server._host.sessions.pop("test-sid", None)
+            retire_test_session(server, "test-sid")
 
 
 # ===========================================================================
@@ -349,7 +352,7 @@ class TestPendingTitleValueError:
                 "so auto-title can take over"
             )
         finally:
-            server._host.sessions.pop("sid", None)
+            retire_test_session(server, "sid")
 
     def test_other_exception_keeps_pending_title_for_retry(self, monkeypatch):
         """Non-ValueError exceptions should keep pending_title for retry."""
@@ -403,7 +406,7 @@ class TestPendingTitleValueError:
                 "for retry on next turn"
             )
         finally:
-            server._host.sessions.pop("sid", None)
+            retire_test_session(server, "sid")
 
 
 # ===========================================================================

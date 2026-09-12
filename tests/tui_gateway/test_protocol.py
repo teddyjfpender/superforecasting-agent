@@ -14,6 +14,9 @@ import pytest
 _original_stdout = sys.stdout
 
 
+from tests.runtime_session_cleanup import retire_test_sessions
+
+
 @pytest.fixture(autouse=True)
 def _restore_stdout():
     yield
@@ -32,7 +35,7 @@ def server():
         mod = importlib.import_module("tui_gateway.server")
         yield mod
         assert mod.shutdown_runtime(5), "protocol test left runtime workers active"
-        mod._host.sessions.clear()
+        retire_test_sessions(mod)
         mod._pending.clear()
         mod._answers.clear()
         mod._methods.clear()
@@ -314,7 +317,7 @@ def test_session_resume_returns_hydrated_messages(server, monkeypatch):
 
     monkeypatch.setattr(server, "_get_db", lambda: _DB())
     monkeypatch.setattr(server, "_make_agent", lambda sid, key, session_id=None: object())
-    monkeypatch.setattr(server, "_init_session", lambda sid, key, agent, history, cols=80, pending_handoff=False: server._host.sessions.update({sid: {"session_key": key, "history_lock": threading.Lock(), "running": pending_handoff, "_replacing": pending_handoff}}))
+    monkeypatch.setattr(server, "_init_session", lambda sid, key, agent, history, cols=80, pending_handoff=False: server._host.sessions.register(sid, {"session_key": key, "history_lock": threading.Lock(), "running": pending_handoff, "_replacing": pending_handoff}))
     monkeypatch.setattr(server, "_session_info", lambda _agent: {"model": "test/model"})
 
     resp = server.handle_request(

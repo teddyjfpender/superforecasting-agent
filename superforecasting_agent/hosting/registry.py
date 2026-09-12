@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import threading
-from collections.abc import Callable, ItemsView, Iterator, MutableMapping, ValuesView
+from collections.abc import Callable, ItemsView, Iterator, Mapping, ValuesView
 from typing import Any
 
 from superforecasting_agent.hosting.sessions import SessionBusy, reserve_close
 
 
-class SessionRegistry(MutableMapping[str, dict[str, Any]]):
+class SessionRegistry(Mapping[str, dict[str, Any]]):
     """Own live runtime membership; each session retains its own history lock.
 
     Enumeration snapshots membership so concurrent creation/retirement cannot
@@ -31,10 +31,6 @@ class SessionRegistry(MutableMapping[str, dict[str, Any]]):
             if previous is not None and previous is not value:
                 raise SessionBusy("runtime session identifier is already registered")
             self._entries[key] = value
-
-    def __delitem__(self, key: str) -> None:
-        with self.lock:
-            del self._entries[key]
 
     def __iter__(self) -> Iterator[str]:
         with self.lock:

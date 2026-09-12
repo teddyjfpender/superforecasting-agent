@@ -38,6 +38,9 @@ PROJECT_ROOT = Path(__file__).parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from tests.runtime_session_cleanup import retire_test_sessions
+
+
 def _install_third_party_warning_filters() -> None:
     """Suppress known third-party import deprecations in warning audits."""
 
@@ -694,7 +697,7 @@ def _reset_module_state():
     # from one test module into another on the same worker.
     try:
         from tui_gateway import server as _tui_server
-        _tui_server._host.sessions.clear()
+        retire_test_sessions(_tui_server)
         _tui_server._pending.clear()
         _tui_server._answers.clear()
     except Exception:
