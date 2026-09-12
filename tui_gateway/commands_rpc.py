@@ -348,6 +348,14 @@ def _(rid, params: dict) -> dict:
     except Exception:
         pass
 
+    if name == "config":
+        from superforecasting_agent.application.configuration_view import configuration_text
+
+        result = _core._methods["config.show"](rid, params)
+        if "error" in result:
+            return result
+        return _ok(rid, {"type": "exec", "output": configuration_text(result["result"]["sections"])})
+
     if name == "curator":
         from superforecasting_agent.runtime.curator import command_output
 

@@ -2858,3 +2858,19 @@ contract and directory-wide strict lint/format/type scope cover the new module.
 The earlier integrated batch pushed successfully at 5de4af1cc after 31,157 Python
 tests passed (148 skipped), followed by the terminal gate. The two subsequent
 configuration commits are integrated and their full push gate is running separately.
+
+
+### Native configuration inspection
+
+The TUI /config command now hands off directly to native dispatch and config.show;
+it does not construct an agent or classic slash worker. RPC and CLI use a shared
+configuration-report owner. Live session model, endpoint, iteration budget, toolsets
+and verbosity override configured defaults. Explicit empty toolsets display none,
+not all. Credentials display only presence or a callable-provider label; inspection
+never fetches a token. Classic CLI retains terminal/SSH and session-start details.
+
+359 configuration-dispatch, callable-credential and gateway tests passed. Additional
+focused verification covers inspection before model initialization and secret-byte
+exclusion. Shared application strict coverage and import rules cover the new owner.
+The primary checkout remains frozen while the earlier configuration batch runs its
+full push gate; this command migration is committed in the isolated worktree.

@@ -951,3 +951,35 @@ def test_toolset_command_uses_its_host_when_sibling_adapter_is_rebound(configure
     output = dispatch('toolsets')['result']['output']
     row = next(line for line in output.splitlines() if 'Owned selection' in line)
     assert '(*)' not in row
+
+
+def test_config_inspection_uses_live_session_without_worker(configure, monkeypatch):
+    from types import SimpleNamespace
+    configure({})
+    monkeypatch.setattr(server, "_resolve_model", lambda: "configured-model")
+    def credential():
+        raise AssertionError("must not fetch token")
+    server._host.sessions["runtime"]["agent"] = SimpleNamespace(
+        model="session-model", base_url="https://local.example", api_key=credential,
+        max_iterations=7, enabled_toolsets=[], verbose_logging=True,
+    )
+    assert slash("config")["error"]["code"] == 4018
+    result = dispatch("config")["result"]
+    assert "session-model" in result["output"]
+    assert "configured-model" not in result["output"]
+    assert "Toolsets: none" in result["output"]
+    assert "Token provider" in result["output"]
+    assert "Max Turns: 7" in result["output"]
+
+
+def test_config_inspection_before_model_initialization(configure, monkeypatch):
+    configure({})
+    monkeypatch.setattr(server, '_resolve_model', lambda: 'not-started')
+    monkeypatch.setattr(server, '_load_enabled_toolsets', lambda: [])
+    monkeypatch.setenv('HERMES_API_KEY', 'private-do-not-display')
+    assert slash('config')['error']['code'] == 4018
+    output = dispatch('config')['result']['output']
+    assert 'not-started' in output
+    assert 'private-do-not-display' not in output
+    assert 'API Key: Configured' in output
+    assert 'Toolsets: none' in output

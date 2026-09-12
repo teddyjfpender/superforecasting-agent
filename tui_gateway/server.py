@@ -5790,7 +5790,7 @@ def _(rid, params: dict) -> dict:
         except OSError as exc:
             return _err(rid, 5017, str(exc))
 
-    if _cmd_base in {"plugins", "toolsets", "profile", "bundles", "insights", "codex-runtime", "gquota", "platforms", "cron", "curator"}:
+    if _cmd_base in {"config", "plugins", "toolsets", "profile", "bundles", "insights", "codex-runtime", "gquota", "platforms", "cron", "curator"}:
         return _command_handoff(rid, "native command: use command.dispatch")
 
     if _cmd_base in _PENDING_INPUT_COMMANDS:
@@ -6012,34 +6012,21 @@ def _(rid, params: dict) -> dict:
         cfg = _load_cfg()
         model = _resolve_model()
         api_key = os.environ.get("HERMES_API_KEY", "") or cfg.get("api_key", "")
-        masked = f"****{api_key[-4:]}" if len(api_key) > 4 else "(not set)"
-        base_url = os.environ.get("HERMES_BASE_URL", "") or cfg.get("base_url", "")
+        from superforecasting_agent.application.configuration_view import configuration_sections
+        from superforecasting_agent.tooling.inventory import session_toolset_selection
 
-        sections = [
-            {
-                "title": "Model",
-                "rows": [
-                    ["Model", model],
-                    ["Base URL", base_url or "(default)"],
-                    ["API Key", masked],
-                ],
-            },
-            {
-                "title": "Agent",
-                "rows": [
-                    ["Max Turns", str(_cfg_max_turns(cfg, 90))],
-                    ["Toolsets", ", ".join(cfg.get("enabled_toolsets", [])) or "all"],
-                    ["Verbose", str(cfg.get("verbose", False))],
-                ],
-            },
-            {
-                "title": "Environment",
-                "rows": [
-                    ["Working Dir", os.getcwd()],
-                    ["Config File", str(_hermes_home / "config.yaml")],
-                ],
-            },
-        ]
+        session = _host.sessions.get(params.get("session_id", "")) or {}
+        agent = session.get("agent")
+        base_url = os.environ.get("HERMES_BASE_URL", "") or cfg.get("base_url", "")
+        sections = configuration_sections(
+            model=getattr(agent, "model", model),
+            base_url=getattr(agent, "base_url", base_url),
+            api_key=getattr(agent, "api_key", api_key),
+            max_turns=getattr(agent, "max_iterations", _cfg_max_turns(cfg, 90)),
+            toolsets=session_toolset_selection(session, _load_enabled_toolsets),
+            verbose=getattr(agent, "verbose_logging", cfg.get("verbose", False)),
+            cwd=os.getcwd(), config_path=str(_hermes_home / "config.yaml"),
+        )
         return _ok(rid, {"sections": sections})
     except Exception as e:
         return _err(rid, 5030, str(e))

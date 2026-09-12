@@ -3994,63 +3994,27 @@ class ForecastCLI:
     from superforecasting_agent.runtime.maintenance_commands import _handle_profile_command as _handle_profile_command
 
     def show_config(self):
-        """Display current configuration with forecast-desk ASCII framing."""
-        # Get terminal config from environment (which was set from cli-config.yaml)
+        """Display the same safe configuration summary as the native TUI."""
+        from superforecasting_agent.application.configuration_view import configuration_sections, configuration_text
+
+        sections = configuration_sections(
+            model=self.model, base_url=self.base_url, api_key=self.api_key,
+            max_turns=self.max_turns, toolsets=self.enabled_toolsets,
+            verbose=self.verbose,
+            cwd=os.getenv("TERMINAL_CWD", os.getcwd()),
+            config_path=str(_hermes_home / "config.yaml"),
+        )
         terminal_env = os.getenv("TERMINAL_ENV", "local")
-        terminal_cwd = os.getenv("TERMINAL_CWD", os.getcwd())
-        terminal_timeout = os.getenv("TERMINAL_TIMEOUT", "60")
-        
-        user_config_path = _hermes_home / 'config.yaml'
-        project_config_path = Path(__file__).parent / 'cli-config.yaml'
-        if user_config_path.exists():
-            config_path = user_config_path
-        else:
-            config_path = project_config_path
-        config_status = "(loaded)" if config_path.exists() else "(not found)"
-        
-        # ``self.api_key`` may be a callable (Azure Foundry Entra ID bearer
-        # provider). Never invoke it; just identify the auth surface.
-        from agent.azure_identity_adapter import is_token_provider
-        if is_token_provider(self.api_key):
-            api_key_display = "Microsoft Entra ID"
-        elif isinstance(self.api_key, str) and len(self.api_key) > 12:
-            api_key_display = f"{self.api_key[:8]}...{self.api_key[-4:]}"
-        else:
-            api_key_display = "Not set!"
-        
-        print()
-        title = "Configuration"
-        width = 50
-        pad = width - len(title)
-        print("+" + "-" * width + "+")
-        print("|" + " " * (pad // 2) + title + " " * (pad - pad // 2) + "|")
-        print("+" + "-" * width + "+")
-        print()
-        print("  -- Model --")
-        print(f"  Model:     {self.model}")
-        print(f"  Base URL:  {self.base_url}")
-        print(f"  API Key:   {api_key_display}")
-        print()
-        print("  -- Terminal --")
-        print(f"  Environment:  {terminal_env}")
+        terminal_rows = [["Environment", terminal_env],
+                         ["Timeout", os.getenv("TERMINAL_TIMEOUT", "60") + "s"]]
         if terminal_env == "ssh":
-            ssh_host = os.getenv("TERMINAL_SSH_HOST", "not set")
-            ssh_user = os.getenv("TERMINAL_SSH_USER", "not set")
-            ssh_port = os.getenv("TERMINAL_SSH_PORT", "22")
-            print(f"  SSH Target:   {ssh_user}@{ssh_host}:{ssh_port}")
-        print(f"  Working Dir:  {terminal_cwd}")
-        print(f"  Timeout:      {terminal_timeout}s")
-        print()
-        print("  -- Agent --")
-        print(f"  Max Turns:  {self.max_turns}")
-        print(f"  Toolsets:   {', '.join(self.enabled_toolsets) if self.enabled_toolsets else 'all'}")
-        print(f"  Verbose:    {self.verbose}")
-        print()
-        print("  -- Session --")
-        print(f"  Started:     {self.session_start.strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"  Config File: {config_path} {config_status}")
-        print()
-    
+            terminal_rows.append(["SSH Target", f"{os.getenv('TERMINAL_SSH_USER', 'not set')}@{os.getenv('TERMINAL_SSH_HOST', 'not set')}:{os.getenv('TERMINAL_SSH_PORT', '22')}"])
+        sections.append({"title": "Terminal", "rows": terminal_rows})
+        started = getattr(self, "session_start", None)
+        if started is not None:
+            sections.append({"title": "Session", "rows": [["Started", started.strftime('%Y-%m-%d %H:%M:%S')]]})
+        print(configuration_text(sections))
+
     def _list_recent_sessions(self, limit: int = 10) -> list[dict[str, Any]]:
         """Return recent CLI sessions for resume affordances."""
         if not self._session_db:
