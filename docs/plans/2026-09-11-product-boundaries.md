@@ -3689,3 +3689,23 @@ All 63 conversation-owner, live-market, model-lookup and CLI tests passed. They 
 success/failure disposal, active-call close rejection, exact failed-handle retries,
 reused-agent release and CLI cleanup after ledger failure. Shared Python gates pass
 with 54 contracts, including a transitive boundary around the new strict owner.
+
+
+### Shared agent execution-budget interpretation
+
+TUI initialization previously coerced fractions/booleans with int() and raised on
+malformed strings; the classic CLI could pass raw strings or invalid numbers to
+agent construction. A pure configuration owner now selects a valid positive whole
+number from explicit override, nested agent configuration, legacy root value and
+caller-owned fallback. Numeric strings remain supported. Configuration normalization,
+classic CLI startup, TUI startup and gateway iteration environment mirrors use it.
+
+The classic CLI preserves its legacy environment fallback only when no valid
+configured budget exists; it does not reread fallback configuration when a captured
+budget is usable. TUI environment precedence and the gateway's rule that missing
+config leaves legacy environment values alone remain intact. The new file receives
+strict checks automatically through directory-wide configuration coverage.
+
+All 342 focused tests passed, including real classic-CLI construction, malformed
+values/sections, TUI parity, configuration migration and subprocess gateway import
+with stale environment values. Shared Python gates passed with 54 contracts.

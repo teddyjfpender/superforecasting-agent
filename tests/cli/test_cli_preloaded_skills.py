@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
-def _make_real_cli(**kwargs):
+def _make_real_cli(*, configuration=None, **kwargs):
     clean_config = {
         "model": {
             "default": "anthropic/claude-opus-4.6",
@@ -19,6 +19,8 @@ def _make_real_cli(**kwargs):
         "agent": {},
         "terminal": {"env_type": "local"},
     }
+    if configuration is not None:
+        clean_config.update(configuration)
     clean_env = {"LLM_MODEL": "", "HERMES_MAX_ITERATIONS": ""}
     prompt_toolkit_stubs = {
         "prompt_toolkit": MagicMock(),
@@ -123,3 +125,12 @@ def test_show_banner_does_not_print_skills():
     startup_lines = [line for line in print_calls if "Activated skills:" in line]
     assert len(startup_lines) == 0
     assert mock_banner.call_count == 1
+
+
+@pytest.mark.parametrize('override, expected', [('41', 41), (True, 37), (2.5, 37), (-1, 37), (None, 37)])
+def test_classic_cli_uses_shared_positive_turn_budget(monkeypatch, override, expected):
+    from agent import iteration_budget
+    monkeypatch.setattr(iteration_budget, 'resolve_max_tool_iterations', MagicMock(side_effect=AssertionError('configured budget reread fallback')))
+    instance = _make_real_cli(configuration={'agent': {'max_turns': '37'}}, max_turns=override)
+    assert instance.max_turns == expected
+    assert type(instance.max_turns) is int

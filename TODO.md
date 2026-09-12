@@ -33,7 +33,8 @@ changes, tests and their limits. The previous checklist is preserved in the
 
 Already implemented: shared forecast review/resolution/scoring, command catalog
 and aliases, configured-command validation/execution, session selection and
-branching, native command handoffs before model initialization, shared goal-command transitions, shared configuration inspection
+branching, native command handoffs before model initialization, shared goal-command transitions, shared positive-integer agent budget selection
+across configuration normalization, classic CLI, TUI and gateway environment bridges, shared configuration inspection
 (including live session settings and credential-safe reporting), shared toolset/insights/
 quota/platform inspection, curator operations and runtime selection, and lazy legacy worker admission.
 The legacy dispatcher itself remains.

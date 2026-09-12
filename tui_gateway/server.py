@@ -2352,14 +2352,9 @@ def _apply_personality_to_session(
 
 
 def _cfg_max_turns(cfg: dict, default: int) -> int:
-    try:
-        env_max = int(_tui_env("MAX_TURNS") or 0)
-        if env_max > 0:
-            return env_max
-    except (TypeError, ValueError):
-        pass
-    agent_cfg = cfg.get("agent") or {}
-    return int(agent_cfg.get("max_turns") or cfg.get("max_turns") or default)
+    from superforecasting_agent.configuration.agent_limits import agent_turn_budget
+
+    return agent_turn_budget(cfg, override=_tui_env("MAX_TURNS"), default=default)
 
 
 def _parse_tui_skills_env() -> list[str]:

@@ -736,7 +736,8 @@ def _reload_runtime_env_preserving_config_authority() -> None:
 
     agent_cfg = cfg.get("agent", {})
     if isinstance(agent_cfg, dict) and "max_turns" in agent_cfg:
-        _set_max_iterations_env_aliases(agent_cfg["max_turns"])
+        from superforecasting_agent.configuration.agent_limits import agent_turn_budget
+        _set_max_iterations_env_aliases(agent_turn_budget(cfg))
 
 
 _DOCKER_VOLUME_SPEC_RE = re.compile(r"^(?P<host>.+):(?P<container>/[^:]+?)(?::(?P<options>[^:]+))?$")
@@ -855,7 +856,8 @@ if _config_path.exists():
         _agent_cfg = _cfg.get("agent", {})
         if _agent_cfg and isinstance(_agent_cfg, dict):
             if "max_turns" in _agent_cfg:
-                _set_max_iterations_env_aliases(_agent_cfg["max_turns"])
+                from superforecasting_agent.configuration.agent_limits import agent_turn_budget
+                _set_max_iterations_env_aliases(agent_turn_budget(_cfg))
             if "gateway_timeout" in _agent_cfg:
                 _set_env_aliases(_AGENT_TIMEOUT_ENV_NAMES, _agent_cfg["gateway_timeout"])
             if "gateway_timeout_warning" in _agent_cfg:

@@ -110,14 +110,12 @@ def _normalize_root_model_keys(config: Dict[str, Any]) -> Dict[str, Any]:
 
 def _normalize_max_turns_config(config: Dict[str, Any]) -> Dict[str, Any]:
     """Normalize legacy root-level max_turns into agent.max_turns."""
+    from superforecasting_agent.configuration.agent_limits import agent_turn_budget
+
     config = dict(config)
-    agent_config = dict(config.get("agent") or {})
-
-    if "max_turns" in config and "max_turns" not in agent_config:
-        agent_config["max_turns"] = config["max_turns"]
-
-    if "max_turns" not in agent_config:
-        agent_config["max_turns"] = DEFAULT_CONFIG["agent"]["max_turns"]
+    section = config.get("agent")
+    agent_config = dict(section) if isinstance(section, dict) else {}
+    agent_config["max_turns"] = agent_turn_budget(config)
 
     config["agent"] = agent_config
     config.pop("max_turns", None)

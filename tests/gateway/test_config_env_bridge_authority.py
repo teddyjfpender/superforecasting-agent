@@ -238,3 +238,10 @@ def test_env_value_survives_when_config_omits_key(hermes_home: Path) -> None:
     env = _run_gateway_import(hermes_home, initial_env={})
 
     assert env.get("FORECAST_MAX_ITERATIONS") == "123"
+
+
+def test_invalid_config_budget_does_not_export_boolean_iteration_limit(hermes_home):
+    _write_config(hermes_home, agent_cfg={'max_turns': True})
+    env = _run_gateway_import(hermes_home, initial_env={})
+    assert env.get('SUPERFORECASTING_AGENT_MAX_ITERATIONS') == '90'
+    assert env.get('HERMES_MAX_ITERATIONS') == '90'

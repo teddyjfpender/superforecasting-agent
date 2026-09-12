@@ -1554,20 +1554,14 @@ class ForecastCLI:
             self.api_key = api_key or os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
         else:
             self.api_key = api_key or os.getenv("OPENAI_API_KEY") or os.getenv("OPENROUTER_API_KEY")
-        # Max turns priority: CLI arg > config file > env var > default
-        if max_turns is not None:  # CLI arg was explicitly set
-            self.max_turns = max_turns
-        elif CLI_CONFIG["agent"].get("max_turns"):
-            self.max_turns = CLI_CONFIG["agent"]["max_turns"]
-        elif CLI_CONFIG.get("max_turns"):  # Backwards compat: root-level max_turns
-            self.max_turns = CLI_CONFIG["max_turns"]
-        else:
-            # Honor FORECAST_AGENT_MAX_TOOL_ITERATIONS (or a legacy alias); default
-            # 200 — raised from 90 for deep-research turns. A soft-cap breach is a
-            # checkpoint-continuation, not a hard stop (see loop_should_continue).
-            from agent.iteration_budget import resolve_max_tool_iterations
-            self.max_turns = resolve_max_tool_iterations()
-        
+        # Shared interpretation; preserve the legacy fallback when no budget is configured.
+        from agent.iteration_budget import resolve_max_tool_iterations
+        from superforecasting_agent.configuration.agent_limits import agent_turn_budget, configured_turn_count
+
+        self.max_turns = configured_turn_count(CLI_CONFIG, override=max_turns)
+        if self.max_turns is None:
+            self.max_turns = agent_turn_budget({}, default=resolve_max_tool_iterations())
+
         # Parse and validate toolsets
         self.enabled_toolsets = toolsets
         self.disabled_toolsets = CLI_CONFIG["agent"].get("disabled_toolsets") or []
