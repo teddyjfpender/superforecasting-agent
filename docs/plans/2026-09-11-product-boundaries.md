@@ -2884,3 +2884,14 @@ reported through the shared model-section interpreter, including legacy fallback
 A deterministic test rejects a second profile read and verifies the nested endpoint,
 model and explicit empty toolset selection. 345 gateway/dispatch tests and shared
 Python quality gates passed. The earlier full push gate remains running independently.
+
+
+### Strict type diagnostics block local and CI gates
+
+The shared development check now passes --error-on-warning to ty. The inherited
+unknown-argument warning rule can no longer allow a strict-scope type defect through
+bootstrap, hooks or CI. Existing strict owners pass with this setting. A regression
+test adds a new module beneath a strict directory, runs the real type checker, proves
+an unknown keyword argument blocks subsequent gates, then repairs it and verifies
+checks continue. That failure-injection test passed, as did the shared Python quality
+workflow. Repository-wide advisory diagnostics remain separate from strict enforcement.

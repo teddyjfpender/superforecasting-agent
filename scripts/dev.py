@@ -98,7 +98,7 @@ def check(*, python_only: bool = False) -> None:
     run(venv_tool("ruff"), "check", "--select", "E4,E7,E9,F", *CORRECTNESS_PYTHON)
     run(venv_tool("ruff"), "check", "--select", "E4,E7,E9,F,I", *STRICT_PYTHON)
     run(venv_tool("ruff"), "format", "--check", *STRICT_PYTHON)
-    run(venv_tool("ty"), "check", *STRICT_PYTHON)
+    run(venv_tool("ty"), "check", "--error-on-warning", *STRICT_PYTHON)
     run(venv_tool("lint-imports"))
     run(venv_tool("python"), "-m", "protocol.codegen", "--check")
     if not python_only:

@@ -17,7 +17,9 @@ Python and contract gates without Node. CI calls the same bootstrap/check code.
 The check includes repository-wide encoding lint, stricter Ruff rules/formatting
 and `ty` for the extracted application layer and gate runner, import contracts,
 protocol generation checks, and TUI ESLint/type checking. The strict Python scope
-is listed in `scripts/dev.py` and grows with ownership migrations. It is not a
+is listed in `scripts/dev.py` and grows with ownership migrations. Warning-level
+type diagnostics also fail this strict gate; advisory reporting for inherited
+code does not weaken enforcement here. It is not a
 claim that all inherited Python code is type checked or formatted. Run behavioral
 tests through `scripts/run_tests.sh`; quality checks do not replace that suite.
 
