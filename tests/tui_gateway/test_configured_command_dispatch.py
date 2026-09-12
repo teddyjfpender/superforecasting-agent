@@ -534,3 +534,72 @@ def test_platform_configuration_shared_with_cli(configure, monkeypatch, scenario
     assert slash("/platforms")["error"]["data"]["execution_started"] is False
     server._start_agent_build.assert_not_called()
     server._SlashWorker.assert_not_called()
+
+
+@pytest.mark.parametrize('argument,action', [
+    ('list', 'list'),
+    ('add "every 2h" "Review forecasts"', 'create'),
+    ('edit job-1 --prompt "Review evidence"', 'update'),
+    ('pause job-1', 'pause'), ('resume job-1', 'resume'),
+    ('run job-1', 'run'), ('remove job-1', 'remove'),
+])
+def test_cron_shared_commands_execute_once_without_worker(configure, monkeypatch, argument, action):
+    import json
+    from cli import ForecastCLI
+    from superforecasting_agent.runtime import cron_commands
+
+    configure({})
+    job = {'job_id': 'job-1', 'name': 'Review', 'schedule': 'every 2h',
+           'next_run_at': '2026-10-01T00:00:00Z', 'repeat': 'forever'}
+    api = Mock(return_value=json.dumps({'success': True, 'job': job, 'jobs': [job],
+                                       'removed_job': job, **job}))
+    monkeypatch.setattr('tools.cronjob_tools.cronjob', api)
+    monkeypatch.setattr(cron_commands, 'get_job', lambda _: job)
+    response = dispatch('cron', argument)
+    assert 'error' not in response
+    api.assert_called_once()
+    assert api.call_args.kwargs['action'] == action
+    output = []
+    monkeypatch.setattr(cron_commands, 'print', output.append, raising=False)
+    ForecastCLI._handle_cron_command(None, '/cron ' + argument)
+    assert response['result']['output'] == output[0]
+    assert api.call_count == 2
+    assert slash('/cron ' + argument)['error']['data']['execution_started'] is False
+    assert api.call_count == 2
+
+
+@pytest.mark.parametrize('argument', [
+    'add "every 2h" "prompt" --typo',
+    'edit job-1 --name', 'edit job-1 --name --clear-skills',
+    'add "unterminated', 'add "every 2h" "prompt" --repeat nope',
+])
+def test_cron_invalid_input_never_reaches_storage(configure, monkeypatch, argument):
+    from superforecasting_agent.runtime import cron_commands
+    configure({})
+    api = Mock(side_effect=AssertionError('invalid command reached tool'))
+    lookup = Mock(side_effect=AssertionError('invalid command reached storage'))
+    monkeypatch.setattr('tools.cronjob_tools.cronjob', api)
+    monkeypatch.setattr(cron_commands, 'get_job', lookup)
+    result = dispatch('cron', argument)
+    assert result['result']['output']
+    api.assert_not_called()
+    lookup.assert_not_called()
+
+
+def test_cron_failure_never_requests_second_dispatch(configure, monkeypatch):
+    configure({})
+    api = Mock(side_effect=OSError('storage unavailable'))
+    monkeypatch.setattr('tools.cronjob_tools.cronjob', api)
+    result = dispatch('cron', 'list')
+    assert result['error']['code'] == 5017
+    assert 'data' not in result['error']
+    api.assert_called_once()
+
+
+@pytest.mark.parametrize('argument', ['', 'list'])
+def test_cron_list_failure_is_not_reported_as_empty_schedule(configure, monkeypatch, argument):
+    configure({})
+    monkeypatch.setattr('tools.cronjob_tools.cronjob', lambda **_: '{"success": false, "error": "unreadable schedule"}')
+    output = dispatch('cron', argument)['result']['output']
+    assert 'Failed to list jobs: unreadable schedule' in output
+    assert 'No scheduled' not in output

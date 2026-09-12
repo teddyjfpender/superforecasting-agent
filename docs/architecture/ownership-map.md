@@ -490,3 +490,9 @@ Classic CLI foreground and background construction also uses
 and credential pools share the TUI mapping and provider/model validation. The CLI
 still owns its presentation callbacks and session initialization; full foreground
 configuration assembly and legacy slash-worker removal remain unfinished.
+
+`runtime/cron_commands.py::cron_command_output` owns scheduled-task slash-command
+parsing, invocation and textual results for classic CLI and native TUI dispatch.
+It uses the existing cron tool/storage operations and returns text without global
+stdout redirection. Neither an agent nor a classic CLI worker is needed. Tool
+failures remain visible; the transport must not replay a command after execution.

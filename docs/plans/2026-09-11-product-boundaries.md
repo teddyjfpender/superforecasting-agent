@@ -2013,3 +2013,18 @@ pool identity, explicit empty tool/reasoning selections, borrowed session storag
 and rejection before constructing an incompatible Codex agent. Background callback
 coverage now also checks credential-pool forwarding. This extraction does not
 complete foreground configuration assembly or eliminate the legacy slash worker.
+
+### Native scheduled-task commands
+
+The complete `/cron` command family now uses one output-returning operation in
+`runtime/cron_commands.py`; classic CLI renders its result and TUI dispatches it
+without constructing a model or classic slash worker. The scheduler/tool layer
+retains persistence ownership. No global stdout capture is used.
+
+Unknown options, missing flag values and malformed quoting are rejected before
+storage access. A failed list operation reports its error instead of claiming the
+schedule is empty. Regression tests cover CLI/TUI parity across list/create/edit/
+pause/resume/run/remove, pre-execution handoff, one execution per invocation,
+invalid-input exclusion and storage-error reporting without dispatcher retry.
+150 focused command and cron-tool tests passed. Shared quality checks passed before
+the final list-error guard; the commit gate checks the final staged snapshot.

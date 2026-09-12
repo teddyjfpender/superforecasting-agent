@@ -342,6 +342,14 @@ def _(rid, params: dict) -> dict:
     except Exception:
         pass
 
+    if name == "cron":
+        from superforecasting_agent.runtime.cron_commands import cron_command_output
+
+        try:
+            return _ok(rid, {"type": "exec", "output": cron_command_output(arg)})
+        except Exception as exc:
+            return _err(rid, 5017, f"Scheduled task command failed: {exc}")
+
     if name == "platforms":
         from superforecasting_agent.runtime.platform_commands import platform_configuration_lines
 
