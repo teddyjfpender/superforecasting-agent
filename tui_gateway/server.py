@@ -3262,27 +3262,20 @@ def _(rid, params: dict) -> dict:
 
 @rpc_validated("session.save")
 def _(rid, params: dict) -> dict:
-    session, err = _sess(params, rid)
+    session, err = _sess_nowait(params, rid)
     if err:
         return err
-    import time as _time
+    from superforecasting_agent.storage.transcripts import save_transcript
 
-    saved_dir = _hermes_home / "sessions" / "saved"
-    filename = saved_dir / f"forecast_transcript_{_time.strftime('%Y%m%d_%H%M%S')}.json"
     try:
-        saved_dir.mkdir(parents=True, exist_ok=True)
-        with open(filename, "w", encoding="utf-8") as f:
-            json.dump(
-                {
-                    "model": getattr(session["agent"], "model", ""),
-                    "session_id": params.get("session_id", ""),
-                    "session_key": session.get("session_key", ""),
-                    "messages": session.get("history", []),
-                },
-                f,
-                indent=2,
-                ensure_ascii=False,
-            )
+        with session["history_lock"]:
+            history = copy.deepcopy(session.get("history", []))
+            model = getattr(session.get("agent"), "model", "")
+        filename = save_transcript(
+            _hermes_home, messages=history, model=model,
+            session_id=params.get("session_id", ""),
+            session_key=session.get("session_key", ""),
+        )
         return _ok(rid, {"file": str(filename)})
     except Exception as e:
         return _err(rid, 5011, str(e))

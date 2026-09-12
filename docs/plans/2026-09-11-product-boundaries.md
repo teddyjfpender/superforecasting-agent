@@ -2313,3 +2313,26 @@ complete migration of the other remaining commands or change curator review
 thread ownership.
 Shared quality checks passed, including the new transitive curator boundary:
 42 import contracts kept, none broken.
+
+
+### One safe transcript export owner
+
+The /save audit found duplicate CLI/TUI serialization, filenames that could
+overwrite another save within the same second, and TUI exports unnecessarily
+initializing a model. Both consumers now use storage.transcripts.save_transcript,
+which rejects empty histories, preserves their existing metadata fields, uses a
+unique filename and commits through the existing atomic JSON writer.
+
+The TUI captures a deep history snapshot under the session history lock and
+uses non-blocking session lookup without agent construction. Deferred sessions
+can export their available history without credentials; absent model metadata
+stays empty rather than being inferred from current settings. The CLI retains
+its saved-path and resume messages. The new owner is included in strict
+lint/format/type checks and has a transitive consumer-import prohibition.
+
+724 storage/CLI/TUI/gateway tests passed. Regressions cover concurrent same-second
+saves without replacement, failed serialization leaving no partial export,
+empty-state rejection, deferred-agent export and history changes between snapshot
+capture and file I/O. These are convenience transcript exports; they do not
+replace durable session journaling or the forecast-ledger transfer format.
+Shared quality checks passed with 43 import contracts kept and none broken.

@@ -6419,3 +6419,46 @@ def test_make_agent_resolves_provider_from_captured_raw_profile(monkeypatch):
     assert raw == original
     assert pool_writes
     assert options["credential_pool"].current().source == "config:desk"
+
+
+def test_session_save_does_not_initialize_deferred_agent(monkeypatch, tmp_path):
+    server._host.sessions["sid"] = _session(
+        history=[{"role": "user", "content": "Saved without provider credentials"}],
+    )
+    server._host.sessions["sid"]["agent"] = None
+    monkeypatch.setattr(server, "_hermes_home", tmp_path)
+    build = Mock(side_effect=AssertionError("export initialized a model"))
+    monkeypatch.setattr(server, "_start_agent_build", build)
+    response = server.handle_request({
+        "id": "save", "method": "session.save", "params": {"session_id": "sid"},
+    })
+    assert "result" in response, response
+    payload = json.loads(Path(response["result"]["file"]).read_text(encoding="utf-8"))
+    assert payload["messages"] == server._host.sessions["sid"]["history"]
+    assert payload["model"] == ""
+    build.assert_not_called()
+
+
+def test_session_save_captures_history_before_concurrent_update(monkeypatch, tmp_path):
+    from superforecasting_agent.storage import transcripts
+
+    session = _session(history=[{"role": "assistant", "content": {"text": "captured"}}])
+    server._host.sessions["sid"] = session
+    monkeypatch.setattr(server, "_hermes_home", tmp_path)
+    original = transcripts.save_transcript
+
+    def save(home, **kwargs):
+        # Simulate the next turn arriving after the locked snapshot, before I/O.
+        with session["history_lock"]:
+            session["history"][0]["content"]["text"] = "updated"
+            session["history"].append({"role": "user", "content": "next turn"})
+        return original(home, **kwargs)
+
+    monkeypatch.setattr(transcripts, "save_transcript", save)
+    response = server.handle_request({
+        "id": "save", "method": "session.save", "params": {"session_id": "sid"},
+    })
+    assert "result" in response, response
+    payload = json.loads(Path(response["result"]["file"]).read_text(encoding="utf-8"))
+    assert payload["messages"] == [{"role": "assistant", "content": {"text": "captured"}}]
+    assert len(session["history"]) == 2

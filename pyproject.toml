@@ -672,3 +672,9 @@ name = "curator operations do not depend on terminal presentation"
 type = "forbidden"
 source_modules = ["superforecasting_agent.runtime.curator"]
 forbidden_modules = ["cli", "tui_gateway"]
+
+[[tool.importlinter.contracts]]
+name = "transcript exports do not depend on consumers"
+type = "forbidden"
+source_modules = ["superforecasting_agent.storage.transcripts"]
+forbidden_modules = ["cli", "tui_gateway", "gateway", "agent", "superforecasting_agent.runtime"]

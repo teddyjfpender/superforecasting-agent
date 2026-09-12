@@ -4566,23 +4566,14 @@ class ForecastCLI:
             print("No forecast transcript to save.")
             return
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        saved_dir = get_agent_home() / "sessions" / "saved"
-        try:
-            saved_dir.mkdir(parents=True, exist_ok=True)
-        except Exception as e:
-            print(f"Failed to create save directory {saved_dir}: {e}")
-            return
-        path = saved_dir / f"forecast_transcript_{timestamp}.json"
+        from superforecasting_agent.storage.transcripts import save_transcript
 
         try:
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump({
-                    "model": self.model,
-                    "session_id": self.session_id,
-                    "session_start": self.session_start.isoformat(),
-                    "messages": self.conversation_history,
-                }, f, indent=2, ensure_ascii=False)
+            path = save_transcript(
+                get_agent_home(), messages=self.conversation_history,
+                model=self.model, session_id=self.session_id,
+                session_start=self.session_start.isoformat(),
+            )
             print(f"Forecast transcript snapshot saved to: {path}")
             if self.session_id:
                 print(
