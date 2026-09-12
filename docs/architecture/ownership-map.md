@@ -710,3 +710,16 @@ This removes the forecasting-to-runtime plugin import exception; quorum provider
 discovery/model selection remains the sole runtime exception, alongside the
 separately frozen tool imports. A fresh-process regression verifies discovery
 through the actual default agent class import; injected factories remain lazy.
+
+### Shared forecasting agent construction
+
+`agent.agent_factory.build_forecast_agent` owns forecasting desk prompt assembly
+and optional startup-skill loading, delegating provider resolution/allocation to
+`build_agent`. Classic CLI and native TUI desk constructors use this entry point.
+They supply session identity, borrowed storage and transport callbacks unchanged.
+Invalid prompts, missing skills and conflicting raw prompt overrides fail before
+this factory resolves a provider or allocates an agent. Generic/background agent
+construction still uses `build_agent`; launch-setting selection remains in the
+adapters and is not yet a completed host boundary. A direct-import contract
+prevents the factory/startup-prompt owner from importing CLI or gateway adapters;
+indirect runtime compatibility dependencies remain allowed.

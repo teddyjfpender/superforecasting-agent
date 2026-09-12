@@ -23,7 +23,9 @@ changes, tests and their limits. The previous checklist is preserved in the
   Extended remote-host command recovery remains to be qualified.
 - [ ] Finish separating agent construction from RPC orchestration. Deferred-build
   admission/retry, initialization completion and partial-agent retention, and notification polling/admission now belong to the host;
-  protocol event delivery remains an adapter responsibility.
+  protocol event delivery remains an adapter responsibility. CLI and TUI now share
+  forecasting-agent prompt/skill construction through the agent factory; launch
+  setting selection still belongs to the adapters and needs consolidation.
 - [ ] Reduce the remaining frozen domain-to-runtime/tool import exceptions.
   Move a capability and its tests together; directory moves alone are insufficient.
   Shared defaults/normalization and read-only profile access are now independent.

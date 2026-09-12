@@ -743,6 +743,7 @@ def test_cli_factory_preserves_resolved_credentials_and_explicit_selections(monk
     monkeypatch.setattr('agent.agent_factory._aiagent_cls', lambda: FakeAgent)
     shell = cli.HermesCLI(model='fixture-model', compact=True, max_turns=1)
     monkeypatch.setattr(shell, '_ensure_runtime_credentials', lambda: True)
+    shell.system_prompt = 'question-specific instructions'
     shell.enabled_toolsets = []
     shell.reasoning_config = {}
     pool = object()
@@ -758,3 +759,7 @@ def test_cli_factory_preserves_resolved_credentials_and_explicit_selections(monk
     assert captured['enabled_toolsets'] == []
     assert captured['reasoning_config'] == {}
     assert captured['session_db'] is shell._session_db
+    from forecasting.protocol import build_forecast_chat_system_prompt
+    assert captured['ephemeral_system_prompt'] == build_forecast_chat_system_prompt(
+        shell.system_prompt
+    )

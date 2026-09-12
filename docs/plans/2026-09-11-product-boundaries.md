@@ -4305,3 +4305,20 @@ The four affected forecasting test modules passed all 88 tests, including
 fresh-process default discovery and lazy injected-factory checks. Shared quality
 gates passed with all 58 import contracts kept. This does not remove quorum
 provider discovery or the separate forecasting-to-tool exceptions.
+
+### Shared forecasting desk construction policy
+
+The CLI and TUI now construct desk agents through build_forecast_agent in the
+existing agent factory. Forecast prompt assembly and optional startup-skill
+loading have one owner; provider resolution continues through build_agent.
+Callbacks and session storage pass through without replacing or closing them.
+Generic background construction is unchanged. The shared factory rejects invalid
+prompts, missing skills and conflicting raw prompt overrides before provider
+resolution/allocation. Launch settings and RPC callback wiring remain adapter work.
+
+70 factory, startup prompt, CLI provider/personality and TUI construction tests
+passed, along with shared quality gates and 59 import contracts. The new
+construction contract blocks direct presentation imports; it does not claim the
+legacy runtime has no indirect presentation dependencies. These include injected runtime/agent
+construction, not credentialed provider calls or rendered terminal qualification.
+The complete CLI and TUI gateway directories also passed all 1,379 tests.

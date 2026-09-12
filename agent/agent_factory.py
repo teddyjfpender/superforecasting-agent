@@ -121,6 +121,34 @@ def build_agent(
     return _aiagent_cls()(model=model, **agent_kwargs)
 
 
+def build_forecast_agent(
+    *,
+    session_id: str,
+    system_prompt: str | None = None,
+    startup_skills: list[str] | None = None,
+    **agent_kwargs: Any,
+):
+    """Construct a forecasting desk agent with the shared startup policy.
+
+    Interfaces supply their session, callbacks and runtime options. Prompt/skill
+    validation precedes provider resolution or agent allocation. Storage remains
+    borrowed from the caller; construction and cleanup ownership are unchanged.
+    """
+    from agent.startup_prompt import prepare_startup_prompt
+    from forecasting.protocol import build_forecast_chat_system_prompt
+
+    if "ephemeral_system_prompt" in agent_kwargs:
+        raise ValueError("Use system_prompt when constructing a forecasting agent")
+    prompt, _loaded_skills = prepare_startup_prompt(
+        system_prompt, startup_skills or [], session_id=session_id
+    )
+    return build_agent(
+        session_id=session_id,
+        ephemeral_system_prompt=build_forecast_chat_system_prompt(prompt),
+        **agent_kwargs,
+    )
+
+
 @contextmanager
 def managed_agent(**kwargs: Any) -> Iterator[Any]:
     """Own a newly constructed agent through a complete unit of conversation work.

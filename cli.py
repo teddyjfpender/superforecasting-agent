@@ -405,7 +405,7 @@ from rich.text import Text as _RichText
 import fire
 
 # Import the agent and tool systems
-from agent.agent_factory import build_agent
+from agent.agent_factory import build_agent, build_forecast_agent
 
 if TYPE_CHECKING:
     from agent.runtime import AIAgent
@@ -3084,12 +3084,8 @@ class ForecastCLI:
                 "credential_pool": getattr(self, "_credential_pool", None),
             }
             effective_model = model_override or self.model
-            from forecasting.protocol import build_forecast_chat_system_prompt
-
-            forecast_system_prompt = build_forecast_chat_system_prompt(
-                self.system_prompt
-            )
-            self.agent = build_agent(
+            self.agent = build_forecast_agent(
+                system_prompt=self.system_prompt,
                 runtime=runtime,
                 model=effective_model,
                 max_iterations=self.max_turns,
@@ -3097,7 +3093,6 @@ class ForecastCLI:
                 disabled_toolsets=self.disabled_toolsets,
                 verbose_logging=self.verbose,
                 quiet_mode=not self.verbose,
-                ephemeral_system_prompt=forecast_system_prompt,
                 prefill_messages=self.prefill_messages or None,
                 reasoning_config=self.reasoning_config,
                 reasoning_summary=self.reasoning_summary,

@@ -128,3 +128,45 @@ def test_factory_and_legacy_import_share_runtime_state(monkeypatch):
     assert runtime.AIAgent is fake_agent
     result = af.build_agent({'provider': 'fixture'}, model='fixture-model')
     assert result == {'provider': 'fixture', 'model': 'fixture-model'}
+
+
+@pytest.mark.parametrize("platform", ["cli", "tui"])
+def test_forecast_factory_preserves_session_resources_and_prompt_policy(monkeypatch, platform):
+    from unittest.mock import Mock
+    from forecasting.protocol import build_forecast_chat_system_prompt
+
+    captured = _fake_agent(monkeypatch)
+    callback, database = object(), object()
+    loader = Mock(return_value=("skill instructions", ["research"], []))
+    monkeypatch.setattr("agent.skill_commands.build_preloaded_skills_prompt", loader)
+    af.build_forecast_agent(
+        session_id="owner", system_prompt=" user instructions ",
+        startup_skills=["research"], runtime={"provider": "fixture"},
+        platform=platform, session_db=database, stream_delta_callback=callback,
+    )
+    loader.assert_called_once_with(["research"], task_id="owner")
+    assert captured["session_id"] == "owner"
+    assert captured["session_db"] is database
+    assert captured["stream_delta_callback"] is callback
+    assert captured["ephemeral_system_prompt"] == build_forecast_chat_system_prompt(
+        "user instructions\n\nskill instructions"
+    )
+
+
+@pytest.mark.parametrize("options,match", [
+    ({"system_prompt": {"invalid": True}}, "system_prompt must be a string"),
+    ({"startup_skills": ["missing"]}, "Unknown skill"),
+    ({"ephemeral_system_prompt": "bypass"}, "Use system_prompt"),
+])
+def test_forecast_factory_rejects_bad_prompt_before_runtime(monkeypatch, options, match):
+    from unittest.mock import Mock
+
+    resolver, constructor = Mock(), Mock()
+    monkeypatch.setattr(af, "resolve_and_map_runtime", resolver)
+    monkeypatch.setattr(af, "_aiagent_cls", constructor)
+    monkeypatch.setattr("agent.skill_commands.build_preloaded_skills_prompt",
+                        lambda *args, **kwargs: ("partial", [], ["missing"]))
+    with pytest.raises(ValueError, match=match):
+        af.build_forecast_agent(session_id="owner", **options)
+    resolver.assert_not_called()
+    constructor.assert_not_called()

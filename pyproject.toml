@@ -754,3 +754,10 @@ name = "delegation control state is independent of tools and presentation"
 type = "forbidden"
 source_modules = ["superforecasting_agent.hosting.delegations"]
 forbidden_modules = ["tools", "agent", "superforecasting_agent.runtime", "tui_gateway", "gateway", "cli"]
+
+[[tool.importlinter.contracts]]
+name = "shared agent construction never directly imports presentation"
+type = "forbidden"
+source_modules = ["agent.agent_factory", "agent.startup_prompt"]
+forbidden_modules = ["gateway", "tui_gateway", "cli"]
+allow_indirect_imports = true

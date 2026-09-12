@@ -2454,20 +2454,12 @@ def _make_agent(sid: str, key: str, session_id: str | None = None):
 
     cfg = resolve_config(_load_cfg())
     agent_cfg = cfg.get("agent") or {}
-    from agent.startup_prompt import prepare_startup_prompt
-
-    system_prompt, _loaded_skills = prepare_startup_prompt(
-        agent_cfg.get("system_prompt"), _parse_tui_skills_env(),
-        session_id=session_id or key,
-    )
     model, requested_provider = _resolve_startup_runtime(cfg=cfg)
-    from agent.agent_factory import build_agent
-    from forecasting.protocol import build_forecast_chat_system_prompt
+    from agent.agent_factory import build_forecast_agent
 
-    # Single resolve->construct path: build_agent resolves the runtime provider and
-    # maps provider/base_url/api_key/api_mode/acp_*/credential_pool onto the AIAgent
-    # kwargs (behaviour-identical to the hand-written mapping it replaces).
-    return build_agent(
+    return build_forecast_agent(
+        system_prompt=agent_cfg.get("system_prompt"),
+        startup_skills=_parse_tui_skills_env(),
         model=model,
         requested_provider=requested_provider,
         configuration=cfg,
@@ -2480,7 +2472,6 @@ def _make_agent(sid: str, key: str, session_id: str | None = None):
         platform="tui",
         session_id=session_id or key,
         session_db=_get_db(),
-        ephemeral_system_prompt=build_forecast_chat_system_prompt(system_prompt),
         checkpoints_enabled=is_truthy_value(_tui_env("CHECKPOINTS")),
         pass_session_id=is_truthy_value(_tui_env("PASS_SESSION_ID")),
         skip_context_files=is_truthy_value(_runtime_env("IGNORE_RULES")),
