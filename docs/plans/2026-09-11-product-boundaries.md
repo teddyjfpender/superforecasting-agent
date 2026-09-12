@@ -1852,3 +1852,27 @@ ambiguous observation boundary rather than claiming a runtime defect is fixed.
 
 Validation: all 67 command/inventory tests and Python quality checks passed.
 The final integrated full gate is still required.
+
+
+### Installed qualification after host and numerical boundary changes
+
+Built independent backend and terminal artifacts in
+`/tmp/forecast-host-boundary-profiles` and ran `scripts/verify_profiles.py` with
+the retained v0.21.2 backend using fresh Python 3.11.15 environments on macOS.
+The v0.22.0 upgrade preserved question, probability history, evidence, Unicode
+session messages and configuration. Backend create/update/resolve/score ran
+without Node on PATH. The new installed numerical check disabled optional
+libraries, verified Gaussian CDF and OLS fallback results, and observed no
+installer access. Packaged Ink negotiated local and authenticated localhost
+WebSocket hosts, scored the durable forecast and exited cleanly. Optional web
+installation, clean host termination and no credential logging passed.
+
+Artifact SHA-256:
+- Backend: `77bbe07a941ed30d4c491a50d8fa25c0f5c043a86feccc8f1d1ae3c494e02d4a`
+- Terminal: `1be8eec34cbab0ef49491e1171c1e8a0ec11fd239d3c0ec1178f2022f73482a2`
+- Prior backend: `09c3ec93d5dec5e26353922c2162f50d5702e4c5264a846643470c9fa4abfaca`
+
+Evidence: `/tmp/forecast-host-boundary-build.log` and
+`/tmp/forecast-host-boundary-installed.log`. The verifier completed with exit 0.
+This qualifies these local artifacts, not publication, native Windows/Termux,
+a terminal cross-version upgrade, or long-duration remote recovery.
