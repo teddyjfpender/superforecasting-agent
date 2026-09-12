@@ -35,6 +35,10 @@ def rpc_validated(name: str):
 
 def register(server) -> None:
     """(Re-)register the carved browser.manage handler into ``server._methods``."""
+    global _core, _err, _ok
+    _core = server
+    _err = server._err
+    _ok = server._ok
     for kind, name, fn in _REGISTRARS:
         getattr(server, kind)(name)(fn)
 

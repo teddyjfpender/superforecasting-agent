@@ -60,6 +60,19 @@ def method(name: str):
 
 def register(server) -> None:
     """(Re-)register every carved voice / insights handler into ``server._methods``."""
+    global _core, _db_unavailable_error, _err, _ok, _speak_with_status, _voice_cfg_dict, _voice_emit, _voice_flag, _voice_mode_enabled, _voice_record_key, _voice_session_key, logger
+    _core = server
+    _db_unavailable_error = server._db_unavailable_error
+    _err = server._err
+    _ok = server._ok
+    _speak_with_status = server._speak_with_status
+    _voice_cfg_dict = server._voice_cfg_dict
+    _voice_emit = server._voice_emit
+    _voice_flag = server._voice_flag
+    _voice_mode_enabled = server._voice_mode_enabled
+    _voice_record_key = server._voice_record_key
+    _voice_session_key = server._voice_session_key
+    logger = server.logger
     for kind, name, fn in _REGISTRARS:
         getattr(server, kind)(name)(fn)
 

@@ -52,6 +52,14 @@ def method(name: str):
 
 def register(server) -> None:
     """(Re-)register every carved subagent/spawn-tree handler into ``_methods``."""
+    global _SPAWN_TREE_INDEX, _append_spawn_tree_index, _err, _ok, _read_spawn_tree_index, _spawn_tree_session_dir, _spawn_trees_root
+    _SPAWN_TREE_INDEX = server._SPAWN_TREE_INDEX
+    _append_spawn_tree_index = server._append_spawn_tree_index
+    _err = server._err
+    _ok = server._ok
+    _read_spawn_tree_index = server._read_spawn_tree_index
+    _spawn_tree_session_dir = server._spawn_tree_session_dir
+    _spawn_trees_root = server._spawn_trees_root
     for kind, name, fn in _REGISTRARS:
         getattr(server, kind)(name)(fn)
 

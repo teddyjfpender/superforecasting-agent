@@ -37,6 +37,12 @@ def rpc_validated(name: str):
 
 def register(server) -> None:
     """(Re-)register every carved rollback.* handler into ``server._methods``."""
+    global _err, _ok, _resolve_checkpoint_hash, _sess, _with_checkpoints
+    _err = server._err
+    _ok = server._ok
+    _resolve_checkpoint_hash = server._resolve_checkpoint_hash
+    _sess = server._sess
+    _with_checkpoints = server._with_checkpoints
     for kind, name, fn in _REGISTRARS:
         getattr(server, kind)(name)(fn)
 

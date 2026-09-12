@@ -553,3 +553,10 @@ The TUI passes its override string and setting label and renders returned notice
 through a callback. The shared owner has strict lint/format/type checks and a
 transitive import contract prohibiting classic CLI and TUI dependencies. Empty
 configured selections remain empty; explicit all-tool overrides remain `None`.
+
+Every import-bound RPC family rebinds its server references, callbacks and constants
+when registered. Registration transfers the family to the receiving process-level
+server owner; it does not support simultaneously serving multiple server module
+instances through the same module globals. Closure-based families already capture
+the receiving server. The registration-owner regression discovers import-bound
+families and checks every imported dependency against its registered owner.

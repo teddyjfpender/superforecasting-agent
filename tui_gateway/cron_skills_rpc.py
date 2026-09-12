@@ -31,6 +31,9 @@ def method(name: str):
 
 def register(server) -> None:
     """(Re-)register every carved cron/skills handler into ``server._methods``."""
+    global _err, _ok
+    _err = server._err
+    _ok = server._ok
     for kind, name, fn in _REGISTRARS:
         getattr(server, kind)(name)(fn)
 

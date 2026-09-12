@@ -47,3 +47,38 @@ def test_command_registration_rebinds_receiving_owner(monkeypatch):
     assert commands_rpc._core is replacement
     for name in names[1:]:
         assert getattr(commands_rpc, name) is getattr(replacement, name)
+
+
+def test_every_import_bound_rpc_family_rebinds_its_server_dependencies(monkeypatch):
+    """Audit the import/registration relationship rather than a frozen file list."""
+    import ast
+    import importlib
+    from pathlib import Path
+
+    for path in sorted(Path(server.__file__).parent.glob('*rpc.py')):
+        tree = ast.parse(path.read_text(encoding='utf-8'))
+        imports = {}
+        for node in tree.body:
+            if isinstance(node, ast.ImportFrom) and node.module == 'tui_gateway.server':
+                imports.update({alias.asname or alias.name: alias.name for alias in node.names})
+            elif isinstance(node, ast.Import):
+                imports.update({alias.asname: None for alias in node.names
+                                if alias.name == 'tui_gateway.server' and alias.asname})
+        if not imports:
+            continue
+        family = importlib.import_module(f'tui_gateway.{path.stem}')
+        handlers = {}
+        def register(name):
+            return lambda fn: handlers.setdefault(name, fn)
+        replacement = SimpleNamespace(method=register, rpc_validated=register)
+        for attribute in imports.values():
+            if attribute is not None:
+                setattr(replacement, attribute, object())
+        with monkeypatch.context() as restore:
+            for name in imports:
+                restore.setattr(family, name, getattr(family, name))
+            family.register(replacement)
+            for name, attribute in imports.items():
+                expected = replacement if attribute is None else getattr(replacement, attribute)
+                assert getattr(family, name) is expected, (path.name, name)
+            assert handlers, path.name

@@ -2210,3 +2210,19 @@ the stale-registration mechanism; other RPC families still warrant the same audi
 118 targeted registration, command, inventory, live-path and file-staleness tests
 passed. The shared quality workflow passed for the code changes. This is focused
 evidence; the repaired integrated batch still requires the full-suite push gate.
+
+### Complete the sibling RPC registration audit
+
+Audited all RPC registration families. Ten additional import-bound families had
+the stale-reference pattern: agents, browser, completion, cron/skills, forecasts,
+market models, Obsidian, rollback, subagents and voice. Each now rebinds its imported
+server dependencies when registered, matching the command/tools fix. Closure-based
+host, forecast operations, market, PM and jobs registration already captures its
+receiving server and did not need this repair.
+
+The regression discovers import-bound families from their source imports and
+asserts that registration replaces every corresponding dependency with the new
+server's value. This checks an ownership relationship rather than a fixed family
+count. 644 TUI/gateway tests passed; shared quality checks passed. This establishes
+re-registration correctness for the existing process-level server owner, not
+simultaneous multiple server module instances sharing RPC globals.
