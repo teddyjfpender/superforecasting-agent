@@ -42,7 +42,7 @@ def main():
             return result
         delegations.set_spawn_paused = audited_pause
 
-    if os.environ.get('FORECAST_TEST_HANDOFF') == '1':
+    if os.environ.get('FORECAST_TEST_HANDOFF') in {'1', 'running'}:
         from contextlib import closing
         from types import SimpleNamespace
         import gateway.config as gateway_config
@@ -57,7 +57,7 @@ def main():
             if result:
                 def transfer():
                     with closing(SessionDB(db_path=db.db_path)) as remote:
-                        if remote.claim_handoff(key, attempt_id=attempt_id):
+                        if remote.claim_handoff(key, attempt_id=attempt_id) and os.environ.get('FORECAST_TEST_HANDOFF') != 'running':
                             remote.complete_handoff(key, attempt_id=attempt_id)
                 threading.Thread(target=transfer, daemon=True).start()
             return result

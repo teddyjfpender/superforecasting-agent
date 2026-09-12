@@ -391,3 +391,48 @@ def test_real_desk_native_handoff_preserves_agent_and_receipt(local_desk, monkey
         until(ws, lambda out: receipt(home) and receipt(home)['id'] != before['id'] and receipt(home)['status'] == 'complete', screen=screen)
         assert receipt(home)['session_id'] != rows[0][0]
         ws.close(code=1000)
+
+
+def test_real_desk_handoff_cancel_and_dashboard_reconnect(local_desk, monkeypatch):
+    from tests.tui_pty.vt import VTScreen
+
+    client, home, bridges = local_desk
+    monkeypatch.setenv('FORECAST_TEST_FORBID_CLASSIC_WORKER', '1')
+    monkeypatch.setenv('FORECAST_TEST_HANDOFF', 'running')
+    monkeypatch.setenv('SUPERFORECASTING_AGENT_TUI_NO_CONFIRM', '1')
+    screen = VTScreen(rows=45, cols=160)
+    url = '/api/pty?token=local-engineering&channel=handoff-cancel'
+
+    def transfer_state():
+        with closing(sqlite3.connect(home / 'state.db')) as db:
+            return db.execute("SELECT id, handoff_state, handoff_attempt_id FROM sessions WHERE handoff_state IS NOT NULL").fetchone()
+
+    with client.websocket_connect(url) as ws:
+        ws.send_text('\x1b[RESIZE:160;45]')
+        data = until(ws, lambda out: b'local-fixture' in out, screen=screen)
+        ws.send_text('complete before cancelled handoff\r')
+        data += until(ws, lambda out: receipt(home) and receipt(home)['status'] == 'complete', screen=screen)
+        before = receipt(home)
+        ws.send_text('/handoff telegram\r')
+        data += until(ws, lambda out: b'Queued handoff' in out and transfer_state() and transfer_state()[1] == 'running', screen=screen)
+        transferred = transfer_state()
+        ws.send_text('\x03')
+        data += until(ws, lambda out: b'Gateway transfer is still running' in out, screen=screen)
+        assert transfer_state() == transferred
+        assert receipt(home)['id'] == before['id']
+        ws.close(code=1006)
+    assert bridges[0].is_alive()
+    with client.websocket_connect(url + f'&cursor={len(data)}') as ws:
+        # ForecastDeskPage.onReady resends terminal dimensions on every connection.
+        ws.send_text('\x1b[RESIZE:160;45]')
+        ws.send_text('blocked after reconnect\r')
+        until(ws, lambda out: b'handoff is in progress' in out, screen=screen)
+        assert transfer_state() == transferred
+        assert receipt(home)['id'] == before['id']
+        ws.send_text('/new\r')
+        until(ws, lambda out: b'new forecast session started' in out, screen=screen)
+        ws.send_text('complete in independent session\r')
+        until(ws, lambda out: receipt(home) and receipt(home)['id'] != before['id'] and receipt(home)['status'] == 'complete', screen=screen)
+        assert receipt(home)['session_id'] != transferred[0]
+        assert len(bridges) == 1
+        ws.close(code=1000)

@@ -4262,3 +4262,20 @@ during reserved handoff, pending/running reconnects for both prompt methods, and
 a closed database that must block agent construction. The terminal test still
 uses a simulated messaging destination; rendered interruption/reconnect and
 recovery after gateway death remain separate qualifications.
+
+
+### Rendered handoff cancellation and dashboard reconnect
+
+The real terminal fixture can now hold a simulated destination in running state.
+Its new test starts a transfer, cancels the local wait with Ctrl+C, checks that
+the same SQLite attempt remains running and the prior receipt is unchanged,
+reconnects the dashboard to the retained PTY, verifies a local turn is rejected,
+and completes a turn in an independent /new session. Classic worker construction
+is forbidden throughout.
+
+The test passed on macOS, and shared quality gates passed. The first fixture
+version omitted the dimensions message that ForecastDeskPage.onReady sends on
+every connection; adding that real-client behavior corrected the rendered /new
+assertion. This is retained-PTY reconnect coverage with a simulated destination,
+not backend restart recovery, real messaging service verification, or cross-platform
+qualification. A crashed gateway's claimed transfer remains an open recovery task.
