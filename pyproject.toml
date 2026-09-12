@@ -708,3 +708,10 @@ name = "startup environment loading never imports runtime or consumers"
 type = "forbidden"
 source_modules = ["superforecasting_agent.startup_environment"]
 forbidden_modules = ["superforecasting_agent.runtime", "agent", "tools", "forecasting", "cli", "gateway", "tui_gateway"]
+
+[[tool.importlinter.contracts]]
+name = "goal command operations depend on ports rather than runtime implementations"
+type = "forbidden"
+source_modules = ["superforecasting_agent.application.goals"]
+forbidden_modules = ["superforecasting_agent.runtime", "superforecasting_agent.storage", "agent", "tools", "forecasting"]
+allow_indirect_imports = false

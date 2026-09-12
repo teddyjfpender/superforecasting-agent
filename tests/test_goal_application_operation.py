@@ -75,3 +75,28 @@ def test_classic_cli_uses_shared_transitions_and_queues_only_goal_creation(tmp_p
             assert any('Goal cleared' in line for line in output)
     finally:
         database.close()
+
+
+def test_subgoal_commands_validate_and_persist_without_runtime_owned_dispatch(tmp_path, monkeypatch):
+    from superforecasting_agent.application.goals import execute_subgoal
+    from superforecasting_agent.runtime.subgoal_commands import execute_subgoal as compatibility
+
+    assert compatibility is execute_subgoal
+    monkeypatch.setenv('HERMES_HOME', str(tmp_path))
+    database = SessionDB()
+    try:
+        with GoalManager('criteria', database_provider=lambda: database) as manager:
+            assert execute_subgoal(manager, 'Check revisions').startswith('No active goal')
+            execute_goal(manager, 'Audit sources')
+            assert 'Added subgoal 1' in execute_subgoal(manager, 'Check revisions')
+            assert 'Added subgoal 2' in execute_subgoal(manager, 'Check units')
+            assert 'integer' in execute_subgoal(manager, 'remove wrong')
+            assert 'out of range' in execute_subgoal(manager, 'remove 0')
+            assert 'Usage:' in execute_subgoal(manager, 'clear unexpected')
+            assert manager.state.subgoals == ['Check revisions', 'Check units']
+            assert 'Check revisions' in execute_subgoal(manager, 'remove 1')
+            assert manager.state.subgoals == ['Check units']
+            assert 'Cleared 1 subgoal.' in execute_subgoal(manager, 'clear')
+            assert manager.state.subgoals == []
+    finally:
+        database.close()

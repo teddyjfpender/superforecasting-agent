@@ -589,7 +589,7 @@ def _(rid, params: dict) -> dict:
             max_turns = 20
         mgr = GoalManager(session_id=sid_key, default_max_turns=max_turns, database_provider=_core._get_db)
         if name == "subgoal":
-            from superforecasting_agent.runtime.subgoal_commands import execute_subgoal
+            from superforecasting_agent.application.goals import execute_subgoal
 
             return _ok(rid, {"type": "exec", "output": execute_subgoal(mgr, arg)})
 

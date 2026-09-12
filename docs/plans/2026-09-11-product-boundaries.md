@@ -3397,3 +3397,17 @@ result isolation and classic CLI kickoff behavior.
 
 Validation: 39 focused application/CLI/TUI/gateway tests passed; shared Python
 quality gates passed with all 51 import contracts intact.
+
+
+### Goal and subgoal dependency enforcement
+
+Subgoal validation and dispatch now share the goal application owner, using a
+structural manager port rather than importing GoalManager. CLI, messaging and
+native TUI import this owner directly; the old runtime path preserves function
+identity as a compatibility alias. A dedicated transitive contract prohibits
+implementation imports from the shared goal command owner.
+
+Validation: 91 focused SQLite-backed application, goal-manager, TUI and gateway
+tests passed; shared quality checks passed with 52 import contracts. Invalid
+subgoal indices/clear arguments preserve stored criteria and compatibility
+imports resolve to the same operation.

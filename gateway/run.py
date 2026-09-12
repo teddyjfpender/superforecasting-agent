@@ -11411,7 +11411,7 @@ class GatewayRunner:
         mgr, _session_entry = self._get_goal_manager_for_event(event)
         if mgr is None:
             return t("gateway.goal.unavailable")
-        from superforecasting_agent.runtime.subgoal_commands import execute_subgoal
+        from superforecasting_agent.application.goals import execute_subgoal
 
         return execute_subgoal(mgr, args)
 

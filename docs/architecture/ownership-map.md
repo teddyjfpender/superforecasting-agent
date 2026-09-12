@@ -594,3 +594,9 @@ Adapters retain session-manager acquisition, localized rendering, pending-messag
 cleanup and kickoff delivery. Storage and concurrent-state checks remain with
 GoalManager. The application package import contract and strict directory-wide
 lint, formatting and types cover this owner automatically.
+
+`application.goals.execute_subgoal` owns criterion command validation and dispatch
+through a manager port. All three consumers call it directly; the prior runtime
+module is a compatibility re-export. A dedicated transitive import contract now
+forbids runtime, storage, agent, tool and forecasting implementations from the
+goal application owner, supplementing the existing presentation restrictions.

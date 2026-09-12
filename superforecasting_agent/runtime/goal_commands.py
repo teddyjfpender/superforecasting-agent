@@ -135,7 +135,7 @@ def _handle_subgoal_command(self, cmd: str) -> None:
         _cprint(f"  {_DIM}Goals unavailable (no active forecast session).{_RST}")
         return
 
-    from superforecasting_agent.runtime.subgoal_commands import execute_subgoal
+    from superforecasting_agent.application.goals import execute_subgoal
 
     for line in execute_subgoal(mgr, arg).splitlines():
         _cprint(f"  {line}")
