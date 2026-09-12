@@ -41,7 +41,7 @@ def test_model_lookup_does_not_require_presentation(monkeypatch, model):
             run_conversation=lambda *args, **kwargs: {"final_response": '{"probability": 0.6}'}
         )
 
-    forecaster = build_informed_market_forecaster(agent_factory=factory, discover=False)
+    forecaster = build_informed_market_forecaster(agent_factory=factory)
     assert forecaster({"id": "x", "question": "Will X occur?", "source": "manifold"}) == 0.6
     assert calls == ["test-model", "test-model"]
     assert forbidden == []

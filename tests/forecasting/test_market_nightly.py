@@ -461,7 +461,7 @@ def test_fresh_agent_per_call_builds_a_new_agent_each_forecast():
     markets = _future_markets(3)
 
     fresh = mnf.build_informed_market_forecaster(
-        model="x", agent_factory=fake_factory, discover=False, fresh_agent_per_call=True
+        model="x", agent_factory=fake_factory, fresh_agent_per_call=True
     )
     for m in markets:
         assert fresh(m) == pytest.approx(0.5)
@@ -469,7 +469,7 @@ def test_fresh_agent_per_call_builds_a_new_agent_each_forecast():
 
     builds["n"] = 0
     reused = mnf.build_informed_market_forecaster(
-        model="x", agent_factory=fake_factory, discover=False
+        model="x", agent_factory=fake_factory
     )
     for m in markets:
         assert reused(m) == pytest.approx(0.5)

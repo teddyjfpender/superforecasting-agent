@@ -71,7 +71,7 @@ def _open_market(mid="m1", *, yes=0.40, close="2030-01-01T00:00:00Z"):
 def test_forecaster_returns_float_when_agent_emits_json():
     agent = _MockAgent(response=json.dumps({"probability": 0.73, "rationale": "fresh search"}))
     forecaster = mnf.build_informed_market_forecaster(
-        model="test-model", agent_factory=_factory_returning(agent), discover=False
+        model="test-model", agent_factory=_factory_returning(agent)
     )
     p = forecaster(_open_market())
     assert isinstance(p, float)
@@ -83,7 +83,7 @@ def test_forecaster_search_toolset_includes_web_and_is_not_closed_book():
     # The whole point of the LIVE path: the agent CAN search. "web" MUST be present.
     agent = _MockAgent(response=json.dumps({"probability": 0.5}))
     forecaster = mnf.build_informed_market_forecaster(
-        model="test-model", agent_factory=_factory_returning(agent), discover=False
+        model="test-model", agent_factory=_factory_returning(agent)
     )
     forecaster(_open_market())
     assert "web" in agent.kwargs["enabled_toolsets"]
@@ -144,7 +144,7 @@ def test_live_enabled_toolsets_is_research_only():
     # The built agent is constructed with exactly these toolsets (no widening).
     agent = _MockAgent(response=json.dumps({"probability": 0.5}))
     forecaster = mnf.build_informed_market_forecaster(
-        model="test-model", agent_factory=_factory_returning(agent), discover=False
+        model="test-model", agent_factory=_factory_returning(agent)
     )
     forecaster(_open_market())
     assert agent.kwargs["enabled_toolsets"] == mnf.LIVE_ENABLED_TOOLSETS
@@ -154,7 +154,7 @@ def test_live_enabled_toolsets_is_research_only():
 def test_forecaster_returns_none_when_agent_errors():
     agent = _MockAgent(raises=True)
     forecaster = mnf.build_informed_market_forecaster(
-        model="m", agent_factory=_factory_returning(agent), discover=False
+        model="m", agent_factory=_factory_returning(agent)
     )
     assert forecaster(_open_market()) is None
 
@@ -162,7 +162,7 @@ def test_forecaster_returns_none_when_agent_errors():
 def test_forecaster_returns_none_on_non_json():
     agent = _MockAgent(response="I think it is fairly likely but cannot say.")
     forecaster = mnf.build_informed_market_forecaster(
-        model="m", agent_factory=_factory_returning(agent), discover=False
+        model="m", agent_factory=_factory_returning(agent)
     )
     assert forecaster(_open_market()) is None
 
@@ -173,7 +173,7 @@ def test_forecaster_none_lets_record_pending_skip_the_market(tmp_path):
     ledger = ForecastLedger(tmp_path / "mn.db")
     agent = _MockAgent(raises=True)  # -> forecaster returns None
     forecaster = mnf.build_informed_market_forecaster(
-        model="m", agent_factory=_factory_returning(agent), discover=False
+        model="m", agent_factory=_factory_returning(agent)
     )
     run = record_pending(ledger, [_open_market("skipme")], "2026-06-01T00:00:00Z", forecaster)
     assert run.n_recorded == 0
@@ -399,7 +399,7 @@ def test_research_arm_voi_routes_voi_prompt_sharing_the_agent_plumbing():
 
     agent = _CapturingAgent()
     voi_forecaster = mnf.build_informed_market_forecaster(
-        model="m", agent_factory=_factory_returning(agent), discover=False, research_arm="voi"
+        model="m", agent_factory=_factory_returning(agent), research_arm="voi"
     )
     p = voi_forecaster(_open_market())
     assert p == pytest.approx(0.42)
@@ -428,7 +428,7 @@ def test_research_arm_plain_and_unknown_use_the_plain_prompt():
             return agent
 
         forecaster = mnf.build_informed_market_forecaster(
-            model="m", agent_factory=factory, discover=False, research_arm=arm
+            model="m", agent_factory=factory, research_arm=arm
         )
         forecaster(_open_market())
         assert "Adequacy discipline" not in (_Cap.last or ""), arm
@@ -548,10 +548,57 @@ def test_real_forecaster_exposes_reusable_agent_cleanup():
     agent.run_conversation.return_value = '{"probability": 0.6}'
     agent.close.return_value = None
     forecaster = mnf.build_informed_market_forecaster(
-        model='test', agent_factory=lambda **kwargs: agent, discover=False,
+        model='test', agent_factory=lambda **kwargs: agent,
     )
     assert forecaster(_open_market()) == 0.6
     agent.close.assert_not_called()
     forecaster.close()
     forecaster.close()
     agent.close.assert_called_once()
+
+
+def test_injected_factory_owns_discovery_and_stays_lazy(monkeypatch):
+    from unittest.mock import Mock
+    from superforecasting_agent.runtime import plugins
+
+    discovery = Mock()
+    monkeypatch.setattr(plugins, 'discover_plugins', discovery)
+    agent = _MockAgent(response=json.dumps({'probability': 0.6}))
+    factory = Mock(return_value=agent)
+    forecaster = mnf.build_informed_market_forecaster(model='fixture', agent_factory=factory)
+    try:
+        factory.assert_not_called()
+        discovery.assert_not_called()
+        assert forecaster(_open_market()) == 0.6
+        factory.assert_called_once()
+        discovery.assert_not_called()
+    finally:
+        forecaster.close()
+
+
+def test_default_agent_runtime_owns_plugin_discovery(tmp_path):
+    import os
+    from pathlib import Path
+    import subprocess
+    import sys
+
+    env = dict(os.environ)
+    for prefix in ('SUPERFORECASTING_AGENT', 'FORECAST', 'HERMES'):
+        env[prefix + '_HOME'] = str(tmp_path)
+    code = '''
+from superforecasting_agent.runtime import plugins
+calls = []
+plugins.discover_plugins = lambda: calls.append('discovered')
+from agent.agent_factory import _aiagent_cls
+_aiagent_cls()
+assert calls, 'default agent did not initialize plugin discovery'
+'''
+    subprocess.run(
+        [sys.executable, '-c', code],
+        cwd=Path(__file__).resolve().parents[2],
+        env=env,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )

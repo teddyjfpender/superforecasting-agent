@@ -700,3 +700,13 @@ Local-turn handoff admission belongs to `application.handoff`: both foreground
 and background TUI prompts consume it before model construction. It reads durable
 state for reconnected handles and retains stricter completion ownership for a
 live source attempt. Storage read failure propagates to admission as an error.
+
+### Market forecaster initialization ownership
+
+The market forecaster delegates runtime initialization to its injected agent factory.
+The default factory loads the tool runtime, which already owns plugin discovery.
+The redundant eager discovery call and internal `discover` switch are removed.
+This removes the forecasting-to-runtime plugin import exception; quorum provider
+discovery/model selection remains the sole runtime exception, alongside the
+separately frozen tool imports. A fresh-process regression verifies discovery
+through the actual default agent class import; injected factories remain lazy.

@@ -4293,3 +4293,15 @@ worker, including manually entered hidden commands.
 329 catalog/dispatch/access-policy tests and shared quality gates passed. This
 corrects unsupported interface advertisement; the generic legacy fallback still
 exists and its direct-RPC compatibility cases require a separate migration audit.
+
+### Remove duplicate market plugin initialization
+
+Market forecaster construction no longer eagerly initializes runtime plugins.
+The default agent already loads the tool runtime, whose discovery is authoritative;
+injected factories own their own initialization. Removed the internal `discover`
+keyword and its test callers, and deleted the associated frozen import exception.
+
+The four affected forecasting test modules passed all 88 tests, including
+fresh-process default discovery and lazy injected-factory checks. Shared quality
+gates passed with all 58 import contracts kept. This does not remove quorum
+provider discovery or the separate forecasting-to-tool exceptions.

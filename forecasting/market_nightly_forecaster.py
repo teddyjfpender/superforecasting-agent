@@ -259,26 +259,12 @@ def build_voi_market_messages(case: Mapping[str, Any]) -> list[dict[str, str]]:
     ]
 
 
-def _ensure_plugins_discovered() -> None:
-    """Register web-search providers once (idempotent) so the live search path
-    has its tools available. A discovery failure is non-fatal — the agent simply
-    runs with whatever toolsets are already registered."""
-
-    try:
-        from superforecasting_agent.runtime.plugins import discover_plugins
-
-        discover_plugins()  # idempotent
-    except Exception:  # noqa: BLE001 — discovery is best-effort, never fatal
-        pass
-
-
 def build_informed_market_forecaster(
     *,
     model: str | None = None,
     max_iterations: int = DEFAULT_MAX_ITERATIONS,
     timeout: int = DEFAULT_TIMEOUT_SECONDS,
     agent_factory: Callable[..., Any] | None = None,
-    discover: bool = True,
     fresh_agent_per_call: bool = False,
     research_arm: str = "plain",
 ) -> Callable[[Mapping[str, Any]], float | None]:
@@ -316,6 +302,8 @@ def build_informed_market_forecaster(
     ``config["model"]`` with the same ``_resolve_active_model_id`` logic the
     quorum uses — ``config["model"]`` is a dict). ``agent_factory`` is an injection
     seam for tests so no live agent is constructed; it defaults to ``build_agent``.
+    The supplied factory owns runtime/tool initialization. The default agent loads
+    the tool runtime, which owns plugin discovery, when first constructed.
 
     ``fresh_agent_per_call`` (default ``False``) controls agent REUSE. The default
     builds ONE agent on the first market and reuses it across the sweep — fine for
@@ -340,9 +328,6 @@ def build_informed_market_forecaster(
             model = resolve_active_model_id(read_configuration().get("model"))
         except Exception:  # noqa: BLE001 — leave model unset; the factory may still default it
             model = model or None
-
-    if discover:
-        _ensure_plugins_discovered()
 
     # The A/B prompt lever: "voi" -> research-disciplined packet, anything else ->
     # the plain packet. Resolved ONCE here so the per-market closure is branch-free.
