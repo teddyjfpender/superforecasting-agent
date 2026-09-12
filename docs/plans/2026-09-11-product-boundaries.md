@@ -1750,3 +1750,13 @@ construction, repeated close, and a real local keep-alive transport. Python
 quality, 35 import contracts and protocol checks passed. This addresses client
 identity/admission; task-ID tool cleanup and retryable cleanup-failure ownership
 remain open.
+
+
+### Enforce quality for client and session cleanup owners
+
+`agent/openai_clients.py` and `agent/session_lifecycle.py` now participate in
+the shared blocking lint, format and type scope used by development checks and
+CI. Canonical formatting/import order and nullable message parameter annotations
+were corrected; no diagnostic baseline or suppression was introduced. The
+12 focused cleanup/rebuild tests and all Python quality checks passed, including
+35 import contracts and protocol generation checks.

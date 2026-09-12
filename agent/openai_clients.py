@@ -44,13 +44,13 @@ def detach_primary_client(self) -> Any:
 def _is_openai_client_closed(client: Any) -> bool:
     """Check if an OpenAI client is closed.
 
-        Handles both property and method forms of is_closed:
-        - httpx.Client.is_closed is a bool property
-        - openai.OpenAI.is_closed is a method returning bool
+    Handles both property and method forms of is_closed:
+    - httpx.Client.is_closed is a bool property
+    - openai.OpenAI.is_closed is a method returning bool
 
-        Prior bug: getattr(client, "is_closed", False) returned the bound method,
-        which is always truthy, causing unnecessary client recreation on every call.
-        """
+    Prior bug: getattr(client, "is_closed", False) returned the bound method,
+    which is always truthy, causing unnecessary client recreation on every call.
+    """
     from unittest.mock import Mock
 
     if isinstance(client, Mock):
@@ -73,8 +73,9 @@ def _is_openai_client_closed(client: Any) -> bool:
 
 def _build_keepalive_http_client(base_url: str = "") -> Any:
     try:
-        import httpx as _httpx
         import socket as _socket
+
+        import httpx as _httpx
 
         _sock_opts = [(_socket.SOL_SOCKET, _socket.SO_KEEPALIVE, 1)]
         if hasattr(_socket, "TCP_KEEPIDLE"):
@@ -125,7 +126,9 @@ def _replace_primary_openai_client(self, *, reason: str) -> bool:
             return False
         old_client = getattr(self, "client", None)
         try:
-            new_client = self._create_openai_client(self._client_kwargs, reason=reason, shared=True)
+            new_client = self._create_openai_client(
+                self._client_kwargs, reason=reason, shared=True
+            )
         except Exception as exc:
             logger.warning(
                 "Failed to rebuild shared OpenAI client (%s) %s error=%s",
@@ -135,7 +138,9 @@ def _replace_primary_openai_client(self, *, reason: str) -> bool:
             )
             return False
         if getattr(self, "_resources_closed", False):
-            self._close_openai_client(new_client, reason="closed_during_build", shared=True)
+            self._close_openai_client(
+                new_client, reason="closed_during_build", shared=True
+            )
             return False
         self.client = new_client
     self._close_openai_client(old_client, reason=f"replace:{reason}", shared=True)
@@ -194,7 +199,9 @@ def _copilot_headers_for_request(self, *, is_vision: bool) -> dict:
     return copilot_request_headers(is_agent_turn=True, is_vision=is_vision)
 
 
-def _create_request_openai_client(self, *, reason: str, api_kwargs: Optional[dict] = None) -> Any:
+def _create_request_openai_client(
+    self, *, reason: str, api_kwargs: Optional[dict] = None
+) -> Any:
     from unittest.mock import Mock
 
     primary_client = self._ensure_primary_openai_client(reason=reason)
@@ -213,11 +220,12 @@ def _create_request_openai_client(self, *, reason: str, api_kwargs: Optional[dic
     # Shared/primary clients and Anthropic / Bedrock paths are
     # unaffected (they don't go through here).
     request_kwargs["max_retries"] = 0
-    if (
-        base_url_host_matches(str(request_kwargs.get("base_url", "")), "api.githubcopilot.com")
-        and self._api_kwargs_have_image_parts(api_kwargs or {})
-    ):
-        request_kwargs["default_headers"] = self._copilot_headers_for_request(is_vision=True)
+    if base_url_host_matches(
+        str(request_kwargs.get("base_url", "")), "api.githubcopilot.com"
+    ) and self._api_kwargs_have_image_parts(api_kwargs or {}):
+        request_kwargs["default_headers"] = self._copilot_headers_for_request(
+            is_vision=True
+        )
     return self._create_openai_client(request_kwargs, reason=reason, shared=False)
 
 
