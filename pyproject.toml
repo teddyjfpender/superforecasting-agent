@@ -833,3 +833,11 @@ type = "forbidden"
 source_modules = ["superforecasting_agent.configuration.codex_catalog"]
 forbidden_modules = ["tools", "agent", "cli", "gateway", "tui_gateway", "superforecasting_agent.runtime"]
 allow_indirect_imports = false
+
+
+[[tool.importlinter.contracts]]
+name = "auth persistence never imports credential execution or presentation"
+type = "forbidden"
+source_modules = ["superforecasting_agent.storage.auth"]
+forbidden_modules = ["tools", "agent", "cli", "gateway", "tui_gateway", "superforecasting_agent.runtime"]
+allow_indirect_imports = false

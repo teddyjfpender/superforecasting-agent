@@ -85,7 +85,7 @@ except Exception:
 # Constants
 # =============================================================================
 
-AUTH_STORE_VERSION = 1
+from superforecasting_agent.storage.auth import AUTH_STORE_VERSION as AUTH_STORE_VERSION
 AUTH_LOCK_TIMEOUT_SECONDS = 15.0
 
 # Nous Portal defaults
@@ -869,12 +869,15 @@ def _auth_file_path() -> Path:
     # hermetic conftest, or sandbox escapes via threads/subprocesses. In
     # production (no PYTEST_CURRENT_TEST) this is a single dict lookup.
     if os.environ.get("PYTEST_CURRENT_TEST"):
-        real_home_auth = (Path.home() / ".hermes" / "auth.json").resolve(strict=False)
+        real_home_auth = {
+            (Path.home() / home / "auth.json").resolve(strict=False)
+            for home in (".superforecasting-agent", ".hermes")
+        }
         try:
             resolved = path.resolve(strict=False)
         except Exception:
             resolved = path
-        if resolved == real_home_auth:
+        if resolved in real_home_auth:
             raise RuntimeError(
                 f"Refusing to touch real user auth store during test run: {path}. "
                 "Set HERMES_HOME to a tmp_path in your test fixture, or run "
@@ -985,94 +988,15 @@ def _auth_store_lock(timeout_seconds: float = AUTH_LOCK_TIMEOUT_SECONDS):
 
 
 def _load_auth_store(auth_file: Optional[Path] = None) -> Dict[str, Any]:
-    auth_file = auth_file or _auth_file_path()
-    if not auth_file.exists():
-        return {"version": AUTH_STORE_VERSION, "providers": {}}
+    from superforecasting_agent.storage.auth import load_auth_store
 
-    try:
-        raw = json.loads(auth_file.read_text())
-    except Exception as exc:
-        corrupt_path = auth_file.with_suffix(".json.corrupt")
-        try:
-            import shutil
-            shutil.copy2(auth_file, corrupt_path)
-        except Exception:
-            pass
-        logger.warning(
-            "auth: failed to parse %s (%s) — starting with empty store. "
-            "Corrupt file preserved at %s",
-            auth_file, exc, corrupt_path,
-        )
-        return {"version": AUTH_STORE_VERSION, "providers": {}}
-
-    if isinstance(raw, dict) and (
-        isinstance(raw.get("providers"), dict)
-        or isinstance(raw.get("credential_pool"), dict)
-    ):
-        raw.setdefault("providers", {})
-        return raw
-
-    # Migrate from PR's "systems" format if present
-    if isinstance(raw, dict) and isinstance(raw.get("systems"), dict):
-        systems = raw["systems"]
-        providers = {}
-        if "nous_portal" in systems:
-            providers["nous"] = systems["nous_portal"]
-        return {"version": AUTH_STORE_VERSION, "providers": providers,
-                "active_provider": "nous" if providers else None}
-
-    return {"version": AUTH_STORE_VERSION, "providers": {}}
+    return load_auth_store(auth_file or _auth_file_path())
 
 
 def _save_auth_store(auth_store: Dict[str, Any]) -> Path:
-    auth_file = _auth_file_path()
-    auth_file.parent.mkdir(parents=True, exist_ok=True)
-    # Tighten parent dir to 0o700 so siblings can't traverse to creds.
-    # No-op on Windows (POSIX mode bits not enforced); ignore failures.
-    try:
-        os.chmod(auth_file.parent, 0o700)
-    except OSError:
-        pass
-    auth_store["version"] = AUTH_STORE_VERSION
-    auth_store["updated_at"] = datetime.now(timezone.utc).isoformat()
-    payload = json.dumps(auth_store, indent=2) + "\n"
-    tmp_path = auth_file.with_name(f"{auth_file.name}.tmp.{os.getpid()}.{uuid.uuid4().hex}")
-    try:
-        # Create with 0o600 atomically via os.open(O_EXCL) + fdopen to close
-        # the TOCTOU window where default umask (often 0o644) briefly exposed
-        # OAuth tokens to other local users between open() and chmod().
-        # Mirrors agent/google_oauth.py (#19673) and tools/mcp_oauth.py (#21148).
-        fd = os.open(
-            str(tmp_path),
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
-            stat.S_IRUSR | stat.S_IWUSR,
-        )
-        with owned_text_descriptor(fd) as handle:
-            handle.write(payload)
-            handle.flush()
-            os.fsync(handle.fileno())
-        atomic_replace(tmp_path, auth_file)
-        try:
-            dir_fd = os.open(str(auth_file.parent), os.O_RDONLY)
-        except OSError:
-            dir_fd = None
-        if dir_fd is not None:
-            try:
-                os.fsync(dir_fd)
-            finally:
-                os.close(dir_fd)
-    finally:
-        try:
-            if tmp_path.exists():
-                tmp_path.unlink()
-        except OSError:
-            pass
-    # Restrict file permissions to owner only
-    try:
-        auth_file.chmod(stat.S_IRUSR | stat.S_IWUSR)
-    except OSError:
-        pass
-    return auth_file
+    from superforecasting_agent.storage.auth import save_auth_store
+
+    return save_auth_store(_auth_file_path(), auth_store)
 
 
 def _load_provider_state(auth_store: Dict[str, Any], provider_id: str) -> Optional[Dict[str, Any]]:

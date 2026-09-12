@@ -4820,3 +4820,19 @@ teardown close the raw handle once and preserve other allocations.
 Validation: 27 descriptor, atomic JSON/YAML and credential-mode tests passed;
 shared quality checks passed. The historical SSL/native descriptor incidents
 remain unproven and are not attributed to this newly reproduced leak.
+
+
+### Shared auth-store persistence
+
+Moved auth-store parsing, legacy format handling, corrupt-file preservation and
+durable writes into `storage/auth.py`, with explicit paths and shared descriptor
+ownership. Runtime delegates preserve the existing profile selection and caller-
+owned cross-process lock. Credential execution/refresh is deliberately not hidden
+behind a nominally read-only storage API. A transitive import gate excludes it.
+
+A negative control also confirmed the pytest guard missed the primary forecast
+home; both primary and legacy default homes are now protected. Tests use simulated
+homes and never access live credentials. Validation: 544 auth/provider, storage,
+metadata and boundary checks passed (one skip), plus three standalone storage
+compatibility/recovery checks. Shared quality checks passed all 72 import contracts
+and blocking Python/TUI/protocol checks. Refresh/discovery extraction remains open.

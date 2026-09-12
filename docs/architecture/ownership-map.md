@@ -944,3 +944,18 @@ Atomic configuration writers and the three native auth token writers use it.
 Failure and repeated-teardown tests preserve the previous target and unrelated
 open descriptors. This fixes a reproduced construction leak; it does not identify
 the historical native SSL or late bad-file-descriptor crash causes.
+
+
+### Auth-store persistence
+
+`superforecasting_agent/storage/auth.py` owns the auth-store version, legacy
+format parsing, corrupt-file preservation and durable private writes. Paths are
+explicit. Runtime auth delegates to it after profile selection and retains the
+cross-process read/modify/write lock, refresh and login behavior. A transitive
+import gate excludes execution and presentation from this storage owner.
+
+The runtime test guard now rejects both primary and legacy default auth homes;
+explicit isolated test profiles remain usable. Legacy credential-pool and systems
+formats round-trip through the shared owner, and malformed source files remain
+available for recovery. The module does not make concurrent unlocked callers safe
+or turn credential-status discovery into a passive operation.
