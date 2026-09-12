@@ -4119,3 +4119,19 @@ Concurrent output-buffer isolation and nested confirmation propagation have
 regressions. This does not prove cancellation during synchronous hub I/O or
 network-provider behavior; install success accounting and quoted arguments remain
 explicit follow-ups.
+
+
+### Shared skill result and output correctness
+
+The native migration exposed snapshot export writing directly to process stdout,
+which is the gateway protocol channel. Export now writes to the supplied console
+sink, including raw JSON without Rich rendering. Shared slash parsing uses shlex
+and rejects malformed quoting before dispatch. Quoted paths work in both callers.
+
+Installation returns True only after installation completes, and False on handled
+rejection/cancellation paths. Batch update/import summaries count that result;
+structured TUI installation no longer unconditionally returns installed=True.
+The 178-test skills/command run and shared quality checks passed. Regression
+coverage includes actual successful and security-blocked install paths, mixed
+batch results, malformed quoting, and no export leakage to global stdout.
+Network exceptions continue to propagate to the caller's existing error handling.

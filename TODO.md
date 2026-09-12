@@ -138,4 +138,4 @@ Import contracts enforce extracted owners; frozen exceptions remain explicit.
 Forecast pilots, deferred settlements and operational lesson evaluation are
 tracked in the archive and ledger. They do not block this structural workstream.
 
-Skills Hub follow-ups: report actual successful installs in update/import summaries; support quoted slash arguments; provide cooperative cancellation for in-progress hub I/O. Native dispatch currently retains host ownership until the operation returns.
+Skills Hub follow-up: provide cooperative cancellation for in-progress hub I/O. Native dispatch currently retains host ownership until the operation returns. Shared parsing now accepts quoted arguments, snapshot stdout uses the caller output sink, and batch/TUI installation results reflect actual completed installs.

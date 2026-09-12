@@ -1206,3 +1206,15 @@ def test_skills_fallback_uses_shared_operation_without_classic_worker(configure,
         assert 'owned skill output' in response['result']['output']
     else:
         assert 'skills' in response['result']['output'].lower()
+
+
+@pytest.mark.parametrize('installed', [True, False])
+def test_skills_install_reports_operation_result(configure, monkeypatch, installed):
+    from superforecasting_agent.runtime import skills_hub
+
+    monkeypatch.setattr(skills_hub, 'do_install', Mock(return_value=installed))
+    response = server.handle_request({
+        'id': 3, 'method': 'skills.manage',
+        'params': {'action': 'install', 'query': 'owner/fixture', 'session_id': 'runtime'},
+    })
+    assert response['result']['installed'] is installed

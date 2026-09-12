@@ -101,7 +101,7 @@ def _capture_update(monkeypatch, results) -> tuple[str, list[tuple[str, str, boo
     monkeypatch.setattr(hub, "HubLockFile", lambda: type("L", (), {
         "get_installed": lambda self, name: {"install_path": "category/" + name}
     })())
-    monkeypatch.setattr(cli_hub, "do_install", lambda identifier, category="", force=False, console=None, skip_confirm=False: installs.append((identifier, category, force)))
+    monkeypatch.setattr(cli_hub, "do_install", lambda identifier, category="", force=False, console=None, skip_confirm=False: (installs.append((identifier, category, force)) or True))
 
     do_update(console=console)
     return sink.getvalue(), installs
@@ -360,7 +360,7 @@ def test_do_install_scans_with_resolved_identifier(monkeypatch, tmp_path, hub_en
     sink = StringIO()
     console = Console(file=sink, force_terminal=False, color_system=None)
 
-    do_install("skils-sh/anthropics/skills/frontend-design", console=console, skip_confirm=True)
+    assert do_install("skils-sh/anthropics/skills/frontend-design", console=console, skip_confirm=True) is False
 
     assert scanned["source"] == canonical_identifier
 
@@ -437,11 +437,11 @@ def test_url_install_uses_name_override_on_non_interactive_surface(monkeypatch, 
 
     sink = StringIO()
     console = Console(file=sink, force_terminal=False, color_system=None)
-    do_install(
+    assert do_install(
         "https://example.com/SKILL.md",
         console=console, skip_confirm=True,
         name_override="my-url-skill",
-    )
+    ) is True
 
     assert installs == [{"name": "my-url-skill", "category": ""}]
 
@@ -618,3 +618,51 @@ def test_concurrent_skill_commands_keep_separate_output(monkeypatch):
         second = pool.submit(skills_hub.skills_slash_output, 'audit SECOND')
         assert first.result().strip() == 'FIRST\nFIRST'
         assert second.result().strip() == 'SECOND\nSECOND'
+
+
+def test_snapshot_stdout_uses_supplied_console(monkeypatch, capsys):
+    import json
+    import tools.skills_hub as hub
+    from superforecasting_agent.runtime import skills_hub
+
+    monkeypatch.setattr(hub, 'HubLockFile', lambda: type('Lock', (), {'list_installed': lambda self: []})())
+    monkeypatch.setattr(hub, 'TapsManager', lambda: type('Taps', (), {'list_taps': lambda self: []})())
+    output = skills_hub.skills_slash_output('snapshot export -')
+    assert json.loads(output)['skills'] == []
+    assert capsys.readouterr().out == ''
+
+
+def test_slash_snapshot_quoted_path(monkeypatch):
+    from unittest.mock import Mock
+    from superforecasting_agent.runtime import skills_hub
+
+    export = Mock()
+    monkeypatch.setattr(skills_hub, 'do_snapshot_export', export)
+    skills_hub.skills_slash_output('snapshot export "path with spaces.json"')
+    assert export.call_args.args == ('path with spaces.json',)
+    export.reset_mock()
+    output = skills_hub.skills_slash_output('snapshot export "unfinished')
+    assert 'Invalid skills command:' in output
+    export.assert_not_called()
+
+
+def test_batch_counts_only_completed_installs(monkeypatch, tmp_path):
+    import json
+    from unittest.mock import Mock
+    import tools.skills_hub as hub
+    from superforecasting_agent.runtime import skills_hub
+
+    monkeypatch.setattr(hub, 'check_for_skill_updates', lambda **kw: [
+        {'name': name, 'identifier': f'owner/{name}', 'status': 'update_available'}
+        for name in ('one', 'two')
+    ])
+    monkeypatch.setattr(hub, 'HubLockFile', lambda: type('Lock', (), {'get_installed': lambda self, name: None})())
+    install = Mock(side_effect=[True, False])
+    monkeypatch.setattr(skills_hub, 'do_install', install)
+    output = skills_hub.skills_slash_output('update')
+    assert 'Updated 1 skill(s); 1 not updated.' in output
+    snapshot = tmp_path / 'snapshot.json'
+    snapshot.write_text(json.dumps({'skills': [{'identifier': 'owner/one'}, {'identifier': 'owner/two'}, {}]}), encoding='utf-8')
+    install.side_effect = [True, False]
+    output = skills_hub.skills_slash_output(f'snapshot import {snapshot}')
+    assert '1 installed; 2 not installed.' in output
