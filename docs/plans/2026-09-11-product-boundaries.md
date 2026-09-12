@@ -3577,3 +3577,29 @@ and command tests passed afterward; shared Python gates passed with 52 contracts
 This is preparation for live restoration, not a cross-file crash transaction.
 Durable recovery records and host-wide quiescence remain necessary; TUI restore
 remains blocked until those are implemented.
+
+
+### Journaled snapshot recovery
+
+Restore now records its staged copies and SHA-256 digests before publication.
+Publication errors retain those exact copies; a new restore cannot overwrite a
+pending journal. Recovery validates every member before writing and can roll
+forward without retaining the source snapshot. A completed journal distinguishes
+unfinished cleanup from unfinished publication, so cleanup retries do not overwrite
+subsequent profile changes. Publication copies have journal-derived names for
+reclamation after abrupt death. POSIX directory entries are synced in publication
+order; Windows currently has process-interruption recovery only, with no power-loss
+durability claim.
+
+The storage API is `recover_quick_snapshot_restore(home)`. It serializes restores,
+not all profile writers: callers must quiesce writers before restore or recovery.
+Live TUI restoration remains disabled pending host coordination. This provides
+recoverable roll-forward, not an atomic cross-file transaction or live SQLite swap.
+
+All 151 snapshot integrity/recovery and backup tests passed. Four subprocess tests
+terminate via `os._exit` before/after file publication and the completion marker,
+remove the source snapshot, then recover in another process. Further tests cover
+corrupt/missing/symlink copies, malformed journals, duplicate members, pending
+restore admission and interrupted cleanup. Shared Python quality gates passed
+with all 52 import contracts. Physical power loss and other platform behavior
+were not tested by these subprocess cases.

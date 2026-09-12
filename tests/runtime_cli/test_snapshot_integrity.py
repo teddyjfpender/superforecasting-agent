@@ -62,7 +62,7 @@ def test_restore_rejects_symlink_members(home, tmp_path, side):
     assert external.read_text(encoding="utf-8") == "untouched"
 
 
-def test_failed_replacement_preserves_live_file_and_cleans_temporary(home, monkeypatch):
+def test_failed_replacement_preserves_live_file_and_retains_recovery(home, monkeypatch):
     sid = backup.create_quick_snapshot(hermes_home=home)
     (home / "config.yaml").write_text("current", encoding="utf-8")
     def fail(*args):
@@ -71,7 +71,9 @@ def test_failed_replacement_preserves_live_file_and_cleans_temporary(home, monke
     with pytest.raises(OSError, match="restoration incomplete"):
         backup.restore_quick_snapshot(sid, hermes_home=home)
     assert (home / "config.yaml").read_text(encoding="utf-8") == "current"
-    assert not list(home.glob(".*.snap_restore-*"))
+    assert list(home.glob(".*.snap_restore-*"))
+    assert (home / ".snapshot-restore.json").is_file()
+    assert not list(home.glob(".*.restore_publish-*"))
 
 
 @pytest.mark.parametrize("keep", [-1, True, 1.5, "2"])
@@ -195,4 +197,10 @@ def test_partial_publication_is_never_reported_as_success(home, monkeypatch):
         backup.restore_quick_snapshot(sid, hermes_home=home)
     assert (home / 'config.yaml').read_text(encoding='utf-8') == 'original'
     assert (home / 'auth.json').read_text(encoding='utf-8') == 'current auth'
+    assert list(home.glob('.*.snap_restore-*'))
+    monkeypatch.setattr(backup, 'atomic_replace', replace)
+    assert backup.recover_quick_snapshot_restore(home)
+    assert (home / 'auth.json').read_text(encoding='utf-8') == 'snapshot auth'
     assert not list(home.glob('.*.snap_restore-*'))
+    assert not (home / '.snapshot-restore.json').exists()
+    assert backup.recover_quick_snapshot_restore(home) is False

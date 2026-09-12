@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -15,7 +16,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from superforecasting_agent.constants import get_agent_home
-from superforecasting_agent.storage.files import atomic_json_write, atomic_replace
+from superforecasting_agent.storage.files import (
+    atomic_json_write,
+    atomic_replace,
+    yaml_update_lock,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -194,7 +199,7 @@ def list_quick_snapshots(
     return results
 
 
-def restore_quick_snapshot(
+def _restore_quick_snapshot(
     snapshot_id: str,
     hermes_home: Optional[Path] = None,
 ) -> bool:
@@ -232,7 +237,8 @@ def restore_quick_snapshot(
         members.append((rel, src, dst))
 
     staged: list[tuple[str, Path, Path]] = []
-    published: list[str] = []
+    journal = home / ".snapshot-restore.json"
+    recorded = False
     try:
         for rel, src, dst in members:
             dst.parent.mkdir(parents=True, exist_ok=True)
@@ -245,24 +251,172 @@ def restore_quick_snapshot(
             shutil.copy2(src, tmp)
             with tmp.open("rb") as stream:
                 os.fsync(stream.fileno())
+        if not staged:
+            return False
+        record = {
+            "version": 1,
+            "snapshot_id": snapshot_id,
+            "state": "publishing",
+            "members": [
+                {"path": rel, "staged": tmp.name, "sha256": _restore_digest(tmp)}
+                for rel, tmp, _ in staged
+            ],
+        }
+        # Retain copies if journal publication changed the target before
+        # raising: a caller must never lose the bytes needed for retry.
+        _sync_restore_directories(home, [tmp.parent for _, tmp, _ in staged])
+        atomic_json_write(journal, record)
+        _sync_restore_directories(home, [home])
+        recorded = True
+        return _recover_quick_snapshot_restore(home)
+    finally:
+        if not recorded and not journal.exists():
+            for _, tmp, _ in staged:
+                tmp.unlink(missing_ok=True)
 
-        for rel, tmp, dst in staged:
+
+def _sync_restore_directories(home: Path, directories: list[Path]) -> None:
+    """Persist directory entries on POSIX; Windows supports process retry only."""
+    if os.name == "nt":
+        return
+    pending = {home}
+    for directory in directories:
+        while directory != home:
+            pending.add(directory)
+            directory = directory.parent
+    for directory in sorted(pending, key=lambda path: len(path.parts), reverse=True):
+        fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+
+
+def _restore_digest(path: Path) -> str:
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def _restore_journal_members(home: Path, record: Any) -> list[tuple[str, Path, Path]]:
+    if (
+        not isinstance(record, dict)
+        or type(record.get("version")) is not int
+        or record["version"] != 1
+        or record.get("state") not in ("publishing", "complete")
+        or not isinstance(record.get("members"), list)
+        or not record["members"]
+    ):
+        raise ValueError("Invalid snapshot restore journal")
+    _snapshot_name(record.get("snapshot_id"))
+    members: list[tuple[str, Path, Path]] = []
+    seen: set[str] = set()
+    for member in record["members"]:
+        if not isinstance(member, dict):
+            raise ValueError("Invalid snapshot restore member")
+        rel = member.get("path")
+        dst = _snapshot_member(home, rel)
+        name = _snapshot_name(member.get("staged"))
+        if not name.startswith(f".{dst.name}.snap_restore-") or rel in seen:
+            raise ValueError("Invalid or duplicate snapshot restore member")
+        seen.add(rel)
+        tmp = dst.parent / name
+        if (
+            tmp.is_symlink()
+            or tmp.with_name(tmp.name + ".publish").is_symlink()
+            or (dst.exists() and not dst.is_file())
+        ):
+            raise ValueError("Snapshot restore members must be regular files")
+        if record["state"] == "publishing":
+            digest = member.get("sha256")
+            if (
+                not tmp.is_file()
+                or not isinstance(digest, str)
+                or _restore_digest(tmp) != digest
+            ):
+                raise ValueError(f"Snapshot restore copy is missing or changed: {rel}")
+        members.append((rel, tmp, dst))
+    return members
+
+
+def _recover_quick_snapshot_restore(home: Path) -> bool:
+    journal = home / ".snapshot-restore.json"
+    if journal.is_symlink():
+        raise ValueError("Snapshot restore journal must not be a symbolic link")
+    if not journal.exists():
+        return False
+    record = json.loads(journal.read_text(encoding="utf-8"))
+    members = _restore_journal_members(home, record)
+    published: list[str] = []
+    if record["state"] == "publishing":
+        for rel, staged, dst in members:
+            # Derive the disposable publication copy from the journal-owned
+            # staged name so a retry can reclaim it after abrupt process death.
+            tmp = staged.with_name(staged.name + ".publish")
+            if tmp.is_symlink():
+                raise ValueError(
+                    "Snapshot publication copy must not be a symbolic link"
+                )
+            tmp.unlink(missing_ok=True)
             try:
+                with tmp.open("xb"):
+                    pass
+                shutil.copy2(staged, tmp)
+                with tmp.open("rb") as stream:
+                    os.fsync(stream.fileno())
                 atomic_replace(tmp, dst)
             except OSError as exc:
                 raise OSError(
                     f"Snapshot restoration incomplete while publishing {rel}; "
                     f"confirmed published files: {', '.join(published) or '(none)'}. "
-                    "The failed target may also have changed. "
-                    f"Original error: {exc}"
+                    "The failed target may also have changed. Staged copies are "
+                    f"retained for recovery. Original error: {exc}"
                 ) from exc
+            finally:
+                tmp.unlink(missing_ok=True)
             published.append(rel)
-    finally:
-        for _, tmp, _ in staged:
-            tmp.unlink(missing_ok=True)
+        # Mark completion durably before deleting the copies. A crash during
+        # cleanup must not make recovery try to republish deleted staged files.
+        _sync_restore_directories(home, [dst.parent for _, _, dst in members])
+        record["state"] = "complete"
+        atomic_json_write(journal, record)
+        _sync_restore_directories(home, [home])
+    for _, staged, _ in members:
+        staged.with_name(staged.name + ".publish").unlink(missing_ok=True)
+        staged.unlink(missing_ok=True)
+    journal.unlink()
+    _sync_restore_directories(home, [staged.parent for _, staged, _ in members])
+    logger.info("Completed snapshot restoration: %s", record["snapshot_id"])
+    return True
 
-    logger.info("Restored %d files from snapshot %s", len(published), snapshot_id)
-    return bool(published)
+
+def recover_quick_snapshot_restore(hermes_home: Optional[Path] = None) -> bool:
+    """Finish an interrupted restore under exclusive restore admission.
+
+    Callers must quiesce other profile writers first. Copies are verified before
+    writes; retries republish identical bytes and cannot select a new snapshot.
+    """
+    home = hermes_home or get_agent_home()
+    if (home / ".snapshot-restore.json").is_symlink():
+        raise ValueError("Snapshot restore journal must not be a symbolic link")
+    with yaml_update_lock(home / ".snapshot-restore.json"):
+        return _recover_quick_snapshot_restore(home)
+
+
+def restore_quick_snapshot(
+    snapshot_id: str, hermes_home: Optional[Path] = None
+) -> bool:
+    """Stage and journal a restore; refuse to overwrite pending recovery state."""
+    _snapshot_name(snapshot_id)
+    home = hermes_home or get_agent_home()
+    journal = home / ".snapshot-restore.json"
+    if journal.is_symlink():
+        raise ValueError("Snapshot restore journal must not be a symbolic link")
+    with yaml_update_lock(journal):
+        if journal.exists() or journal.is_symlink():
+            raise OSError(
+                "Snapshot restoration pending; recover it before starting another"
+            )
+        return _restore_quick_snapshot(snapshot_id, home)
 
 
 def _prune_quick_snapshots(root: Path, keep: int = _QUICK_DEFAULT_KEEP) -> int:
