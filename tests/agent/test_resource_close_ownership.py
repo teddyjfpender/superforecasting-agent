@@ -296,3 +296,24 @@ def test_host_retains_agent_until_failed_child_disposal_succeeds(monkeypatch):
     assert not session['_cleanup_pending']
     assert session['_disposed_resources']['agent'] is agent
     assert child.close.call_count == 2
+
+
+def test_borrowed_session_tools_survive_while_owned_clients_close(monkeypatch):
+    from tools import process_registry
+
+    agent = make_agent()
+    agent._owns_session_tools = False
+    client = object()
+    agent.client = client
+    agent._close_openai_client = Mock()
+    parent_environment = Mock()
+    monkeypatch.setattr(terminal_tool, '_active_environments', {agent.session_id: parent_environment})
+    monkeypatch.setattr(process_registry.process_registry, 'kill_all', Mock())
+    monkeypatch.setattr(session_lifecycle, 'cleanup_browser', Mock())
+    session_lifecycle.close(agent)
+    session_lifecycle.close(agent)
+    parent_environment.cleanup.assert_not_called()
+    assert terminal_tool._active_environments[agent.session_id] is parent_environment
+    process_registry.process_registry.kill_all.assert_not_called()
+    session_lifecycle.cleanup_browser.assert_not_called()
+    agent._close_openai_client.assert_called_once_with(client, reason='agent_close', shared=True)

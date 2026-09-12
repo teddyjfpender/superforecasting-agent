@@ -293,3 +293,43 @@ def test_background_review_never_replaces_foreground_streams(monkeypatch, capsys
     assert len(failures) == 1
     assert 'injected review failure' in str(failures[0][1])
     assert (sys.stdout, sys.stderr) == streams
+
+
+def test_review_borrows_parent_session_tools_but_closes_its_client(monkeypatch):
+    import threading
+    from unittest.mock import Mock
+    from agent import session_lifecycle
+    from tools import process_registry, terminal_tool
+
+    parent = _bare_agent()
+    environment = Mock()
+    client = object()
+    close_client = Mock()
+    monkeypatch.setattr(terminal_tool, '_active_environments', {parent.session_id: environment})
+    kill = Mock()
+    browser = Mock()
+    monkeypatch.setattr(process_registry.process_registry, 'kill_all', kill)
+    monkeypatch.setattr(session_lifecycle, 'cleanup_browser', browser)
+    class FakeReviewAgent:
+        def __init__(self, **kwargs):
+            self._session_messages = []
+            self._resource_close_lock = threading.RLock()
+            self._active_children_lock = threading.Lock()
+            self._active_children = []
+            self.client = client
+            self._close_openai_client = close_client
+        def run_conversation(self, **kwargs):
+            assert self.session_id == parent.session_id
+            assert self._owns_session_tools is False
+        def shutdown_memory_provider(self):
+            pass
+        def close(self):
+            session_lifecycle.close(self)
+    monkeypatch.setattr(run_agent_module, 'AIAgent', FakeReviewAgent)
+    monkeypatch.setattr(run_agent_module.threading, 'Thread', ImmediateThread)
+    AIAgent._spawn_background_review(parent, [], review_memory=True)
+    assert terminal_tool._active_environments[parent.session_id] is environment
+    environment.cleanup.assert_not_called()
+    kill.assert_not_called()
+    browser.assert_not_called()
+    close_client.assert_called_once_with(client, reason='agent_close', shared=True)

@@ -189,6 +189,7 @@ def init_agent(
     """
     agent._resource_close_lock = threading.RLock()
     agent._resources_closed = False
+    agent._owns_session_tools = True
 
     _install_safe_stdio()
 

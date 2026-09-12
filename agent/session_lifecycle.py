@@ -239,25 +239,26 @@ def close(self) -> None:
 def _close_resources(self) -> None:
     task_id = getattr(self, "session_id", None) or ""
 
-    # 1. Kill background processes for this task
-    try:
-        from tools.process_registry import process_registry
+    if getattr(self, "_owns_session_tools", True):
+        # 1. Kill background processes for this task
+        try:
+            from tools.process_registry import process_registry
 
-        process_registry.kill_all(task_id=task_id)
-    except Exception:
-        pass
+            process_registry.kill_all(task_id=task_id)
+        except Exception:
+            pass
 
-    # 2. Clean terminal sandbox environments
-    try:
-        cleanup_vm(task_id)
-    except Exception:
-        pass
+        # 2. Clean terminal sandbox environments
+        try:
+            cleanup_vm(task_id)
+        except Exception:
+            pass
 
-    # 3. Clean browser daemon sessions
-    try:
-        cleanup_browser(task_id)
-    except Exception:
-        pass
+        # 3. Clean browser daemon sessions
+        try:
+            cleanup_browser(task_id)
+        except Exception:
+            pass
 
     # 4. Close active children, retaining exact handles if disposal fails.
     _close_children(self, release_only=False)

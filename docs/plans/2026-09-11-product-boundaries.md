@@ -2739,3 +2739,21 @@ The command recovery test waits for command activity to finish, not just streame
 Created text, before checking Ctrl+C exit. An initial combined run exposed that
 streaming-versus-completion distinction; after correction all 37 focused review,
 Bayes and native terminal recovery tests passed. Python quality gates passed.
+
+
+### Review forks borrow session tools rather than destroying the parent
+
+The review fork pins the parent's session ID for cached-prompt/history compatibility.
+Normal close previously used that ID to kill background processes and clean terminal
+and browser resources, despite the review's memory/skill whitelist never owning those
+tools. Agent initialization now records session-tool ownership explicitly. The review
+marks those tools borrowed before adopting the parent's identity; lifecycle cleanup
+skips only borrowed tool resources and still closes owned children and API clients.
+
+28 focused ownership, review, cache-parity and client-lifecycle tests passed. Tests
+exercise the actual review-to-close path with a parent environment registered under
+the shared ID, proving no parent cleanup/process kill/browser cleanup while the fork's
+client closes once. Ordinary agents retain existing owner behavior and repeated-close
+protection. Shared Python quality gates passed. Background-review thread admission,
+interruption and draining are still unfinished; this addresses the separate shared-ID
+resource destruction defect discovered during that audit.

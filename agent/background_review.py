@@ -435,6 +435,10 @@ def _run_review_in_thread(
         # rebuild path, but these pins guarantee parity even
         # if a future code path bypasses the cache.
         review_agent.session_start = agent.session_start
+        # The fork borrows this identity for prompt/history compatibility. Its
+        # whitelist forbids session tools; closing it must not destroy the
+        # parent's terminal, browser or background processes.
+        review_agent._owns_session_tools = False
         review_agent.session_id = agent.session_id
 
         from superforecasting_agent.tooling.runtime import get_tool_definitions
