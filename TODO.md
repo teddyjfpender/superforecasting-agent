@@ -34,9 +34,9 @@ The legacy dispatcher itself remains.
   can mark itself closed before transport disposal fails. Safe recovery of those
   transports and terminal/browser cleanup failures is still unfinished.
 - [x] Remove the legacy global goal database cache. Standalone managers own
-  closable connections; TUI managers borrow host storage. Manager reads refresh
-  and writes reject stale state. Supply the existing CLI/gateway stores as a
-  further consolidation of host construction.
+  closable connections; CLI, gateway and TUI managers borrow their host storage.
+  Manager reads refresh and writes reject stale state. Hosted goal paths never
+  open an implicit fallback database.
 - [ ] Extend installed remote-host/provider recovery exercises to longer sessions.
 
 Already implemented: host-owned workers, session registry/storage, profile

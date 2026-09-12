@@ -2143,3 +2143,18 @@ worth doing to avoid unnecessary separate standalone connections in those hosts.
 The prior CLI/cron/cleanup batch pushed at `ce5d9f8db` after 30,981 tests passed
 (148 skipped, 58 warnings). Sandbox ownership/configuration and goal-store changes
 remain pending their integrated gate.
+
+### Goal storage borrowed by all product hosts
+
+Wired the classic CLI and all three gateway goal-consumer paths to their existing
+session database. They no longer create standalone stores as a hidden fallback.
+CLI manager reuse requires both session and database identity, and rebinding
+retires the old manager without closing the borrowed store. Missing gateway
+storage reports unavailable/defers continuation rather than opening another DB.
+
+103 goal tests passed across CLI, gateway, TUI and standalone behavior; shared
+quality checks passed. New tests prohibit fallback database creation, exercise
+CLI session/database rebinding, preserve borrowed stores, and verify gateway
+command, queued-continuation and post-turn paths with unavailable host storage.
+Test runners now supply owned fixture databases rather than relying on the old
+global-cache behavior.

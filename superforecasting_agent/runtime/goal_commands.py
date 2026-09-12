@@ -23,8 +23,13 @@ def _get_goal_manager(self):
     if not sid:
         return None
 
+    database = getattr(self, "_session_db", None)
+    if database is None:
+        return None
     existing = getattr(self, "_goal_manager", None)
-    if existing is not None and getattr(existing, "session_id", None) == sid:
+    if (existing is not None and getattr(existing, "session_id", None) == sid
+            and getattr(existing, "_database", None) is database
+            and not getattr(existing, "_closed", False)):
         return existing
 
     try:
@@ -34,7 +39,10 @@ def _get_goal_manager(self):
     except Exception:
         max_turns = 20
 
-    mgr = GoalManager(session_id=sid, default_max_turns=max_turns)
+    mgr = GoalManager(session_id=sid, default_max_turns=max_turns,
+                      database_provider=lambda: database)
+    if existing is not None:
+        existing.close()
     self._goal_manager = mgr
     return mgr
 

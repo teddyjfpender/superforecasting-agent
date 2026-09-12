@@ -534,3 +534,10 @@ A weak finalizer supports legacy callers that discard standalone managers withou
 closing explicitly. Compatibility load/save helpers close their own short-lived
 connections. CLI/gateway callers can migrate to their existing host DB providers
 without changing goal validation or compare-and-swap behavior.
+
+Classic CLI and messaging-gateway goal managers now borrow their existing
+`_session_db`, as TUI managers borrow host storage. Missing host storage never
+falls back to standalone database creation. CLI goal-manager reuse checks both
+session and database identity; rebinding closes only the old manager, not its
+borrowed connection. Gateway command lookup, queued-continuation checks and
+post-turn judging all use the same host store.

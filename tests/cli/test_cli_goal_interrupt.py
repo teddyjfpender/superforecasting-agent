@@ -54,6 +54,7 @@ def _make_cli_with_goal(session_id: str, goal_text: str = "build a thing"):
 
     mgr = GoalManager(session_id=session_id, default_max_turns=5)
     mgr.set(goal_text)
+    cli._session_db = mgr._database
     cli._goal_manager = mgr
     return cli, mgr
 

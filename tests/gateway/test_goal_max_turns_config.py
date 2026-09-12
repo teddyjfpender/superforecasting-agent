@@ -23,7 +23,7 @@ class _FakeSessionStore:
 
 
 @pytest.mark.asyncio
-async def test_gateway_goal_uses_goals_max_turns_from_full_config(tmp_path, monkeypatch):
+async def test_gateway_goal_uses_goals_max_turns_from_full_config(tmp_path, monkeypatch, request):
     """Gateway /goal should honor top-level goals.max_turns from config.yaml."""
     home = tmp_path / ".hermes"
     home.mkdir()
@@ -31,6 +31,9 @@ async def test_gateway_goal_uses_goals_max_turns_from_full_config(tmp_path, monk
     monkeypatch.setenv("HERMES_HOME", str(home))
 
     runner = object.__new__(GatewayRunner)
+    from superforecasting_agent.storage.session import SessionDB
+    runner._session_db = SessionDB()
+    request.addfinalizer(runner._session_db.close)
     runner.config = GatewayConfig(
         platforms={Platform.DISCORD: PlatformConfig(enabled=True, token="token")}
     )

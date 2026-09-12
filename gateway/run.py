@@ -2614,7 +2614,7 @@ class GatewayRunner:
             return False
         try:
             from superforecasting_agent.runtime.goals import GoalManager
-            return GoalManager(session_id=session_id).is_active()
+            return GoalManager(session_id=session_id, database_provider=lambda: getattr(self, "_session_db", None)).is_active()
         except Exception as exc:
             logger.debug("goal continuation: active-state recheck failed: %s", exc)
             return False
@@ -11317,7 +11317,13 @@ class GatewayRunner:
         if not sid:
             return None, None
         max_turns = self._goal_max_turns_from_config()
-        return GoalManager(session_id=sid, default_max_turns=max_turns), session_entry
+        try:
+            manager = GoalManager(session_id=sid, default_max_turns=max_turns,
+                                  database_provider=lambda: getattr(self, "_session_db", None))
+        except Exception as exc:
+            logger.warning("goal storage unavailable: %s", exc)
+            return None, None
+        return manager, session_entry
 
     async def _handle_goal_command(self, event: "MessageEvent") -> str:
         """Handle /goal for gateway platforms.
@@ -11502,7 +11508,12 @@ class GatewayRunner:
 
         max_turns = self._goal_max_turns_from_config()
 
-        mgr = GoalManager(session_id=sid, default_max_turns=max_turns)
+        try:
+            mgr = GoalManager(session_id=sid, default_max_turns=max_turns,
+                              database_provider=lambda: getattr(self, "_session_db", None))
+        except Exception as exc:
+            logger.warning("goal continuation storage unavailable: %s", exc)
+            return
         if not mgr.is_active():
             return
 
