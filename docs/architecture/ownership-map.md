@@ -44,6 +44,7 @@ The formality layer of the modularization program
 | `superforecasting_agent/tooling/github_auth.py` | skill source authentication | `GitHubAuth`, re-exported by `tools.skills_hub` | Credentials resolve lazily; importing the module does not load source adapters |
 | `superforecasting_agent/tooling/skill_paths.py` | skill bundle path validation | Shared name, category, and relative-file validators, re-exported by `tools.skills_hub` | Standard-library-only validation before filesystem access |
 | `tools/` | tools | `tools.registry`; `tools.forecast_actions.ACTIONS` | `run_agent` (forbidden) |
+| `forecasting/configuration/` | setting contracts and registry | ConfigKey, defaults and alias maps; AppConfig re-exports existing names and owns loading/diagnostics | No AppConfig, runtime/storage, tools, agent or presentation imports; enforced transitively |
 | `forecasting/domains.py` | semantic classification | Explicit source categories and audited active-question corrections | No title-based inference or probability-history rewriting |
 | `forecasting/source_bindings.py` | measurement contracts | NWS temperature and USGS magnitude extraction | No network calls or inferred settlement decisions |
 | `forecasting/sources/bls_parsing.py` | BLS parsing | Finite measurements, exact series identity, periods and duplicate/revision checks | No network, CLI or ledger writes; periods are not publication times |

@@ -625,3 +625,11 @@ type = "forbidden"
 source_modules = ["superforecasting_agent.storage.configuration"]
 forbidden_modules = ["superforecasting_agent.runtime", "gateway", "tui_gateway", "cli"]
 allow_indirect_imports = false
+
+
+[[tool.importlinter.contracts]]
+name = "forecast setting registry is independent of loading and runtime"
+type = "forbidden"
+source_modules = ["forecasting.configuration"]
+forbidden_modules = ["forecasting.appconfig", "superforecasting_agent", "tools", "agent", "gateway", "tui_gateway", "cli"]
+allow_indirect_imports = false

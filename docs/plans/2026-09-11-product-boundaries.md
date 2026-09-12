@@ -1630,3 +1630,19 @@ complete output and independently reloaded durable goal state.
 Validation: 80 goal/command tests passed
 (`/tmp/forecast-goal-render-boundary-tests.log`). The integrated batch still needs
 a fresh full gate; the previous failure is not counted as qualification.
+
+### Data-only forecast settings registry with strict quality gates
+
+`forecasting/configuration/registry.py` now owns ConfigKey, setting defaults,
+alias metadata and the derived lookup maps. AppConfig retains loading, typed
+accessors and diagnostics, and re-exports the existing registry names so current
+callers keep their API. Both the loader and new configuration directory now run
+blocking lint, formatting and type checks; the registry has a transitive contract
+forbidding loader, storage/runtime, tool, agent and presentation dependencies.
+The boundary regression deliberately injects an indirect CLI import and verifies
+rejection.
+
+Validation: 48 configuration/contract tests passed
+(`/tmp/forecast-config-registry-tests.log`). Python quality passed, including all
+35 import contracts (`/tmp/forecast-config-registry-quality.log`). No setting
+values, defaults or compatibility aliases were changed.
