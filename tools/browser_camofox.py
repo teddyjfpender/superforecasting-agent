@@ -285,12 +285,15 @@ def camofox_soft_cleanup(task_id: Optional[str] = None) -> bool:
     does nothing and returns ``False`` so the caller can fall back to
     :func:`camofox_close`.
     """
-    camofox_cfg = _get_camofox_config()
-    if bool(camofox_cfg.get("managed_persistence")) or _camofox_identity_override(task_id, camofox_cfg):
-        _drop_session(task_id)
-        logger.debug("Camofox soft cleanup for task %s (managed persistence)", task_id)
-        return True
-    return False
+    from superforecasting_agent.hosting.browser_sessions import browser_session_lifecycle
+
+    with browser_session_lifecycle((task_id or "default").removesuffix("::local")):
+        camofox_cfg = _get_camofox_config()
+        if bool(camofox_cfg.get("managed_persistence")) or _camofox_identity_override(task_id, camofox_cfg):
+            _drop_session(task_id)
+            logger.debug("Camofox soft cleanup for task %s (managed persistence)", task_id)
+            return True
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -335,208 +338,232 @@ def _delete(path: str, body: dict = None, timeout: int = _DEFAULT_TIMEOUT) -> di
 
 def camofox_navigate(url: str, task_id: Optional[str] = None) -> str:
     """Navigate to a URL via Camofox."""
-    try:
-        session = _get_session(task_id)
-        if not session["tab_id"]:
-            # Create tab with the target URL directly
-            session = _ensure_tab(task_id, url)
-            data = {"ok": True, "url": url}
-        else:
-            # Navigate existing tab
-            data = _post(
-                f"/tabs/{session['tab_id']}/navigate",
-                {"userId": session["user_id"], "url": url},
-                timeout=60,
-            )
-        result = {
-            "success": True,
-            "url": data.get("url", url),
-            "title": data.get("title", ""),
-        }
-        vnc = get_vnc_url()
-        if vnc:
-            result["vnc_url"] = vnc
-            result["vnc_hint"] = (
-                "Browser is visible via VNC. "
-                "Share this link with the user so they can watch the browser live."
-            )
+    from superforecasting_agent.hosting.browser_sessions import browser_session_lifecycle
 
-        # Auto-take a compact snapshot so the model can act immediately
+    with browser_session_lifecycle((task_id or "default").removesuffix("::local")):
         try:
-            snap_data = _get(
-                f"/tabs/{session['tab_id']}/snapshot",
-                params={"userId": session["user_id"]},
-            )
-            snapshot_text = snap_data.get("snapshot", "")
-            from tools.browser_tool import (
-                SNAPSHOT_SUMMARIZE_THRESHOLD,
-                _truncate_snapshot,
-            )
-            if len(snapshot_text) > SNAPSHOT_SUMMARIZE_THRESHOLD:
-                snapshot_text = _truncate_snapshot(snapshot_text)
-            result["snapshot"] = snapshot_text
-            result["element_count"] = snap_data.get("refsCount", 0)
-        except Exception:
-            pass  # Navigation succeeded; snapshot is a bonus
+            session = _get_session(task_id)
+            if not session["tab_id"]:
+                # Create tab with the target URL directly
+                session = _ensure_tab(task_id, url)
+                data = {"ok": True, "url": url}
+            else:
+                # Navigate existing tab
+                data = _post(
+                    f"/tabs/{session['tab_id']}/navigate",
+                    {"userId": session["user_id"], "url": url},
+                    timeout=60,
+                )
+            result = {
+                "success": True,
+                "url": data.get("url", url),
+                "title": data.get("title", ""),
+            }
+            vnc = get_vnc_url()
+            if vnc:
+                result["vnc_url"] = vnc
+                result["vnc_hint"] = (
+                    "Browser is visible via VNC. "
+                    "Share this link with the user so they can watch the browser live."
+                )
 
-        return json.dumps(result)
-    except requests.HTTPError as e:
-        return tool_error(f"Navigation failed: {e}", success=False)
-    except requests.ConnectionError:
-        return json.dumps({
-            "success": False,
-            "error": f"Cannot connect to Camofox at {get_camofox_url()}. "
-                     "Is the server running? Start with: npm start (in camofox-browser dir) "
-                     "or: docker run -p 9377:9377 -e CAMOFOX_PORT=9377 jo-inc/camofox-browser",
-        })
-    except Exception as e:
-        return tool_error(str(e), success=False)
+            # Auto-take a compact snapshot so the model can act immediately
+            try:
+                snap_data = _get(
+                    f"/tabs/{session['tab_id']}/snapshot",
+                    params={"userId": session["user_id"]},
+                )
+                snapshot_text = snap_data.get("snapshot", "")
+                from tools.browser_tool import (
+                    SNAPSHOT_SUMMARIZE_THRESHOLD,
+                    _truncate_snapshot,
+                )
+                if len(snapshot_text) > SNAPSHOT_SUMMARIZE_THRESHOLD:
+                    snapshot_text = _truncate_snapshot(snapshot_text)
+                result["snapshot"] = snapshot_text
+                result["element_count"] = snap_data.get("refsCount", 0)
+            except Exception:
+                pass  # Navigation succeeded; snapshot is a bonus
+
+            return json.dumps(result)
+        except requests.HTTPError as e:
+            return tool_error(f"Navigation failed: {e}", success=False)
+        except requests.ConnectionError:
+            return json.dumps({
+                "success": False,
+                "error": f"Cannot connect to Camofox at {get_camofox_url()}. "
+                         "Is the server running? Start with: npm start (in camofox-browser dir) "
+                         "or: docker run -p 9377:9377 -e CAMOFOX_PORT=9377 jo-inc/camofox-browser",
+            })
+        except Exception as e:
+            return tool_error(str(e), success=False)
 
 
 def camofox_snapshot(full: bool = False, task_id: Optional[str] = None,
                      user_task: Optional[str] = None) -> str:
     """Get accessibility tree snapshot from Camofox."""
-    try:
-        session = _get_session(task_id)
-        if not session["tab_id"]:
-            return tool_error("No browser session. Call browser_navigate first.", success=False)
+    from superforecasting_agent.hosting.browser_sessions import browser_session_lifecycle
 
-        data = _get(
-            f"/tabs/{session['tab_id']}/snapshot",
-            params={"userId": session["user_id"]},
-        )
+    with browser_session_lifecycle((task_id or "default").removesuffix("::local")):
+        try:
+            session = _get_session(task_id)
+            if not session["tab_id"]:
+                return tool_error("No browser session. Call browser_navigate first.", success=False)
 
-        snapshot = data.get("snapshot", "")
-        refs_count = data.get("refsCount", 0)
+            data = _get(
+                f"/tabs/{session['tab_id']}/snapshot",
+                params={"userId": session["user_id"]},
+            )
 
-        # Apply same summarization logic as the main browser tool
-        from tools.browser_tool import (
-            SNAPSHOT_SUMMARIZE_THRESHOLD,
-            _extract_relevant_content,
-            _truncate_snapshot,
-        )
+            snapshot = data.get("snapshot", "")
+            refs_count = data.get("refsCount", 0)
 
-        if len(snapshot) > SNAPSHOT_SUMMARIZE_THRESHOLD:
-            if user_task:
-                snapshot = _extract_relevant_content(snapshot, user_task)
-            else:
-                snapshot = _truncate_snapshot(snapshot)
+            # Apply same summarization logic as the main browser tool
+            from tools.browser_tool import (
+                SNAPSHOT_SUMMARIZE_THRESHOLD,
+                _extract_relevant_content,
+                _truncate_snapshot,
+            )
 
-        return json.dumps({
-            "success": True,
-            "snapshot": snapshot,
-            "element_count": refs_count,
-        })
-    except Exception as e:
-        return tool_error(str(e), success=False)
+            if len(snapshot) > SNAPSHOT_SUMMARIZE_THRESHOLD:
+                if user_task:
+                    snapshot = _extract_relevant_content(snapshot, user_task)
+                else:
+                    snapshot = _truncate_snapshot(snapshot)
+
+            return json.dumps({
+                "success": True,
+                "snapshot": snapshot,
+                "element_count": refs_count,
+            })
+        except Exception as e:
+            return tool_error(str(e), success=False)
 
 
 def camofox_click(ref: str, task_id: Optional[str] = None) -> str:
     """Click an element by ref via Camofox."""
-    try:
-        session = _get_session(task_id)
-        if not session["tab_id"]:
-            return tool_error("No browser session. Call browser_navigate first.", success=False)
+    from superforecasting_agent.hosting.browser_sessions import browser_session_lifecycle
 
-        # Strip @ prefix if present (our tool convention)
-        clean_ref = ref.lstrip("@")
+    with browser_session_lifecycle((task_id or "default").removesuffix("::local")):
+        try:
+            session = _get_session(task_id)
+            if not session["tab_id"]:
+                return tool_error("No browser session. Call browser_navigate first.", success=False)
 
-        data = _post(
-            f"/tabs/{session['tab_id']}/click",
-            {"userId": session["user_id"], "ref": clean_ref},
-        )
-        return json.dumps({
-            "success": True,
-            "clicked": clean_ref,
-            "url": data.get("url", ""),
-        })
-    except Exception as e:
-        return tool_error(str(e), success=False)
+            # Strip @ prefix if present (our tool convention)
+            clean_ref = ref.lstrip("@")
+
+            data = _post(
+                f"/tabs/{session['tab_id']}/click",
+                {"userId": session["user_id"], "ref": clean_ref},
+            )
+            return json.dumps({
+                "success": True,
+                "clicked": clean_ref,
+                "url": data.get("url", ""),
+            })
+        except Exception as e:
+            return tool_error(str(e), success=False)
 
 
 def camofox_type(ref: str, text: str, task_id: Optional[str] = None) -> str:
     """Type text into an element by ref via Camofox."""
-    try:
-        session = _get_session(task_id)
-        if not session["tab_id"]:
-            return tool_error("No browser session. Call browser_navigate first.", success=False)
+    from superforecasting_agent.hosting.browser_sessions import browser_session_lifecycle
 
-        clean_ref = ref.lstrip("@")
+    with browser_session_lifecycle((task_id or "default").removesuffix("::local")):
+        try:
+            session = _get_session(task_id)
+            if not session["tab_id"]:
+                return tool_error("No browser session. Call browser_navigate first.", success=False)
 
-        _post(
-            f"/tabs/{session['tab_id']}/type",
-            {"userId": session["user_id"], "ref": clean_ref, "text": text},
-        )
-        return json.dumps({
-            "success": True,
-            "typed": text,
-            "element": clean_ref,
-        })
-    except Exception as e:
-        return tool_error(str(e), success=False)
+            clean_ref = ref.lstrip("@")
+
+            _post(
+                f"/tabs/{session['tab_id']}/type",
+                {"userId": session["user_id"], "ref": clean_ref, "text": text},
+            )
+            return json.dumps({
+                "success": True,
+                "typed": text,
+                "element": clean_ref,
+            })
+        except Exception as e:
+            return tool_error(str(e), success=False)
 
 
 def camofox_scroll(direction: str, task_id: Optional[str] = None) -> str:
     """Scroll the page via Camofox."""
-    try:
-        session = _get_session(task_id)
-        if not session["tab_id"]:
-            return tool_error("No browser session. Call browser_navigate first.", success=False)
+    from superforecasting_agent.hosting.browser_sessions import browser_session_lifecycle
 
-        _post(
-            f"/tabs/{session['tab_id']}/scroll",
-            {"userId": session["user_id"], "direction": direction},
-        )
-        return json.dumps({"success": True, "scrolled": direction})
-    except Exception as e:
-        return tool_error(str(e), success=False)
+    with browser_session_lifecycle((task_id or "default").removesuffix("::local")):
+        try:
+            session = _get_session(task_id)
+            if not session["tab_id"]:
+                return tool_error("No browser session. Call browser_navigate first.", success=False)
+
+            _post(
+                f"/tabs/{session['tab_id']}/scroll",
+                {"userId": session["user_id"], "direction": direction},
+            )
+            return json.dumps({"success": True, "scrolled": direction})
+        except Exception as e:
+            return tool_error(str(e), success=False)
 
 
 def camofox_back(task_id: Optional[str] = None) -> str:
     """Navigate back via Camofox."""
-    try:
-        session = _get_session(task_id)
-        if not session["tab_id"]:
-            return tool_error("No browser session. Call browser_navigate first.", success=False)
+    from superforecasting_agent.hosting.browser_sessions import browser_session_lifecycle
 
-        data = _post(
-            f"/tabs/{session['tab_id']}/back",
-            {"userId": session["user_id"]},
-        )
-        return json.dumps({"success": True, "url": data.get("url", "")})
-    except Exception as e:
-        return tool_error(str(e), success=False)
+    with browser_session_lifecycle((task_id or "default").removesuffix("::local")):
+        try:
+            session = _get_session(task_id)
+            if not session["tab_id"]:
+                return tool_error("No browser session. Call browser_navigate first.", success=False)
+
+            data = _post(
+                f"/tabs/{session['tab_id']}/back",
+                {"userId": session["user_id"]},
+            )
+            return json.dumps({"success": True, "url": data.get("url", "")})
+        except Exception as e:
+            return tool_error(str(e), success=False)
 
 
 def camofox_press(key: str, task_id: Optional[str] = None) -> str:
     """Press a keyboard key via Camofox."""
-    try:
-        session = _get_session(task_id)
-        if not session["tab_id"]:
-            return tool_error("No browser session. Call browser_navigate first.", success=False)
+    from superforecasting_agent.hosting.browser_sessions import browser_session_lifecycle
 
-        _post(
-            f"/tabs/{session['tab_id']}/press",
-            {"userId": session["user_id"], "key": key},
-        )
-        return json.dumps({"success": True, "pressed": key})
-    except Exception as e:
-        return tool_error(str(e), success=False)
+    with browser_session_lifecycle((task_id or "default").removesuffix("::local")):
+        try:
+            session = _get_session(task_id)
+            if not session["tab_id"]:
+                return tool_error("No browser session. Call browser_navigate first.", success=False)
+
+            _post(
+                f"/tabs/{session['tab_id']}/press",
+                {"userId": session["user_id"], "key": key},
+            )
+            return json.dumps({"success": True, "pressed": key})
+        except Exception as e:
+            return tool_error(str(e), success=False)
 
 
 def camofox_close(task_id: Optional[str] = None) -> str:
     """Close the browser session via Camofox."""
-    try:
-        session = _drop_session(task_id)
-        if not session:
-            return json.dumps({"success": True, "closed": True})
+    from superforecasting_agent.hosting.browser_sessions import browser_session_lifecycle
 
-        _delete(
-            f"/sessions/{session['user_id']}",
-        )
-        return json.dumps({"success": True, "closed": True})
-    except Exception as e:
-        return json.dumps({"success": True, "closed": True, "warning": str(e)})
+    with browser_session_lifecycle((task_id or "default").removesuffix("::local")):
+        try:
+            session = _drop_session(task_id)
+            if not session:
+                return json.dumps({"success": True, "closed": True})
+
+            _delete(
+                f"/sessions/{session['user_id']}",
+            )
+            return json.dumps({"success": True, "closed": True})
+        except Exception as e:
+            return json.dumps({"success": True, "closed": True, "warning": str(e)})
 
 
 def camofox_get_images(task_id: Optional[str] = None) -> str:
@@ -545,138 +572,144 @@ def camofox_get_images(task_id: Optional[str] = None) -> str:
     Extracts image information from the accessibility tree snapshot,
     since Camofox does not expose a dedicated /images endpoint.
     """
-    try:
-        session = _get_session(task_id)
-        if not session["tab_id"]:
-            return tool_error("No browser session. Call browser_navigate first.", success=False)
+    from superforecasting_agent.hosting.browser_sessions import browser_session_lifecycle
 
-        import re
+    with browser_session_lifecycle((task_id or "default").removesuffix("::local")):
+        try:
+            session = _get_session(task_id)
+            if not session["tab_id"]:
+                return tool_error("No browser session. Call browser_navigate first.", success=False)
 
-        data = _get(
-            f"/tabs/{session['tab_id']}/snapshot",
-            params={"userId": session["user_id"]},
-        )
-        snapshot = data.get("snapshot", "")
+            import re
 
-        # Parse img elements from the accessibility tree.
-        # Format: img "alt text" or img "alt text" [eN]
-        # URLs appear on /url: lines following img entries
-        images = []
-        lines = snapshot.split("\n")
-        for i, line in enumerate(lines):
-            stripped = line.strip()
-            if stripped.startswith(("- img ", "img ")):
-                alt_match = re.search(r'img\s+"([^"]*)"', stripped)
-                alt = alt_match.group(1) if alt_match else ""
-                # Look for URL on the next line
-                src = ""
-                if i + 1 < len(lines):
-                    url_match = re.search(r'/url:\s*(\S+)', lines[i + 1].strip())
-                    if url_match:
-                        src = url_match.group(1)
-                if alt or src:
-                    images.append({"src": src, "alt": alt})
+            data = _get(
+                f"/tabs/{session['tab_id']}/snapshot",
+                params={"userId": session["user_id"]},
+            )
+            snapshot = data.get("snapshot", "")
 
-        return json.dumps({
-            "success": True,
-            "images": images,
-            "count": len(images),
-        })
-    except Exception as e:
-        return tool_error(str(e), success=False)
+            # Parse img elements from the accessibility tree.
+            # Format: img "alt text" or img "alt text" [eN]
+            # URLs appear on /url: lines following img entries
+            images = []
+            lines = snapshot.split("\n")
+            for i, line in enumerate(lines):
+                stripped = line.strip()
+                if stripped.startswith(("- img ", "img ")):
+                    alt_match = re.search(r'img\s+"([^"]*)"', stripped)
+                    alt = alt_match.group(1) if alt_match else ""
+                    # Look for URL on the next line
+                    src = ""
+                    if i + 1 < len(lines):
+                        url_match = re.search(r'/url:\s*(\S+)', lines[i + 1].strip())
+                        if url_match:
+                            src = url_match.group(1)
+                    if alt or src:
+                        images.append({"src": src, "alt": alt})
+
+            return json.dumps({
+                "success": True,
+                "images": images,
+                "count": len(images),
+            })
+        except Exception as e:
+            return tool_error(str(e), success=False)
 
 
 def camofox_vision(question: str, annotate: bool = False,
                    task_id: Optional[str] = None) -> str:
     """Take a screenshot and analyze it with vision AI via Camofox."""
-    try:
-        session = _get_session(task_id)
-        if not session["tab_id"]:
-            return tool_error("No browser session. Call browser_navigate first.", success=False)
+    from superforecasting_agent.hosting.browser_sessions import browser_session_lifecycle
 
-        # Get screenshot as binary PNG
-        resp = _get_raw(
-            f"/tabs/{session['tab_id']}/screenshot",
-            params={"userId": session["user_id"]},
-        )
-
-        # Save screenshot to cache
-        from superforecasting_agent.constants import get_agent_home
-        screenshots_dir = get_agent_home() / "browser_screenshots"
-        screenshots_dir.mkdir(parents=True, exist_ok=True)
-        screenshot_path = str(screenshots_dir / f"browser_screenshot_{uuid.uuid4().hex[:8]}.png")
-
-        with open(screenshot_path, "wb") as f:
-            f.write(resp.content)
-
-        # Encode for vision LLM
-        img_b64 = base64.b64encode(resp.content).decode("utf-8")
-
-        # Also get annotated snapshot if requested
-        annotation_context = ""
-        if annotate:
-            try:
-                snap_data = _get(
-                    f"/tabs/{session['tab_id']}/snapshot",
-                    params={"userId": session["user_id"]},
-                )
-                annotation_context = f"\n\nAccessibility tree (element refs for interaction):\n{snap_data.get('snapshot', '')[:3000]}"
-            except Exception:
-                pass
-
-        # Redact secrets from annotation context before sending to vision LLM.
-        # The screenshot image itself cannot be redacted, but at least the
-        # text-based accessibility tree snippet won't leak secret values.
-        from agent.redact import redact_sensitive_text
-        annotation_context = redact_sensitive_text(annotation_context)
-
-        # Send to vision LLM
-        from agent.auxiliary_client import call_llm
-
-        vision_prompt = (
-            f"Analyze this browser screenshot and answer: {question}"
-            f"{annotation_context}"
-        )
-
+    with browser_session_lifecycle((task_id or "default").removesuffix("::local")):
         try:
-            _cfg = load_config()
-            _vision_cfg = cfg_get(_cfg, "auxiliary", "vision", default={})
-            _vision_timeout = float(_vision_cfg.get("timeout", 120))
-            _vision_temperature = float(_vision_cfg.get("temperature", 0.1))
-        except Exception:
-            _vision_timeout = 120.0
-            _vision_temperature = 0.1
+            session = _get_session(task_id)
+            if not session["tab_id"]:
+                return tool_error("No browser session. Call browser_navigate first.", success=False)
 
-        response = call_llm(
-            messages=[{
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": vision_prompt},
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/png;base64,{img_b64}",
+            # Get screenshot as binary PNG
+            resp = _get_raw(
+                f"/tabs/{session['tab_id']}/screenshot",
+                params={"userId": session["user_id"]},
+            )
+
+            # Save screenshot to cache
+            from superforecasting_agent.constants import get_agent_home
+            screenshots_dir = get_agent_home() / "browser_screenshots"
+            screenshots_dir.mkdir(parents=True, exist_ok=True)
+            screenshot_path = str(screenshots_dir / f"browser_screenshot_{uuid.uuid4().hex[:8]}.png")
+
+            with open(screenshot_path, "wb") as f:
+                f.write(resp.content)
+
+            # Encode for vision LLM
+            img_b64 = base64.b64encode(resp.content).decode("utf-8")
+
+            # Also get annotated snapshot if requested
+            annotation_context = ""
+            if annotate:
+                try:
+                    snap_data = _get(
+                        f"/tabs/{session['tab_id']}/snapshot",
+                        params={"userId": session["user_id"]},
+                    )
+                    annotation_context = f"\n\nAccessibility tree (element refs for interaction):\n{snap_data.get('snapshot', '')[:3000]}"
+                except Exception:
+                    pass
+
+            # Redact secrets from annotation context before sending to vision LLM.
+            # The screenshot image itself cannot be redacted, but at least the
+            # text-based accessibility tree snippet won't leak secret values.
+            from agent.redact import redact_sensitive_text
+            annotation_context = redact_sensitive_text(annotation_context)
+
+            # Send to vision LLM
+            from agent.auxiliary_client import call_llm
+
+            vision_prompt = (
+                f"Analyze this browser screenshot and answer: {question}"
+                f"{annotation_context}"
+            )
+
+            try:
+                _cfg = load_config()
+                _vision_cfg = cfg_get(_cfg, "auxiliary", "vision", default={})
+                _vision_timeout = float(_vision_cfg.get("timeout", 120))
+                _vision_temperature = float(_vision_cfg.get("temperature", 0.1))
+            except Exception:
+                _vision_timeout = 120.0
+                _vision_temperature = 0.1
+
+            response = call_llm(
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": vision_prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/png;base64,{img_b64}",
+                            },
                         },
-                    },
-                ],
-            }],
-            task="vision",
-            temperature=_vision_temperature,
-            timeout=_vision_timeout,
-        )
-        analysis = (response.choices[0].message.content or "").strip() if response.choices else ""
+                    ],
+                }],
+                task="vision",
+                temperature=_vision_temperature,
+                timeout=_vision_timeout,
+            )
+            analysis = (response.choices[0].message.content or "").strip() if response.choices else ""
 
-        # Redact secrets the vision LLM may have read from the screenshot.
-        from agent.redact import redact_sensitive_text
-        analysis = redact_sensitive_text(analysis)
+            # Redact secrets the vision LLM may have read from the screenshot.
+            from agent.redact import redact_sensitive_text
+            analysis = redact_sensitive_text(analysis)
 
-        return json.dumps({
-            "success": True,
-            "analysis": analysis,
-            "screenshot_path": screenshot_path,
-        })
-    except Exception as e:
-        return tool_error(str(e), success=False)
+            return json.dumps({
+                "success": True,
+                "analysis": analysis,
+                "screenshot_path": screenshot_path,
+            })
+        except Exception as e:
+            return tool_error(str(e), success=False)
 
 
 def camofox_console(clear: bool = False, task_id: Optional[str] = None) -> str:
@@ -685,14 +718,17 @@ def camofox_console(clear: bool = False, task_id: Optional[str] = None) -> str:
     Camofox does not expose browser console logs via its REST API.
     Returns an empty result with a note.
     """
-    return json.dumps({
-        "success": True,
-        "console_messages": [],
-        "js_errors": [],
-        "total_messages": 0,
-        "total_errors": 0,
-        "note": "Console log capture is not available with the Camofox backend. "
-                "Use browser_snapshot or browser_vision to inspect page state.",
-    })
+    from superforecasting_agent.hosting.browser_sessions import browser_session_lifecycle
+
+    with browser_session_lifecycle((task_id or "default").removesuffix("::local")):
+        return json.dumps({
+            "success": True,
+            "console_messages": [],
+            "js_errors": [],
+            "total_messages": 0,
+            "total_errors": 0,
+            "note": "Console log capture is not available with the Camofox backend. "
+                    "Use browser_snapshot or browser_vision to inspect page state.",
+        })
 
 

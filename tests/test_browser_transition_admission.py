@@ -123,3 +123,47 @@ def test_endpoint_change_waits_for_running_browser_command(monkeypatch, tmp_path
     assert results[0]["success"] is True
     assert cleaned.is_set()
     assert environment["BROWSER_CDP_URL"] == "new"
+
+
+@pytest.mark.parametrize("backend", ["cdp", "camofox"])
+def test_direct_backend_operation_blocks_endpoint_change(monkeypatch, backend):
+    from tools import browser_cdp_tool, browser_camofox
+
+    entered, release, cleaned = threading.Event(), threading.Event(), threading.Event()
+    errors = []
+    def blocked(*args, **kwargs):
+        entered.set()
+        assert release.wait(3)
+        return '{"success": true}'
+    if backend == "cdp":
+        monkeypatch.setattr(browser_cdp_tool, "_browser_cdp_via_supervisor", blocked)
+        operation = lambda: browser_cdp_tool.browser_cdp("Runtime.evaluate", frame_id="frame", task_id="task")
+    else:
+        monkeypatch.setattr(browser_camofox, "_drop_session", lambda task: {"user_id": "user"})
+        monkeypatch.setattr(browser_camofox, "_delete", blocked)
+        operation = lambda: browser_camofox.camofox_close(task_id="task")
+    environment = {"BROWSER_CDP_URL": "old"}
+    def run():
+        try:
+            operation()
+        except BaseException as exc:
+            errors.append(exc)
+    def change():
+        try:
+            change_browser_endpoint("new", environment=environment, cleanup=cleaned.set)
+        except BaseException as exc:
+            errors.append(exc)
+    worker, transition = threading.Thread(target=run), threading.Thread(target=change)
+    worker.start()
+    try:
+        assert entered.wait(3)
+        transition.start()
+        assert not cleaned.wait(0.2)
+    finally:
+        release.set()
+        worker.join(3)
+        if transition.ident is not None:
+            transition.join(3)
+    assert not errors
+    assert not worker.is_alive() and not transition.is_alive()
+    assert cleaned.is_set() and environment["BROWSER_CDP_URL"] == "new"

@@ -3291,3 +3291,18 @@ The startup batch's full push gate remains running in the primary checkout.
   is unchanged inside the new admission scope.
 - Scope: agent-browser execution only. Direct CDP and Camofox paths and whole-tool
   work outside the command runner still require lifecycle admission review.
+
+### Browser tool surface lifecycle admission
+
+- Added task lifecycle admission around ten public browser-tool operations,
+  twelve Camofox operations (including cleanup) and direct CDP execution. This
+  covers backend selection and result/tracking updates outside the subprocess
+  runner as well as direct-backend calls. Reentrant admission supports nested
+  tool/adapter calls within one task group.
+- AST checks verified all 23 existing bodies, including embedded script string
+  values, remain unchanged inside their admission scopes. Deterministic direct
+  CDP and Camofox tests pause a backend call and prove endpoint cleanup waits.
+- Verification: 117 browser/CDP/Camofox/hybrid/creation/transition/console/hardening
+  tests passed; shared Python quality gates passed. Provider-level disposal
+  failure semantics and browser-supervisor asynchronous maintenance remain
+  separate ownership concerns; this does not prove all runtime cleanup complete.
