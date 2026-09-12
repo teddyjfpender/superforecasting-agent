@@ -106,7 +106,9 @@ def _handle_handoff_command(self, cmd_original: str) -> bool:
         session_title = self.session_id[:8]
 
     # Mark pending — gateway watcher will pick this up.
-    ok = self._session_db.request_handoff(self.session_id, platform_name)
+    from uuid import uuid4
+    attempt_id = uuid4().hex
+    ok = self._session_db.request_handoff(self.session_id, platform_name, attempt_id=attempt_id)
     if not ok:
         _cprint("  Session is already in flight for handoff. Wait for it to settle, then retry.")
         return True
@@ -123,6 +125,9 @@ def _handle_handoff_command(self, cmd_original: str) -> bool:
             state_row = self._session_db.get_handoff_state(self.session_id)
         except Exception:
             state_row = None
+        if state_row and state_row.get("attempt_id") != attempt_id:
+            _cprint("  Handoff attempt changed. This wait no longer owns the current transfer.")
+            return True
         current = (state_row or {}).get("state") or "pending"
         if current != last_state:
             if current == "running":
@@ -146,11 +151,14 @@ def _handle_handoff_command(self, cmd_original: str) -> bool:
     # A local waiting deadline cannot revoke a transfer already owned by the gateway.
     try:
         cancelled = self._session_db.cancel_pending_handoff(
-            self.session_id, "timed out waiting for gateway"
+            self.session_id, "timed out waiting for gateway", attempt_id=attempt_id
         )
         state_row = self._session_db.get_handoff_state(self.session_id)
     except Exception as exc:
         _cprint(f"  Could not verify handoff state: {exc}. Check the gateway before retrying.")
+        return True
+    if state_row and state_row.get("attempt_id") != attempt_id:
+        _cprint("  Handoff attempt changed. Check the current transfer before retrying.")
         return True
     current = (state_row or {}).get("state")
     if current == "completed":

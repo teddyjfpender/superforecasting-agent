@@ -6,7 +6,7 @@ from typing import Dict
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 
 SCHEMA_SQL = """
@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     handoff_state TEXT,
     handoff_platform TEXT,
     handoff_error TEXT,
+    handoff_attempt_id TEXT,
     FOREIGN KEY (parent_session_id) REFERENCES sessions(id)
 );
 
@@ -318,6 +319,11 @@ def _init_schema(self):
                 "COALESCE(tool_name, '') || ' ' || "
                 "COALESCE(tool_calls, '') "
                 "FROM messages"
+            )
+        if current_version < 12:
+            cursor.execute(
+                "UPDATE sessions SET handoff_attempt_id = lower(hex(randomblob(16))) "
+                "WHERE handoff_state IS NOT NULL AND handoff_attempt_id IS NULL"
             )
         if current_version < SCHEMA_VERSION:
             cursor.execute(

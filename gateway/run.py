@@ -4993,18 +4993,22 @@ class GatewayRunner:
                     session_id = row.get("id")
                     if not session_id:
                         continue
-                    if not self._session_db.claim_handoff(session_id):
+                    attempt_id = row.get("handoff_attempt_id")
+                    if not attempt_id:
+                        logger.warning("Handoff %s has no attempt identity", session_id)
+                        continue
+                    if not self._session_db.claim_handoff(session_id, attempt_id=attempt_id):
                         # Another tick or another gateway already claimed it.
                         continue
                     try:
                         await self._process_handoff(row)
-                        self._session_db.complete_handoff(session_id)
+                        self._session_db.complete_handoff(session_id, attempt_id=attempt_id)
                     except Exception as exc:
                         logger.warning(
                             "Handoff for session %s failed: %s",
                             session_id, exc, exc_info=True,
                         )
-                        self._session_db.fail_handoff(session_id, str(exc))
+                        self._session_db.fail_handoff(session_id, str(exc), attempt_id=attempt_id)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:

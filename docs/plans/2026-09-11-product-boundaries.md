@@ -4187,3 +4187,23 @@ state, and CLI deadline messages without wall-clock sleeps. Existing handoff
 test fixtures now close their database handles. This is a prerequisite fix;
 native handoff command migration, attempt identity and recovery of a gateway that
 dies after claiming a handoff remain open.
+
+
+### Bind handoff transitions to an attempt
+
+Session schema v12 adds a handoff attempt ID. Requests generate an ID (or accept
+the initiating caller's ID), and claim, completion, failure and pending-only
+cancellation require it alongside the expected state. The gateway uses the ID
+from its pending-row snapshot throughout processing. The CLI retains its own ID
+and stops observing a replacement attempt rather than reporting its result as
+the original transfer. Legacy handoff rows receive IDs during migration; reopening
+the database preserves them.
+
+243 storage/handoff/branch tests and shared quality gates passed. Regression
+coverage includes stale claims and callbacks against a retry, migration/reopen
+identity, and the actual gateway watcher using an isolated database with a fake
+transfer operation. Historical schema fixtures remain at their original versions;
+post-migration assertions now expect v12. Native handoff admission and recovery of
+claimed work after gateway death remain unimplemented. This does not establish
+compatibility with simultaneously running older gateway code that lacks attempt
+checks.
