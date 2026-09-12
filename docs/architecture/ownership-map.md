@@ -647,3 +647,10 @@ uses the agent; timeout reporting does not close a still-active call. The agent
 factory now has mandatory lint, format and type checks. Failed close propagates
 with original error context; forced interruption and retained failed-close retry
 ownership remain separate runtime work.
+
+Snapshot restore stages every validated member before replacing live files. A
+copy failure therefore leaves existing destinations untouched. Publication errors
+raise with confirmed progress and explicitly allow that the failing target may
+already have changed (for example, a post-rename fsync failure). Success means
+all members were published. Cross-file crash atomicity and host quiescence are
+still required before admitting live TUI restoration.

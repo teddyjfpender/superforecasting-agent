@@ -13,7 +13,9 @@ changes, tests and their limits. The previous checklist is preserved in the
   The TUI must not need a second classic CLI runtime to execute business behavior.
   Preserve aliases, validation, error semantics and state ownership. Snapshot
   listing, creation and pruning now share application/storage owners;
-  host-coordinated live restoration remains to be implemented. Kanban now runs
+  host-coordinated live restoration remains to be implemented. Restore now stages
+  all files before publication and rejects partial success; durable crash recovery
+  and host quiescence remain prerequisites. Kanban now runs
   natively with host/session cancellation and visible activity. Real terminal tests
   cover watch, resizing, Ctrl+C, gateway death/reconnect and continued command use.
   Extended remote-host command recovery remains to be qualified.

@@ -200,8 +200,9 @@ def restore_quick_snapshot(
 ) -> bool:
     """Restore state from a quick snapshot.
 
-    Overwrites current state files with the snapshot's copies.
-    Returns True if at least one file was restored.
+    Stage every copy before publishing any destination. Return True only when
+    every member is published. Publication errors propagate with progress details;
+    multi-file publication is not yet a crash-atomic transaction.
     """
     home = hermes_home or get_agent_home()
     root = _quick_snapshot_root(home)
@@ -230,29 +231,38 @@ def restore_quick_snapshot(
             raise ValueError("Snapshot member must be a regular file")
         members.append((rel, src, dst))
 
-    restored = 0
-    for rel, src, dst in members:
-        dst.parent.mkdir(parents=True, exist_ok=True)
-
-        try:
+    staged: list[tuple[str, Path, Path]] = []
+    published: list[str] = []
+    try:
+        for rel, src, dst in members:
+            dst.parent.mkdir(parents=True, exist_ok=True)
             fd, name = tempfile.mkstemp(
                 prefix=f".{dst.name}.snap_restore-", dir=dst.parent
             )
             os.close(fd)
             tmp = Path(name)
-            try:
-                shutil.copy2(src, tmp)
-                with tmp.open("rb") as stream:
-                    os.fsync(stream.fileno())
-                atomic_replace(tmp, dst)
-            finally:
-                tmp.unlink(missing_ok=True)
-            restored += 1
-        except (OSError, PermissionError) as exc:
-            logger.error("Failed to restore %s: %s", rel, exc)
+            staged.append((rel, tmp, dst))
+            shutil.copy2(src, tmp)
+            with tmp.open("rb") as stream:
+                os.fsync(stream.fileno())
 
-    logger.info("Restored %d files from snapshot %s", restored, snapshot_id)
-    return restored > 0
+        for rel, tmp, dst in staged:
+            try:
+                atomic_replace(tmp, dst)
+            except OSError as exc:
+                raise OSError(
+                    f"Snapshot restoration incomplete while publishing {rel}; "
+                    f"confirmed published files: {', '.join(published) or '(none)'}. "
+                    "The failed target may also have changed. "
+                    f"Original error: {exc}"
+                ) from exc
+            published.append(rel)
+    finally:
+        for _, tmp, _ in staged:
+            tmp.unlink(missing_ok=True)
+
+    logger.info("Restored %d files from snapshot %s", len(published), snapshot_id)
+    return bool(published)
 
 
 def _prune_quick_snapshots(root: Path, keep: int = _QUICK_DEFAULT_KEEP) -> int:

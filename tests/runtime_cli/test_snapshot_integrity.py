@@ -68,7 +68,8 @@ def test_failed_replacement_preserves_live_file_and_cleans_temporary(home, monke
     def fail(*args):
         raise OSError("injected replacement failure")
     monkeypatch.setattr(backup, "atomic_replace", fail)
-    assert backup.restore_quick_snapshot(sid, hermes_home=home) is False
+    with pytest.raises(OSError, match="restoration incomplete"):
+        backup.restore_quick_snapshot(sid, hermes_home=home)
     assert (home / "config.yaml").read_text(encoding="utf-8") == "current"
     assert not list(home.glob(".*.snap_restore-*"))
 
@@ -159,3 +160,39 @@ def test_manifest_failure_does_not_publish_snapshot(home, monkeypatch):
         backup.create_quick_snapshot(hermes_home=home)
     assert backup.list_quick_snapshots(hermes_home=home) == []
     assert not list((home / "state-snapshots").glob(".pending-*"))
+
+
+def test_late_copy_failure_cannot_partially_restore_profile(home, monkeypatch):
+    (home / 'auth.json').write_text('snapshot auth', encoding='utf-8')
+    sid = backup.create_quick_snapshot(hermes_home=home)
+    (home / 'config.yaml').write_text('current config', encoding='utf-8')
+    (home / 'auth.json').write_text('current auth', encoding='utf-8')
+    copy = backup.shutil.copy2
+    def fail_auth(source, destination):
+        if source.name == 'auth.json':
+            raise OSError('injected staging failure')
+        return copy(source, destination)
+    monkeypatch.setattr(backup.shutil, 'copy2', fail_auth)
+    with pytest.raises(OSError, match='injected staging failure'):
+        backup.restore_quick_snapshot(sid, hermes_home=home)
+    assert (home / 'config.yaml').read_text(encoding='utf-8') == 'current config'
+    assert (home / 'auth.json').read_text(encoding='utf-8') == 'current auth'
+    assert not list(home.glob('.*.snap_restore-*'))
+
+
+def test_partial_publication_is_never_reported_as_success(home, monkeypatch):
+    (home / 'auth.json').write_text('snapshot auth', encoding='utf-8')
+    sid = backup.create_quick_snapshot(hermes_home=home)
+    (home / 'config.yaml').write_text('current config', encoding='utf-8')
+    (home / 'auth.json').write_text('current auth', encoding='utf-8')
+    replace = backup.atomic_replace
+    def fail_auth(source, destination):
+        if destination.name == 'auth.json':
+            raise OSError('injected publication failure')
+        return replace(source, destination)
+    monkeypatch.setattr(backup, 'atomic_replace', fail_auth)
+    with pytest.raises(OSError, match='incomplete.*auth.json'):
+        backup.restore_quick_snapshot(sid, hermes_home=home)
+    assert (home / 'config.yaml').read_text(encoding='utf-8') == 'original'
+    assert (home / 'auth.json').read_text(encoding='utf-8') == 'current auth'
+    assert not list(home.glob('.*.snap_restore-*'))

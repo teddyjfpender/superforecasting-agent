@@ -3560,3 +3560,20 @@ package mutation is not conclusively attributed; the former candidate ordering
 (browser-provider tests followed by command tests) passed in isolation. The new
 regression failed before the patch change; all 128 command/provider tests passed
 afterward. No production module loading behavior changed.
+
+
+### Restore staging and truthful completion
+
+Quick restore previously copied/published each member in turn, swallowed errors,
+and returned true when any file succeeded. A later failed copy could change
+configuration while leaving authentication/state behind and still report success.
+Restore now stages and fsyncs all copies before publishing any destination. Copy
+errors propagate without modifying live files; publication failures report the
+failed member and confirmed progress, including uncertainty if replacement
+succeeded before a durability error. Temporary copies are cleaned on exit.
+
+Two new regressions failed before the change. All 253 snapshot integrity, backup
+and command tests passed afterward; shared Python gates passed with 52 contracts.
+This is preparation for live restoration, not a cross-file crash transaction.
+Durable recovery records and host-wide quiescence remain necessary; TUI restore
+remains blocked until those are implemented.
