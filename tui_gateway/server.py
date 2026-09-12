@@ -285,7 +285,7 @@ from superforecasting_agent.hosting.workers import HostStopping
 from superforecasting_agent.hosting.runtime import RuntimeHost
 from superforecasting_agent.hosting.sessions import SessionBusy, dispose_session, finalize_session, in_use, replacement, use_session
 
-_host = RuntimeHost(max_workers=_rpc_pool_workers)
+_host = RuntimeHost(max_workers=_rpc_pool_workers, home=_hermes_home)
 
 
 # Embedded hosts retain their process streams. The stdio entrypoint explicitly

@@ -5042,3 +5042,23 @@ ownership and host-wide live-restore coordination, then audit the original five
 deliverables against current evidence. Adjacent cleanup should not silently add
 new completion requirements. Historical SSL attribution and extra platforms stay
 explicitly unverified unless they block an original acceptance requirement.
+
+
+### Profile restoration admission (2026-09-12, in progress)
+
+Runtime hosts, CLI/worker lifetimes, SessionDB connections and shared config/auth
+writers now retain profile admission. Restore/recovery requires an exclusive
+SQLite coordination lease; interrupted restore journals block new readers.
+Failed host shutdown/restart retains admission until explicit cleanup succeeds.
+The lock file is excluded from profile/backup transfer. The standalone
+`superforecasting-agent snapshot restore <id>` / `snapshot recover` path operates
+without constructing a runtime; interactive CLI/TUI direct users to this path.
+Restoration checkpoints old session WAL state before database replacement.
+
+Real subprocess death, conflicting readers, failed shutdown/restart, crashed WAL,
+configuration/auth writer exclusion and offline CLI behavior have focused tests.
+The broader storage/snapshot/host/command/backup selection passed 438 tests;
+strict Python checks and all 75 import contracts passed. The subsequent snapshot
+capture admission rerun passed all 58 focused tests. This is not yet the final
+integrated push: remaining caller admission and transfer-path review must precede
+that gate, along with credential-service separation and acceptance reconciliation.

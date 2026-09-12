@@ -7,7 +7,7 @@ import shlex
 from superforecasting_agent.constants import display_agent_home
 from superforecasting_agent.storage import snapshots as backup
 
-_USAGE = "Usage: /snapshot [list|create [label]|restore <id>|prune [N]]"
+_USAGE = "Usage: /snapshot [list|create [label]|restore <id>|recover|prune [N]]"
 
 
 def execute_snapshot(argument: str, *, allow_restore: bool = True) -> str:
@@ -15,17 +15,23 @@ def execute_snapshot(argument: str, *, allow_restore: bool = True) -> str:
     parts = shlex.split(argument)
     action = parts.pop(0).lower() if parts else "list"
     action = {"ls": "list", "rewind": "restore"}.get(action, action)
-    if action not in {"list", "create", "restore", "prune"}:
+    if action not in {"list", "create", "restore", "recover", "prune"}:
         raise ValueError(f"Unknown subcommand: {action}\n{_USAGE}")
-    if (action == "list" and parts) or (
+    if (action in {"list", "recover"} and parts) or (
         action in {"prune", "restore"} and len(parts) > 1
     ):
         raise ValueError(_USAGE)
-    if action == "restore" and not allow_restore:
+    if action in {"restore", "recover"} and not allow_restore:
         return (
-            "/snapshot restore is blocked in the TUI because it changes "
-            "config/state on disk while the live agent has cached settings. "
-            "Run it in the classic CLI, then restart the TUI."
+            "Snapshot restore/recover requires exclusive profile access. "
+            "Stop this profile's running hosts and commands, then run "
+            "superforecasting-agent snapshot restore <id> (or snapshot recover)."
+        )
+    if action == "recover":
+        return (
+            "Snapshot recovery completed."
+            if backup.recover_quick_snapshot_restore()
+            else "No snapshot restoration is pending."
         )
     if action == "list":
         snapshots = backup.list_quick_snapshots()
@@ -78,5 +84,5 @@ def execute_snapshot(argument: str, *, allow_restore: bool = True) -> str:
             raise ValueError(f"Invalid snapshot number. Use 1-{len(snapshots)}.")
         snapshot_id = snapshots[index - 1]["id"]
     if backup.restore_quick_snapshot(snapshot_id):
-        return f"Restored state from: {snapshot_id}\nRestart recommended for state.db changes to take effect."
+        return f"Restored state from: {snapshot_id}\nThe profile is ready to reopen."
     return f"Snapshot not found: {snapshot_id}"

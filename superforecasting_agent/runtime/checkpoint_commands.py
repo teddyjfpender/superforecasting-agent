@@ -117,7 +117,7 @@ def _handle_snapshot_command(self, command: str):
 
     parts = command.strip().split(maxsplit=1)
     try:
-        output = execute_snapshot(parts[1] if len(parts) > 1 else "")
+        output = execute_snapshot(parts[1] if len(parts) > 1 else "", allow_restore=False)
     except (ValueError, OSError) as exc:
         output = str(exc)
     print(output)

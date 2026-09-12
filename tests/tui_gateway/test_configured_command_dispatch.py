@@ -784,7 +784,7 @@ def test_snapshot_restore_admission_and_storage_failure_never_fall_through(confi
     configure({})
     restore = Mock(side_effect=AssertionError("live database restore attempted"))
     monkeypatch.setattr(snapshots, "restore_quick_snapshot", restore)
-    assert "blocked in the TUI" in dispatch("snap", "rewind 1")["result"]["output"]
+    assert "requires exclusive profile access" in dispatch("snap", "rewind 1")["result"]["output"]
     restore.assert_not_called()
     create = Mock(side_effect=OSError("injected storage failure"))
     monkeypatch.setattr(snapshots, "create_quick_snapshot", create)

@@ -74,6 +74,13 @@ def load_auth_store(
 
 
 def save_auth_store(auth_file: Path, auth_store: dict[str, Any]) -> Path:
+    from .profile_lease import ProfileLease
+
+    with ProfileLease(auth_file.parent):
+        return _save_auth_store(auth_file, auth_store)
+
+
+def _save_auth_store(auth_file: Path, auth_store: dict[str, Any]) -> Path:
     auth_file.parent.mkdir(parents=True, exist_ok=True)
     # Tighten parent dir to 0o700 so siblings can't traverse to creds.
     # No-op on Windows (POSIX mode bits not enforced); ignore failures.

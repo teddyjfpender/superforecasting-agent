@@ -190,6 +190,7 @@ def _clone_all_copytree_ignore(source_dir: Path):
 # caches, binaries) that named profiles don't have. We exclude those so the
 # export is a portable, reasonable-size archive of actual profile data.
 _DEFAULT_EXPORT_EXCLUDE_ROOT = frozenset({
+    ".profile-use.lock",
     # Infrastructure
     "superforecasting-agent",  # fork-native repo checkout (multi-GB)
     "hermes-agent",            # legacy repo checkout (multi-GB)

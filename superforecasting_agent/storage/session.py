@@ -23,6 +23,7 @@ from superforecasting_agent.storage import telegram as _telegram
 from superforecasting_agent.storage import telegram_schema as _telegram_schema
 from superforecasting_agent.storage import text as _text
 from superforecasting_agent.storage import transcript as _transcript
+from superforecasting_agent.storage.profile_lease import ProfileLease
 from superforecasting_agent.storage.schema import (
     FTS_SQL as FTS_SQL,
 )
@@ -104,7 +105,9 @@ class SessionDB:
         self._lock = threading.Lock()
         self._write_count = 0
         self._conn = None
+        self._profile_lease = None
         try:
+            self._profile_lease = ProfileLease(self.db_path.parent)
             self._conn = sqlite3.connect(
                 str(self.db_path),
                 check_same_thread=False,
@@ -140,6 +143,8 @@ class SessionDB:
             if self._conn is not None:
                 self._conn.close()
                 self._conn = None
+            if self._profile_lease is not None:
+                self._profile_lease.close()
             raise
 
     # ── Core write helper ──
@@ -248,6 +253,8 @@ class SessionDB:
                     pass
                 self._conn.close()
                 self._conn = None
+            if self._profile_lease is not None:
+                self._profile_lease.close()
 
     _parse_schema_columns = staticmethod(_schema._parse_schema_columns)
     _reconcile_columns = _schema._reconcile_columns

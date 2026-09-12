@@ -7,7 +7,7 @@ import os
 import stat
 import tempfile
 import threading
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from typing import Any, Iterator, TextIO, Union
 
@@ -40,9 +40,16 @@ _YAML_LOCK_HOLDERS = threading.local()
 def yaml_update_lock(path):
     """Serialize read-modify-write across threads, processes and symlink aliases."""
     from .locking import file_lock
+    from .profile_lease import ProfileLease
 
-    target = Path(path).resolve()
-    with _YAML_LOCK:
+    original = Path(path).absolute()
+    target = original.resolve()
+    admission = (
+        ProfileLease(original.parent)
+        if original.name in {"config.yaml", ".env", "auth.json"}
+        else nullcontext()
+    )
+    with admission, _YAML_LOCK:
         holders = getattr(_YAML_LOCK_HOLDERS, "paths", None)
         if holders is None:
             holders = _YAML_LOCK_HOLDERS.paths = {}

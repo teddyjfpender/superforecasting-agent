@@ -22,6 +22,14 @@ def main(
         sys.stderr.write(f"usage: {program} run <job_id>\n")
         return 2
 
+    from superforecasting_agent.constants import get_agent_home
+    from superforecasting_agent.storage.profile_lease import ProfileLease
+
+    with ProfileLease(get_agent_home()):
+        return _run_job(argv[1])
+
+
+def _run_job(job_id: str) -> int:
     # A detached worker is a fresh process: register the search/extract providers
     # so job types that research have them (mirrors quorum_jobs' worker boot).
     try:
@@ -35,7 +43,7 @@ def main(
 
     from forecasting.jobs.runtime import run
 
-    record = run(argv[1])
+    record = run(job_id)
     # ``awaiting_approval`` is a clean PARK (a policy `ask` cell stopped it before any
     # spend), not a crash — exit 0 so a supervising harness does not flag it failed.
     return 0 if record.status in ("done", "cancelled", "awaiting_approval") else 1

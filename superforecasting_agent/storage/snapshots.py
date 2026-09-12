@@ -21,6 +21,7 @@ from superforecasting_agent.storage.files import (
     atomic_replace,
     yaml_update_lock,
 )
+from superforecasting_agent.storage.profile_lease import ProfileLease
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +106,16 @@ def _snapshot_member(base: Path, relative: str) -> Path:
 
 
 def create_quick_snapshot(
+    label: Optional[str] = None,
+    hermes_home: Optional[Path] = None,
+) -> Optional[str]:
+    """Capture profile state while excluding concurrent restoration."""
+    home = hermes_home or get_agent_home()
+    with ProfileLease(home):
+        return _create_quick_snapshot(label, home)
+
+
+def _create_quick_snapshot(
     label: Optional[str] = None,
     hermes_home: Optional[Path] = None,
 ) -> Optional[str]:
@@ -338,6 +349,26 @@ def _restore_journal_members(home: Path, record: Any) -> list[tuple[str, Path, P
     return members
 
 
+def _prepare_session_database_replace(path: Path) -> None:
+    """Drain the old WAL before replacing its database under exclusive admission.
+
+    A crashed process can leave WAL pages behind. They belong to the old
+    database and must never be replayed onto the restored file. Failed/busy
+    checkpoints retain the journal for recovery without replacing the database.
+    """
+    sidecars = [Path(str(path) + suffix) for suffix in ("-wal", "-shm", "-journal")]
+    if any(sidecar.is_symlink() for sidecar in sidecars):
+        raise OSError("Session database sidecars must not be symbolic links")
+    if path.exists():
+        with closing(sqlite3.connect(str(path), timeout=0)) as connection:
+            result = connection.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+            if result[0] != 0:
+                raise OSError("Session database is still in use; checkpoint is busy")
+    for sidecar in sidecars:
+        sidecar.unlink(missing_ok=True)
+    _sync_restore_directories(path.parent, [path.parent])
+
+
 def _recover_quick_snapshot_restore(home: Path) -> bool:
     journal = home / ".snapshot-restore.json"
     if journal.is_symlink():
@@ -363,6 +394,8 @@ def _recover_quick_snapshot_restore(home: Path) -> bool:
                 shutil.copy2(staged, tmp)
                 with tmp.open("rb") as stream:
                     os.fsync(stream.fileno())
+                if rel == "state.db":
+                    _prepare_session_database_replace(dst)
                 atomic_replace(tmp, dst)
             except OSError as exc:
                 raise OSError(
@@ -398,7 +431,10 @@ def recover_quick_snapshot_restore(hermes_home: Optional[Path] = None) -> bool:
     home = hermes_home or get_agent_home()
     if (home / ".snapshot-restore.json").is_symlink():
         raise ValueError("Snapshot restore journal must not be a symbolic link")
-    with yaml_update_lock(home / ".snapshot-restore.json"):
+    with (
+        ProfileLease(home, exclusive=True),
+        yaml_update_lock(home / ".snapshot-restore.json"),
+    ):
         return _recover_quick_snapshot_restore(home)
 
 
@@ -411,7 +447,7 @@ def restore_quick_snapshot(
     journal = home / ".snapshot-restore.json"
     if journal.is_symlink():
         raise ValueError("Snapshot restore journal must not be a symbolic link")
-    with yaml_update_lock(journal):
+    with ProfileLease(home, exclusive=True), yaml_update_lock(journal):
         if journal.exists() or journal.is_symlink():
             raise OSError(
                 "Snapshot restoration pending; recover it before starting another"

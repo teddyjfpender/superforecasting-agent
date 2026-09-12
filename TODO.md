@@ -32,7 +32,7 @@ changes, tests and their limits. The previous checklist is preserved in the
   host-coordinated live restoration remains to be implemented. Restore now stages
   all files before publication and rejects partial success. A versioned restore
   journal retains hash-verified copies for idempotent recovery after process death;
-  host-wide writer quiescence and restore/recovery admission remain prerequisites. Kanban now runs
+  profile leases now exclude restore/recovery while managed hosts, sessions and config/auth writers are active; failed shutdown retains admission and pending journals block new users. Offline restore/recover has a dedicated CLI path, and crashed SQLite WAL is drained before database replacement. Caller and backup-import admission still require a final audit before this is complete. Kanban now runs
   natively with host/session cancellation and visible activity. Real terminal tests
   cover watch, resizing, Ctrl+C, gateway death/reconnect and continued command use.
   Extended remote-host command recovery remains to be qualified.

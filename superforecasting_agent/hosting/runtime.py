@@ -6,6 +6,7 @@ import logging
 import threading
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any
 
 from superforecasting_agent.hosting.configuration import ProfileConfiguration
@@ -15,6 +16,7 @@ from superforecasting_agent.hosting.sessions import use_session
 from superforecasting_agent.hosting.storage import SessionStore
 from superforecasting_agent.hosting.workers import RuntimeWorkers
 from superforecasting_agent.storage import turns
+from superforecasting_agent.storage.profile_lease import ProfileLease
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +28,7 @@ class RuntimeHost:
     They cannot reopen admission until every previous resource is relinquished.
     """
 
-    def __init__(self, *, max_workers: int = 4) -> None:
+    def __init__(self, *, max_workers: int = 4, home: Path | None = None) -> None:
         self._lock = threading.Lock()
         self._max_workers = max_workers
         self._shutdown_complete = False
@@ -35,6 +37,8 @@ class RuntimeHost:
         self.store = SessionStore()
         self.configuration = ProfileConfiguration()
         self.sign_in = DeviceSignIn()
+        self._home = home
+        self._profile_lease = ProfileLease(home) if home is not None else None
 
     @contextmanager
     def command(self, session: dict[str, Any]) -> Iterator[threading.Event]:
@@ -77,6 +81,12 @@ class RuntimeHost:
                 or self.store.current is not None
             ):
                 raise RuntimeError("previous runtime shutdown is incomplete")
+            self._profile_lease = (
+                ProfileLease(self._home) if self._home is not None else None
+            )
+            # A failed restart may have allocated resources in reset_services;
+            # retain admission until shutdown has disposed them.
+            self._shutdown_complete = False
             reset_services()
             self.sign_in = DeviceSignIn()
             self.store.start()
@@ -158,6 +168,13 @@ class RuntimeHost:
                 self.store.close()
             except Exception:
                 logger.exception("runtime session store cleanup incomplete")
+                return False
+            try:
+                if self._profile_lease is not None:
+                    self._profile_lease.close()
+                    self._profile_lease = None
+            except Exception:
+                logger.exception("runtime profile admission cleanup incomplete")
                 return False
             self._shutdown_complete = True
             return True

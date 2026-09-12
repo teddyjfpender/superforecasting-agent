@@ -72,7 +72,7 @@ def _require_boto3():
     except ImportError as exc:
         raise ImportError(
             "The 'boto3' package is required for the AWS Bedrock provider. "
-            "Install Superforecasting Agent with Bedrock support: "
+            "You can install Superforecasting Agent with Bedrock support: "
             "pip install 'superforecasting-agent[bedrock]'"
         ) from exc
 

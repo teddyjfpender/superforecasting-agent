@@ -81,6 +81,9 @@ def test_failed_restart_does_not_reopen_admission():
         host.start(reset_services=Mock(side_effect=OSError("reset failed")))
     assert host.workers is old_workers
     assert host.workers.stopping
+    with pytest.raises(RuntimeError, match="incomplete"):
+        host.start(reset_services=Mock())
+    assert host.shutdown(0, **operations)
     host.start(reset_services=Mock())
     assert host.workers is not old_workers
     assert not host.workers.stopping

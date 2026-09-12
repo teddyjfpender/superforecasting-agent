@@ -607,7 +607,9 @@ def _auth_store_lock(timeout_seconds: float = AUTH_LOCK_TIMEOUT_SECONDS):
     refresh paths follow this order; violating it risks deadlock
     against a concurrent import on the shared store.
     """
-    with _file_lock(
+    from superforecasting_agent.storage.profile_lease import ProfileLease
+
+    with ProfileLease(_auth_file_path().parent), _file_lock(
         _auth_lock_path(),
         _auth_lock_holder,
         timeout_seconds,

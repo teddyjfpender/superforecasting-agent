@@ -79,11 +79,13 @@ _EXCLUDED_SUFFIXES = (
 
 # File names to skip (runtime state that's meaningless on another machine)
 _EXCLUDED_NAMES = {
+    ".profile-use.lock",
     "gateway.pid",
     "cron.pid",
 }
 
 _IMPORT_SKIP_NAMES = {
+    ".profile-use.lock",
     "gateway_state.json",
     "gateway.pid",
     "cron.pid",

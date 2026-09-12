@@ -56,6 +56,12 @@ def test_wrapper_failure_closes_descriptor_and_preserves_target(
                 target,
                 target.with_name(target.name + ".lock"),
             }
+        elif writer == "auth":
+            from superforecasting_agent.storage.profile_lease import LEASE_FILE, ProfileLease
+
+            assert set(output.iterdir()) == {target, output / LEASE_FILE}
+            with ProfileLease(output, exclusive=True):
+                pass  # Failed writes must release profile admission too.
         else:
             assert list(output.iterdir()) == [target]
         assert len(opened) == 1

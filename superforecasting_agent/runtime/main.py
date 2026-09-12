@@ -8800,7 +8800,15 @@ def _plugin_cli_discovery_needed() -> bool:
 
 
 def main():
-    """Main entry point for hermes CLI."""
+    """Hold profile admission for the complete runtime command lifetime."""
+    from superforecasting_agent.storage.profile_lease import ProfileLease
+
+    with ProfileLease(get_agent_home()):
+        return _main()
+
+
+def _main():
+    """Main entry point for the runtime CLI."""
     # Force UTF-8 stdio on Windows before anything prints.  No-op elsewhere.
     try:
         from superforecasting_agent.runtime.stdio import configure_windows_stdio
