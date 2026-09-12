@@ -3820,3 +3820,22 @@ including a gateway-level injected context-reset failure. Shared quality gates
 passed with 55 contracts. Constructor-internal allocations that fail before an
 agent is returned still require their own constructor cleanup; this change does
 not claim to handle those allocations or attribute historical native crashes.
+
+
+### Directory-wide storage quality enforcement
+
+The shared development gate now checks the storage directory rather than eight
+selected storage files. All 25 modules, including new files added later, receive
+blocking lint, formatting and type checks through the same local/CI command.
+The audit found 12 lint issues and 33 type diagnostics. Optional parameters now
+accurately include None; compatibility exports remain explicit reexports; the
+YAML representer keeps its base-class keyword parameter; file-mode restoration
+accepts both path types it actually receives. A closed connection now returns
+before attempting a best-effort checkpoint. Windows locking has a small explicit
+module protocol so its required operations can be checked on the macOS host.
+
+All 321 focused storage, SQLite lifecycle and development-gate tests passed, as
+did the shared quality gates with 55 import contracts. Formatting accounts for
+most of the diff. These checks do not establish native Windows execution, and
+inherited unannotated storage methods still limit static analysis precision;
+directory-wide enforcement is not a claim that all storage APIs are fully typed.

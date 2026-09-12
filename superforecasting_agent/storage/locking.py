@@ -1,16 +1,32 @@
 """Reentrant cross-process file locking shared by credential and config stores."""
-from contextlib import contextmanager
-from pathlib import Path
+
 import threading
 import time
+from contextlib import contextmanager
+from importlib import import_module
+from pathlib import Path
+from types import ModuleType
+from typing import Protocol, cast
+
+
+class WindowsLocking(Protocol):
+    LK_NBLCK: int
+    LK_UNLCK: int
+
+    def locking(self, fd: int, mode: int, nbytes: int, /) -> None: ...
+
+
+fcntl: ModuleType | None
+msvcrt: WindowsLocking | None
 try:
-    import fcntl
+    fcntl = import_module("fcntl")
 except ImportError:
     fcntl = None
 try:
-    import msvcrt
+    msvcrt = cast(WindowsLocking, import_module("msvcrt"))
 except ImportError:
     msvcrt = None
+
 
 @contextmanager
 def file_lock(
@@ -18,7 +34,9 @@ def file_lock(
     holder: threading.local,
     timeout_seconds: float,
     timeout_message: str,
-    *, posix=fcntl, windows=msvcrt,
+    *,
+    posix=fcntl,
+    windows=msvcrt,
 ):
     """Cross-process advisory flock helper.
 
@@ -59,6 +77,7 @@ def file_lock(
                 if posix:
                     posix.flock(lock_file.fileno(), posix.LOCK_EX | posix.LOCK_NB)
                 else:
+                    assert windows is not None  # no-backend fallback returned above
                     lock_file.seek(0)
                     windows.locking(lock_file.fileno(), windows.LK_NBLCK, 1)
                 break
@@ -83,5 +102,3 @@ def file_lock(
                     windows.locking(lock_file.fileno(), windows.LK_UNLCK, 1)
                 except (OSError, IOError):
                     pass
-
-

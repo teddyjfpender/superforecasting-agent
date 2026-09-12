@@ -24,7 +24,9 @@ def get_messages(self, session_id: str) -> List[Dict[str, Any]]:
             try:
                 msg["tool_calls"] = json.loads(msg["tool_calls"])
             except (json.JSONDecodeError, TypeError):
-                logger.warning("Failed to deserialize tool_calls in get_messages, falling back to []")
+                logger.warning(
+                    "Failed to deserialize tool_calls in get_messages, falling back to []"
+                )
                 msg["tool_calls"] = []
         result.append(msg)
     return result
@@ -38,23 +40,23 @@ def get_messages_around(
 ) -> Dict[str, Any]:
     """Load a window of messages anchored on a specific message id.
 
-        Returns a dict with:
-          - ``window``: up to ``window`` messages before the anchor, the anchor
-            itself, and up to ``window`` messages after, ordered by id ascending.
-          - ``messages_before``: count of messages strictly before the anchor
-            still in the session (== window unless we hit the start).
-          - ``messages_after``: count of messages strictly after the anchor
-            still in the session (== window unless we hit the end).
+    Returns a dict with:
+      - ``window``: up to ``window`` messages before the anchor, the anchor
+        itself, and up to ``window`` messages after, ordered by id ascending.
+      - ``messages_before``: count of messages strictly before the anchor
+        still in the session (== window unless we hit the start).
+      - ``messages_after``: count of messages strictly after the anchor
+        still in the session (== window unless we hit the end).
 
-        Used by ``session_search`` for both the discovery shape (anchored on the
-        FTS5 match) and the scroll shape (anchored on any message id). The
-        ``messages_before`` / ``messages_after`` counts let the caller detect
-        session boundaries: when either is less than ``window``, the agent has
-        reached one end of the session.
+    Used by ``session_search`` for both the discovery shape (anchored on the
+    FTS5 match) and the scroll shape (anchored on any message id). The
+    ``messages_before`` / ``messages_after`` counts let the caller detect
+    session boundaries: when either is less than ``window``, the agent has
+    reached one end of the session.
 
-        Returns an empty window when ``around_message_id`` is not a real id in
-        ``session_id`` — callers decide how to surface that.
-        """
+    Returns an empty window when ``around_message_id`` is not a real id in
+    ``session_id`` — callers decide how to surface that.
+    """
     if window < 0:
         window = 0
     with self._lock:
@@ -116,37 +118,35 @@ def get_anchored_view(
 ) -> Dict[str, Any]:
     """Return an anchored window plus session bookends.
 
-        Built on top of ``get_messages_around``. Three slices:
+    Built on top of ``get_messages_around``. Three slices:
 
-          - ``window``: messages immediately surrounding the anchor. Filtered
-            to ``keep_roles`` (tool-response noise dropped by default), EXCEPT
-            the anchor itself is always preserved regardless of role.
-          - ``bookend_start``: first ``bookend`` user/assistant messages of the
-            session — but only those whose id is strictly before the window's
-            first message id. Empty when the window already overlaps the
-            session head. Empty-content messages (tool-call-only assistant
-            turns) are skipped so they don't crowd out actual prose openings.
-          - ``bookend_end``: last ``bookend`` user/assistant messages of the
-            session, same non-overlap rule at the tail.
+      - ``window``: messages immediately surrounding the anchor. Filtered
+        to ``keep_roles`` (tool-response noise dropped by default), EXCEPT
+        the anchor itself is always preserved regardless of role.
+      - ``bookend_start``: first ``bookend`` user/assistant messages of the
+        session — but only those whose id is strictly before the window's
+        first message id. Empty when the window already overlaps the
+        session head. Empty-content messages (tool-call-only assistant
+        turns) are skipped so they don't crowd out actual prose openings.
+      - ``bookend_end``: last ``bookend`` user/assistant messages of the
+        session, same non-overlap rule at the tail.
 
-        Bookends let an FTS5 hit anywhere in a long session yield the goal
-        (opening) and the resolution (closing) on a single call — without
-        loading the whole transcript.
+    Bookends let an FTS5 hit anywhere in a long session yield the goal
+    (opening) and the resolution (closing) on a single call — without
+    loading the whole transcript.
 
-        Returns ``{"window": [], "messages_before": 0, "messages_after": 0,
-        "bookend_start": [], "bookend_end": []}`` when the anchor isn't in
-        the session.
+    Returns ``{"window": [], "messages_before": 0, "messages_after": 0,
+    "bookend_start": [], "bookend_end": []}`` when the anchor isn't in
+    the session.
 
-        ``keep_roles=None`` disables role filtering (raw window + raw
-        bookends).
-        """
+    ``keep_roles=None`` disables role filtering (raw window + raw
+    bookends).
+    """
     if bookend < 0:
         bookend = 0
     # Reuse the primitive — handles anchor-existence, content decoding,
     # tool_calls deserialisation, and boundary counts.
-    primitive = self.get_messages_around(
-        session_id, around_message_id, window=window
-    )
+    primitive = self.get_messages_around(session_id, around_message_id, window=window)
     window_rows = primitive["window"]
     if not window_rows:
         return {
@@ -160,7 +160,8 @@ def get_anchored_view(
     if keep_roles is not None:
         keep_set = set(keep_roles)
         filtered_window = [
-            m for m in window_rows
+            m
+            for m in window_rows
             if m.get("id") == around_message_id or m.get("role") in keep_set
         ]
     else:
@@ -197,6 +198,7 @@ def get_anchored_view(
             ).fetchall()
             # End rows came back DESC for the LIMIT cap; flip to ASC.
             bookend_end_rows = list(reversed(bookend_end_rows))
+
     def _hydrate(row) -> Dict[str, Any]:
         msg = dict(row)
         if "content" in msg:
@@ -210,6 +212,7 @@ def get_anchored_view(
                 )
                 msg["tool_calls"] = []
         return msg
+
     return {
         "window": filtered_window,
         "messages_before": primitive["messages_before"],

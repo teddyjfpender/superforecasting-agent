@@ -40,14 +40,19 @@ _YAML_LOCK_HOLDERS = threading.local()
 def yaml_update_lock(path):
     """Serialize read-modify-write across threads, processes and symlink aliases."""
     from .locking import file_lock
+
     target = Path(path).resolve()
     with _YAML_LOCK:
-        holders = getattr(_YAML_LOCK_HOLDERS, 'paths', None)
+        holders = getattr(_YAML_LOCK_HOLDERS, "paths", None)
         if holders is None:
             holders = _YAML_LOCK_HOLDERS.paths = {}
         holder = holders.setdefault(str(target), threading.local())
-        with file_lock(target.with_name(target.name + '.lock'), holder, 10,
-                       'Timed out waiting for configuration writer'):
+        with file_lock(
+            target.with_name(target.name + ".lock"),
+            holder,
+            10,
+            "Timed out waiting for configuration writer",
+        ):
             yield
 
 
@@ -110,7 +115,7 @@ def _preserve_file_mode(path: Path) -> "int | None":
         return None
 
 
-def _restore_file_mode(path: Path, mode: "int | None") -> None:
+def _restore_file_mode(path: str | Path, mode: "int | None") -> None:
     """Re-apply *mode* to *path* after an atomic replace.
 
     ``tempfile.mkstemp`` creates files with 0o600 (owner-only).  After
@@ -246,9 +251,9 @@ def _roundtrip_codec():
     from ruamel.yaml.representer import RoundTripRepresenter
 
     class ConfigRepresenter(RoundTripRepresenter):
-        def represent_str(self, value):
-            style = '"' if value.lower() in {'on', 'off', 'yes', 'no'} else None
-            return self.represent_scalar('tag:yaml.org,2002:str', value, style=style)
+        def represent_str(self, data):
+            style = '"' if data.lower() in {"on", "off", "yes", "no"} else None
+            return self.represent_scalar("tag:yaml.org,2002:str", data, style=style)
 
     ConfigRepresenter.add_representer(str, ConfigRepresenter.represent_str)
     codec = YAML(typ="rt")
@@ -273,7 +278,6 @@ def atomic_roundtrip_yaml_update(
     """
     with yaml_update_lock(path):
         try:
-            from ruamel.yaml import YAML
             from ruamel.yaml.comments import CommentedMap
         except ModuleNotFoundError:
             _atomic_yaml_update_without_ruamel(path, key_path, value)
@@ -311,7 +315,6 @@ def atomic_roundtrip_yaml_mutate(path, mutate):
     path = Path(path)
     with yaml_update_lock(path):
         try:
-            from ruamel.yaml import YAML
             codec = _roundtrip_codec()
             codec.preserve_quotes = True
             codec.allow_unicode = True

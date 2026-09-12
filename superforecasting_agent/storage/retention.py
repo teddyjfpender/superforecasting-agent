@@ -12,8 +12,10 @@ logger = logging.getLogger(__name__)
 def prune_empty_ghost_sessions(self, sessions_dir: "Optional[Path]" = None) -> int:
     """Remove empty TUI ghost sessions (no messages, no title, >24hr old)."""
     cutoff = time.time() - 86400  # Only sessions older than 24 hours
+
     def _do(conn):
-        rows = conn.execute("""
+        rows = conn.execute(
+            """
                 SELECT id FROM sessions
                 WHERE source = 'tui'
                   AND title IS NULL
@@ -22,14 +24,15 @@ def prune_empty_ghost_sessions(self, sessions_dir: "Optional[Path]" = None) -> i
                   AND NOT EXISTS (
                       SELECT 1 FROM messages WHERE messages.session_id = sessions.id
                   )
-            """, (cutoff,)).fetchall()
+            """,
+            (cutoff,),
+        ).fetchall()
         ids = [r[0] if isinstance(r, (tuple, list)) else r["id"] for r in rows]
         if ids:
             placeholders = ",".join("?" * len(ids))
-            conn.execute(
-                f"DELETE FROM sessions WHERE id IN ({placeholders})", ids
-            )
+            conn.execute(f"DELETE FROM sessions WHERE id IN ({placeholders})", ids)
         return ids
+
     removed_ids = self._execute_write(_do) or []
     # Clean up any on-disk session files (belt-and-suspenders)
     if sessions_dir and removed_ids:
@@ -41,12 +44,13 @@ def prune_empty_ghost_sessions(self, sessions_dir: "Optional[Path]" = None) -> i
 def finalize_orphaned_compression_sessions(self) -> int:
     """Mark orphaned compression continuation sessions as ended.
 
-        Targets child sessions that were never finalized: parent is ended
-        with reason='compression', child has messages but no end_reason/ended_at
-        and api_call_count=0.  Non-destructive: preserves all messages and sets
-        end_reason='orphaned_compression'.  Fix for #20001.
-        """
+    Targets child sessions that were never finalized: parent is ended
+    with reason='compression', child has messages but no end_reason/ended_at
+    and api_call_count=0.  Non-destructive: preserves all messages and sets
+    end_reason='orphaned_compression'.  Fix for #20001.
+    """
     cutoff = time.time() - 604800  # 7 days
+
     def _do(conn):
         now = time.time()
         result = conn.execute(
@@ -73,30 +77,31 @@ def finalize_orphaned_compression_sessions(self) -> int:
             (now, cutoff),
         )
         return result.rowcount
+
     return self._execute_write(_do) or 0
 
 
 def clear_messages(self, session_id: str) -> None:
     """Delete all messages for a session and reset its counters."""
+
     def _do(conn):
-        conn.execute(
-            "DELETE FROM messages WHERE session_id = ?", (session_id,)
-        )
+        conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
         conn.execute(
             "UPDATE sessions SET message_count = 0, tool_call_count = 0 WHERE id = ?",
             (session_id,),
         )
+
     self._execute_write(_do)
 
 
 def _remove_session_files(sessions_dir: Optional[Path], session_id: str) -> None:
     """Remove on-disk transcript files for a session.
 
-        Cleans up ``{session_id}.json``, ``{session_id}.jsonl``, and any
-        ``request_dump_{session_id}_*.json`` files left by the gateway.
-        Silently skips files that don't exist and swallows OSError so a
-        filesystem hiccup never blocks a DB operation.
-        """
+    Cleans up ``{session_id}.json``, ``{session_id}.jsonl``, and any
+    ``request_dump_{session_id}_*.json`` files left by the gateway.
+    Silently skips files that don't exist and swallows OSError so a
+    filesystem hiccup never blocks a DB operation.
+    """
     if sessions_dir is None:
         return
     for suffix in (".json", ".jsonl"):
@@ -123,12 +128,13 @@ def delete_session(
 ) -> bool:
     """Delete a session and all its messages.
 
-        Child sessions are orphaned (parent_session_id set to NULL) rather
-        than cascade-deleted, so they remain accessible independently.
-        When *sessions_dir* is provided, also removes on-disk transcript
-        files (``.json`` / ``.jsonl`` / ``request_dump_*``) for the deleted
-        session. Returns True if the session was found and deleted.
-        """
+    Child sessions are orphaned (parent_session_id set to NULL) rather
+    than cascade-deleted, so they remain accessible independently.
+    When *sessions_dir* is provided, also removes on-disk transcript
+    files (``.json`` / ``.jsonl`` / ``request_dump_*``) for the deleted
+    session. Returns True if the session was found and deleted.
+    """
+
     def _do(conn):
         cursor = conn.execute(
             "SELECT COUNT(*) FROM sessions WHERE id = ?", (session_id,)
@@ -137,13 +143,13 @@ def delete_session(
             return False
         # Orphan child sessions so FK constraint is satisfied
         conn.execute(
-            "UPDATE sessions SET parent_session_id = NULL "
-            "WHERE parent_session_id = ?",
+            "UPDATE sessions SET parent_session_id = NULL WHERE parent_session_id = ?",
             (session_id,),
         )
         conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
         conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
         return True
+
     deleted = self._execute_write(_do)
     if deleted:
         self._remove_session_files(sessions_dir, session_id)
@@ -153,20 +159,21 @@ def delete_session(
 def prune_sessions(
     self,
     older_than_days: int = 90,
-    source: str = None,
+    source: str | None = None,
     sessions_dir: Optional[Path] = None,
 ) -> int:
     """Delete sessions older than N days. Returns count of deleted sessions.
 
-        Only prunes ended sessions (not active ones).  Child sessions outside
-        the prune window are orphaned (parent_session_id set to NULL) rather
-        than cascade-deleted.  When *sessions_dir* is provided, also removes
-        on-disk transcript files (``.json`` / ``.jsonl`` /
-        ``request_dump_*``) for every pruned session, outside the DB
-        transaction.
-        """
+    Only prunes ended sessions (not active ones).  Child sessions outside
+    the prune window are orphaned (parent_session_id set to NULL) rather
+    than cascade-deleted.  When *sessions_dir* is provided, also removes
+    on-disk transcript files (``.json`` / ``.jsonl`` /
+    ``request_dump_*``) for every pruned session, outside the DB
+    transaction.
+    """
     cutoff = time.time() - (older_than_days * 86400)
     removed_ids: list[str] = []
+
     def _do(conn):
         if source:
             cursor = conn.execute(
@@ -194,6 +201,7 @@ def prune_sessions(
             conn.execute("DELETE FROM sessions WHERE id = ?", (sid,))
             removed_ids.append(sid)
         return len(session_ids)
+
     count = self._execute_write(_do)
     # Clean up on-disk files outside the DB transaction
     for sid in removed_ids:
@@ -216,12 +224,14 @@ def get_meta(self, key: str) -> Optional[str]:
 
 def set_meta(self, key: str, value: str) -> None:
     """Write a value to the state_meta key/value store."""
+
     def _do(conn):
         conn.execute(
             "INSERT INTO state_meta (key, value) VALUES (?, ?) "
             "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             (key, value),
         )
+
     self._execute_write(_do)
 
 
@@ -231,8 +241,11 @@ def mutate_meta(self, key: str, update) -> str:
     The callback must be side-effect free: lock contention may retry it.
     Raising from the callback rolls back without changing the stored value.
     """
+
     def _do(conn):
-        row = conn.execute("SELECT value FROM state_meta WHERE key = ?", (key,)).fetchone()
+        row = conn.execute(
+            "SELECT value FROM state_meta WHERE key = ?", (key,)
+        ).fetchone()
         current = row[0] if row is not None else None
         value = update(current)
         if not isinstance(value, str):
@@ -243,23 +256,24 @@ def mutate_meta(self, key: str, update) -> str:
             (key, value),
         )
         return value
+
     return self._execute_write(_do)
 
 
 def vacuum(self) -> None:
     """Run VACUUM to reclaim disk space after large deletes.
 
-        SQLite does not shrink the database file when rows are deleted —
-        freed pages just get reused on the next insert. After a prune that
-        removed hundreds of sessions, the file stays bloated unless we
-        explicitly VACUUM.
+    SQLite does not shrink the database file when rows are deleted —
+    freed pages just get reused on the next insert. After a prune that
+    removed hundreds of sessions, the file stays bloated unless we
+    explicitly VACUUM.
 
-        VACUUM rewrites the entire DB, so it's expensive (seconds per
-        100MB) and cannot run inside a transaction. It also acquires an
-        exclusive lock, so callers must ensure no other writers are
-        active. Safe to call at startup before the gateway/CLI starts
-        serving traffic.
-        """
+    VACUUM rewrites the entire DB, so it's expensive (seconds per
+    100MB) and cannot run inside a transaction. It also acquires an
+    exclusive lock, so callers must ensure no other writers are
+    active. Safe to call at startup before the gateway/CLI starts
+    serving traffic.
+    """
     # VACUUM cannot be executed inside a transaction.
     with self._lock:
         # Best-effort WAL checkpoint first, then VACUUM.
@@ -279,23 +293,23 @@ def maybe_auto_prune_and_vacuum(
 ) -> Dict[str, Any]:
     """Idempotent auto-maintenance: prune old sessions + optional VACUUM.
 
-        Records the last run timestamp in state_meta so subsequent calls
-        within ``min_interval_hours`` no-op. Designed to be called once at
-        startup from long-lived entrypoints (CLI, gateway, cron scheduler).
+    Records the last run timestamp in state_meta so subsequent calls
+    within ``min_interval_hours`` no-op. Designed to be called once at
+    startup from long-lived entrypoints (CLI, gateway, cron scheduler).
 
-        When *sessions_dir* is provided, on-disk transcript files
-        (``.json`` / ``.jsonl`` / ``request_dump_*``) for pruned sessions
-        are removed as part of the same sweep (issue #3015).
+    When *sessions_dir* is provided, on-disk transcript files
+    (``.json`` / ``.jsonl`` / ``request_dump_*``) for pruned sessions
+    are removed as part of the same sweep (issue #3015).
 
-        Never raises. On any failure, logs a warning and returns a dict
-        with ``"error"`` set.
+    Never raises. On any failure, logs a warning and returns a dict
+    with ``"error"`` set.
 
-        Returns a dict with keys:
-          - ``"skipped"`` (bool) — true if within min_interval_hours of last run
-          - ``"pruned"`` (int)   — number of sessions deleted
-          - ``"vacuumed"`` (bool) — true if VACUUM ran
-          - ``"error"`` (str, optional) — present only on failure
-        """
+    Returns a dict with keys:
+      - ``"skipped"`` (bool) — true if within min_interval_hours of last run
+      - ``"pruned"`` (int)   — number of sessions deleted
+      - ``"vacuumed"`` (bool) — true if VACUUM ran
+      - ``"error"`` (str, optional) — present only on failure
+    """
     result: Dict[str, Any] = {"skipped": False, "pruned": 0, "vacuumed": False}
     try:
         # Skip if another process/call did maintenance recently.

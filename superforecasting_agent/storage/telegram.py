@@ -15,15 +15,17 @@ def enable_telegram_topic_mode(
 ) -> None:
     """Enable Telegram DM topic mode for one private chat/user.
 
-        This method intentionally owns the explicit topic migration. Ordinary
-        SessionDB startup must not create these side tables.
-        """
+    This method intentionally owns the explicit topic migration. Ordinary
+    SessionDB startup must not create these side tables.
+    """
     self.apply_telegram_topic_migration()
     now = time.time()
+
     def _to_int(value: Optional[bool]) -> Optional[int]:
         if value is None:
             return None
         return 1 if value else 0
+
     def _do(conn):
         conn.execute(
             """
@@ -50,6 +52,7 @@ def enable_telegram_topic_mode(
                 now,
             ),
         )
+
     self._execute_write(_do)
 
 
@@ -61,14 +64,15 @@ def disable_telegram_topic_mode(
 ) -> None:
     """Disable Telegram DM topic mode for one private chat.
 
-        When ``clear_bindings`` is True (default) the (chat_id, thread_id)
-        bindings for this chat are also cleared so re-enabling later
-        starts from a clean slate. Set to False if the operator wants to
-        preserve bindings for a later re-enable.
+    When ``clear_bindings`` is True (default) the (chat_id, thread_id)
+    bindings for this chat are also cleared so re-enabling later
+    starts from a clean slate. Set to False if the operator wants to
+    preserve bindings for a later re-enable.
 
-        Never creates the topic-mode tables from scratch; if they don't
-        exist there is nothing to disable and the call is a no-op.
-        """
+    Never creates the topic-mode tables from scratch; if they don't
+    exist there is nothing to disable and the call is a no-op.
+    """
+
     def _do(conn):
         try:
             conn.execute(
@@ -84,6 +88,7 @@ def disable_telegram_topic_mode(
         except sqlite3.OperationalError:
             # Tables don't exist yet — nothing to disable.
             return
+
     self._execute_write(_do)
 
 
@@ -134,9 +139,9 @@ def list_telegram_topic_bindings_for_chat(
 ) -> List[Dict[str, Any]]:
     """All Telegram DM topic bindings for one chat, newest first.
 
-        Read-only; returns [] if the bindings table doesn't exist yet
-        (does not trigger the topic-mode migration).
-        """
+    Read-only; returns [] if the bindings table doesn't exist yet
+    (does not trigger the topic-mode migration).
+    """
     with self._lock:
         try:
             rows = self._conn.execute(
@@ -156,10 +161,10 @@ def get_telegram_topic_binding_by_session(
 ) -> Optional[Dict[str, Any]]:
     """Return the Telegram DM topic binding for a given session_id, if present.
 
-        Uses the UNIQUE INDEX on telegram_dm_topic_bindings(session_id) for an
-        efficient reverse lookup. Returns None when the session has no binding or
-        the table does not exist yet.
-        """
+    Uses the UNIQUE INDEX on telegram_dm_topic_bindings(session_id) for an
+    efficient reverse lookup. Returns None when the session has no binding or
+    the table does not exist yet.
+    """
     with self._lock:
         try:
             row = self._conn.execute(
@@ -186,10 +191,10 @@ def bind_telegram_topic(
 ) -> None:
     """Bind one Telegram DM topic thread to one agent session.
 
-        An agent session may only be linked to one Telegram topic in MVP.
-        Rebinding the same topic to the same session is idempotent; trying to
-        link the same session to a different topic raises ValueError.
-        """
+    An agent session may only be linked to one Telegram topic in MVP.
+    Rebinding the same topic to the same session is idempotent; trying to
+    link the same session to a different topic raises ValueError.
+    """
     self.apply_telegram_topic_migration()
     now = time.time()
     chat_id = str(chat_id)
@@ -197,6 +202,7 @@ def bind_telegram_topic(
     user_id = str(user_id)
     session_key = str(session_key)
     session_id = str(session_id)
+
     def _do(conn):
         existing_session = conn.execute(
             """
@@ -206,8 +212,16 @@ def bind_telegram_topic(
             (session_id,),
         ).fetchone()
         if existing_session is not None:
-            linked_chat = existing_session["chat_id"] if isinstance(existing_session, sqlite3.Row) else existing_session[0]
-            linked_thread = existing_session["thread_id"] if isinstance(existing_session, sqlite3.Row) else existing_session[1]
+            linked_chat = (
+                existing_session["chat_id"]
+                if isinstance(existing_session, sqlite3.Row)
+                else existing_session[0]
+            )
+            linked_thread = (
+                existing_session["thread_id"]
+                if isinstance(existing_session, sqlite3.Row)
+                else existing_session[1]
+            )
             if str(linked_chat) != chat_id or str(linked_thread) != thread_id:
                 raise ValueError("session is already linked to another Telegram topic")
         conn.execute(
@@ -234,17 +248,18 @@ def bind_telegram_topic(
                 now,
             ),
         )
+
     self._execute_write(_do)
 
 
 def is_telegram_session_linked_to_topic(self, *, session_id: str) -> bool:
     """Return True if an agent session is already bound to any Telegram DM topic.
 
-        Read-only: does NOT trigger the telegram-topic migration. If the
-        topic-mode tables have not been created yet (i.e. nobody has run
-        ``/topic`` in this profile), the session is by definition unbound
-        and we return False.
-        """
+    Read-only: does NOT trigger the telegram-topic migration. If the
+    topic-mode tables have not been created yet (i.e. nobody has run
+    ``/topic`` in this profile), the session is by definition unbound
+    and we return False.
+    """
     with self._lock:
         try:
             row = self._conn.execute(
@@ -269,11 +284,11 @@ def list_unlinked_telegram_sessions_for_user(
 ) -> List[Dict[str, Any]]:
     """List previous Telegram sessions for this user that are not bound to a topic.
 
-        Read-only: does NOT trigger the telegram-topic migration. If the
-        topic-mode tables are absent, fall back to a simpler query that
-        just returns this user's Telegram sessions — there can't be any
-        bindings yet.
-        """
+    Read-only: does NOT trigger the telegram-topic migration. If the
+    topic-mode tables are absent, fall back to a simpler query that
+    just returns this user's Telegram sessions — there can't be any
+    bindings yet.
+    """
     with self._lock:
         try:
             rows = self._conn.execute(

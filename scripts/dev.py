@@ -19,19 +19,13 @@ ROOT = Path(__file__).resolve().parents[1]
 # The stricter scope grows with ownership extractions. Legacy code still runs
 # the repository-wide encoding gate; no silent baseline hides new-layer errors.
 STRICT_PYTHON = (
+    "superforecasting_agent/storage",
     "agent/conversation_lifecycle.py",
-    "superforecasting_agent/storage/turns.py",
     "superforecasting_agent/worker.py",
-    "superforecasting_agent/storage/snapshots.py",
-    "superforecasting_agent/storage/curator_state.py",
-    "superforecasting_agent/storage/plugin_environment.py",
-    "superforecasting_agent/storage/plugin_manifests.py",
     "superforecasting_agent/configuration",
-    "superforecasting_agent/storage/transcripts.py",
     "tools/environments/configuration.py",
     "forecasting/appconfig.py",
     "forecasting/configuration",
-    "superforecasting_agent/storage/configuration.py",
     "superforecasting_agent/tooling",
     "superforecasting_agent/runtime/subgoal_commands.py",
     "superforecasting_agent/runtime/plugin_commands.py",
@@ -53,7 +47,6 @@ STRICT_PYTHON = (
     "superforecasting_agent/profile_paths.py",
     "superforecasting_agent/hosting",
     "superforecasting_agent/processes.py",
-    "superforecasting_agent/storage/media.py",
     "superforecasting_agent/platform_registry.py",
     "superforecasting_agent/session_context.py",
     "forecasting/application",

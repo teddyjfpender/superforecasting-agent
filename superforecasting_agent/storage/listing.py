@@ -15,31 +15,31 @@ def list_sessions_rich(
 ) -> List[Dict[str, Any]]:
     """List sessions with preview (first user message) and last active timestamp.
 
-        Returns dicts with keys: id, source, model, title, started_at, ended_at,
-        message_count, preview (first 60 chars of first user message),
-        last_active (timestamp of last message).
+    Returns dicts with keys: id, source, model, title, started_at, ended_at,
+    message_count, preview (first 60 chars of first user message),
+    last_active (timestamp of last message).
 
-        Uses a single query with correlated subqueries instead of N+2 queries.
+    Uses a single query with correlated subqueries instead of N+2 queries.
 
-        By default, child sessions (subagent runs, compression continuations)
-        are excluded.  Pass ``include_children=True`` to include them.
+    By default, child sessions (subagent runs, compression continuations)
+    are excluded.  Pass ``include_children=True`` to include them.
 
-        With ``project_compression_tips=True`` (default), sessions that are
-        roots of compression chains are projected forward to their latest
-        continuation — one logical conversation = one list entry, showing the
-        live continuation's id/message_count/title/last_active. This prevents
-        compressed continuations from being invisible to users while keeping
-        delegate subagents and branches hidden. Pass ``False`` to return the
-        raw root rows (useful for admin/debug UIs).
+    With ``project_compression_tips=True`` (default), sessions that are
+    roots of compression chains are projected forward to their latest
+    continuation — one logical conversation = one list entry, showing the
+    live continuation's id/message_count/title/last_active. This prevents
+    compressed continuations from being invisible to users while keeping
+    delegate subagents and branches hidden. Pass ``False`` to return the
+    raw root rows (useful for admin/debug UIs).
 
-        Pass ``order_by_last_active=True`` to sort by most-recent activity
-        instead of original conversation start time. For compression chains,
-        the "most-recent activity" is taken from the live tip (not the root),
-        so an old conversation that was compressed and continued recently
-        surfaces in the correct slot. Ordering is computed at SQL level via
-        a recursive CTE that walks compression-continuation edges, so LIMIT
-        and OFFSET still apply efficiently.
-        """
+    Pass ``order_by_last_active=True`` to sort by most-recent activity
+    instead of original conversation start time. For compression chains,
+    the "most-recent activity" is taken from the live tip (not the root),
+    so an old conversation that was compressed and continued recently
+    surfaces in the correct slot. Ordering is computed at SQL level via
+    a recursive CTE that walks compression-continuation edges, so LIMIT
+    and OFFSET still apply efficiently.
+    """
     where_clauses = []
     params = []
     if not include_children:
@@ -187,9 +187,16 @@ def list_sessions_rich(
             # surface the tip's identity and activity data.
             merged = dict(s)
             for key in (
-                "id", "ended_at", "end_reason", "message_count",
-                "tool_call_count", "title", "last_active", "preview",
-                "model", "system_prompt",
+                "id",
+                "ended_at",
+                "end_reason",
+                "message_count",
+                "tool_call_count",
+                "title",
+                "last_active",
+                "preview",
+                "model",
+                "system_prompt",
             ):
                 if key in tip_row:
                     merged[key] = tip_row[key]
@@ -201,9 +208,9 @@ def list_sessions_rich(
 
 def _get_session_rich_row(self, session_id: str) -> Optional[Dict[str, Any]]:
     """Fetch a single session with the same enriched columns as
-        ``list_sessions_rich`` (preview + last_active). Returns None if the
-        session doesn't exist.
-        """
+    ``list_sessions_rich`` (preview + last_active). Returns None if the
+    session doesn't exist.
+    """
     query = """
             SELECT s.*,
                 COALESCE(
@@ -240,7 +247,7 @@ def _get_session_rich_row(self, session_id: str) -> Optional[Dict[str, Any]]:
     return s
 
 
-def session_count(self, source: str = None) -> int:
+def session_count(self, source: str | None = None) -> int:
     """Count sessions, optionally filtered by source."""
     with self._lock:
         if source:
@@ -252,7 +259,7 @@ def session_count(self, source: str = None) -> int:
         return cursor.fetchone()[0]
 
 
-def message_count(self, session_id: str = None) -> int:
+def message_count(self, session_id: str | None = None) -> int:
     """Count messages, optionally for a specific session."""
     with self._lock:
         if session_id:
@@ -273,11 +280,11 @@ def export_session(self, session_id: str) -> Optional[Dict[str, Any]]:
     return {**session, "messages": messages}
 
 
-def export_all(self, source: str = None) -> List[Dict[str, Any]]:
+def export_all(self, source: str | None = None) -> List[Dict[str, Any]]:
     """
-        Export all sessions (with messages) as a list of dicts.
-        Suitable for writing to a JSONL file for backup/analysis.
-        """
+    Export all sessions (with messages) as a list of dicts.
+    Suitable for writing to a JSONL file for backup/analysis.
+    """
     sessions = self.search_sessions(source=source, limit=100000)
     results = []
     for session in sessions:

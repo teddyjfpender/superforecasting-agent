@@ -97,7 +97,7 @@ See the work log for artifact hashes; this is not a published-release claim.
 ## 4. Maintain enforceable repository hygiene
 
 - [ ] Expand strict lint/format/type coverage as inherited owners are extracted.
-  Shared tooling now joins configuration, hosting and application packages in
+  Shared tooling and the entire storage package join configuration, hosting and application packages in
   directory-wide strict coverage. New files there are covered automatically;
   older code elsewhere still has narrower checks.
 - [ ] Keep ownership documentation, generated protocol references and extension

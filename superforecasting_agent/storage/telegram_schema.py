@@ -1,20 +1,20 @@
 """Session telegram_schema operations behind the SessionDB API."""
 
 
-
 def apply_telegram_topic_migration(self) -> None:
     """Create Telegram DM topic-mode tables on explicit /topic opt-in.
 
-        This migration is deliberately not part of automatic SessionDB startup
-        reconciliation. Operators must be able to upgrade Superforecasting
-        Agent, keep the old Telegram bot behavior running, and only mutate
-        topic-mode state when the user executes /topic to opt into the feature.
+    This migration is deliberately not part of automatic SessionDB startup
+    reconciliation. Operators must be able to upgrade Superforecasting
+    Agent, keep the old Telegram bot behavior running, and only mutate
+    topic-mode state when the user executes /topic to opt into the feature.
 
-        Schema versions:
-          v1 — initial shape (no ON DELETE CASCADE on session_id FK)
-          v2 — session_id FK gets ON DELETE CASCADE so session pruning
-               automatically clears bindings.
-        """
+    Schema versions:
+      v1 — initial shape (no ON DELETE CASCADE on session_id FK)
+      v2 — session_id FK gets ON DELETE CASCADE so session pruning
+           automatically clears bindings.
+    """
+
     def _do(conn):
         conn.executescript(
             """
@@ -57,14 +57,15 @@ def apply_telegram_topic_migration(self) -> None:
             "SELECT value FROM state_meta WHERE key = ?",
             ("telegram_dm_topic_schema_version",),
         ).fetchone()
-        current_version = int(current[0]) if current and str(current[0]).isdigit() else 0
+        current_version = (
+            int(current[0]) if current and str(current[0]).isdigit() else 0
+        )
         if current_version < 2:
             fk_rows = conn.execute(
                 "PRAGMA foreign_key_list('telegram_dm_topic_bindings')"
             ).fetchall()
             needs_rebuild = any(
-                row[2] == "sessions" and (row[6] or "") != "CASCADE"
-                for row in fk_rows
+                row[2] == "sessions" and (row[6] or "") != "CASCADE" for row in fk_rows
             )
             if needs_rebuild:
                 conn.executescript(
@@ -98,4 +99,5 @@ def apply_telegram_topic_migration(self) -> None:
             "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             ("telegram_dm_topic_schema_version", "2"),
         )
+
     self._execute_write(_do)
