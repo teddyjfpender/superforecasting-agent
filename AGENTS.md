@@ -406,7 +406,8 @@ its own provider/model/base_url/max_tokens/reasoning_effort. See
 `archive_after_days`, `backup` (nested).
 
 ### .env variables (SECRETS ONLY — API keys, tokens, passwords):
-1. Add to `OPTIONAL_ENV_VARS` in `superforecasting_agent/runtime/config.py` with metadata:
+1. Add to `OPTIONAL_ENV_VARS` in `superforecasting_agent/configuration/environment_catalog.py` with metadata
+   (runtime configuration re-exports the same catalog for compatibility):
 ```python
 "NEW_API_KEY": {
     "description": "What it's for",

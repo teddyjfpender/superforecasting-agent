@@ -4459,6 +4459,8 @@ def test_model_tool_and_proxy_guidance_are_forecast_native():
     tools_config = (root / 'superforecasting_agent/runtime' / "tools_config.py").read_text(encoding="utf-8")
     config = (root / 'superforecasting_agent/runtime' / "config.py").read_text(encoding="utf-8")
 
+    config += (root / "superforecasting_agent/configuration/environment_catalog.py").read_text(encoding="utf-8")
+
     assert "Hermes will still save" not in models
     assert "Hermes cannot verify the model name" not in models
     assert "Hermes routes X searches" not in tools_config

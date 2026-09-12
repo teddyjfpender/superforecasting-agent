@@ -3028,3 +3028,17 @@ the forecast-to-runtime loader exception remains until catalog ownership is extr
 passed. Shared Python quality gates and 49 import contracts passed. The curator host
 and state batch pushed successfully at 430c4a8b7; later state validation, strict tooling
 and parser changes require the next integrated full gate.
+
+
+### Shared built-in environment metadata
+
+Required/optional environment metadata and additional recognized key names now live
+in configuration/environment_catalog.py. Runtime configuration re-exports the same
+objects, preserving plugin metadata extensions and compatibility patches. The pure
+catalog imports without initializing runtime configuration. All three moved catalog
+expressions compare identically by AST to the previous source; no metadata entries
+changed. Developer guidance now points additions at the owning module.
+
+182 catalog/metadata/loader/credential tests passed (one existing skip). Shared Python
+quality checks and 49 import contracts passed. Dynamic platform-plugin discovery
+still belongs to runtime setup; loader extraction must preserve that extension path.
