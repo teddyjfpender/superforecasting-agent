@@ -873,9 +873,8 @@ def _run_chrome_fallback_command(
         # to avoid pipe hang from agent-browser daemon inheriting fds.
         stdout_path = os.path.join(task_socket_dir, f"_stdout_{cmd}")
         stderr_path = os.path.join(task_socket_dir, f"_stderr_{cmd}")
-        stdout_fd = os.open(stdout_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        stderr_fd = os.open(stderr_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        try:
+        from superforecasting_agent.processes import private_process_output
+        with private_process_output(stdout_path, stderr_path) as (stdout_fd, stderr_fd):
             # On Windows, launch the child in a new process group so parent
             # console Ctrl+C doesn't kill it with STATUS_CONTROL_C_EXIT
             # (0xC000013A = rc 3221225786), AND insulate its stdio + handle
@@ -916,9 +915,6 @@ def _run_chrome_fallback_command(
                 stdin=subprocess.DEVNULL, env=browser_env,
                 **_popen_extra,
             )
-        finally:
-            os.close(stdout_fd)
-            os.close(stderr_fd)
         try:
             _wait_browser_process(proc, timeout)
         except subprocess.TimeoutExpired:
@@ -2122,9 +2118,8 @@ def _run_browser_command(
             # sees EOF and blocks until the timeout fires.
             stdout_path = os.path.join(task_socket_dir, f"_stdout_{command}")
             stderr_path = os.path.join(task_socket_dir, f"_stderr_{command}")
-            stdout_fd = os.open(stdout_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            stderr_fd = os.open(stderr_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            try:
+            from superforecasting_agent.processes import private_process_output
+            with private_process_output(stdout_path, stderr_path) as (stdout_fd, stderr_fd):
                 # See matching comment at the other Popen site above — on
                 # Windows we put agent-browser in its own process group, force
                 # STARTF_USESTDHANDLES so CreateProcess hands the child ONLY our
@@ -2150,9 +2145,6 @@ def _run_browser_command(
                     env=browser_env,
                     **_popen_extra,
                 )
-            finally:
-                os.close(stdout_fd)
-                os.close(stderr_fd)
 
             try:
                 _wait_browser_process(proc, timeout)

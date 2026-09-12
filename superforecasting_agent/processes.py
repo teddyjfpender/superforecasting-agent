@@ -2,6 +2,8 @@
 
 import os
 import sys
+from collections.abc import Iterator
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
 _IS_WINDOWS = sys.platform == "win32"
@@ -101,3 +103,20 @@ def pid_exists(pid: int) -> bool:
             return True
         except OSError:
             return False
+
+
+@contextmanager
+def private_process_output(
+    stdout_path: str | Path, stderr_path: str | Path
+) -> Iterator[tuple[int, int]]:
+    """Own parent output descriptors through partial allocation and child launch.
+
+    Files avoid inherited-pipe EOF hangs from daemonized children. Register each
+    descriptor immediately so later allocation or spawn failures cannot leak it.
+    """
+    with ExitStack() as owned:
+        stdout = os.open(stdout_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        owned.callback(os.close, stdout)
+        stderr = os.open(stderr_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        owned.callback(os.close, stderr)
+        yield stdout, stderr
