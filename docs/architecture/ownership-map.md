@@ -893,3 +893,22 @@ the same objects. Host/application integrations can now check cancellation witho
 importing a tool implementation. The transitive import gate prohibits consumer
 imports. This preserves the existing thread-ID signaling model; it does not add
 forced cancellation of blocking provider calls or solve thread-ID reuse.
+
+
+### Shared web search
+
+`superforecasting_agent/tooling/web_search.py` owns bounded search execution,
+provider-result status/shape checks and cancellation checks. Tools serialize its
+result; supervisor research consumes it directly. Provider selection has one
+owner in `agent/web_search_registry.py`, reading shared profile storage instead
+of runtime CLI configuration. Explicit available-or-unavailable search providers
+retain precedence over the shared backend, including legacy case-insensitive
+names. Provider failures remain visible rather than silently switching routes.
+
+The search service has a transitive prohibition on tool/product/runtime adapter
+imports. The forecast-to-tool contract now has zero direct exceptions. Existing
+extract/crawl compatibility helpers and dynamically loaded provider internals are
+separate migration surfaces; this does not claim every plugin is independent of
+legacy tool modules. Provider calls remain cooperatively cancellable. Late
+results are discarded after cancellation, and tool diagnostic failures do not
+invalidate a successful search.

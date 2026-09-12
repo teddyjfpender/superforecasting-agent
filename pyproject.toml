@@ -386,9 +386,7 @@ type = "forbidden"
 source_modules = ["forecasting"]
 forbidden_modules = ["tools"]
 allow_indirect_imports = "true"
-ignore_imports = [
-    "forecasting.supervisor_search -> tools.web_tools",
-]
+ignore_imports = []
 
 
 [[tool.importlinter.contracts]]
@@ -803,4 +801,12 @@ name = "cancellation signaling never imports consumers"
 type = "forbidden"
 source_modules = ["superforecasting_agent.tooling.interrupts"]
 forbidden_modules = ["tools", "agent", "cli", "gateway", "tui_gateway", "superforecasting_agent.runtime"]
+allow_indirect_imports = false
+
+
+[[tool.importlinter.contracts]]
+name = "shared web search never imports tool or product adapters"
+type = "forbidden"
+source_modules = ["superforecasting_agent.tooling.web_search"]
+forbidden_modules = ["tools", "cli", "gateway", "tui_gateway", "forecasting.cli", "superforecasting_agent.runtime"]
 allow_indirect_imports = false

@@ -57,8 +57,9 @@ changes, tests and their limits. The previous checklist is preserved in the
   now share validation/results across CLI and tools; label/alert changes commit
   together. Expert triage labels now require a known class at the application and
   ledger boundaries; invalid adjudication batches roll back instead of becoming
-  silent partial successes. One direct forecast-to-tool exception remains
-  (supervisor web search).
+  silent partial successes. Supervisor search now consumes shared provider routing
+  and cancellation; no direct forecast-to-tool exceptions remain. Web provider
+  selection reads shared profile storage and honors explicit search overrides.
   Shared defaults/normalization and read-only profile access are now independent.
   Ledger scoring/snapshot settings, hook policy and estimate-first policy use them;
   scheduler, worker and research readers use the same owner. Quorum command reads and writes now use independent configuration and installation

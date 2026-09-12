@@ -4741,3 +4741,26 @@ and the event proxy retain identity and share the same state. A transitive
 consumer-import gate covers the owner. Seventeen interrupt propagation,
 concurrency and CLI checks passed, including old/new API interoperability; shared
 quality checks passed. Blocking providers still require cooperative cancellation.
+
+
+### Shared supervisor and tool search
+
+Removed the final direct forecast-to-tool import exception by making supervisor
+research and the registered web tool consume the shared search operation.
+Provider selection now consistently uses the existing registry and shared profile
+reader. Negative controls reproduced silent fallback from an unavailable explicit
+search provider and a case-sensitivity regression; both now preserve configured
+routing. No provider was contacted during verification.
+
+Cancellation tests cover pre-call stop, stop during a returning provider and stop
+during a provider exception across the service, tool and supervisor surfaces.
+Late results cannot enter supervisor evidence. Invalid response status/list
+shapes become failures; provider errors cannot masquerade as successful evidence.
+Diagnostic-write failures no longer discard successful tool output. Two existing
+Parallel client tests now stub their optional SDK installer as well as the fake
+module and restore any previous module, so they do not require installed packages.
+
+Validation: 296 web/provider/supervisor tests passed. The shared quality workflow
+passes 68 import contracts, blocking Python lint/format/types, protocol generation
+and TUI lint/types. Extract/crawl compatibility routing and provider-internal
+legacy tool imports remain outside this extraction.

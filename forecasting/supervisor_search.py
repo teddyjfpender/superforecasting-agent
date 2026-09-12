@@ -31,7 +31,7 @@ The runner is:
     path does not use this runner — it pins sources to the evidence cutoff.)
 
 The backend is the agent's existing web-search harness
-(:func:`tools.web_tools.web_search_tool`), which returns the registry-routed
+(:func:`superforecasting_agent.tooling.web_search.search_web`), which returns the registry-routed
 provider's ``{title, url, description}`` rows. We reshape each row into the
 ``{title, summary, source, url, available_at}`` evidence dict that
 ``forecasting.quorum._augment_context`` (and the panel/judge prompts) consume.
@@ -45,9 +45,9 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
-# A search backend takes (query, limit) and returns the web_search_tool JSON
-# string. Injectable so tests can stub it without any network or provider setup.
-SearchBackend = Callable[[str, int], str]
+# A search backend takes (query, limit) and returns structured data or legacy
+# JSON. Injectable so tests need neither network access nor provider setup.
+SearchBackend = Callable[[str, int], str | dict[str, Any]]
 
 # Conservative live caps. A supervisor research round is a fresh-information
 # top-up, not an exhaustive crawl: a handful of the most-relevant fresh items is
@@ -62,16 +62,16 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _default_backend(query: str, limit: int) -> str:
+def _default_backend(query: str, limit: int) -> dict[str, Any]:
     """The live web-search backend: the agent's registry-routed provider.
 
-    Imported lazily so importing this module never pulls in the web-tool stack
+    Imported lazily so importing this module never initializes provider selection
     (and so tests that inject a stub backend never touch the real provider).
     """
 
-    from tools.web_tools import web_search_tool
+    from superforecasting_agent.tooling.web_search import search_web
 
-    return web_search_tool(query, limit)
+    return search_web(query, limit)
 
 
 def _canonical_url(value: str) -> str:
@@ -148,7 +148,7 @@ def build_supervisor_search_runner(
 
     Returns a ``Callable[[list[str]], list[dict]]``: given the judge's
     ``clarifying_queries`` it runs a real web/news search per query (via
-    ``backend``, defaulting to the live :func:`tools.web_tools.web_search_tool`)
+    ``backend``, defaulting to the live :func:`superforecasting_agent.tooling.web_search.search_web`)
     and returns evidence dicts shaped ``{title, summary, source, url,
     available_at}`` — exactly what :func:`forecasting.quorum._augment_context`
     and the panel/judge prompts expect.

@@ -368,6 +368,9 @@ class TestParallelClientConfig:
         import tools.web_tools
         tools.web_tools._parallel_client = None
         os.environ.pop("PARALLEL_API_KEY", None)
+        self._prior_parallel_module = sys.modules.get("parallel")
+        self._sdk_patcher = patch("plugins.web.parallel.provider._ensure_parallel_sdk_installed")
+        self._sdk_patcher.start()
         fake_parallel = types.ModuleType("parallel")
 
         class Parallel:
@@ -386,7 +389,11 @@ class TestParallelClientConfig:
         import tools.web_tools
         tools.web_tools._parallel_client = None
         os.environ.pop("PARALLEL_API_KEY", None)
-        sys.modules.pop("parallel", None)
+        self._sdk_patcher.stop()
+        if self._prior_parallel_module is None:
+            sys.modules.pop("parallel", None)
+        else:
+            sys.modules["parallel"] = self._prior_parallel_module
 
     def test_creates_client_with_key(self):
         """PARALLEL_API_KEY set → creates Parallel client."""
@@ -463,7 +470,7 @@ class TestWebSearchSchema:
         fake_provider.name = "parallel"
 
         with patch("tools.web_tools._get_search_backend", return_value="parallel"), \
-             patch("agent.web_search_registry.get_provider", return_value=fake_provider), \
+             patch("agent.web_search_registry.get_active_search_provider", return_value=fake_provider), \
              patch("tools.interrupt.is_interrupted", return_value=False), \
              patch.object(tools.web_tools._debug, "log_call"), \
              patch.object(tools.web_tools._debug, "save"):
@@ -491,7 +498,7 @@ class TestWebSearchErrorHandling:
         fake_provider.name = "firecrawl"
 
         with patch("tools.web_tools._get_search_backend", return_value="firecrawl"), \
-             patch("agent.web_search_registry.get_provider", return_value=fake_provider), \
+             patch("agent.web_search_registry.get_active_search_provider", return_value=fake_provider), \
              patch("tools.interrupt.is_interrupted", return_value=False), \
              patch.object(tools.web_tools._debug, "log_call") as mock_log_call, \
              patch.object(tools.web_tools._debug, "save"):

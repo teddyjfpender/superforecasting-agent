@@ -237,32 +237,22 @@ class TestDefaultConfig:
 
 
 class TestWebSearchUsesSearchBackend:
-    """web_search_tool dispatches through _get_search_backend not _get_backend."""
+    """The tool consumes registry selection through the shared operation."""
 
-    def test_search_tool_calls_search_backend(self, monkeypatch):
+    def test_search_tool_uses_selected_provider(self, monkeypatch):
+        import json
+        from types import SimpleNamespace
+        from agent import web_search_registry
         from tools import web_tools
 
-        called_with = []
-        original_get_search = web_tools._get_search_backend
-
-        def tracking_get_search():
-            result = original_get_search()
-            called_with.append(("search", result))
-            return result
-
-        monkeypatch.setattr(web_tools, "_get_search_backend", tracking_get_search)
-        monkeypatch.setattr(web_tools, "_load_web_config", lambda: {"backend": "firecrawl"})
-        monkeypatch.setenv("FIRECRAWL_API_KEY", "fake")
-
-        # The function will fail at Firecrawl client level but we just
-        # need to verify _get_search_backend was called
-        try:
-            web_tools.web_search_tool("test", 1)
-        except Exception:
-            pass
-
-        assert len(called_with) > 0
-        assert called_with[0][0] == "search"
+        calls = []
+        def search(query, limit):
+            calls.append((query, limit))
+            return {"success": True, "data": {"web": []}}
+        provider = SimpleNamespace(name="custom", search=search)
+        monkeypatch.setattr(web_search_registry, "get_active_search_provider", lambda: provider)
+        assert json.loads(web_tools.web_search_tool("test", 1))["success"] is True
+        assert calls == [("test", 1)]
 
 
 class TestUnconfiguredErrorEnvelopeParity:
@@ -296,9 +286,7 @@ class TestUnconfiguredErrorEnvelopeParity:
         monkeypatch.setattr(web_tools, "_ddgs_package_importable", lambda: False)
 
     def test_unconfigured_search_emits_top_level_error(self, monkeypatch):
-        """``web_search_tool`` with no creds returns ``{"error": "Error searching web: ..."}``
-        — matching main's ``tool_error()`` envelope, not a per-result shape.
-        """
+        """An unconfigured registry produces a top-level setup error."""
         import json
         from tools import web_tools
 
@@ -308,11 +296,12 @@ class TestUnconfiguredErrorEnvelopeParity:
         monkeypatch.setattr(web_tools, "_firecrawl_client_config", None, raising=False)
         monkeypatch.setattr(web_tools, "_load_web_config", lambda: {})
 
+        from agent import web_search_registry
+        monkeypatch.setattr(web_search_registry, "get_active_search_provider", lambda: None)
         result = json.loads(web_tools.web_search_tool("hello world", limit=3))
         assert "error" in result, f"expected top-level 'error' key, got {result}"
-        # ``Error searching web:`` prefix comes from web_tools' top-level except handler
-        assert "Error searching web:" in result["error"]
-        assert "FIRECRAWL_API_KEY" in result["error"]
+        assert result["success"] is False
+        assert "No web search provider configured" in result["error"]
         # No per-result burying
         assert "results" not in result
 
