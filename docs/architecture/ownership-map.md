@@ -91,6 +91,11 @@ for classic CLI startup. TUI personality lookup uses the read-only operation.
 - `superforecasting_agent/storage/files.py`: locked atomic YAML mutations and
   the stable revision-bearing snapshot type; `runtime/config.py`: configuration
   defaults, loaders and snapshot admission.
+  Its `resolve_config` operation normalizes an already captured raw mapping
+  without rereading a profile. TUI startup passes that result through the agent
+  factory, provider resolver, custom-pool seeding and pool strategy selection.
+  Runtime values contain expanded environment references and must not replace
+  raw revision-bearing settings during persistence.
 - `tui_gateway/turn_journal.py`: durable partial turns and worker ownership;
   the gateway persists before delivering events, and Ink renders that status.
 

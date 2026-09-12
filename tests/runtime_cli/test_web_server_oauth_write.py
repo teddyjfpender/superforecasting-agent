@@ -26,7 +26,7 @@ def oauth_file(monkeypatch, tmp_path):
         'agent.anthropic_adapter.get_hermes_oauth_file', lambda: target
     )
     monkeypatch.setattr(
-        'agent.credential_pool.load_pool', lambda _provider: _DummyPool()
+        'agent.credential_pool.load_pool', lambda _provider, **_snapshot: _DummyPool()
     )
     return target
 

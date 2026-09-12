@@ -913,3 +913,35 @@ class TestCollaborationConfig:
         messages = [issue.message for issue in validate_config_structure(config)]
         assert any("oauth_state_ttl_seconds" in message for message in messages)
         assert any("oauth_callback_path" in message for message in messages)
+
+
+def test_captured_config_resolution_matches_file_loader(tmp_path, monkeypatch):
+    import copy
+    from superforecasting_agent.runtime import config
+
+    raw = {
+        "model": {"model": "${FORECAST_TEST_CONFIG_MODEL}"},
+        "provider": "custom",
+        "base_url": "https://desk.example.test/v1",
+        "max_turns": 39,
+        "tts": {"elevenlabs": {"voice_id": "snapshot-voice"}},
+        "platform_toolsets": {"cli": []},
+    }
+    original = copy.deepcopy(raw)
+    monkeypatch.setenv("FORECAST_TEST_CONFIG_MODEL", "snapshot-model")
+    path = tmp_path / "config.yaml"
+    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+    monkeypatch.setattr(config, "get_config_path", lambda: path)
+    monkeypatch.setattr(config, "ensure_hermes_home", lambda: None)
+    monkeypatch.setattr(config, "_ignore_user_config_requested", lambda: False)
+
+    resolved = config.resolve_config(raw)
+    assert resolved == config.load_config()
+    assert resolved["model"]["default"] == "snapshot-model"
+    assert resolved["model"]["provider"] == "custom"
+    assert resolved["agent"]["max_turns"] == 39
+    assert resolved["platform_toolsets"]["cli"] == []
+    assert resolved["tts"]["elevenlabs"]["model_id"] == config.DEFAULT_CONFIG["tts"]["elevenlabs"]["model_id"]
+    assert raw == original
+    resolved["platform_toolsets"]["cli"].append("terminal")
+    assert raw == original

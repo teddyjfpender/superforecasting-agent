@@ -192,7 +192,7 @@ def test_setup_same_provider_rotation_strategy_saved_for_multi_credential_pool(t
     monkeypatch.setattr(_setup_mod, "prompt_choice", fake_prompt_choice)
     monkeypatch.setattr(_setup_mod, "prompt_yes_no", fake_prompt_yes_no)
     monkeypatch.setattr(_setup_mod, "prompt", lambda *args, **kwargs: "")
-    monkeypatch.setattr(_pool_mod, "load_pool", lambda provider: _Pool())
+    monkeypatch.setattr(_pool_mod, "load_pool", lambda provider, **_snapshot: _Pool())
     monkeypatch.setattr(_aux_mod, "get_available_vision_backends", lambda: [])
 
     setup_model_provider(config)
@@ -289,7 +289,7 @@ def test_setup_same_provider_single_credential_keeps_existing_rotation_strategy(
     monkeypatch.setattr("superforecasting_agent.runtime.main.select_provider_and_model", fake_select)
     _stub_tts(monkeypatch)
     monkeypatch.setattr("superforecasting_agent.runtime.setup.prompt", lambda *args, **kwargs: "")
-    monkeypatch.setattr("agent.credential_pool.load_pool", lambda provider: _Pool())
+    monkeypatch.setattr("agent.credential_pool.load_pool", lambda provider, **_snapshot: _Pool())
     monkeypatch.setattr("agent.auxiliary_client.get_available_vision_backends", lambda: [])
 
     setup_model_provider(config)
@@ -336,7 +336,7 @@ def test_setup_pool_step_shows_manual_vs_auto_detected_counts(tmp_path, monkeypa
     monkeypatch.setattr("superforecasting_agent.runtime.setup.prompt_choice", fake_prompt_choice)
     monkeypatch.setattr("superforecasting_agent.runtime.setup.prompt_yes_no", lambda *args, **kwargs: False)
     monkeypatch.setattr("superforecasting_agent.runtime.setup.prompt", lambda *args, **kwargs: "")
-    monkeypatch.setattr("agent.credential_pool.load_pool", lambda provider: _Pool())
+    monkeypatch.setattr("agent.credential_pool.load_pool", lambda provider, **_snapshot: _Pool())
     monkeypatch.setattr("agent.auxiliary_client.get_available_vision_backends", lambda: [])
 
     setup_model_provider(config)

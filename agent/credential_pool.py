@@ -320,7 +320,9 @@ def _iter_custom_providers(config: Optional[dict] = None):
         yield _normalize_custom_pool_name(name), entry
 
 
-def get_custom_provider_pool_key(base_url: str, provider_name: Optional[str] = None) -> Optional[str]:
+def get_custom_provider_pool_key(
+    base_url: str, provider_name: Optional[str] = None, *, config: Optional[dict] = None,
+) -> Optional[str]:
     """Look up the custom_providers list in config.yaml and return 'custom:<name>' for a matching base_url.
 
     When provider_name is given, prefer matching by name first (solving the case where
@@ -332,18 +334,19 @@ def get_custom_provider_pool_key(base_url: str, provider_name: Optional[str] = N
     if not base_url:
         return None
     normalized_url = base_url.strip().rstrip("/")
+    providers = list(_iter_custom_providers(config))
 
     # When a provider name is given, try to match by name first.
     # This fixes the P1 bug where two custom providers sharing the same
     # base_url always resolve to the first one's credentials.
     if provider_name:
         normalized_name = _normalize_custom_pool_name(provider_name)
-        for norm_name, entry in _iter_custom_providers():
+        for norm_name, entry in providers:
             if norm_name == normalized_name:
                 return f"{CUSTOM_POOL_PREFIX}{norm_name}"
 
     # Fall back to base_url matching (original behavior)
-    for norm_name, entry in _iter_custom_providers():
+    for norm_name, entry in providers:
         entry_url = str(entry.get("base_url") or "").strip().rstrip("/")
         if entry_url and entry_url == normalized_url:
             return f"{CUSTOM_POOL_PREFIX}{norm_name}"
@@ -361,20 +364,20 @@ def list_custom_pool_providers() -> List[str]:
     )
 
 
-def _get_custom_provider_config(pool_key: str) -> Optional[Dict[str, Any]]:
+def _get_custom_provider_config(pool_key: str, config: Optional[dict] = None) -> Optional[Dict[str, Any]]:
     """Return the custom_providers config entry matching a pool key like 'custom:together.ai'."""
     if not pool_key.startswith(CUSTOM_POOL_PREFIX):
         return None
     suffix = pool_key[len(CUSTOM_POOL_PREFIX):]
-    for norm_name, entry in _iter_custom_providers():
+    for norm_name, entry in _iter_custom_providers(config):
         if norm_name == suffix:
             return entry
     return None
 
 
-def get_pool_strategy(provider: str) -> str:
+def get_pool_strategy(provider: str, config: Optional[dict] = None) -> str:
     """Return the configured selection strategy for a provider."""
-    config = _load_config_safe()
+    config = config if config is not None else _load_config_safe()
     if config is None:
         return STRATEGY_FILL_FIRST
 
@@ -392,11 +395,11 @@ DEFAULT_MAX_CONCURRENT_PER_CREDENTIAL = 1
 
 
 class CredentialPool:
-    def __init__(self, provider: str, entries: List[PooledCredential]):
+    def __init__(self, provider: str, entries: List[PooledCredential], *, config: Optional[dict] = None):
         self.provider = provider
         self._entries = sorted(entries, key=lambda entry: entry.priority)
         self._current_id: Optional[str] = None
-        self._strategy = get_pool_strategy(provider)
+        self._strategy = get_pool_strategy(provider, config)
         self._lock = threading.Lock()
         self._active_leases: Dict[str, int] = {}
         self._max_concurrent = DEFAULT_MAX_CONCURRENT_PER_CREDENTIAL
@@ -1905,8 +1908,9 @@ def _prune_stale_seeded_entries(entries: List[PooledCredential], active_sources:
     return True
 
 
-def _seed_custom_pool(pool_key: str, entries: List[PooledCredential]) -> Tuple[bool, Set[str]]:
+def _seed_custom_pool(pool_key: str, entries: List[PooledCredential], *, config: Optional[dict] = None) -> Tuple[bool, Set[str]]:
     """Seed a custom endpoint pool from custom_providers config and model config."""
+    config = config if config is not None else (_load_config_safe() or {})
     changed = False
     active_sources: Set[str] = set()
 
@@ -1918,7 +1922,7 @@ def _seed_custom_pool(pool_key: str, entries: List[PooledCredential]) -> Tuple[b
             return False
 
     # Seed from the custom_providers config entry's api_key field
-    cp_config = _get_custom_provider_config(pool_key)
+    cp_config = _get_custom_provider_config(pool_key, config)
     if cp_config:
         api_key = str(cp_config.get("api_key") or "").strip()
         base_url = str(cp_config.get("base_url") or "").strip().rstrip("/")
@@ -1942,7 +1946,6 @@ def _seed_custom_pool(pool_key: str, entries: List[PooledCredential]) -> Tuple[b
 
     # Seed from model.api_key if model.provider=='custom' and model.base_url matches
     try:
-        config = _load_config_safe()
         model_cfg = config.get("model") if config else None
         if isinstance(model_cfg, dict):
             model_provider = str(model_cfg.get("provider") or "").strip().lower()
@@ -1955,7 +1958,7 @@ def _seed_custom_pool(pool_key: str, entries: List[PooledCredential]) -> Tuple[b
                     break
             if model_provider == "custom" and model_base_url and model_api_key:
                 # Check if this model's base_url matches our custom provider
-                matched_key = get_custom_provider_pool_key(model_base_url)
+                matched_key = get_custom_provider_pool_key(model_base_url, config=config)
                 if matched_key == pool_key:
                     source = "model_config"
                     if not _is_suppressed(pool_key, source):
@@ -1978,7 +1981,8 @@ def _seed_custom_pool(pool_key: str, entries: List[PooledCredential]) -> Tuple[b
     return changed, active_sources
 
 
-def load_pool(provider: str) -> CredentialPool:
+def load_pool(provider: str, *, config: Optional[dict] = None) -> CredentialPool:
+    config = config if config is not None else (_load_config_safe() or {})
     provider = (provider or "").strip().lower()
     raw_entries = read_credential_pool(provider)
     raw_needs_sanitization = any(
@@ -1990,7 +1994,7 @@ def load_pool(provider: str) -> CredentialPool:
 
     if provider.startswith(CUSTOM_POOL_PREFIX):
         # Custom endpoint pool — seed from custom_providers config and model config
-        custom_changed, custom_sources = _seed_custom_pool(provider, entries)
+        custom_changed, custom_sources = _seed_custom_pool(provider, entries, config=config)
         changed = raw_needs_sanitization or custom_changed
         changed |= _prune_stale_seeded_entries(entries, custom_sources)
     else:
@@ -2005,4 +2009,4 @@ def load_pool(provider: str) -> CredentialPool:
             provider,
             [entry.to_dict() for entry in sorted(entries, key=lambda item: item.priority)],
         )
-    return CredentialPool(provider, entries)
+    return CredentialPool(provider, entries, config=config)

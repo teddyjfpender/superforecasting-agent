@@ -823,7 +823,7 @@ def test_auth_list_does_not_call_mutating_select(monkeypatch, capsys):
 
     monkeypatch.setattr(
         "superforecasting_agent.runtime.auth_commands.load_pool",
-        lambda provider: _Pool() if provider == "openrouter" else type("_EmptyPool", (), {"entries": lambda self: []})(),
+        lambda provider, **_snapshot: _Pool() if provider == "openrouter" else type("_EmptyPool", (), {"entries": lambda self: []})(),
     )
 
     class _Args:
@@ -855,7 +855,7 @@ def test_auth_list_shows_exhausted_cooldown(monkeypatch, capsys):
         def peek(self):
             return None
 
-    monkeypatch.setattr("superforecasting_agent.runtime.auth_commands.load_pool", lambda provider: _Pool())
+    monkeypatch.setattr("superforecasting_agent.runtime.auth_commands.load_pool", lambda provider, **_snapshot: _Pool())
     monkeypatch.setattr("superforecasting_agent.runtime.auth_commands.time.time", lambda: 1030.0)
 
     class _Args:
@@ -889,7 +889,7 @@ def test_auth_list_shows_auth_failure_when_exhausted_entry_is_unauthorized(monke
         def peek(self):
             return None
 
-    monkeypatch.setattr("superforecasting_agent.runtime.auth_commands.load_pool", lambda provider: _Pool())
+    monkeypatch.setattr("superforecasting_agent.runtime.auth_commands.load_pool", lambda provider, **_snapshot: _Pool())
     monkeypatch.setattr("superforecasting_agent.runtime.auth_commands.time.time", lambda: 1030.0)
 
     class _Args:
@@ -925,7 +925,7 @@ def test_auth_list_prefers_explicit_reset_time(monkeypatch, capsys):
         def peek(self):
             return None
 
-    monkeypatch.setattr("superforecasting_agent.runtime.auth_commands.load_pool", lambda provider: _Pool())
+    monkeypatch.setattr("superforecasting_agent.runtime.auth_commands.load_pool", lambda provider, **_snapshot: _Pool())
     monkeypatch.setattr(
         "superforecasting_agent.runtime.auth_commands.time.time",
         lambda: datetime(2026, 4, 5, 10, 30, tzinfo=timezone.utc).timestamp(),

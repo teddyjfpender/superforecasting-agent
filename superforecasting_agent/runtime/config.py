@@ -5101,6 +5101,35 @@ def load_config_readonly() -> Dict[str, Any]:
     return _load_config_impl(want_deepcopy=False)
 
 
+def _merge_user_config(user_config: Dict[str, Any]) -> Dict[str, Any]:
+    """Merge a raw snapshot without mutating it or reading another profile."""
+    if not isinstance(user_config, dict):
+        raise ValueError("Configuration root must be a mapping")
+    user_config = copy.deepcopy(user_config)
+    if "max_turns" in user_config:
+        agent_user_config = dict(user_config.get("agent") or {})
+        if agent_user_config.get("max_turns") is None:
+            agent_user_config["max_turns"] = user_config["max_turns"]
+        user_config["agent"] = agent_user_config
+        user_config.pop("max_turns", None)
+
+    # Promote explicit model.model before defaults can shadow it.
+    if isinstance(user_config.get('model'), dict):
+        from superforecasting_agent.runtime.model_configuration import model_section
+        user_config['model'] = model_section(user_config)
+    return _deep_merge(copy.deepcopy(DEFAULT_CONFIG), user_config)
+
+
+def resolve_config(user_config: Dict[str, Any]) -> Dict[str, Any]:
+    """Resolve a captured raw profile using the same rules as file loading.
+
+    The result is for runtime use, not persistence: it contains defaults and
+    expanded environment references, without the raw snapshot's save revision.
+    """
+    config = _merge_user_config(user_config)
+    return _expand_env_vars(_normalize_root_model_keys(_normalize_max_turns_config(config)))
+
+
 def _load_config_impl(*, want_deepcopy: bool) -> Dict[str, Any]:
     with _CONFIG_LOCK:
         ensure_hermes_home()
@@ -5128,18 +5157,7 @@ def _load_config_impl(*, want_deepcopy: bool) -> Dict[str, Any]:
             try:
                 user_config = yaml.safe_load(cache_key.decode("utf-8")) or {}
 
-                if "max_turns" in user_config:
-                    agent_user_config = dict(user_config.get("agent") or {})
-                    if agent_user_config.get("max_turns") is None:
-                        agent_user_config["max_turns"] = user_config["max_turns"]
-                    user_config["agent"] = agent_user_config
-                    user_config.pop("max_turns", None)
-
-                # Promote explicit model.model before defaults can shadow it.
-                if isinstance(user_config.get('model'), dict):
-                    from superforecasting_agent.runtime.model_configuration import model_section
-                    user_config['model'] = model_section(user_config)
-                config = _deep_merge(config, user_config)
+                config = _merge_user_config(user_config)
             except Exception as e:
                 _warn_config_parse_failure(config_path, e)
 

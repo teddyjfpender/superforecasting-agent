@@ -6364,3 +6364,58 @@ def test_startup_toolsets_use_supplied_mcp_snapshot(monkeypatch):
     assert selected == ["enabled_source"]
     assert any("disabled_source" in notice for notice in notices)
     config.read_raw_config.assert_not_called()
+
+
+def test_make_agent_resolves_provider_from_captured_raw_profile(monkeypatch):
+    import copy
+    from agent import agent_factory, credential_pool
+    from superforecasting_agent.runtime import config, runtime_provider
+
+    raw = {
+        "model": {"model": "${FORECAST_TEST_STARTUP_MODEL}", "provider": "custom:desk"},
+        "custom_providers": [{
+            "name": "desk", "base_url": "https://desk.example.test/v1",
+            "api_key": "${FORECAST_TEST_STARTUP_KEY}",
+        }],
+        "max_turns": 41,
+        "platform_toolsets": {"cli": []},
+    }
+    original = copy.deepcopy(raw)
+    monkeypatch.setenv("FORECAST_TEST_STARTUP_MODEL", "captured-model")
+    monkeypatch.setenv("FORECAST_TEST_STARTUP_KEY", "captured-key")
+    load = Mock(side_effect=[raw, AssertionError("host snapshot reread")])
+    monkeypatch.setattr(server, "_load_cfg", load)
+    monkeypatch.setattr(server, "_tui_env", lambda name: "")
+    monkeypatch.setattr(server, "_first_runtime_env_value", lambda names: "")
+    monkeypatch.setattr(server, "_get_db", lambda: None)
+    monkeypatch.setattr(server, "_agent_cbs", lambda sid: {})
+    monkeypatch.setattr(credential_pool, "read_credential_pool", lambda provider: [])
+    pool_writes = []
+    monkeypatch.setattr(credential_pool, "write_credential_pool", lambda provider, entries: pool_writes.append(entries))
+    monkeypatch.setattr("superforecasting_agent.runtime.auth.is_source_suppressed", lambda *args: False)
+    accesses = []
+    def reject_profile_read():
+        import traceback
+        accesses.append("".join(traceback.format_stack(limit=9)))
+        raise AssertionError("provider reloaded the profile")
+    forbidden = Mock(side_effect=reject_profile_read)
+    monkeypatch.setattr(runtime_provider, "load_config", forbidden)
+    monkeypatch.setattr(config, "load_config", forbidden)
+    constructed = Mock()
+    monkeypatch.setattr(agent_factory, "_aiagent_cls", lambda: constructed)
+
+    server._make_agent("sid", "key")
+
+    load.assert_called_once_with()
+    assert not accesses, "\n".join(accesses)
+    options = constructed.call_args.kwargs
+    assert options["model"] == "captured-model"
+    assert options["provider"] == "custom"
+    assert options["api_key"] == "captured-key"
+    assert options["base_url"] == "https://desk.example.test/v1"
+    assert options["max_iterations"] == 41
+    assert options["enabled_toolsets"] == []
+    assert "configuration" not in options
+    assert raw == original
+    assert pool_writes
+    assert options["credential_pool"].current().source == "config:desk"

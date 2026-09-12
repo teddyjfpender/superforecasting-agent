@@ -1193,7 +1193,7 @@ def test_least_used_strategy_selects_lowest_count(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
     monkeypatch.setattr(
         "agent.credential_pool.get_pool_strategy",
-        lambda _provider: "least_used",
+        lambda _provider, config=None: "least_used",
     )
     monkeypatch.setattr(
         "agent.credential_pool._seed_from_singletons",
@@ -1257,7 +1257,7 @@ def test_thread_safety_concurrent_select(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
     monkeypatch.setattr(
         "agent.credential_pool.get_pool_strategy",
-        lambda _provider: "round_robin",
+        lambda _provider, config=None: "round_robin",
     )
     monkeypatch.setattr(
         "agent.credential_pool._seed_from_singletons",
@@ -1318,7 +1318,7 @@ def test_custom_endpoint_pool_keyed_by_name(tmp_path, monkeypatch):
     # Disable seeding so we only test stored entries
     monkeypatch.setattr(
         "agent.credential_pool._seed_custom_pool",
-        lambda pool_key, entries: (False, set()),
+        lambda pool_key, entries, **_snapshot: (False, set()),
     )
     _write_auth_store(
         tmp_path,

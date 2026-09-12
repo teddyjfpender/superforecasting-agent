@@ -17,7 +17,7 @@ def test_resolve_runtime_provider_uses_credential_pool(monkeypatch):
             return _Entry()
 
     monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "openai-codex")
-    monkeypatch.setattr(rp, "load_pool", lambda provider: _Pool())
+    monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: _Pool())
 
     resolved = rp.resolve_runtime_provider(requested="openai-codex")
 
@@ -49,7 +49,7 @@ def test_resolve_runtime_provider_anthropic_pool_respects_config_base_url(monkey
             "base_url": "https://proxy.example.com/anthropic",
         },
     )
-    monkeypatch.setattr(rp, "load_pool", lambda provider: _Pool())
+    monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: _Pool())
 
     resolved = rp.resolve_runtime_provider(requested="anthropic")
 
@@ -76,7 +76,7 @@ def test_resolve_runtime_provider_anthropic_ignores_stale_aggregator_base_url(mo
             return _Entry()
 
     monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "anthropic")
-    monkeypatch.setattr(rp, "load_pool", lambda provider: _Pool())
+    monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: _Pool())
 
     for stale in (
         "https://openrouter.ai/api/v1",
@@ -110,7 +110,7 @@ def test_resolve_runtime_provider_anthropic_keeps_azure_base_url(monkeypatch):
             return _Entry()
 
     monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "anthropic")
-    monkeypatch.setattr(rp, "load_pool", lambda provider: _Pool())
+    monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: _Pool())
     monkeypatch.setattr(
         rp,
         "_get_model_config",
@@ -163,7 +163,7 @@ def test_resolve_runtime_provider_falls_back_when_pool_empty(monkeypatch):
             return False
 
     monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "openai-codex")
-    monkeypatch.setattr(rp, "load_pool", lambda provider: _Pool())
+    monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: _Pool())
     monkeypatch.setattr(
         rp,
         "resolve_codex_runtime_credentials",
@@ -186,7 +186,7 @@ def test_resolve_runtime_provider_codex(monkeypatch):
     monkeypatch.setattr(
         rp,
         "load_pool",
-        lambda provider: type("P", (), {"has_credentials": lambda self: False})(),
+        lambda provider, **_snapshot: type("P", (), {"has_credentials": lambda self: False})(),
     )
     monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "openai-codex")
     monkeypatch.setattr(
@@ -249,7 +249,7 @@ def test_resolve_runtime_provider_uses_qwen_pool_entry(monkeypatch):
             return _Entry()
 
     monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "qwen-oauth")
-    monkeypatch.setattr(rp, "load_pool", lambda provider: _Pool())
+    monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: _Pool())
     monkeypatch.setattr(rp, "_get_model_config", lambda **_snapshot: {"provider": "qwen-oauth", "default": "coder-model"})
 
     resolved = rp.resolve_runtime_provider(requested="qwen-oauth")
@@ -316,7 +316,7 @@ def test_resolve_runtime_provider_lmstudio_uses_token_when_present(monkeypatch):
     monkeypatch.setattr(
         rp,
         "load_pool",
-        lambda provider: type("Pool", (), {"has_credentials": lambda self: False})(),
+        lambda provider, **_snapshot: type("Pool", (), {"has_credentials": lambda self: False})(),
     )
     monkeypatch.setattr(
         rp,
@@ -362,7 +362,7 @@ def test_resolve_runtime_provider_lmstudio_honors_saved_base_url(monkeypatch):
     monkeypatch.setattr(
         rp,
         "load_pool",
-        lambda provider: type("Pool", (), {"has_credentials": lambda self: False})(),
+        lambda provider, **_snapshot: type("Pool", (), {"has_credentials": lambda self: False})(),
     )
     # Don't mock resolve_api_key_provider_credentials — exercise the real
     # function so we test the end-to-end precedence between model_cfg and
@@ -401,7 +401,7 @@ def test_resolve_runtime_provider_lmstudio_saved_base_url_wins_over_env(monkeypa
     monkeypatch.setattr(
         rp,
         "load_pool",
-        lambda provider: type("Pool", (), {"has_credentials": lambda self: False})(),
+        lambda provider, **_snapshot: type("Pool", (), {"has_credentials": lambda self: False})(),
     )
 
     resolved = rp.resolve_runtime_provider(requested="lmstudio")
@@ -479,7 +479,7 @@ def test_resolve_runtime_provider_auto_uses_openrouter_pool(monkeypatch):
 
     monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "openrouter")
     monkeypatch.setattr(rp, "_get_model_config", lambda **_snapshot: {})
-    monkeypatch.setattr(rp, "load_pool", lambda provider: _Pool())
+    monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: _Pool())
     monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
     monkeypatch.delenv("OPENROUTER_BASE_URL", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -509,7 +509,7 @@ def test_resolve_runtime_provider_openrouter_explicit_api_key_skips_pool(monkeyp
 
     monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "openrouter")
     monkeypatch.setattr(rp, "_get_model_config", lambda **_snapshot: {})
-    monkeypatch.setattr(rp, "load_pool", lambda provider: _Pool())
+    monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: _Pool())
     monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
     monkeypatch.delenv("OPENROUTER_BASE_URL", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -812,7 +812,8 @@ def test_named_custom_provider_uses_saved_credentials(monkeypatch):
     assert resolved["base_url"] == "http://1.2.3.4:1234/v1"
     assert resolved["api_key"] == "local-provider-key"
     assert resolved["requested_provider"] == "local"
-    assert resolved["source"] == "custom_provider:Local"
+    assert resolved["source"] == "pool:custom:local"
+    assert resolved["credential_pool"].current().source == "config:Local"
 
 
 def test_named_custom_provider_uses_providers_dict_when_list_missing(monkeypatch):
@@ -852,7 +853,8 @@ def test_named_custom_provider_uses_providers_dict_when_list_missing(monkeypatch
     assert resolved["base_url"] == "https://api.openai.com/v1"
     assert resolved["api_key"] == "dir-key"
     assert resolved["requested_provider"] == "openai-direct-primary"
-    assert resolved["source"] == "custom_provider:OpenAI Direct (Primary)"
+    assert resolved["source"] == "pool:custom:openai-direct-(primary)"
+    assert resolved["credential_pool"].current().source == "config:OpenAI Direct (Primary)"
     assert resolved["model"] == "gpt-5-mini"
 
 
@@ -1048,7 +1050,7 @@ def test_explicit_openrouter_honors_openrouter_base_url_over_pool(monkeypatch):
 
     monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "openrouter")
     monkeypatch.setattr(rp, "_get_model_config", lambda **_snapshot: {})
-    monkeypatch.setattr(rp, "load_pool", lambda provider: _Pool())
+    monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: _Pool())
     monkeypatch.setenv("OPENROUTER_BASE_URL", "https://mirror.example.com/v1")
     monkeypatch.setenv("OPENROUTER_API_KEY", "mirror-key")
     monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
@@ -1551,7 +1553,7 @@ def test_auto_detected_nous_auth_failure_falls_through_to_openrouter(monkeypatch
     # resolve_provider returns "nous" (stale active_provider in auth.json)
     monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "nous")
     # load_pool returns empty pool so we hit the direct credential resolution
-    monkeypatch.setattr(rp, "load_pool", lambda p: type("P", (), {
+    monkeypatch.setattr(rp, "load_pool", lambda p, **_snapshot: type("P", (), {
         "has_credentials": lambda self: False,
     })())
     # Nous credential resolution fails with revoked token
@@ -1580,7 +1582,7 @@ def test_auto_detected_codex_auth_failure_falls_through_to_openrouter(monkeypatc
     monkeypatch.setattr(rp, "load_config", lambda: {})
 
     monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "openai-codex")
-    monkeypatch.setattr(rp, "load_pool", lambda p: type("P", (), {
+    monkeypatch.setattr(rp, "load_pool", lambda p, **_snapshot: type("P", (), {
         "has_credentials": lambda self: False,
     })())
     monkeypatch.setattr(
@@ -1605,7 +1607,7 @@ def test_explicit_nous_auth_failure_still_raises(monkeypatch):
     monkeypatch.setattr(rp, "load_config", lambda: {})
 
     monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "nous")
-    monkeypatch.setattr(rp, "load_pool", lambda p: type("P", (), {
+    monkeypatch.setattr(rp, "load_pool", lambda p, **_snapshot: type("P", (), {
         "has_credentials": lambda self: False,
     })())
     monkeypatch.setattr(
@@ -1772,7 +1774,7 @@ class TestOllamaUrlSubstringLeak:
         monkeypatch.setattr(rp, "_get_model_config", lambda **_snapshot: self._make_cfg(
             "http://127.0.0.1:9000/ollama.com/v1"
         ))
-        monkeypatch.setattr(rp, "load_pool", lambda provider: None)
+        monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: None)
         monkeypatch.setattr(rp, "_try_resolve_from_custom_pool", lambda *a, **k: None)
 
         resolved = rp.resolve_runtime_provider(requested="custom")
@@ -1793,7 +1795,7 @@ class TestOllamaUrlSubstringLeak:
         monkeypatch.setattr(rp, "_get_model_config", lambda **_snapshot: self._make_cfg(
             "http://ollama.com.attacker.test:9000/v1"
         ))
-        monkeypatch.setattr(rp, "load_pool", lambda provider: None)
+        monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: None)
         monkeypatch.setattr(rp, "_try_resolve_from_custom_pool", lambda *a, **k: None)
 
         resolved = rp.resolve_runtime_provider(requested="custom")
@@ -1811,7 +1813,7 @@ class TestOllamaUrlSubstringLeak:
         monkeypatch.setattr(rp, "_get_model_config", lambda **_snapshot: self._make_cfg(
             "https://ollama.com/v1"
         ))
-        monkeypatch.setattr(rp, "load_pool", lambda provider: None)
+        monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: None)
         monkeypatch.setattr(rp, "_try_resolve_from_custom_pool", lambda *a, **k: None)
 
         resolved = rp.resolve_runtime_provider(requested="custom")
@@ -1826,7 +1828,7 @@ class TestOllamaUrlSubstringLeak:
         monkeypatch.setattr(rp, "_get_model_config", lambda **_snapshot: self._make_cfg(
             "https://api.ollama.com/v1"
         ))
-        monkeypatch.setattr(rp, "load_pool", lambda provider: None)
+        monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: None)
         monkeypatch.setattr(rp, "_try_resolve_from_custom_pool", lambda *a, **k: None)
 
         resolved = rp.resolve_runtime_provider(requested="custom")
@@ -1860,7 +1862,7 @@ class TestAzureFoundryResolution:
             "https://my-resource.openai.azure.com/openai/v1",
             "chat_completions",
         ))
-        monkeypatch.setattr(rp, "load_pool", lambda provider: None)
+        monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: None)
 
         resolved = rp.resolve_runtime_provider(requested="azure-foundry")
 
@@ -1878,7 +1880,7 @@ class TestAzureFoundryResolution:
             "https://my-resource.services.ai.azure.com/anthropic/v1",
             "anthropic_messages",
         ))
-        monkeypatch.setattr(rp, "load_pool", lambda provider: None)
+        monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: None)
 
         resolved = rp.resolve_runtime_provider(requested="azure-foundry")
 
@@ -1892,7 +1894,7 @@ class TestAzureFoundryResolution:
         monkeypatch.delenv("AZURE_FOUNDRY_BASE_URL", raising=False)
         monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "azure-foundry")
         monkeypatch.setattr(rp, "_get_model_config", lambda **_snapshot: {})
-        monkeypatch.setattr(rp, "load_pool", lambda provider: None)
+        monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: None)
 
         with pytest.raises(rp.AuthError, match="base URL") as exc:
             rp.resolve_runtime_provider(requested="azure-foundry")
@@ -1908,7 +1910,7 @@ class TestAzureFoundryResolution:
         monkeypatch.setattr(rp, "_get_model_config", lambda **_snapshot: self._make_cfg(
             "https://my-resource.openai.azure.com/openai/v1"
         ))
-        monkeypatch.setattr(rp, "load_pool", lambda provider: None)
+        monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: None)
 
         with pytest.raises(rp.AuthError, match="API key") as exc:
             rp.resolve_runtime_provider(requested="azure-foundry")
@@ -1935,7 +1937,7 @@ class TestAzureFoundryResolution:
         monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "azure-foundry")
         monkeypatch.setattr(rp, "_get_model_config",
                             lambda **_snapshot: self._make_cfg_with_model("gpt-5.3-codex", "chat_completions"))
-        monkeypatch.setattr(rp, "load_pool", lambda provider: None)
+        monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: None)
 
         resolved = rp.resolve_runtime_provider(requested="azure-foundry")
 
@@ -1948,7 +1950,7 @@ class TestAzureFoundryResolution:
         monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "azure-foundry")
         monkeypatch.setattr(rp, "_get_model_config",
                             lambda **_snapshot: self._make_cfg_with_model("gpt-4o-pure", "chat_completions"))
-        monkeypatch.setattr(rp, "load_pool", lambda provider: None)
+        monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: None)
 
         resolved = rp.resolve_runtime_provider(requested="azure-foundry")
 
@@ -1964,7 +1966,7 @@ class TestAzureFoundryResolution:
             "api_mode": "anthropic_messages",
             "default": "gpt-5.3-codex",  # nonsensical on Anthropic but tests the guard
         })
-        monkeypatch.setattr(rp, "load_pool", lambda provider: None)
+        monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: None)
 
         resolved = rp.resolve_runtime_provider(requested="azure-foundry")
 
@@ -1977,7 +1979,7 @@ class TestAzureFoundryResolution:
         # Config still pinned to gpt-4o, but user just ran /model gpt-5.3-codex
         monkeypatch.setattr(rp, "_get_model_config",
                             lambda **_snapshot: self._make_cfg_with_model("gpt-4o-pure", "chat_completions"))
-        monkeypatch.setattr(rp, "load_pool", lambda provider: None)
+        monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: None)
 
         resolved = rp.resolve_runtime_provider(
             requested="azure-foundry",
@@ -1994,7 +1996,7 @@ class TestAzureFoundryResolution:
         # now switches to gpt-4o which speaks chat completions.
         monkeypatch.setattr(rp, "_get_model_config",
                             lambda **_snapshot: self._make_cfg_with_model("gpt-5.3-codex", "codex_responses"))
-        monkeypatch.setattr(rp, "load_pool", lambda provider: None)
+        monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: None)
 
         resolved = rp.resolve_runtime_provider(
             requested="azure-foundry",
@@ -2012,7 +2014,7 @@ class TestAzureFoundryResolution:
         monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "azure-foundry")
         monkeypatch.setattr(rp, "_get_model_config",
                             lambda **_snapshot: self._make_cfg_with_model("o3-mini", "chat_completions"))
-        monkeypatch.setattr(rp, "load_pool", lambda provider: None)
+        monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: None)
 
         resolved = rp.resolve_runtime_provider(requested="azure-foundry")
 
@@ -2053,7 +2055,7 @@ class TestAzureAnthropicEnvVarHint:
         monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "anthropic")
         monkeypatch.setattr(rp, "_get_model_config",
                             lambda **_snapshot: self._cfg(key_env="MY_CUSTOM_AZURE_KEY"))
-        monkeypatch.setattr(rp, "load_pool", lambda provider: None)
+        monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: None)
 
         resolved = rp.resolve_runtime_provider(requested="anthropic")
 
@@ -2068,7 +2070,7 @@ class TestAzureAnthropicEnvVarHint:
         monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "anthropic")
         monkeypatch.setattr(rp, "_get_model_config",
                             lambda **_snapshot: self._cfg(api_key_env="DOCS_VARIANT_KEY"))
-        monkeypatch.setattr(rp, "load_pool", lambda provider: None)
+        monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: None)
 
         resolved = rp.resolve_runtime_provider(requested="anthropic")
 
@@ -2082,7 +2084,7 @@ class TestAzureAnthropicEnvVarHint:
         monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "anthropic")
         monkeypatch.setattr(rp, "_get_model_config",
                             lambda **_snapshot: self._cfg(key_env="MY_PROVIDER_KEY"))
-        monkeypatch.setattr(rp, "load_pool", lambda provider: None)
+        monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: None)
 
         resolved = rp.resolve_runtime_provider(requested="anthropic")
 
@@ -2095,7 +2097,7 @@ class TestAzureAnthropicEnvVarHint:
         monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "anthropic")
         monkeypatch.setattr(rp, "_get_model_config",
                             lambda **_snapshot: self._cfg(api_key="inline-azure-key"))
-        monkeypatch.setattr(rp, "load_pool", lambda provider: None)
+        monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: None)
 
         resolved = rp.resolve_runtime_provider(requested="anthropic")
 
@@ -2107,7 +2109,7 @@ class TestAzureAnthropicEnvVarHint:
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "anthropic")
         monkeypatch.setattr(rp, "_get_model_config", lambda **_snapshot: self._cfg())
-        monkeypatch.setattr(rp, "load_pool", lambda provider: None)
+        monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: None)
 
         resolved = rp.resolve_runtime_provider(requested="anthropic")
 
@@ -2122,7 +2124,7 @@ class TestAzureAnthropicEnvVarHint:
         monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "anthropic")
         monkeypatch.setattr(rp, "_get_model_config",
                             lambda **_snapshot: self._cfg(key_env="UNSET_VAR"))
-        monkeypatch.setattr(rp, "load_pool", lambda provider: None)
+        monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: None)
 
         resolved = rp.resolve_runtime_provider(requested="anthropic")
 
@@ -2135,7 +2137,7 @@ class TestAzureAnthropicEnvVarHint:
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "anthropic")
         monkeypatch.setattr(rp, "_get_model_config", lambda **_snapshot: self._cfg())
-        monkeypatch.setattr(rp, "load_pool", lambda provider: None)
+        monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: None)
 
         with pytest.raises(rp.AuthError, match="key_env"):
             rp.resolve_runtime_provider(requested="anthropic")
@@ -2150,7 +2152,7 @@ class TestAzureAnthropicEnvVarHint:
             "base_url": "https://api.anthropic.com",  # non-Azure
             "key_env": "MY_KEY",
         })
-        monkeypatch.setattr(rp, "load_pool", lambda provider: None)
+        monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: None)
         called = {"resolve_anthropic_token": False}
         def _fake_resolve():
             called["resolve_anthropic_token"] = True
@@ -2309,7 +2311,7 @@ def test_minimax_oauth_runtime_returns_anthropic_messages_mode(monkeypatch):
 
     monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "minimax-oauth")
     monkeypatch.setattr(rp, "_get_model_config", lambda **_snapshot: {"provider": "minimax-oauth"})
-    monkeypatch.setattr(rp, "load_pool", lambda provider: None)
+    monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: None)
     monkeypatch.setattr(
         rp,
         "_resolve_named_custom_runtime",
@@ -2345,7 +2347,7 @@ def test_minimax_oauth_runtime_uses_inference_base_url(monkeypatch):
 
     monkeypatch.setattr(rp, "resolve_provider", lambda *a, **k: "minimax-oauth")
     monkeypatch.setattr(rp, "_get_model_config", lambda **_snapshot: {"provider": "minimax-oauth"})
-    monkeypatch.setattr(rp, "load_pool", lambda provider: None)
+    monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: None)
     monkeypatch.setattr(rp, "_resolve_named_custom_runtime", lambda **k: None)
     monkeypatch.setattr(rp, "_resolve_explicit_runtime", lambda **k: None)
 
@@ -2390,7 +2392,7 @@ def test_minimax_oauth_pool_forces_anthropic_messages_despite_stale_config(monke
             "api_mode": "chat_completions",
         },
     )
-    monkeypatch.setattr(rp, "load_pool", lambda provider: _Pool())
+    monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: _Pool())
     monkeypatch.setattr(rp, "_resolve_named_custom_runtime", lambda **k: None)
     monkeypatch.setattr(rp, "_resolve_explicit_runtime", lambda **k: None)
 
@@ -2432,7 +2434,7 @@ def test_custom_aliases_with_lan_base_url_route_to_custom_not_openrouter(
     # reaching it.
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-fake-test")
     # No custom credential pool — exercise the bare-alias path.
-    monkeypatch.setattr(rp, "load_pool", lambda provider: None)
+    monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: None)
 
     resolved = rp.resolve_runtime_provider()
 
@@ -2453,7 +2455,7 @@ def test_custom_alias_with_loopback_base_url_routes_to_custom(monkeypatch):
         lambda **_snapshot: {"provider": "ollama", "base_url": "http://localhost:11434/v1"},
     )
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-fake-test")
-    monkeypatch.setattr(rp, "load_pool", lambda provider: None)
+    monkeypatch.setattr(rp, "load_pool", lambda provider, **_snapshot: None)
 
     resolved = rp.resolve_runtime_provider()
 

@@ -2463,7 +2463,9 @@ def _session_runtime(sid: str) -> dict:
 
 def _make_agent(sid: str, key: str, session_id: str | None = None):
 
-    cfg = _load_cfg()
+    from superforecasting_agent.runtime.config import resolve_config
+
+    cfg = resolve_config(_load_cfg())
     agent_cfg = cfg.get("agent") or {}
     from agent.startup_prompt import prepare_startup_prompt
 
@@ -2481,6 +2483,7 @@ def _make_agent(sid: str, key: str, session_id: str | None = None):
     return build_agent(
         model=model,
         requested_provider=requested_provider,
+        configuration=cfg,
         max_iterations=_cfg_max_turns(cfg, 90),
         quiet_mode=True,
         verbose_logging=_load_tool_progress_mode(cfg=cfg) == "verbose",

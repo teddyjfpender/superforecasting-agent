@@ -481,13 +481,14 @@ def _try_resolve_from_custom_pool(
     provider_label: str,
     api_mode_override: Optional[str] = None,
     provider_name: Optional[str] = None,
+    config: Optional[Dict[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
     """Check if a credential pool exists for a custom endpoint and return a runtime dict if so."""
-    pool_key = get_custom_provider_pool_key(base_url, provider_name=provider_name)
+    pool_key = get_custom_provider_pool_key(base_url, provider_name=provider_name, config=config)
     if not pool_key:
         return None
     try:
-        pool = load_pool(pool_key)
+        pool = load_pool(pool_key, config=config)
         if not pool.has_credentials():
             return None
         entry = pool.select()
@@ -522,7 +523,7 @@ def _get_named_custom_provider(
         return None
     if not requested_norm.startswith("custom:"):
         try:
-            canonical = auth_mod.resolve_provider(requested_norm)
+            canonical = auth_mod.resolve_provider(requested_norm, config=config)
         except AuthError:
             pass
         else:
@@ -663,7 +664,7 @@ def _resolve_named_custom_runtime(
         try:
             from superforecasting_agent.runtime.auth import resolve_provider as _resolve_provider
 
-            if _resolve_provider(requested_norm) == "custom":
+            if _resolve_provider(requested_norm, config=config) == "custom":
                 requested_norm = "custom"
         except Exception:
             pass
@@ -672,7 +673,7 @@ def _resolve_named_custom_runtime(
         # Check credential pool first — mirrors the named-custom-provider path
         # so bare `provider: custom` with a configured custom_providers entry
         # also gets its api_key from the pool instead of env var fallbacks.
-        pool_result = _try_resolve_from_custom_pool(base_url, "custom", None)
+        pool_result = _try_resolve_from_custom_pool(base_url, "custom", None, config=config)
         if pool_result:
             pool_result["source"] = "direct-alias"
             return pool_result
@@ -713,7 +714,7 @@ def _resolve_named_custom_runtime(
         return None
 
     # Check if a credential pool exists for this custom endpoint
-    pool_result = _try_resolve_from_custom_pool(base_url, "custom", custom_provider.get("api_mode"), provider_name=custom_provider.get("name"))
+    pool_result = _try_resolve_from_custom_pool(base_url, "custom", custom_provider.get("api_mode"), provider_name=custom_provider.get("name"), config=config)
     if pool_result:
         # Propagate the model name even when using pooled credentials —
         # the pool doesn't know about the custom_providers model field.
@@ -760,6 +761,7 @@ def _resolve_openrouter_runtime(
     explicit_api_key: Optional[str] = None,
     explicit_base_url: Optional[str] = None,
     model_cfg: Optional[Dict[str, Any]] = None,
+    config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     model_cfg = model_cfg if model_cfg is not None else _get_model_config()
     cfg_base_url = model_cfg.get("base_url") if isinstance(model_cfg.get("base_url"), str) else ""
@@ -781,7 +783,7 @@ def _resolve_openrouter_runtime(
         try:
             from superforecasting_agent.runtime.auth import resolve_provider as _resolve_provider
 
-            if _resolve_provider(requested_norm) == "custom":
+            if _resolve_provider(requested_norm, config=config) == "custom":
                 requested_norm = "custom"
         except Exception:
             pass
@@ -1326,6 +1328,7 @@ def resolve_runtime_provider(
                 for host in _known_cloud_hosts
             ):
                 runtime = _resolve_openrouter_runtime(
+                    config=config,
                     model_cfg=model_cfg,
                     requested_provider=requested_provider,
                     explicit_api_key=explicit_api_key,
@@ -1336,6 +1339,7 @@ def resolve_runtime_provider(
 
     provider = resolve_provider(
         requested_provider,
+        config=config,
         explicit_api_key=explicit_api_key,
         explicit_base_url=explicit_base_url,
     )
@@ -1370,7 +1374,7 @@ def resolve_runtime_provider(
         )
 
     try:
-        pool = load_pool(provider) if should_use_pool else None
+        pool = load_pool(provider, config=config) if should_use_pool else None
     except Exception:
         pool = None
     if pool and pool.has_credentials():
@@ -1729,6 +1733,7 @@ def resolve_runtime_provider(
         }
 
     runtime = _resolve_openrouter_runtime(
+        config=config,
         model_cfg=model_cfg,
         requested_provider=requested_provider,
         explicit_api_key=explicit_api_key,

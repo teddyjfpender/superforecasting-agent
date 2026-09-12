@@ -1385,7 +1385,7 @@ def deactivate_provider() -> None:
 # =============================================================================
 
 
-def _get_config_hint_for_unknown_provider(provider_name: str) -> str:
+def _get_config_hint_for_unknown_provider(provider_name: str, config: Optional[dict] = None) -> str:
     """Return a helpful hint string when provider resolution fails.
 
     Checks for common config.yaml mistakes (malformed custom_providers, etc.)
@@ -1393,7 +1393,7 @@ def _get_config_hint_for_unknown_provider(provider_name: str) -> str:
     """
     try:
         from superforecasting_agent.runtime.config import validate_config_structure
-        issues = validate_config_structure()
+        issues = validate_config_structure(config)
         if not issues:
             return ""
 
@@ -1415,6 +1415,7 @@ def resolve_provider(
     *,
     explicit_api_key: Optional[str] = None,
     explicit_base_url: Optional[str] = None,
+    config: Optional[dict] = None,
 ) -> str:
     """
     Determine which inference provider to use.
@@ -1485,7 +1486,7 @@ def resolve_provider(
         return normalized
     if normalized != "auto":
         # Check for common config.yaml issues that cause this error
-        _config_hint = _get_config_hint_for_unknown_provider(normalized)
+        _config_hint = _get_config_hint_for_unknown_provider(normalized, config)
         msg = f"Unknown provider '{normalized}'."
         if _config_hint:
             msg += f"\n\n{_config_hint}"

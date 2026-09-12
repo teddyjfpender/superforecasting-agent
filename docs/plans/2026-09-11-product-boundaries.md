@@ -2264,3 +2264,32 @@ failures from additional string-targeted test doubles rejecting the new snapshot
 keyword. After updating those doubles, both affected modules passed all 205 tests;
 their Copilot response-mode and Ollama credential-isolation assertions are unchanged.
 The full integrated push gate remains required for this increment.
+
+
+### Connect captured startup configuration to provider and pool construction
+
+The existing configuration owner now exposes resolve_config for raw snapshots.
+File loading and snapshot normalization share the same user/default merge,
+legacy model/max-turn handling and environment expansion. Normalization returns
+independent runtime values rather than a persistence snapshot.
+
+TUI foreground construction sends those values through the shared agent factory
+to provider resolution. An integration test retains the real normalizer, factory,
+provider resolver and custom credential pool; it replaces only final model-client
+construction and credential-store I/O. It proves legacy keys and environment
+references reach the correct model/endpoint/key, empty tool choices survive,
+the raw mapping is unchanged, and profile rereads are forbidden.
+
+That test uncovered additional reads in unknown-provider diagnostics, pool-name
+lookup, custom-pool seeding and pool strategy selection. Those paths now accept
+the captured configuration. Standalone pool loading also reads configuration
+once, while live credential-store operations remain owned by the pool. Two
+provider fixtures now correctly report pool provenance: their supplied settings
+reach pool seeding instead of falling through against a different profile.
+Agent-internal configuration and subsequent live credential refresh still need
+their own consistency audit; this is construction-path evidence.
+
+Validation: the expanded CLI/runtime, TUI gateway, agent-factory and credential-pool
+run passed 6,028 tests with 10 skips. Shared quality checks passed, including all
+41 import contracts. No external inference calls were needed. The integrated
+batch still requires its full-suite pre-push gate.

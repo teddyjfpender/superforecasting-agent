@@ -54,6 +54,7 @@ def resolve_and_map_runtime(
     requested_provider: str | None = None,
     target_model: str | None = None,
     credential_context: dict[str, Any] | None = None,
+    configuration: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Resolve a runtime-provider dict (if not supplied) and map it to the AIAgent
     kwargs. A ``credential_context`` (the per-tenant seam) may supply an explicit
@@ -64,11 +65,13 @@ def resolve_and_map_runtime(
         from superforecasting_agent.runtime.runtime_provider import resolve_runtime_provider
 
         ctx = credential_context or {}
+        config_options = {"config": configuration} if configuration is not None else {}
         runtime = resolve_runtime_provider(
             requested=ctx.get("provider") or requested_provider,
             explicit_api_key=ctx.get("api_key"),
             explicit_base_url=ctx.get("base_url"),
             target_model=target_model or None,
+            **config_options,
         )
     return {
         kwarg: runtime.get(key)
@@ -83,6 +86,7 @@ def build_agent(
     model: str = "",
     requested_provider: str | None = None,
     credential_context: dict[str, Any] | None = None,
+    configuration: dict[str, Any] | None = None,
     **agent_kwargs: Any,
 ):
     """Construct an AIAgent via the single resolve->construct path.
@@ -105,6 +109,7 @@ def build_agent(
         requested_provider=requested_provider,
         target_model=model or None,
         credential_context=credential_context,
+        configuration=configuration,
     )
     for kwarg, value in mapped.items():
         agent_kwargs.setdefault(kwarg, value)
