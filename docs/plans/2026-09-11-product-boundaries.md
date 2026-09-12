@@ -4152,3 +4152,20 @@ passed with 58 import contracts. Native dispatch tests forbid worker/agent
 construction, assert admitted command ownership, and cover success/failure. Uploads
 were mocked; this is engineering evidence, not live paste-service verification.
 Network operations remain synchronous and this does not add mid-upload cancellation.
+
+
+### Atomic shared footer transitions
+
+The application footer operation owns inspection, validation and mutation for
+classic CLI and native TUI. Messaging gateway mutations call the same operation;
+its status retains effective platform reporting. Global toggles now read the
+latest global flag under the writer lock rather than toggling a stale snapshot
+or a platform-specific override. Invalid configuration fails before writes, and
+status on a missing profile does not create a file. The TUI no longer needs a
+classic worker for this command.
+
+164 focused command/footer tests and shared quality gates passed. Tests exercise
+concurrent toggles, malformed boolean configuration, read-only status, CLI/native
+TUI parity without worker construction, and gateway toggles with a platform
+override and deliberately stale reader snapshot. This configures the existing
+runtime metadata footer; it does not change Ink's distinct local status bar.

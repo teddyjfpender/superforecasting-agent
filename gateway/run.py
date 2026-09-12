@@ -12656,24 +12656,12 @@ class GatewayRunner:
                 platform=platform_key,
             )
 
-        if arg in {"on", "enable", "true", "1"}:
-            new_state = True
-        elif arg in {"off", "disable", "false", "0"}:
-            new_state = False
-        elif arg == "":
-            new_state = not effective["enabled"]
-        else:
-            return t("gateway.footer.usage")
+        from superforecasting_agent.application.footer import change_footer
 
-        # --- write global flag ---------------------------------------------
         try:
-            if not isinstance(user_config.get("display"), dict):
-                user_config["display"] = {}
-            display = user_config["display"]
-            if not isinstance(display.get("runtime_footer"), dict):
-                display["runtime_footer"] = {}
-            display["runtime_footer"]["enabled"] = new_state
-            atomic_roundtrip_yaml_update(config_path, "display.runtime_footer.enabled", new_state)
+            new_state = change_footer(arg, config_path)
+        except ValueError as e:
+            return str(e)
         except Exception as e:
             logger.warning("Failed to save runtime_footer.enabled: %s", e)
             return t("gateway.config_save_failed", error=e)

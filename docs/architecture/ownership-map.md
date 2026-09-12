@@ -674,3 +674,9 @@ collection belongs to `runtime.dump`. Both route textual output through the
 request-local application output sink. TUI /debug directly consumes the shared
 operation under host admission, preserving protocol stdout during nested dump
 collection; the classic CLI uses the same report operation with default streams.
+
+
+`application.footer` owns global runtime-footer command validation and atomic
+transitions through the shared storage writer. CLI and native TUI consume its
+textual operation; messaging consumes its mutation and retains platform-specific
+status rendering. A platform override cannot become the input to a global toggle.

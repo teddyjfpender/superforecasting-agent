@@ -5785,6 +5785,19 @@ def _(rid, params: dict) -> dict:
         except Exception as exc:
             return _err(rid, 5030, f"Background command failed: {exc}")
 
+    if _cmd_base == "footer":
+        from superforecasting_agent.application.footer import footer_command
+        from superforecasting_agent.constants import get_agent_home
+
+        try:
+            with _host.command(session):
+                output = footer_command(_cmd_arg, get_agent_home() / "config.yaml")
+            return _ok(rid, {"output": output})
+        except ValueError as exc:
+            return _err(rid, 4004, str(exc))
+        except Exception as exc:
+            return _err(rid, 5030, f"Footer command failed: {exc}")
+
     if _cmd_base == "debug":
         from superforecasting_agent.runtime.debug import slash_output
 
