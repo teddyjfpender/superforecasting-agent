@@ -11246,27 +11246,19 @@ class GatewayRunner:
         session_entry = self.session_store.get_or_create_session(source)
         history = self.session_store.load_transcript(session_entry.session_id)
         
-        # Find the last user message
-        last_user_msg = None
-        last_user_idx = None
-        for i in range(len(history) - 1, -1, -1):
-            if history[i].get("role") == "user":
-                last_user_msg = history[i].get("content", "")
-                last_user_idx = i
-                break
-        
-        if not last_user_msg:
-            return t("gateway.retry.no_previous")
-        
-        # Truncate history to before the last user message and persist
-        truncated = history[:last_user_idx]
-        self.session_store.rewrite_transcript(session_entry.session_id, truncated)
+        from superforecasting_agent.application.retry import prepare_retry, RetryUnavailable
+
+        try:
+            plan = prepare_retry(history)
+        except RetryUnavailable as exc:
+            return str(exc)
+        self.session_store.rewrite_transcript(session_entry.session_id, plan.history)
         # Reset stored token count — transcript was truncated
         session_entry.last_prompt_tokens = 0
         
         # Re-send by creating a fake text event with the old message
         retry_event = MessageEvent(
-            text=last_user_msg,
+            text=plan.message,
             message_type=MessageType.TEXT,
             source=source,
             raw_message=event.raw_message,

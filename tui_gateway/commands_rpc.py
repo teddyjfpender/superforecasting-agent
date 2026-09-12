@@ -521,36 +521,18 @@ def _(rid, params: dict) -> dict:
     if name == "retry":
         if not session:
             return _err(rid, 4001, "no active forecast session to retry")
-        if session.get("running"):
-            return _err(
-                rid, 4009, "session busy — /interrupt the current turn before /retry"
-            )
-        history = session.get("history", [])
-        if not history:
-            return _err(rid, 4018, "no previous forecast note to retry")
-        # Walk backwards to find the last user note.
-        last_user_idx = None
-        for i in range(len(history) - 1, -1, -1):
-            if history[i].get("role") == "user":
-                last_user_idx = i
-                break
-        if last_user_idx is None:
-            return _err(rid, 4018, "no previous forecast note to retry")
-        content = history[last_user_idx].get("content", "")
-        if isinstance(content, list):
-            content = " ".join(
-                p.get("text", "")
-                for p in content
-                if isinstance(p, dict) and p.get("type") == "text"
-            )
-        if not content:
-            return _err(rid, 4018, "last forecast note is empty")
-        # Truncate history: remove everything from the last user note onward
-        # (mirrors CLI retry_last() which strips the failed exchange)
+        from superforecasting_agent.application.retry import prepare_retry, RetryUnavailable
+
         with session["history_lock"]:
-            session["history"] = history[:last_user_idx]
+            if session.get("running"):
+                return _err(rid, 4009, "session busy — /interrupt the current turn before /retry")
+            try:
+                plan = prepare_retry(session.get("history", []))
+            except RetryUnavailable as exc:
+                return _err(rid, 4018, str(exc))
+            session["history"] = plan.history
             session["history_version"] = int(session.get("history_version", 0)) + 1
-        return _ok(rid, {"type": "send", "message": content})
+        return _ok(rid, {"type": "send", "message": plan.message})
 
     if name == "steer":
         if not arg:

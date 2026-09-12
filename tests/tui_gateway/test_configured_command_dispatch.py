@@ -1092,3 +1092,26 @@ def test_native_skill_handoff_with_cached_module_without_package_attribute(confi
     # normal imports find the cached module, dotted getattr traversal does not.
     assert import_module('agent.skill_commands') is module
     test_skill_handoff_does_not_need_provider_initialization(configure, monkeypatch)
+
+
+def test_retry_cannot_discard_attachment_or_history(configure):
+    configure({})
+    session = server._host.sessions['runtime']
+    history = [{'role': 'user', 'content': [{'type': 'text', 'text': 'inspect'}, {'type': 'image_url', 'image_url': {'url': 'image'}}]}]
+    session['history'] = history
+    session['history_version'] = 7
+    result = dispatch('retry')
+    assert 'attachments' in result['error']['message']
+    assert session['history'] is history
+    assert session['history_version'] == 7
+
+
+def test_retry_commits_text_plan_and_version_together(configure):
+    configure({})
+    session = server._host.sessions['runtime']
+    session['history'] = [{'role': 'system', 'content': 'policy'}, {'role': 'user', 'content': 'retry'}, {'role': 'assistant', 'content': 'partial'}]
+    session['history_version'] = 7
+    result = dispatch('retry')
+    assert result['result'] == {'type': 'send', 'message': 'retry'}
+    assert session['history'] == [{'role': 'system', 'content': 'policy'}]
+    assert session['history_version'] == 8

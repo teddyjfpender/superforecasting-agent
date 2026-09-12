@@ -3709,3 +3709,22 @@ strict checks automatically through directory-wide configuration coverage.
 All 342 focused tests passed, including real classic-CLI construction, malformed
 values/sections, TUI parity, configuration migration and subprocess gateway import
 with stale environment values. Shared Python gates passed with 54 contracts.
+
+
+### Shared retry preparation across CLI, TUI and messaging
+
+Three retry implementations selected and altered history independently. A pure
+application operation now validates the last user request and returns a detached
+message/history plan. The CLI preserves structured content, refuses empty/invalid
+requests before removing history, and no longer formats a list as a string slice.
+Text-only transports reject unsupported attachments rather than silently dropping
+them. TUI preparation and history/version replacement occur under one history lock.
+Messaging persists the prepared prefix before resetting token accounting or sending.
+
+All 137 retry/command tests passed, including empty content, attachment preservation,
+plan isolation, TUI version updates and gateway rewrite failure preventing resend.
+Shared Python gates passed with 55 contracts; the retry operation has a transitive
+boundary forbidding storage, runtime and presentation imports. This preserves the
+existing commit-then-send flow; crash-safe retry delivery after a committed history
+change is not established by these tests, and attachment replay in text-only
+transports still requires a future transport capability.

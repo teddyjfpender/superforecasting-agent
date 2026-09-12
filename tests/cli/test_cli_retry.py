@@ -47,3 +47,19 @@ def test_process_command_retry_requeues_original_message_not_retry_command():
 
     assert queued == ["retry me"]
     assert cli.conversation_history == []
+
+
+def test_empty_retry_preserves_failed_exchange():
+    cli = _make_cli()
+    history = [{'role': 'user', 'content': ''}, {'role': 'assistant', 'content': 'saved response'}]
+    cli.conversation_history = history
+    assert cli.retry_last() is None
+    assert cli.conversation_history is history
+
+
+def test_structured_retry_preserves_image_content():
+    cli = _make_cli()
+    content = [{'type': 'text', 'text': 'inspect'}, {'type': 'image_url', 'image_url': {'url': 'image'}}]
+    cli.conversation_history = [{'role': 'user', 'content': content}]
+    assert cli.retry_last() == content
+    assert cli.conversation_history == []

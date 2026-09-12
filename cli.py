@@ -4548,28 +4548,18 @@ class ForecastCLI:
         the last user message, then re-sends that forecast note to the agent.
         Returns the message to re-send, or None if there's nothing to retry.
         """
-        if not self.conversation_history:
-            print("No messages to retry.")
+        from superforecasting_agent.application.retry import prepare_retry, RetryUnavailable
+
+        try:
+            plan = prepare_retry(self.conversation_history, structured_messages=True)
+        except RetryUnavailable as exc:
+            print(str(exc))
             return None
-        
-        # Walk backwards to find the last user message
-        last_user_idx = None
-        for i in range(len(self.conversation_history) - 1, -1, -1):
-            if self.conversation_history[i].get("role") == "user":
-                last_user_idx = i
-                break
-        
-        if last_user_idx is None:
-            print("No user message found to retry.")
-            return None
-        
-        # Extract the message text and remove everything from that point forward
-        last_message = self.conversation_history[last_user_idx].get("content", "")
-        self.conversation_history = self.conversation_history[:last_user_idx]
-        
-        print(f"Retrying: \"{last_message[:60]}{'...' if len(last_message) > 60 else ''}\"")
-        return last_message
-    
+        self.conversation_history = plan.history
+        preview = str(plan.message)
+        print(f'Retrying: "{preview[:60]}{"..." if len(preview) > 60 else ""}"')
+        return plan.message
+
     def undo_last(self):
         """Remove the last user/forecaster exchange from conversation history.
         
