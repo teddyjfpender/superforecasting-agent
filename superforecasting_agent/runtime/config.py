@@ -375,7 +375,7 @@ def get_container_exec_info() -> Optional[dict]:
 
 # Re-export from superforecasting_agent.constants — canonical definition lives there.
 from superforecasting_agent.constants import get_agent_home, display_agent_home  # noqa: F811,E402
-from superforecasting_agent.storage.files import atomic_replace
+from superforecasting_agent.storage.files import atomic_replace, owned_text_descriptor
 
 def get_config_path() -> Path:
     """Get the main config file path."""
@@ -2416,7 +2416,6 @@ def sanitize_env_file() -> int:
     from superforecasting_agent.storage.files import yaml_update_lock
     with yaml_update_lock(env_path):
         read_kw = {"encoding": "utf-8-sig", "errors": "replace"}
-        write_kw = {"encoding": "utf-8"}
 
         with open(env_path, **read_kw) as f:
             original_lines = f.readlines()
@@ -2435,7 +2434,7 @@ def sanitize_env_file() -> int:
 
         fd, tmp_path = tempfile.mkstemp(dir=str(env_path.parent), suffix=".tmp", prefix=".env_")
         try:
-            with os.fdopen(fd, "w", **write_kw) as f:
+            with owned_text_descriptor(fd) as f:
                 f.writelines(sanitized)
                 f.flush()
                 os.fsync(f.fileno())
@@ -2510,7 +2509,6 @@ def save_env_value(key: str, value: str):
         # On Windows, open() defaults to the system locale (cp1252) which can
         # cause OSError errno 22 on UTF-8 .env files.
         read_kw = {"encoding": "utf-8-sig", "errors": "replace"}
-        write_kw = {"encoding": "utf-8"}
 
         lines = []
         if env_path.exists():
@@ -2542,7 +2540,7 @@ def save_env_value(key: str, value: str):
             except OSError:
                 pass
         try:
-            with os.fdopen(fd, 'w', **write_kw) as f:
+            with owned_text_descriptor(fd) as f:
                 f.writelines(lines)
                 f.flush()
                 os.fsync(f.fileno())
@@ -2583,7 +2581,6 @@ def remove_env_value(key: str) -> bool:
     from superforecasting_agent.storage.files import yaml_update_lock
     with yaml_update_lock(env_path):
         read_kw = {"encoding": "utf-8-sig", "errors": "replace"}
-        write_kw = {"encoding": "utf-8"}
 
         with open(env_path, **read_kw) as f:
             lines = f.readlines()
@@ -2601,7 +2598,7 @@ def remove_env_value(key: str) -> bool:
             except OSError:
                 pass
             try:
-                with os.fdopen(fd, 'w', **write_kw) as f:
+                with owned_text_descriptor(fd) as f:
                     f.writelines(new_lines)
                     f.flush()
                     os.fsync(f.fileno())

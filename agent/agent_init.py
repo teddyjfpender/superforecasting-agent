@@ -713,7 +713,9 @@ def init_agent(
                     # (e.g. alibaba → DASHSCOPE_API_KEY, not ALIBABA_API_KEY).
                     _env_hint = f"{_explicit.upper()}_API_KEY"
                     try:
-                        from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY
+                        from superforecasting_agent.configuration.authentication import (
+                            PROVIDER_REGISTRY,
+                        )
                         _pcfg = PROVIDER_REGISTRY.get(_explicit)
                         if _pcfg and _pcfg.api_key_env_vars:
                             _env_hint = _pcfg.api_key_env_vars[0]

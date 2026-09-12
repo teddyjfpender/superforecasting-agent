@@ -1060,7 +1060,10 @@ def list_available_providers() -> list[dict[str, str]]:
         # Check if this provider has credentials available
         has_creds = False
         try:
-            from superforecasting_agent.runtime.auth import get_auth_status, has_usable_secret
+            from superforecasting_agent.configuration.authentication import (
+                has_usable_secret,
+            )
+            from superforecasting_agent.runtime.auth import get_auth_status
             if pid == "custom":
                 custom_base_url = _get_custom_base_url() or ""
                 has_creds = bool(custom_base_url.strip())
@@ -1777,7 +1780,9 @@ def _credential_fingerprint(provider: str) -> str:
 
     # Env vars from PROVIDER_REGISTRY for this slug
     try:
-        from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY
+        from superforecasting_agent.configuration.authentication import (
+            PROVIDER_REGISTRY,
+        )
         pcfg = PROVIDER_REGISTRY.get(provider)
         if pcfg is not None:
             for ev in getattr(pcfg, "api_key_env_vars", ()) or ():

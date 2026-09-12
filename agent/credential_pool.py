@@ -20,10 +20,10 @@ from agent.credential_persistence import (
     sanitize_borrowed_credential_payload,
 )
 import superforecasting_agent.runtime.auth as auth_mod
+from superforecasting_agent.configuration.authentication import PROVIDER_REGISTRY
 from superforecasting_agent.runtime.auth import (
     CODEX_ACCESS_TOKEN_REFRESH_SKEW_SECONDS,
     DEFAULT_AGENT_KEY_MIN_TTL_SECONDS,
-    PROVIDER_REGISTRY,
     _auth_store_lock,
     _codex_access_token_is_expiring,
     _decode_jwt_claims,

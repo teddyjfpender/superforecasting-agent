@@ -3905,7 +3905,9 @@ class APIServerAdapter(BasePlatformAdapter):
             # Ported from openclaw/openclaw#64586.
             if is_network_accessible(self._host) and self._api_key:
                 try:
-                    from superforecasting_agent.runtime.auth import has_usable_secret
+                    from superforecasting_agent.configuration.authentication import (
+                        has_usable_secret,
+                    )
                     if not has_usable_secret(self._api_key, min_length=8):
                         logger.error(
                             "[%s] Refusing to start: API_SERVER_KEY is set to a "

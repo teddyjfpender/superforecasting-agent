@@ -611,8 +611,10 @@ def run_doctor(args):
 
             known_providers: set = set()
             try:
-                from superforecasting_agent.runtime.auth import (
+                from superforecasting_agent.configuration.authentication import (
                     PROVIDER_REGISTRY,
+                )
+                from superforecasting_agent.runtime.auth import (
                     resolve_provider as _resolve_auth_provider,
                 )
                 known_providers = set(PROVIDER_REGISTRY.keys()) | {"openrouter", "custom", "auto"}
@@ -740,7 +742,10 @@ def run_doctor(args):
                             or str(get_env_value("OPENAI_API_KEY") or "").strip()
                         )
                     else:
-                        from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY, get_auth_status
+                        from superforecasting_agent.configuration.authentication import (
+                            PROVIDER_REGISTRY,
+                        )
+                        from superforecasting_agent.runtime.auth import get_auth_status
 
                         pconfig = PROVIDER_REGISTRY.get(runtime_provider)
                         configured = True

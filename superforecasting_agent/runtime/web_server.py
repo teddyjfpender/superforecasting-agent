@@ -1961,10 +1961,12 @@ async def _start_device_code_flow(provider_id: str) -> Dict[str, Any]:
     so the UI can render the verification page link + user code.
     """
     if provider_id == "nous":
+        from superforecasting_agent.configuration.authentication import (
+            PROVIDER_REGISTRY,
+        )
         from superforecasting_agent.runtime.auth import (
             _nous_device_scope_with_env_override,
             _request_nous_device_code_with_scope_fallback,
-            PROVIDER_REGISTRY,
         )
         from superforecasting_agent.runtime.nous_env import nous_portal_base_url
         import httpx

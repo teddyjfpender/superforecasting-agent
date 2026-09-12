@@ -4873,3 +4873,25 @@ file-descriptor cleanup or native Windows qualification.
 Validation: 157 auth/provider and lock checks passed; the shared quality workflow
 passed all 72 import contracts and blocking Python/TUI/protocol checks. The historical SSL and late descriptor incident
 causes remain unproven; this is a separately reproduced storage ownership defect.
+
+
+### Authentication metadata boundary and remaining credential writers
+
+Moved provider authentication metadata and pure secret policy to shared
+configuration, with direct TUI/CLI/gateway/pool consumers and identity-preserving
+runtime exports. Plugin alias metadata is checked in a fresh interpreter without
+loading the auth runtime. A new transitive prohibition brings the gate to 73
+contracts; new configuration files inherit strict lint, format and type checks.
+
+Five negative controls reproduced Anthropic inspection choosing placeholder keys
+instead of the valid fallback (or reporting a placeholder as configured). It now
+uses the existing shared usable-secret rule. Three additional negative controls
+reproduced temporary descriptor leaks in `.env` save/remove/sanitize on wrapper
+construction failure. All use the existing storage descriptor owner; failures
+preserve old file contents and process values.
+
+Verification: 373 policy/provider/boundary checks, 504 credential/setup/gateway
+consumer checks and 114 configuration/descriptor checks passed through the
+hermetic test runner. Shared quality checks passed. Full-suite push validation is
+required for the integrated commit. OAuth refresh/status ownership and the
+historical native crash attribution are still incomplete.

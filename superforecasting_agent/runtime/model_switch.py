@@ -1086,7 +1086,7 @@ def list_authenticated_providers(
         fetch_models_dev,
         get_provider_info as _mdev_pinfo,
     )
-    from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY
+    from superforecasting_agent.configuration.authentication import PROVIDER_REGISTRY
     from superforecasting_agent.runtime.models import (
         OPENROUTER_MODELS, _PROVIDER_MODELS,
         _MODELS_DEV_PREFERRED, _merge_with_models_dev, provider_model_ids,
@@ -1114,7 +1114,9 @@ def list_authenticated_providers(
         static inference_base_url so the dedup matches what a user typing
         that URL into custom_providers would actually hit."""
         try:
-            from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY as _reg
+            from superforecasting_agent.configuration.authentication import (
+                PROVIDER_REGISTRY as _reg,
+            )
         except Exception:
             return
         pcfg = _reg.get(slug)
@@ -1282,7 +1284,9 @@ def list_authenticated_providers(
 
     # --- 2. Check Hermes-only providers (nous, openai-codex, copilot, opencode-go) ---
     from superforecasting_agent.runtime.providers import PROVIDER_OVERLAYS
-    from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY as _auth_registry
+    from superforecasting_agent.configuration.authentication import (
+        PROVIDER_REGISTRY as _auth_registry,
+    )
 
     # Build reverse mapping: models.dev ID → Hermes provider ID.
     # PROVIDER_OVERLAYS keys may be models.dev IDs (e.g. "github-copilot")

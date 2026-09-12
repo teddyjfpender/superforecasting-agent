@@ -28,7 +28,7 @@ from agent.credential_pool import (
     load_pool,
 )
 import superforecasting_agent.runtime.auth as auth_mod
-from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY
+from superforecasting_agent.configuration.authentication import PROVIDER_REGISTRY
 from superforecasting_agent.constants import OPENROUTER_BASE_URL
 
 from superforecasting_agent.runtime.secret_prompt import masked_secret_prompt

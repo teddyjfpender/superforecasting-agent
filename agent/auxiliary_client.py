@@ -1505,7 +1505,12 @@ def _resolve_api_key_provider() -> Tuple[Optional[OpenAI], Optional[str]]:
     credentials, or (None, None) if none are configured.
     """
     try:
-        from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY, resolve_api_key_provider_credentials
+        from superforecasting_agent.configuration.authentication import (
+            PROVIDER_REGISTRY,
+        )
+        from superforecasting_agent.runtime.auth import (
+            resolve_api_key_provider_credentials,
+        )
     except ImportError:
         logger.debug("Could not import PROVIDER_REGISTRY for API-key fallback")
         return None, None
@@ -3611,8 +3616,10 @@ def resolve_provider_client(
 
     # ── API-key providers from PROVIDER_REGISTRY ─────────────────────
     try:
-        from superforecasting_agent.runtime.auth import (
+        from superforecasting_agent.configuration.authentication import (
             PROVIDER_REGISTRY,
+        )
+        from superforecasting_agent.runtime.auth import (
             resolve_api_key_provider_credentials,
             resolve_external_process_provider_credentials,
         )

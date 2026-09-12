@@ -85,9 +85,9 @@ def _prompt_api_key(pconfig, existing_key: str, provider_id: str = "") -> tuple:
 
 def _model_flow_api_key_provider(config, provider_id, current_model="", *, _PROVIDER_MODELS, _prompt_api_key):
     """Generic flow for API-key providers (z.ai, MiniMax, OpenCode, etc.)."""
+    from superforecasting_agent.configuration.authentication import PROVIDER_REGISTRY
     from superforecasting_agent.runtime.auth import (
         LMSTUDIO_NOAUTH_PLACEHOLDER,
-        PROVIDER_REGISTRY,
         _prompt_model_selection,
         _save_model_choice,
         deactivate_provider,

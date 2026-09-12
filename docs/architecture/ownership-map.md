@@ -975,3 +975,25 @@ Global credential fallback calls `storage.auth.load_auth_store` with
 active profile. Owned-store reads retain corruption backups and only report
 preservation after the copy succeeds. Both default credential homes are excluded
 from pytest fallback reads; isolated fixtures remain supported.
+
+
+### Authentication metadata and pure policy
+
+`superforecasting_agent/configuration/authentication.py` owns `ProviderConfig`,
+the plugin-extended authentication registry, provider endpoint/scope defaults,
+placeholder rejection and Kimi key-prefix routing. TUI, CLI setup, gateway token
+validation and pool consumers import this owner directly. Runtime auth retains
+compatibility exports of the same objects. The shared strict scope and a new
+transitive contract prohibit runtime/execution/presentation dependencies.
+
+Metadata selection does not read credential files, select a pool entry or refresh
+a token. Provider plugins retain their existing discovery/import behavior; this
+boundary does not certify arbitrary external plugin code. Runtime status calls
+still own credential inspection and refresh, so the quorum discovery exception
+remains open. Anthropic settings/status inspection now applies the same usable-
+secret rule as inference selection, skipping placeholders before token fallback.
+
+All three `.env` writers borrow their UTF-8 wrapper from the shared raw descriptor
+owner. Construction failure closes the temporary descriptor without changing the
+prior file or process environment. Existing locking, permission restoration and
+atomic publication semantics remain in their respective owners.

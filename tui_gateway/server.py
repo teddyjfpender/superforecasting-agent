@@ -5093,7 +5093,9 @@ def _(rid, params: dict) -> dict:
     model.options entries) on success.
     """
     try:
-        from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY
+        from superforecasting_agent.configuration.authentication import (
+            PROVIDER_REGISTRY,
+        )
         from superforecasting_agent.runtime.config import is_managed, save_env_value
         from superforecasting_agent.runtime.inventory import build_models_payload, load_picker_context
 
@@ -5370,7 +5372,10 @@ def _(rid, params: dict) -> dict:
     Returns success status and the provider's slug.
     """
     try:
-        from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY, clear_provider_auth
+        from superforecasting_agent.configuration.authentication import (
+            PROVIDER_REGISTRY,
+        )
+        from superforecasting_agent.runtime.auth import clear_provider_auth
         from superforecasting_agent.runtime.config import remove_env_value
 
         slug = (params.get("slug") or "").strip()

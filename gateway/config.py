@@ -1277,7 +1277,9 @@ def _validate_gateway_config(config: "GatewayConfig") -> None:
     # without changing placeholder values get a clear startup error instead
     # of a confusing "auth failed" from the platform API.
     try:
-        from superforecasting_agent.runtime.auth import has_usable_secret
+        from superforecasting_agent.configuration.authentication import (
+            has_usable_secret,
+        )
     except ImportError:
         has_usable_secret = None  # type: ignore[assignment]
 

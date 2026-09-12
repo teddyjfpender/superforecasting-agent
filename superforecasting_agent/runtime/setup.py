@@ -65,7 +65,7 @@ def _supports_same_provider_pool_setup(provider: str) -> bool:
         return False
     if provider == "openrouter":
         return True
-    from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY
+    from superforecasting_agent.configuration.authentication import PROVIDER_REGISTRY
 
     pconfig = PROVIDER_REGISTRY.get(provider)
     if not pconfig:
@@ -2804,7 +2804,9 @@ def _model_section_has_credentials(config: dict) -> bool:
         pass
 
     try:
-        from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY
+        from superforecasting_agent.configuration.authentication import (
+            PROVIDER_REGISTRY,
+        )
     except Exception:
         PROVIDER_REGISTRY = {}  # type: ignore[assignment]
 

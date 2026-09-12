@@ -13,12 +13,15 @@ _PRIMARY_CLI = "superforecasting-agent"
 
 from superforecasting_agent.runtime import auth as auth_mod
 from agent.credential_pool import CredentialPool, PooledCredential, get_custom_provider_pool_key, load_pool
+from superforecasting_agent.configuration.authentication import (
+    PROVIDER_REGISTRY,
+    has_usable_secret,
+)
 from superforecasting_agent.runtime.auth import (
     AuthError,
     DEFAULT_CODEX_BASE_URL,
     DEFAULT_QWEN_BASE_URL,
     DEFAULT_XAI_OAUTH_BASE_URL,
-    PROVIDER_REGISTRY,
     _agent_key_is_usable,
     format_auth_error,
     resolve_provider,
@@ -29,7 +32,6 @@ from superforecasting_agent.runtime.auth import (
     resolve_gemini_oauth_runtime_credentials,
     resolve_api_key_provider_credentials,
     resolve_external_process_provider_credentials,
-    has_usable_secret,
 )
 from superforecasting_agent.runtime.config import get_compatible_custom_providers, load_config
 from superforecasting_agent.runtime.model_env import inference_provider_env

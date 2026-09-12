@@ -392,7 +392,7 @@ def _has_any_provider_configured() -> bool:
     # Check env vars (may be set by .env or shell).
     # OPENAI_BASE_URL alone counts — local models (vLLM, llama.cpp, etc.)
     # often don't require an API key.
-    from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY
+    from superforecasting_agent.configuration.authentication import PROVIDER_REGISTRY
 
     # Collect all provider env vars
     provider_env_vars = {
@@ -2528,8 +2528,8 @@ def _prompt_provider_choice(choices, *, default=0):
 
 def _model_flow_openrouter(config, current_model=""):
     """OpenRouter provider: ensure API key, then pick model."""
+    from superforecasting_agent.configuration.authentication import ProviderConfig
     from superforecasting_agent.runtime.auth import (
-        ProviderConfig,
         _prompt_model_selection,
         _save_model_choice,
         deactivate_provider,
@@ -2588,8 +2588,8 @@ def _model_flow_openrouter(config, current_model=""):
 
 def _model_flow_ai_gateway(config, current_model=""):
     """Vercel AI Gateway provider: ensure API key, then pick model with pricing."""
+    from superforecasting_agent.configuration.authentication import PROVIDER_REGISTRY
     from superforecasting_agent.runtime.auth import (
-        PROVIDER_REGISTRY,
         _prompt_model_selection,
         _save_model_choice,
         deactivate_provider,
@@ -2698,6 +2698,7 @@ def _model_flow_qwen_oauth(_config, current_model=""):
 
 def _model_flow_minimax_oauth(config, current_model="", args=None):
     """MiniMax OAuth provider: ensure logged in, then pick model."""
+    from superforecasting_agent.configuration.authentication import PROVIDER_REGISTRY
     from superforecasting_agent.runtime.auth import (
         get_provider_auth_state,
         _prompt_model_selection,
@@ -2707,7 +2708,6 @@ def _model_flow_minimax_oauth(config, current_model="", args=None):
         AuthError,
         format_auth_error,
         _login_minimax_oauth,
-        PROVIDER_REGISTRY,
     )
 
     state = get_provider_auth_state("minimax-oauth")
@@ -3401,8 +3401,8 @@ def _prompt_reasoning_effort_selection(efforts, current_effort=""):
 
 def _model_flow_copilot(config, current_model=""):
     """GitHub Copilot flow using env vars, gh CLI, or OAuth device code."""
+    from superforecasting_agent.configuration.authentication import PROVIDER_REGISTRY
     from superforecasting_agent.runtime.auth import (
-        PROVIDER_REGISTRY,
         _prompt_model_selection,
         _save_model_choice,
         deactivate_provider,
@@ -3592,8 +3592,8 @@ def _model_flow_copilot(config, current_model=""):
 
 def _model_flow_copilot_acp(config, current_model=""):
     """GitHub Copilot ACP flow using the local Copilot CLI."""
+    from superforecasting_agent.configuration.authentication import PROVIDER_REGISTRY
     from superforecasting_agent.runtime.auth import (
-        PROVIDER_REGISTRY,
         _prompt_model_selection,
         _save_model_choice,
         deactivate_provider,
@@ -3715,8 +3715,8 @@ def _model_flow_kimi(config, current_model=""):
 
     No manual base URL prompt — endpoint is determined by key prefix.
     """
+    from superforecasting_agent.configuration.authentication import PROVIDER_REGISTRY
     from superforecasting_agent.runtime.auth import (
-        PROVIDER_REGISTRY,
         KIMI_CODE_BASE_URL,
         _prompt_model_selection,
         _save_model_choice,
@@ -3826,8 +3826,8 @@ def _stepfun_base_url_for_region(region: str) -> str:
 
 def _model_flow_stepfun(config, current_model=""):
     """StepFun Step Plan flow with region-specific endpoints."""
+    from superforecasting_agent.configuration.authentication import PROVIDER_REGISTRY
     from superforecasting_agent.runtime.auth import (
-        PROVIDER_REGISTRY,
         _prompt_model_selection,
         _save_model_choice,
         deactivate_provider,

@@ -4,6 +4,7 @@ import argparse
 
 def _model_flow_nous(config, current_model="", args=None):
     """Nous Portal provider: ensure logged in, then pick model."""
+    from superforecasting_agent.configuration.authentication import PROVIDER_REGISTRY
     from superforecasting_agent.runtime.auth import (
         get_provider_auth_state,
         _prompt_model_selection,
@@ -13,7 +14,6 @@ def _model_flow_nous(config, current_model="", args=None):
         AuthError,
         format_auth_error,
         _login_nous,
-        PROVIDER_REGISTRY,
     )
     from superforecasting_agent.runtime.config import (
         get_env_value,
@@ -192,13 +192,13 @@ def _model_flow_nous(config, current_model="", args=None):
 
 def _model_flow_openai_codex(config, current_model=""):
     """OpenAI Codex provider: ensure logged in, then pick model."""
+    from superforecasting_agent.configuration.authentication import PROVIDER_REGISTRY
     from superforecasting_agent.runtime.auth import (
         get_codex_auth_status,
         _prompt_model_selection,
         _save_model_choice,
         _update_config_for_provider,
         _login_openai_codex,
-        PROVIDER_REGISTRY,
         DEFAULT_CODEX_BASE_URL,
     )
     from superforecasting_agent.runtime.codex_models import get_codex_model_ids
@@ -282,6 +282,7 @@ def _model_flow_openai_codex(config, current_model=""):
 
 def _model_flow_xai_oauth(_config, current_model="", *, args=None):
     """xAI Grok OAuth (SuperGrok Subscription) provider: ensure logged in, then pick model."""
+    from superforecasting_agent.configuration.authentication import PROVIDER_REGISTRY
     from superforecasting_agent.runtime.auth import (
         get_xai_oauth_auth_status,
         _prompt_model_selection,
@@ -290,7 +291,6 @@ def _model_flow_xai_oauth(_config, current_model="", *, args=None):
         resolve_xai_oauth_runtime_credentials,
         _login_xai_oauth,
         DEFAULT_XAI_OAUTH_BASE_URL,
-        PROVIDER_REGISTRY,
     )
     from superforecasting_agent.runtime.models import _PROVIDER_MODELS
 
