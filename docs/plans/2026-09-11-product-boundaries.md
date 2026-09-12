@@ -2609,3 +2609,21 @@ of virtual time, cancellation results, disconnection, missing final results,
 duplicate terminal events and wrong-session/request/non-command acknowledgements.
 These deterministic transport checks do not prove visible progress or Ctrl+C
 interaction. Those remain the next native-command integration work.
+
+
+### Native command activity is independent of model turns
+
+A terminal command store now tracks active command identities by session, retains
+only 4,096 characters of output per active command and ignores recently completed
+identities. The composer displays a bounded live preview and a cancellation hint.
+Ctrl+C requests session interruption and marks commands cancelling; only the host
+terminal event removes them. Request failure restores the active marker and reports
+the error. Transport loss clears live markers without claiming completion.
+Terminal events are consumed even when another session is displayed, preventing
+stale activity when switching back. Model-turn busy state remains independent.
+
+88 focused command-store, event-handler, input-helper and real Ink rendering tests
+passed. The rendering check exercises running, output and cancelling text at a
+60-column terminal width. Type checking and scoped lint passed. A full native watch,
+Ctrl+C and continued-use interaction, including reconnect behavior, remains to be
+qualified; input-helper tests do not prove the actual keyboard route end to end.

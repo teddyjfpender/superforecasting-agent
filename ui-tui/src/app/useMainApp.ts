@@ -31,6 +31,7 @@ import { estimatedMsgHeight, messageHeightKey } from '../lib/virtualHeights.js'
 import { WireEvent } from '../protocol/generated.js'
 import type { Msg, PanelSection, SlashCatalog } from '../types.js'
 
+import { clearCommands } from './commandStore.js'
 import { createGatewayEventHandler } from './createGatewayEventHandler.js'
 import { createSlashHandler } from './createSlashHandler.js'
 import { forecastDeskRailSections, forecastDeskStatusLabel } from './forecastPanel.js'
@@ -700,6 +701,7 @@ export function useMainApp(gw: GatewayClient) {
     // countdown in the ready-state slot, and CAPTURE the live session id so the
     // reconnect restores this desk instead of silently opening a blank one.
     const reconnectHandler = (info: GatewayReconnectInfo) => {
+      clearCommands()
       turnController.reset()
       captureLinkReconnect({
         attempt: info.attempt,
@@ -722,6 +724,7 @@ export function useMainApp(gw: GatewayClient) {
     // Terminal: the retry budget is spent (or this was a deliberate stop). Name
     // the failure, show what the gateway actually printed, and offer the retry.
     const exitHandler = (_code?: null | number, info?: GatewayExitInfo) => {
+      clearCommands()
       turnController.reset()
       markLinkLost({ attempts: info?.attempts ?? 0, detail: info?.reason ?? 'gateway exited' })
       patchUiState({ busy: false, sid: null, status: 'gateway lost' })

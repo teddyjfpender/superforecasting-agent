@@ -42,6 +42,7 @@ import { FloatingOverlays, OutputPager, PromptZone } from './appOverlays.js'
 import { HomeHero, Panel, SessionPanel } from './branding.js'
 import { CalendarView } from './calendarView.js'
 import { CalibrationView } from './calibrationView.js'
+import { CommandActivity } from './commandActivity.js'
 import { DemoVizView } from './demoVizView.js'
 import { DeskView } from './deskView.js'
 import { DocsView } from './docsView.js'
@@ -412,6 +413,8 @@ const ComposerPane = memo(function ComposerPane({
           </>
         )}
       </Box>
+
+      <CommandActivity />
 
       {!composer.empty && !ui.sid && <Text color={ui.theme.color.muted}>P {ui.status}</Text>}
 

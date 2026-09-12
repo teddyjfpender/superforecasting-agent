@@ -21,6 +21,7 @@ import { fromSkin } from '../theme.js'
 import type { Msg, SubagentProgress, SubagentStatus } from '../types.js'
 
 import { agentsActiveFromResult, setAgentsActive } from './agentsActiveStore.js'
+import { applyCommandEvent } from './commandStore.js'
 import { applyDelegationStatus, getDelegationState } from './delegationStore.js'
 import { forecastDeskRailSections, forecastDeskStatusLabel } from './forecastPanel.js'
 import { getGatewayLink, markLinkLive, takeResumeSid } from './gatewayLinkStore.js'
@@ -475,7 +476,10 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         }
 
         patchUiState({ status: 'session startup unavailable' })
-        turnController.pushActivity(`Could not check saved session state: ${rpcErrorMessage(error)}. Use /resume to retry, or /new to explicitly start a session.`, 'error')
+        turnController.pushActivity(
+          `Could not check saved session state: ${rpcErrorMessage(error)}. Use /resume to retry, or /new to explicitly start a session.`,
+          'error'
+        )
       })
   }
 
@@ -484,6 +488,10 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
 
   return (ev: GatewayEvent) => {
     const sid = getUiState().sid
+
+    if (applyCommandEvent(ev)) {
+      return
+    }
 
     if (ev.session_id && sid && ev.session_id !== sid && !ev.type.startsWith('gateway.')) {
       return
