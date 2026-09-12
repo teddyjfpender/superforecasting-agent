@@ -1,9 +1,21 @@
-"""Process liveness checks shared by hosts and resource owners."""
+"""Process ID parsing and liveness shared by hosts and resource owners."""
 
 import os
 import sys
+from pathlib import Path
 
 _IS_WINDOWS = sys.platform == "win32"
+
+
+def read_pid_file(path: Path) -> int:
+    """Read one process ID; never accept POSIX process-group selectors.
+
+    A valid number alone does not prove resource ownership or prevent PID reuse.
+    """
+    pid = int(path.read_text(encoding="utf-8").strip())
+    if pid <= 0:
+        raise ValueError(f"PID file must contain a positive process ID: {path}")
+    return pid
 
 
 def pid_exists(pid: int) -> bool:
@@ -28,6 +40,8 @@ def pid_exists(pid: int) -> bool:
     unavailable — e.g. stripped-down install or import error during the
     scaffold phase before ``psutil`` is pip-installed.
     """
+    if pid <= 0:
+        return False
     try:
         import psutil
 

@@ -1395,16 +1395,18 @@ def _reap_orphaned_browser_sessions():
 
         # Ownership check: prefer owner_pid file (cross-process safe).
         owner_pid_file = os.path.join(socket_dir, f"{session_name}.owner_pid")
-        owner_alive: Optional[bool] = None  # None = owner_pid missing/unreadable
+        owner_alive: Optional[bool] = None  # None = legacy owner_pid missing
         if os.path.isfile(owner_pid_file):
             try:
-                owner_pid = int(Path(owner_pid_file).read_text(encoding="utf-8").strip())
+                from superforecasting_agent.processes import read_pid_file
+                owner_pid = read_pid_file(Path(owner_pid_file))
                 # ``os.kill(pid, 0)`` is NOT a no-op on Windows (bpo-14484).
                 # Use the cross-platform existence check.
                 from superforecasting_agent.processes import pid_exists as _pid_exists
                 owner_alive = _pid_exists(owner_pid)
             except (ValueError, OSError):
-                owner_alive = None  # corrupt file — fall through
+                # An unreadable owner is unknown, not evidence of an orphan.
+                continue
 
         if owner_alive is True:
             # Owner is alive — this session belongs to a live hermes process.
@@ -1424,7 +1426,8 @@ def _reap_orphaned_browser_sessions():
             continue
 
         try:
-            daemon_pid = int(Path(pid_file).read_text(encoding="utf-8").strip())
+            from superforecasting_agent.processes import read_pid_file
+            daemon_pid = read_pid_file(Path(pid_file))
         except (ValueError, OSError):
             shutil.rmtree(socket_dir, ignore_errors=True)
             continue
@@ -3542,8 +3545,7 @@ def _cleanup_single_browser_session(task_id: str) -> None:
 
     if session_info:
         bb_session_id = session_info.get("bb_session_id")
-        if bb_session_id:
-            session_info["_cleanup_pending"] = True
+        session_info["_cleanup_pending"] = True
         logger.debug("Found session for task %s: bb_session_id=%s", task_id, bb_session_id)
 
         # Stop auto-recording before closing (saves the file)
@@ -3576,12 +3578,13 @@ def _cleanup_single_browser_session(task_id: str) -> None:
                 # agent-browser writes {session}.pid in the socket dir
                 pid_file = os.path.join(socket_dir, f"{session_name}.pid")
                 if os.path.isfile(pid_file):
+                    from superforecasting_agent.processes import read_pid_file
+                    daemon_pid = read_pid_file(Path(pid_file))
                     try:
-                        daemon_pid = int(Path(pid_file).read_text(encoding="utf-8").strip())
                         os.kill(daemon_pid, signal.SIGTERM)
-                        logger.debug("Killed daemon pid %s for %s", daemon_pid, session_name)
-                    except (ProcessLookupError, ValueError, PermissionError, OSError):
-                        logger.debug("Could not kill daemon pid for %s (already dead or inaccessible)", session_name)
+                        logger.debug("Sent termination to daemon pid %s for %s", daemon_pid, session_name)
+                    except ProcessLookupError:
+                        pass  # Already gone; other signal failures retain ownership.
                 shutil.rmtree(socket_dir, ignore_errors=True)
 
         with _cleanup_lock:

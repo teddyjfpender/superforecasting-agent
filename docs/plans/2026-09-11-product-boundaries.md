@@ -4566,3 +4566,17 @@ Validation: 341 browser tests passed, 22 optional cases skipped; shared quality
 checks passed. A failed cloud disposer retains the same object, succeeds on retry,
 and is not called again after successful disposal. Removed an implementation-text
 assertion that required the unsafe unconditional tracking clear.
+
+### Browser PID files cannot select process groups
+
+Local daemon cleanup previously accepted zero/negative PID-file contents directly
+as signal targets. Shared process-ID parsing now rejects process-group selectors;
+liveness probes reject them too. Local cleanup marks all resources pending,
+retains handles on invalid PID files or signaling errors, and only treats an
+already-gone process as successful signaling cleanup. An unreadable owner record
+is unknown and no longer authorizes an orphan kill through the legacy fallback.
+
+Validation: 356 process/browser tests passed, 22 optional cases skipped; shared
+quality checks passed. Fake signal tests cover zero, negative IDs and permission
+failure without signaling actual processes. Positive PID validation is not proof
+of process identity: PID reuse and confirmed termination remain open work.

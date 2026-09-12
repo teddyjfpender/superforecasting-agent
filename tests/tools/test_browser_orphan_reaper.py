@@ -238,8 +238,8 @@ class TestOwnerPidCrossProcess:
         assert (12345, signal.SIGTERM) in kill_calls
         assert not d.exists()
 
-    def test_corrupt_owner_pid_falls_back_to_legacy(self, fake_tmpdir):
-        """Corrupt owner_pid file → fall back to tracked_names check."""
+    def test_corrupt_owner_pid_does_not_authorize_reaping(self, fake_tmpdir):
+        """An unreadable owner is unknown even for an untracked daemon."""
         import tools.browser_tool as bt
         from tools.browser_tool import _reap_orphaned_browser_sessions
 
@@ -248,8 +248,6 @@ class TestOwnerPidCrossProcess:
         # Write garbage to owner_pid file
         (d / f"{session_name}.owner_pid").write_text("not-a-pid")
 
-        # Register session so legacy fallback leaves it alone
-        bt._active_sessions["task"] = {"session_name": session_name}
 
         kill_calls = []
 
@@ -260,7 +258,7 @@ class TestOwnerPidCrossProcess:
              patch("os.kill", side_effect=mock_kill):
             _reap_orphaned_browser_sessions()
 
-        # Legacy path took over → tracked → not reaped
+        # Unknown owner never authorizes a signal
         assert (12345, signal.SIGTERM) not in kill_calls
         assert d.exists()
 

@@ -41,3 +41,20 @@ def test_windows_missing_or_inaccessible_process_has_no_handle_to_close(monkeypa
     assert processes.pid_exists(123) is alive
     kernel.CloseHandle.assert_not_called()
     kernel.WaitForSingleObject.assert_not_called()
+
+
+@pytest.mark.parametrize('pid', [0, -1, -123])
+def test_process_group_selectors_are_never_probed(monkeypatch, pid):
+    kill = Mock(side_effect=AssertionError('must not probe a process group'))
+    monkeypatch.setattr(processes.os, 'kill', kill)
+    monkeypatch.setitem(sys.modules, 'psutil', None)
+    assert processes.pid_exists(pid) is False
+    kill.assert_not_called()
+
+
+@pytest.mark.parametrize('value', ['0', '-1', '-123', 'not-a-pid'])
+def test_pid_file_rejects_non_process_values(tmp_path, value):
+    path = tmp_path / 'daemon.pid'
+    path.write_text(value, encoding='utf-8')
+    with pytest.raises(ValueError):
+        processes.read_pid_file(path)

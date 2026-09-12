@@ -100,7 +100,10 @@ Tool inventory and /tools list now use shared views without building an agent or
   endpoint changes; failed cloud/Camofox disposal retains exact handles, and
   bundled cloud disposers retain allocation credentials. Emergency bulk cleanup now drains endpoint operations, retains failed disposal
   handles and marks completion only after success. Malformed allocations and
-  lower-level local daemon disposal remain to audit.
+  lower-level local daemon disposal remain to audit. PID-file parsing now rejects
+  process-group selectors; invalid PID files and signaling failures retain local
+  handles. Unreadable owner records no longer authorize orphan reaping. PID reuse
+  and confirmation of daemon termination remain unqualified.
   Disconnect now suppresses the saved CDP
   endpoint for the running process without rewriting the profile.
 - [x] Remove the legacy global goal database cache. Standalone managers own

@@ -1,6 +1,8 @@
 """Regression tests for browser session cleanup and screenshot recovery."""
 
 import logging
+
+import pytest
 from unittest.mock import patch
 
 
@@ -63,13 +65,13 @@ class TestBrowserCleanup:
 
         assert "task-1" not in browser_tool._active_sessions
         assert "task-1" not in browser_tool._session_last_activity
-        mock_stop.assert_called_once_with("task-1", session_info={"session_name": "sess-1", "bb_session_id": None})
+        mock_stop.assert_called_once_with("task-1", session_info={"session_name": "sess-1", "bb_session_id": None, "_cleanup_pending": True})
         mock_run.assert_called_once_with(
             "task-1",
             "close",
             [],
             timeout=10,
-            _session_info={"session_name": "sess-1", "bb_session_id": None},
+            _session_info={"session_name": "sess-1", "bb_session_id": None, "_cleanup_pending": True},
         )
 
     def test_cleanup_camofox_managed_persistence_skips_close(self):
@@ -184,3 +186,30 @@ def test_emergency_cleanup_retains_failed_owner_and_retries(monkeypatch):
     assert bt._cleanup_done is True
     bt._emergency_cleanup_all_sessions()
     assert disposer.call_count == 2
+
+
+@pytest.mark.parametrize('pid_text, signal_error', [('-1', None), ('0', None), ('123', PermissionError('denied'))])
+def test_local_daemon_cleanup_failure_retains_session(monkeypatch, tmp_path, pid_text, signal_error):
+    import pytest
+    from unittest.mock import Mock
+    from tools import browser_tool as bt
+
+    handle = {'session_name': 'h_fixture'}
+    folder = tmp_path / 'agent-browser-h_fixture'
+    folder.mkdir()
+    (folder / 'h_fixture.pid').write_text(pid_text, encoding='utf-8')
+    monkeypatch.setattr(bt, '_active_sessions', {'task': handle})
+    monkeypatch.setattr(bt, '_session_last_activity', {'task': 1.0})
+    monkeypatch.setattr(bt, '_recording_sessions', set())
+    monkeypatch.setattr(bt, '_socket_safe_tmpdir', lambda: str(tmp_path))
+    monkeypatch.setattr(bt, '_stop_cdp_supervisor', lambda _: None)
+    monkeypatch.setattr(bt, '_is_camofox_mode', lambda: False)
+    monkeypatch.setattr(bt, '_run_browser_command', lambda *a, **k: {'success': True})
+    kill = Mock(side_effect=signal_error or AssertionError('must never signal a process group'))
+    monkeypatch.setattr(bt.os, 'kill', kill)
+    with pytest.raises(RuntimeError, match='positive process ID|denied'):
+        bt.cleanup_browser('task')
+    assert kill.call_count == (1 if signal_error else 0)
+    assert bt._active_sessions['task'] is handle
+    assert handle['_cleanup_pending'] is True
+    assert folder.exists()

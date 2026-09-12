@@ -126,5 +126,5 @@ def test_cleanup_waits_for_primary_and_sidecar_creation(monkeypatch):
             cleaner.join(3)
     assert not creator.is_alive() and not cleaner.is_alive()
     assert not errors
-    assert closed == [("task::local", {"session_name": "local", "bb_session_id": None})]
+    assert closed == [("task::local", {"session_name": "local", "bb_session_id": None, "_cleanup_pending": True})]
     assert browser._active_sessions == {}
