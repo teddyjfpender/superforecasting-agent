@@ -41,6 +41,7 @@ STRICT_PYTHON = (
     "agent/openai_clients.py",
     "agent/session_lifecycle.py",
     "agent/review_lifecycle.py",
+    "superforecasting_agent/installation.py",
     "superforecasting_agent/profile_paths.py",
     "superforecasting_agent/hosting",
     "superforecasting_agent/processes.py",

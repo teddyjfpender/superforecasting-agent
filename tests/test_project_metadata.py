@@ -5115,7 +5115,7 @@ def test_oauth_file_env_aliases_are_forecast_native():
 
 def test_managed_install_env_aliases_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
-    config = (root / 'superforecasting_agent/runtime' / "config.py").read_text(encoding="utf-8")
+    config = (root / 'superforecasting_agent' / "installation.py").read_text(encoding="utf-8")
     conftest = (root / "tests" / "conftest.py").read_text(encoding="utf-8")
     run_tests = (root / "scripts" / "run_tests.sh").read_text(encoding="utf-8")
     nix_module = (root / "nix" / "nixosModules.nix").read_text(encoding="utf-8")

@@ -686,3 +686,9 @@ name = "review lifetime owns handles without constructing agents or presentation
 type = "forbidden"
 source_modules = ["agent.review_lifecycle"]
 forbidden_modules = ["agent.runtime", "agent.background_review", "tools", "cli", "gateway", "tui_gateway", "superforecasting_agent.runtime"]
+
+[[tool.importlinter.contracts]]
+name = "installation policy never initializes runtime or consumers"
+type = "forbidden"
+source_modules = ["superforecasting_agent.installation"]
+forbidden_modules = ["superforecasting_agent.runtime", "agent", "tools", "gateway", "tui_gateway", "cli", "forecasting"]

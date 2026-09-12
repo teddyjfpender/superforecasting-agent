@@ -784,7 +784,7 @@ def _quorum_config(rest: list[str]) -> None:
 def _quorum_default(rest: list[str], *, scope: str | None) -> None:
     from forecasting.configuration.quorum import default_policy_changes
     from superforecasting_agent.constants import get_agent_home
-    from superforecasting_agent.runtime.config import is_managed, managed_error
+    from superforecasting_agent.installation import require_configuration_writable
     from superforecasting_agent.storage.configuration import ProfileConfiguration, read_configuration
 
     if len(rest) > 1:
@@ -794,8 +794,10 @@ def _quorum_default(rest: list[str], *, scope: str | None) -> None:
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
     if changes:
-        if is_managed():
-            managed_error("set quorum defaults")
+        try:
+            require_configuration_writable("set quorum defaults", home=get_agent_home())
+        except PermissionError as exc:
+            print(str(exc))
             return
         ProfileConfiguration().update_many(get_agent_home() / "config.yaml", changes)
         if "quorum.default_enabled" in changes:

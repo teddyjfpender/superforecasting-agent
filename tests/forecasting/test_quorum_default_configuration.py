@@ -8,9 +8,9 @@ from forecasting.cli.quorum_panel import _quorum_default
 @pytest.fixture
 def profile(tmp_path, monkeypatch):
     from superforecasting_agent import constants
-    from superforecasting_agent.runtime import config
     monkeypatch.setattr(constants, 'get_agent_home', lambda: tmp_path)
-    monkeypatch.setattr(config, 'is_managed', lambda: False)
+    for name in ('SUPERFORECASTING_AGENT_MANAGED', 'FORECAST_MANAGED', 'HERMES_MANAGED'):
+        monkeypatch.delenv(name, raising=False)
     path = tmp_path / 'config.yaml'
     path.write_text('quorum:\n  default_enabled: false\n  default_scope: high_impact\ndisplay:\n  skin: mono\n', encoding='utf-8')
     return path
@@ -25,14 +25,12 @@ def test_invalid_scope_does_not_partially_enable_quorum(profile, capsys):
 
 
 def test_managed_refusal_does_not_report_success(profile, monkeypatch, capsys):
-    from superforecasting_agent.runtime import config
-    monkeypatch.setattr(config, 'is_managed', lambda: True)
-    monkeypatch.setattr(config, 'managed_error', lambda action: print('managed refusal'))
+    monkeypatch.setenv('SUPERFORECASTING_AGENT_MANAGED', 'homebrew')
     before = profile.read_bytes()
     _quorum_default(['on'], scope='always')
     assert profile.read_bytes() == before
     out = capsys.readouterr().out
-    assert 'managed refusal' in out
+    assert 'managed by Homebrew' in out
     assert '✓' not in out
 
 

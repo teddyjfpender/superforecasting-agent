@@ -2808,3 +2808,19 @@ atomic quorum publication, managed refusal, invalid-scope rollback and sibling-h
 isolation. Shared Python quality checks and 47 import contracts passed. The preceding
 full push remained blocked (10 failures, 31,137 passing Python tests, 148 skips; 458
 terminal tests passed). A fresh integrated gate is still required.
+
+
+### Independent installation policy
+
+Managed-install detection and refusal messages now belong to installation.py, with
+runtime compatibility helpers delegating to that owner. Quorum default mutations
+use the independent admission check before their existing atomic write. Native and
+legacy environment precedence and profile-local .managed markers remain enforced;
+read-only admission creates no profile files. General quorum configuration still
+uses the runtime setter and remains a follow-up.
+
+14 focused installation/default-policy tests passed, plus the metadata guard in a
+12-test filtered run. A fresh-process test proves importing installation policy
+loads no runtime or consumers. Shared Python quality checks and all 48 import
+contracts passed. This increment has not yet undergone its integrated full-suite
+push gate; the preceding batch is still running in the primary checkout.
