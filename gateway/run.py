@@ -13665,33 +13665,12 @@ class GatewayRunner:
 
     async def _handle_insights_command(self, event: MessageEvent) -> str:
         """Handle /insights command -- show usage insights and analytics."""
-        args = event.get_command_args().strip()
+        from superforecasting_agent.application.insights import parse_insights_arguments
 
-        # Normalize Unicode dashes (Telegram/iOS auto-converts -- to em/en dash)
-        args = re.sub(r'[\u2012\u2013\u2014\u2015](days|source)', r'--\1', args)
-
-        days = 30
-        source = None
-
-        # Parse simple args: /insights 7  or  /insights --days 7
-        if args:
-            parts = args.split()
-            i = 0
-            while i < len(parts):
-                if parts[i] == "--days" and i + 1 < len(parts):
-                    try:
-                        days = int(parts[i + 1])
-                    except ValueError:
-                        return t("gateway.insights.invalid_days", value=parts[i + 1])
-                    i += 2
-                elif parts[i] == "--source" and i + 1 < len(parts):
-                    source = parts[i + 1]
-                    i += 2
-                elif parts[i].isdigit():
-                    days = int(parts[i])
-                    i += 1
-                else:
-                    i += 1
+        try:
+            query = parse_insights_arguments(event.get_command_args() or "")
+        except ValueError as exc:
+            return str(exc)
 
         try:
             from superforecasting_agent.storage.session import SessionDB
@@ -13701,11 +13680,12 @@ class GatewayRunner:
 
             def _run_insights():
                 db = SessionDB()
-                engine = InsightsEngine(db)
-                report = engine.generate(days=days, source=source)
-                result = engine.format_gateway(report)
-                db.close()
-                return result
+                try:
+                    engine = InsightsEngine(db)
+                    report = engine.generate(days=query.days, source=query.source)
+                    return engine.format_gateway(report)
+                finally:
+                    db.close()
 
             return await loop.run_in_executor(None, _run_insights)
         except Exception as e:

@@ -1661,3 +1661,22 @@ Validation: 80 native-command/shared-bundle tests passed
 parity and real temporary-directory bundle inventory/empty state. Python quality
 and all 35 import contracts passed (`/tmp/forecast-profile-bundle-native-quality.log`).
 Other legacy command routes remain.
+
+### Shared insights arguments and explicit database ownership
+
+`application/insights.py` owns typed days/source arguments and command parsing
+for CLI, messaging and native TUI insights. Defaults, numeric shorthand and
+Unicode-dash flag normalization agree across consumers; unknown/missing arguments
+and nonpositive day windows fail before report generation. Quoted source values
+are preserved. Native `/insights` delegates to the existing InsightsEngine using
+the host-owned store, without model or classic-worker construction. CLI and
+messaging keep their owned connections but close them in finally blocks when
+report generation or formatting fails. The host connection is never closed by
+the command.
+
+Validation: 123 parser/CLI/messaging/engine/native-command tests passed
+(`/tmp/forecast-insights-final-tests.log`), including owned-close and borrowed-store
+failure paths. The former Unicode normalization tests now call the actual shared
+parser instead of copying its regex. Python quality and all 35 import contracts
+passed (`/tmp/forecast-insights-quality.log`). The old `insights.get` summary RPC
+remains separate; this change migrates the slash-command workflow.

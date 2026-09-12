@@ -342,6 +342,25 @@ def _(rid, params: dict) -> dict:
     except Exception:
         pass
 
+    if name == "insights":
+        from superforecasting_agent.application.insights import parse_insights_arguments
+
+        try:
+            query = parse_insights_arguments(arg)
+        except ValueError as exc:
+            return _err(rid, 4004, str(exc))
+        database = _core._get_db()
+        if database is None:
+            return _core._db_unavailable_error(rid, code=5017)
+        try:
+            from agent.insights import InsightsEngine
+
+            engine = InsightsEngine(database)
+            report = engine.generate(days=query.days, source=query.source)
+            return _ok(rid, {"type": "exec", "output": engine.format_terminal(report)})
+        except Exception as exc:
+            return _err(rid, 5017, str(exc))
+
     if name == "profile":
         from superforecasting_agent.constants import display_agent_home, get_active_profile_name
 

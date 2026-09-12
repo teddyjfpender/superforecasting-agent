@@ -6714,37 +6714,26 @@ class ForecastCLI:
 
     def _show_insights(self, command: str = "/insights"):
         """Show usage insights and analytics from session history."""
-        # Parse optional --days flag
-        parts = command.split()
-        days = 30
-        source = None
-        i = 1
-        while i < len(parts):
-            if parts[i] == "--days" and i + 1 < len(parts):
-                try:
-                    days = int(parts[i + 1])
-                except ValueError:
-                    print(f"  Invalid --days value: {parts[i + 1]}")
-                    return
-                i += 2
-            elif parts[i] == "--source" and i + 1 < len(parts):
-                source = parts[i + 1]
-                i += 2
-            elif parts[i].isdigit():
-                days = int(parts[i])
-                i += 1
-            else:
-                i += 1
+        from superforecasting_agent.application.insights import parse_insights_arguments
+
+        parts = command.split(maxsplit=1)
+        try:
+            query = parse_insights_arguments(parts[1] if len(parts) > 1 else "")
+        except ValueError as exc:
+            print(f"  {exc}")
+            return
 
         try:
             from superforecasting_agent.storage.session import SessionDB
             from agent.insights import InsightsEngine
 
             db = SessionDB()
-            engine = InsightsEngine(db)
-            report = engine.generate(days=days, source=source)
-            print(engine.format_terminal(report))
-            db.close()
+            try:
+                engine = InsightsEngine(db)
+                report = engine.generate(days=query.days, source=query.source)
+                print(engine.format_terminal(report))
+            finally:
+                db.close()
         except Exception as e:
             print(f"  Error generating insights: {e}")
 

@@ -385,3 +385,28 @@ def test_native_bundle_inspection_reads_shared_inventory(configure, monkeypatch,
     assert slash("bundles")["error"]["data"]["dispatch"] == "command.dispatch"
     server._start_agent_build.assert_not_called()
     server._SlashWorker.assert_not_called()
+
+
+@pytest.mark.parametrize("failure", [False, True])
+def test_native_insights_uses_host_store_without_closing_it(configure, monkeypatch, failure):
+    configure({})
+    database = Mock()
+    monkeypatch.setattr(server, "_get_db", lambda: database)
+    engine = Mock()
+    engine.generate.return_value = {"fixture": True}
+    engine.format_terminal.return_value = "Fixture insights"
+    if failure:
+        engine.generate.side_effect = RuntimeError("fixture generation failure")
+    constructor = Mock(return_value=engine)
+    monkeypatch.setattr("agent.insights.InsightsEngine", constructor)
+    response = dispatch("insights", "—days 7 --source cli")
+    constructor.assert_called_once_with(database)
+    engine.generate.assert_called_once_with(days=7, source="cli")
+    if failure:
+        assert response["error"] == {"code": 5017, "message": "fixture generation failure"}
+    else:
+        assert response["result"] == {"type": "exec", "output": "Fixture insights"}
+    database.close.assert_not_called()
+    assert slash("insights")["error"]["data"]["dispatch"] == "command.dispatch"
+    server._SlashWorker.assert_not_called()
+    server._start_agent_build.assert_not_called()
