@@ -25,9 +25,8 @@ def test_missing_credentials_probe_sdk_only_once():
 
     session = MagicMock()
     session.get_credentials.return_value = None
-    with patch.dict('sys.modules', {'botocore': MagicMock(), 'botocore.session': MagicMock()}):
-        import botocore.session as sdk
-        sdk.get_session = MagicMock(return_value=session)
+    sdk = MagicMock(get_session=MagicMock(return_value=session))
+    with patch.dict('sys.modules', {'botocore': MagicMock(session=sdk), 'botocore.session': sdk}):
         assert has_aws_credentials({}) is False
         sdk.get_session.assert_called_once()
         session.get_credentials.assert_called_once()

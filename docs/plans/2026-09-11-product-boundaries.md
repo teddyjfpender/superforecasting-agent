@@ -5062,3 +5062,24 @@ strict Python checks and all 75 import contracts passed. The subsequent snapshot
 capture admission rerun passed all 58 focused tests. This is not yet the final
 integrated push: remaining caller admission and transfer-path review must precede
 that gate, along with credential-service separation and acceptance reconciliation.
+
+
+### Full backup import admission follow-up (2026-09-12)
+
+The caller audit found full backup import bypassed snapshot admission. Its storage
+entry now requires exclusive access to the default home and refuses pending
+snapshot recovery. Named-profile users retain the enclosing home lease, so a
+full-home import cannot overwrite an active named profile; independent named
+profiles still admit separate work and restoration. Backup import skips source
+coordination/journal/WAL files and checkpoints destination state.db before
+replacement. The standalone CLI uses shared import argument definitions without
+constructing a runtime that would conflict with import admission.
+
+The isolated-worktree backup/admission selection passed 122 tests and the final
+CLI/admission selection passed 17. Strict Python checks and all 75 contracts pass.
+Those checks exposed an optional-SDK assumption in AWS discovery: the owner now
+loads botocore explicitly through importlib on discovery, permitting the same
+quality gates to run when the optional SDK is absent. No dependency is installed
+on import. The AWS selection passed 139 tests (6 optional-SDK skips); its fake
+package fixtures now bind the parent and submodule to the same SDK object. These
+changes await integration after the current main push terminates.

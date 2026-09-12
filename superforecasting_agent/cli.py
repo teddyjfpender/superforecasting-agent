@@ -314,6 +314,20 @@ def main(argv: list[str] | None = None) -> None:
     if not forecast_candidate_argv and _tui_env_enabled():
         _run_inherited_runtime([*raw_argv, "desk"])
         return
+    if forecast_candidate_argv[:1] == ["import"]:
+        _apply_profile(profile_name)
+        from superforecasting_agent.runtime.backup import configure_import_parser, run_import
+
+        parser = argparse.ArgumentParser(prog="superforecasting-agent import")
+        configure_import_parser(parser)
+        args = parser.parse_args(forecast_candidate_argv[1:])
+        try:
+            run_import(args)
+        except OSError as exc:
+            print(f"Import failed: {exc}", file=sys.stderr)
+            raise SystemExit(1) from None
+        return
+
     if forecast_candidate_argv[:1] == ["snapshot"]:
         _apply_profile(profile_name)
         import shlex

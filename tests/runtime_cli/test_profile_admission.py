@@ -177,3 +177,48 @@ def test_snapshot_capture_cannot_read_partially_restored_state(tmp_path):
         with pytest.raises(OSError, match="in use"):
             snapshots.create_quick_snapshot(hermes_home=tmp_path)
     assert not (tmp_path / "state-snapshots").exists()
+
+
+def test_full_home_import_excludes_named_profile_users(tmp_path):
+    with ProfileLease(tmp_path / "profiles" / "forecast"):
+        with pytest.raises(OSError, match="in use"):
+            ProfileLease(tmp_path, exclusive=True)
+    with ProfileLease(tmp_path, exclusive=True):
+        with pytest.raises(OSError, match="in use"):
+            ProfileLease(tmp_path / "profiles" / "forecast")
+
+
+def test_named_profile_restore_preserves_independent_profile_admission(tmp_path):
+    with ProfileLease(tmp_path / "profiles" / "first", exclusive=True):
+        with ProfileLease(tmp_path / "profiles" / "second"):
+            pass
+
+
+def test_backup_import_cannot_bypass_profile_admission(tmp_path, monkeypatch):
+    from argparse import Namespace
+    from superforecasting_agent.runtime import backup
+
+    monkeypatch.setattr(backup, "get_default_agent_root", lambda: tmp_path)
+    restore = Mock()
+    monkeypatch.setattr(backup, "_run_import", restore)
+    with ProfileLease(tmp_path / "profiles" / "active"):
+        with pytest.raises(OSError, match="in use"):
+            backup.run_import(Namespace())
+    restore.assert_not_called()
+    (tmp_path / ".snapshot-restore.json").write_text("{}", encoding="utf-8")
+    with pytest.raises(OSError, match="pending"):
+        backup.run_import(Namespace())
+    restore.assert_not_called()
+
+
+def test_offline_backup_import_uses_shared_arguments_without_runtime(monkeypatch):
+    from superforecasting_agent import cli
+    from superforecasting_agent.runtime import backup
+
+    monkeypatch.setattr(cli, "_run_inherited_runtime", Mock(side_effect=AssertionError("runtime constructed")))
+    execute = Mock()
+    monkeypatch.setattr(backup, "run_import", execute)
+    cli.main(["import", "example.zip", "-f"])
+    parsed = execute.call_args.args[0]
+    assert parsed.zipfile == "example.zip"
+    assert parsed.force is True

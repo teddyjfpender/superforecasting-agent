@@ -80,12 +80,20 @@ _EXCLUDED_SUFFIXES = (
 # File names to skip (runtime state that's meaningless on another machine)
 _EXCLUDED_NAMES = {
     ".profile-use.lock",
+    ".snapshot-restore.json",
+    "state.db-wal",
+    "state.db-shm",
+    "state.db-journal",
     "gateway.pid",
     "cron.pid",
 }
 
 _IMPORT_SKIP_NAMES = {
     ".profile-use.lock",
+    ".snapshot-restore.json",
+    "state.db-wal",
+    "state.db-shm",
+    "state.db-journal",
     "gateway_state.json",
     "gateway.pid",
     "cron.pid",
@@ -384,7 +392,28 @@ def _extract_member_atomically(
         raise
 
 
+def configure_import_parser(parser) -> None:
+    """Shared backup import arguments for standalone and inherited entrypoints."""
+    parser.add_argument("zipfile", help="Path to the backup zip file")
+    parser.add_argument(
+        "--force", "-f", action="store_true",
+        help="Overwrite existing files without confirmation",
+    )
+
+
 def run_import(args) -> None:
+    """Require exclusive profile ownership before importing any files."""
+    from superforecasting_agent.storage.profile_lease import ProfileLease
+
+    home = get_default_agent_root()
+    with ProfileLease(home, exclusive=True):
+        journal = home / ".snapshot-restore.json"
+        if journal.exists() or journal.is_symlink():
+            raise OSError("Snapshot restoration is pending; recover it before importing")
+        _run_import(args)
+
+
+def _run_import(args) -> None:
     """Restore a Superforecasting Agent backup from a zip file."""
     zip_path = Path(args.zipfile).expanduser().resolve()
 
@@ -468,6 +497,10 @@ def run_import(args) -> None:
 
             try:
                 target.parent.mkdir(parents=True, exist_ok=True)
+                if target.name == "state.db":
+                    from superforecasting_agent.storage.snapshots import _prepare_session_database_replace
+
+                    _prepare_session_database_replace(target)
                 _extract_member_atomically(zf, member, target, new_file_mode)
                 if target.name in _SECRET_FILE_NAMES:
                     os.chmod(target, 0o600)

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
+from importlib import import_module
 
 # ---------------------------------------------------------------------------
 # AWS credential detection
@@ -61,9 +62,8 @@ def resolve_aws_auth_env_var(env: Mapping[str, str] | None = None) -> str | None
     # No env vars — check if boto3 can resolve credentials via IMDS or other
     # implicit sources (EC2 instance role, ECS task role, Lambda, etc.)
     try:
-        import botocore.session
-
-        session = botocore.session.get_session()
+        # This SDK is optional in backend and contributor installations.
+        session = import_module("botocore.session").get_session()
         credentials = session.get_credentials()
         if credentials is not None:
             resolved = credentials.get_frozen_credentials()
@@ -111,9 +111,11 @@ def resolve_bedrock_region(env: Mapping[str, str] | None = None) -> str:
     if explicit:
         return explicit
     try:
-        import botocore.session
-
-        region = botocore.session.get_session().get_config_variable("region")
+        region = (
+            import_module("botocore.session")
+            .get_session()
+            .get_config_variable("region")
+        )
         if region:
             return region
     except Exception:

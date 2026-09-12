@@ -9931,13 +9931,8 @@ Examples:
         "runtime home directory, restoring configuration, skills, "
         "sessions, and data",
     )
-    import_parser.add_argument("zipfile", help="Path to the backup zip file")
-    import_parser.add_argument(
-        "--force",
-        "-f",
-        action="store_true",
-        help="Overwrite existing files without confirmation",
-    )
+    from superforecasting_agent.runtime.backup import configure_import_parser
+    configure_import_parser(import_parser)
     import_parser.set_defaults(func=cmd_import)
 
     # =========================================================================

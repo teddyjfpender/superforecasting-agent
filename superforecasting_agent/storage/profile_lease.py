@@ -20,10 +20,23 @@ class ProfileLease:
     def __init__(self, home: Path, *, exclusive: bool = False) -> None:
         self.home = home.resolve()
         self._connection: Connection | None = None
+        self._root_lease: ProfileLease | None = None
         self.home.mkdir(parents=True, exist_ok=True)
         path = self.home / LEASE_FILE
         if path.is_symlink():
             raise OSError("Profile admission lock must not be a symbolic link")
+        # Full-home imports can also replace named profiles. Their users retain
+        # the enclosing home before their own lease, in a fixed outer-first order.
+        if self.home.parent.name == "profiles":
+            self._root_lease = ProfileLease(self.home.parent.parent)
+        try:
+            self._open(path, exclusive=exclusive)
+        except BaseException:
+            if self._root_lease is not None:
+                self._root_lease.close()
+            raise
+
+    def _open(self, path: Path, *, exclusive: bool) -> None:
         connection = connect(
             str(path), isolation_level=None, timeout=0, check_same_thread=False
         )
@@ -54,6 +67,9 @@ class ProfileLease:
         if self._connection is not None:
             self._connection.close()
             self._connection = None
+        if self._root_lease is not None:
+            self._root_lease.close()
+            self._root_lease = None
 
     def __enter__(self) -> ProfileLease:
         return self
