@@ -3747,3 +3747,19 @@ Python/TypeScript quality gates and the production TUI build passed. The scoped
 design detector reported no findings; no visual layout changed. A session switch
 invalidates the delayed submission rather than sending it into another session;
 this change does not introduce durable draft recovery for that unsent input.
+
+
+### Session ownership for shell, interpolation and steering callbacks
+
+The remaining deferred submission paths had the same cross-session failure: shell
+completion could append output and clear a replacement session's busy state,
+interpolation could submit there, and failed steering could enqueue an old note.
+Each callback now checks its originating session before changing presentation or
+queue state. Same-session behavior is preserved. This does not cancel an already
+running shell command or introduce durable draft recovery.
+
+Five regressions failed before the fix. All 15 focused submission/state tests pass,
+including successful same-session shell, interpolation and steering fallback paths.
+Full shared quality checks passed with 55 import contracts, and the production TUI
+build passed. These are deferred-callback tests with mocked hook plumbing, not a
+rendered terminal or network recovery qualification.

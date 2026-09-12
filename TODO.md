@@ -76,7 +76,8 @@ finalizes drained turns before session disposal and retains resources on write f
 detaches exact handles before cleanup so concurrent replacements survive. Real
 Ink/dashboard/local-provider/SQLite recovery tests exist. TUI submission callbacks
 now retain their originating session: delayed file detection and request errors
-cannot send into or reset a replacement session.
+cannot send into or reset a replacement session. Shell completion, interpolation
+and failed steering now apply the same session ownership rule.
 
 ## 3. Complete distribution qualification
 

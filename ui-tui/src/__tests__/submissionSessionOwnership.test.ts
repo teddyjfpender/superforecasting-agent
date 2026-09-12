@@ -25,8 +25,8 @@ function Harness() {
 
   const opts = {
     appendMessage,
-    composerActions: { enqueue },
-    composerRefs: {},
+    composerActions: { clearIn: vi.fn(), enqueue, pushHistory: vi.fn() },
+    composerRefs: { queueEditRef: { current: null }, queueRef: { current: [] } },
     composerState: { input: '', inputBuf: [], pasteSnips: [] },
     gw: { request },
     maybeForecastPulse: vi.fn(),
@@ -106,4 +106,104 @@ it('retains busy handling for a submission in the current session', async () => 
   await Promise.resolve()
   expect(h.enqueue).toHaveBeenCalledWith('forecast note')
   expect(getUiState().status).toBe('queued for next turn')
+})
+
+it.each(['resolved', 'rejected'])(
+  'does not show old shell output or clear another session status (%s)',
+  async outcome => {
+    const h = Harness()
+    let resolve!: (value: unknown) => void
+    let reject!: (error: Error) => void
+    h.request.mockReturnValueOnce(
+      new Promise((yes, no) => {
+        resolve = yes
+        reject = no
+      })
+    )
+    h.sendQueued('!echo evidence')
+    patchUiState({ sid: 'replacement', busy: true, status: 'replacement working' })
+
+    if (outcome === 'resolved') {
+      resolve({ stdout: 'original private output', stderr: '', code: 0 })
+    } else {
+      reject(new Error('original failure'))
+    }
+
+    await new Promise<void>(done => setImmediate(done))
+    expect(h.sys).not.toHaveBeenCalled()
+    expect(getUiState().status).toBe('replacement working')
+    expect(getUiState().busy).toBe(true)
+  }
+)
+
+it('does not submit interpolated output to another session', async () => {
+  const h = Harness()
+  let resolve!: (value: unknown) => void
+  h.request.mockReturnValueOnce(
+    new Promise(yes => {
+      resolve = yes
+    })
+  )
+  h.request.mockResolvedValue({})
+  h.sendQueued('research {!echo evidence}')
+  patchUiState({ sid: 'replacement', busy: true, status: 'replacement working' })
+  resolve({ stdout: 'private evidence', stderr: '', code: 0 })
+  await new Promise<void>(done => setImmediate(done))
+  expect(h.request).toHaveBeenCalledTimes(1)
+  expect(h.appendMessage).not.toHaveBeenCalled()
+  expect(getUiState().status).toBe('replacement working')
+})
+
+it.each(['resolved', 'rejected'])('does not enqueue a stale steering fallback (%s)', async outcome => {
+  const h = Harness()
+  let resolve!: (value: unknown) => void
+  let reject!: (error: Error) => void
+  h.request.mockReturnValueOnce(
+    new Promise((yes, no) => {
+      resolve = yes
+      reject = no
+    })
+  )
+  patchUiState({ busy: true, busyInputMode: 'steer' })
+  h.dispatchSubmission('steering note')
+  expect(h.request).toHaveBeenCalledWith('session.steer', { session_id: 'original', text: 'steering note' })
+  patchUiState({ sid: 'replacement' })
+
+  if (outcome === 'resolved') {
+    resolve({ status: 'rejected' })
+  } else {
+    reject(new Error('disconnected'))
+  }
+
+  await new Promise<void>(done => setImmediate(done))
+  expect(h.enqueue).not.toHaveBeenCalled()
+  expect(h.sys).not.toHaveBeenCalled()
+})
+
+it('shows shell output and clears status in the originating session', async () => {
+  const h = Harness()
+  h.request.mockResolvedValue({ stdout: 'evidence', stderr: '', code: 0 })
+  h.sendQueued('!echo evidence')
+  await new Promise<void>(done => setImmediate(done))
+  expect(h.sys).toHaveBeenCalledWith('evidence')
+  expect(getUiState().busy).toBe(false)
+  expect(getUiState().status).toBe('ready')
+})
+
+it('submits interpolation in the originating session', async () => {
+  const h = Harness()
+  h.request.mockResolvedValueOnce({ stdout: 'evidence', stderr: '', code: 0 })
+  h.request.mockResolvedValue({})
+  h.sendQueued('research {!echo evidence}')
+  await new Promise<void>(done => setImmediate(done))
+  expect(h.request).toHaveBeenLastCalledWith('prompt.submit', { session_id: 'original', text: 'research evidence' })
+})
+
+it('keeps steering fallback in the originating queue', async () => {
+  const h = Harness()
+  h.request.mockRejectedValue(new Error('steer unavailable'))
+  patchUiState({ busy: true, busyInputMode: 'steer' })
+  h.dispatchSubmission('steering note')
+  await new Promise<void>(done => setImmediate(done))
+  expect(h.enqueue).toHaveBeenCalledWith('steering note')
 })

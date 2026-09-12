@@ -179,11 +179,18 @@ export function useSubmission(opts: UseSubmissionOptions) {
 
   const shellExec = useCallback(
     (cmd: string) => {
+      const sid = getUiState().sid
+      const stale = () => getUiState().sid !== sid
+
       appendMessage({ role: 'user', text: `!${cmd}` })
       patchUiState({ busy: true, status: 'running…' })
 
       gw.request<ShellExecResponse>('shell.exec', { command: cmd })
         .then(raw => {
+          if (stale()) {
+            return
+          }
+
           const r = asRpcResult<ShellExecResponse>(raw)
 
           if (!r) {
@@ -200,14 +207,24 @@ export function useSubmission(opts: UseSubmissionOptions) {
             sys(`exit ${r.code}`)
           }
         })
-        .catch((e: Error) => sys(`error: ${e.message}`))
-        .finally(() => patchUiState({ busy: false, status: 'ready' }))
+        .catch((e: Error) => {
+          if (!stale()) {
+            sys(`error: ${e.message}`)
+          }
+        })
+        .finally(() => {
+          if (!stale()) {
+            patchUiState({ busy: false, status: 'ready' })
+          }
+        })
     },
     [appendMessage, gw, sys]
   )
 
   const interpolate = useCallback(
     (text: string, then: (result: string) => void) => {
+      const sid = getUiState().sid
+
       patchUiState({ status: 'interpolating…' })
       const matches = [...text.matchAll(new RegExp(INTERPOLATION_RE.source, 'g'))]
 
@@ -222,7 +239,11 @@ export function useSubmission(opts: UseSubmissionOptions) {
             })
             .catch(() => '(error)')
         )
-      ).then(results => then(spliceMatches(text, matches, results)))
+      ).then(results => {
+        if (getUiState().sid === sid) {
+          then(spliceMatches(text, matches, results))
+        }
+      })
     },
     [gw]
   )
@@ -261,6 +282,10 @@ export function useSubmission(opts: UseSubmissionOptions) {
       const mode = live.busyInputMode
 
       const fallback = (note: string) => {
+        if (getUiState().sid !== live.sid) {
+          return
+        }
+
         if (opts.fallbackToFront) {
           composerRefs.queueRef.current.unshift(full)
           composerActions.syncQueue()
