@@ -1,7 +1,8 @@
 # Product boundary acceptance audit
 
 Scope: the five deliverables in the original repository architecture objective.
-This audit records current evidence, not completion of the whole migration.
+The initial audit and dated follow-ups below retain revision-specific evidence;
+this is not completion of the whole migration.
 Source revision: `de453c2072ac2bc16b721ccfb3e9f60119e3db74`.
 
 | Deliverable | Current evidence | Remaining qualification or work |
@@ -50,3 +51,25 @@ divergent triage label/alert writes and invalid expert-label persistence. Focuse
 model checks (56) and the final triage/evidence checks (86) passed. These source
 checks supplement the earlier installed-product evidence; the wheel identities
 above still refer to their original source revision, not these later commits.
+
+
+## Storage and search follow-up
+
+The shared gate now enforces 72 import contracts. The direct forecasting-to-tools
+contract has no exceptions: supervisor search uses shared provider dispatch,
+validation and cooperative cancellation. Provider identity and offline model
+catalogs also have independent owners. The remaining forecasting runtime
+exception is credential-status discovery, whose OAuth refresh behavior still
+needs explicit service ownership.
+
+Revision `e6dbb1873` passed the full push gate: 31,873 Python tests passed,
+148 skipped, with 66 warnings. The remote branch was verified at that revision.
+Subsequent focused storage fixes at `c46588097` and `6cf5435a0` make global auth
+fallback non-writing and bind lock reentrancy to process and resource identity.
+Their focused checks and shared quality gates passed; final integrated push
+validation is recorded in the corresponding push log rather than assumed here.
+
+These source-level checks do not replace installed-profile qualification. The
+artifact hashes and platform limits above still belong to the original build.
+Historical SSL attribution, live restore coordination, credential discovery
+ownership, and further cross-platform recovery remain open in `TODO.md`.

@@ -121,8 +121,10 @@ for classic CLI startup. TUI personality lookup uses the read-only operation.
   factory, provider resolver, custom-pool seeding and pool strategy selection.
   Runtime values contain expanded environment references and must not replace
   raw revision-bearing settings during persistence.
-- `tui_gateway/turn_journal.py`: durable partial turns and worker ownership;
-  the gateway persists before delivering events, and Ink renders that status.
+- `superforecasting_agent/storage/turns.py`: durable partial-turn receipts;
+  `tui_gateway/turn_journal.py` is a compatibility facade. The host owns workers
+  and persists terminal state before disposal; transport delivers that state
+  for Ink to render.
 
 ### Existing forecasting façades
 
@@ -959,3 +961,17 @@ explicit isolated test profiles remain usable. Legacy credential-pool and system
 formats round-trip through the shared owner, and malformed source files remain
 available for recovery. The module does not make concurrent unlocked callers safe
 or turn credential-status discovery into a passive operation.
+
+
+### File-lock resource identity and fallback reads
+
+`storage/locking.py` tracks reentrancy by thread-local holder, process and resolved
+path. Reusing a holder for another store does not skip that store's OS lock.
+Nested interruption releases only the inner resource. The no-OS-backend fallback
+tracks nesting only; it does not promise cross-process exclusion.
+
+Global credential fallback calls `storage.auth.load_auth_store` with
+`preserve_corrupt=False`, so inspection cannot create recovery files outside the
+active profile. Owned-store reads retain corruption backups and only report
+preservation after the copy succeeds. Both default credential homes are excluded
+from pytest fallback reads; isolated fixtures remain supported.
