@@ -2321,80 +2321,19 @@ def save_config(config: Dict[str, Any]):
 
 
 def load_env() -> Dict[str, str]:
-    """Load environment variables from the active agent-home .env.
+    """Read the active credential file through shared, content-keyed storage."""
+    from superforecasting_agent.storage.environment import read_environment
 
-    Sanitizes lines before parsing so that corrupted files (e.g.
-    concatenated KEY=VALUE pairs on a single line) are handled
-    gracefully instead of producing mangled values such as duplicated
-    bot tokens.  See #8908.
-
-    The parsed dict is memoised keyed on the .env file mtime, because
-    ``get_env_value()`` is called dozens-to-hundreds of times per
-    interactive menu render (`superforecasting-agent tools`, setup, status
-    panels). Sanitisation is O(lines × known-keys), so re-parsing the
-    same file on every call was burning ~300ms of CPU per `superforecasting-agent tools`
-    menu paint on top of the OAuth-refresh slowness. The mtime check
-    invalidates the cache when the user edits .env mid-process.
-    """
-    global _env_cache
-    env_path = get_env_path()
-
-    try:
-        mtime = env_path.stat().st_mtime
-        size = env_path.stat().st_size
-        cache_key = (str(env_path), mtime, size)
-    except FileNotFoundError:
-        cache_key = (str(env_path), None, None)
-    except Exception:
-        cache_key = None
-
-    if cache_key is not None and _env_cache is not None:
-        cached_key, cached_vars = _env_cache
-        if cached_key == cache_key:
-            return dict(cached_vars)
-
-    env_vars: Dict[str, str] = {}
-
-    if env_path.exists():
-        # On Windows, open() defaults to the system locale (cp1252) which can
-        # fail on UTF-8 .env files. Always use explicit UTF-8; tolerate BOM
-        # via utf-8-sig since users may edit .env in Notepad which adds one.
-        open_kw = {"encoding": "utf-8-sig", "errors": "replace"}
-        with open(env_path, **open_kw) as f:
-            raw_lines = f.readlines()
-        # Sanitize before parsing: split concatenated lines & drop stale
-        # placeholders so corrupted .env files don't produce invalid tokens.
-        lines = _sanitize_env_lines(raw_lines)
-        for line in lines:
-            line = line.strip()
-            if line and not line.startswith('#') and '=' in line:
-                key, _, value = line.partition('=')
-                env_vars[key.strip()] = value.strip().strip('"\'')
-
-    if cache_key is not None:
-        _env_cache = (cache_key, dict(env_vars))
-
-    return env_vars
-
-
-# Module-level memo for load_env(), keyed on (path, mtime, size).
-# Editing .env bumps mtime → next load_env() rebuilds. invalidate_env_cache()
-# is the explicit knob for writers that update .env via this module
-# (set_env_value, save_env, etc.) without relying on filesystem mtime
-# resolution.
-_env_cache: Optional[Tuple[Tuple[str, Optional[float], Optional[int]], Dict[str, str]]] = None
+    return read_environment(
+        get_env_path(), known_keys=set(OPTIONAL_ENV_VARS) | _EXTRA_ENV_KEYS,
+    )
 
 
 def invalidate_env_cache() -> None:
-    """Clear the load_env() process-level memo.
+    """Discard cached credential parsing after an owned mutation."""
+    from superforecasting_agent.storage.environment import clear_environment_cache
 
-    Writers that mutate .env (set_env_value, save_env, etc.) call this
-    to guarantee the next load_env() sees their change even on
-    filesystems with coarse mtime resolution. Reads invalidate naturally
-    via the mtime/size check.
-    """
-    global _env_cache
-    _env_cache = None
+    clear_environment_cache()
 
 
 def _sanitize_env_lines(lines: list) -> list:
@@ -2406,8 +2345,8 @@ def _sanitize_env_lines(lines: list) -> list:
 def sanitize_env_file() -> int:
     """Read, sanitize, and rewrite active agent-home .env in place.
 
-    Returns the number of lines that were fixed (concatenation splits +
-    placeholder removals).  Returns 0 when no changes are needed.
+    Returns the number of lines changed by concatenation repair or whitespace
+    normalization. Credential usability is validated separately.  Returns 0 when no changes are needed.
     """
     env_path = get_env_path()
     if not env_path.exists():
@@ -2425,10 +2364,10 @@ def sanitize_env_file() -> int:
         if sanitized == original_lines:
             return 0
 
-        # Count fixes: difference in line count (from splits) + removed lines
+        # Count fixes: line count changes from splits and normalized content
         fixes = abs(len(sanitized) - len(original_lines))
         if fixes == 0:
-            # Lines changed content (e.g. *** removal) even if count is same
+            # Lines changed content even if their count is the same
             fixes = sum(1 for a, b in zip(original_lines, sanitized) if a != b)
             fixes += abs(len(sanitized) - len(original_lines))
 
@@ -2514,7 +2453,7 @@ def save_env_value(key: str, value: str):
         if env_path.exists():
             with open(env_path, **read_kw) as f:
                 lines = f.readlines()
-            # Sanitize on every read: split concatenated keys, drop stale placeholders
+            # Repair concatenated keys and normalize surrounding whitespace
             lines = _sanitize_env_lines(lines)
 
         # Find and update or append

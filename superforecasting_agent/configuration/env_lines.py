@@ -1,15 +1,16 @@
 """Pure environment-file repair, independent of credential discovery and I/O."""
 
 from collections.abc import Collection
+from io import StringIO
 
 
 def sanitize_env_lines(lines: list[str], known_keys: Collection[str]) -> list[str]:
     """Fix corrupted .env lines before reading or writing.
 
-    Handles two known corruption patterns:
+    Repairs concatenation and normalizes surrounding whitespace and line endings:
     1. Concatenated KEY=VALUE pairs on a single line (missing newline between
        entries, e.g. ``ANTHROPIC_API_KEY=sk-...OPENAI_BASE_URL=https://...``).
-    2. Stale ``KEY=***`` placeholder entries left by incomplete setup runs.
+    Placeholder values are preserved; credential usability is a separate policy.
 
     Uses the caller-supplied known keys so we only
     split on real agent env var names, avoiding false positives from values
@@ -61,3 +62,22 @@ def sanitize_env_lines(lines: list[str], known_keys: Collection[str]) -> list[st
             sanitized.append(stripped + "\n")
 
     return sanitized
+
+
+def parse_environment(contents: str, known_keys: Collection[str]) -> dict[str, str]:
+    """Parse the legacy KEY=VALUE grammar after repairing concatenated keys.
+
+    Values remain strings. This preserves the existing quote stripping and
+    last-assignment-wins behavior; it does not execute shell or dotenv expansion.
+    """
+    values: dict[str, str] = {}
+    # Match text-file universal newlines, preserving other Unicode separators
+    # inside values (str.splitlines would treat those as additional records).
+    with StringIO(contents, newline=None) as stream:
+        lines = stream.readlines()
+    for line in sanitize_env_lines(lines, known_keys):
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, _, value = line.partition("=")
+            values[key.strip()] = value.strip().strip("\"'")
+    return values

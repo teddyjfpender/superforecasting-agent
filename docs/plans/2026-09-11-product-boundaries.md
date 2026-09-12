@@ -4895,3 +4895,23 @@ consumer checks and 114 configuration/descriptor checks passed through the
 hermetic test runner. Shared quality checks passed. Full-suite push validation is
 required for the integrated commit. OAuth refresh/status ownership and the
 historical native crash attribution are still incomplete.
+
+
+### Content-correct credential-file reads
+
+A negative control reproduced `.env` reads retaining an obsolete key after a
+same-size edit with preserved mtime. Shared storage now reads current contents and
+caches only parsing by contents plus recognized-key vocabulary. The parser lives
+with pure environment-line rules; the runtime loader is a delegate. Timestamp,
+path and global cache races can no longer substitute another parse for current
+bytes. Missing files remain empty; access failures remain errors.
+
+144 configuration/storage/boundary checks passed, including independent mappings,
+concurrent profiles, vocabulary changes, BOM/invalid UTF-8 compatibility and
+non-mutating reads. Additional review caught and corrected Unicode line-separator
+handling before publication: parsing matches text-file universal newlines and
+preserves other separators inside values. Strict Python/TUI/protocol checks and 74 import contracts
+passed. A local 80-key warm-read comparison measured 3.18 ms (old metadata cache)
+and 14.13 ms (content-correct reader) per 1,000 calls, medians of five runs. Parsing
+remains cached; the measured extra read cost is about 11 microseconds per call.
+These timings are local evidence, not a portable performance guarantee.

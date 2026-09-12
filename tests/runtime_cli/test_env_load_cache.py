@@ -1,10 +1,8 @@
 """Tests for the load_env() process-level cache.
 
-The cache exists to keep `hermes tools` → "All Platforms" fast: every
-`get_env_value()` lookup used to re-read and re-sanitise the entire
-.env file, racking up hundreds of ms across one menu render. The
-cache is keyed on (path, mtime, size); writers (save_env_value /
-remove_env_value / sanitise_env_file) call invalidate_env_cache().
+The cache keeps repeated sanitization out of menu renders. File contents and
+recognized keys determine parsed values; timestamps alone cannot certify that
+credentials are unchanged. Owned writers can explicitly discard retained parsing.
 """
 
 from __future__ import annotations
@@ -34,10 +32,7 @@ def test_load_env_caches_on_repeat_calls():
     try:
         with patch("superforecasting_agent.runtime.config.get_env_path", return_value=env_path):
             first = load_env()
-            # Even if a writer outside our cache mutates the file, an
-            # mtime/size match means the cache still wins. We simulate that
-            # by writing identical bytes back — sanity check that the cache
-            # is keyed structurally, not on a counter.
+            # Identical contents remain stable across repeated reads.
             second = load_env()
 
         assert first == second
@@ -99,7 +94,7 @@ def test_invalidate_env_cache_forces_reread():
         with patch("superforecasting_agent.runtime.config.get_env_path", return_value=env_path):
             assert load_env().get("OPENAI_API_KEY") == "sk-old"
 
-            # Rewrite WITHOUT bumping mtime — simulates same-second write.
+            # Explicit invalidation remains supported with timestamp-preserving edits.
             mtime_before = env_path.stat().st_mtime
             _write_env(env_path, "OPENAI_API_KEY=sk-new\n")
             os.utime(env_path, (mtime_before, mtime_before))
@@ -191,3 +186,18 @@ def test_load_env_handles_missing_file():
             assert load_env() == {}  # cached
     finally:
         invalidate_env_cache()
+
+
+def test_same_size_edit_with_preserved_mtime_refreshes_credentials(tmp_path, monkeypatch):
+    """An external atomic update may preserve size and mtime but change the key."""
+    from superforecasting_agent.runtime import config
+
+    path = tmp_path / ".env"
+    path.write_text("OPENAI_API_KEY=old-value\n", encoding="utf-8")
+    monkeypatch.setattr(config, "get_env_path", lambda: path)
+    config.invalidate_env_cache()
+    before = path.stat()
+    assert config.load_env()["OPENAI_API_KEY"] == "old-value"
+    path.write_text("OPENAI_API_KEY=new-value\n", encoding="utf-8")
+    os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
+    assert config.load_env()["OPENAI_API_KEY"] == "new-value"

@@ -997,3 +997,20 @@ All three `.env` writers borrow their UTF-8 wrapper from the shared raw descript
 owner. Construction failure closes the temporary descriptor without changing the
 prior file or process environment. Existing locking, permission restoration and
 atomic publication semantics remain in their respective owners.
+
+
+### Credential-file reading and parsing
+
+`storage/environment.py` reads an explicit profile file and returns independent
+string mappings. `configuration/env_lines.py` owns concatenation repair and the
+legacy KEY=VALUE parsing grammar. The content-keyed, single-entry parsing cache
+also includes recognized keys, so same-size timestamp-preserving rotations and
+catalog changes cannot reuse an obsolete parse. Concurrent profile reads share
+only immutable cache inputs; returned mappings are copies. Reads never rewrite
+the file or mutate the process environment, and access failures propagate.
+
+`runtime.config.load_env` and its invalidation function delegate to this owner,
+retaining active-profile selection and compatibility call sites. The storage
+reader has no execution/presentation dependency under a transitive contract.
+Token selection, OAuth refresh, environment application and credential writes
+remain distinct operations; this does not remove quorum's discovery exception.
