@@ -3624,3 +3624,17 @@ SQLite shutdown, failed writes, missing stores, terminal-receipt preservation an
 compatibility function identity. Shared Python gates passed with 53 import
 contracts. The preceding snapshot batch push remains in its existing full-suite
 gate; this extraction was developed in the isolated worktree.
+
+
+### Reject implicit runtime session replacement
+
+SessionRegistry.register rejected collisions, but mapping assignment only guarded
+a currently retiring session. Assigning a different object could silently detach
+an idle resource owner, an active build or a failed cleanup handle. Assignment
+now rejects any different existing owner; identical-object assignment remains
+idempotent, and an identifier can be reused after explicit retirement succeeds.
+
+Four new regressions failed before the fix. All 81 registry/build/branch/protocol
+tests passed afterward. This closes replacement admission, not raw mapping removal:
+inherited fixtures still use pop/clear and need migration before those bypasses
+can be removed from the owner API.

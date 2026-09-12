@@ -42,6 +42,9 @@ The legacy dispatcher itself remains.
 
 - [ ] Audit lower-level agent cleanup for concrete resource ownership.
   Do not retry task-ID cleanup if it could close a replacement component's resources.
+  Registry assignment now rejects a different existing owner, including builds and
+  failed cleanup. Raw mapping removal remains to be replaced by explicit retirement
+  after updating inherited test fixtures that bypass the owner.
 - [ ] Close remaining partial-construction and shutdown failure paths with
   deterministic failure injection and retained cleanup handles. Child cleanup
   retries retain exact handles; failed SDK close remains pending because HTTPX

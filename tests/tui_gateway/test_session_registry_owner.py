@@ -67,3 +67,28 @@ def test_interrupted_finalization_releases_admission_without_detaching():
     with use_session(session):
         pass
     assert registry.retire('runtime', lambda value: None) is session
+
+
+@pytest.mark.parametrize('state', [{}, {'running': True}, {'_cleanup_pending': True}])
+def test_mapping_assignment_cannot_discard_existing_resource_owner(state):
+    registry = SessionRegistry()
+    original = {'session_key': 'one', **state}
+    registry.register('runtime', original)
+    registry['runtime'] = original  # assigning the identical owner is harmless
+    with pytest.raises(SessionBusy, match='already registered'):
+        registry['runtime'] = {'session_key': 'replacement'}
+    assert registry['runtime'] is original
+
+
+def test_mapping_assignment_cannot_orphan_an_inflight_build():
+    registry = SessionRegistry()
+    original = {'agent_build_started': True, 'agent_ready': threading.Event()}
+    registry.register('runtime', original)
+    with pytest.raises(SessionBusy, match='already registered'):
+        registry['runtime'] = {'session_key': 'replacement'}
+    assert registry['runtime'] is original
+    original['agent_ready'].set()
+    assert registry.retire('runtime', lambda session: None) is original
+    replacement = {'session_key': 'replacement'}
+    registry['runtime'] = replacement
+    assert registry['runtime'] is replacement

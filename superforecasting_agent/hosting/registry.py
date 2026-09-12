@@ -28,12 +28,8 @@ class SessionRegistry(MutableMapping[str, dict[str, Any]]):
     def __setitem__(self, key: str, value: dict[str, Any]) -> None:
         with self.lock:
             previous = self._entries.get(key)
-            if (
-                previous is not None
-                and previous is not value
-                and previous.get("_closing")
-            ):
-                raise SessionBusy("cannot replace a retiring runtime session")
+            if previous is not None and previous is not value:
+                raise SessionBusy("runtime session identifier is already registered")
             self._entries[key] = value
 
     def __delitem__(self, key: str) -> None:
