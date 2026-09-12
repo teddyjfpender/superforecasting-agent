@@ -553,17 +553,19 @@ def camofox_close(task_id: Optional[str] = None) -> str:
     from superforecasting_agent.hosting.browser_sessions import browser_session_lifecycle
 
     with browser_session_lifecycle((task_id or "default").removesuffix("::local")):
-        try:
-            session = _drop_session(task_id)
-            if not session:
-                return json.dumps({"success": True, "closed": True})
-
-            _delete(
-                f"/sessions/{session['user_id']}",
-            )
+        key = task_id or "default"
+        with _sessions_lock:
+            session = _sessions.get(key)
+        if session is None:
             return json.dumps({"success": True, "closed": True})
-        except Exception as e:
-            return json.dumps({"success": True, "closed": True, "warning": str(e)})
+        try:
+            _delete(f"/sessions/{session['user_id']}")
+        except Exception as exc:
+            return json.dumps({"success": False, "closed": False, "error": str(exc)})
+        with _sessions_lock:
+            if _sessions.get(key) is session:
+                _sessions.pop(key)
+        return json.dumps({"success": True, "closed": True})
 
 
 def camofox_get_images(task_id: Optional[str] = None) -> str:

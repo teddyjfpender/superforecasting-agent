@@ -139,7 +139,7 @@ def test_direct_backend_operation_blocks_endpoint_change(monkeypatch, backend):
         monkeypatch.setattr(browser_cdp_tool, "_browser_cdp_via_supervisor", blocked)
         operation = lambda: browser_cdp_tool.browser_cdp("Runtime.evaluate", frame_id="frame", task_id="task")
     else:
-        monkeypatch.setattr(browser_camofox, "_drop_session", lambda task: {"user_id": "user"})
+        monkeypatch.setattr(browser_camofox, "_sessions", {"task": {"user_id": "user"}})
         monkeypatch.setattr(browser_camofox, "_delete", blocked)
         operation = lambda: browser_camofox.camofox_close(task_id="task")
     environment = {"BROWSER_CDP_URL": "old"}

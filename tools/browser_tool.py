@@ -3521,9 +3521,12 @@ def _cleanup_single_browser_session(task_id: str) -> None:
         try:
             from tools.browser_camofox import camofox_close, camofox_soft_cleanup
             if not camofox_soft_cleanup(task_id):
-                camofox_close(task_id)
-        except Exception as e:
-            logger.debug("Camofox cleanup for task %s: %s", task_id, e)
+                result = json.loads(camofox_close(task_id))
+                if not result.get("success") or not result.get("closed"):
+                    raise RuntimeError(result.get("error") or "Camofox cleanup incomplete")
+        except Exception:
+            logger.warning("Camofox cleanup failed for task %s", task_id, exc_info=True)
+            raise
 
     logger.debug("cleanup_browser called for task_id: %s", task_id)
     logger.debug("Active sessions: %s", list(_active_sessions.keys()))

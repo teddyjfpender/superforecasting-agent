@@ -3306,3 +3306,18 @@ The startup batch's full push gate remains running in the primary checkout.
   tests passed; shared Python quality gates passed. Provider-level disposal
   failure semantics and browser-supervisor asynchronous maintenance remain
   separate ownership concerns; this does not prove all runtime cleanup complete.
+
+### Camofox disposal ownership and truthful failures
+
+- `camofox_close` retains the exact tracked session until its remote delete
+  succeeds. Failure now returns `success: false, closed: false` with the error,
+  allowing a retry against the same remote identity; an already-completed close
+  remains a no-op. Removal checks handle identity before deleting local tracking.
+- Browser task cleanup validates the close result and propagates failures instead
+  of suppressing them and continuing as though disposal completed. Managed soft
+  cleanup retains its existing explicit persistence behavior.
+- Verification: 37 Camofox/cleanup/transition tests passed; shared Python quality
+  gates passed. Tests cover failed close, exact-identity retry, completed-close
+  idempotence, and failure propagation to the task cleanup owner.
+- Remaining: global cleanup must enumerate Camofox-only sessions, and cloud
+  browser provider disposal still needs equivalent exact-owner failure handling.

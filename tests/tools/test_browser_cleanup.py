@@ -93,7 +93,7 @@ class TestBrowserCleanup:
                 "tools.browser_camofox.camofox_soft_cleanup",
                 return_value=True,
             ) as mock_soft,
-            patch("tools.browser_camofox.camofox_close") as mock_close,
+            patch("tools.browser_camofox.camofox_close", return_value='{"success": true, "closed": true}') as mock_close,
         ):
             browser_tool.cleanup_browser("task-1")
 
@@ -121,7 +121,7 @@ class TestBrowserCleanup:
                 "tools.browser_camofox.camofox_soft_cleanup",
                 return_value=False,
             ) as mock_soft,
-            patch("tools.browser_camofox.camofox_close") as mock_close,
+            patch("tools.browser_camofox.camofox_close", return_value='{"success": true, "closed": true}') as mock_close,
         ):
             browser_tool.cleanup_browser("task-1")
 
