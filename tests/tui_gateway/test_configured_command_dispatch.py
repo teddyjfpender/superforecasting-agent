@@ -1050,3 +1050,16 @@ def test_background_curator_remains_owned_until_review_finishes(configure, monke
         assert host.workers.drain(5)
     assert host.shutdown(0, **shutdown_args) is True
     assert closed == ['runtime']
+
+
+def test_curator_status_reports_damaged_state_to_native_client(configure, monkeypatch, tmp_path):
+    from agent import curator
+    configure({})
+    path = tmp_path / '.curator_state'
+    path.write_text('{broken', encoding='utf-8')
+    monkeypatch.setattr(curator, '_state_file', lambda: path)
+    response = dispatch('curator', 'status')
+    assert response['error']['code'] == 5017
+    assert 'operation failed' in response['error']['message']
+    assert 'ENABLED' not in response['error']['message']
+    assert path.read_text(encoding='utf-8') == '{broken'

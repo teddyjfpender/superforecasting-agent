@@ -70,9 +70,9 @@ def _default_state() -> Dict[str, Any]:
     return default_state()
 
 
-def load_state() -> Dict[str, Any]:
+def load_state(*, strict: bool = False) -> Dict[str, Any]:
     from superforecasting_agent.storage.curator_state import load_state as load
-    return load(_state_file())
+    return load(_state_file(), strict=strict)
 
 
 def save_state(data: Dict[str, Any]) -> None:

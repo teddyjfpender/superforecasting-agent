@@ -2982,3 +2982,16 @@ Read-only compatibility inspection retains its existing default behavior.
 before skill mutation and invalid-publication preservation. Shared Python quality
 checks and all 49 import contracts passed. The previous integrated push is running;
 this increment still requires its full integrated gate.
+
+
+### Status does not disguise damaged curator state
+
+The user-facing curator status operation now opts into strict state reads. Corrupt
+JSON, non-object roots and invalid pause values produce a nonzero command result,
+not an ENABLED/default-state report. Native TUI dispatch propagates that failure
+through its existing error response while preserving file contents. The low-level
+compatibility reader remains tolerant for callers that explicitly need defaults.
+
+140 command, gateway and state tests passed, including native dispatch against an
+actual damaged state file. Shared Python quality checks and 49 import contracts
+passed. The primary push gate is still running on the earlier integrated batch.

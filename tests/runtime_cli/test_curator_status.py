@@ -22,7 +22,7 @@ def test_status_uses_last_activity_not_only_last_used(monkeypatch, capsys):
     import superforecasting_agent.runtime.curator as curator_cli
     import tools.skill_usage as skill_usage
 
-    monkeypatch.setattr(curator_state, "load_state", lambda: {
+    monkeypatch.setattr(curator_state, "load_state", lambda **kwargs: {
         "paused": False,
         "last_run_at": None,
         "last_run_summary": "(none)",
@@ -183,7 +183,7 @@ def test_status_marks_missing_last_report_path(monkeypatch, capsys, tmp_path):
     import tools.skill_usage as skill_usage
 
     missing_report = tmp_path / "stale-report"
-    monkeypatch.setattr(curator_state, "load_state", lambda: {
+    monkeypatch.setattr(curator_state, "load_state", lambda **kwargs: {
         "paused": False,
         "last_run_at": None,
         "last_run_summary": "auto: no changes",

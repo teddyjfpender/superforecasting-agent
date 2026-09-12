@@ -49,7 +49,7 @@ def _cmd_status(args, *, emit=print, confirm=None) -> int:
     from agent import curator
     from tools import skill_usage
 
-    state = curator.load_state()
+    state = curator.load_state(strict=True)
     enabled = curator.is_enabled()
     paused = state.get("paused", False)
     last_run = state.get("last_run_at")
