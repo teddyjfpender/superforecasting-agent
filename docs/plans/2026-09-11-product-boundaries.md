@@ -1778,3 +1778,21 @@ display or model execution, correct-owner admission, and producer key retention
 alongside secret redaction. Python quality, 35 import contracts and protocol
 checks passed. The queue remains process-local: orphan retention is not durable
 across host death, and the polling/admission wiring still lives in the transport.
+
+
+### Host-owned notification admission loop
+
+Moved queue polling, consumed-event filtering, routing, stop/requeue decisions
+and session running-state reservation into `hosting.notifications.poll_notifications`.
+The RPC adapter now only supplies the queue/formatter, host stop state, and
+protocol-specific event/turn delivery. The host module imports no agent, tool,
+CLI or transport implementation; a new transitive import contract enforces this.
+Unexpected queue failures now terminate with a diagnosable exception instead of
+being swallowed in an infinite polling loop. Dispatch failures are logged and
+release the running reservation without blindly replaying a possibly started turn.
+
+Validation: 237 host/transport notification tests and 24 import-boundary mutation
+tests passed. The shared quality command keeps all 36 contracts and passes lint,
+format, types and generated protocol checks. Direct host tests cover reservation,
+dispatch failure and broken queue behavior without a transport. Queue durability
+and exact-once delivery across process death are not established by this change.

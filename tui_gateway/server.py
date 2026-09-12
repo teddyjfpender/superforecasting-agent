@@ -3721,74 +3721,23 @@ def _route_async_completion(evt: dict, my_session_key: str | None) -> str:
 def _notification_poller_loop(
     stop_event: threading.Event, sid: str, session: dict
 ) -> None:
-    """Poll completion_queue and dispatch notifications autonomously.
-
-    Runs in a daemon thread started by _init_session(). Emits a
-    status.update (kind=process) for user visibility, then chains an
-    agent turn via _run_prompt_submit if the session is idle.
-
-    NOTE: The completion_queue is global (one per process). If multiple
-    TUI sessions coexist, whichever poller wakes first grabs the event,
-    but session-bound events remain queued for their owner. Unscoped legacy
-    events retain single-session delivery behavior.
-    """
+    """Adapt host notification admission to RPC events and turn submission."""
+    from superforecasting_agent.hosting.notifications import poll_notifications
     from tools.process_registry import process_registry, format_process_notification
 
-    while not stop_event.is_set() and not session.get("_finalized"):
-        try:
-            evt = process_registry.completion_queue.get(timeout=0.5)
-        except Exception:
-            continue
-
-        if stop_event.is_set() or session.get("_finalized"):
-            process_registry.completion_queue.put(evt)
-            break
-
-        _evt_sid = evt.get("session_id", "")
-        if evt.get("type") == "completion" and process_registry.is_completion_consumed(_evt_sid):
-            continue
-
-        # Route async-delegation completions back to the session that dispatched them
-        # (not first-poller-wins) so a background subagent's result can't surface in
-        # the wrong session's chat on a multi-session gateway.
-        if _route_async_completion(evt, session.get("session_key")) == "requeue":
-            process_registry.completion_queue.put(evt)
-            stop_event.wait(0.02)  # let the originating session pick it up
-            continue
-
-        text = format_process_notification(evt)
-        if not text:
-            continue
-
-        with session["history_lock"]:
-            stopping = (
-                stop_event.is_set() or session.get("_finalized")
-                or session.get("_closing") or _host.workers.stopping
-            )
-            busy = session.get("running")
-            if not stopping and not busy:
-                session["running"] = True
-        if stopping or busy:
-            process_registry.completion_queue.put(evt)
-            if stopping:
-                break
-            stop_event.wait(0.02)
-            continue
-
+    def dispatch(text: str) -> None:
         rid = f"__notif__{int(time.time() * 1000)}"
-        try:
-            _emit("status.update", sid, {"kind": "process", "text": text})
-            _emit("message.start", sid)
-            _run_prompt_submit(rid, sid, session, text)
-        except Exception as exc:
-            print(
-                f"[tui_gateway] notification poller dispatch failed: "
-                f"{type(exc).__name__}: {exc}",
-                file=sys.stderr,
-            )
-            with session["history_lock"]:
-                session["running"] = False
+        _emit("status.update", sid, {"kind": "process", "text": text})
+        _emit("message.start", sid)
+        _run_prompt_submit(rid, sid, session, text)
 
+    poll_notifications(
+        stop_event, session, process_registry.completion_queue,
+        consumed=process_registry.is_completion_consumed,
+        format_event=format_process_notification,
+        host_stopping=lambda: _host.workers.stopping,
+        dispatch=dispatch,
+    )
 
 
 def _start_notification_poller(sid: str, session: dict) -> threading.Event:

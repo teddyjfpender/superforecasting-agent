@@ -425,3 +425,8 @@ Session-bound events may only be consumed by their named conversation; retry
 counts cannot redirect ownership. The process registry retains that key when
 producing completions. TUI polling supplies queue access and rendering/turn
 callbacks; its historical routing helper delegates to the shared policy.
+
+`hosting.notifications.poll_notifications` also owns queue admission, stop/requeue
+decisions and session exclusion. Transport adapters supply formatting and delivery
+callbacks. A transitive import contract prohibits presentation, runtime, agent and
+tool implementation dependencies from this owner.
