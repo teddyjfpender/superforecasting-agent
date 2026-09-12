@@ -16,7 +16,6 @@ call-time hop; ``_ok`` / ``_err`` are not patched — imported bare from core.
 """
 from __future__ import annotations
 
-import os
 import time
 
 from superforecasting_agent.configuration.browser import (
@@ -61,25 +60,19 @@ def _resolve_browser_cdp_url() -> str:
     an override is set.
 
     Mirrors the env/config precedence of ``_get_cdp_override`` (env
-    var first, then ``browser.cdp_url`` from config.yaml) without the
+    var first, including an explicit empty/disconnected value, then
+    ``browser.cdp_url`` from config.yaml) without the
     websocket-resolution step, so the answer reflects user intent
     even when the configured host is not currently reachable.  The
     actual WS normalization happens in ``browser_navigate`` on the
     next tool call.
     """
-    env_url = os.environ.get("BROWSER_CDP_URL", "").strip()
-    if env_url:
-        return env_url
-    try:
-        from superforecasting_agent.runtime.config import read_raw_config
+    from superforecasting_agent.runtime.browser_connect import get_browser_endpoint
 
-        cfg = read_raw_config()
-        browser_cfg = cfg.get("browser", {}) if isinstance(cfg, dict) else {}
-        if isinstance(browser_cfg, dict):
-            return str(browser_cfg.get("cdp_url", "") or "").strip()
+    try:
+        return get_browser_endpoint()
     except Exception:
-        pass
-    return ""
+        return ""
 
 
 def _http_ok(url: str, timeout: float) -> bool:

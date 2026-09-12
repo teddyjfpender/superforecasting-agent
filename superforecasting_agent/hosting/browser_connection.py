@@ -21,7 +21,8 @@ def change_browser_endpoint(
     with _change_lock:
         cleanup()
         if endpoint is None:
-            environment.pop("BROWSER_CDP_URL", None)
+            # Empty is an explicit process override: do not fall back to config.
+            environment["BROWSER_CDP_URL"] = ""
         else:
             environment["BROWSER_CDP_URL"] = endpoint
         try:

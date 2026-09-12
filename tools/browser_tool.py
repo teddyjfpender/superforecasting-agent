@@ -285,28 +285,20 @@ def _get_cdp_override() -> str:
     """Return a normalized CDP URL override, or empty string.
 
     Precedence is:
-    1. ``BROWSER_CDP_URL`` env var (live override from ``/browser connect``)
+    1. ``BROWSER_CDP_URL`` env var (live override; empty disables CDP)
     2. ``browser.cdp_url`` in config.yaml (persistent config)
 
-    When either is set, we skip both Browserbase and the local headless
+    When the selected value is nonempty, we skip Browserbase and the local headless
     launcher and connect directly to the supplied Chrome DevTools Protocol
     endpoint.
     """
-    env_override = os.environ.get("BROWSER_CDP_URL", "").strip()
-    if env_override:
-        return _resolve_cdp_override(env_override)
+    from superforecasting_agent.runtime.browser_connect import get_browser_endpoint
 
     try:
-        from superforecasting_agent.runtime.config import read_raw_config
-
-        cfg = read_raw_config()
-        browser_cfg = cfg.get("browser", {})
-        if isinstance(browser_cfg, dict):
-            return _resolve_cdp_override(str(browser_cfg.get("cdp_url", "") or ""))
-    except Exception as e:
-        logger.debug("Could not read browser.cdp_url from config: %s", e)
-
-    return ""
+        return _resolve_cdp_override(get_browser_endpoint())
+    except Exception as exc:
+        logger.debug("Could not read browser endpoint: %s", exc)
+        return ""
 
 
 def _get_dialog_policy_config() -> Tuple[str, float]:

@@ -45,7 +45,7 @@ Every environment variable the server, tools, and CLI actually **read** — harv
 | `GITHUB_APP_PRIVATE_KEY_PATH` | `None` | `superforecasting_agent.tooling.github_auth` |
 | `GITHUB_TOKEN` | `None` | `forecasting.cli.collaboration_admin`, `superforecasting_agent.tooling.github_auth`, `tools.tirith_security` |
 | `GITHUB_TOKEN_ENCRYPTION_KEY` | `''` | `forecasting.cli.collaboration_admin` |
-| `HASS_TOKEN` | `''`, `None` | `superforecasting_agent.runtime.tools_config`, `tools.homeassistant_tool`, `tools.send_message_tool` |
+| `HASS_TOKEN` | `''`, `None` | `superforecasting_agent.tooling.selection`, `tools.homeassistant_tool`, `tools.send_message_tool` |
 | `HERMES_API_KEY` | `''` | `tui_gateway.server` |
 | `HERMES_KANBAN_SPECIFY_MAX_TOKENS` | `'6000'` | `superforecasting_agent.runtime.kanban_specify` |
 | `HERMES_REDACT_SECRETS` | `None` | `superforecasting_agent.runtime.codex_runtime_plugin_migration` |
@@ -70,7 +70,7 @@ Every environment variable the server, tools, and CLI actually **read** — harv
 | `VERCEL_TOKEN` | `None` | `tools.terminal_tool` |
 | `VOICE_TOOLS_OPENAI_KEY` | `''` | `tools.tool_backend_helpers` |
 | `WEIXIN_TOKEN` | `''` | `tools.send_message_tool` |
-| `XAI_API_KEY` | `''`, `None` | `superforecasting_agent.runtime.tools_config`, `tools.xai_http` |
+| `XAI_API_KEY` | `''`, `None` | `superforecasting_agent.tooling.selection`, `tools.xai_http` |
 
 ## Configuration & runtime
 
@@ -89,7 +89,7 @@ Every environment variable the server, tools, and CLI actually **read** — harv
 | `AUXILIARY_WEB_EXTRACT_MODEL` | `''` | `tools.browser_tool` |
 | `AWS_EC2_METADATA_DISABLED` | `None` | `superforecasting_agent.runtime.doctor` |
 | `AZURE_FOUNDRY_BASE_URL` | `''` | `superforecasting_agent.runtime.runtime_provider` |
-| `BROWSER_CDP_URL` | `''` | `superforecasting_agent.runtime.browser_commands`, `tools.browser_camofox`, `tools.browser_tool`, `tui_gateway.browser_rpc` |
+| `BROWSER_CDP_URL` | `''`, `(required)` | `superforecasting_agent.runtime.browser_connect`, `tools.browser_camofox` |
 | `BROWSER_INACTIVITY_TIMEOUT` | `'300'` | `tools.browser_tool` |
 | `CAMOFOX_URL` | `''` | `tools.browser_camofox` |
 | `CAMOFOX_USER_ID` | `''` | `tools.browser_camofox` |

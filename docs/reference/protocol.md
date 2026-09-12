@@ -9,7 +9,7 @@
 
 > **Source of truth:** `protocol/__init__.py (RPC_SPECS, EVENT_SPECS) + protocol/rpc, protocol/events`
 
-The gateway speaks **protocol version 1**. Every request, response, and event below is a pydantic model in the `protocol/` package; the TUI's TypeScript wire types (`ui-tui/src/protocol/generated.ts`) are generated from the same registry via `python -m protocol.codegen`. There are **101 RPCs** and **46 events**.
+The gateway speaks **protocol version 1**. Every request, response, and event below is a pydantic model in the `protocol/` package; the TUI's TypeScript wire types (`ui-tui/src/protocol/generated.ts`) are generated from the same registry via `python -m protocol.codegen`. There are **106 RPCs** and **49 events**.
 
 
 ## RPC methods
@@ -44,6 +44,7 @@ The gateway speaks **protocol version 1**. Every request, response, and event be
 | `forecast.hooks.set` | [`ForecastHooksSetRequest`](#forecasthookssetrequest) | [`ForecastHooksSetResponse`](#forecasthookssetresponse) |
 | `forecast.onboard_commit` | [`ForecastOnboardCommitRequest`](#forecastonboardcommitrequest) | [`ForecastOnboardCommitResponse`](#forecastonboardcommitresponse) |
 | `forecast.onboard_propose` | [`ForecastOnboardProposeRequest`](#forecastonboardproposerequest) | [`ForecastOnboardProposeResponse`](#forecastonboardproposeresponse) |
+| `forecast.operation` | [`ForecastOperationRequest`](#forecastoperationrequest) | [`ForecastOperationResponse`](#forecastoperationresponse) |
 | `forecast.question` | [`ForecastQuestionRequest`](#forecastquestionrequest) | [`ForecastQuestionPacketResponse`](#forecastquestionpacketresponse) |
 | `forecast.question.readiness` | [`ForecastQuestionReadinessRequest`](#forecastquestionreadinessrequest) | [`ForecastQuestionReadinessResponse`](#forecastquestionreadinessresponse) |
 | `forecast.quorum.status` | [`ForecastQuorumStatusRequest`](#forecastquorumstatusrequest) | [`ForecastQuorumStatusResponse`](#forecastquorumstatusresponse) |
@@ -51,6 +52,8 @@ The gateway speaks **protocol version 1**. Every request, response, and event be
 | `forecast.reforecast.active` | [`ForecastReforecastActiveRequest`](#forecastreforecastactiverequest) | [`ForecastReforecastActiveResponse`](#forecastreforecastactiveresponse) |
 | `forecast.reforecast.start` | [`ForecastReforecastStartRequest`](#forecastreforecaststartrequest) | [`ForecastReforecastStartResponse`](#forecastreforecaststartresponse) |
 | `forecast.reforecast.status` | [`ForecastReforecastStatusRequest`](#forecastreforecaststatusrequest) | [`ForecastReforecastStatusResponse`](#forecastreforecaststatusresponse) |
+| `forecast.resolve` | [`ForecastResolveRequest`](#forecastresolverequest) | [`ForecastResolveResponse`](#forecastresolveresponse) |
+| `forecast.review` | [`ForecastReviewRequest`](#forecastreviewrequest) | [`ForecastReviewResponse`](#forecastreviewresponse) |
 | `forecast.reviews.next` | [`ForecastReviewsNextRequest`](#forecastreviewsnextrequest) | [`ForecastReviewsNextResponse`](#forecastreviewsnextresponse) |
 | `forecast.schedule.status` | [`ForecastScheduleStatusRequest`](#forecastschedulestatusrequest) | [`ForecastScheduleStatusResponse`](#forecastschedulestatusresponse) |
 | `forecast.theses` | [`ForecastThesesRequest`](#forecastthesesrequest) | [`ForecastThesesResponse`](#forecastthesesresponse) |
@@ -62,6 +65,7 @@ The gateway speaks **protocol version 1**. Every request, response, and event be
 | `forecast.warnings.list` | [`ForecastWarningsListRequest`](#forecastwarningslistrequest) | [`ForecastWarningsListResponse`](#forecastwarningslistresponse) |
 | `forecast.warnings.resolve` | [`ForecastWarningsResolveRequest`](#forecastwarningsresolverequest) | [`ForecastWarningsResolveResponse`](#forecastwarningsresolveresponse) |
 | `forecast.workspace` | [`ForecastWorkspaceRequest`](#forecastworkspacerequest) | [`ForecastWorkspaceResponse`](#forecastworkspaceresponse) |
+| `host.negotiate` | [`HostNegotiateRequest`](#hostnegotiaterequest) | [`HostNegotiateResponse`](#hostnegotiateresponse) |
 | `image.attach` | [`ImageAttachRequest`](#imageattachrequest) | [`ImageAttachResponse`](#imageattachresponse) |
 | `input.detect_drop` | [`InputDetectDropRequest`](#inputdetectdroprequest) | [`InputDetectDropResponse`](#inputdetectdropresponse) |
 | `jobs.active` | [`JobsActiveRequest`](#jobsactiverequest) | [`JobsActiveResponse`](#jobsactiveresponse) |
@@ -90,6 +94,7 @@ The gateway speaks **protocol version 1**. Every request, response, and event be
 | `rollback.restore` | [`RollbackRestoreRequest`](#rollbackrestorerequest) | [`RollbackRestoreResponse`](#rollbackrestoreresponse) |
 | `secret.respond` | [`RespondRequest`](#respondrequest) | [`SecretRespondResponse`](#secretrespondresponse) |
 | `session.branch` | [`SessionBranchRequest`](#sessionbranchrequest) | [`SessionBranchResponse`](#sessionbranchresponse) |
+| `session.branch_replace` | [`SessionBranchRequest`](#sessionbranchrequest) | [`SessionBranchResponse`](#sessionbranchresponse) |
 | `session.close` | [`SessionCloseRequest`](#sessioncloserequest) | [`SessionCloseResponse`](#sessioncloseresponse) |
 | `session.compress` | [`SessionCompressRequest`](#sessioncompressrequest) | [`SessionCompressResponse`](#sessioncompressresponse) |
 | `session.create` | [`SessionCreateRequest`](#sessioncreaterequest) | [`SessionCreateResponse`](#sessioncreateresponse) |
@@ -128,6 +133,9 @@ The gateway speaks **protocol version 1**. Every request, response, and event be
 | `background.complete` | [`BackgroundCompletePayload`](#backgroundcompletepayload) |
 | `browser.progress` | [`BrowserProgressPayload`](#browserprogresspayload) |
 | `clarify.request` | [`ClarifyRequestPayload`](#clarifyrequestpayload) |
+| `command.finished` | [`CommandFinished`](#commandfinished) |
+| `command.output` | [`CommandOutput`](#commandoutput) |
+| `command.started` | [`CommandStarted`](#commandstarted) |
 | `cron.fired` | [`CronFiredPayload`](#cronfiredpayload) |
 | `error` | [`ErrorPayload`](#errorpayload) |
 | `forecast.warnings.automode.complete` | [`AutomodeCompletePayload`](#automodecompletepayload) |
@@ -358,6 +366,29 @@ _(no fields)_
 | `message` | `string?` |
 | `token_estimate` | `number?` |
 | `width` | `number?` |
+
+### CommandFinished
+
+| field | type |
+| --- | --- |
+| `command_id` | `string` |
+| `status` | `'cancelled' | 'failed' | 'finished'` |
+
+### CommandOutput
+
+| field | type |
+| --- | --- |
+| `command_id` | `string` |
+| `stream` | `'stderr' | 'stdout'` |
+| `text` | `string` |
+
+### CommandStarted
+
+| field | type |
+| --- | --- |
+| `command_id` | `string` |
+| `name` | `string` |
+| `request_id` | `string` |
 
 ### CommandsCatalogRequest
 
@@ -1476,6 +1507,22 @@ _(no fields)_
 | `recommended_clarifications` | `Record<string, unknown>[]?` |
 | `spec` | `Record<string, unknown>?` |
 
+### ForecastOperationRequest
+
+| field | type |
+| --- | --- |
+| `arg` | `string | null` |
+| `argv` | `string[] | null` |
+| `operation` | `string` |
+
+### ForecastOperationResponse
+
+| field | type |
+| --- | --- |
+| `code` | `number` |
+| `data` | `Record<string, unknown> | null` |
+| `output` | `string` |
+
 ### ForecastOutcomeSpace
 
 | field | type |
@@ -1822,6 +1869,62 @@ _(no fields)_
 | `stance` | `string? | null` |
 | `title` | `string?` |
 | `verdict` | `string? | null` |
+
+### ForecastResolveRequest
+
+| field | type |
+| --- | --- |
+| `auto_score` | `boolean` |
+| `confidence` | `number | null` |
+| `confirmed_by` | `string | null` |
+| `correction_ref` | `string | null` |
+| `criteria_satisfied` | `boolean` |
+| `outcome` | `unknown` |
+| `question_id` | `string` |
+| `resolution_source` | `string | null` |
+| `resolution_source_snapshot_ref` | `string | null` |
+| `resolution_status` | `string` |
+| `resolver_notes` | `string | null` |
+| `resolver_type` | `string` |
+| `scoreable` | `boolean` |
+| `trusted_policy_id` | `string | null` |
+
+### ForecastResolveResponse
+
+| field | type |
+| --- | --- |
+| `resolution` | `Record<string, unknown>` |
+| `retrospective` | `Record<string, unknown> | null` |
+| `score` | `Record<string, unknown> | null` |
+
+### ForecastReviewRequest
+
+| field | type |
+| --- | --- |
+| `confidence_above` | `number | null` |
+| `confidence_below` | `number | null` |
+| `domain` | `string | null` |
+| `horizon` | `string | null` |
+| `large_delta_threshold` | `number | null` |
+| `last_days` | `number` |
+| `now` | `string | null` |
+| `stale` | `boolean` |
+| `topic` | `string | null` |
+
+### ForecastReviewResponse
+
+| field | type |
+| --- | --- |
+| `rows` | `ForecastReviewRow[]` |
+
+### ForecastReviewRow
+
+| field | type |
+| --- | --- |
+| `current_snapshot` | `Record<string, unknown> | null` |
+| `priority` | `number` |
+| `question` | `Record<string, unknown>` |
+| `reasons` | `string[]` |
 
 ### ForecastReviewsNextRequest
 
@@ -2591,6 +2694,8 @@ _(no fields)_
 | field | type |
 | --- | --- |
 | `build` | `BuildInfoPayload?` |
+| `capabilities` | `string[]?` |
+| `min_protocol_version` | `number?` |
 | `protocol_version` | `number?` |
 | `skin` | `SkinPayload?` |
 
@@ -2628,6 +2733,21 @@ _(no fields)_
 | `name` | `string?` |
 | `role` | `'assistant' | 'system' | 'tool' | 'user'` |
 | `text` | `string?` |
+
+### HostNegotiateRequest
+
+| field | type |
+| --- | --- |
+| `protocol_version` | `number` |
+| `required_capabilities` | `string[]` |
+
+### HostNegotiateResponse
+
+| field | type |
+| --- | --- |
+| `capabilities` | `string[]` |
+| `min_protocol_version` | `number` |
+| `protocol_version` | `number` |
 
 ### ImageAttachRequest
 
@@ -3377,12 +3497,14 @@ _(no fields)_
 
 | field | type |
 | --- | --- |
+| `name` | `string` |
 | `session_id` | `string | null` |
 
 ### SessionBranchResponse
 
 | field | type |
 | --- | --- |
+| `parent` | `string?` |
 | `session_id` | `string?` |
 | `title` | `string?` |
 
@@ -3435,6 +3557,7 @@ _(no fields)_
 | `config_warning` | `string?` |
 | `credential_warning` | `string?` |
 | `cwd` | `string?` |
+| `durable_session_id` | `string?` |
 | `fast` | `boolean?` |
 | `lazy` | `boolean?` |
 | `mcp_servers` | `McpServerStatus[]?` |
@@ -3495,6 +3618,7 @@ _(no fields)_
 | --- | --- |
 | `build` | `BuildInfoPayload?` |
 | `cwd` | `string?` |
+| `durable_session_id` | `string?` |
 | `fast` | `boolean?` |
 | `lazy` | `boolean?` |
 | `mcp_servers` | `McpServerStatus[]?` |
@@ -3518,6 +3642,7 @@ _(no fields)_
 | --- | --- |
 | `build` | `BuildInfoPayload?` |
 | `cwd` | `string` |
+| `durable_session_id` | `string?` |
 | `fast` | `boolean` |
 | `model` | `string` |
 | `profile_name` | `string` |

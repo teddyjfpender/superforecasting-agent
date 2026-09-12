@@ -225,3 +225,18 @@ def set_browser_endpoint(endpoint: str | None) -> None:
     from tools.browser_tool import cleanup_all_browsers
 
     change_browser_endpoint(endpoint, environment=os.environ, cleanup=cleanup_all_browsers)
+
+
+def get_browser_endpoint() -> str:
+    """Read desired CDP state without probing the browser.
+
+    An absent process override inherits configuration. An explicit empty override
+    disables CDP for this process while retaining the saved endpoint for restart.
+    """
+    if "BROWSER_CDP_URL" in os.environ:
+        return os.environ["BROWSER_CDP_URL"].strip()
+    from superforecasting_agent.storage.configuration import read_configuration
+
+    cfg = read_configuration(get_agent_home() / "config.yaml")
+    browser = cfg.get("browser", {})
+    return str(browser.get("cdp_url", "") or "").strip() if isinstance(browser, dict) else ""

@@ -47,7 +47,8 @@ The legacy dispatcher itself remains.
   supervisors now retain failed startup/stop handles and reject overlapping
   lifecycle mutations. CLI/TUI now share endpoint transitions and surface
   supervisor cleanup failures. Browser session cleanup ownership, concurrent
-  tool admission and persistent-config disconnect semantics remain unfinished.
+  tool admission remain unfinished. Disconnect now suppresses the saved CDP
+  endpoint for the running process without rewriting the profile.
 - [x] Remove the legacy global goal database cache. Standalone managers own
   closable connections; CLI, gateway and TUI managers borrow their host storage.
   Manager reads refresh and writes reject stale state. Hosted goal paths never

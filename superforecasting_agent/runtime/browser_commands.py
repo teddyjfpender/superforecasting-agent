@@ -1,6 +1,5 @@
 """Interactive browser connection commands backed by native CDP helpers."""
 
-import os
 import time
 from superforecasting_agent.configuration.browser import parse_cdp_url, normalize_cdp_url
 
@@ -10,6 +9,7 @@ from .browser_connect import (
     manual_chrome_debug_command,
     try_launch_chrome_debug,
     set_browser_endpoint,
+    get_browser_endpoint,
 )
 
 def _try_launch_chrome_debug(port: int, system: str) -> bool:
@@ -31,7 +31,11 @@ def _handle_browser_command(self, cmd: str):
     sub = parts[1].lower().strip() if len(parts) > 1 else "status"
 
     _DEFAULT_CDP = DEFAULT_BROWSER_CDP_URL
-    current = os.environ.get("BROWSER_CDP_URL", "").strip()
+    try:
+        current = get_browser_endpoint()
+    except Exception as exc:
+        print(f"   ⚠ Could not read browser configuration: {exc}")
+        return
 
     if sub.startswith("connect"):
         # Optionally accept a custom CDP URL: /browser connect ws://host:port
@@ -119,12 +123,12 @@ def _handle_browser_command(self, cmd: str):
             )
 
     elif sub == "disconnect":
+        try:
+            set_browser_endpoint(None)
+        except Exception as exc:
+            print(f"   ⚠ Browser disconnect failed: {exc}")
+            return
         if current:
-            try:
-                set_browser_endpoint(None)
-            except Exception as exc:
-                print(f"   ⚠ Browser disconnect failed: {exc}")
-                return
             print()
             print("🌐 Browser disconnected from live Chromium-family browser")
             print("   Browser tools reverted to default mode (local headless or cloud provider)")

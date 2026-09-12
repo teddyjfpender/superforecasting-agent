@@ -3193,3 +3193,20 @@ The startup batch's full push gate remains running in the primary checkout.
 - Remaining: per-session browser/recording/cloud cleanup ownership, concurrent
   tool admission during an endpoint transition, and disconnect semantics when
   a persistent config endpoint remains after the process override is removed.
+
+### Persistent browser endpoint disconnect semantics
+
+- The shared browser endpoint reader now distinguishes an absent process override
+  (inherit `browser.cdp_url`) from an explicit empty override (CDP disabled).
+  Disconnect publishes the empty override; connect replaces it. Saved profile
+  configuration remains unchanged, and startup without the override inherits it.
+- CLI status/commands, TUI status and browser tools consult the same read-only
+  endpoint selection. Profile reads use the independent configuration storage
+  owner. CLI disconnect retries cleanup even after an earlier attempt published
+  the disconnected state but failed its second cleanup pass.
+- Verification: 91 browser/CLI/TUI/CDP tests passed, including real isolated
+  profile disconnect, status/tool agreement, reconnect and unchanged config
+  bytes for both interfaces. Shared Python gates passed. Generated references
+  and the browser guide were refreshed with the explicit-empty semantics.
+- Remaining: task admission during process-wide transitions and exact ownership
+  for browser sessions, recordings and cloud resources.

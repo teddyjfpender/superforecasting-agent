@@ -4976,9 +4976,9 @@ def test_browser_manage_status_falls_back_to_config_cdp_url(monkeypatch):
     monkeypatch.delenv("BROWSER_CDP_URL", raising=False)
 
     fake_cfg = types.SimpleNamespace(
-        read_raw_config=lambda: {"browser": {"cdp_url": "http://lan:9222"}}
+        read_configuration=lambda path: {"browser": {"cdp_url": "http://lan:9222"}}
     )
-    with patch.dict(sys.modules, {"superforecasting_agent.runtime.config": fake_cfg}):
+    with patch.dict(sys.modules, {"superforecasting_agent.storage.configuration": fake_cfg}):
         resp = server.handle_request(
             {"id": "1", "method": "browser.manage", "params": {"action": "status"}}
         )
@@ -5478,7 +5478,7 @@ def test_browser_manage_connect_concrete_ws_tcp_unreachable(monkeypatch):
     assert resp["error"]["code"] == 5031
 
 
-def test_browser_manage_disconnect_drops_env_and_cleans(monkeypatch):
+def test_browser_manage_disconnect_disables_override_and_cleans(monkeypatch):
     monkeypatch.setenv("BROWSER_CDP_URL", "http://127.0.0.1:9222")
     cleanup_count = {"n": 0}
     fake = types.SimpleNamespace(
@@ -5493,8 +5493,8 @@ def test_browser_manage_disconnect_drops_env_and_cleans(monkeypatch):
         )
 
     assert resp["result"] == {"connected": False}
-    assert "BROWSER_CDP_URL" not in os.environ
-    # Two cleanups: once before env removal, once after, matching connect.
+    assert os.environ["BROWSER_CDP_URL"] == ""
+    # Two cleanups: before and after publishing the empty override.
     assert cleanup_count["n"] == 2
 
 
