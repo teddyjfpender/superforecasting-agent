@@ -862,8 +862,24 @@ def test_async_native_watch_accepts_session_interrupt_and_preserves_transport(co
             "session_id": "runtime",
         }}, transport)
         assert response["result"]["status"] == "cancelling"
-        finished = responses.get(timeout=3)
-        assert finished["id"] == 20
+        events = []
+        while True:
+            finished = responses.get(timeout=3)
+            if finished.get("id") == 20:
+                break
+            events.append(finished["params"])
+        assert events[0]["type"] == "command.started"
+        assert events[0]["payload"]["request_id"] == "20"
+        command_id = events[0]["payload"]["command_id"]
+        assert command_id
+        assert all(event["session_id"] == "runtime" for event in events)
+        assert all(event["payload"]["command_id"] == command_id for event in events)
+        assert events[-1]["type"] == "command.finished"
+        assert events[-1]["payload"]["status"] == "cancelled"
+        assert sum(event["type"] == "command.finished" for event in events) == 1
+        chunks = [event["payload"]["text"] for event in events if event["type"] == "command.output"]
+        assert chunks
+        assert "".join(chunks).strip() == finished["result"]["output"]
         assert "stopped" in finished["result"]["output"]
         assert not server._host.sessions["runtime"].get("_command_stops")
     finally:
@@ -885,3 +901,35 @@ def test_native_command_rejects_stopping_host_without_work(configure, monkeypatc
     assert response["error"] == {"code": 5030, "message": "runtime host is stopping"}
     operation.assert_not_called()
     assert server._host.workers.drain(0)
+
+
+def test_native_command_failure_emits_terminal_status_and_releases_host(configure, monkeypatch):
+    from superforecasting_agent.runtime import kanban
+
+    configure({})
+    events = []
+    monkeypatch.setattr(server, "_emit", lambda kind, sid, payload: events.append((kind, sid, payload)))
+    operation = Mock(side_effect=OSError("injected command failure"))
+    monkeypatch.setattr(kanban, "run_slash", operation)
+    result = slash("kanban list")
+    assert result["error"]["code"] == 5017
+    assert [event[0] for event in events] == ["command.started", "command.finished"]
+    assert events[-1][2]["status"] == "failed"
+    assert events[0][2]["command_id"] == events[-1][2]["command_id"]
+    assert not server._host.sessions["runtime"].get("_command_stops")
+    operation.assert_called_once()
+
+
+def test_native_command_event_delivery_failure_does_not_repeat_mutation(configure, monkeypatch, tmp_path):
+    from superforecasting_agent.runtime import kanban_db
+
+    configure({})
+    monkeypatch.setattr(kanban_db, "kanban_home", lambda: tmp_path)
+    delivery = Mock(side_effect=OSError("disconnected event transport"))
+    monkeypatch.setattr(server, "_emit", delivery)
+    result = slash('kanban create "single durable mutation"')
+    assert "Created" in result["result"]["output"]
+    delivery.assert_called_once()
+    with kanban_db.connection() as db:
+        assert [task.title for task in kanban_db.list_tasks(db)] == ["single durable mutation"]
+    assert not server._host.sessions["runtime"].get("_command_stops")

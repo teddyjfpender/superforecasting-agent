@@ -2592,9 +2592,12 @@ Read-only commands are safe while an agent is running.\
 """
 
 
-def run_slash(rest: str, *, stop_event: threading.Event | None = None) -> str:
+def run_slash(
+    rest: str, *, stop_event: threading.Event | None = None,
+    on_output=None, output_limit: int | None = None,
+) -> str:
     """Capture only this invocation's output, leaving process streams alone."""
-    with capture_output() as (buf_out, buf_err):
+    with capture_output(limit=output_limit, on_output=on_output) as (buf_out, buf_err):
         return _run_slash(rest, buf_out, buf_err, stop_event)
 
 

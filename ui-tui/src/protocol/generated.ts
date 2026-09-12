@@ -5,15 +5,18 @@
 
 export const PROTOCOL_VERSION = 1
 
-export type WireEventName = 'approval.request' | 'background.complete' | 'browser.progress' | 'clarify.request' | 'cron.fired' | 'error' | 'forecast.warnings.automode.complete' | 'forecast.warnings.automode.error' | 'forecast.warnings.automode.progress' | 'gateway.protocol_error' | 'gateway.ready' | 'gateway.start_timeout' | 'gateway.stderr' | 'jobs.complete' | 'jobs.error' | 'jobs.progress' | 'markets.model.complete' | 'markets.model.error' | 'markets.model.progress' | 'markets.model.refreshed' | 'message.complete' | 'message.delta' | 'message.start' | 'pm.tick' | 'reasoning.available' | 'reasoning.delta' | 'review.summary' | 'review.sweep' | 'secret.request' | 'session.info' | 'skin.changed' | 'status.update' | 'subagent.complete' | 'subagent.progress' | 'subagent.spawn_requested' | 'subagent.start' | 'subagent.thinking' | 'subagent.tool' | 'sudo.request' | 'thinking.delta' | 'tool.complete' | 'tool.generating' | 'tool.progress' | 'tool.start' | 'voice.status' | 'voice.transcript'
+export type WireEventName = 'approval.request' | 'background.complete' | 'browser.progress' | 'clarify.request' | 'command.finished' | 'command.output' | 'command.started' | 'cron.fired' | 'error' | 'forecast.warnings.automode.complete' | 'forecast.warnings.automode.error' | 'forecast.warnings.automode.progress' | 'gateway.protocol_error' | 'gateway.ready' | 'gateway.start_timeout' | 'gateway.stderr' | 'jobs.complete' | 'jobs.error' | 'jobs.progress' | 'markets.model.complete' | 'markets.model.error' | 'markets.model.progress' | 'markets.model.refreshed' | 'message.complete' | 'message.delta' | 'message.start' | 'pm.tick' | 'reasoning.available' | 'reasoning.delta' | 'review.summary' | 'review.sweep' | 'secret.request' | 'session.info' | 'skin.changed' | 'status.update' | 'subagent.complete' | 'subagent.progress' | 'subagent.spawn_requested' | 'subagent.start' | 'subagent.thinking' | 'subagent.tool' | 'sudo.request' | 'thinking.delta' | 'tool.complete' | 'tool.generating' | 'tool.progress' | 'tool.start' | 'voice.status' | 'voice.transcript'
 
-export const WIRE_EVENT_NAMES: readonly WireEventName[] = ['approval.request', 'background.complete', 'browser.progress', 'clarify.request', 'cron.fired', 'error', 'forecast.warnings.automode.complete', 'forecast.warnings.automode.error', 'forecast.warnings.automode.progress', 'gateway.protocol_error', 'gateway.ready', 'gateway.start_timeout', 'gateway.stderr', 'jobs.complete', 'jobs.error', 'jobs.progress', 'markets.model.complete', 'markets.model.error', 'markets.model.progress', 'markets.model.refreshed', 'message.complete', 'message.delta', 'message.start', 'pm.tick', 'reasoning.available', 'reasoning.delta', 'review.summary', 'review.sweep', 'secret.request', 'session.info', 'skin.changed', 'status.update', 'subagent.complete', 'subagent.progress', 'subagent.spawn_requested', 'subagent.start', 'subagent.thinking', 'subagent.tool', 'sudo.request', 'thinking.delta', 'tool.complete', 'tool.generating', 'tool.progress', 'tool.start', 'voice.status', 'voice.transcript']
+export const WIRE_EVENT_NAMES: readonly WireEventName[] = ['approval.request', 'background.complete', 'browser.progress', 'clarify.request', 'command.finished', 'command.output', 'command.started', 'cron.fired', 'error', 'forecast.warnings.automode.complete', 'forecast.warnings.automode.error', 'forecast.warnings.automode.progress', 'gateway.protocol_error', 'gateway.ready', 'gateway.start_timeout', 'gateway.stderr', 'jobs.complete', 'jobs.error', 'jobs.progress', 'markets.model.complete', 'markets.model.error', 'markets.model.progress', 'markets.model.refreshed', 'message.complete', 'message.delta', 'message.start', 'pm.tick', 'reasoning.available', 'reasoning.delta', 'review.summary', 'review.sweep', 'secret.request', 'session.info', 'skin.changed', 'status.update', 'subagent.complete', 'subagent.progress', 'subagent.spawn_requested', 'subagent.start', 'subagent.thinking', 'subagent.tool', 'sudo.request', 'thinking.delta', 'tool.complete', 'tool.generating', 'tool.progress', 'tool.start', 'voice.status', 'voice.transcript']
 
 export const WireEvent = {
   APPROVAL_REQUEST: 'approval.request',
   BACKGROUND_COMPLETE: 'background.complete',
   BROWSER_PROGRESS: 'browser.progress',
   CLARIFY_REQUEST: 'clarify.request',
+  COMMAND_FINISHED: 'command.finished',
+  COMMAND_OUTPUT: 'command.output',
+  COMMAND_STARTED: 'command.started',
   CRON_FIRED: 'cron.fired',
   ERROR: 'error',
   FORECAST_WARNINGS_AUTOMODE_COMPLETE: 'forecast.warnings.automode.complete',
@@ -195,6 +198,23 @@ export interface ClipboardPasteResponse {
   message?: string
   token_estimate?: number
   width?: number
+}
+
+export interface CommandFinished {
+  command_id: string
+  status: 'cancelled' | 'failed' | 'finished'
+}
+
+export interface CommandOutput {
+  command_id: string
+  stream: 'stderr' | 'stdout'
+  text: string
+}
+
+export interface CommandStarted {
+  command_id: string
+  name: string
+  request_id: string
 }
 
 export interface CommandsCatalogRequest {

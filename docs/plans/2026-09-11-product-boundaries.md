@@ -2569,3 +2569,26 @@ handles, foreign sessions and shutdown during admission. Full UI streaming and
 visible cancellation remain unverified; this is backend integration evidence.
 The preceding command-context batch pushed after 31,100 tests passed with 148
 skips and 58 warnings.
+
+
+### Native command progress contract and bounded capture
+
+Native Kanban operations now emit typed command.started, command.output and
+command.finished events on the requesting transport. A generated command identity
+links the sequence; the start event also identifies the original RPC request.
+Finished means the operation returned, not that a legacy textual usage/error
+result represents business success. Cancellation and raised failures have separate
+terminal statuses. These live events are not durable forecast-turn records.
+
+Request-local capture can retain a bounded Unicode character tail while streaming
+all writes. Native commands retain at most 65,536 characters per output stream;
+event chunks are limited to 4,096 characters. Observer failure is logged once and
+disabled without converting an applied mutation into an operation failure.
+
+175 focused output, Kanban and gateway tests passed, including cancellation event
+ordering on the real asynchronous transport, failed-operation terminal status,
+request-local nested capture, bounded output and exactly one durable mutation when
+event delivery fails. Python quality checks and all 46 import contracts passed.
+The preceding host-cancellation batch pushed after 31,114 tests passed, 148 skipped.
+Visible TUI progress/cancellation and acknowledged long-command timeout handling
+remain pending; generated client types alone do not establish that interaction.

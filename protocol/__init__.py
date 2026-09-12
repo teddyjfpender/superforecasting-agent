@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from protocol.events import commands as _events_commands
 from protocol.events import desk as _events_desk
 from protocol.events import gateway as _events_gateway
 from protocol.events import jobs as _events_jobs
@@ -235,6 +236,9 @@ EXTRA_MODELS: list[type[WireModel]] = [
 ]
 
 EVENT_SPECS: list[EventSpec] = [
+    EventSpec("command.started", _events_commands.CommandStarted),
+    EventSpec("command.output", _events_commands.CommandOutput),
+    EventSpec("command.finished", _events_commands.CommandFinished),
     # ── pm.* + jobs.* (A1 / Arc B) ───────────────────────────────────────────
     EventSpec("pm.tick", _events_pm.PmTick),
     EventSpec("jobs.progress", _events_jobs.JobProgress),

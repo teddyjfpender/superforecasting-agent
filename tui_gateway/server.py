@@ -5789,7 +5789,29 @@ def _(rid, params: dict) -> dict:
 
         try:
             with _host.command(session) as stop:
-                return _ok(rid, {"output": run_slash(_cmd_arg, stop_event=stop)})
+                command_id = uuid.uuid4().hex
+                sid = params.get("session_id", "")
+                status = "failed"
+                delivery_failed = False
+                def notify(event, payload):
+                    nonlocal delivery_failed
+                    if delivery_failed:
+                        return
+                    try:
+                        _emit(event, sid, {"command_id": command_id, **payload})
+                    except Exception:
+                        delivery_failed = True
+                        logger.exception("Native command event delivery failed")
+                def output(stream, text):
+                    for offset in range(0, len(text), 4096):
+                        notify("command.output", {"stream": stream, "text": text[offset:offset + 4096]})
+                notify("command.started", {"request_id": str(rid), "name": "kanban"})
+                try:
+                    result = run_slash(_cmd_arg, stop_event=stop, output_limit=65536, on_output=output)
+                    status = "cancelled" if stop.is_set() else "finished"
+                    return _ok(rid, {"output": result})
+                finally:
+                    notify("command.finished", {"status": status})
         except ValueError as exc:
             return _err(rid, 4004, str(exc))
         except OSError as exc:
