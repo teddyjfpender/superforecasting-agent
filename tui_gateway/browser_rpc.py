@@ -137,7 +137,7 @@ def _(rid, params: dict) -> dict:
 def _browser_connect(rid, params: dict) -> dict:
     import platform
 
-    from tools.browser_tool import cleanup_all_browsers
+    from superforecasting_agent.runtime.browser_connect import set_browser_endpoint
 
     url = params.get("url")
 
@@ -207,13 +207,7 @@ def _browser_connect(rid, params: dict) -> dict:
 
         normalized = _normalize_cdp_url(parsed)
 
-        # Order matters: reap sessions BEFORE publishing the new env
-        # so an in-flight tool call sees the old supervisor closed,
-        # then again AFTER so the default task's cached supervisor
-        # is drained against the new URL.
-        cleanup_all_browsers()
-        os.environ["BROWSER_CDP_URL"] = normalized
-        cleanup_all_browsers()
+        set_browser_endpoint(normalized)
     except Exception as e:
         return _err(rid, 5031, str(e))
 
@@ -224,17 +218,10 @@ def _browser_connect(rid, params: dict) -> dict:
 
 
 def _browser_disconnect(rid) -> dict:
-    # Reap, drop the env override, reap again — closes the same swap
-    # window covered by ``_browser_connect``.
-    def reap() -> None:
-        try:
-            from tools.browser_tool import cleanup_all_browsers
+    from superforecasting_agent.runtime.browser_connect import set_browser_endpoint
 
-            cleanup_all_browsers()
-        except Exception:
-            pass
-
-    reap()
-    os.environ.pop("BROWSER_CDP_URL", None)
-    reap()
+    try:
+        set_browser_endpoint(None)
+    except Exception as exc:
+        return _err(rid, 5031, f"Browser disconnect failed: {exc}")
     return _ok(rid, {"connected": False})

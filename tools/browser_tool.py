@@ -3553,12 +3553,14 @@ def cleanup_all_browsers() -> None:
     for task_id in task_ids:
         cleanup_browser(task_id)
 
-    # Tear down CDP supervisors for all tasks so background threads exit.
+    # Keep supervisor cleanup failures visible to connection/shutdown owners.
+    # The optional supervisor package may be absent in minimal installations.
     try:
-        from tools.browser_supervisor import SUPERVISOR_REGISTRY  # type: ignore[import-not-found]
-        SUPERVISOR_REGISTRY.stop_all()
-    except Exception:
+        from tools.browser_supervisor import SUPERVISOR_REGISTRY
+    except ImportError:
         pass
+    else:
+        SUPERVISOR_REGISTRY.stop_all()
 
     # Reset cached lookups so they are re-evaluated on next use.
     global _cached_agent_browser, _agent_browser_resolved

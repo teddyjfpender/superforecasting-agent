@@ -3174,3 +3174,22 @@ The startup batch's full push gate remains running in the primary checkout.
 - Remaining browser work: session/recording/cloud-provider resource ownership and
   propagation of cleanup failures through browser connect/disconnect adapters.
   The registry fix alone does not establish truthful end-to-end disconnect state.
+
+### Browser endpoint transition and failure reporting
+
+- `hosting/browser_connection.py` now owns serialized endpoint transitions for
+  CLI and TUI. Both adapters drain before publishing the process override and
+  drain again afterward. A first-pass failure preserves the old setting; a
+  second-pass failure explicitly reports incomplete cleanup with the new desired
+  setting still visible. The lock serializes commands, not browser tool calls.
+- `cleanup_all_browsers` no longer suppresses supervisor shutdown failures;
+  only absence of the optional supervisor dependency is tolerated. Both
+  connection consumers report errors rather than successful disconnect when
+  supervisor cleanup fails. The CLI also probes a replacement endpoint before
+  starting destructive cleanup of the old browser resources.
+- Verification: 75 focused host/browser/CLI/TUI/supervisor tests passed. Real
+  cleanup-to-consumer tests injected a supervisor failure, proved both consumers
+  reported it and preserved the prior endpoint. Shared Python quality gates passed.
+- Remaining: per-session browser/recording/cloud cleanup ownership, concurrent
+  tool admission during an endpoint transition, and disconnect semantics when
+  a persistent config endpoint remains after the process override is removed.

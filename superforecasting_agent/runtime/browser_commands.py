@@ -9,6 +9,7 @@ from .browser_connect import (
     is_browser_debug_ready,
     manual_chrome_debug_command,
     try_launch_chrome_debug,
+    set_browser_endpoint,
 )
 
 def _try_launch_chrome_debug(port: int, system: str) -> bool:
@@ -43,13 +44,6 @@ def _handle_browser_command(self, cmd: str):
             return
         _port = parsed_cdp.port or (443 if parsed_cdp.scheme in {"https", "wss"} else 80)
         cdp_url = normalize_cdp_url(parsed_cdp)
-
-        # Clear any existing browser sessions so the next tool call uses the new backend
-        try:
-            from tools.browser_tool import cleanup_all_browsers
-            cleanup_all_browsers()
-        except Exception:
-            pass
 
         print()
 
@@ -92,7 +86,11 @@ def _handle_browser_command(self, cmd: str):
             print()
             return
 
-        os.environ["BROWSER_CDP_URL"] = cdp_url
+        try:
+            set_browser_endpoint(cdp_url)
+        except Exception as exc:
+            print(f"   ⚠ Browser connection failed: {exc}")
+            return
         # Eagerly start the CDP supervisor so pending_dialogs + frame_tree
         # show up in the next browser_snapshot.  No-op if already started.
         try:
@@ -122,13 +120,11 @@ def _handle_browser_command(self, cmd: str):
 
     elif sub == "disconnect":
         if current:
-            os.environ.pop("BROWSER_CDP_URL", None)
             try:
-                from tools.browser_tool import cleanup_all_browsers, _stop_cdp_supervisor
-                _stop_cdp_supervisor("default")
-                cleanup_all_browsers()
-            except Exception:
-                pass
+                set_browser_endpoint(None)
+            except Exception as exc:
+                print(f"   ⚠ Browser disconnect failed: {exc}")
+                return
             print()
             print("🌐 Browser disconnected from live Chromium-family browser")
             print("   Browser tools reverted to default mode (local headless or cloud provider)")

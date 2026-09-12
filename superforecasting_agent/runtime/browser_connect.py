@@ -217,3 +217,11 @@ def try_launch_chrome_debug(port: int = DEFAULT_BROWSER_CDP_PORT, system: str | 
         except Exception:
             continue
     return False
+
+
+def set_browser_endpoint(endpoint: str | None) -> None:
+    """Apply a process-local endpoint through the shared host operation."""
+    from superforecasting_agent.hosting.browser_connection import change_browser_endpoint
+    from tools.browser_tool import cleanup_all_browsers
+
+    change_browser_endpoint(endpoint, environment=os.environ, cleanup=cleanup_all_browsers)

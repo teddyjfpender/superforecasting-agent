@@ -45,8 +45,9 @@ The legacy dispatcher itself remains.
   can mark itself closed before transport disposal fails. Safe recovery of those
   transports and terminal/browser cleanup failures is still unfinished. Browser
   supervisors now retain failed startup/stop handles and reject overlapping
-  lifecycle mutations; adapter failure propagation and browser session cleanup
-  ownership remain to be finished.
+  lifecycle mutations. CLI/TUI now share endpoint transitions and surface
+  supervisor cleanup failures. Browser session cleanup ownership, concurrent
+  tool admission and persistent-config disconnect semantics remain unfinished.
 - [x] Remove the legacy global goal database cache. Standalone managers own
   closable connections; CLI, gateway and TUI managers borrow their host storage.
   Manager reads refresh and writes reject stale state. Hosted goal paths never
