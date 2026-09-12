@@ -222,3 +222,20 @@ def test_offline_backup_import_uses_shared_arguments_without_runtime(monkeypatch
     parsed = execute.call_args.args[0]
     assert parsed.zipfile == "example.zip"
     assert parsed.force is True
+
+
+def test_abandoned_lease_explicitly_closes_sqlite_and_enclosing_home(tmp_path):
+    import gc
+    import weakref
+    import sqlite3
+
+    lease = ProfileLease(tmp_path / "profiles" / "discarded")
+    connection = lease._connection
+    reference = weakref.ref(lease)
+    del lease
+    gc.collect()
+    assert reference() is None
+    with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+        connection.execute("SELECT 1")
+    with ProfileLease(tmp_path, exclusive=True):
+        pass

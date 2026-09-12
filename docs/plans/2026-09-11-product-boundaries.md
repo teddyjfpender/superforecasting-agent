@@ -5083,3 +5083,14 @@ quality gates to run when the optional SDK is absent. No dependency is installed
 on import. The AWS selection passed 139 tests (6 optional-SDK skips); its fake
 package fixtures now bind the parent and submodule to the same SDK object. These
 changes await integration after the current main push terminates.
+
+
+The b02dd642a full push gate failed: 31,934 passed, 13 failed, 2 errors,
+148 skipped. Most failures were Python 3.13 unclosed SQLite warnings from
+abandoned profile leases; an additional assertion retained old TUI restore copy.
+Profile leases now register explicit collection-time cleanup with weakref.finalize,
+retaining their enclosing home until the child closes. Explicit failed closes
+still retain handles for retry. The regression holds the underlying connection
+after collecting the lease and verifies it was explicitly closed, then verifies
+exclusive home admission. The focused admission/goal/websocket/TUI selection
+passed 287 tests. Full integrated verification remains required.

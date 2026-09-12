@@ -3251,7 +3251,7 @@ def test_snapshot_restore_is_blocked_from_tui_worker():
     )
     assert dispatch_resp["result"]["type"] == "exec"
     assert (
-        "/snapshot restore is blocked in the TUI" in dispatch_resp["result"]["output"]
+        "Snapshot restore/recover requires exclusive profile access" in dispatch_resp["result"]["output"]
     )
 
 

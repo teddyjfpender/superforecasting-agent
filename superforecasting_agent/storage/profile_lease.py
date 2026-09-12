@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from sqlite3 import Connection, OperationalError, connect
 from typing import Any
+from weakref import finalize
 
 LEASE_FILE = ".profile-use.lock"
 
@@ -21,6 +22,7 @@ class ProfileLease:
         self.home = home.resolve()
         self._connection: Connection | None = None
         self._root_lease: ProfileLease | None = None
+        self._finalizer: finalize | None = None
         self.home.mkdir(parents=True, exist_ok=True)
         path = self.home / LEASE_FILE
         if path.is_symlink():
@@ -62,6 +64,16 @@ class ProfileLease:
             connection.close()
             raise
         self._connection = connection
+        # Session fixtures and embedding callers may abandon their owner. Close
+        # the dedicated connection explicitly at collection too; sqlite3 warns
+        # on implicit disposal, and the enclosing home must outlive its child.
+        self._finalizer = finalize(self, self._release, connection, self._root_lease)
+
+    @staticmethod
+    def _release(connection: Connection, root: ProfileLease | None) -> None:
+        connection.close()
+        if root is not None:
+            root.close()
 
     def close(self) -> None:
         if self._connection is not None:
@@ -70,6 +82,9 @@ class ProfileLease:
         if self._root_lease is not None:
             self._root_lease.close()
             self._root_lease = None
+        if self._finalizer is not None:
+            self._finalizer.detach()
+            self._finalizer = None
 
     def __enter__(self) -> ProfileLease:
         return self
