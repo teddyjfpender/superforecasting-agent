@@ -21,27 +21,33 @@ logger = logging.getLogger(__name__)
 AUTH_STORE_VERSION = 1
 
 
-def load_auth_store(auth_file: Path) -> dict[str, Any]:
+def load_auth_store(
+    auth_file: Path, *, preserve_corrupt: bool = True
+) -> dict[str, Any]:
+    """Read a store; read-only fallback callers disable corruption backup writes."""
     if not auth_file.exists():
         return {"version": AUTH_STORE_VERSION, "providers": {}}
 
     try:
         raw = json.loads(auth_file.read_text(encoding="utf-8"))
     except Exception as exc:
-        corrupt_path = auth_file.with_suffix(".json.corrupt")
-        try:
-            import shutil
-
-            shutil.copy2(auth_file, corrupt_path)
-        except Exception:
-            pass
         logger.warning(
-            "auth: failed to parse %s (%s) — starting with empty store. "
-            "Corrupt file preserved at %s",
-            auth_file,
-            exc,
-            corrupt_path,
+            "auth: failed to parse %s (%s) — starting with empty store", auth_file, exc
         )
+        if preserve_corrupt:
+            corrupt_path = auth_file.with_suffix(".json.corrupt")
+            try:
+                import shutil
+
+                shutil.copy2(auth_file, corrupt_path)
+            except Exception as backup_error:
+                logger.warning(
+                    "auth: could not preserve corrupt store at %s: %s",
+                    corrupt_path,
+                    backup_error,
+                )
+            else:
+                logger.warning("auth: corrupt file preserved at %s", corrupt_path)
         return {"version": AUTH_STORE_VERSION, "providers": {}}
 
     if isinstance(raw, dict) and (

@@ -939,14 +939,19 @@ def _load_global_auth_store() -> Dict[str, Any]:
     if os.environ.get("PYTEST_CURRENT_TEST"):
         real_home_env = os.environ.get("HOME", "")
         if real_home_env:
-            real_root = Path(real_home_env) / ".hermes" / "auth.json"
+            real_roots = {
+                (Path(real_home_env) / home / "auth.json").resolve(strict=False)
+                for home in (".superforecasting-agent", ".hermes")
+            }
             try:
-                if global_path.resolve(strict=False) == real_root.resolve(strict=False):
+                if global_path.resolve(strict=False) in real_roots:
                     return {}
             except Exception:
                 pass
     try:
-        return _load_auth_store(global_path)
+        from superforecasting_agent.storage.auth import load_auth_store
+
+        return load_auth_store(global_path, preserve_corrupt=False)
     except Exception:
         # A malformed global store must not break profile reads. The
         # profile's own auth store is still authoritative.

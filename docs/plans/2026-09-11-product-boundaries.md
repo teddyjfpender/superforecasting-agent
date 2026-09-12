@@ -4847,3 +4847,14 @@ snapshot. The test now gates the background worker, proves immediate stale-data
 service, then releases and verifies fresh session totals. Fixture teardown drains
 workers before restoring patched modules/profile paths. Nine plugin checks pass.
 No production cache behavior was weakened to satisfy the test.
+
+
+### Non-writing global credential fallback
+
+Two negative controls reproduced a global fallback writing a corrupt-file backup
+and the pytest fallback guard failing to protect the primary forecast home.
+Global reads now disable backup writes through the shared storage API, and both
+default homes are protected using the real HOME environment path. Owned-store
+recovery backups retain their existing behavior; logs only claim preservation
+when the copy actually succeeds. 158 auth/profile/storage checks and the shared
+quality workflow passed. No live credentials were read in the tests.
