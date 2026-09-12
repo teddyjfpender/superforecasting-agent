@@ -2463,7 +2463,7 @@ def _session_runtime(sid: str) -> dict:
 
 def _make_agent(sid: str, key: str, session_id: str | None = None):
 
-    from superforecasting_agent.runtime.config import resolve_config
+    from superforecasting_agent.configuration import resolve_config
 
     cfg = resolve_config(_load_cfg())
     agent_cfg = cfg.get("agent") or {}

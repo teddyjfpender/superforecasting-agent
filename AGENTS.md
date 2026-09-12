@@ -380,7 +380,9 @@ Reference: #2810 (bounds pass), #9801 (SHA pinning + audit CI).
 ## Adding Configuration
 
 ### config.yaml options:
-1. Add to `DEFAULT_CONFIG` in `superforecasting_agent/runtime/config.py`
+1. Add to `DEFAULT_CONFIG` in `superforecasting_agent/configuration/defaults.py`.
+   The runtime module re-exports it for compatibility; defaults and normalization
+   belong to the shared configuration package, which imports no runtime or UI code.
 2. Bump `_config_version` (check the current value at the top of `DEFAULT_CONFIG`)
    ONLY if you need to actively migrate/transform existing user config
    (renaming keys, changing structure). Adding a new key to an existing

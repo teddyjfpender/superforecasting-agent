@@ -2,30 +2,7 @@
 from pathlib import Path
 
 
-def model_section(config):
-    if not isinstance(config, dict):
-        raise ValueError('configuration must be a mapping')
-    raw = config.get('model')
-    if isinstance(raw, str):
-        section = {'default': raw.strip()}
-    elif isinstance(raw, dict):
-        section = dict(raw)
-        if not section.get('default') and section.get('model'):
-            section['default'] = section['model']
-    elif raw is None:
-        section = {}
-    else:
-        raise ValueError('model configuration must be a string or mapping')
-    for key in ('provider', 'base_url', 'context_length'):
-        if not section.get(key) and config.get(key):
-            section[key] = config[key]
-    for key in ('default', 'provider', 'base_url', 'api_mode'):
-        value = section.get(key)
-        if value is not None:
-            if not isinstance(value, str):
-                raise ValueError(f'model.{key} must be a string')
-            section[key] = value.strip()
-    return section
+from superforecasting_agent.configuration import model_section as model_section
 
 
 def persist_model_selection(path, *, model, provider, base_url=None, api_mode=None):

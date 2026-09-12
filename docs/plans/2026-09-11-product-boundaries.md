@@ -2336,3 +2336,26 @@ empty-state rejection, deferred-agent export and history changes between snapsho
 capture and file I/O. These are convenience transcript exports; they do not
 replace durable session journaling or the forecast-ledger transfer format.
 Shared quality checks passed with 43 import contracts kept and none broken.
+
+
+### Configuration values become an independent owner
+
+The remaining domain-to-runtime exceptions are largely configuration reads.
+As the prerequisite for migrating those readers, defaults and normalization now
+live in superforecasting_agent/configuration rather than the CLI management
+module. The package owns default data, model-section interpretation, legacy-key
+normalization, recursive merge/lookup and environment expansion. Runtime modules
+re-export existing names; TUI startup imports the shared normalizer directly.
+
+The complete DEFAULT_CONFIG expression AST was compared before and after the
+move and is identical, including arithmetic defaults. 319 focused configuration,
+model-normalization and TUI tests passed. The package is covered by strict
+lint/format/types and a transitive contract forbidding storage, runtime, domain
+and presentation dependencies. Contributor guidance now points to the actual
+defaults owner. File reading, cache/persistence migration and removal of the
+remaining domain-reader exceptions are subsequent work, not claimed complete here.
+
+The expanded runtime/CLI/TUI/AppConfig run passed 5,561 tests with 10 skips.
+Shared quality checks passed with 44 import contracts kept and none broken.
+The seven extracted normalization/lookup helper bodies were also compared by
+AST: identical apart from removing the import of their now-local model helper.

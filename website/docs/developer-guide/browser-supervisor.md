@@ -207,7 +207,7 @@ Issue planned against `jo-inc/camofox-browser` adding:
   - `browser_snapshot` (at ~line 1536): merge supervisor state into return payload
   - `/browser connect` handler: restart supervisor with new endpoint
   - Session teardown hooks in `_cleanup_browser_session`
-- `superforecasting_agent/runtime/config.py` — add `browser.dialog_policy` and `browser.dialog_timeout_s` to `DEFAULT_CONFIG`
+- `superforecasting_agent/configuration/defaults.py` — add `browser.dialog_policy` and `browser.dialog_timeout_s` to `DEFAULT_CONFIG`
 - Docs: `website/docs/user-guide/features/browser.md`, `website/docs/reference/tools-reference.md`, `website/docs/reference/toolsets-reference.md`
 
 ## Non-goals

@@ -17,6 +17,8 @@ changes, tests and their limits. The previous checklist is preserved in the
   protocol event delivery remains an adapter responsibility.
 - [ ] Reduce the remaining frozen domain-to-runtime/tool import exceptions.
   Move a capability and its tests together; directory moves alone are insufficient.
+  Shared defaults/normalization are now independent; move profile-reading ownership
+  next so ledger and hook settings no longer import CLI configuration management.
 
 Already implemented: shared forecast review/resolution/scoring, command catalog
 and aliases, configured-command validation/execution, session selection and

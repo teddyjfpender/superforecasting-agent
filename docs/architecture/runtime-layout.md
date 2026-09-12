@@ -174,3 +174,12 @@ Interactive goal/subgoal commands and post-turn continuation coordination live
 in `runtime/goal_commands.py`; persistent goal state and judging stay in
 `runtime/goals.py`. Slash-command detection belongs to the central command
 module, and console escape constants share the console-output owner.
+
+
+Configuration defaults and mapping normalization live in
+`superforecasting_agent/configuration/`. `defaults.py` is data only; the package
+owns `resolve_config`, `model_section` and `cfg_get`. It reads no profile files
+and imports no runtime or presentation modules. File loading, migration and
+persistence remain separate. Existing imports through `runtime.config` and
+`runtime.model_configuration` remain compatible re-exports; new value-only
+consumers should import the shared configuration package directly.

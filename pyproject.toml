@@ -678,3 +678,9 @@ name = "transcript exports do not depend on consumers"
 type = "forbidden"
 source_modules = ["superforecasting_agent.storage.transcripts"]
 forbidden_modules = ["cli", "tui_gateway", "gateway", "agent", "superforecasting_agent.runtime"]
+
+[[tool.importlinter.contracts]]
+name = "configuration values never initialize runtime or consumers"
+type = "forbidden"
+source_modules = ["superforecasting_agent.configuration"]
+forbidden_modules = ["superforecasting_agent.runtime", "superforecasting_agent.storage", "agent", "tools", "gateway", "tui_gateway", "cli", "forecasting"]
