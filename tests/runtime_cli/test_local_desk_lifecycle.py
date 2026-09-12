@@ -102,19 +102,25 @@ def local_desk(tmp_path, monkeypatch):
         thread.join(3)
 
 
-def until(ws, predicate):
+def until(ws, predicate, *, screen=None):
     output = b''
     try:
         for _ in range(300):
             frame = ws.receive()
             assert "bytes" in frame, f"Forecast Desk transport failed before expected output: {frame}"
             output += frame["bytes"]
-            plain = re.sub(rb'\x1b\[[0-?]*[ -/]*[@-~]', b'', output)
+            if screen is None:
+                plain = re.sub(rb'\x1b\[[0-?]*[ -/]*[@-~]', b'', output)
+            else:
+                screen.feed(frame["bytes"])
+                plain = screen.text().encode("utf-8")
             if predicate(plain):
                 return output
         pytest.fail('desk never reached expected state')
     finally:
         print('TERMINAL:', repr(output[-5000:]))
+        if screen is not None:
+            print('SCREEN:', screen.text())
 
 
 @pytest.mark.parametrize('prompt,visible', [('failure', b'expired'), ('quota', b'exceeded'), ('disconnect', b'ended')])
@@ -162,6 +168,8 @@ def test_real_desk_interruption_preserves_work(local_desk, terminate):
 
 
 def test_real_desk_shared_forecast_operations(local_desk):
+    from functools import partial
+    from tests.tui_pty.vt import VTScreen
     from forecasting.ledger import ForecastLedger
 
     client, home, _ = local_desk
@@ -173,26 +181,27 @@ def test_real_desk_shared_forecast_operations(local_desk):
     ledger.create_snapshot(question_id=question.id, probability_or_distribution=0.7, rationale="Baseline.")
     with client.websocket_connect('/api/pty?token=local-engineering&channel=forecast-operations') as ws:
         ws.send_text('\x1b[RESIZE:160;45]')
-        until(ws, lambda out: b'local-fixture' in out)
+        observe = partial(until, ws, screen=VTScreen(rows=45, cols=160))
+        observe(lambda out: b'local-fixture' in out)
         ws.send_text('/review --last 7d\r')
-        until(ws, lambda out: question.id.encode() in out)
+        observe(lambda out: question.id.encode() in out)
         ws.send_text('q')
-        until(ws, lambda out: b'TODAY' in out)
+        observe(lambda out: b'TODAY' in out and b'Esc close' not in out)
         ws.send_text(f'/resolve {question.id} --outcome true --source fixture\r')
-        until(ws, lambda out: b'auto_score:' in out)
+        observe(lambda out: b'auto_score:' in out)
         resolution = ledger.get_latest_resolution(question.id)
         assert resolution is not None
         assert ledger.get_question(question.id).status == 'resolved'
         ws.send_text('q')
-        until(ws, lambda out: b'TODAY' in out)
+        observe(lambda out: b'TODAY' in out and b'Esc close' not in out)
         ws.send_text(f'/forecast resolve {question.id} --outcome true --source fixture\r')
-        until(ws, lambda out: b'auto_score:' in out)
+        observe(lambda out: b'auto_score:' in out)
         assert ledger.get_latest_resolution(question.id).id == resolution.id
         score = ledger.get_current_score(question.id)
         ws.send_text('q')
-        until(ws, lambda out: b'TODAY' in out)
+        observe(lambda out: b'TODAY' in out and b'Esc close' not in out)
         ws.send_text(f'/score {question.id} --baselines\r')
-        until(ws, lambda out: b'baseline_scores: none' in out)
+        observe(lambda out: b'baseline_scores: none' in out)
         assert ledger.get_current_score(question.id).id == score.id
         ws.close(code=1000)
 
@@ -210,3 +219,24 @@ def test_real_desk_unavailable_history_does_not_start_replacement(local_desk, mo
             with closing(sqlite3.connect(state)) as db:
                 assert db.execute('SELECT COUNT(*) FROM sessions').fetchone()[0] == 0
         ws.close(code=1000)
+
+
+def test_desk_screen_observation_retains_unchanged_rows():
+    from tests.tui_pty.vt import VTScreen
+
+    class Frames:
+        def __init__(self):
+            self.frames = iter([
+                b"\x1b[HTODAY\x1b[2;1Hloading",
+                b"\x1b[2;1H\x1b[2Kresolved",
+            ])
+
+        def receive(self):
+            return {"bytes": next(self.frames)}
+
+    ws = Frames()
+    screen = VTScreen(rows=3, cols=20)
+    until(ws, lambda out: b"loading" in out, screen=screen)
+    delta = until(ws, lambda out: b"TODAY" in out and b"resolved" in out, screen=screen)
+    assert b"TODAY" not in delta
+    assert b"loading" not in screen.text().encode()

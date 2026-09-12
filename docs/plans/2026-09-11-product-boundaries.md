@@ -3477,3 +3477,22 @@ operation. Both empty and explicit learning requests retain their exact prompt.
 The new regression first failed on unexpected agent construction in both cases.
 After the fix, all 178 configured-command/protocol tests passed. Modern clients
 already use native dispatch first; this closes the older-client entry path.
+
+
+### Durable desk test observes rendered state
+
+The integrated push gate failed one real desk test after 31,431 other passes.
+It waited for `TODAY` in newly emitted PTY bytes after pager dismissal. Ink emits
+screen differences, so an unchanged heading need not appear in a later frame.
+Reusing the existing tested VTScreen emulator preserves cursor movement, erased
+text and unchanged rows between waits. The first screen-aware run also showed
+that `TODAY` remains visible behind the pager: the next command must wait for
+the pager hint to disappear, not only for the landing heading to be present.
+
+The corrected test checks rendered pager dismissal before sending each command;
+a deterministic frame fixture proves unchanged rows survive and erased text does
+not. Raw byte returns remain unchanged for reconnect cursor accounting. Diagnostics
+now include the rendered screen. No production timeout or test deadline changed.
+All 22 real desk lifecycle and VT emulator tests passed in 10.04 seconds. This
+fixes an invalid test observation boundary; it does not attribute the historical
+native SSL incident.
