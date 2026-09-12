@@ -10,6 +10,7 @@
 // so the A4 grep-proof (no hand-written wire-shape INTERFACE outside
 // generated.ts) holds. The forecast value-enums re-export from ./types.js.
 import type { WireEvent } from './protocol/generated.js'
+import type { CommandFinished, CommandOutput, CommandStarted } from './protocol/generated.js'
 import type { BuildInfoPayload, GatewaySkin, SubagentEventPayload } from './protocol/generated.js'
 import type { SessionInfo, Usage } from './types.js'
 
@@ -235,6 +236,9 @@ export type { ForecastTailClassification, ForecastTriageLabel } from './types.js
 // its own payload); the payloads reference generated shapes (GatewaySkin,
 // SubagentEventPayload, SessionInfo, Usage) where they are non-trivial.
 export type GatewayEvent =
+  | { payload: CommandStarted; session_id?: string; type: typeof WireEvent.COMMAND_STARTED }
+  | { payload: CommandOutput; session_id?: string; type: typeof WireEvent.COMMAND_OUTPUT }
+  | { payload: CommandFinished; session_id?: string; type: typeof WireEvent.COMMAND_FINISHED }
   | {
       payload?: { build?: BuildInfoPayload; protocol_version?: number; skin?: GatewaySkin }
       session_id?: string

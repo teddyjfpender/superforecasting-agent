@@ -2592,3 +2592,20 @@ event delivery fails. Python quality checks and all 46 import contracts passed.
 The preceding host-cancellation batch pushed after 31,114 tests passed, 148 skipped.
 Visible TUI progress/cancellation and acknowledged long-command timeout handling
 remain pending; generated client types alone do not establish that interaction.
+
+
+### Acknowledged native commands outlive ordinary RPC deadlines
+
+The terminal transport now suspends only a slash.exec deadline acknowledged by a
+command.started event matching its pending request and session. Both local stdio
+and attached WebSocket paths use this shared dispatcher. A terminal command event
+starts a fresh final-response deadline; duplicate start/finish events cannot keep
+extending it. Results and errors still settle through the original RPC response,
+and transport disconnection rejects pending work using the existing cleanup path.
+Command events are included in the generated-payload GatewayEvent union.
+
+23 client transport tests passed, including commands running beyond five minutes
+of virtual time, cancellation results, disconnection, missing final results,
+duplicate terminal events and wrong-session/request/non-command acknowledgements.
+These deterministic transport checks do not prove visible progress or Ctrl+C
+interaction. Those remain the next native-command integration work.

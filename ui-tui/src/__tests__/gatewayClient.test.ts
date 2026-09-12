@@ -159,6 +159,100 @@ describe('GatewayClient websocket attach mode', () => {
     gw.kill()
   })
 
+  it.each(['result', 'disconnect', 'missing-result'] as const)(
+    'keeps acknowledged commands pending until %s',
+    async ending => {
+      vi.useFakeTimers()
+      process.env.HERMES_TUI_GATEWAY_URL = 'ws://gateway.test/api/ws'
+      const gw = new GatewayClient()
+
+      try {
+        gw.start()
+        const socket = FakeWebSocket.instances[0]!
+        socket.open()
+        const request = gw.request('slash.exec', { command: 'kanban watch', session_id: 's1' })
+
+        const outcome = request.then(
+          value => ({ value }),
+          error => ({ error: String(error) })
+        )
+
+        await Promise.resolve()
+        const frame = JSON.parse(socket.sent[0]!)
+
+        const event = (type: string, payload: Record<string, unknown>, session = 's1') =>
+          socket.message(JSON.stringify({ method: 'event', params: { type, session_id: session, payload } }))
+
+        const start = { request_id: frame.id, command_id: 'c1', name: 'kanban' }
+        event('command.started', start)
+        const settled = vi.fn()
+        void outcome.then(settled)
+        await vi.advanceTimersByTimeAsync(300_000)
+        expect(settled).not.toHaveBeenCalled()
+
+        if (ending === 'disconnect') {
+          socket.close()
+          expect(await outcome).toHaveProperty('error')
+        } else {
+          event('command.finished', { command_id: 'c1', status: 'cancelled' })
+
+          if (ending === 'result') {
+            socket.message(JSON.stringify({ id: frame.id, result: { output: '(stopped)' } }))
+            expect(await outcome).toEqual({ value: { output: '(stopped)' } })
+          } else {
+            await vi.advanceTimersByTimeAsync(60_000)
+            event('command.started', start)
+            event('command.finished', { command_id: 'c1', status: 'cancelled' })
+            await vi.advanceTimersByTimeAsync(60_001)
+            expect(await outcome).toEqual({ error: 'Error: timeout: slash.exec' })
+          }
+        }
+      } finally {
+        gw.kill()
+        vi.useRealTimers()
+      }
+    }
+  )
+
+  it.each(['wrong-session', 'wrong-request', 'not-command'])(
+    'does not extend an RPC deadline for %s acknowledgements',
+    async mismatch => {
+      vi.useFakeTimers()
+      process.env.HERMES_TUI_GATEWAY_URL = 'ws://gateway.test/api/ws'
+      const gw = new GatewayClient()
+
+      try {
+        gw.start()
+        const socket = FakeWebSocket.instances[0]!
+        socket.open()
+        const method = mismatch === 'not-command' ? 'session.list' : 'slash.exec'
+        const request = gw.request(method, { session_id: 's1' })
+        const outcome = request.catch(error => String(error))
+        await Promise.resolve()
+        const frame = JSON.parse(socket.sent[0]!)
+        socket.message(
+          JSON.stringify({
+            method: 'event',
+            params: {
+              type: 'command.started',
+              session_id: mismatch === 'wrong-session' ? 's2' : 's1',
+              payload: {
+                request_id: mismatch === 'wrong-request' ? 'unknown' : frame.id,
+                command_id: 'c1',
+                name: 'kanban'
+              }
+            }
+          })
+        )
+        await vi.advanceTimersByTimeAsync(120_001)
+        expect(await outcome).toBe(`Error: timeout: ${method}`)
+      } finally {
+        gw.kill()
+        vi.useRealTimers()
+      }
+    }
+  )
+
   it('accepts forecast-native websocket attach aliases', async () => {
     process.env.FORECAST_TUI_GATEWAY_URL = 'ws://gateway.test/api/ws?token=abc'
     const gw = new GatewayClient()

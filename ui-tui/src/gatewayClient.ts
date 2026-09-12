@@ -199,6 +199,9 @@ const redactUrl = (raw: string): string => {
 interface Pending {
   id: string
   method: string
+  sessionId?: string
+  commandId?: string
+  commandFinished?: boolean
   reject: (e: Error) => void
   resolve: (v: unknown) => void
   timeout: ReturnType<typeof setTimeout>
@@ -737,7 +740,41 @@ export class GatewayClient extends EventEmitter {
       const ev = asGatewayEvent(msg.params)
 
       if (ev) {
+        this.trackCommand(ev)
         this.publish(ev)
+      }
+    }
+  }
+
+  private trackCommand(ev: GatewayEvent) {
+    const payload = ev.payload as Record<string, unknown> | undefined
+
+    if (!payload || typeof payload.command_id !== 'string' || !payload.command_id) {return}
+
+    if (ev.type === WireEvent.COMMAND_STARTED && typeof payload.request_id === 'string') {
+      const pending = this.pending.get(payload.request_id)
+
+      // Only an acknowledgement for this request and session extends a command.
+      // Duplicate starts cannot suspend the final-response deadline.
+      if (pending?.method === 'slash.exec' && pending.sessionId === ev.session_id && !pending.commandId) {
+        pending.commandId = payload.command_id
+        clearTimeout(pending.timeout)
+      }
+    } else if (
+      ev.type === WireEvent.COMMAND_FINISHED &&
+      ['finished', 'cancelled', 'failed'].includes(String(payload.status))
+    ) {
+      for (const pending of this.pending.values()) {
+        if (
+          pending.commandId === payload.command_id &&
+          pending.sessionId === ev.session_id &&
+          !pending.commandFinished
+        ) {
+          pending.commandFinished = true
+          // A terminal event does not replace the RPC result or its error.
+          pending.timeout = setTimeout(this.onTimeout, REQUEST_TIMEOUT_MS, pending.id)
+          pending.timeout.unref?.()
+        }
       }
     }
   }
@@ -902,6 +939,7 @@ export class GatewayClient extends EventEmitter {
           this.pending.set(id, {
             id,
             method,
+            sessionId: typeof params.session_id === 'string' ? params.session_id : undefined,
             reject,
             resolve: v => resolve(v as T),
             timeout
@@ -961,6 +999,7 @@ export class GatewayClient extends EventEmitter {
       this.pending.set(id, {
         id,
         method,
+        sessionId: typeof params.session_id === 'string' ? params.session_id : undefined,
         reject,
         resolve: v => resolve(v as T),
         timeout
