@@ -829,23 +829,9 @@ def kanban_command(args: argparse.Namespace) -> int:
     if action == "boards":
         return _dispatch_boards(args)
 
-    # `--board <slug>` applies to every subcommand below by way of an
-    # env-var pin for the duration of this call. Setting every board alias
-    # (rather than threading `board=` through 50+ kb.connect() sites) keeps the
-    # patch small and inherits the exact same resolution the dispatcher uses
-    # for workers — consistency is a feature here.
+    # Bind database/path selection to this invocation, never process globals.
     board_override = getattr(args, "board", None)
-    prev_board_env = {name: os.environ.get(name) for name in kb.KANBAN_BOARD_ENV_NAMES}
-    restore_board_env = False
-
-    def _restore_board_env() -> None:
-        if not restore_board_env:
-            return
-        for name, value in prev_board_env.items():
-            if value is None:
-                os.environ.pop(name, None)
-            else:
-                os.environ[name] = value
+    normed = None
     if board_override:
         try:
             normed = kb._normalize_board_slug(board_override)
@@ -864,10 +850,11 @@ def kanban_command(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             return 1
-        for name in kb.KANBAN_BOARD_ENV_NAMES:
-            os.environ[name] = normed
-        restore_board_env = True
+    with kb.board_scope(normed):
+        return _execute_kanban_command(args, action)
 
+
+def _execute_kanban_command(args: argparse.Namespace, action: str) -> int:
     # Auto-initialize the DB before dispatching any subcommand. init_db
     # is idempotent, so running it every invocation is cheap (one
     # SELECT against sqlite_master when tables already exist) and
@@ -879,7 +866,6 @@ def kanban_command(args: argparse.Namespace) -> int:
         kb.init_db()
     except Exception as exc:
         print(f"kanban: could not initialize database: {exc}", file=sys.stderr)
-        _restore_board_env()
         return 1
 
     handlers = {
@@ -924,16 +910,12 @@ def kanban_command(args: argparse.Namespace) -> int:
     handler = handlers.get(action)
     if not handler:
         print(f"kanban: unknown action {action!r}", file=sys.stderr)
-        _restore_board_env()
         return 2
     try:
         return int(handler(args) or 0)
     except (ValueError, RuntimeError) as exc:
         print(f"kanban: {exc}", file=sys.stderr)
-        _restore_board_env()
         return 1
-    finally:
-        _restore_board_env()
 
 
 # ---------------------------------------------------------------------------

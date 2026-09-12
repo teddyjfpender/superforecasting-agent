@@ -2486,3 +2486,21 @@ corrupt databases, destination preservation, SQLite URI metacharacters, a later
 file-copy failure, manifest failure and prune/list during pending publication. The
 existing connection-lifetime regression still proves both SQLite handles close.
 Shared Python quality checks and all 45 import contracts passed.
+
+
+### Board selection belongs to a command context
+
+The remaining /kanban worker audit found command dispatch temporarily overwriting
+all process-wide board environment aliases. Overlapping commands could therefore
+resolve each other's board and restore stale environment values. Existing board
+storage now owns a ContextVar-backed board_scope, which is entered after argument
+validation and always reset. Database/path readers use that scope; worker-spawn
+code already resolves the current board and explicitly writes child environment
+aliases. Existing explicit database/workspace environment pins retain precedence.
+
+The actual command-dispatch regression overlaps two create operations, verifies
+board identity throughout, checks durable rows in both databases and asserts that
+process aliases never change. Nested scopes unwind on exceptions. 48 focused tests
+and the expanded 559 Kanban tests passed (one skip); shared Python quality checks
+passed. This removes a prerequisite concurrency bug; run_slash still captures
+process-global stdout/stderr and is not yet safe for native concurrent RPC use.

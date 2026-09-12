@@ -70,6 +70,7 @@ new locking.
 from __future__ import annotations
 
 import contextlib
+from contextvars import ContextVar
 import json
 import os
 import re
@@ -262,11 +263,27 @@ def current_board_path() -> Path:
     return kanban_home() / "kanban" / "current"
 
 
+_board_override: ContextVar[Optional[str]] = ContextVar("kanban_board_override", default=None)
+
+
+@contextlib.contextmanager
+def board_scope(board: Optional[str]) -> Iterator[None]:
+    """Select a board for this command without mutating process environment."""
+    normalized = _normalize_board_slug(board)
+    token = _board_override.set(normalized) if normalized is not None else None
+    try:
+        yield
+    finally:
+        if token is not None:
+            _board_override.reset(token)
+
+
 def get_current_board() -> str:
     """Return the active board slug, honouring the resolution chain.
 
     Order (highest precedence first):
 
+    0. A request-local :func:`board_scope` override.
     1. ``SUPERFORECASTING_AGENT_KANBAN_BOARD`` env var (set by the dispatcher
        on worker spawn, or manually for ad-hoc overrides). ``FORECAST_*`` and
        inherited ``HERMES_*`` aliases are accepted.
@@ -278,6 +295,9 @@ def get_current_board() -> str:
     with a best-effort warning — the dispatcher must never crash because a
     user hand-edited a file or removed a board directory.
     """
+    scoped = _board_override.get()
+    if scoped is not None:
+        return scoped
     env = _first_env_value(KANBAN_BOARD_ENV_NAMES)
     if env:
         try:

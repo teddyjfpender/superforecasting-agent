@@ -519,3 +519,56 @@ def test_run_slash_board_override_does_not_change_boards_show_current(kanban_hom
     out = kc.run_slash("--board beta boards show")
 
     assert "Current board: alpha" in out
+
+
+def test_concurrent_commands_keep_board_selection_local(kanban_home, monkeypatch):
+    import argparse
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    kb.create_board("alpha")
+    kb.create_board("beta")
+    prior = {name: os.environ.get(name) for name in kb.KANBAN_BOARD_ENV_NAMES}
+    barrier = Barrier(2, timeout=5)
+    create = kc._cmd_create
+
+    def overlapping_create(args):
+        barrier.wait()
+        assert kb.get_current_board() == args.board
+        assert {name: os.environ.get(name) for name in kb.KANBAN_BOARD_ENV_NAMES} == prior
+        result = create(args)
+        barrier.wait()
+        assert kb.get_current_board() == args.board
+        return result
+
+    monkeypatch.setattr(kc, "_cmd_create", overlapping_create)
+
+    def run(board):
+        parser = argparse.ArgumentParser()
+        kc.build_parser(parser.add_subparsers())
+        args = parser.parse_args(["kanban", "--board", board, "create", f"task-{board}"])
+        result = kc.kanban_command(args)
+        assert kb._board_override.get() is None
+        return result
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert list(pool.map(run, ["alpha", "beta"])) == [0, 0]
+    for board in ("alpha", "beta"):
+        with kb.connection(board=board) as connection:
+            assert [task.title for task in kb.list_tasks(connection)] == [f"task-{board}"]
+    assert {name: os.environ.get(name) for name in kb.KANBAN_BOARD_ENV_NAMES} == prior
+
+
+def test_nested_board_scope_restores_selection_on_exception(kanban_home, monkeypatch):
+    kb.create_board("alpha")
+    kb.create_board("beta")
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_KANBAN_BOARD", "beta")
+    with kb.board_scope("alpha"):
+        assert kb.get_current_board() == "alpha"
+        with pytest.raises(RuntimeError, match="interrupted"):
+            with kb.board_scope("beta"):
+                assert kb.get_current_board() == "beta"
+                raise RuntimeError("interrupted")
+        assert kb.get_current_board() == "alpha"
+    assert kb.get_current_board() == "beta"
+    assert os.environ["SUPERFORECASTING_AGENT_KANBAN_BOARD"] == "beta"
