@@ -30,6 +30,8 @@ def test_native_handoff_routes_actual_session(tmp_path, monkeypatch, completed):
         def wait(store, key, attempt, *, stop):
             assert store is db and key == 'durable'
             assert session['running'] and session['_command_stops']
+            background = server.handle_request({'id': 4, 'method': 'prompt.background', 'params': {'session_id': 'runtime', 'text': 'racing background'}})
+            assert background['error']['code'] == 4009
             with pytest.raises(ValueError, match='handoff is in progress'):
                 turns.start(db, key, 'racing turn')
             assert db.claim_handoff(key, attempt_id=attempt)
@@ -60,3 +62,35 @@ def test_handoff_rejects_active_durable_turn(tmp_path):
         assert not db.request_handoff('durable', 'telegram')
         turns.transition(db, turn, 'interrupted')
         assert db.request_handoff('durable', 'telegram')
+
+
+@pytest.mark.parametrize('method', ['prompt.submit', 'prompt.background'])
+@pytest.mark.parametrize('claimed', [False, True])
+def test_reconnected_session_observes_durable_handoff(tmp_path, monkeypatch, method, claimed):
+    monkeypatch.setattr(server, '_host', RuntimeHost())
+    server._host.sessions['runtime'] = {'session_key': 'durable', 'history': [], 'history_lock': Lock()}
+    monkeypatch.setattr(server, '_start_agent_build', Mock(side_effect=AssertionError('agent')))
+    with closing(SessionDB(db_path=tmp_path / 'state.db')) as db:
+        db.create_session('durable', source='tui')
+        assert db.request_handoff('durable', 'telegram')
+        if claimed:
+            assert db.claim_handoff('durable', attempt_id=db.get_handoff_state('durable')['attempt_id'])
+        monkeypatch.setattr(server, '_get_db', lambda: db)
+        result = server.handle_request({'id': 1, 'method': method, 'params': {'session_id': 'runtime', 'text': 'reconnected work'}})
+        assert result['error']['code'] == 4009
+        assert 'handoff is in progress' in result['error']['message']
+        server._start_agent_build.assert_not_called()
+
+
+@pytest.mark.parametrize('method', ['prompt.submit', 'prompt.background'])
+def test_handoff_read_failure_is_not_no_handoff(tmp_path, monkeypatch, method):
+    monkeypatch.setattr(server, '_host', RuntimeHost())
+    server._host.sessions['runtime'] = {'session_key': 'durable', 'history': [], 'history_lock': Lock()}
+    monkeypatch.setattr(server, '_start_agent_build', Mock(side_effect=AssertionError('agent')))
+    db = SessionDB(db_path=tmp_path / 'state.db')
+    db.close()
+    monkeypatch.setattr(server, '_get_db', lambda: db)
+    result = server.handle_request({'id': 1, 'method': method, 'params': {'session_id': 'runtime', 'text': 'unsafe work'}})
+    assert result['error']['code'] == 5030
+    assert 'Cannot verify handoff' in result['error']['message']
+    server._start_agent_build.assert_not_called()

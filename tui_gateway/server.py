@@ -3456,22 +3456,33 @@ def _(rid, params: dict) -> dict:
 # ── Methods: prompt ──────────────────────────────────────────────────
 
 
+def _handoff_admission_error(rid, session):
+    if session.get("handoff_reserved"):
+        return _err(rid, 4009, "session handoff is being prepared")
+    from superforecasting_agent.application.handoff import require_local_turn
+    try:
+        db = _get_db()
+        if db is None:
+            if session.get("handoff_attempt"):
+                return _err(rid, 5030, "Cannot verify handoff without session storage")
+            return None
+        require_local_turn(db, session["session_key"], session.get("handoff_attempt"))
+    except ValueError as exc:
+        return _err(rid, 4009, str(exc))
+    except Exception as exc:
+        return _err(rid, 5030, f"Cannot verify handoff state: {exc}")
+    return None
+
+
 @rpc_validated("prompt.submit")
 def _(rid, params: dict) -> dict:
     sid, text = params.get("session_id", ""), params.get("text", "")
     session, err = _sess_nowait(params, rid)
     if err:
         return err
-    if session.get("handoff_attempt"):
-        from superforecasting_agent.application.handoff import observe_handoff
-        try:
-            state = observe_handoff(_get_db(), session["session_key"], session["handoff_attempt"])
-            if state.state == "completed":
-                session["handoff_complete"] = True
-            elif state.state in {"unknown", "replaced"}:
-                return _err(rid, 4009, "handoff state is unavailable or changed; check the transfer before continuing")
-        except Exception as exc:
-            return _err(rid, 5030, f"Cannot verify handoff state: {exc}")
+    err = _handoff_admission_error(rid, session)
+    if err:
+        return err
     with session["history_lock"]:
         if session.get("handoff_complete"):
             return _err(rid, 4009, "session handed off; use /new or explicitly /resume before continuing")
@@ -4088,6 +4099,12 @@ def _(rid, params: dict) -> dict:
 
 @rpc_validated("prompt.background")
 def _(rid, params: dict) -> dict:
+    session, err = _sess_nowait(params, rid)
+    if err:
+        return err
+    err = _handoff_admission_error(rid, session)
+    if err:
+        return err
     session, err = _sess(params, rid)
     if err:
         return err
@@ -5821,6 +5838,7 @@ def _(rid, params: dict) -> dict:
             if busy:
                 return _err(rid, 4009, f"session busy ({', '.join(busy)}); finish active work before handoff")
             session["running"] = True
+            session["handoff_reserved"] = True
         try:
             with _host.command(session) as stop:
                 if stop.is_set():
@@ -5861,6 +5879,7 @@ def _(rid, params: dict) -> dict:
         finally:
             with session["history_lock"]:
                 session["running"] = False
+                session.pop("handoff_reserved", None)
 
     if _cmd_base == "footer":
         from superforecasting_agent.application.footer import footer_command

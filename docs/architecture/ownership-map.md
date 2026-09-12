@@ -694,3 +694,9 @@ ownership. Destination configuration and command events remain transport/runtime
 adapters. SQLite admission excludes pending/running handoffs from new durable TUI
 turns and excludes active durable turns from handoff requests. The adapter retains
 the source attempt to recognize completion after a local waiting deadline.
+
+
+Local-turn handoff admission belongs to `application.handoff`: both foreground
+and background TUI prompts consume it before model construction. It reads durable
+state for reconnected handles and retains stricter completion ownership for a
+live source attempt. Storage read failure propagates to admission as an error.

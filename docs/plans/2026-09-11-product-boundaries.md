@@ -4244,3 +4244,21 @@ construction; the busy guard correctly rejected that race. The corrected test
 finishes startup before handoff. This validates the local macOS transport, not a
 live messaging provider or interrupted remote gateway. Further admission/reconnect
 qualification and claimed-transfer recovery remain open.
+
+
+### Handoff admission across background work and reconnects
+
+Foreground and background prompts now share application-owned local-turn
+validation before agent construction. The check reads durable pending/running
+state even without a source attempt marker, protecting reconnected handles.
+Source handles also reject delayed completion and changed/unknown attempts.
+A preparation reservation blocks background submission before the pending row
+is published. Handoff state reads now propagate database errors rather than
+conflating read failure with absence of a handoff.
+
+191 focused command/journal/background/handoff tests, shared quality gates and
+the real terminal handoff regression passed. Tests include background submission
+during reserved handoff, pending/running reconnects for both prompt methods, and
+a closed database that must block agent construction. The terminal test still
+uses a simulated messaging destination; rendered interruption/reconnect and
+recovery after gateway death remain separate qualifications.

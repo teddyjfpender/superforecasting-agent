@@ -64,3 +64,25 @@ def wait_for_handoff(
     db.cancel_pending_handoff(session_id, reason, attempt_id=attempt_id)
     result = observe_handoff(db, session_id, attempt_id)
     return HandoffResult(result.state, result.error, wait_ended=True)
+
+
+def require_local_turn(
+    db: SessionDB, session_id: str, attempt_id: str | None = None
+) -> None:
+    """Reject work while transfer owns this session, including after reconnect.
+
+    An explicit later resume has no source attempt marker. A live source handle
+    retains its marker so delayed completion cannot silently reopen that handle.
+    """
+    row = db.get_handoff_state(session_id)
+    if attempt_id and (not row or row.get("attempt_id") != attempt_id):
+        raise ValueError("handoff state is unavailable or changed; check the transfer")
+    state = (row or {}).get("state")
+    if state in {"pending", "running"}:
+        raise ValueError("session handoff is in progress; wait for gateway transfer")
+    if attempt_id and state == "completed":
+        raise ValueError(
+            "session handed off; close it before explicitly resuming locally"
+        )
+    if attempt_id and state != "failed":
+        raise ValueError("handoff state is unavailable; check the transfer")

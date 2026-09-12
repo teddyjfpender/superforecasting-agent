@@ -47,23 +47,20 @@ def get_handoff_state(self, session_id: str) -> Optional[Dict[str, Any]]:
     Returns ``{"state", "platform", "error", "attempt_id"}`` or None if the session has
     no handoff record.
     """
-    try:
-        cur = self._conn.execute(
-            "SELECT handoff_state, handoff_platform, handoff_error, handoff_attempt_id "
-            "FROM sessions WHERE id = ?",
-            (session_id,),
-        )
-        row = cur.fetchone()
-        if not row:
-            return None
-        return {
-            "state": row["handoff_state"],
-            "platform": row["handoff_platform"],
-            "error": row["handoff_error"],
-            "attempt_id": row["handoff_attempt_id"],
-        }
-    except Exception:
+    cur = self._conn.execute(
+        "SELECT handoff_state, handoff_platform, handoff_error, handoff_attempt_id "
+        "FROM sessions WHERE id = ?",
+        (session_id,),
+    )
+    row = cur.fetchone()
+    if not row:
         return None
+    return {
+        "state": row["handoff_state"],
+        "platform": row["handoff_platform"],
+        "error": row["handoff_error"],
+        "attempt_id": row["handoff_attempt_id"],
+    }
 
 
 def list_pending_handoffs(self) -> List[Dict[str, Any]]:
