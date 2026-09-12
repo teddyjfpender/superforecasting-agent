@@ -33,6 +33,14 @@ def _openai_client_lock(self) -> threading.RLock:
     return lock
 
 
+def detach_primary_client(self) -> Any:
+    """Transfer this instance's current client to cleanup under the owner lock."""
+    with _openai_client_lock(self):
+        client = getattr(self, "client", None)
+        self.client = None
+        return client
+
+
 def _is_openai_client_closed(client: Any) -> bool:
     """Check if an OpenAI client is closed.
 
@@ -113,6 +121,8 @@ def _close_openai_client(self, client: Any, *, reason: str, shared: bool) -> Non
 
 def _replace_primary_openai_client(self, *, reason: str) -> bool:
     with self._openai_client_lock():
+        if getattr(self, "_resources_closed", False):
+            return False
         old_client = getattr(self, "client", None)
         try:
             new_client = self._create_openai_client(self._client_kwargs, reason=reason, shared=True)
@@ -124,6 +134,9 @@ def _replace_primary_openai_client(self, *, reason: str) -> bool:
                 exc,
             )
             return False
+        if getattr(self, "_resources_closed", False):
+            self._close_openai_client(new_client, reason="closed_during_build", shared=True)
+            return False
         self.client = new_client
     self._close_openai_client(old_client, reason=f"replace:{reason}", shared=True)
     return True
@@ -131,6 +144,8 @@ def _replace_primary_openai_client(self, *, reason: str) -> bool:
 
 def _ensure_primary_openai_client(self, *, reason: str) -> Any:
     with self._openai_client_lock():
+        if getattr(self, "_resources_closed", False):
+            raise RuntimeError("Agent resources are closed")
         client = getattr(self, "client", None)
         if client is not None and not self._is_openai_client_closed(client):
             return client

@@ -1733,3 +1733,20 @@ guard test rejects private transport traversal. Python quality, 35 import
 contracts and protocol generation checks passed. This is not reproduction or
 attribution of the historical SSL or bad-file-descriptor incidents. Lower-level
 task-ID tool cleanup ownership and failure retention remain separate work.
+
+
+### Preserve replacement clients during eviction
+
+Client eviction and session close now detach the exact primary client under its
+client lock before invoking cleanup. Previously they read the old client, closed
+it, then unconditionally assigned `None`; a concurrent rebuild during close
+could lose the replacement reference. Rebuild admission now rejects a closed
+agent and disposes a newly constructed client if shutdown occurred during
+construction, including reentrant shutdown.
+
+Validation: 12 focused client ownership/rebuild tests passed, including an
+event-controlled concurrent eviction and rebuild, reentrant close during client
+construction, repeated close, and a real local keep-alive transport. Python
+quality, 35 import contracts and protocol checks passed. This addresses client
+identity/admission; task-ID tool cleanup and retryable cleanup-failure ownership
+remain open.

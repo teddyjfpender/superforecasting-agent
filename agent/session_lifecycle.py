@@ -3,6 +3,7 @@
 import threading
 from typing import Any
 
+from agent.openai_clients import detach_primary_client
 from tools.terminal_tool import cleanup_vm
 from tools.browser_tool import cleanup_browser
 
@@ -162,10 +163,9 @@ def _release_clients(self) -> None:
 
     # Close the OpenAI/httpx client to release sockets immediately.
     try:
-        client = getattr(self, "client", None)
+        client = detach_primary_client(self)
         if client is not None:
             self._close_openai_client(client, reason="cache_evict", shared=True)
-            self.client = None
     except Exception:
         pass
 
@@ -229,9 +229,8 @@ def _close_resources(self) -> None:
 
     # 5. Close the OpenAI/httpx client
     try:
-        client = getattr(self, "client", None)
+        client = detach_primary_client(self)
         if client is not None:
             self._close_openai_client(client, reason="agent_close", shared=True)
-            self.client = None
     except Exception:
         pass

@@ -120,3 +120,88 @@ def test_cleanup_callback_can_reenter_close(monkeypatch):
     monkeypatch.setattr(session_lifecycle, "cleanup_browser", browser)
     session_lifecycle.close(agent)
     browser.assert_called_once()
+
+
+def test_eviction_detaches_client_before_cleanup_can_install_replacement(monkeypatch):
+    agent = make_agent()
+    original, replacement = object(), object()
+    agent.client = original
+
+    def close_client(client, **kwargs):
+        assert client is original
+        assert agent.client is None
+        agent.client = replacement
+
+    agent._close_openai_client = Mock(side_effect=close_client)
+    session_lifecycle.release_clients(agent)
+    assert agent.client is replacement
+
+
+def test_closed_agent_cannot_rebuild_client():
+    from agent import openai_clients
+
+    agent = make_agent()
+    agent._resources_closed = True
+    agent._client_lock = threading.RLock()
+    agent._openai_client_lock = lambda: agent._client_lock
+    agent._create_openai_client = Mock(side_effect=AssertionError("closed owner rebuilt"))
+    assert not openai_clients._replace_primary_openai_client(agent, reason="test")
+    agent._create_openai_client.assert_not_called()
+
+
+def test_close_during_construction_disposes_unpublished_client(monkeypatch):
+    from agent import openai_clients
+    from tools import process_registry
+
+    agent = make_agent()
+    agent._client_lock = threading.RLock()
+    agent._openai_client_lock = lambda: agent._client_lock
+    agent._client_kwargs = {}
+    client = object()
+    monkeypatch.setattr(session_lifecycle, "cleanup_vm", Mock())
+    monkeypatch.setattr(session_lifecycle, "cleanup_browser", Mock())
+    monkeypatch.setattr(process_registry.process_registry, "kill_all", Mock())
+
+    def build(*args, **kwargs):
+        session_lifecycle.close(agent)
+        return client
+
+    agent._create_openai_client = build
+    agent._close_openai_client = Mock()
+    assert not openai_clients._replace_primary_openai_client(agent, reason="test")
+    assert agent.client is None
+    agent._close_openai_client.assert_called_once_with(client, reason="closed_during_build", shared=True)
+
+
+def test_concurrent_rebuild_survives_eviction_cleanup():
+    from agent import openai_clients
+
+    agent = make_agent()
+    agent._client_lock = threading.RLock()
+    agent._openai_client_lock = lambda: agent._client_lock
+    agent._client_kwargs = {}
+    original, replacement = object(), object()
+    agent.client = original
+    agent._create_openai_client = lambda *args, **kwargs: replacement
+    entered, release = threading.Event(), threading.Event()
+    closed = []
+
+    def close_client(client, **kwargs):
+        if client is None:
+            return
+        closed.append(client)
+        if client is original:
+            entered.set()
+            assert release.wait(3)
+
+    agent._close_openai_client = close_client
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        eviction = pool.submit(session_lifecycle.release_clients, agent)
+        try:
+            assert entered.wait(3)
+            assert openai_clients._replace_primary_openai_client(agent, reason="rebuild")
+        finally:
+            release.set()
+        eviction.result(timeout=3)
+    assert agent.client is replacement
+    assert closed == [original]
