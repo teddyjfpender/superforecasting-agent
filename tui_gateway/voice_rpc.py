@@ -3,7 +3,8 @@
 Moves-only slice of the Wave-2 server family-split (docs/plans/2026-07-10-
 modularization-program.md §W2.a). ``voice.toggle`` / ``voice.record`` /
 ``voice.tts`` / ``voice.stop`` and the contiguous ``insights.get`` RPC moved here
-VERBATIM. The local ``rpc_validated`` / ``method`` decorators capture handlers
+here originally. Insights now shares query validation and reporting with command consumers.
+The local ``rpc_validated`` / ``method`` decorators capture handlers
 into ``_REGISTRARS``; ``server.py`` calls :func:`register` (at load AND on
 ``importlib.reload`` — the pm_rpc/jobs_rpc sibling contract), replaying them
 through the REAL ``server.rpc_validated`` / ``server.method`` so registration
@@ -22,7 +23,6 @@ must share the one live object (and ``voice.record``'s ``global`` write becomes 
 from __future__ import annotations
 
 import threading  # noqa: F401  (voice.record spawns a recorder thread)
-import time
 
 import tui_gateway.server as _core
 from tui_gateway.server import (
@@ -291,23 +291,26 @@ def _(rid, params: dict) -> dict:
 
 @method("insights.get")
 def _(rid, params: dict) -> dict:
-    days = params.get("days", 30)
+    from agent.insights import InsightsEngine
+    from superforecasting_agent.application.insights import InsightsQuery
+
+    try:
+        query = InsightsQuery(params.get("days", 30), params.get("source"))
+    except ValueError as exc:
+        return _err(rid, 4004, str(exc))
     db = _core._get_db()
     if db is None:
         return _db_unavailable_error(rid, code=5017)
     try:
-        cutoff = time.time() - days * 86400
-        rows = [
-            s
-            for s in db.list_sessions_rich(limit=500)
-            if (s.get("started_at") or 0) >= cutoff
-        ]
+        overview = InsightsEngine(db).generate(
+            days=query.days, source=query.source,
+        )["overview"]
         return _ok(
             rid,
             {
-                "days": days,
-                "sessions": len(rows),
-                "messages": sum(s.get("message_count", 0) for s in rows),
+                "days": query.days,
+                "sessions": overview.get("total_sessions", 0),
+                "messages": overview.get("total_messages", 0),
             },
         )
     except Exception as e:

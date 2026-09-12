@@ -1680,3 +1680,18 @@ failure paths. The former Unicode normalization tests now call the actual shared
 parser instead of copying its regex. Python quality and all 35 import contracts
 passed (`/tmp/forecast-insights-quality.log`). The old `insights.get` summary RPC
 remains separate; this change migrates the slash-command workflow.
+
+
+### Insights summary parity and complete history
+
+`insights.get` now validates through `application.insights.InsightsQuery` and
+uses the same `InsightsEngine` report as CLI, messaging and native TUI commands.
+The response keeps its days/sessions/messages shape, supports the shared source
+filter and no longer silently truncates history at 500 sessions. Invalid typed
+inputs fail before storage acquisition. Both success and report failure leave
+the borrowed host database open. The transport registration remains in the
+historical voice RPC module; this change does not claim that module is decomposed.
+
+Validation: 26 focused summary and command-parser tests passed, including a real
+505-session SQLite history, empty history, source filtering, invalid inputs and
+post-failure writes through the same host store.
