@@ -53,9 +53,8 @@ from typing import Any, Callable, Dict, List, Optional, Set
 from superforecasting_agent.constants import get_agent_home
 from superforecasting_agent.environment import env_var_enabled
 from superforecasting_agent.configuration import cfg_get
-from superforecasting_agent.configuration.plugin_manifest import (
-    PluginManifest, VALID_PLUGIN_KINDS as _VALID_PLUGIN_KINDS, parse_manifest,
-)
+from superforecasting_agent.configuration.plugin_manifest import PluginManifest
+from superforecasting_agent.storage.plugin_manifests import read_plugin_manifest
 
 
 _BUNDLED_PLUGIN_DIR_ENV_VARS = (
@@ -105,10 +104,6 @@ def get_bundled_plugins_dir() -> Path:
         return Path(env_override)
     return get_install_root() / "plugins"
 
-try:
-    import yaml
-except ImportError:  # pragma: no cover – yaml is optional at import time
-    yaml = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -1076,71 +1071,11 @@ class PluginManager:
         Returns ``None`` on parse failure (logs a warning).
         """
         try:
-            if yaml is None:
-                logger.warning("PyYAML not installed – cannot load %s", manifest_file)
-                return None
-            data = yaml.safe_load(manifest_file.read_text(encoding="utf-8"))
-            manifest = parse_manifest(
-                {} if data is None else data, directory_name=plugin_dir.name,
-                path=str(plugin_dir), source=source, prefix=prefix,
-            )
-
-            data = {} if data is None else data
-            name, key = manifest.name, manifest.key
-
-            raw_kind = data.get("kind", "standalone")
-            if not isinstance(raw_kind, str):
-                raw_kind = "standalone"
-            kind = raw_kind.strip().lower()
-            if kind not in _VALID_PLUGIN_KINDS:
-                logger.warning(
-                    "Plugin %s: unknown kind '%s' (valid: %s); treating as 'standalone'",
-                    key, raw_kind, ", ".join(sorted(_VALID_PLUGIN_KINDS)),
-                )
-                kind = "standalone"
-
-            # Auto-coerce user-installed memory providers to kind="exclusive"
-            # so they're routed to plugins/memory discovery instead of being
-            # loaded by the general PluginManager (which has no
-            # register_memory_provider on PluginContext). Mirrors the
-            # heuristic in plugins/memory/__init__.py:_is_memory_provider_dir.
-            # Bundled memory providers are already skipped via skip_names.
-            if kind == "standalone" and "kind" not in data:
-                init_file = plugin_dir / "__init__.py"
-                if init_file.exists():
-                    try:
-                        source_text = init_file.read_text(errors="replace")[:8192]
-                        if (
-                            "register_memory_provider" in source_text
-                            or "MemoryProvider" in source_text
-                        ):
-                            kind = "exclusive"
-                            logger.debug(
-                                "Plugin %s: detected memory provider, "
-                                "treating as kind='exclusive'",
-                                key,
-                            )
-                        elif (
-                            "register_provider" in source_text
-                            and "ProviderProfile" in source_text
-                        ):
-                            # Model provider plugin (calls register_provider()
-                            # from ``providers`` with a ProviderProfile). Route
-                            # to providers/__init__.py discovery.
-                            kind = "model-provider"
-                            logger.debug(
-                                "Plugin %s: detected model provider, "
-                                "treating as kind='model-provider'",
-                                key,
-                            )
-                    except Exception:
-                        pass
-
+            manifest = read_plugin_manifest(manifest_file, plugin_dir, source, prefix)
             logger.debug(
                 "Parsed manifest: key=%s name=%s kind=%s source=%s path=%s",
-                key, name, kind, source, plugin_dir,
+                manifest.key, manifest.name, manifest.kind, source, plugin_dir,
             )
-            manifest.kind = kind
             return manifest
         except Exception as exc:
             logger.warning(

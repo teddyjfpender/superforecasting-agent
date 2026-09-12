@@ -22,6 +22,7 @@ STRICT_PYTHON = (
     "superforecasting_agent/storage/snapshots.py",
     "superforecasting_agent/storage/curator_state.py",
     "superforecasting_agent/storage/plugin_environment.py",
+    "superforecasting_agent/storage/plugin_manifests.py",
     "superforecasting_agent/configuration",
     "superforecasting_agent/storage/transcripts.py",
     "tools/environments/configuration.py",

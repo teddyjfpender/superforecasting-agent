@@ -700,7 +700,7 @@ forbidden_modules = ["agent", "tools", "superforecasting_agent.runtime", "cli", 
 [[tool.importlinter.contracts]]
 name = "platform environment metadata never loads runtime or plugin implementations"
 type = "forbidden"
-source_modules = ["superforecasting_agent.storage.plugin_environment"]
+source_modules = ["superforecasting_agent.storage.plugin_environment", "superforecasting_agent.storage.plugin_manifests"]
 forbidden_modules = ["superforecasting_agent.runtime", "agent", "tools", "gateway", "tui_gateway", "cli"]
 
 [[tool.importlinter.contracts]]

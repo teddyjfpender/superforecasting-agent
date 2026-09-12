@@ -3114,3 +3114,19 @@ The startup batch's full push gate remains running in the primary checkout.
   manifest contract run passed (14 tests). Shared Python quality gates passed,
   including strict configuration coverage and all 51 import contracts.
 - This is a declaration boundary, not completion of plugin runtime ownership.
+
+### Plugin manifest storage boundary
+
+- `storage/plugin_manifests.py` owns YAML reading and legacy provider routing
+  without importing plugin implementations or runtime modules. The manager
+  retains discovery failure handling, debug diagnostics and registration.
+- Source-text routing now reads only the documented first 8192 characters,
+  instead of loading the whole implementation before slicing. Explicit kinds
+  override heuristic routing. Missing/unreadable implementation text preserves
+  standalone routing.
+- The storage owner is included in strict lint/format/type coverage and the
+  transitive metadata import contract. Fresh-process tests prove importing it
+  does not initialize the agent, runtime or TUI.
+- Verification: 165 plugin/command/declaration tests passed; shared Python gates
+  passed with all 51 contracts. This does not remove runtime discovery's remaining
+  domain import exceptions.
