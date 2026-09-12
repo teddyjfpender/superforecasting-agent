@@ -6010,20 +6010,21 @@ def _(rid, params: dict) -> dict:
 def _(rid, params: dict) -> dict:
     try:
         cfg = _load_cfg()
-        model = _resolve_model()
+        model = _resolve_model(cfg)
         api_key = os.environ.get("HERMES_API_KEY", "") or cfg.get("api_key", "")
+        from superforecasting_agent.configuration import model_section
         from superforecasting_agent.application.configuration_view import configuration_sections
         from superforecasting_agent.tooling.inventory import session_toolset_selection
 
         session = _host.sessions.get(params.get("session_id", "")) or {}
         agent = session.get("agent")
-        base_url = os.environ.get("HERMES_BASE_URL", "") or cfg.get("base_url", "")
+        base_url = os.environ.get("HERMES_BASE_URL", "") or model_section(cfg).get("base_url", "")
         sections = configuration_sections(
             model=getattr(agent, "model", model),
             base_url=getattr(agent, "base_url", base_url),
             api_key=getattr(agent, "api_key", api_key),
             max_turns=getattr(agent, "max_iterations", _cfg_max_turns(cfg, 90)),
-            toolsets=session_toolset_selection(session, _load_enabled_toolsets),
+            toolsets=session_toolset_selection(session, lambda: _load_enabled_toolsets(cfg)),
             verbose=getattr(agent, "verbose_logging", cfg.get("verbose", False)),
             cwd=os.getcwd(), config_path=str(_hermes_home / "config.yaml"),
         )

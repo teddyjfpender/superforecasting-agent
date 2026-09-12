@@ -5792,7 +5792,7 @@ def test_config_show_displays_nested_max_turns(monkeypatch):
         "_load_cfg",
         lambda: {"agent": {"max_turns": 120}, "enabled_toolsets": [], "verbose": False},
     )
-    monkeypatch.setattr(server, "_resolve_model", lambda: "test-model")
+    monkeypatch.setattr(server, "_resolve_model", lambda cfg=None: "test-model")
 
     resp = server.handle_request({"id": "1", "method": "config.show", "params": {}})
     sections = resp["result"]["sections"]

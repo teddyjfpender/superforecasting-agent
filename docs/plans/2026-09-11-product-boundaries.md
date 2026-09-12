@@ -2874,3 +2874,13 @@ focused verification covers inspection before model initialization and secret-by
 exclusion. Shared application strict coverage and import rules cover the new owner.
 The primary checkout remains frozen while the earlier configuration batch runs its
 full push gate; this command migration is committed in the isolated worktree.
+
+
+### Configuration inspection captures one profile
+
+config.show now passes the captured configuration to model and toolset resolution,
+rather than reading the profile again during rendering. Canonical model.base_url is
+reported through the shared model-section interpreter, including legacy fallback.
+A deterministic test rejects a second profile read and verifies the nested endpoint,
+model and explicit empty toolset selection. 345 gateway/dispatch tests and shared
+Python quality gates passed. The earlier full push gate remains running independently.

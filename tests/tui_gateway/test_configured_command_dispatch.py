@@ -956,7 +956,7 @@ def test_toolset_command_uses_its_host_when_sibling_adapter_is_rebound(configure
 def test_config_inspection_uses_live_session_without_worker(configure, monkeypatch):
     from types import SimpleNamespace
     configure({})
-    monkeypatch.setattr(server, "_resolve_model", lambda: "configured-model")
+    monkeypatch.setattr(server, "_resolve_model", lambda cfg=None: "configured-model")
     def credential():
         raise AssertionError("must not fetch token")
     server._host.sessions["runtime"]["agent"] = SimpleNamespace(
@@ -974,8 +974,8 @@ def test_config_inspection_uses_live_session_without_worker(configure, monkeypat
 
 def test_config_inspection_before_model_initialization(configure, monkeypatch):
     configure({})
-    monkeypatch.setattr(server, '_resolve_model', lambda: 'not-started')
-    monkeypatch.setattr(server, '_load_enabled_toolsets', lambda: [])
+    monkeypatch.setattr(server, '_resolve_model', lambda cfg=None: 'not-started')
+    monkeypatch.setattr(server, '_load_enabled_toolsets', lambda cfg=None: [])
     monkeypatch.setenv('HERMES_API_KEY', 'private-do-not-display')
     assert slash('config')['error']['code'] == 4018
     output = dispatch('config')['result']['output']
@@ -983,3 +983,32 @@ def test_config_inspection_before_model_initialization(configure, monkeypatch):
     assert 'private-do-not-display' not in output
     assert 'API Key: Configured' in output
     assert 'Toolsets: none' in output
+
+
+def test_config_inspection_uses_one_profile_snapshot(configure, monkeypatch):
+    configure({})
+    cfg = {'model': {'default': 'first-model', 'base_url': 'https://first.example'},
+           'agent': {'max_turns': 17}, 'enabled_toolsets': []}
+    reads = []
+    def read_once():
+        reads.append(True)
+        if len(reads) > 1:
+            raise AssertionError('configuration was reread while rendering')
+        return cfg
+    monkeypatch.setattr(server, '_load_cfg', read_once)
+    def resolve_model(snapshot):
+        assert snapshot is cfg
+        return snapshot['model']['default']
+    def resolve_tools(snapshot):
+        assert snapshot is cfg
+        return []
+    monkeypatch.setattr(server, '_resolve_model', resolve_model)
+    monkeypatch.setattr(server, '_load_enabled_toolsets', resolve_tools)
+    monkeypatch.delenv('HERMES_BASE_URL', raising=False)
+    result = server.handle_request({'id': 7, 'method': 'config.show', 'params': {'session_id': 'runtime'}})
+    assert 'error' not in result, result
+    rows = dict(row for section in result['result']['sections'] for row in section['rows'])
+    assert rows['Base URL'] == 'https://first.example'
+    assert rows['Model'] == 'first-model'
+    assert rows['Toolsets'] == 'none'
+    assert len(reads) == 1
