@@ -723,3 +723,15 @@ construction still uses `build_agent`; launch-setting selection remains in the
 adapters and is not yet a completed host boundary. A direct-import contract
 prevents the factory/startup-prompt owner from importing CLI or gateway adapters;
 indirect runtime compatibility dependencies remain allowed.
+
+### Host-owned desk launch policy
+
+`superforecasting_agent.hosting.desk_agent` resolves the supplied profile and
+launch overrides, selects static provider/model routing, turn budget, toolsets,
+reasoning, service tier, startup skills and execution flags, then calls the shared
+forecasting factory. TUI RPC captures its environment/session aliases and supplies
+callbacks, warning output and borrowed session storage. Inspection helpers delegate
+to the same owner. No RPC/global transport state is imported by the host module;
+its direct presentation-import contract and directory-wide strict checks apply.
+Configuration interpolation still uses the configuration owner's environment
+expansion. Background construction/disposal remains in the RPC handler.

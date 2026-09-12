@@ -20,7 +20,7 @@ from superforecasting_agent.configuration.goals import configured_goal_turn_budg
 
 from superforecasting_agent.constants import get_agent_home
 from superforecasting_agent.runtime.env_loader import load_forecast_dotenv
-from superforecasting_agent.environment import INTERACTIVE_ENV_NAMES, is_truthy_value
+from superforecasting_agent.environment import INTERACTIVE_ENV_NAMES
 from tui_gateway.transport import (
     StdioTransport,
     Transport,
@@ -1320,48 +1320,17 @@ def resolve_skin() -> dict:
 
 
 def _resolve_model(cfg: dict | None = None) -> str:
-    env = _first_runtime_env_value(("MODEL", "INFERENCE_MODEL"))
-    if env:
-        return env
-    m = (cfg if cfg is not None else _load_cfg()).get("model", "")
-    if isinstance(m, dict):
-        return str(m.get("default", "") or "").strip()
-    if isinstance(m, str) and m:
-        return m.strip()
-    return "anthropic/claude-sonnet-4"
+    from superforecasting_agent.hosting.desk_agent import selected_model
 
+    return selected_model(
+        cfg if cfg is not None else _load_cfg(),
+        _first_runtime_env_value(("MODEL", "INFERENCE_MODEL")),
+    )
 
 def _resolve_startup_runtime(cfg: dict | None = None) -> tuple[str, str | None]:
-    model = _resolve_model(cfg) if cfg is not None else _resolve_model()
-    explicit_provider = _tui_env("PROVIDER").strip()
-    if explicit_provider:
-        return model, explicit_provider
+    from superforecasting_agent.hosting.desk_agent import startup_runtime
 
-    explicit_model = _first_runtime_env_value(("MODEL", "INFERENCE_MODEL"))
-    if not explicit_model:
-        return model, None
-
-    try:
-        from superforecasting_agent.runtime.models import detect_static_provider_for_model
-
-        cfg = (cfg if cfg is not None else _load_cfg()).get("model") or {}
-        current_provider = (
-            (
-                str(cfg.get("provider") or "").strip().lower()
-                if isinstance(cfg, dict)
-                else ""
-            )
-            or _runtime_env_value("INFERENCE_PROVIDER").lower()
-            or "auto"
-        )
-        detected = detect_static_provider_for_model(explicit_model, current_provider)
-        if detected:
-            provider, detected_model = detected
-            return detected_model, provider
-    except Exception:
-        pass
-    return model, None
-
+    return startup_runtime(cfg if cfg is not None else _load_cfg(), _desk_launch_overrides())
 
 def _write_config_key(key_path: str, value):
     """Merge a single setting into the latest profile, preserving user comments."""
@@ -1395,35 +1364,23 @@ def _display_mouse_tracking(display: dict) -> bool:
 
 
 def _load_reasoning_config(cfg: dict | None = None) -> dict | None:
-    from superforecasting_agent.constants import parse_reasoning_effort
+    from superforecasting_agent.hosting.desk_agent import reasoning_config
 
-    effort = str(
-        ((cfg if cfg is not None else _load_cfg()).get("agent") or {}).get("reasoning_effort", "") or ""
-    ).strip()
-    return parse_reasoning_effort(effort)
-
+    return reasoning_config(cfg if cfg is not None else _load_cfg())
 
 def _load_service_tier(cfg: dict | None = None) -> str | None:
-    from superforecasting_agent.constants import parse_service_tier
-    return parse_service_tier(((cfg if cfg is not None else _load_cfg()).get("agent") or {}).get("service_tier"))
+    from superforecasting_agent.hosting.desk_agent import service_tier
 
+    return service_tier(cfg if cfg is not None else _load_cfg())
 
 def _load_show_reasoning() -> bool:
     return bool((_load_cfg().get("display") or {}).get("show_reasoning", False))
 
 
 def _load_tool_progress_mode(cfg: dict | None = None) -> str:
-    env = _tui_env("TOOL_PROGRESS").strip().lower()
-    if env in {"off", "new", "all", "verbose"}:
-        return env
-    raw = ((cfg if cfg is not None else _load_cfg()).get("display") or {}).get("tool_progress", "all")
-    if raw is False:
-        return "off"
-    if raw is True:
-        return "all"
-    mode = str(raw or "all").strip().lower()
-    return mode if mode in {"off", "new", "all", "verbose"} else "all"
+    from superforecasting_agent.hosting.desk_agent import tool_progress_mode
 
+    return tool_progress_mode(cfg if cfg is not None else _load_cfg(), _tui_env("TOOL_PROGRESS"))
 
 def _load_enabled_toolsets(cfg: dict | None = None) -> list[str] | None:
     from superforecasting_agent.tooling.startup_selection import resolve_startup_toolsets
@@ -2324,18 +2281,6 @@ def _cfg_max_turns(cfg: dict, default: int) -> int:
     return agent_turn_budget(cfg, override=_tui_env("MAX_TURNS"), default=default)
 
 
-def _parse_tui_skills_env() -> list[str]:
-    raw = _tui_env("SKILLS")
-    skills: list[str] = []
-    seen: set[str] = set()
-    for part in raw.replace("\n", ",").split(","):
-        item = part.strip()
-        if item and item not in seen:
-            seen.add(item)
-            skills.append(item)
-    return skills
-
-
 def _background_agent_kwargs(agent, task_id: str) -> dict:
     from agent.background_options import background_agent_options
 
@@ -2448,37 +2393,29 @@ def _session_runtime(sid: str) -> dict:
         return {}
 
 
-def _make_agent(sid: str, key: str, session_id: str | None = None):
-
-    from superforecasting_agent.configuration import resolve_config
-
-    cfg = resolve_config(_load_cfg())
-    agent_cfg = cfg.get("agent") or {}
-    model, requested_provider = _resolve_startup_runtime(cfg=cfg)
-    from agent.agent_factory import build_forecast_agent
-
-    return build_forecast_agent(
-        system_prompt=agent_cfg.get("system_prompt"),
-        startup_skills=_parse_tui_skills_env(),
-        model=model,
-        requested_provider=requested_provider,
-        configuration=cfg,
-        max_iterations=_cfg_max_turns(cfg, 90),
-        quiet_mode=True,
-        verbose_logging=_load_tool_progress_mode(cfg=cfg) == "verbose",
-        reasoning_config=_load_reasoning_config(cfg=cfg),
-        service_tier=_load_service_tier(cfg=cfg),
-        enabled_toolsets=_load_enabled_toolsets(cfg=cfg),
-        platform="tui",
-        session_id=session_id or key,
-        session_db=_get_db(),
-        checkpoints_enabled=is_truthy_value(_tui_env("CHECKPOINTS")),
-        pass_session_id=is_truthy_value(_tui_env("PASS_SESSION_ID")),
-        skip_context_files=is_truthy_value(_runtime_env("IGNORE_RULES")),
-        skip_memory=is_truthy_value(_runtime_env("IGNORE_RULES")),
-        **_agent_cbs(sid),
+def _desk_launch_overrides() -> dict[str, str]:
+    """Capture this thread's session/environment aliases for host construction."""
+    overrides = {
+        name.lower(): _tui_env(name)
+        for name in ("PROVIDER", "MAX_TURNS", "TOOL_PROGRESS", "TOOLSETS", "SKILLS",
+                     "CHECKPOINTS", "PASS_SESSION_ID")
+    }
+    overrides.update(
+        model=_first_runtime_env_value(("MODEL", "INFERENCE_MODEL")),
+        inference_provider=_runtime_env_value("INFERENCE_PROVIDER"),
+        ignore_rules=_runtime_env("IGNORE_RULES"),
     )
+    return overrides
 
+
+def _make_agent(sid: str, key: str, session_id: str | None = None):
+    from superforecasting_agent.hosting.desk_agent import build_desk_agent
+
+    return build_desk_agent(
+        _load_cfg(), overrides=_desk_launch_overrides(),
+        session_id=session_id or key, session_db=_get_db(), callbacks=_agent_cbs(sid),
+        warn=lambda message: print(f"[tui] {message}", file=sys.stderr, flush=True),
+    )
 
 def _init_session(sid: str, key: str, agent, history: list, cols: int = 80, *, pending_handoff: bool = False):
     _host.sessions.register(sid, {

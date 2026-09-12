@@ -31,10 +31,10 @@ def test_make_agent_passes_resolved_provider():
     with (
         patch("tui_gateway.server._load_cfg", return_value=fake_cfg),
         patch("tui_gateway.server._get_db", return_value=MagicMock()),
-        patch("tui_gateway.server._load_tool_progress_mode", return_value="compact"),
-        patch("tui_gateway.server._load_reasoning_config", return_value=None),
-        patch("tui_gateway.server._load_service_tier", return_value=None),
-        patch("tui_gateway.server._load_enabled_toolsets", return_value=None),
+        patch("superforecasting_agent.hosting.desk_agent.tool_progress_mode", return_value="compact"),
+        patch("superforecasting_agent.hosting.desk_agent.reasoning_config", return_value=None),
+        patch("superforecasting_agent.hosting.desk_agent.service_tier", return_value=None),
+        patch("superforecasting_agent.tooling.startup_selection.resolve_startup_toolsets", return_value=None),
         patch(
             "superforecasting_agent.runtime.runtime_provider.resolve_runtime_provider",
             return_value=fake_runtime,
@@ -239,3 +239,40 @@ def test_make_agent_tolerates_null_personalities_with_active_personality():
         prompt = mock_agent.call_args.kwargs["ephemeral_system_prompt"]
         assert "Superforecasting Agent" in prompt
         assert "forecasting desk" in prompt
+
+
+
+def test_concurrent_construction_captures_each_sessions_launch_overrides(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from agent.tenant_runtime import set_tenant_runtime, clear_tenant_runtime
+    from tui_gateway import server
+
+    barrier = Barrier(2)
+    monkeypatch.setattr(server, '_load_cfg', lambda: {})
+    monkeypatch.setattr(server, '_get_db', lambda: None)
+    monkeypatch.setattr(server, '_agent_cbs', lambda sid: {})
+    monkeypatch.setenv('SUPERFORECASTING_AGENT_MODEL', 'process-default')
+
+    def construct(config, **options):
+        barrier.wait(timeout=5)
+        return options
+
+    monkeypatch.setattr('superforecasting_agent.hosting.desk_agent.build_desk_agent', construct)
+
+    def launch(owner):
+        token = set_tenant_runtime(toggles={'MODEL': owner, 'TUI_PROVIDER': owner + '-provider',
+                                          'TUI_MAX_TURNS': '7' if owner == 'first' else '9'})
+        try:
+            return server._make_agent(owner, owner + '-durable')
+        finally:
+            clear_tenant_runtime(token)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(launch, ['first', 'second']))
+    for owner, result, budget in zip(['first', 'second'], results, ['7', '9']):
+        assert result['session_id'] == owner + '-durable'
+        assert result['overrides']['model'] == owner
+        assert result['overrides']['provider'] == owner + '-provider'
+        assert result['overrides']['max_turns'] == budget
+    assert server._runtime_env_value('MODEL') == 'process-default'

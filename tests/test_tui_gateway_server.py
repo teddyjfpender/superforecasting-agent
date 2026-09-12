@@ -5675,7 +5675,7 @@ def _setup_make_agent_mocks(monkeypatch, cfg):
 
     monkeypatch.setattr(server, "_load_cfg", lambda: cfg)
     monkeypatch.setattr(
-        server, "_resolve_startup_runtime", lambda **kwargs: ("test-model", None)
+        "superforecasting_agent.hosting.desk_agent.startup_runtime", lambda *args: ("test-model", None)
     )
     monkeypatch.setattr(
         import_module("superforecasting_agent.runtime.runtime_provider"),
@@ -5692,10 +5692,10 @@ def _setup_make_agent_mocks(monkeypatch, cfg):
             "credential_pool": None,
         },
     )
-    monkeypatch.setattr(server, "_load_tool_progress_mode", lambda **kwargs: "off")
-    monkeypatch.setattr(server, "_load_reasoning_config", lambda **kwargs: None)
-    monkeypatch.setattr(server, "_load_service_tier", lambda **kwargs: None)
-    monkeypatch.setattr(server, "_load_enabled_toolsets", lambda **kwargs: None)
+    monkeypatch.setattr("superforecasting_agent.hosting.desk_agent.tool_progress_mode", lambda *args: "off")
+    monkeypatch.setattr("superforecasting_agent.hosting.desk_agent.reasoning_config", lambda *args: None)
+    monkeypatch.setattr("superforecasting_agent.hosting.desk_agent.service_tier", lambda *args: None)
+    monkeypatch.setattr("superforecasting_agent.tooling.startup_selection.resolve_startup_toolsets", lambda *args, **kwargs: None)
     monkeypatch.setattr(server, "_get_db", lambda: None)
     monkeypatch.setattr(server, "_agent_cbs", lambda sid: {})
 
@@ -6319,9 +6319,10 @@ def test_empty_configured_toolsets_are_not_widened_to_all(monkeypatch):
 
 
 def test_make_agent_preserves_empty_configured_toolsets(monkeypatch):
-    loader = server._load_enabled_toolsets
+    from superforecasting_agent.tooling import startup_selection
+    loader = startup_selection.resolve_startup_toolsets
     _setup_make_agent_mocks(monkeypatch, {"platform_toolsets": {"cli": []}, "mcp_servers": {}})
-    monkeypatch.setattr(server, '_load_enabled_toolsets', loader)
+    monkeypatch.setattr(startup_selection, 'resolve_startup_toolsets', loader)
     monkeypatch.delenv('SUPERFORECASTING_AGENT_TUI_TOOLSETS', raising=False)
     monkeypatch.delenv('HERMES_TUI_TOOLSETS', raising=False)
     monkeypatch.setattr('superforecasting_agent.runtime.config.load_config',

@@ -4322,3 +4322,25 @@ construction contract blocks direct presentation imports; it does not claim the
 legacy runtime has no indirect presentation dependencies. These include injected runtime/agent
 construction, not credentialed provider calls or rendered terminal qualification.
 The complete CLI and TUI gateway directories also passed all 1,379 tests.
+
+### Host-owned desk launch construction
+
+Moved foreground desk construction, configuration normalization, static routing,
+execution defaults and tool/prompt selection into hosting/desk_agent.py. The RPC
+adapter now captures launch aliases and supplies session storage, callbacks and
+warning output. Inspection helpers delegate to the same host policy. Removed the
+unused gateway skill-list parser. The host module is covered by strict directory
+checks and a direct presentation-import prohibition (60 total import contracts).
+
+All 1,630 host, CLI, TUI gateway and factory tests passed, including concurrent
+session launch overrides, preserved borrowed resources, snapshot selection and
+empty toolsets. Existing construction fixtures now patch the actual host/tool
+owners. Shared quality gates passed. Background construction/disposal remains in
+the RPC handler, including a cleanup path that removes its handle even when close
+raises; that concrete ownership gap remains to fix.
+
+The preceding plugin-ownership push was stopped by a rendered handoff-reconnect
+test failure (31,717 passed, 1 failed). The failure reproduces locally at the
+rendered /new status assertion. The new-session screen appears with corrupted
+status text in the test emulator; renderer versus emulator attribution remains
+unproven. No hook bypass or successful integrated-push claim is made.

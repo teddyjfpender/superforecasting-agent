@@ -761,3 +761,10 @@ type = "forbidden"
 source_modules = ["agent.agent_factory", "agent.startup_prompt"]
 forbidden_modules = ["gateway", "tui_gateway", "cli"]
 allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "hosted desk construction never directly imports presentation"
+type = "forbidden"
+source_modules = ["superforecasting_agent.hosting.desk_agent"]
+forbidden_modules = ["gateway", "tui_gateway", "cli"]
+allow_indirect_imports = true
