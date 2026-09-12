@@ -3439,3 +3439,28 @@ the backend worker entrypoint is present without requiring terminal dependencies
 Validation: 44 focused entrypoint, detached-launcher, real warnings-job and
 reforecast tests passed. Shared Python quality gates passed with 52 contracts.
 The new installed-artifact check is added but has not yet run on a rebuilt wheel.
+
+
+### Installed backend worker and distribution qualification
+
+Built backend and terminal wheels from `6337ab6ac` into
+`/tmp/forecast-worker-profile-artifacts`. Strengthened the installed verifier to
+create a durable warnings dry-run job, execute the backend worker in a separate
+process and read back its completed state. Verification runs outside the checkout
+with Node absent from the backend PATH.
+
+The verifier completed with exit 0 on macOS Python 3.11.15. Upgrade from retained
+0.21.2 to candidate 0.22.0 preserved question, probability history, evidence,
+Unicode session and configuration. Worker execution, numerical fallback, forecast
+create/update/resolve/score, independent local and authenticated localhost remote
+Ink, optional web installation and clean host termination passed. These are local
+artifact qualifications, not publication or native Windows/Termux evidence.
+
+SHA-256:
+- Backend: `063472fa70f4738bc7fa17145c8226834752e3a54e7a9bd7a132dc0166fcab9d`
+- Terminal: `120714c254f5dcce02da01d7627b0e7d5b287ba8efd16cdca93d7d55e64e15a8`
+- Prior backend: `09c3ec93d5dec5e26353922c2162f50d5702e4c5264a846643470c9fa4abfaca`
+
+Evidence: `/tmp/forecast-worker-profile-build.log` and
+`/tmp/forecast-worker-profile-execution.log`. Shared Python quality gates also
+passed after the verifier change.

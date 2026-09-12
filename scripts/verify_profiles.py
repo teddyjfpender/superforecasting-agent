@@ -367,6 +367,22 @@ def main() -> None:
         backend_run(
             "-c", "from superforecasting_agent.worker import main; assert main([]) == 2"
         )
+        job_id = backend_run(
+            "-c",
+            "from forecasting.jobs.store import JobStore; "
+            "from forecasting.jobs.model import JobRecord; "
+            "store = JobStore(); job_id = store.new_id(); "
+            "store.write(JobRecord(job_id=job_id, type='warnings', "
+            "spec={'dry_run': True})); print(job_id)",
+        ).strip()
+        backend_run("-m", "superforecasting_agent.worker", "run", job_id)
+        backend_run(
+            "-c",
+            "import sys; from forecasting.jobs.store import JobStore; "
+            "assert JobStore().read(sys.argv[1]).status == 'done'",
+            job_id,
+        )
+        print("Backend: installed worker completed a durable dry-run job without Node.")
         backend_run("-c", NUMERICAL_FALLBACK_CHECK)
         print(
             "Backend: numerical fallback passed without optional libraries or installer access."
