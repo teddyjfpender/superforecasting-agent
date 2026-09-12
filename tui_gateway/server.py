@@ -5796,6 +5796,7 @@ def _(rid, params: dict) -> dict:
                 rid,
                 "snapshot restore mutates live config/state; use command.dispatch for /snapshot restore",
             )
+        return _command_handoff(rid, "snapshot command: use command.dispatch")
 
     try:
         from agent.skill_bundles import get_skill_bundles

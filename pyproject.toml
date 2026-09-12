@@ -672,3 +672,9 @@ name = "configuration values never initialize runtime or consumers"
 type = "forbidden"
 source_modules = ["superforecasting_agent.configuration"]
 forbidden_modules = ["superforecasting_agent.runtime", "superforecasting_agent.storage", "agent", "tools", "gateway", "tui_gateway", "cli", "forecasting"]
+
+[[tool.importlinter.contracts]]
+name = "snapshot storage never imports CLI management or consumers"
+type = "forbidden"
+source_modules = ["superforecasting_agent.storage.snapshots"]
+forbidden_modules = ["superforecasting_agent.runtime", "cli", "gateway", "tui_gateway", "agent"]

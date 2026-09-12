@@ -1390,6 +1390,7 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     main_py = (root / 'superforecasting_agent/runtime' / "main.py").read_text(encoding="utf-8")
     parser_py = (root / 'superforecasting_agent/runtime' / "_parser.py").read_text(encoding="utf-8")
     config_py = (root / 'superforecasting_agent/runtime' / "config.py").read_text(encoding="utf-8")
+    config_py += "\n" + (root / "superforecasting_agent/configuration/defaults.py").read_text(encoding="utf-8")
     setup_py = (root / 'superforecasting_agent/runtime' / "setup.py").read_text(encoding="utf-8")
 
     assert "Persistent session goals for Superforecasting Agent" in goals
@@ -1636,6 +1637,7 @@ def test_runtime_user_guidance_prefers_active_forecast_home():
     goals = (root / 'superforecasting_agent/runtime' / "goals.py").read_text(encoding="utf-8")
     main = (root / 'superforecasting_agent/runtime' / "main.py").read_text(encoding="utf-8")
     config = (root / 'superforecasting_agent/runtime' / "config.py").read_text(encoding="utf-8")
+    config += "\n" + (root / "superforecasting_agent/configuration/defaults.py").read_text(encoding="utf-8")
     plugins_cmd = (root / 'superforecasting_agent/runtime' / "plugins_cmd.py").read_text(
         encoding="utf-8"
     )
@@ -1883,6 +1885,7 @@ def test_command_registry_and_oneshot_docs_are_forecast_native():
     )
     main_help = (root / 'superforecasting_agent/runtime' / "main.py").read_text(encoding="utf-8")
     config_py = (root / 'superforecasting_agent/runtime' / "config.py").read_text(encoding="utf-8")
+    config_py += "\n" + (root / "superforecasting_agent/configuration/defaults.py").read_text(encoding="utf-8")
     classic_cli = (root / "cli.py").read_text(encoding="utf-8")
 
     combined = "\n".join(
@@ -2659,6 +2662,7 @@ def test_setup_model_toolpicker_docs_are_forecast_native():
         "superforecasting_agent/runtime/tools_config.py",
         "superforecasting_agent/runtime/main.py",
         "superforecasting_agent/runtime/config.py",
+        "superforecasting_agent/configuration/defaults.py",
         "superforecasting_agent/runtime/plugins.py",
         "superforecasting_agent/runtime/model_catalog.py",
         "tools/web_tools.py",
@@ -4680,6 +4684,7 @@ def test_update_docs_messaging_restart_copy_is_forecast_native():
 def test_model_catalog_default_url_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     config_py = (root / 'superforecasting_agent/runtime' / "config.py").read_text(encoding="utf-8")
+    config_py += "\n" + (root / "superforecasting_agent/configuration/defaults.py").read_text(encoding="utf-8")
     catalog_py = (root / 'superforecasting_agent/runtime' / "model_catalog.py").read_text(encoding="utf-8")
 
     expected = (

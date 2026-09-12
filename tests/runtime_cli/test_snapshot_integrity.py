@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from superforecasting_agent.runtime import backup
+from superforecasting_agent.storage import snapshots as backup
 
 
 @pytest.fixture

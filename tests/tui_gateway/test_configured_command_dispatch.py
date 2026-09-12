@@ -766,3 +766,58 @@ def test_runtime_alias_executes_shared_operation_once(configure, monkeypatch):
     save.assert_called_once()
     server._SlashWorker.assert_not_called()
     server._start_agent_build.assert_not_called()
+
+
+def test_snapshot_native_lifecycle_and_cli_listing_parity(configure, monkeypatch, tmp_path, capsys):
+    from superforecasting_agent.runtime.checkpoint_commands import _handle_snapshot_command
+    from superforecasting_agent.storage.snapshots import list_quick_snapshots
+
+    configure({})
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", str(tmp_path))
+    (tmp_path / "config.yaml").write_text("model: test-model\n", encoding="utf-8")
+    assert slash('/snap create "before upgrade"')["error"]["data"]["execution_started"] is False
+    assert not (tmp_path / "state-snapshots").exists()
+    created = dispatch("snap", 'create "before upgrade"')
+    assert "Snapshot created:" in created["result"]["output"]
+    snapshots = list_quick_snapshots(hermes_home=tmp_path)
+    assert len(snapshots) == 1 and snapshots[0]["label"] == "before upgrade"
+    listed = dispatch("snapshot", "list")["result"]["output"]
+    _handle_snapshot_command(None, "/snap ls")
+    assert capsys.readouterr().out.strip() == listed
+    assert dispatch("snapshot", "prune 0")["result"]["output"] == "Pruned 1 old snapshot(s) (keeping 0)."
+    assert list_quick_snapshots(hermes_home=tmp_path) == []
+    server._SlashWorker.assert_not_called()
+    server._start_agent_build.assert_not_called()
+
+
+@pytest.mark.parametrize("argument", ["list extra", "prune -1", "prune 2 extra", 'create "', "create ../escape", "unknown"])
+def test_snapshot_validation_matches_cli_without_worker(configure, monkeypatch, tmp_path, capsys, argument):
+    from superforecasting_agent.runtime.checkpoint_commands import _handle_snapshot_command
+
+    configure({})
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", str(tmp_path))
+    response = dispatch("snapshot", argument)
+    assert response["error"]["code"] == 4004
+    _handle_snapshot_command(None, "/snapshot " + argument)
+    assert capsys.readouterr().out.strip() == response["error"]["message"]
+    assert not (tmp_path / "state-snapshots").exists()
+    server._SlashWorker.assert_not_called()
+    server._start_agent_build.assert_not_called()
+
+
+def test_snapshot_restore_admission_and_storage_failure_never_fall_through(configure, monkeypatch):
+    from superforecasting_agent.storage import snapshots
+
+    configure({})
+    restore = Mock(side_effect=AssertionError("live database restore attempted"))
+    monkeypatch.setattr(snapshots, "restore_quick_snapshot", restore)
+    assert "blocked in the TUI" in dispatch("snap", "rewind 1")["result"]["output"]
+    restore.assert_not_called()
+    create = Mock(side_effect=OSError("injected storage failure"))
+    monkeypatch.setattr(snapshots, "create_quick_snapshot", create)
+    response = dispatch("snapshot", "create")
+    assert response["error"]["code"] == 5017
+    assert "data" not in response["error"]
+    create.assert_called_once()
+    server._SlashWorker.assert_not_called()
+    server._start_agent_build.assert_not_called()

@@ -12,8 +12,8 @@ changes, tests and their limits. The previous checklist is preserved in the
 - [ ] Migrate remaining classic slash-worker commands to shared operations.
   The TUI must not need a second classic CLI runtime to execute business behavior.
   Preserve aliases, validation, error semantics and state ownership. Snapshot
-  storage now validates paths and uses atomic file replacement; native snapshot
-  operations and host-coordinated restoration remain to be implemented.
+  listing, creation and pruning now share application/storage owners;
+  host-coordinated live restoration remains to be implemented.
 - [ ] Finish separating agent construction from RPC orchestration. Deferred-build
   admission/retry and notification polling/admission now belong to the host;
   protocol event delivery remains an adapter responsibility.

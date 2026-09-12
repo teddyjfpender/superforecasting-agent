@@ -635,20 +635,15 @@ def _(rid, params: dict) -> dict:
             {"type": "send", "notice": notice, "message": state.goal},
         )
 
-    if name in {"snapshot", "snap"}:
-        subcommand = arg.split(maxsplit=1)[0].lower() if arg else ""
-        if subcommand in {"restore", "rewind"}:
-            return _ok(
-                rid,
-                {
-                    "type": "exec",
-                    "output": (
-                        "/snapshot restore is blocked in the TUI because it changes "
-                        "config/state on disk while the live agent has cached settings. "
-                        "Run it in the classic CLI, then restart the TUI."
-                    ),
-                },
-            )
+    if name == "snapshot":
+        from superforecasting_agent.application.snapshots import execute_snapshot
+
+        try:
+            return _ok(rid, {"type": "exec", "output": execute_snapshot(arg, allow_restore=False)})
+        except ValueError as exc:
+            return _err(rid, 4004, str(exc))
+        except OSError as exc:
+            return _err(rid, 5017, str(exc))
 
     from superforecasting_agent.application.command_catalog import resolve_command
 

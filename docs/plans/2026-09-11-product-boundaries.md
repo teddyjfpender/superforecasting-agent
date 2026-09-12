@@ -2436,3 +2436,28 @@ symlinks, invalid retention and injected replacement failure. Shared Python qual
 checks passed. This is per-file atomicity, not a multi-file transaction or proof
 that replacing an open SQLite database is safe. Native TUI restore remains blocked;
 host-coordinated restoration and command extraction remain unfinished.
+
+
+### Snapshot operations become native shared consumers
+
+Snapshot storage and SQLite copying moved out of CLI backup administration into
+strictly checked storage.snapshots; runtime.backup re-exports compatibility names.
+The transitive application boundary initially rejected importing backup because
+it reaches profiles, gateway administration and CLI entrypoints. The extraction
+removes that dependency instead of adding an exception. A dedicated transitive
+storage prohibition raises the enforced contract count to 45.
+
+application.snapshots owns argument parsing, validation and formatted operation
+results. Classic CLI and TUI dispatch both invoke it; listing, creation and pruning
+no longer construct a classic worker or model. Registry aliases share the same
+route. Invalid trailing arguments and malformed labels fail before mutation, and
+operation failures do not request fallback execution. Live restore remains denied
+by the TUI host; this extraction does not implement coordinated database shutdown.
+
+960 backup/metadata/gateway tests passed with one skip; after adding native snapshot
+lifecycle and CLI-parity regressions, all 104 configured-command tests passed.
+Shared quality checks passed, including 45 import contracts. The prior full push
+gate stopped with five metadata assertions still reading moved defaults from
+runtime/config.py (31,044 other tests passed, 148 skipped); these now inspect both
+configuration owners without dropping their branding assertions and pass in the
+expanded run. A fresh full push gate is still required for the integrated batch.
