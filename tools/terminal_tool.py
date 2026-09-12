@@ -1458,12 +1458,11 @@ def cleanup_vm(task_id: str):
     # actual (potentially slow) env.cleanup() call to outside the lock
     # so other tool calls aren't blocked.
     env = None
-    with _env_lock:
+    # Invalidate in-flight creators atomically with detaching the current env.
+    # Keep the same env -> creation lock order as the inactivity reaper.
+    with _env_lock, _creation_locks_lock:
         env = _active_environments.pop(task_id, None)
         _last_activity.pop(task_id, None)
-
-    # Clean up per-task creation lock
-    with _creation_locks_lock:
         _creation_locks.pop(task_id, None)
 
     # Invalidate stale file_ops cache entry
@@ -1871,8 +1870,15 @@ def terminal_tool(
                 task_lock = _creation_locks[effective_task_id]
 
             with task_lock:
-                # Double-check after acquiring the per-task lock
-                with _env_lock:
+                # A cleanup may invalidate this lock while this caller waits.
+                # Such a caller belongs to the retired generation, even if a
+                # replacement environment now exists under the same task ID.
+                with _env_lock, _creation_locks_lock:
+                    if _creation_locks.get(effective_task_id) is not task_lock:
+                        return json.dumps({
+                            "output": "", "exit_code": -1, "status": "cancelled",
+                            "error": "Environment creation cancelled by session cleanup",
+                        })
                     if effective_task_id in _active_environments:
                         _last_activity[effective_task_id] = time.time()
                         env = _active_environments[effective_task_id]
@@ -1935,10 +1941,20 @@ def terminal_tool(
                             "status": "disabled"
                         }, ensure_ascii=False)
 
-                    with _env_lock:
-                        _active_environments[effective_task_id] = new_env
-                        _last_activity[effective_task_id] = time.time()
-                        env = new_env
+                    with _env_lock, _creation_locks_lock:
+                        retired = _creation_locks.get(effective_task_id) is not task_lock
+                        if not retired:
+                            _active_environments[effective_task_id] = new_env
+                            _last_activity[effective_task_id] = time.time()
+                            env = new_env
+                    if retired:
+                        # Dispose the unpublished object, never a task-ID lookup
+                        # that could tear down a replacement environment.
+                        new_env.cleanup()
+                        return json.dumps({
+                            "output": "", "exit_code": -1, "status": "cancelled",
+                            "error": "Environment creation cancelled by session cleanup",
+                        })
                     logger.info("%s environment ready for task %s", env_type, effective_task_id[:8])
 
         # Pre-exec security checks (tirith + dangerous command detection)

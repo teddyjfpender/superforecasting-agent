@@ -2067,3 +2067,22 @@ process-level isolation. It does not establish either historical crash cause.
 The earlier integrated construction/provenance batch pushed at `c76034948` after
 30,958 tests passed (148 skipped, 58 warnings). The subsequent CLI factory, native
 cron, child cleanup and SDK diagnostics commits require their own integrated gate.
+
+### Sandbox creation generation ownership
+
+Manual terminal cleanup previously detached the environment and removed its
+creation lock in separate critical sections. An already-running creator could
+subsequently publish a sandbox after cleanup, replacing a new session's environment;
+an old waiter could also consume replacement state. Cleanup now invalidates the
+creation-lock identity atomically with environment detachment using the existing
+env-then-creation lock order. Creators and waiters check that identity before using
+state, and creators check again before publication. Retired creations are disposed
+by object handle, never through a task-ID lookup, and return cancelled without
+executing the requested command.
+
+32 focused terminal/file-tool/lifecycle tests passed; shared quality checks passed.
+A deterministic blocked-creator plus waiting-caller test installs a replacement
+between cleanup and completion, then proves no stale publication, execution or
+replacement cleanup occurs. Terminal cleanup-failure retention and file-operation
+cache cleanup races remain separate work; this does not claim all sandbox disposal
+paths are complete.

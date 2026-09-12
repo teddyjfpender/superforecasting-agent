@@ -508,3 +508,8 @@ refuses to report complete while these remain unconfirmed: HTTPX can set its
 closed flag before transport disposal raises, making subsequent public close calls
 no-ops. Retention is diagnostic containment, not a promise of automatic transport
 recovery; private SDK/socket internals remain outside agent ownership.
+
+Terminal sandbox publication is tied to its per-task creation-lock identity.
+Cleanup invalidates that identity atomically with detaching the active environment.
+Retired creators and waiters cannot publish into or execute against a replacement
+session; unpublished sandbox disposal uses its direct object handle.
