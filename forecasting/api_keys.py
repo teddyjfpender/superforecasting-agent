@@ -171,7 +171,7 @@ def lookup_provider(name: str) -> ApiKeyProvider:
 def default_env_path() -> Path:
     """Where api-key writes land — the user-level dotenv loaded first by the runtime."""
 
-    from superforecasting_agent.runtime.env_loader import get_agent_home
+    from superforecasting_agent.constants import get_agent_home
 
     return get_agent_home() / ".env"
 

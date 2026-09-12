@@ -1810,3 +1810,15 @@ Validation: 238 notification/host/server tests passed, including real turn
 submission emitting exactly one start and an injected status-display failure
 still submitting exactly one turn. Python quality and all 36 import contracts
 passed. This does not make the process-local notification queue durable.
+
+
+### API-key profile paths no longer import runtime dotenv
+
+The API-key domain service now obtains `get_agent_home` from its shared constants
+owner instead of indirectly importing it through the runtime dotenv loader. The
+corresponding frozen domain-to-runtime exception is removed. A regression denies
+all runtime imports while resolving successive profile homes; existing key
+mutation/redaction/CLI tests remain unchanged.
+
+Validation: 19 API-key tests and the shared Python quality checks passed,
+including all 36 import contracts. Other domain configuration exceptions remain.
