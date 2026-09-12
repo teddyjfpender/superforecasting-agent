@@ -333,11 +333,11 @@ def build_informed_market_forecaster(
         # than passing "" to the provider (codex rejects an empty model). The CLI path
         # already resolves it; this covers programmatic callers.
         try:
-            from superforecasting_agent.runtime.config import load_config
+            from superforecasting_agent.storage.configuration import read_configuration
 
             from forecasting.quorum_autorun import resolve_active_model_id
 
-            model = resolve_active_model_id(load_config().get("model"))
+            model = resolve_active_model_id(read_configuration().get("model"))
         except Exception:  # noqa: BLE001 — leave model unset; the factory may still default it
             model = model or None
 

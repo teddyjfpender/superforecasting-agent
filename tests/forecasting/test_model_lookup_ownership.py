@@ -11,13 +11,13 @@ from forecasting.research_audit import _change_my_mind_coverage
 @pytest.mark.parametrize("model", ["test-model", {"default": "test-model"}, {"model": "test-model"}])
 def test_model_lookup_does_not_require_presentation(monkeypatch, model):
     monkeypatch.setattr(
-        "superforecasting_agent.runtime.config.load_config", lambda: {"model": model}
+        "superforecasting_agent.storage.configuration.read_configuration", lambda: {"model": model}
     )
     imported = builtins.__import__
     forbidden = []
 
     def guarded(name, *args, **kwargs):
-        if name == "forecasting.cli" or name.startswith("forecasting.cli."):
+        if name == "superforecasting_agent.runtime.config" or name == "forecasting.cli" or name.startswith("forecasting.cli."):
             forbidden.append(name)
             raise AssertionError("programmatic model lookup imported the CLI")
         return imported(name, *args, **kwargs)

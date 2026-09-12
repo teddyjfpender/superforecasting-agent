@@ -2381,3 +2381,20 @@ lacked the declared NumPy 2.4.3 full-test dependency. After installing that exac
 dependency, both numerical modules and the new profile tests passed (63 tests).
 Shared Python quality checks passed, including all 44 import contracts. This
 is focused verification, not a new full-repository gate or release qualification.
+
+
+### Background forecast readers share profile ownership
+
+Scheduler, cron policy, estimator/review workers, quorum jobs/autorun and
+market/research model lookup now use shared read-only profile storage. Eight
+additional frozen runtime configuration exceptions are removed (17 to 9); the
+remaining exceptions concern CLI adapters, plugin discovery and model runners.
+No scheduling, model budget, override priority or scoring formula is changed.
+
+137 focused tests passed, including real profile values through background
+consumers with CLI configuration loaders forbidden, no profile file creation,
+and programmatic market/research model lookup with presentation imports forbidden.
+Existing command-only test fixtures retain their CLI seam. Shared Python lint,
+format, scoped types, protocol generation and all 44 import contracts passed.
+Broader forecasting verification is running separately; this entry does not
+claim that pending run or the full-repository push gate has passed.

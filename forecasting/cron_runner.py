@@ -49,9 +49,9 @@ _FREE_TIER_SWEEP_CAP_DEFAULT = 500
 def _warnings_config() -> dict[str, Any]:
     """Read the optional ``forecasting.warnings`` config block (best-effort)."""
     try:
-        from superforecasting_agent.runtime.config import load_config
+        from superforecasting_agent.storage.configuration import read_configuration
 
-        cfg = load_config() or {}
+        cfg = read_configuration() or {}
         fc = cfg.get("forecasting", {}) if isinstance(cfg, dict) else {}
         block = fc.get("warnings", {}) if isinstance(fc, dict) else {}
         return block if isinstance(block, dict) else {}
@@ -155,9 +155,9 @@ _REVIEW_SWEEP_INTERVAL_DEFAULT = 10
 def _reviews_config() -> dict[str, Any]:
     """Read the optional ``forecasting.reviews`` config block (best-effort)."""
     try:
-        from superforecasting_agent.runtime.config import load_config
+        from superforecasting_agent.storage.configuration import read_configuration
 
-        cfg = load_config() or {}
+        cfg = read_configuration() or {}
         fc = cfg.get("forecasting", {}) if isinstance(cfg, dict) else {}
         block = fc.get("reviews", {}) if isinstance(fc, dict) else {}
         return block if isinstance(block, dict) else {}
@@ -1543,9 +1543,9 @@ def _first_env_value(names: tuple[str, ...]) -> str:
 def _automode_config() -> dict[str, Any]:
     """Read the optional ``cron.warning_automode`` config block (best-effort)."""
     try:
-        from superforecasting_agent.runtime.config import load_config
+        from superforecasting_agent.storage.configuration import read_configuration
 
-        cfg = load_config() or {}
+        cfg = read_configuration() or {}
         cron_cfg = cfg.get("cron", {}) if isinstance(cfg, dict) else {}
         block = cron_cfg.get("warning_automode", {}) if isinstance(cron_cfg, dict) else {}
         return block if isinstance(block, dict) else {}
@@ -1556,9 +1556,9 @@ def _automode_config() -> dict[str, Any]:
 def _source_estimator_config() -> dict[str, Any]:
     """Read the dedicated source-estimator worker settings."""
     try:
-        from superforecasting_agent.runtime.config import load_config
+        from superforecasting_agent.storage.configuration import read_configuration
 
-        cfg = load_config() or {}
+        cfg = read_configuration() or {}
         cron_cfg = cfg.get("cron", {}) if isinstance(cfg, dict) else {}
         block = cron_cfg.get("source_estimator", {}) if isinstance(cron_cfg, dict) else {}
         return block if isinstance(block, dict) else {}

@@ -246,7 +246,7 @@ def _on_config():
 def test_autorun_fires_start_job_on_high_impact_live(tmp_path, monkeypatch):
     from forecasting import cli as fcli
     import forecasting.jobs.types.quorum as qj
-    import superforecasting_agent.runtime.config as cfgmod
+    import superforecasting_agent.storage.configuration as cfgmod
 
     ledger, q = _high_impact_ledger(tmp_path)
     snap = SimpleNamespace(forecast_id="fc_snap_1")
@@ -258,7 +258,7 @@ def test_autorun_fires_start_job_on_high_impact_live(tmp_path, monkeypatch):
         return "qr_test123"
 
     monkeypatch.setattr(qj, "start_job", _fake_start_job)
-    monkeypatch.setattr(cfgmod, "load_config", _on_config)
+    monkeypatch.setattr(cfgmod, "read_configuration", _on_config)
     # Fail-open provider detection ⇒ frontier stays reachable (no self fallback).
     monkeypatch.setattr(quorum, "available_provider_slugs", lambda: None)
 
@@ -278,7 +278,7 @@ def test_autorun_fires_start_job_on_high_impact_live(tmp_path, monkeypatch):
 def test_autorun_respects_config_off(tmp_path, monkeypatch):
     from forecasting import cli as fcli
     import forecasting.jobs.types.quorum as qj
-    import superforecasting_agent.runtime.config as cfgmod
+    import superforecasting_agent.storage.configuration as cfgmod
 
     ledger, q = _high_impact_ledger(tmp_path)
 
@@ -286,7 +286,7 @@ def test_autorun_respects_config_off(tmp_path, monkeypatch):
         raise AssertionError("auto-run must not fire when default_enabled is off")
 
     monkeypatch.setattr(qj, "start_job", _must_not_run)
-    monkeypatch.setattr(cfgmod, "load_config", lambda: {"quorum": {"default_enabled": False}})
+    monkeypatch.setattr(cfgmod, "read_configuration", lambda: {"quorum": {"default_enabled": False}})
 
     fcli._maybe_autorun_quorum(
         ledger, q.id, snapshot=SimpleNamespace(forecast_id="x"),
@@ -297,7 +297,7 @@ def test_autorun_respects_config_off(tmp_path, monkeypatch):
 def test_autorun_is_fail_open_when_start_job_raises(tmp_path, monkeypatch, capsys):
     from forecasting import cli as fcli
     import forecasting.jobs.types.quorum as qj
-    import superforecasting_agent.runtime.config as cfgmod
+    import superforecasting_agent.storage.configuration as cfgmod
 
     ledger, q = _high_impact_ledger(tmp_path)
 
@@ -305,7 +305,7 @@ def test_autorun_is_fail_open_when_start_job_raises(tmp_path, monkeypatch, capsy
         raise RuntimeError("spawn failed")
 
     monkeypatch.setattr(qj, "start_job", _boom)
-    monkeypatch.setattr(cfgmod, "load_config", _on_config)
+    monkeypatch.setattr(cfgmod, "read_configuration", _on_config)
     monkeypatch.setattr(quorum, "available_provider_slugs", lambda: None)
 
     # Must NOT raise — the commit already happened.
@@ -465,7 +465,7 @@ def _seed_commit_prereqs(ledger, q):
 
 def test_tool_update_forecast_fires_autorun(tmp_path, monkeypatch):
     import forecasting.jobs.types.quorum as qj
-    import superforecasting_agent.runtime.config as cfgmod
+    import superforecasting_agent.storage.configuration as cfgmod
     from tools.forecasting_tool import forecast_ledger_tool
 
     ledger, q = _high_impact_ledger(tmp_path)
@@ -473,7 +473,7 @@ def test_tool_update_forecast_fires_autorun(tmp_path, monkeypatch):
 
     captured = {}
     monkeypatch.setattr(qj, "start_job", lambda spec, *, wait=False: (captured.update(spec=spec), "qr_tool1")[1])
-    monkeypatch.setattr(cfgmod, "load_config", _on_config)
+    monkeypatch.setattr(cfgmod, "read_configuration", _on_config)
     monkeypatch.setattr(quorum, "available_provider_slugs", lambda: None)
 
     out = json.loads(forecast_ledger_tool(_tool_update_args(ledger, q)))
@@ -490,13 +490,13 @@ def test_tool_update_forecast_fires_autorun(tmp_path, monkeypatch):
 
 def test_tool_update_forecast_autorun_respects_config_off(tmp_path, monkeypatch):
     import forecasting.jobs.types.quorum as qj
-    import superforecasting_agent.runtime.config as cfgmod
+    import superforecasting_agent.storage.configuration as cfgmod
     from tools.forecasting_tool import forecast_ledger_tool
 
     ledger, q = _high_impact_ledger(tmp_path)
     _seed_commit_prereqs(ledger, q)
     monkeypatch.setattr(qj, "start_job", lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not fire")))
-    monkeypatch.setattr(cfgmod, "load_config", lambda: {"quorum": {"default_enabled": False}})
+    monkeypatch.setattr(cfgmod, "read_configuration", lambda: {"quorum": {"default_enabled": False}})
 
     out = json.loads(forecast_ledger_tool(_tool_update_args(ledger, q)))
     assert out["success"] is True
@@ -509,7 +509,7 @@ def test_tool_update_forecast_autorun_respects_config_off(tmp_path, monkeypatch)
 
 def test_tool_update_forecast_autorun_skipped_when_panel_attached(tmp_path, monkeypatch):
     import forecasting.jobs.types.quorum as qj
-    import superforecasting_agent.runtime.config as cfgmod
+    import superforecasting_agent.storage.configuration as cfgmod
     from tools.forecasting_tool import forecast_ledger_tool
 
     ledger, q = _high_impact_ledger(tmp_path)
@@ -532,7 +532,7 @@ def test_tool_update_forecast_autorun_skipped_when_panel_attached(tmp_path, monk
         aggregation_method="median",
     )
     monkeypatch.setattr(qj, "start_job", lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not fire")))
-    monkeypatch.setattr(cfgmod, "load_config", _on_config)
+    monkeypatch.setattr(cfgmod, "read_configuration", _on_config)
 
     out = json.loads(forecast_ledger_tool(_tool_update_args(ledger, q, panel_run_ref=panel["id"])))
     assert out["success"] is True
@@ -545,13 +545,13 @@ def test_tool_update_forecast_autorun_skipped_when_panel_attached(tmp_path, monk
 
 def test_tool_update_forecast_autorun_fail_open(tmp_path, monkeypatch):
     import forecasting.jobs.types.quorum as qj
-    import superforecasting_agent.runtime.config as cfgmod
+    import superforecasting_agent.storage.configuration as cfgmod
     from tools.forecasting_tool import forecast_ledger_tool
 
     ledger, q = _high_impact_ledger(tmp_path)
     _seed_commit_prereqs(ledger, q)
     monkeypatch.setattr(qj, "start_job", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("spawn failed")))
-    monkeypatch.setattr(cfgmod, "load_config", _on_config)
+    monkeypatch.setattr(cfgmod, "read_configuration", _on_config)
     monkeypatch.setattr(quorum, "available_provider_slugs", lambda: None)
 
     out = json.loads(forecast_ledger_tool(_tool_update_args(ledger, q)))

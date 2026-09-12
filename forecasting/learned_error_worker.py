@@ -87,9 +87,9 @@ def build_agent_learned_error_reviewer(
     """Build the hosted reviewer while preserving the configured model."""
     if not model:
         from forecasting.quorum_autorun import resolve_active_model_id
-        from superforecasting_agent.runtime.config import load_config
+        from superforecasting_agent.storage.configuration import read_configuration
 
-        model = resolve_active_model_id(load_config().get("model"))
+        model = resolve_active_model_id(read_configuration().get("model"))
     if not model:
         raise ValidationError("no active model configured for learned-error review")
 

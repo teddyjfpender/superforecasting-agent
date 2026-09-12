@@ -235,9 +235,9 @@ def test_live_default_on_fires_runner_without_any_config(home, tmp_path, monkeyp
         lambda **_k: (lambda queries: [{"title": "fresh"}]),
     )
     # Empty config (no quorum key at all) -> the code fallback must default ON.
-    import superforecasting_agent.runtime.config as hc
+    import superforecasting_agent.storage.configuration as hc
 
-    monkeypatch.setattr(hc, "load_config", lambda: {})
+    monkeypatch.setattr(hc, "read_configuration", lambda: {})
 
     spec = {"question_id": q.id, "db": db, "models": ["a/m1", "b/m2"], "trim": 0}
     run_id = qj.start_job(spec, wait=True)
@@ -322,11 +322,11 @@ def test_gate_on_via_config_flag(home, tmp_path, monkeypatch):
     monkeypatch.setattr(
         ss, "build_supervisor_search_runner", lambda **_k: (lambda queries: [{"title": "cfg"}])
     )
-    # _supervisor_search_enabled does a function-local `from superforecasting_agent.runtime.config import
-    # load_config`, so the real seam is superforecasting_agent.runtime.config.load_config.
-    import superforecasting_agent.runtime.config as hc
+    # _supervisor_search_enabled does a function-local `from superforecasting_agent.storage.configuration import
+    # read_configuration`, so the real seam is superforecasting_agent.storage.configuration.read_configuration.
+    import superforecasting_agent.storage.configuration as hc
 
-    monkeypatch.setattr(hc, "load_config", lambda: {"quorum": {"supervisor_search": True}})
+    monkeypatch.setattr(hc, "read_configuration", lambda: {"quorum": {"supervisor_search": True}})
 
     spec = {"question_id": q.id, "db": db, "models": ["a/m1", "b/m2"], "trim": 0}
     run_id = qj.start_job(spec, wait=True)

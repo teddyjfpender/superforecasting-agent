@@ -265,9 +265,9 @@ def _supervisor_search_enabled(spec: dict[str, Any]) -> bool:
     if "supervisor_search" in spec:
         return _truthy(spec.get("supervisor_search"))
     try:
-        from superforecasting_agent.runtime.config import load_config
+        from superforecasting_agent.storage.configuration import read_configuration
 
-        cfg = load_config().get("quorum", {})
+        cfg = read_configuration().get("quorum", {})
     except Exception:  # noqa: BLE001 — config optional; harmless default ON
         return True
     if not isinstance(cfg, dict) or "supervisor_search" not in cfg:
@@ -288,9 +288,9 @@ def _track_record_weights_enabled(spec: dict[str, Any]) -> bool:
     if "track_record_weights" in spec:
         return _truthy(spec.get("track_record_weights"))
     try:
-        from superforecasting_agent.runtime.config import load_config
+        from superforecasting_agent.storage.configuration import read_configuration
 
-        cfg = load_config().get("quorum", {})
+        cfg = read_configuration().get("quorum", {})
     except Exception:  # noqa: BLE001 — config optional; harmless default ON
         return True
     if not isinstance(cfg, dict) or "track_record_weights" not in cfg:
@@ -309,9 +309,9 @@ def _track_record_min_sample(spec: dict[str, Any]) -> int:
         except (TypeError, ValueError):
             return 10
     try:
-        from superforecasting_agent.runtime.config import load_config
+        from superforecasting_agent.storage.configuration import read_configuration
 
-        cfg = load_config().get("quorum", {})
+        cfg = read_configuration().get("quorum", {})
         if isinstance(cfg, dict) and "track_record_min_sample" in cfg:
             return max(1, int(cfg.get("track_record_min_sample")))
     except Exception:  # noqa: BLE001 — config optional
@@ -341,9 +341,9 @@ def _derive_alpha_enabled() -> bool:
     ``False`` (the fail-safe: never derive without an explicit opt-in)."""
 
     try:
-        from superforecasting_agent.runtime.config import load_config
+        from superforecasting_agent.storage.configuration import read_configuration
 
-        cal = (load_config().get("forecasting", {}) or {}).get("calibration", {})
+        cal = (read_configuration().get("forecasting", {}) or {}).get("calibration", {})
     except Exception:  # noqa: BLE001 — config optional; default OFF without it
         return False
     return _truthy(cal.get("derive_alpha")) if isinstance(cal, dict) else False
@@ -392,9 +392,9 @@ def _market_anchor_enabled(spec: dict[str, Any]) -> bool:
     if "market_anchor" in spec:
         return _truthy(spec.get("market_anchor"))
     try:
-        from superforecasting_agent.runtime.config import load_config
+        from superforecasting_agent.storage.configuration import read_configuration
 
-        cfg = load_config().get("quorum", {})
+        cfg = read_configuration().get("quorum", {})
     except Exception:  # noqa: BLE001 — config optional; doctrine default ON
         return True
     if not isinstance(cfg, dict) or "market_anchor" not in cfg:
@@ -415,9 +415,9 @@ def _market_anchor_threshold_pp(spec: dict[str, Any]) -> float:
         except (TypeError, ValueError):
             return 10.0
     try:
-        from superforecasting_agent.runtime.config import load_config
+        from superforecasting_agent.storage.configuration import read_configuration
 
-        cfg = load_config().get("quorum", {})
+        cfg = read_configuration().get("quorum", {})
         if isinstance(cfg, dict) and "market_anchor_deviation_pp" in cfg:
             return max(0.0, float(cfg.get("market_anchor_deviation_pp")))
     except Exception:  # noqa: BLE001 — config optional

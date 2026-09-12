@@ -415,9 +415,10 @@ def deterministic_research_checks(
 # ── (1b) the judge ────────────────────────────────────────────────────────────
 def _resolve_adequacy_threshold() -> float:
     try:
-        from superforecasting_agent.runtime.config import cfg_get, load_config_readonly
+        from superforecasting_agent.configuration import cfg_get
+        from superforecasting_agent.storage.configuration import read_configuration
 
-        val = cfg_get(load_config_readonly(), "forecasting", "research", "adequacy_threshold", default=None)
+        val = cfg_get(read_configuration(), "forecasting", "research", "adequacy_threshold", default=None)
         if val is not None:
             return float(val)
     except Exception:
@@ -589,10 +590,10 @@ def _change_my_mind_coverage(
     active_model = model
     if not active_model:
         try:
-            from superforecasting_agent.runtime.config import load_config
+            from superforecasting_agent.storage.configuration import read_configuration
             from forecasting.quorum_autorun import resolve_active_model_id
 
-            active_model = resolve_active_model_id(load_config().get("model"))
+            active_model = resolve_active_model_id(read_configuration().get("model"))
         except Exception:
             active_model = None
     if not active_model:

@@ -100,3 +100,49 @@ def test_cached_raw_profile_expands_current_environment(tmp_path, monkeypatch):
     monkeypatch.setenv("FORECAST_TEST_PROFILE_MODEL", "second")
     assert read_configuration(path)["model"] == "second"
     assert "${FORECAST_TEST_PROFILE_MODEL}" in path.read_text(encoding="utf-8")
+
+
+def test_background_readers_use_active_profile_without_cli_loading(tmp_path, monkeypatch):
+    from forecasting import cron_runner, scheduler
+    from forecasting.estimator_worker import build_agent_estimator
+    from forecasting.learned_error_worker import build_agent_learned_error_reviewer
+    from forecasting.jobs.types import quorum
+    from forecasting.research_audit import _resolve_adequacy_threshold
+    from superforecasting_agent.runtime import config as cli_config
+
+    monkeypatch.setattr(cli_config, "load_config", lambda: pytest.fail("CLI loader used"))
+    monkeypatch.setattr(cli_config, "load_config_readonly", lambda: pytest.fail("CLI loader used"))
+    home = tmp_path / "background-profile"
+    home.mkdir()
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", str(home))
+    path = home / "config.yaml"
+    path.write_text(yaml.safe_dump({
+        "model": {"default": "isolated-test-model"},
+        "forecasting": {
+            "cron": {"auto_install": False, "warning_automode_auto_install": False},
+            "research": {"adequacy_threshold": 0.73},
+            "warnings": {"auto_free_tier": False},
+            "reviews": {"interval_minutes": 43},
+            "calibration": {"derive_alpha": True},
+        },
+        "cron": {"source_estimator": {"interval_minutes": 37}},
+        "quorum": {"supervisor_search": False, "market_anchor": False,
+                   "track_record_weights": False, "track_record_min_sample": 23,
+                   "market_anchor_deviation_pp": 6.5},
+    }), encoding="utf-8")
+    assert callable(build_agent_estimator())
+    assert callable(build_agent_learned_error_reviewer())
+    assert scheduler._auto_install_enabled() is False
+    assert scheduler._warning_automode_auto_install_enabled() is False
+    assert cron_runner._source_estimator_config()["interval_minutes"] == 37
+    assert cron_runner._reviews_config()["interval_minutes"] == 43
+    assert cron_runner._warnings_config()["auto_free_tier"] is False
+    assert _resolve_adequacy_threshold() == 0.73
+    assert quorum._supervisor_search_enabled({}) is False
+    assert quorum._market_anchor_enabled({}) is False
+    assert quorum._track_record_weights_enabled({}) is False
+    assert quorum._track_record_min_sample({}) == 23
+    assert quorum._market_anchor_threshold_pp({}) == 6.5
+    assert quorum._derive_alpha_enabled() is True
+    assert quorum._market_anchor_threshold_pp({"market_anchor_deviation_pp": 8}) == 8
+    assert list(home.iterdir()) == [path]

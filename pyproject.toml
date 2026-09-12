@@ -383,17 +383,9 @@ ignore_imports = [
     "forecasting.cli.markets_pm -> superforecasting_agent.runtime.config",
     "forecasting.cli.quorum_panel -> superforecasting_agent.runtime.config",
     "forecasting.cli.refresh_cycle -> superforecasting_agent.runtime.config",
-    "forecasting.cron_runner -> superforecasting_agent.runtime.config",
-    "forecasting.estimator_worker -> superforecasting_agent.runtime.config",
     "forecasting.jobs.__main__ -> superforecasting_agent.runtime.plugins",
-    "forecasting.jobs.types.quorum -> superforecasting_agent.runtime.config",
-    "forecasting.learned_error_worker -> superforecasting_agent.runtime.config",
-    "forecasting.market_nightly_forecaster -> superforecasting_agent.runtime.config",
     "forecasting.market_nightly_forecaster -> superforecasting_agent.runtime.plugins",
     "forecasting.quorum.panels -> superforecasting_agent.runtime.models",
-    "forecasting.quorum_autorun -> superforecasting_agent.runtime.config",
-    "forecasting.research_audit -> superforecasting_agent.runtime.config",
-    "forecasting.scheduler -> superforecasting_agent.runtime.config",
 ]
 
 [[tool.importlinter.contracts]]
