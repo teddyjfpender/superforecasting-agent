@@ -2,7 +2,7 @@
 
 import os
 import time
-from urllib.parse import urlparse
+from superforecasting_agent.configuration.browser import parse_cdp_url, normalize_cdp_url
 
 from .browser_connect import (
     DEFAULT_BROWSER_CDP_URL,
@@ -36,37 +36,13 @@ def _handle_browser_command(self, cmd: str):
         # Optionally accept a custom CDP URL: /browser connect ws://host:port
         connect_parts = cmd.strip().split(None, 2)  # ["/browser", "connect", "ws://..."]
         cdp_url = connect_parts[2].strip() if len(connect_parts) > 2 else _DEFAULT_CDP
-        parsed_cdp = urlparse(cdp_url if "://" in cdp_url else f"http://{cdp_url}")
-        if parsed_cdp.scheme not in {"http", "https", "ws", "wss"}:
-            print()
-            print(
-                f"   ⚠ Unsupported browser url scheme: {parsed_cdp.scheme or '(missing)'} "
-                "(expected one of: http, https, ws, wss)"
-            )
-            print()
-            return
         try:
-            _port = parsed_cdp.port or (443 if parsed_cdp.scheme in {"https", "wss"} else 80)
-        except ValueError:
-            print()
-            print(f"   ⚠ Invalid port in browser url: {cdp_url}")
-            print()
+            parsed_cdp = parse_cdp_url(cdp_url)
+        except ValueError as exc:
+            print(f"\n   ⚠ {exc}\n")
             return
-        if not parsed_cdp.hostname:
-            print()
-            print(f"   ⚠ Missing host in browser url: {cdp_url}")
-            print()
-            return
-        _host = parsed_cdp.hostname
-        if parsed_cdp.path.startswith("/devtools/browser/"):
-            cdp_url = parsed_cdp.geturl()
-        else:
-            cdp_url = parsed_cdp._replace(
-                path="",
-                params="",
-                query="",
-                fragment="",
-            ).geturl()
+        _port = parsed_cdp.port or (443 if parsed_cdp.scheme in {"https", "wss"} else 80)
+        cdp_url = normalize_cdp_url(parsed_cdp)
 
         # Clear any existing browser sessions so the next tool call uses the new backend
         try:
@@ -103,7 +79,7 @@ def _handle_browser_command(self, cmd: str):
                 sys_name = _plat.system()
                 chrome_cmd = manual_chrome_debug_command(_port, sys_name)
                 if chrome_cmd:
-                    print(f"     Launch a Chromium-family browser manually:")
+                    print("     Launch a Chromium-family browser manually:")
                     print(f"     {chrome_cmd}")
                 else:
                     print("     No supported Chromium-family browser executable found in this environment")

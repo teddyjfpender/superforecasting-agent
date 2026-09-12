@@ -19,6 +19,11 @@ from __future__ import annotations
 import os
 import time
 
+from superforecasting_agent.configuration.browser import (
+    parse_cdp_url, is_default_local_cdp as _is_default_local_cdp,
+    normalize_cdp_url as _normalize_cdp_url,
+)
+
 import tui_gateway.server as _core
 from tui_gateway.server import _err, _ok
 
@@ -77,27 +82,6 @@ def _resolve_browser_cdp_url() -> str:
     return ""
 
 
-def _is_default_local_cdp(parsed) -> bool:
-    """Match the discovery-style local default; never the concrete WS form.
-
-    A user-supplied ``ws://127.0.0.1:9222/devtools/browser/<id>`` is a
-    real, connectable endpoint — collapsing it to bare ``http://...:9222``
-    would strip the path and break the connect.
-    """
-    try:
-        port = parsed.port or 80
-    except ValueError:
-        return False
-
-    discovery_path = parsed.path in {"", "/", "/json", "/json/version"}
-    return (
-        parsed.scheme in {"http", "ws"}
-        and parsed.hostname in {"127.0.0.1", "localhost"}
-        and port == 9222
-        and discovery_path
-    )
-
-
 def _http_ok(url: str, timeout: float) -> bool:
     import urllib.request
 
@@ -112,16 +96,6 @@ def _probe_urls(parsed) -> list[str]:
     scheme = {"ws": "http", "wss": "https"}.get(parsed.scheme, parsed.scheme)
     root = f"{scheme}://{parsed.netloc}".rstrip("/")
     return [f"{root}/json/version", f"{root}/json"]
-
-
-def _normalize_cdp_url(parsed) -> str:
-    # Concrete ``/devtools/browser/<id>`` endpoints (Browserbase et al.)
-    # are connectable as-is. Discovery-style inputs collapse to bare
-    # ``scheme://host:port`` so ``_resolve_cdp_override`` can append
-    # ``/json/version`` later without doubling the path.
-    if parsed.path.startswith("/devtools/browser/"):
-        return parsed.geturl()
-    return parsed._replace(path="", params="", query="", fragment="").geturl()
 
 
 def _failure_messages(url: str, port: int, system: str) -> list[str]:
@@ -163,16 +137,9 @@ def _(rid, params: dict) -> dict:
 def _browser_connect(rid, params: dict) -> dict:
     import platform
 
-    from superforecasting_agent.runtime.browser_connect import DEFAULT_BROWSER_CDP_URL
     from tools.browser_tool import cleanup_all_browsers
-    from urllib.parse import urlparse
 
-    raw_url = params.get("url")
-    if raw_url is not None and not isinstance(raw_url, str):
-        return _err(
-            rid, 4015, f"browser url must be a string, got {type(raw_url).__name__}"
-        )
-    url = (raw_url or "").strip() or DEFAULT_BROWSER_CDP_URL
+    url = params.get("url")
 
     sid = params.get("session_id") or ""
     system = platform.system()
@@ -186,22 +153,12 @@ def _browser_connect(rid, params: dict) -> dict:
         if sid:
             _core._emit("browser.progress", sid, {"message": message, "level": level})
 
-    parsed = urlparse(url if "://" in url else f"http://{url}")
-    if parsed.scheme not in {"http", "https", "ws", "wss"}:
-        return _err(rid, 4015, f"unsupported browser url: {url}")
-    if not parsed.hostname:
-        return _err(rid, 4015, f"missing host in browser url: {url}")
     try:
-        port = parsed.port or (443 if parsed.scheme in {"https", "wss"} else 80)
-    except ValueError:
-        return _err(rid, 4015, f"invalid port in browser url: {url}")
-
-    # Always normalize default-local to 127.0.0.1:9222 so downstream
-    # comparisons + messaging match what we'll actually persist.
-    if _is_default_local_cdp(parsed):
-        url = DEFAULT_BROWSER_CDP_URL
-        parsed = urlparse(url)
-        port = parsed.port or 9222
+        parsed = parse_cdp_url(url)
+    except ValueError as exc:
+        return _err(rid, 4015, str(exc))
+    url = parsed.geturl()
+    port = parsed.port or (443 if parsed.scheme in {"https", "wss"} else 80)
 
     try:
         # ws[s]://.../devtools/browser/<id> endpoints (hosted CDP

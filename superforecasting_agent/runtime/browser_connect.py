@@ -11,8 +11,10 @@ import subprocess
 from superforecasting_agent.constants import get_agent_home
 
 
-DEFAULT_BROWSER_CDP_PORT = 9222
-DEFAULT_BROWSER_CDP_URL = f"http://127.0.0.1:{DEFAULT_BROWSER_CDP_PORT}"
+from superforecasting_agent.configuration.browser import (
+    DEFAULT_BROWSER_CDP_PORT as DEFAULT_BROWSER_CDP_PORT,
+    DEFAULT_BROWSER_CDP_URL as DEFAULT_BROWSER_CDP_URL,
+)
 
 _DARWIN_APPS = (
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",

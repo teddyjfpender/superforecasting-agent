@@ -3143,3 +3143,17 @@ The startup batch's full push gate remains running in the primary checkout.
   every source/kind, opt-in requirements and delegated loader behavior. Shared
   Python quality gates passed; application directory strict checks and import
   contracts automatically cover the new owner.
+
+### Shared browser endpoint policy
+
+- `configuration/browser.py` owns CDP defaults, endpoint validation and
+  normalization, consumed by classic CLI and TUI browser management. Legacy
+  browser-connect constants remain re-exported for compatibility.
+- Local discovery aliases now normalize consistently in both products; concrete
+  WebSocket endpoint paths and query parameters retain their identity. Invalid
+  bracket/port/type inputs fail before browser cleanup; port zero is rejected.
+- Verification: 54 browser/CLI/gateway checks passed, including actual CLI alias
+  connection and invalid-input preservation of the existing connection. Shared
+  Python quality gates passed with all 51 import contracts.
+- Browser resource cleanup and connection orchestration still have separate
+  adapters; this change does not establish shared resource ownership for them.
