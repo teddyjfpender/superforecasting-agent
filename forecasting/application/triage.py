@@ -306,15 +306,19 @@ def relabel_route(args: dict[str, Any], ledger: Any) -> dict[str, Any]:
         relabeled: list[dict[str, Any]] = []
         for adj in adjudications:
             if not isinstance(adj, dict):
-                continue
+                raise ValueError(
+                    "relabel_route adjudications must be objects with label_id and label"
+                )
             lid = adj.get("label_id")
             raw_label = adj.get("label") or adj.get("expert_label")
             if not lid or not raw_label:
-                continue
+                raise ValueError(
+                    "relabel_route adjudications require label_id and label"
+                )
             row = ledger.get_triage_label(str(lid))
             if row is None:
-                continue
-            expert = normalize_label(raw_label)
+                raise ValueError(f"relabel_route triage label not found: {lid}")
+            expert = normalize_label(raw_label, strict=True)
             updated = ledger.update_triage_label(
                 str(lid),
                 expert_label=expert,

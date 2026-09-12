@@ -649,6 +649,12 @@ def update_triage_label(
     verdict: str | None = None,
     materiality: str | None = None,
 ) -> dict[str, Any] | None:
+    from forecasting.triage import normalize_label
+
+    if expert_label is not None:
+        expert_label = normalize_label(expert_label, strict=True)
+    if triage_label is not None:
+        triage_label = normalize_label(triage_label, strict=True)
     sets: list[str] = []
     params: list[Any] = []
     if expert_label is not None:

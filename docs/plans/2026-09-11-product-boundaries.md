@@ -4715,3 +4715,19 @@ labeler call runs under the write transaction.
 Validation: 65 triage, CLI, label-scoring and trust checks passed, including
 CLI/tool/application error parity and interrupted-write recovery. Shared quality
 checks passed, including all 66 import contracts and blocking Python/TUI checks.
+
+
+### Expert triage label validation
+
+The extraction exposed a separate correctness defect: unknown expert labels were
+silently normalized to skim and recorded as gold. Direct ledger writes also
+accepted invalid scalar labels (malformed objects instead failed at SQLite).
+Strict normalization now rejects unknown expert classes at both entrypoints,
+while recognized aliases become canonical labels. Model-generated suggestions
+keep their conservative skim fallback. Malformed/missing adjudications now fail
+rather than reporting successful partial work; the batch transaction rolls back.
+
+Validation: six negative controls failed before the fix. 86 triage, trust, CLI,
+scoring and evidence-autopilot checks now pass, including malformed batch rollback
+and canonical alias storage. Shared quality checks passed. Existing gold records
+that were previously coerced cannot be retrospectively certified by this change.

@@ -875,3 +875,11 @@ label writes run inside a ledger transaction; expert adjudication and alert
 acknowledgement commit together. Interruptions roll back and propagate. No model
 or network call is held inside those write transactions. The CLI no longer enters
 the forecast tool registry to perform triage.
+
+
+Expert triage writes use strict label normalization at the application and ledger
+boundaries. Unknown labels are rejected; recognized aliases are stored as canonical
+classes. Model-generated suggestions retain the tolerant skim fallback. An invalid
+adjudication batch rolls back all its writes. Historical records already coerced
+into a valid class cannot be distinguished from intentional labels by this check;
+this change does not retroactively certify those records.

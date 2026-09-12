@@ -272,3 +272,34 @@ def test_triage_coupled_writes_roll_back_on_failure(ledger, monkeypatch, stage, 
         assert retry["success"] is True
         assert ledger.get_triage_label(target["id"])["label_source"] == "expert"
         assert ledger.get_alert(target["alert_id"]).acknowledged_at
+
+
+@pytest.mark.parametrize("surface", ["tool", "ledger"])
+@pytest.mark.parametrize("label", ["misspelled-label", 7, {"label": "irrelevant"}])
+def test_invalid_expert_labels_cannot_become_gold(ledger, surface, label):
+    [row] = ledger.record_triage_labels(verdicts=[{"triage_label": "relevant_uninteresting", "title": "sample"}])
+    if surface == "tool":
+        result = json.loads(_tool()({"action": "relabel_route", "db": ledger.db_path, "label_id": row["id"], "label": label}))
+        assert result["success"] is False
+    else:
+        with pytest.raises(ValueError, match="triage label"):
+            ledger.update_triage_label(row["id"], expert_label=label, label_source="expert")
+    assert ledger.get_triage_label(row["id"]) == row
+
+
+@pytest.mark.parametrize("invalid", [{"label_id": "missing", "label": "keep"}, {"label_id": "missing"}, "keep", {"label": "typo"}])
+def test_invalid_adjudication_batch_is_not_partially_committed(ledger, invalid):
+    rows = _seed_auto_rows(ledger)
+    invalid = {"label_id": rows[1]["id"], **invalid} if isinstance(invalid, dict) and "label" in invalid else invalid
+    before = ledger.list_triage_labels(question_id="q1")
+    result = json.loads(_tool()({"action": "relabel_route", "db": ledger.db_path, "adjudications": [
+        {"label_id": rows[0]["id"], "label": "keep"}, invalid,
+    ]}))
+    assert result["success"] is False
+    assert ledger.list_triage_labels(question_id="q1") == before
+
+
+def test_expert_label_aliases_are_stored_canonically(ledger):
+    [row] = ledger.record_triage_labels(verdicts=[{"triage_label": "irrelevant", "title": "sample"}])
+    updated = ledger.update_triage_label(row["id"], expert_label="KEEP", triage_label="keep")
+    assert updated["expert_label"] == updated["triage_label"] == "relevant_interesting"

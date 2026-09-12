@@ -55,7 +55,10 @@ changes, tests and their limits. The previous checklist is preserved in the
   owner. Model building now shares an application operation; reciprocal question links
   commit atomically and failed links preserve the build for retry. Triage operations
   now share validation/results across CLI and tools; label/alert changes commit
-  together. One direct forecast-to-tool exception remains (supervisor web search).
+  together. Expert triage labels now require a known class at the application and
+  ledger boundaries; invalid adjudication batches roll back instead of becoming
+  silent partial successes. One direct forecast-to-tool exception remains
+  (supervisor web search).
   Shared defaults/normalization and read-only profile access are now independent.
   Ledger scoring/snapshot settings, hook policy and estimate-first policy use them;
   scheduler, worker and research readers use the same owner. Quorum command reads and writes now use independent configuration and installation
