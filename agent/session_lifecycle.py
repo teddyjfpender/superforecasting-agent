@@ -5,6 +5,7 @@ import threading
 from typing import Any
 
 from agent.openai_clients import detach_primary_client, require_client_cleanup_complete
+from agent.review_lifecycle import reviews_for
 from tools.browser_tool import cleanup_browser
 from tools.terminal_tool import cleanup_vm
 
@@ -21,6 +22,7 @@ def shutdown_memory_provider(self, messages: list | None = None) -> None:
     NOT called per-turn — only at CLI exit, /reset, gateway
     session expiry, etc.
     """
+    reviews_for(self).stop()
     if self._memory_manager:
         try:
             self._memory_manager.on_session_end(messages or [])
@@ -140,6 +142,7 @@ def release_clients(self) -> None:
     expiry).
     """
     with getattr(self, "_resource_close_lock", _partial_agent_close_lock):
+        reviews_for(self).stop()
         if getattr(self, "_resources_closed", False):
             return
         _release_clients(self)
@@ -222,6 +225,7 @@ def close(self) -> None:
     independently guarded so a failure in one does not prevent the rest.
     """
     with getattr(self, "_resource_close_lock", _partial_agent_close_lock):
+        reviews_for(self).stop()
         if getattr(self, "_resources_closed", False):
             # Retry only retained object handles, never session/task-ID lookups.
             _close_children(self, release_only=False, collect_active=False)

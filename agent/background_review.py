@@ -350,6 +350,8 @@ def _run_review_in_thread(
     except Exception:
         pass
 
+    from agent.review_lifecycle import reviews_for
+    owner = reviews_for(agent)
     review_agent = None
     review_messages: List[Dict] = []
     try:
@@ -401,6 +403,8 @@ def _run_review_in_thread(
             parent_session_id=agent.session_id,
             skip_memory=True,
         )
+        if not owner.register(review_agent):
+            return
         review_agent._memory_write_origin = "background_review"
         review_agent._memory_write_context = "background_review"
         review_agent._memory_store = agent._memory_store
@@ -474,16 +478,7 @@ def _run_review_in_thread(
         finally:
             clear_thread_tool_whitelist()
 
-        # Tear down the fork before reporting its successful actions.
-        # The finally block below is a safety net for the exception path.
-        try:
-            review_agent.shutdown_memory_provider()
-        except Exception:
-            pass
-        try:
-            review_agent.close()
-        except Exception:
-            pass
+        owner.dispose(review_agent)
         review_messages = list(getattr(review_agent, "_session_messages", []))
         review_agent = None
 
@@ -516,20 +511,8 @@ def _run_review_in_thread(
         logger.warning("Background memory/skill review failed: %s", e)
         agent._emit_auxiliary_failure("background review", e)
     finally:
-        # Safety-net cleanup must never replace process streams: another
-        # foreground request can be writing while this worker shuts down.
         if review_agent is not None:
-            try:
-                try:
-                    review_agent.shutdown_memory_provider()
-                except Exception:
-                    pass
-                try:
-                    review_agent.close()
-                except Exception:
-                    pass
-            except Exception:
-                pass
+            owner.dispose(review_agent)
         # Clear the approval callback on this bg-review thread so a
         # recycled thread-id doesn't inherit a stale reference.
         try:

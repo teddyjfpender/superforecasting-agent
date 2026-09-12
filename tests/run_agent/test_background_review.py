@@ -333,3 +333,45 @@ def test_review_borrows_parent_session_tools_but_closes_its_client(monkeypatch):
     kill.assert_not_called()
     browser.assert_not_called()
     close_client.assert_called_once_with(client, reason='agent_close', shared=True)
+
+
+def test_real_review_spawn_is_owned_until_parent_cleanup_can_finish(monkeypatch):
+    import threading
+    import pytest
+    from unittest.mock import Mock
+    from agent import session_lifecycle
+
+    entered, leave, interrupted = threading.Event(), threading.Event(), threading.Event()
+    constructed = []
+    class FakeReviewAgent:
+        def __init__(self, **kwargs):
+            constructed.append(self)
+            self._session_messages = []
+        def run_conversation(self, **kwargs):
+            entered.set()
+            assert leave.wait(5)
+        def interrupt(self):
+            interrupted.set()
+        def shutdown_memory_provider(self):
+            pass
+        def close(self):
+            pass
+    monkeypatch.setattr(run_agent_module, 'AIAgent', FakeReviewAgent)
+    cleanup = Mock()
+    monkeypatch.setattr(session_lifecycle, '_close_resources', cleanup)
+    parent = _bare_agent()
+    parent._resource_close_lock = threading.RLock()
+    AIAgent._spawn_background_review(parent, [], review_memory=True)
+    try:
+        assert entered.wait(5)
+        with pytest.raises(RuntimeError, match='still running'):
+            session_lifecycle.close(parent)
+        assert interrupted.is_set()
+        cleanup.assert_not_called()
+        AIAgent._spawn_background_review(parent, [], review_memory=True)
+        assert len(constructed) == 1
+    finally:
+        leave.set()
+        assert parent._review_lifecycle.workers.drain(5)
+    session_lifecycle.close(parent)
+    cleanup.assert_called_once()

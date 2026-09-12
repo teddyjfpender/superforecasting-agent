@@ -2757,3 +2757,28 @@ client closes once. Ordinary agents retain existing owner behavior and repeated-
 protection. Shared Python quality gates passed. Background-review thread admission,
 interruption and draining are still unfinished; this addresses the separate shared-ID
 resource destruction defect discovered during that audit.
+
+
+### Background reviews participate in parent shutdown
+
+ReviewLifecycle reuses RuntimeWorkers for dedicated-thread admission and completion.
+The parent owns this lifecycle; spawning after cleanup starts is rejected. Constructed
+review agents are registered before use, and construction that finishes after shutdown
+is refused admission to the review loop. Parent close, client eviction and memory
+shutdown stop new reviews, interrupt registered running children and report pending
+cleanup until workers exit. Parent resources are not marked closed or reclaimed while
+review work remains active.
+
+Cleanup retains exact child handles and tracks memory/client disposal independently.
+Exceptions or explicit False results remain pending; successful steps are not repeated
+on retries. Child interruption and disposal admission share a lock so a completed
+child's old execution-thread identity is not signalled after disposal. Quiet operation,
+borrowed session tools and cache-compatible prompts remain intact.
+
+489 focused ownership, actual review-spawn, cache-parity, client and gateway tests
+passed. Deterministic cases cover shutdown during a blocked review, late starts,
+construction racing shutdown, repeated close and retained failed cleanup. The new
+owner receives strict lint/format/type checks and its own import contract; all 47
+contracts and shared Python quality gates pass. This does not resolve SDK transports
+that cannot safely retry disposal after their own failed close, or other terminal/
+browser resource ownership gaps recorded in TODO.md.

@@ -1055,9 +1055,8 @@ class AIAgent:
 
         Thin wrapper — the heavy lifting lives in
         ``agent.background_review.spawn_background_review_thread`` which
-        returns the thread target.  ``threading.Thread`` is constructed
-        here so existing tests that patch ``run_agent.threading.Thread``
-        keep working.
+        returns the thread target. The review lifecycle owns thread admission
+        and draining; the shared threading module remains patchable in tests.
         """
         from agent.background_review import spawn_background_review_thread
         target, _prompt = spawn_background_review_thread(
@@ -1066,8 +1065,12 @@ class AIAgent:
             review_memory=review_memory,
             review_skills=review_skills,
         )
-        t = threading.Thread(target=target, daemon=True, name="bg-review")
-        t.start()
+        from agent.review_lifecycle import reviews_for
+        from superforecasting_agent.hosting.workers import HostStopping
+        try:
+            reviews_for(self).workers.start(target, name="bg-review")
+        except HostStopping:
+            logger.debug("Review skipped because agent cleanup has started")
 
     def _build_memory_write_metadata(
         self,

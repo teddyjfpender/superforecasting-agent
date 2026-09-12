@@ -680,3 +680,9 @@ name = "command output owns no application state or product runtime"
 type = "forbidden"
 source_modules = ["superforecasting_agent.application.command_output"]
 forbidden_modules = ["superforecasting_agent.runtime", "superforecasting_agent.storage", "forecasting", "agent", "tools", "cli", "gateway", "tui_gateway"]
+
+[[tool.importlinter.contracts]]
+name = "review lifetime owns handles without constructing agents or presentation"
+type = "forbidden"
+source_modules = ["agent.review_lifecycle"]
+forbidden_modules = ["agent.runtime", "agent.background_review", "tools", "cli", "gateway", "tui_gateway", "superforecasting_agent.runtime"]
