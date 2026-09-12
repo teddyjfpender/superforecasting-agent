@@ -32,7 +32,9 @@ def test_failed_post_publication_cleanup_is_explicit():
 
 @pytest.mark.parametrize("interface", ["cli", "tui"])
 def test_supervisor_failure_reaches_connection_consumer(monkeypatch, capsys, interface):
-    from tools import browser_tool, browser_supervisor
+    from tools import browser_tool, browser_supervisor, browser_camofox
+
+    monkeypatch.setattr(browser_camofox, "_sessions", {})
     from superforecasting_agent.runtime.browser_commands import _handle_browser_command
 
     monkeypatch.setenv("BROWSER_CDP_URL", "http://existing:9222")

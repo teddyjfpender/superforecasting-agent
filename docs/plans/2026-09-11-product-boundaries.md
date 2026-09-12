@@ -3321,3 +3321,20 @@ The startup batch's full push gate remains running in the primary checkout.
   idempotence, and failure propagation to the task cleanup owner.
 - Remaining: global cleanup must enumerate Camofox-only sessions, and cloud
   browser provider disposal still needs equivalent exact-owner failure handling.
+
+### Global browser cleanup covers independently owned backends
+
+- Global cleanup now includes Camofox-only session keys, independent of the
+  currently selected mode. It attempts every task group and the supervisor
+  registry before reporting aggregate failure. Task cleanup likewise attempts
+  both primary and sidecar resources after an individual failure.
+- Camofox exposes read-only ownership queries so cleanup does not inspect or
+  create sessions through backend internals. Failed resources remain in their
+  owning registry; successful resources are removed even when a sibling fails.
+- Tests cover a failed Camofox primary alongside a healthy separate task or local
+  sidecar after switching away from Camofox mode. Both healthy resources and
+  supervisors still receive cleanup. Existing Camofox HTTP tests now isolate
+  their session registry so fake allocations cannot outlive their mocks.
+- Verification: 86 disposal/browser/host/transition/hybrid tests passed; shared
+  Python quality gates passed. Cloud-provider exact disposal ownership remains
+  unfinished; aggregate reporting does not fix failures suppressed by a backend.

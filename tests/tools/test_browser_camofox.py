@@ -23,6 +23,12 @@ from tools.browser_camofox import (
 )
 
 
+@pytest.fixture(autouse=True)
+def isolated_camofox_sessions(monkeypatch):
+    # Fake HTTP allocations must not outlive the mocks that own them.
+    monkeypatch.setattr("tools.browser_camofox._sessions", {})
+
+
 # ---------------------------------------------------------------------------
 # Configuration detection
 # ---------------------------------------------------------------------------

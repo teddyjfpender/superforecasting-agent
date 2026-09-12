@@ -269,6 +269,17 @@ def _ensure_tab(task_id: Optional[str], url: str = "about:blank") -> Dict[str, A
     return session
 
 
+def camofox_session_keys() -> tuple[str, ...]:
+    """Snapshot owned task identifiers without creating sessions."""
+    with _sessions_lock:
+        return tuple(_sessions)
+
+
+def has_camofox_session(task_id: str) -> bool:
+    with _sessions_lock:
+        return task_id in _sessions
+
+
 def _drop_session(task_id: Optional[str]) -> Optional[Dict[str, Any]]:
     """Remove and return session info."""
     task_id = task_id or "default"

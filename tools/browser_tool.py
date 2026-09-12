@@ -3492,12 +3492,20 @@ def _cleanup_browser_for_task(task_id: str) -> None:
         session_keys = [task_id]
         sidecar_key = f"{task_id}{_LOCAL_SUFFIX}"
         with _cleanup_lock:
-            if sidecar_key in _active_sessions:
-                session_keys.append(sidecar_key)
+            has_sidecar = sidecar_key in _active_sessions
+        camofox = sys.modules.get("tools.browser_camofox")
+        if has_sidecar or (camofox is not None and camofox.has_camofox_session(sidecar_key)):
+            session_keys.append(sidecar_key)
         bare_task_id = task_id
 
+    failures = []
     for session_key in session_keys:
-        _cleanup_single_browser_session(session_key)
+        try:
+            _cleanup_single_browser_session(session_key)
+        except Exception as exc:
+            failures.append(exc)
+    if failures:
+        raise RuntimeError(f"Browser task cleanup incomplete: {failures[0]}") from failures[0]
 
     # Drop the last-active pointer only when the bare task is being cleaned
     # (i.e. not when we're only reaping a sidecar mid-task).
@@ -3517,7 +3525,8 @@ def _cleanup_single_browser_session(task_id: str) -> None:
     # Skip full close when managed persistence is enabled — the browser
     # profile (and its session cookies) must survive across agent tasks.
     # The inactivity reaper still frees idle resources.
-    if _is_camofox_mode():
+    camofox = sys.modules.get("tools.browser_camofox")
+    if _is_camofox_mode() or (camofox is not None and camofox.has_camofox_session(task_id)):
         try:
             from tools.browser_camofox import camofox_close, camofox_soft_cleanup
             if not camofox_soft_cleanup(task_id):
@@ -3604,18 +3613,31 @@ def cleanup_all_browsers() -> None:
 def _cleanup_all_browsers_owned() -> None:
     """Drain the registry while no other thread can allocate a browser session."""
     with _cleanup_lock:
-        task_ids = list(_active_sessions.keys())
-    for task_id in task_ids:
-        cleanup_browser(task_id)
+        task_ids = set(_active_sessions)
+    camofox = sys.modules.get("tools.browser_camofox")
+    if camofox is not None:
+        task_ids.update(camofox.camofox_session_keys())
+    failures = []
+    # A primary cleanup also covers its local sidecar. Capture each group once.
+    for task_id in sorted({key.removesuffix(_LOCAL_SUFFIX) for key in task_ids}):
+        try:
+            cleanup_browser(task_id)
+        except Exception as exc:
+            failures.append(exc)
 
-    # Keep supervisor cleanup failures visible to connection/shutdown owners.
-    # The optional supervisor package may be absent in minimal installations.
+    # Attempt supervisors even if another backend failed; failed handles remain
+    # in their owning registries for retry.
     try:
         from tools.browser_supervisor import SUPERVISOR_REGISTRY
     except ImportError:
         pass
     else:
-        SUPERVISOR_REGISTRY.stop_all()
+        try:
+            SUPERVISOR_REGISTRY.stop_all()
+        except Exception as exc:
+            failures.append(exc)
+    if failures:
+        raise RuntimeError(f"Browser cleanup incomplete: {len(failures)} failure(s): {failures[0]}") from failures[0]
 
     # Reset cached lookups so they are re-evaluated on next use.
     global _cached_agent_browser, _agent_browser_resolved
