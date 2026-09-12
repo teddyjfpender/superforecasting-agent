@@ -4551,3 +4551,18 @@ runtime/presentation dependencies and added failure-injection coverage.
 Validation: 376 quorum, CLI, provider-syntax and boundary tests passed; the shared
 quality workflow passed. Discovery remains in the quorum adapter, so the final
 runtime import exception is still open.
+
+### Emergency browser disposal retains ownership
+
+Emergency cleanup previously set its completed flag before disposal and cleared
+all tracking even when the provider failed. It now uses exclusive endpoint
+admission, includes supervisor/Camofox cleanup with an empty active-session map,
+and leaves failed handles with their existing owners for retry. Completion is
+recorded only after cleanup and the orphan sweep return successfully. The orphan
+reaper retains its existing process-liveness checks; local daemon PID disposal
+is still a separate open investigation.
+
+Validation: 341 browser tests passed, 22 optional cases skipped; shared quality
+checks passed. A failed cloud disposer retains the same object, succeeds on retry,
+and is not called again after successful disposal. Removed an implementation-text
+assertion that required the unsafe unconditional tracking clear.

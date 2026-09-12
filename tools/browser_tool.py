@@ -1248,41 +1248,28 @@ _cleanup_lock = threading.Lock()
 
 
 def _emergency_cleanup_all_sessions():
-    """
-    Emergency cleanup of all active browser sessions.
-    Called on process exit or interrupt to prevent orphaned sessions.
+    """Dispose owned browsers at exit, retaining failed handles for retry."""
+    from superforecasting_agent.hosting.browser_sessions import browser_endpoint_transition
 
-    Also runs the orphan reaper to clean up daemons left behind by previously
-    crashed hermes processes — this way every clean hermes exit sweeps
-    accumulated orphans, not just ones that actively used the browser tool.
-    """
     global _cleanup_done
-    if _cleanup_done:
-        return
-    _cleanup_done = True
-
-    # Clean up this process's own sessions first, so their owner_pid files
-    # are removed before the reaper scans.
-    if _active_sessions:
-        logger.info("Emergency cleanup: closing %s active session(s)...",
-                    len(_active_sessions))
+    with browser_endpoint_transition():
+        if _cleanup_done:
+            return
+        completed = False
         try:
+            # Includes supervisor/Camofox ownership even without an active entry.
             cleanup_all_browsers()
+            completed = True
         except Exception as e:
             logger.error("Emergency cleanup error: %s", e)
-        finally:
-            with _cleanup_lock:
-                _active_sessions.clear()
-                _session_last_activity.clear()
-                _recording_sessions.clear()
 
-    # Sweep orphans from other crashed hermes processes.  Safe even if we
-    # never used the browser — uses owner_pid liveness to avoid reaping
-    # daemons owned by other live hermes processes.
-    try:
-        _reap_orphaned_browser_sessions()
-    except Exception as e:
-        logger.debug("Orphan reap on exit failed: %s", e)
+        # Other processes' orphan records have a separate liveness check.
+        try:
+            _reap_orphaned_browser_sessions()
+        except Exception as e:
+            logger.debug("Orphan reap on exit failed: %s", e)
+            completed = False
+        _cleanup_done = completed
 
 
 # Register cleanup via atexit only.  Previous versions installed SIGINT/SIGTERM

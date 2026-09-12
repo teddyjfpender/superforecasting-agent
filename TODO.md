@@ -98,8 +98,9 @@ Tool inventory and /tools list now use shared views without building an agent or
   lifecycle mutations. CLI/TUI now share endpoint transitions and surface
   supervisor cleanup failures. Browser tool admission now drains before global
   endpoint changes; failed cloud/Camofox disposal retains exact handles, and
-  bundled cloud disposers retain allocation credentials. Emergency bulk cleanup,
-  malformed allocations and lower-level local daemon disposal remain to audit.
+  bundled cloud disposers retain allocation credentials. Emergency bulk cleanup now drains endpoint operations, retains failed disposal
+  handles and marks completion only after success. Malformed allocations and
+  lower-level local daemon disposal remain to audit.
   Disconnect now suppresses the saved CDP
   endpoint for the running process without rewriting the profile.
 - [x] Remove the legacy global goal database cache. Standalone managers own

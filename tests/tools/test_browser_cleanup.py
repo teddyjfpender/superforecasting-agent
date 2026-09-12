@@ -137,10 +137,13 @@ class TestBrowserCleanup:
         browser_tool._session_last_activity["task-2"] = 2.0
         browser_tool._recording_sessions.update({"task-1", "task-2"})
 
-        with patch("tools.browser_tool.cleanup_all_browsers") as mock_cleanup_all:
+        with (
+            patch("tools.browser_tool._run_browser_command", return_value={"success": True}),
+            patch("tools.browser_tool.os.path.exists", return_value=False),
+            patch("tools.browser_tool._reap_orphaned_browser_sessions"),
+        ):
             browser_tool._emergency_cleanup_all_sessions()
 
-        mock_cleanup_all.assert_called_once_with()
         assert browser_tool._active_sessions == {}
         assert browser_tool._session_last_activity == {}
         assert browser_tool._recording_sessions == set()
@@ -155,3 +158,29 @@ class TestBrowserCleanup:
 
         cleanup.assert_called_once_with()
         assert logging.root.manager.disable == previous_disable
+
+
+def test_emergency_cleanup_retains_failed_owner_and_retries(monkeypatch):
+    from tools import browser_tool as bt
+    from unittest.mock import Mock
+
+    handle = {"session_name": "", "bb_session_id": "remote-id"}
+    disposer = Mock(side_effect=[RuntimeError("provider unavailable"), True])
+    handle.update(_cloud_provider=object(), _close_cloud_session=disposer)
+    monkeypatch.setattr(bt, "_active_sessions", {"task": handle})
+    monkeypatch.setattr(bt, "_session_last_activity", {"task": 1.0})
+    monkeypatch.setattr(bt, "_recording_sessions", set())
+    monkeypatch.setattr(bt, "_cleanup_done", False)
+    monkeypatch.setattr(bt, "_stop_cdp_supervisor", lambda _: None)
+    monkeypatch.setattr(bt, "_is_camofox_mode", lambda: False)
+    monkeypatch.setattr(bt, "_run_browser_command", lambda *a, **k: {"success": True})
+    monkeypatch.setattr(bt, "_reap_orphaned_browser_sessions", lambda: None)
+
+    bt._emergency_cleanup_all_sessions()
+    assert bt._active_sessions["task"] is handle
+    assert bt._cleanup_done is False
+    bt._emergency_cleanup_all_sessions()
+    assert bt._active_sessions == {}
+    assert bt._cleanup_done is True
+    bt._emergency_cleanup_all_sessions()
+    assert disposer.call_count == 2
