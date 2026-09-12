@@ -46,7 +46,6 @@ def test_cli_and_native_footer_share_profile_operation(tmp_path, monkeypatch, ca
     monkeypatch.setattr(constants, 'get_agent_home', lambda: tmp_path)
     monkeypatch.setattr(server, '_host', RuntimeHost())
     server._host.sessions['runtime'] = {'session_key': 'durable', 'history': []}
-    monkeypatch.setattr(server, '_SlashWorker', Mock(side_effect=AssertionError('unexpected worker')))
     monkeypatch.setattr(server, '_start_agent_build', Mock(side_effect=AssertionError('unexpected agent')))
     shell = object.__new__(cli.HermesCLI)
     shell._handle_footer_command('/footer on')

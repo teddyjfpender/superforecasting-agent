@@ -1,7 +1,7 @@
 ---
 name: debugging-superforecasting-tui-commands
 description: "Debug forecast TUI slash commands."
-version: 1.0.0
+version: 1.1.0
 author: Superforecasting Agent
 license: MIT
 platforms: [linux, macos, windows]
@@ -31,7 +31,7 @@ Use this skill when you encounter issues with slash commands in the Superforecas
 ## Architecture Overview
 
 ```
-Python backend (superforecasting_agent/runtime/commands.py)     <- canonical COMMAND_REGISTRY
+Python backend (superforecasting_agent/application/command_catalog/)     <- canonical COMMAND_REGISTRY
        │
        ▼
 TUI gateway (tui_gateway/server.py)         <- slash.exec / command.dispatch
@@ -59,8 +59,8 @@ Command definitions must be registered consistently across Python and TypeScript
 
 3. **Check if the command exists in the Python backend:**
    ```bash
-   search_files --pattern "CommandDef" --file_glob "*.py" --path superforecasting_agent/runtime/
-   search_files --pattern "commandname" --path superforecasting_agent/runtime/commands.py --context 3
+   rg -n "CommandDef" superforecasting_agent/application/command_catalog/
+   rg -n -C 3 "commandname" superforecasting_agent/application/command_catalog/
    ```
 
 4. **Examine the gateway implementation:**
@@ -72,7 +72,7 @@ Command definitions must be registered consistently across Python and TypeScript
 
 If a command exists in the TUI but doesn't show in autocomplete:
 
-1. Add a `CommandDef` entry to `COMMAND_REGISTRY` in `superforecasting_agent/runtime/commands.py`:
+1. Add a `CommandDef` entry to `COMMAND_REGISTRY` in `superforecasting_agent/application/command_catalog/`:
    ```python
    CommandDef("commandname", "Description of the command", "Session",
               cli_only=True, aliases=("alias",),
@@ -88,7 +88,7 @@ If a command exists in the TUI but doesn't show in autocomplete:
 
 3. Ensure `subcommands` matches the expected tab-completion options shown by the TUI.
 
-4. If the command runs server-side, add a handler in `ForecastCLI.process_command()` in `cli.py`:
+4. Put shared behavior in an application operation and call it from the native TUI RPC handler. Add the CLI adapter in `ForecastCLI.process_command()` in `cli.py`:
    ```python
    elif canonical == "commandname":
        self._handle_commandname(cmd_original)
@@ -102,9 +102,9 @@ If a command exists in the TUI but doesn't show in autocomplete:
 
 ## Common Issues
 
-1. **Command shows in TUI but not in autocomplete.** The command is defined in the TUI codebase but missing from `COMMAND_REGISTRY` in `superforecasting_agent/runtime/commands.py`. Autocomplete data ships from Python.
+1. **Command shows in TUI but not in autocomplete.** The command is defined in the TUI codebase but missing from `COMMAND_REGISTRY` in `superforecasting_agent/application/command_catalog/`. Autocomplete data ships from Python.
 
-2. **Command shows in autocomplete but doesn't work.** Check the command handler in `tui_gateway/server.py` and the frontend handler in `ui-tui/src/app/createSlashHandler.ts`. If the command is local-only in Ink, it must be handled in `app.tsx` built-in branch; otherwise it falls through to `slash.exec` and must have a Python handler.
+2. **Command shows in autocomplete but doesn't work.** Check the command handler in `tui_gateway/server.py` and the frontend handler in `ui-tui/src/app/createSlashHandler.ts`. Terminal-owned commands need a handler in `ui-tui/src/app/slash/commands/`; backend commands need a native RPC handler and an entry in `tui_gateway/command_routes.py`. There is no classic CLI worker fallback. Run `slashParity.test.ts` to check coverage against the shared catalog.
 
 3. **Command behavior differs between CLI and TUI.** The command might have different implementations. Check both `cli.py::process_command` and the TUI's local handler. Local TUI handlers take precedence over gateway dispatch.
 
@@ -116,7 +116,7 @@ If a command exists in the TUI but doesn't show in autocomplete:
 
 When surface-level inspection doesn't reveal the bug:
 
-- **Python side hangs or misbehaves:** use the `python-debugpy` skill to break inside `_SlashWorker.exec` or the command handler. `remote-pdb` set at the handler entry is the fastest path.
+- **Python side hangs or misbehaves:** use the `python-debugpy` skill to break inside the native RPC command handler. `remote-pdb` set at the handler entry is the fastest path.
 - **Ink side not reacting:** use the `node-inspect-debugger` skill to break in `app.tsx`'s slash dispatch or the local command branch. `sb('dist/app.js', <line>)` after `npm run build`.
 - **Registry mismatch / unclear which side is wrong:** compare the canonical `COMMAND_REGISTRY` entry against the TUI's local command list side-by-side.
 
@@ -135,7 +135,10 @@ After fixing:
 
 1. Rebuild the TUI:
    ```bash
-   cd /home/bb/superforecasting-agent && npm --prefix ui-tui run build
+   # From the repository root:
+   npm --prefix ui-tui run build
+   python3 scripts/dev.py check
+   (cd ui-tui && npx vitest run src/__tests__/slashParity.test.ts)
    ```
 
 2. Run the TUI and test the command:

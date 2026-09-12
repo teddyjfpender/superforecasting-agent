@@ -117,8 +117,7 @@ def test_partial_disposal_blocks_use_and_retries_only_failed_resource(monkeypatc
         if calls.count('agent') == 1:
             raise OSError('injected client close failure')
     session, _ = register_session(server, monkeypatch,
-        agent=SimpleNamespace(close=close_agent),
-        slash_worker=SimpleNamespace(close=lambda: calls.append('worker')))
+        agent=SimpleNamespace(close=close_agent))
     result = request(server, 'session.close')
     assert 'client close failure' in result['error']['message']
     assert server._host.sessions['runtime'] is session
@@ -126,4 +125,4 @@ def test_partial_disposal_blocks_use_and_retries_only_failed_resource(monkeypatc
     with pytest.raises(SessionBusy, match='cleanup is pending'), use_session(session):
         pytest.fail('partially disposed session accepted work')
     assert request(server, 'session.close')['result']['closed'] is True
-    assert calls == ['agent', 'worker', 'agent']
+    assert calls == ['agent', 'agent']

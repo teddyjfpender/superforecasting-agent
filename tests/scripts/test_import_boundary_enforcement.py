@@ -1,4 +1,4 @@
-"""Prove the shipped strict contracts reject a forbidden transitive dependency."""
+"""Inject forbidden imports to prove the shipped ownership gates reject them."""
 import json
 import os
 from pathlib import Path
@@ -9,8 +9,8 @@ import tomllib
 import pytest
 
 
-@pytest.mark.parametrize("source", ["protocol", "superforecasting_agent.application", "forecasting.distribution_summary", "superforecasting_agent.constants", "superforecasting_agent.profile_paths", "forecasting.application", "superforecasting_agent.session_context", "superforecasting_agent.platform_registry", "superforecasting_agent.hosting.workers", "superforecasting_agent.hosting.sessions", "superforecasting_agent.hosting.storage", "superforecasting_agent.hosting.configuration", "superforecasting_agent.hosting.registry", "superforecasting_agent.hosting.credentials", "superforecasting_agent.hosting.runtime", "superforecasting_agent.hosting.device_auth", "superforecasting_agent.hosting.legacy_commands", "superforecasting_agent.hosting.commands", "superforecasting_agent.hosting.builds", "superforecasting_agent.hosting.notifications", "superforecasting_agent.application.command_catalog", "superforecasting_agent.tooling.inventory", "superforecasting_agent.storage.configuration", "forecasting.configuration", "forecasting.bayes_toolkit", "forecasting.market_compute", "agent.background_options", "tools.environments.configuration", "superforecasting_agent.tooling.startup_selection"])
-def test_indirect_presentation_dependency_is_rejected(tmp_path, source):
+@pytest.mark.parametrize("source", ["tui_gateway", "protocol", "superforecasting_agent.application", "forecasting.distribution_summary", "superforecasting_agent.constants", "superforecasting_agent.profile_paths", "forecasting.application", "superforecasting_agent.session_context", "superforecasting_agent.platform_registry", "superforecasting_agent.hosting.workers", "superforecasting_agent.hosting.sessions", "superforecasting_agent.hosting.storage", "superforecasting_agent.hosting.configuration", "superforecasting_agent.hosting.registry", "superforecasting_agent.hosting.credentials", "superforecasting_agent.hosting.runtime", "superforecasting_agent.hosting.device_auth", "superforecasting_agent.hosting.commands", "superforecasting_agent.hosting.builds", "superforecasting_agent.hosting.notifications", "superforecasting_agent.application.command_catalog", "superforecasting_agent.tooling.inventory", "superforecasting_agent.storage.configuration", "forecasting.configuration", "forecasting.bayes_toolkit", "forecasting.market_compute", "agent.background_options", "tools.environments.configuration", "superforecasting_agent.tooling.startup_selection"])
+def test_presentation_dependency_is_rejected(tmp_path, source):
     root = Path(__file__).resolve().parents[2]
     settings = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
     contract = next(c for c in settings["tool"]["importlinter"]["contracts"] if c["source_modules"] == [source])
@@ -26,6 +26,8 @@ def test_indirect_presentation_dependency_is_rejected(tmp_path, source):
     config += '\n'.join(f'{key} = {json.dumps(value)}' for key, value in contract.items())
     (tmp_path / "pyproject.toml").write_text(config, encoding="utf-8")
     entry = tmp_path.joinpath(*source.split("."), "__init__.py")
+    if source == "tui_gateway":
+        entry = entry.parent / "new_transport.py"
     entry.write_text("import boundary_bridge\n", encoding="utf-8")
     bridge = tmp_path / "boundary_bridge/__init__.py"
 
@@ -38,8 +40,13 @@ def test_indirect_presentation_dependency_is_rejected(tmp_path, source):
 
     clean = check()
     assert clean.returncode == 0, clean.stdout + clean.stderr
-    bridge.write_text("import cli\n", encoding="utf-8")
+    if contract.get("allow_indirect_imports"):
+        entry.write_text("import cli\n", encoding="utf-8")
+        forbidden_edge = "tui_gateway.new_transport -> cli"
+    else:
+        bridge.write_text("import cli\n", encoding="utf-8")
+        forbidden_edge = "boundary_bridge -> cli"
     broken = check()
     assert broken.returncode != 0, broken.stdout + broken.stderr
     assert "BROKEN" in broken.stdout
-    assert "boundary_bridge -> cli" in broken.stdout
+    assert forbidden_edge in broken.stdout

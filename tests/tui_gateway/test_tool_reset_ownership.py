@@ -9,8 +9,8 @@ from tui_gateway import server
 
 @pytest.fixture
 def reset_case(monkeypatch):
-    old, new, worker = Mock(), Mock(), Mock()
-    session = {'agent': old, 'slash_worker': worker, 'session_key': 'durable',
+    old, new = Mock(), Mock()
+    session = {'agent': old, 'session_key': 'durable',
                'history': [{'role': 'user', 'content': 'preserve'}],
                'history_lock': threading.Lock(), 'history_version': 7}
     build = Mock(return_value=new)
@@ -22,14 +22,13 @@ def reset_case(monkeypatch):
     monkeypatch.setattr(server, '_load_show_reasoning', lambda: False)
     monkeypatch.setattr(server, '_load_tool_progress_mode', lambda: 'off')
     monkeypatch.setattr('tools.approval.unregister_gateway_notify', Mock())
-    return session, old, new, worker, build
+    return session, old, new, build
 
 
-def test_reset_releases_previous_agent_and_worker_before_construction(reset_case):
-    session, old, new, worker, build = reset_case
+def test_reset_releases_previous_agent_before_construction(reset_case):
+    session, old, new, build = reset_case
     def construct(*args, **kwargs):
         old.close.assert_called_once()
-        worker.close.assert_called_once()
         assert session['_replacing'] and session['running']
         return new
     build.side_effect = construct
@@ -41,7 +40,7 @@ def test_reset_releases_previous_agent_and_worker_before_construction(reset_case
 
 
 def test_failed_disposal_preserves_old_owner_and_history(reset_case):
-    session, old, _, _, build = reset_case
+    session, old, _, build = reset_case
     old.close.side_effect = OSError('transport busy')
     with pytest.raises(RuntimeError, match='cleanup incomplete'):
         server._reset_session_agent('runtime', session)
@@ -53,7 +52,7 @@ def test_failed_disposal_preserves_old_owner_and_history(reset_case):
 
 
 def test_failed_reconstruction_preserves_history_and_records_error(reset_case):
-    session, old, _, _, build = reset_case
+    session, old, _, build = reset_case
     build.side_effect = RuntimeError('provider unavailable')
     with pytest.raises(RuntimeError, match='history preserved'):
         server._reset_session_agent('runtime', session)
@@ -87,7 +86,7 @@ def test_rpc_distinguishes_saved_configuration_from_activation_failure(reset_cas
     from superforecasting_agent.hosting.runtime import RuntimeHost
     from superforecasting_agent.runtime import config
 
-    session, old, _, _, build = reset_case
+    session, old, _, build = reset_case
     host = RuntimeHost()
     monkeypatch.setattr(server, '_host', host)
     host.sessions.register('runtime', session)

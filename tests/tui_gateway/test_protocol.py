@@ -594,16 +594,8 @@ def test_slash_exec_handles_plugin_commands_in_live_gateway(server):
     """Plugin slash commands return normal slash.exec output without using the worker."""
     sid = "test-session"
 
-    class Worker:
-        def __init__(self):
-            self.calls = []
 
-        def run(self, cmd):
-            self.calls.append(cmd)
-            return f"worker:{cmd}"
-
-    worker = Worker()
-    server._host.sessions[sid] = {"session_key": sid, "agent": None, "slash_worker": worker}
+    server._host.sessions[sid] = {"session_key": sid, "agent": None}
 
     with patch(
         "superforecasting_agent.runtime.plugins.get_plugin_command_handler",
@@ -617,23 +609,14 @@ def test_slash_exec_handles_plugin_commands_in_live_gateway(server):
 
     assert "error" not in resp
     assert resp["result"] == {"output": "plugin:hello"}
-    assert worker.calls == []
 
 
 def test_slash_exec_plugin_lookup_failure_keeps_terminal_ownership(server):
     """Plugin discovery failures cannot divert terminal commands to a worker."""
     sid = "test-session"
 
-    class Worker:
-        def __init__(self):
-            self.calls = []
 
-        def run(self, cmd):
-            self.calls.append(cmd)
-            return f"worker:{cmd}"
-
-    worker = Worker()
-    server._host.sessions[sid] = {"session_key": sid, "agent": None, "slash_worker": worker}
+    server._host.sessions[sid] = {"session_key": sid, "agent": None}
 
     with patch(
         "superforecasting_agent.runtime.plugins.get_plugin_command_handler",
@@ -646,26 +629,17 @@ def test_slash_exec_plugin_lookup_failure_keeps_terminal_ownership(server):
         })
 
     assert resp["error"]["data"] == {"dispatch": "terminal", "execution_started": False}
-    assert worker.calls == []
 
 
 def test_slash_exec_plugin_handler_error_returns_output(server):
     """Plugin handler failures return slash output so the TUI does not redispatch."""
     sid = "test-session"
 
-    class Worker:
-        def __init__(self):
-            self.calls = []
-
-        def run(self, cmd):
-            self.calls.append(cmd)
-            return f"worker:{cmd}"
 
     def handler(arg):
         raise RuntimeError(f"handler boom: {arg}")
 
-    worker = Worker()
-    server._host.sessions[sid] = {"session_key": sid, "agent": None, "slash_worker": worker}
+    server._host.sessions[sid] = {"session_key": sid, "agent": None}
 
     with patch(
         "superforecasting_agent.runtime.plugins.get_plugin_command_handler",
@@ -679,7 +653,6 @@ def test_slash_exec_plugin_handler_error_returns_output(server):
 
     assert "error" not in resp
     assert resp["result"] == {"output": "Plugin command error: handler boom: hello"}
-    assert worker.calls == []
 
 
 @pytest.mark.parametrize("cmd", ["retry", "queue hello", "q hello", "steer fix the test"])

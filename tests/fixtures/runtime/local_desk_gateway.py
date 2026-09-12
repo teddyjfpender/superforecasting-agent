@@ -17,9 +17,7 @@ def main():
     socket.socket.connect = local_connect
 
     from tui_gateway import server
-    def forbidden_worker(*args, **kwargs):
-        raise AssertionError('classic worker construction forbidden in desk integration')
-    server._SlashWorker = forbidden_worker
+    assert not hasattr(server, '_SlashWorker'), 'classic worker must not ship in the TUI host'
     server.start_build_check = lambda: None
     if os.environ.get('FORECAST_TEST_STORE_FAILURE') == '1':
         server._get_db = lambda: None

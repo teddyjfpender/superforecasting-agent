@@ -1459,7 +1459,6 @@ def _session(agent=None, **extra):
         "attached_images": [],
         "image_counter": 0,
         "cols": 80,
-        "slash_worker": None,
         "show_reasoning": False,
         "tool_progress_mode": "all",
         **extra,
@@ -1665,14 +1664,7 @@ def test_session_save_writes_forecast_transcript_snapshot(monkeypatch, tmp_path)
 def test_init_session_fires_reset_hook(monkeypatch):
     hooks = []
 
-    class _FakeWorker:
-        def __init__(self, key, model):
-            self.key = key
 
-        def close(self):
-            return None
-
-    monkeypatch.setattr(server, "_SlashWorker", _FakeWorker)
     monkeypatch.setattr(server, "_wire_callbacks", lambda _sid: None)
     monkeypatch.setattr(server, "_emit", lambda *args, **kwargs: None)
     monkeypatch.setattr(
@@ -2036,7 +2028,6 @@ def test_session_create_drops_pending_title_on_valueerror(monkeypatch):
         "attached_images": [],
         "image_counter": 0,
         "cols": 80,
-        "slash_worker": None,
         "show_reasoning": False,
         "tool_progress_mode": "all",
         "pending_title": "duplicate title",
@@ -2625,7 +2616,6 @@ def test_config_set_model_global_persists(monkeypatch):
 
     server._host.sessions["sid"] = _session(agent=_Agent())
     monkeypatch.setattr("superforecasting_agent.runtime.model_switch.switch_model", _switch_model)
-    monkeypatch.setattr(server, "_restart_slash_worker", lambda session: None)
     monkeypatch.setattr(server, "_emit", lambda *args, **kwargs: None)
     monkeypatch.setattr("superforecasting_agent.runtime.config.save_config", lambda cfg: saved.update(cfg))
 
@@ -2675,7 +2665,6 @@ def test_config_set_model_keeps_provider_switch_session_scoped(monkeypatch):
     monkeypatch.setattr(
         "superforecasting_agent.runtime.model_switch.switch_model", lambda **_kwargs: result
     )
-    monkeypatch.setattr(server, "_restart_slash_worker", lambda session: None)
     monkeypatch.setattr(server, "_emit", lambda *args, **kwargs: None)
 
     server._session_toggles.pop("session-key", None)
@@ -2730,7 +2719,6 @@ def test_config_set_model_stores_provider_without_process_env(monkeypatch):
     monkeypatch.setattr(
         "superforecasting_agent.runtime.model_switch.switch_model", lambda **_kwargs: result
     )
-    monkeypatch.setattr(server, "_restart_slash_worker", lambda session: None)
     monkeypatch.setattr(server, "_emit", lambda *args, **kwargs: None)
 
     server._session_toggles.pop("session-key", None)
@@ -2778,7 +2766,6 @@ def test_config_set_model_does_not_replace_process_default(monkeypatch):
     agent = Agent()
     server._host.sessions["sid"] = _session(agent=agent)
     monkeypatch.setenv("SUPERFORECASTING_AGENT_TUI_PROVIDER", "openai-codex")
-    monkeypatch.setattr(server, "_restart_slash_worker", lambda session: None)
     monkeypatch.setattr(server, "_emit", lambda *args, **kwargs: None)
 
     def fake_switch_model(**kwargs):
@@ -2912,7 +2899,7 @@ def test_session_compress_uses_compress_helper(monkeypatch):
 def test_session_compress_syncs_session_key_after_rotation(monkeypatch):
     """When AIAgent._compress_context rotates session_id (compression split),
     the gateway session_key must follow so subsequent approval routing,
-    DB title/history lookups, and slash worker resume target the new
+    DB title/history lookups target the new
     continuation session — mirrors HermesCLI._manual_compress's
     session_id sync (cli.py).
     """
@@ -2927,10 +2914,6 @@ def test_session_compress_syncs_session_key_after_rotation(monkeypatch):
         lambda session, focus_topic=None, **_kw: (2, {"total": 42}),
     )
     monkeypatch.setattr(server, "_session_info", lambda _agent: {"model": "x"})
-    restart_calls = []
-    monkeypatch.setattr(
-        server, "_restart_slash_worker", lambda s: restart_calls.append(s)
-    )
 
     try:
         with patch("tui_gateway.server._emit"):
@@ -2944,7 +2927,6 @@ def test_session_compress_syncs_session_key_after_rotation(monkeypatch):
 
         assert server._host.sessions["sid"]["session_key"] == "rotated-id"
         assert server._host.sessions["sid"]["pending_title"] is None
-        assert len(restart_calls) == 1
     finally:
         retire_test_session(server, "sid")
 
@@ -4055,125 +4037,19 @@ def test_switch_model_to_dead_codex_returns_teaching_error(monkeypatch):
     assert "No Codex credentials stored" in (result.error_message or "")
 
 
-def test_mirror_slash_side_effects_rejects_mutating_commands_while_running(monkeypatch):
-    """Slash worker passthrough (e.g. /model, /style, /prompt,
-    /compress) must reject during an in-flight turn.  Same race as
-    config.set — mutates live agent state while run_conversation is
-    reading it."""
-    import types
-
-    applied = {"model": False, "compress": False}
-
-    def _fake_apply_model(sid, session, arg):
-        applied["model"] = True
-        return {"value": arg, "warning": ""}
-
-    def _fake_compress(session, focus):
-        applied["compress"] = True
-        return (0, {})
-
-    monkeypatch.setattr(server, "_apply_model_switch", _fake_apply_model)
-    monkeypatch.setattr(server, "_compress_session_history", _fake_compress)
-
-    session = _session(running=True)
-    session["agent"] = types.SimpleNamespace(model="x")
-
-    for cmd, expected_name in [
-        ("/model new/model", "model"),
-        ("/style default", "style"),
-        ("/personality default", "personality"),
-        ("/prompt", "prompt"),
-        ("/compress", "compress"),
-    ]:
-        warning = server._mirror_slash_side_effects("sid", session, cmd)
-        assert (
-            "session busy" in warning
-        ), f"{cmd} should have returned busy warning, got: {warning!r}"
-        assert f"/{expected_name}" in warning
-
-    # None of the mutating side-effect helpers should have fired.
-    assert not applied["model"], "model switch fired despite running session"
-    assert not applied["compress"], "compress fired despite running session"
-
-
-def test_mirror_slash_side_effects_allowed_when_idle(monkeypatch):
-    """Regression guard: idle session still runs the side effects."""
-    import types
-
-    applied = {"model": False}
-
-    def _fake_apply_model(sid, session, arg):
-        applied["model"] = True
-        return {"value": arg, "warning": ""}
-
-    monkeypatch.setattr(server, "_apply_model_switch", _fake_apply_model)
-
-    session = _session(running=False)
-    session["agent"] = types.SimpleNamespace(model="x")
-
-    warning = server._mirror_slash_side_effects("sid", session, "/model foo")
-    # Should NOT contain "session busy" — the switch went through.
-    assert "session busy" not in warning
-    assert applied["model"]
-
-
-def test_mirror_slash_compress_does_not_prelock_history(monkeypatch):
-    """Regression guard: /compress side effect must not hold history_lock
-    when calling _compress_session_history (the helper snapshots under
-    the same non-reentrant lock internally)."""
-    import types
-
-    seen = {"compress": False, "sync": False}
-    emitted = []
-
-    def _fake_compress(session, focus_topic=None, **_kw):
-        seen["compress"] = True
-        assert not session["history_lock"].locked()
-        return (0, {"total": 0})
-
-    def _fake_sync(_sid, _session):
-        seen["sync"] = True
-
-    monkeypatch.setattr(server, "_compress_session_history", _fake_compress)
-    monkeypatch.setattr(server, "_sync_session_key_after_compress", _fake_sync)
-    monkeypatch.setattr(server, "_session_info", lambda _agent: {"model": "x"})
-    monkeypatch.setattr(server, "_emit", lambda *args: emitted.append(args))
-
-    session = _session(running=False)
-    session["agent"] = types.SimpleNamespace(model="x")
-
-    warning = server._mirror_slash_side_effects("sid", session, "/compress")
-
-    assert warning == ""
-    assert seen["compress"]
-    assert seen["sync"]
-    assert ("session.info", "sid", {"model": "x"}) in emitted
-
 
 # ---------------------------------------------------------------------------
 # session.create / session.close race: fast /new churn must not orphan the
-# slash_worker subprocess or the global approval-notify registration.
+# global approval-notify registration.
 # ---------------------------------------------------------------------------
 
 
-def test_session_create_close_race_preserves_agent_without_starting_worker(monkeypatch):
+def test_session_create_close_race_preserves_agent_without_classic_runtime(monkeypatch):
     """Busy close preserves initialization ownership; retry releases its resources."""
     import threading
 
-    created_workers: list[str] = []
-    closed_workers: list[str] = []
     unregistered_keys: list[str] = []
     agent_closed = threading.Event()
-
-    class _FakeWorker:
-        def __init__(self, key, model):
-            created_workers.append(key)
-            self.key = key
-            self._closed = False
-
-        def close(self):
-            self._closed = True
-            closed_workers.append(self.key)
 
     class _FakeAgent:
         def __init__(self):
@@ -4204,7 +4080,6 @@ def test_session_create_close_race_preserves_agent_without_starting_worker(monke
 
     # Stub everything _build touches
     monkeypatch.setattr(server, "_make_agent", _slow_make_agent)
-    monkeypatch.setattr(server, "_SlashWorker", _FakeWorker)
     monkeypatch.setattr(
         server,
         "_get_db",
@@ -4261,24 +4136,12 @@ def test_session_create_close_race_preserves_agent_without_starting_worker(monke
     })
     assert close_resp["result"]["closed"] is True
     assert agent_closed.wait(timeout=2.0)
-    assert created_workers == []
-    assert closed_workers == []
     assert unregistered_keys == [session["session_key"]]
 
 
-def test_session_create_keeps_agent_without_starting_worker(monkeypatch):
+def test_session_create_keeps_agent_without_classic_runtime(monkeypatch):
     """Agent initialization registers notifications without starting the CLI."""
-    created_workers: list[str] = []
-    closed_workers: list[str] = []
     unregistered_keys: list[str] = []
-
-    class _FakeWorker:
-        def __init__(self, key, model):
-            created_workers.append(key)
-            self.key = key
-
-        def close(self):
-            closed_workers.append(self.key)
 
     class _FakeAgent:
         def __init__(self):
@@ -4288,7 +4151,6 @@ def test_session_create_keeps_agent_without_starting_worker(monkeypatch):
             self.api_key = ""
 
     monkeypatch.setattr(server, "_make_agent", lambda sid, key: _FakeAgent())
-    monkeypatch.setattr(server, "_SlashWorker", _FakeWorker)
     monkeypatch.setattr(
         server,
         "_get_db",
@@ -4325,14 +4187,9 @@ def test_session_create_keeps_agent_without_starting_worker(monkeypatch):
     # Build finished without a close race — nothing should have been
     # cleaned up by the orphan check.
     assert (
-        closed_workers == []
-    ), f"build thread closed its own worker despite no race: {closed_workers}"
-    assert (
         unregistered_keys == []
     ), f"build thread unregistered its own notify despite no race: {unregistered_keys}"
 
-    assert created_workers == []
-    assert session.get("slash_worker") is None
     assert isinstance(session["agent"], _FakeAgent)
 
     response = server.handle_request({
@@ -4340,7 +4197,6 @@ def test_session_create_keeps_agent_without_starting_worker(monkeypatch):
     })
     assert response["result"]["closed"] is True
     assert unregistered_keys == [session["session_key"]]
-    assert closed_workers == []
 
 
 def test_get_db_degrades_cleanly_when_sessiondb_init_fails(monkeypatch):
@@ -4360,12 +4216,6 @@ def test_get_db_degrades_cleanly_when_sessiondb_init_fails(monkeypatch):
 
 
 def test_session_create_continues_when_state_db_is_unavailable(monkeypatch):
-    class _FakeWorker:
-        def __init__(self, key, model):
-            self.key = key
-
-        def close(self):
-            return None
 
     class _FakeAgent:
         def __init__(self):
@@ -4377,7 +4227,6 @@ def test_session_create_continues_when_state_db_is_unavailable(monkeypatch):
     emits = []
 
     monkeypatch.setattr(server, "_make_agent", lambda sid, key: _FakeAgent())
-    monkeypatch.setattr(server, "_SlashWorker", _FakeWorker)
     monkeypatch.setattr(server, "_get_db", lambda: None)
     monkeypatch.setattr(server, "_session_info", lambda _a: {"model": "x"})
     monkeypatch.setattr(server, "_probe_credentials", lambda _a: None)

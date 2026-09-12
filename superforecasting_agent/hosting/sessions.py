@@ -146,16 +146,14 @@ def dispose_session(
         except Exception as exc:
             errors.append(f"notifications: {exc}")
     disposed = session.setdefault("_disposed_resources", {})
-    for name in ("agent", "slash_worker"):
-        resource = session.get(name)
-        if resource is None or disposed.get(name) is resource:
-            continue
+    resource = session.get("agent")
+    if resource is not None and disposed.get("agent") is not resource:
         try:
             if hasattr(resource, "close") and resource.close() is False:
                 raise RuntimeError("resource cleanup reported incomplete")
-            disposed[name] = resource
+            disposed["agent"] = resource
         except Exception as exc:
-            errors.append(f"{name}: {exc}")
+            errors.append(f"agent: {exc}")
     session_key = session.get("session_key")
     if isinstance(session_key, str) and session_key:
         from superforecasting_agent.hosting.delegations import retry_cleanup

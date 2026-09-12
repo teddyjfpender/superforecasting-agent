@@ -277,7 +277,6 @@ def test_forecast_cli_public_alias_is_exposed():
         root / "skills" / "software-development"
         / "debugging-hermes-tui-commands" / "SKILL.md"
     ).read_text(encoding="utf-8")
-    slash_worker = (root / "tui_gateway" / "slash_worker.py").read_text(encoding="utf-8")
 
     assert ForecastCLI is HermesCLI
     assert ForecastCLI.__name__ == "ForecastCLI"
@@ -289,10 +288,6 @@ def test_forecast_cli_public_alias_is_exposed():
     assert "ForecastCLI.process_command()" in skill_doc
     assert "from cli import HermesCLI" not in extension_doc
     assert "class MyCLI(HermesCLI)" not in extension_doc
-    assert "from cli import ForecastCLI" in slash_worker
-    assert "cli = ForecastCLI(" in slash_worker
-    assert "from cli import HermesCLI" not in slash_worker
-    assert "cli = HermesCLI(" not in slash_worker
 
 
 def test_web_locale_app_brand_is_forecast_native():
@@ -1229,7 +1224,9 @@ def test_tui_readme_uses_forecast_native_product_copy():
     assert "Assistant output is rendered" not in readme
     assert "start assistant streaming" not in readme
     assert "hermes --tui" not in readme
-    assert "persistent ForecastCLI subprocess for slash commands" in readme
+    assert "native command dispatch" in readme
+    assert "backend/terminal command ownership" in readme
+    assert "persistent ForecastCLI subprocess for slash commands" not in readme
     assert "persistent HermesCLI subprocess for slash commands" not in readme
     assert "Input history is stored in `~/.hermes" not in readme
 

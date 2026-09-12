@@ -160,7 +160,6 @@ def test_auth_success_refreshes_live_agent_credentials(monkeypatch):
                 api_key=api_key, base_url=base_url, api_mode=api_mode,
             )
 
-    monkeypatch.setattr(server, "_restart_slash_worker", lambda session: None)
     monkeypatch.setattr(server, "_emit", lambda *a, **k: None)
     monkeypatch.setattr(server, "_session_info", lambda agent: {})
     server._host.sessions["sid_auth"] = {"agent": _FakeAgent(), "running": False}

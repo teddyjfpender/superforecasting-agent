@@ -206,7 +206,6 @@ def test_subgoal_consumers_share_results_and_durable_state(server, session, monk
     sid, key, live = session
     live["running"] = True  # Criteria may be changed while a model turn runs.
     monkeypatch.setattr(server, "_start_agent_build", Mock(side_effect=AssertionError("agent construction")))
-    monkeypatch.setattr(server, "_SlashWorker", Mock(side_effect=AssertionError("classic worker")))
     managers = [GoalManager(session_id=value) for value in (key, "classic", "messaging")]
     for manager in managers:
         manager.set("Review a forecast")
@@ -227,7 +226,6 @@ def test_subgoal_consumers_share_results_and_durable_state(server, session, monk
     persisted = [GoalManager(session_id=value).state.subgoals for value in (key, "classic", "messaging")]
     assert persisted[0] == persisted[1] == persisted[2]
     server._start_agent_build.assert_not_called()
-    server._SlashWorker.assert_not_called()
 
 
 def test_subgoal_legacy_rpc_hands_off_before_build(server, session, monkeypatch):

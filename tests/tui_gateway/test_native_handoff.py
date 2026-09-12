@@ -21,7 +21,6 @@ def test_native_handoff_routes_actual_session(tmp_path, monkeypatch, completed):
     monkeypatch.setattr(server, '_host', RuntimeHost())
     session = {'session_key': 'durable', 'history': [], 'history_lock': Lock()}
     server._host.sessions['runtime'] = session
-    monkeypatch.setattr(server, '_SlashWorker', Mock(side_effect=AssertionError('worker')))
     monkeypatch.setattr(server, '_start_agent_build', Mock(side_effect=AssertionError('agent')))
     destination = SimpleNamespace(platforms={config.Platform.TELEGRAM: SimpleNamespace(enabled=True)}, get_home_channel=lambda p: SimpleNamespace(chat_id='fixture'))
     monkeypatch.setattr(config, 'load_gateway_config', lambda: destination)

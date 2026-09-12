@@ -388,5 +388,6 @@ tui_gateway/
   entry.py               stdio entrypoint
   server.py              RPC handlers and session logic
   render.py              optional rich/ANSI bridge
-  slash_worker.py        persistent ForecastCLI subprocess for slash commands
+  commands_rpc.py        native command dispatch
+  command_routes.py      backend/terminal command ownership
 ```

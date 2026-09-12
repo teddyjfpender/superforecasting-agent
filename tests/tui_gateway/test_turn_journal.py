@@ -140,7 +140,7 @@ def test_compression_continuation_keeps_inflight_receipt(tmp_path, monkeypatch):
     turn_journal.transition(db, tid, 'running', delta='prefix')
     session = dict(session_key='parent', turn_id=tid, agent=SimpleNamespace(session_id='child'))
     monkeypatch.setattr(server, '_get_db', lambda: db)
-    server._sync_session_key_after_compress('runtime', session, restart_slash_worker=False)
+    server._sync_session_key_after_compress('runtime', session)
     assert turn_journal.latest(db, 'parent') is None
     assert turn_journal.latest(db, 'child')['partial_text'] == 'prefix'
     db.close()

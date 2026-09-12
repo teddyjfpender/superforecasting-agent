@@ -43,7 +43,6 @@ def _tui_session(agent=None, session_key="session-key-old", **extra):
         "attached_images": [],
         "image_counter": 0,
         "cols": 80,
-        "slash_worker": None,
         "show_reasoning": False,
         "tool_progress_mode": "all",
         "pending_title": None,

@@ -95,8 +95,9 @@ TUI command execution no longer constructs or calls the classic slash worker.
 `command_routes.py` assigns native backend operations and terminal-owned commands;
 terminal commands redispatch to Ink or return an explicit pre-execution handoff.
 Cross-language parity requires a handler for every catalog command and fails if
-its Python catalog cannot load. Legacy worker classes/retirement helpers remain
-to be removed; they are no longer an execution fallback.
+its Python catalog cannot load. The worker class, subprocess entrypoint, side-effect mirror and retirement
+helpers are deleted. The entire tui_gateway package is forbidden from importing
+classic CLI presentation.
 
 `runtime.interactive_config.read_cli_config` reads shared settings without
 modifying the process. `load_cli_config` explicitly applies environment bridges
@@ -518,7 +519,8 @@ Classic CLI foreground and background construction also uses
 `agent.agent_factory.build_agent`. Resolved provider fields, ACP command arguments
 and credential pools share the TUI mapping and provider/model validation. The CLI
 still owns its presentation callbacks and session initialization; full foreground
-configuration assembly and legacy slash-worker removal remain unfinished.
+configuration assembly remains an area for further consolidation; the legacy
+slash worker and its lifecycle plumbing have been removed.
 
 `runtime/cron_commands.py::cron_command_output` owns scheduled-task slash-command
 parsing, invocation and textual results for classic CLI and native TUI dispatch.

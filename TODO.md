@@ -9,11 +9,13 @@ changes, tests and their limits. The previous checklist is preserved in the
 
 ## 1. Finish application and product boundaries
 
-- [ ] Remove the retired classic slash-worker implementation and cleanup scaffolding.
+- [x] Remove the classic slash-worker implementation and cleanup scaffolding.
   TUI command execution no longer constructs or calls it. Every catalog command
   has a native backend or Ink owner, enforced by a cross-language parity test.
   Terminal-only requests hand back to the client before agent construction.
-  The old worker class, side-effect mirror and retirement helpers remain to remove.
+  The worker class, subprocess entrypoint, side-effect mirror, timeout setting
+  and retirement hooks are deleted. The whole TUI gateway package now has a
+  blocking prohibition on classic CLI imports.
   Native handoff now uses host/session admission and the shared waiter: local timeouts now cancel only unclaimed pending work, and running/terminal gateway states cannot be overwritten by timeout. Attempt identity is now enforced on gateway transitions and CLI cancellation/waiting. Shared application observation/waiting returns durable outcomes on cancellation, and the CLI borrows host storage without opening a fallback connection; native progress/completion is verified through the real terminal with a simulated destination. Foreground/background admission now shares durable handoff validation, including reconnected sessions and read failures. A real terminal test now covers cancelling a claimed-transfer wait, retained-PTY dashboard reconnect, blocked source work and a new independent session. Interrupted gateway recovery and cross-platform handoff qualification remain to be completed.
   Preserve aliases, validation, error semantics and state ownership. Configured aliases already redispatch through the local TUI registry. Messaging-only commands now fail before worker construction; /whoami metadata no longer advertises unavailable terminal behavior. Snapshot
   listing, creation and pruning now share application/storage owners;

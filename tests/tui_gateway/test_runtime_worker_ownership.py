@@ -147,15 +147,14 @@ def test_shutdown_disposal_failure_retains_registry_and_database_for_retry(monke
             raise OSError('injected close failure')
     server._host.sessions['runtime'] = {
         'session_key': 'durable', 'agent': SimpleNamespace(close=close_agent),
-        'slash_worker': SimpleNamespace(close=lambda: calls.append('worker')),
     }
     monkeypatch.setattr(server._host.store, '_connection', SimpleNamespace(close=lambda: calls.append('db')))
     monkeypatch.setattr(server, '_notify_session_boundary', lambda *args: None)
     assert not server.shutdown_runtime(1)
     assert 'runtime' in server._host.sessions
-    assert calls == ['agent', 'worker']
+    assert calls == ['agent']
     with pytest.raises(RuntimeError, match='incomplete'):
         server.start_runtime()
     assert server.shutdown_runtime(1)
-    assert calls == ['agent', 'worker', 'agent', 'db']
+    assert calls == ['agent', 'agent', 'db']
     assert not server._host.sessions

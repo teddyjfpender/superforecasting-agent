@@ -4484,3 +4484,25 @@ fresh terminal build and the shared quality workflow. The rendered lifecycle
 exercises run through the actual Ink/dashboard/local-provider/session database
 with classic-worker construction forbidden. This remains local POSIX evidence,
 not qualification of every supported remote platform.
+
+### Remove retired classic-worker implementation
+
+Deleted the worker subprocess entrypoint, worker class, side-effect mirror and
+legacy host owner. Session creation, model/auth changes, compression re-anchoring
+and disposal no longer carry worker handles or restart flags. Removed the unused
+worker timeout setting and updated the TUI architecture and debugging guide.
+
+The import prohibition now covers the entire tui_gateway package. Removing the
+obsolete worker-owner contract leaves 60 contracts with broader TUI coverage.
+Worker-only tests were removed with their implementation; agent disposal failure,
+retry, history preservation, session admission and command parity tests remain.
+The real desk fixture asserts the worker class is absent.
+
+1008 focused host/gateway/metadata tests passed (1 skipped), along with the shared
+quality workflow. Fresh real-desk qualification is run separately before this
+change is integrated. Historical SSL attribution remains unchanged.
+
+Real desk and existing boundary qualification passed all 44 tests. The expanded
+failure-injection suite passes all 29 cases, including a new transport module
+importing classic CLI code: the package-wide rule rejects it. Updated the old
+README assertion that explicitly required the deleted subprocess architecture.

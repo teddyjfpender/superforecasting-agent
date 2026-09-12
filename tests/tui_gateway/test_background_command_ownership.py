@@ -33,7 +33,6 @@ def background(monkeypatch):
     server._host.sessions.register('runtime', {'session_key': 'desk', 'history': [], 'running': False})
     monkeypatch.setattr(server, '_load_cfg', lambda: {})
     monkeypatch.setattr(server, '_start_agent_build', Mock(side_effect=AssertionError('agent constructed')))
-    monkeypatch.setattr(server, '_SlashWorker', Mock(side_effect=AssertionError('classic worker constructed')))
     return registry, records, killed, calls
 
 

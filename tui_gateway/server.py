@@ -6,7 +6,6 @@ import io
 import json
 import logging
 import os
-import queue
 import subprocess
 import sys
 import threading
@@ -232,11 +231,6 @@ _methods: dict[str, callable] = {}
 _pending: dict[str, tuple[str, threading.Event]] = {}
 _answers: dict[str, str] = {}
 _stdout_lock = threading.Lock()
-try:
-    _slash_timeout = float(_tui_env("SLASH_TIMEOUT_S") or "45")
-except (ValueError, TypeError):
-    _slash_timeout = 45.0
-_SLASH_WORKER_TIMEOUT_S = max(5.0, _slash_timeout)
 _DETAIL_SECTION_NAMES = ("thinking", "tools", "subagents", "activity")
 _DETAIL_MODES = frozenset({"hidden", "collapsed", "expanded"})
 
@@ -304,109 +298,6 @@ _real_stdout = sys.stdout
 _stdio_transport = StdioTransport(lambda: _real_stdout, _stdout_lock)
 
 
-class _SlashWorker:
-    """Persistent classic CLI subprocess for slash commands."""
-
-    def __init__(self, session_key: str, model: str):
-        self._lock = threading.Lock()
-        self._seq = 0
-        self._close_lock = threading.Lock()
-        self._readers = []
-        self.stderr_tail: list[str] = []
-        self.stdout_queue: queue.Queue[dict | None] = queue.Queue()
-
-        argv = [
-            sys.executable,
-            "-m",
-            "tui_gateway.slash_worker",
-            "--session-key",
-            session_key,
-        ]
-        if model:
-            argv += ["--model", model]
-
-        self.proc = subprocess.Popen(
-            argv,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,
-            cwd=os.getcwd(),
-            env=os.environ.copy(),
-        )
-        try:
-            for target in (self._drain_stdout, self._drain_stderr):
-                reader = threading.Thread(target=target, daemon=True)
-                reader.start()
-                self._readers.append(reader)
-        except BaseException:
-            self.close()
-            raise
-
-    def _drain_stdout(self):
-        try:
-            with self.proc.stdout as stream:
-                for line in stream:
-                    try:
-                        self.stdout_queue.put(json.loads(line))
-                    except json.JSONDecodeError:
-                        continue
-        finally:
-            self.stdout_queue.put(None)
-
-    def _drain_stderr(self):
-        with self.proc.stderr as stream:
-            for line in stream:
-                if text := line.rstrip("\n"):
-                    self.stderr_tail = (self.stderr_tail + [text])[-80:]
-
-    def run(self, command: str) -> str:
-        if self.proc.poll() is not None:
-            raise RuntimeError("slash worker exited")
-
-        with self._lock:
-            self._seq += 1
-            rid = self._seq
-            self.proc.stdin.write(json.dumps({"id": rid, "command": command}) + "\n")
-            self.proc.stdin.flush()
-
-            while True:
-                try:
-                    msg = self.stdout_queue.get(timeout=_SLASH_WORKER_TIMEOUT_S)
-                except queue.Empty:
-                    raise RuntimeError("slash worker timed out")
-                if msg is None:
-                    break
-                if msg.get("id") != rid:
-                    continue
-                if not msg.get("ok"):
-                    raise RuntimeError(msg.get("error", "slash worker failed"))
-                return str(msg.get("output", "")).rstrip()
-
-            raise RuntimeError(
-                f"slash worker closed pipe{': ' + chr(10).join(self.stderr_tail[-8:]) if self.stderr_tail else ''}"
-            )
-
-    def close(self):
-        with self._close_lock:
-            if self.proc.poll() is None:
-                self.proc.terminate()
-                try:
-                    self.proc.wait(timeout=1)
-                except subprocess.TimeoutExpired:
-                    self.proc.kill()
-                    self.proc.wait(timeout=1)
-            if self.proc.stdin is not None:
-                self.proc.stdin.close()
-            for reader in self._readers:
-                reader.join(timeout=1)
-            if any(reader.is_alive() for reader in self._readers):
-                raise RuntimeError("slash worker pipe readers did not stop")
-            # Also covers construction failure before a reader started.
-            for stream in (self.proc.stdout, self.proc.stderr):
-                if stream is not None:
-                    stream.close()
 
 
 def _load_busy_input_mode() -> str:
@@ -1399,16 +1290,6 @@ def _tool_progress_enabled(sid: str) -> bool:
     return _session_tool_progress_mode(sid) != "off"
 
 
-def _restart_slash_worker(session: dict):
-    # Compatibility name: invalidate now; recreate only if a legacy command runs.
-    from superforecasting_agent.hosting.legacy_commands import invalidate_worker
-
-    try:
-        invalidate_worker(session)
-    except Exception:
-        # Model/config changes already succeeded. Retain the retiring worker and
-        # let the next legacy command retry cleanup, without misreporting them.
-        logger.exception("legacy command worker cleanup pending")
 
 
 def _persist_model_switch(result) -> None:
@@ -1514,7 +1395,6 @@ def _apply_model_switch(sid: str, session: dict, raw_input: str) -> dict:
             base_url=result.base_url,
             api_mode=result.api_mode,
         )
-        _restart_slash_worker(session)
         _emit("session.info", sid, _session_info(agent))
 
     # The switched model belongs to this session. New sessions use the persisted
@@ -1630,14 +1510,13 @@ def _sync_session_key_after_compress(
     session: dict,
     *,
     clear_pending_title: bool = True,
-    restart_slash_worker: bool = True,
 ) -> None:
     """Re-anchor session_key when AIAgent._compress_context rotates session_id.
 
     AIAgent._compress_context ends the current SessionDB session and creates
     a new continuation session, rotating ``agent.session_id``.  The TUI
     gateway keeps the gateway-side ``session_key`` separate (used for
-    approval routing, slash worker init, DB title/history lookups, yolo
+    approval routing, DB title/history lookups, yolo
     state).  Without this sync, those operations would target the ended
     parent session while the agent writes to the new continuation session.
 
@@ -1645,9 +1524,6 @@ def _sync_session_key_after_compress(
         clear_pending_title: True for manual /compress (title belongs to old
             session). False for post-turn auto-compression (preserve user
             intent so pending_title can be applied to the continuation).
-        restart_slash_worker: True for manual /compress and post-turn
-            auto-compression (worker holds stale session key). False only
-            if the caller manages the worker lifecycle separately.
     """
     agent = session.get("agent")
     new_session_id = getattr(agent, "session_id", None) or ""
@@ -1698,12 +1574,6 @@ def _sync_session_key_after_compress(
 
     if clear_pending_title:
         session["pending_title"] = None
-    if restart_slash_worker:
-        try:
-            _restart_slash_worker(session)
-        except Exception:
-            pass
-
     _emit("session.info", sid, _session_info(agent))
 
 
@@ -2302,7 +2172,6 @@ def _reset_session_agent(sid: str, session: dict, *, reserved: bool = False) -> 
         stop.set()
     dispose_session(session, release_notifications=lambda: unregister_gateway_notify(session["session_key"]))
     session["agent"] = None
-    session["slash_worker"] = None
     session.pop("_disposed_resources", None)
     session.pop("_notifications_released", None)
     session["agent_error"] = None
@@ -2424,7 +2293,6 @@ def _init_session(sid: str, key: str, agent, history: list, cols: int = 80, *, p
         "attached_images": [],
         "image_counter": 0,
         "cols": cols,
-        "slash_worker": None,
         "show_reasoning": _load_show_reasoning(),
         "tool_progress_mode": _load_tool_progress_mode(),
         "edit_snapshots": {},
@@ -2611,7 +2479,6 @@ def _(rid, params: dict) -> dict:
         "running": False,
         "session_key": key,
         "show_reasoning": _load_show_reasoning(),
-        "slash_worker": None,
         "tool_progress_mode": _load_tool_progress_mode(),
         "tool_started_at": {},
         "transport": current_transport() or _stdio_transport,
@@ -3651,11 +3518,10 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
                 # If auto-compression fired inside run_conversation(), agent.session_id
                 # may have rotated. Sync session_key before downstream title/goal/finalize
                 # handling uses it. Preserve pending_title (user intent) so it can be
-                # applied to the continuation. Restart slash worker so subsequent
-                # worker-backed commands (/title etc.) target the live session.
+                # applied to the continuation and later commands target the live session.
                 # Fix for #20001.
                 _sync_session_key_after_compress(
-                    sid, session, clear_pending_title=False, restart_slash_worker=True,
+                    sid, session, clear_pending_title=False,
                 )
 
                 raw = result.get("final_response", "")
@@ -4839,9 +4705,8 @@ _TUI_EXTRA: list[tuple[str, str, str]] = [
     ("/mouse", "Toggle mouse/wheel tracking [on|off|toggle]", "TUI"),
 ]
 
-# Commands that queue messages onto _pending_input in the CLI.
-# In the TUI the slash worker subprocess has no reader for that queue,
-# so slash.exec rejects them → TUI falls through to command.dispatch.
+# Pending-input workflows are owned by command.dispatch; slash.exec hands off
+# before executing them so the client cannot repeat side effects.
 _PENDING_INPUT_COMMANDS: frozenset[str] = frozenset(
     {
         "retry",
@@ -4853,8 +4718,6 @@ _PENDING_INPUT_COMMANDS: frozenset[str] = frozenset(
         "learn",
     }
 )
-
-_WORKER_BLOCKED_COMMANDS: frozenset[str] = frozenset({"snapshot", "snap"})
 
 
 # ── Methods: paste ────────────────────────────────────────────────────
@@ -5390,7 +5253,6 @@ def _refresh_session_credentials_after_auth(sid: str, provider: str) -> bool:
 
         if not refresh_credentials(agent, provider, resolve=resolve_runtime_provider):
             return False
-        _restart_slash_worker(session)
         _emit("session.info", sid, _session_info(agent))
         return True
     except Exception as e:  # never turn a successful sign-in into an error
@@ -5547,67 +5409,6 @@ def _(rid, params: dict) -> dict:
 # ── Methods: slash.exec ──────────────────────────────────────────────
 
 
-def _mirror_slash_side_effects(sid: str, session: dict, command: str) -> str:
-    """Apply side effects that must also hit the gateway's live agent."""
-    parts = command.lstrip("/").split(None, 1)
-    if not parts:
-        return ""
-    name, arg, agent = (
-        parts[0],
-        (parts[1].strip() if len(parts) > 1 else ""),
-        session.get("agent"),
-    )
-
-    # Reject agent-mutating commands during an in-flight turn.  These
-    # all do read-then-mutate on live agent/session state that the
-    # worker thread running agent.run_conversation is using.  Parity
-    # with the session.compress / session.undo guards and the gateway
-    # runner's running-agent /model guard.
-    _MUTATES_WHILE_RUNNING = {"model", "style", "personality", "prompt", "compress"}
-    if name in _MUTATES_WHILE_RUNNING and session.get("running"):
-        return f"session busy — /interrupt the current turn before running /{name}"
-
-    try:
-        if name == "model" and arg and agent:
-            result = _apply_model_switch(sid, session, arg)
-            return result.get("warning", "")
-        elif name in {"style", "personality"} and arg and agent:
-            _, new_prompt = _validate_personality(arg, _load_cfg())
-            _apply_personality_to_session(sid, session, new_prompt)
-        elif name == "prompt" and agent:
-            cfg = _load_cfg()
-            new_prompt = (cfg.get("agent") or {}).get("system_prompt", "") or ""
-            from forecasting.protocol import build_forecast_chat_system_prompt
-
-            agent.ephemeral_system_prompt = build_forecast_chat_system_prompt(
-                new_prompt
-            )
-            agent._cached_system_prompt = None
-        elif name == "compress" and agent:
-            _compress_session_history(session, arg)
-            _sync_session_key_after_compress(sid, session)
-            _emit("session.info", sid, _session_info(agent))
-        elif name == "fast" and agent:
-            mode = arg.lower()
-            if mode in {"fast", "on"}:
-                agent.service_tier = "priority"
-            elif mode in {"normal", "off"}:
-                agent.service_tier = None
-            _emit("session.info", sid, _session_info(agent))
-        elif name == "reload-mcp" and agent and hasattr(agent, "reload_mcp_tools"):
-            agent.reload_mcp_tools()
-    except Exception as e:
-        # Expired/missing provider sign-in is fixable WITHOUT leaving the TUI
-        # — point at /auth instead of echoing the CLI's "run
-        # `superforecasting-agent auth`" guidance (rate-limit errors are not
-        # auth problems and keep their own message).
-        if getattr(e, "relogin_required", False) or "missing access_token" in str(e):
-            return (
-                f"{e}\n\nSign in without leaving the TUI: run /auth "
-                "(shows a code to enter at auth.openai.com, then reconnects this session)."
-            )
-        return f"live session sync failed: {e}"
-    return ""
 
 
 def _background_command_output(session: dict, name: str) -> str:
@@ -5637,10 +5438,8 @@ def _(rid, params: dict) -> dict:
     if not cmd:
         return _err(rid, 4004, "empty command")
 
-    # Skill slash commands and _pending_input commands must NOT go through the
-    # slash worker — see _PENDING_INPUT_COMMANDS definition above. Plugin
-    # commands must also avoid the worker, but unlike skills/pending-input they
-    # still return normal slash.exec output so the TUI keeps the pager path.
+    # Skills and pending-input workflows hand off to command.dispatch. Plugin
+    # handlers return slash.exec output directly so the TUI retains its pager path.
     _cmd_text = cmd.lstrip("/") if cmd.startswith("/") else cmd
     _cmd_parts = _cmd_text.split(maxsplit=1)
     _cmd_base = (_cmd_parts[0] if _cmd_parts else "").lower()
@@ -5851,7 +5650,7 @@ def _(rid, params: dict) -> dict:
             rid, f"pending-input command: use command.dispatch for /{_cmd_base}"
         )
 
-    if _cmd_base in _WORKER_BLOCKED_COMMANDS:
+    if _cmd_base == "snapshot":
         subcommand = _cmd_arg.split(maxsplit=1)[0].lower() if _cmd_arg else ""
         if subcommand in {"restore", "rewind"}:
             return _command_handoff(

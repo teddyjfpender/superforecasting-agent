@@ -415,7 +415,7 @@ allow_indirect_imports = false
 [[tool.importlinter.contracts]]
 name = "TUI host never imports classic CLI presentation"
 type = "forbidden"
-source_modules = ["tui_gateway.server"]
+source_modules = ["tui_gateway"]
 forbidden_modules = ["cli"]
 allow_indirect_imports = true
 
@@ -563,13 +563,6 @@ allow_indirect_imports = false
 name = "command catalog never imports presentation or runtime adapters"
 type = "forbidden"
 source_modules = ["superforecasting_agent.application.command_catalog"]
-forbidden_modules = ["gateway", "tui_gateway", "cli", "superforecasting_agent.runtime", "agent", "tools"]
-allow_indirect_imports = false
-
-[[tool.importlinter.contracts]]
-name = "legacy command ownership never imports presentation or runtime"
-type = "forbidden"
-source_modules = ["superforecasting_agent.hosting.legacy_commands"]
 forbidden_modules = ["gateway", "tui_gateway", "cli", "superforecasting_agent.runtime", "agent", "tools"]
 allow_indirect_imports = false
 

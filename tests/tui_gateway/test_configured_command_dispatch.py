@@ -14,17 +14,13 @@ from tui_gateway import server
 
 @pytest.fixture
 def configure(monkeypatch):
+    assert not hasattr(server, "_SlashWorker")
     monkeypatch.setattr(server, "_host", RuntimeHost())
     server._host.sessions["runtime"] = {"session_key": "durable", "history": []}
     monkeypatch.setattr(
         server,
         "_start_agent_build",
         Mock(side_effect=AssertionError("unexpected agent construction")),
-    )
-    monkeypatch.setattr(
-        server,
-        "_SlashWorker",
-        Mock(side_effect=AssertionError("unexpected classic CLI worker")),
     )
 
     def setup(commands):
@@ -67,7 +63,6 @@ def test_cycle_is_rejected_before_any_command_runs(configure):
         "second": {"type": "alias", "target": "first"},
     })
     assert "cycle" in dispatch("first")["error"]["message"]
-    server._SlashWorker.assert_not_called()
     server._start_agent_build.assert_not_called()
 
 
@@ -87,7 +82,6 @@ def test_malformed_definition_reports_same_error_before_agent_or_execution(
 ):
     configure({"custom": entry})
     assert slash("custom")["error"]["message"] == dispatch("custom")["error"]["message"]
-    server._SlashWorker.assert_not_called()
     server._start_agent_build.assert_not_called()
 
 
@@ -143,7 +137,6 @@ def test_native_handoff_does_not_need_provider_initialization(configure, command
         "dispatch": "command.dispatch", "execution_started": False,
     }
     server._start_agent_build.assert_not_called()
-    server._SlashWorker.assert_not_called()
 
 
 def test_skill_handoff_does_not_need_provider_initialization(configure, monkeypatch):
@@ -154,7 +147,6 @@ def test_skill_handoff_does_not_need_provider_initialization(configure, monkeypa
     )
     assert "skill command" in slash("fixture-skill note")["error"]["message"]
     server._start_agent_build.assert_not_called()
-    server._SlashWorker.assert_not_called()
 
 
 def test_plugin_command_does_not_construct_an_unrelated_agent(configure, monkeypatch):
@@ -168,7 +160,6 @@ def test_plugin_command_does_not_construct_an_unrelated_agent(configure, monkeyp
     assert slash("fixture-plugin CaseSensitive")["result"] == {"output": "fixture output"}
     plugin.assert_called_once_with("CaseSensitive")
     server._start_agent_build.assert_not_called()
-    server._SlashWorker.assert_not_called()
 
 
 def test_terminal_command_returns_to_client_without_execution(configure, monkeypatch):
@@ -178,7 +169,6 @@ def test_terminal_command_returns_to_client_without_execution(configure, monkeyp
     response = dispatch("help")
     assert response["result"] == {"type": "alias", "target": "help"}
     server._start_agent_build.assert_not_called()
-    server._SlashWorker.assert_not_called()
 
 
 def test_native_plugin_failure_never_becomes_a_legacy_handoff(configure, monkeypatch):
@@ -191,7 +181,6 @@ def test_native_plugin_failure_never_becomes_a_legacy_handoff(configure, monkeyp
     assert "data" not in response["error"]
     plugin.assert_called_once_with("args")
     server._start_agent_build.assert_not_called()
-    server._SlashWorker.assert_not_called()
 
 
 @pytest.mark.parametrize("result", [None, RuntimeError("fixture skill failed")])
@@ -218,7 +207,6 @@ def test_unknown_command_rejected_before_runtime_construction(configure, monkeyp
     response = invoke(command)
     assert response["error"] == {"code": 4011, "message": "unknown command: fixture-unknown"}
     server._start_agent_build.assert_not_called()
-    server._SlashWorker.assert_not_called()
 
 
 @pytest.mark.parametrize("plugins", [[], [
@@ -245,7 +233,6 @@ def test_plugin_inspection_matches_classic_without_agent(configure, monkeypatch,
     else:
         assert "No plugins installed." in response["result"]["output"]
     server._start_agent_build.assert_not_called()
-    server._SlashWorker.assert_not_called()
 
 
 def test_plugin_inspection_failure_preserves_native_error(configure, monkeypatch):
@@ -255,7 +242,6 @@ def test_plugin_inspection_failure_preserves_native_error(configure, monkeypatch
     monkeypatch.setattr("superforecasting_agent.runtime.plugins.get_plugin_manager", Mock(side_effect=RuntimeError("inspection failed")))
     assert dispatch("plugins")["error"] == {"code": 5030, "message": "Plugin system error: inspection failed"}
     server._start_agent_build.assert_not_called()
-    server._SlashWorker.assert_not_called()
 
 
 @pytest.fixture
@@ -283,7 +269,6 @@ def test_bundle_dispatch_uses_shared_loader_without_agent(bundle_command):
     }
     bundle_command.assert_called_once_with("/fixture-bundle", "CaseSensitive", task_id="durable")
     server._start_agent_build.assert_not_called()
-    server._SlashWorker.assert_not_called()
 
 
 @pytest.mark.parametrize("failure", [None, RuntimeError("bundle failed")])
@@ -297,7 +282,6 @@ def test_bundle_failure_never_hands_off_or_tries_individual_skill(bundle_command
     assert "data" not in error
     bundle_command.assert_called_once()
     server._start_agent_build.assert_not_called()
-    server._SlashWorker.assert_not_called()
 
 
 def test_bundle_catalog_exposes_one_entry_with_bundle_precedence(bundle_command):
@@ -353,7 +337,6 @@ def test_toolset_command_shares_cli_inventory_without_worker(configure, monkeypa
     assert slash("toolsets")["error"]["data"] == {
         "dispatch": "command.dispatch", "execution_started": False,
     }
-    server._SlashWorker.assert_not_called()
     server._start_agent_build.assert_not_called()
 
 
@@ -370,7 +353,6 @@ def test_profile_command_matches_classic_identity_without_agent(configure, monke
     assert result["type"] == "exec"
     assert slash("profile")["error"]["data"]["dispatch"] == "command.dispatch"
     server._start_agent_build.assert_not_called()
-    server._SlashWorker.assert_not_called()
 
 
 @pytest.mark.parametrize("installed", [False, True])
@@ -392,7 +374,6 @@ def test_native_bundle_inspection_reads_shared_inventory(configure, monkeypatch,
         assert str(tmp_path) in result["output"]
     assert slash("bundles")["error"]["data"]["dispatch"] == "command.dispatch"
     server._start_agent_build.assert_not_called()
-    server._SlashWorker.assert_not_called()
 
 
 @pytest.mark.parametrize("failure", [False, True])
@@ -416,7 +397,6 @@ def test_native_insights_uses_host_store_without_closing_it(configure, monkeypat
         assert response["result"] == {"type": "exec", "output": "Fixture insights"}
     database.close.assert_not_called()
     assert slash("insights")["error"]["data"]["dispatch"] == "command.dispatch"
-    server._SlashWorker.assert_not_called()
     server._start_agent_build.assert_not_called()
 
 
@@ -495,7 +475,6 @@ def test_google_quota_shared_with_cli_without_worker(configure, monkeypatch, sce
             assert "75%" in classic and "25%" in classic
     assert slash("/gquota")["error"]["data"]["execution_started"] is False
     server._start_agent_build.assert_not_called()
-    server._SlashWorker.assert_not_called()
 
 
 @pytest.mark.parametrize("scenario", ["configured", "invalid", "unavailable"])
@@ -535,7 +514,6 @@ def test_platform_configuration_shared_with_cli(configure, monkeypatch, scenario
             load.assert_not_called()
     assert slash("/platforms")["error"]["data"]["execution_started"] is False
     server._start_agent_build.assert_not_called()
-    server._SlashWorker.assert_not_called()
 
 
 @pytest.mark.parametrize('argument,action', [
@@ -624,7 +602,6 @@ def test_curator_shared_operation_without_classic_worker(configure, monkeypatch,
     assert handoff["error"]["data"]["execution_started"] is False
     assert mutation.call_count == 2
     server._start_agent_build.assert_not_called()
-    server._SlashWorker.assert_not_called()
 
 
 @pytest.mark.parametrize("answer,approved", [("", False), ("No", False), ("Yes", True)])
@@ -655,7 +632,6 @@ def test_curator_prune_confirmation_uses_preview_and_cancels_safely(configure, m
         archive.assert_not_called()
         assert "aborted" in response["error"]["message"]
         assert "data" not in response["error"]
-    server._SlashWorker.assert_not_called()
     server._start_agent_build.assert_not_called()
 
 
@@ -686,7 +662,6 @@ def test_curator_failure_cannot_trigger_worker_retry(configure, monkeypatch):
     assert "state store unavailable" in response["error"]["message"]
     assert "data" not in response["error"]
     mutation.assert_called_once_with(True)
-    server._SlashWorker.assert_not_called()
 
 
 @pytest.mark.parametrize("answer,approved", [("", False), ("Yes", True)])
@@ -749,7 +724,6 @@ def test_native_handoff_covers_registry_aliases(configure, canonical):
         assert response["error"]["data"] == {
             "dispatch": "command.dispatch", "execution_started": False,
         }
-    server._SlashWorker.assert_not_called()
     server._start_agent_build.assert_not_called()
 
 
@@ -766,7 +740,6 @@ def test_runtime_alias_executes_shared_operation_once(configure, monkeypatch):
     response = dispatch("codex_runtime", "off")
     assert response["result"]["type"] == "exec"
     save.assert_called_once()
-    server._SlashWorker.assert_not_called()
     server._start_agent_build.assert_not_called()
 
 
@@ -788,7 +761,6 @@ def test_snapshot_native_lifecycle_and_cli_listing_parity(configure, monkeypatch
     assert capsys.readouterr().out.strip() == listed
     assert dispatch("snapshot", "prune 0")["result"]["output"] == "Pruned 1 old snapshot(s) (keeping 0)."
     assert list_quick_snapshots(hermes_home=tmp_path) == []
-    server._SlashWorker.assert_not_called()
     server._start_agent_build.assert_not_called()
 
 
@@ -803,7 +775,6 @@ def test_snapshot_validation_matches_cli_without_worker(configure, monkeypatch, 
     _handle_snapshot_command(None, "/snapshot " + argument)
     assert capsys.readouterr().out.strip() == response["error"]["message"]
     assert not (tmp_path / "state-snapshots").exists()
-    server._SlashWorker.assert_not_called()
     server._start_agent_build.assert_not_called()
 
 
@@ -821,7 +792,6 @@ def test_snapshot_restore_admission_and_storage_failure_never_fall_through(confi
     assert response["error"]["code"] == 5017
     assert "data" not in response["error"]
     create.assert_called_once()
-    server._SlashWorker.assert_not_called()
     server._start_agent_build.assert_not_called()
 
 
@@ -835,7 +805,6 @@ def test_native_kanban_uses_shared_operation_without_classic_worker(configure, m
     with kanban_db.connection() as db:
         assert [task.title for task in kanban_db.list_tasks(db)] == ["native task"]
     assert not server._host.sessions["runtime"].get("_command_stops")
-    server._SlashWorker.assert_not_called()
     server._start_agent_build.assert_not_called()
 
 
@@ -888,7 +857,6 @@ def test_async_native_watch_accepts_session_interrupt_and_preserves_transport(co
         server._host.interrupt_commands(server._host.sessions["runtime"])
         server._host.workers.stop()
         assert server._host.workers.drain(3)
-    server._SlashWorker.assert_not_called()
     server._start_agent_build.assert_not_called()
 
 
@@ -1080,7 +1048,6 @@ def test_learn_handoff_preserves_prompt_without_starting_classic_worker(configur
     result = dispatch('learn', user_request)
     assert result['result'] == {'type': 'send', 'message': build_learn_prompt(user_request)}
     server._start_agent_build.assert_not_called()
-    server._SlashWorker.assert_not_called()
 
 
 def test_native_skill_handoff_with_cached_module_without_package_attribute(configure, monkeypatch):
@@ -1171,7 +1138,6 @@ def test_tools_view_uses_live_selection_without_classic_worker(configure, monkey
     assert 'More detail' not in result
     definitions.assert_called_once_with(enabled_toolsets=[], quiet_mode=True)
     server._start_agent_build.assert_not_called()
-    server._SlashWorker.assert_not_called()
 
 
 @pytest.mark.parametrize("command", ["tools list", "tools 'list'", "tools list ignored"] )
@@ -1183,7 +1149,6 @@ def test_tools_list_reads_saved_configuration_without_build(configure, monkeypat
     assert 'Built-in toolsets (cli):' in result
     assert 'disabled-source  disabled' in result
     server._start_agent_build.assert_not_called()
-    server._SlashWorker.assert_not_called()
 
 
 @pytest.mark.parametrize('action', ['check', 'audit', 'help', 'not-an-action'])
@@ -1281,7 +1246,6 @@ def test_plugin_deadline_retains_session_through_cleanup(configure, monkeypatch,
         assert cleaned == ['owned']
         reserve_close(session)
         server._start_agent_build.assert_not_called()
-        server._SlashWorker.assert_not_called()
 
     asyncio.run(caller())
 
@@ -1294,11 +1258,9 @@ def test_all_terminal_owned_commands_refuse_classic_execution(configure, monkeyp
     for name in terminal_command_names():
         response = slash(name)
         assert response['error']['data'] == {'dispatch': 'terminal', 'execution_started': False}, name
-    server._SlashWorker.assert_not_called()
     server._start_agent_build.assert_not_called()
 
 
 def test_terminal_alias_returns_its_canonical_client_handler(configure):
     configure({})
     assert dispatch('reset')['result'] == {'type': 'alias', 'target': 'new'}
-    server._SlashWorker.assert_not_called()

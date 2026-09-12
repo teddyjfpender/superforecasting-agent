@@ -282,7 +282,6 @@ def test_real_desk_native_background_stop_preserves_session(local_desk, monkeypa
     from tests.tui_pty.vt import VTScreen
 
     client, home, _ = local_desk
-    monkeypatch.setenv('FORECAST_TEST_FORBID_CLASSIC_WORKER', '1')
     screen = VTScreen(rows=45, cols=160)
     with client.websocket_connect('/api/pty?token=local-engineering&channel=background-commands') as ws:
         ws.send_text('\x1b[RESIZE:160;45]')
@@ -307,7 +306,6 @@ def test_real_desk_delegation_pause_isolated_after_new_session(local_desk, monke
     from tests.tui_pty.vt import VTScreen
 
     client, home, _ = local_desk
-    monkeypatch.setenv('FORECAST_TEST_FORBID_CLASSIC_WORKER', '1')
     monkeypatch.setenv('FORECAST_TEST_DELEGATION_AUDIT', '1')
     monkeypatch.setenv('SUPERFORECASTING_AGENT_TUI_NO_CONFIRM', '1')
     screen = VTScreen(rows=45, cols=160)
@@ -342,7 +340,6 @@ def test_real_desk_native_skills_preserves_session(local_desk, monkeypatch):
     from tests.tui_pty.vt import VTScreen
 
     client, home, _ = local_desk
-    monkeypatch.setenv('FORECAST_TEST_FORBID_CLASSIC_WORKER', '1')
     screen = VTScreen(rows=45, cols=160)
     with client.websocket_connect('/api/pty?token=local-engineering&channel=skills-commands') as ws:
         ws.send_text('\x1b[RESIZE:160;45]')
@@ -366,7 +363,6 @@ def test_real_desk_native_handoff_preserves_agent_and_receipt(local_desk, monkey
     from tests.tui_pty.vt import VTScreen
 
     client, home, _ = local_desk
-    monkeypatch.setenv('FORECAST_TEST_FORBID_CLASSIC_WORKER', '1')
     monkeypatch.setenv('FORECAST_TEST_HANDOFF', '1')
     monkeypatch.setenv('SUPERFORECASTING_AGENT_TUI_NO_CONFIRM', '1')
     screen = VTScreen(rows=45, cols=160)
@@ -397,7 +393,6 @@ def test_real_desk_handoff_cancel_and_dashboard_reconnect(local_desk, monkeypatc
     from tests.tui_pty.vt import VTScreen
 
     client, home, bridges = local_desk
-    monkeypatch.setenv('FORECAST_TEST_FORBID_CLASSIC_WORKER', '1')
     monkeypatch.setenv('FORECAST_TEST_HANDOFF', 'running')
     monkeypatch.setenv('SUPERFORECASTING_AGENT_TUI_NO_CONFIRM', '1')
     screen = VTScreen(rows=45, cols=160)
@@ -444,7 +439,6 @@ def test_real_desk_background_stop_and_cleanup_retry(local_desk, monkeypatch):
 
     client, home, bridges = local_desk
     monkeypatch.setenv('FORECAST_TEST_BACKGROUND', '1')
-    monkeypatch.setenv('FORECAST_TEST_FORBID_CLASSIC_WORKER', '1')
     screen = VTScreen(rows=45, cols=160)
     with client.websocket_connect('/api/pty?token=local-engineering&channel=background-owner') as ws:
         ws.send_text('\x1b[RESIZE:160;45]')
