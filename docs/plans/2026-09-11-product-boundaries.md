@@ -4436,3 +4436,22 @@ push gate: 31,755 Python tests (148 skipped) and 672 affected TUI tests. Remote
 branch codex/learning-settlement-runtime advanced to 78d8e5e1e. This supersedes
 the earlier blocked-push notes above; the snapshot-selection change still needs
 its own integrated push gate.
+
+### Plugin coroutine lifetime ownership
+
+RPC session admission already protects synchronous plugin execution. Its shared
+async-result resolver was the remaining hole: a running-loop caller could return
+a timeout while a daemon helper continued the command, and that helper did not
+inherit context variables. The no-running-loop path had no deadline at all.
+
+Both paths now apply the cooperative coroutine deadline and wait for completion
+of cancellation before releasing the caller. Helper threads inherit a copy of
+caller context, join before return, and close an unstarted coroutine if thread
+creation fails. Handler/cleanup timeout diagnostics are preserved. This does not
+forcibly terminate blocking or cancellation-suppressing code, nor prove that a
+plugin releases every external resource correctly.
+
+The three original failure cases reproduced before the fix. All 287 plugin and
+TUI command/protocol tests pass afterward, including both RPC command surfaces
+rejecting session close during async cancellation cleanup and permitting it
+after completion. Failure never becomes a command redispatch.

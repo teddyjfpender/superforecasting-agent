@@ -72,7 +72,11 @@ Tool inventory and /tools list now use shared views without building an agent or
   failed cleanup. Membership now has no raw mapping removal/update APIs; callers
   must retire explicitly, and isolated fixtures verify quiescence before disposal.
 - [ ] Close remaining partial-construction and shutdown failure paths with
-  deterministic failure injection and retained cleanup handles. Delegated child
+  deterministic failure injection and retained cleanup handles. Async plugin
+  command resolution now cancels cooperatively and waits for coroutine cleanup
+  on both CLI/TUI paths, preserving caller context instead of abandoning a
+  timed-out helper thread. Blocking or cancellation-suppressing plugin code
+  remains cooperative; it cannot be forcibly stopped in-process. Delegated child
   close failures now retain exact handles and diagnostics; session-scoped /stop
   and session disposal retry them, with session close remaining pending on failure. Child cleanup
   retries retain exact handles. Direct background conversation agents now use the

@@ -35,6 +35,7 @@ so plugin-defined tools appear alongside the built-in tools.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import importlib
 import importlib.metadata
 import importlib.util
@@ -1384,41 +1385,54 @@ def resolve_plugin_command_result(result: Any) -> Any:
     Sync CLI/TUI dispatch sites call plugin handlers from plain functions.
     If a handler is async, await it directly when no loop is running; if
     we're already inside an active loop, run it in a helper thread with its
-    own loop so the caller still gets a concrete result synchronously. The
-    threaded path is bounded by a 30s timeout so a hung async handler cannot
-    wedge the terminal indefinitely.
+    own loop so the caller still gets a concrete result synchronously.
+    Both paths request cancellation after 30s and retain ownership until async
+    cleanup finishes. The deadline is cooperative: blocking code or suppressed
+    cancellation can delay return, but must not become detached background work.
     """
     if not inspect.isawaitable(result):
         return result
 
+    async def _await_result():
+        deadline = asyncio.timeout(_PLUGIN_COMMAND_AWAIT_TIMEOUT_SECS)
+        try:
+            async with deadline:
+                return await result
+        except TimeoutError as exc:
+            if not deadline.expired() or not isinstance(exc.__cause__, asyncio.CancelledError):
+                raise
+            raise TimeoutError(
+                "Plugin command async handler exceeded "
+                f"{_PLUGIN_COMMAND_AWAIT_TIMEOUT_SECS:g}s; cancellation finished"
+            ) from exc
+
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(result)
+        return asyncio.run(_await_result())
 
+    context = contextvars.copy_context()
     outcome: Dict[str, Any] = {}
     failure: Dict[str, BaseException] = {}
-    done = threading.Event()
 
     def _runner() -> None:
         try:
-            outcome["value"] = asyncio.run(result)
+            outcome["value"] = asyncio.run(_await_result())
         except BaseException as exc:  # pragma: no cover - re-raised below
             failure["exc"] = exc
-        finally:
-            done.set()
 
     thread = threading.Thread(
-        target=_runner,
+        target=lambda: context.run(_runner),
         name="hermes-plugin-command-await",
         daemon=True,
     )
-    thread.start()
-    if not done.wait(timeout=_PLUGIN_COMMAND_AWAIT_TIMEOUT_SECS):
-        raise TimeoutError(
-            "Plugin command async handler did not complete within "
-            f"{_PLUGIN_COMMAND_AWAIT_TIMEOUT_SECS:.0f}s"
-        )
+    try:
+        thread.start()
+    except BaseException:
+        if inspect.iscoroutine(result):
+            result.close()
+        raise
+    thread.join()
     if "exc" in failure:
         raise failure["exc"]
     return outcome.get("value")

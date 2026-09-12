@@ -1246,3 +1246,41 @@ def test_messaging_only_commands_do_not_construct_classic_worker(configure, comm
     result = slash(command)
     assert result['error']['code'] == 4011
     assert 'only in messaging gateways' in result['error']['message']
+
+
+@pytest.mark.parametrize('surface', ['slash', 'dispatch'])
+def test_plugin_deadline_retains_session_through_cleanup(configure, monkeypatch, surface):
+    import asyncio
+    from superforecasting_agent.hosting.sessions import SessionBusy, reserve_close
+
+    configure({})
+    session = server._host.sessions['runtime']
+    cleaned = []
+    monkeypatch.setattr('superforecasting_agent.runtime.plugins._PLUGIN_COMMAND_AWAIT_TIMEOUT_SECS', 0.01)
+    monkeypatch.setattr(import_module('agent.skill_commands'), 'get_skill_commands', lambda: {})
+
+    async def plugin(arg):
+        try:
+            await asyncio.sleep(0.2)
+        finally:
+            with pytest.raises(SessionBusy):
+                reserve_close(session)
+            await asyncio.sleep(0.01)
+            cleaned.append(arg)
+
+    monkeypatch.setattr('superforecasting_agent.runtime.plugins.get_plugin_command_handler', lambda name: plugin)
+
+    async def caller():
+        if surface == 'slash':
+            result = slash('fixture-plugin owned')
+            assert 'cancellation finished' in result['result']['output']
+        else:
+            result = dispatch('fixture-plugin', 'owned')
+            assert result['error']['code'] == 5030
+            assert 'data' not in result['error']  # never redispatch failed effects
+        assert cleaned == ['owned']
+        reserve_close(session)
+        server._start_agent_build.assert_not_called()
+        server._SlashWorker.assert_not_called()
+
+    asyncio.run(caller())
