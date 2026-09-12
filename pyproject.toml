@@ -654,3 +654,9 @@ name = "background agent policy never imports runtime or presentation"
 type = "forbidden"
 source_modules = ["agent.background_options"]
 forbidden_modules = ["agent.runtime", "agent.agent_factory", "tools", "gateway", "tui_gateway", "cli", "superforecasting_agent.runtime"]
+
+[[tool.importlinter.contracts]]
+name = "sandbox configuration does not depend on its consumers"
+type = "forbidden"
+source_modules = ["tools.environments.configuration"]
+forbidden_modules = ["tools.terminal_tool", "tools.file_tools", "agent", "gateway", "tui_gateway", "cli", "superforecasting_agent.runtime"]

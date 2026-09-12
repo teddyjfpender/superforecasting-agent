@@ -518,3 +518,10 @@ File adapters bind to an exact environment object and creation generation. Both
 lazy environment and adapter publication reject retired generations. Terminal
 cleanup uses conditional cache invalidation against its detached environment, and
 live-path bookkeeping obtains cwd from the currently active environment.
+
+`tools/environments/configuration.py` owns the pure mapping from loaded terminal
+configuration plus per-task overrides to sandbox constructor arguments. Terminal
+and file tools consume the same mapping, including backend images, cwd, timeout,
+SSH/local persistence and container options. Mutable container options are copied
+for each construction. The module has strict lint/format/type coverage and a
+transitive import contract forbidding dependencies on its runtime consumers.

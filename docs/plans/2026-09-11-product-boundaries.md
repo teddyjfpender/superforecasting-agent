@@ -2106,3 +2106,20 @@ passed; shared quality checks passed. Deterministic tests cover creation interru
 by cleanup, retained replacement cache/environment, stale adapter rejection, live
 cwd selection, and empty-ID isolation. Active-operation leases and failed sandbox
 disposal ownership remain outside this change.
+
+### One sandbox configuration mapper
+
+Extracted the duplicated terminal/file sandbox constructor mapping into
+`tools/environments/configuration.py`. This fixes a real configuration difference:
+file-triggered creation omitted `modal_mode`, `docker_env` and `docker_extra_args`
+that terminal creation already forwarded. Both clients now share the complete
+mapping, including image/cwd overrides and backend-specific persistence. Mutable
+container settings are copied instead of shared with the caller's configuration.
+
+152 focused tests passed, including constructor-argument parity through both actual
+entrypoints for local, SSH, Docker, Singularity, Modal, Daytona and Vercel sandbox
+families, override propagation, mutable-setting isolation, creation ownership and
+import-boundary mutation tests. Shared quality checks passed with the new mapper
+in strict lint/format/type scope and an additional forbidden-import contract.
+These tests use controllable constructors; they do not claim live qualification
+of external container services.
