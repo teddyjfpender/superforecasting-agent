@@ -51,12 +51,16 @@ from protocol.events.turn import (
     StatusUpdate,
     ThinkingDelta,
 )
+from protocol.events.commands import CommandStarted, CommandOutput, CommandFinished
 from protocol.events.voice import VoiceStatus, VoiceTranscript
 from protocol.events.warnings import AutomodeComplete, AutomodeError, AutomodeProgress
 
 # Every registered event name — the codegen emits a `WireEvent.<KEY>` constant for
 # each, and the TUI references ONLY those constants (the A2 grep-proof).
 EXPECTED_EVENT_NAMES = {
+    "command.started",
+    "command.output",
+    "command.finished",
     "pm.tick",
     "jobs.progress",
     "jobs.complete",
@@ -114,6 +118,9 @@ def test_every_event_name_registered_exactly_once():
 
 # (model, frame, exclude_none) — the frame is the server's actual _emit payload.
 CASES: list[tuple[type, dict, bool]] = [
+    (CommandStarted, {"command_id": "c1", "request_id": "r1", "name": "kanban"}, True),
+    (CommandOutput, {"command_id": "c1", "stream": "stdout", "text": "Watching…"}, True),
+    (CommandFinished, {"command_id": "c1", "status": "cancelled"}, True),
     # ── gateway lifecycle ────────────────────────────────────────────────────
     (Skin, {"name": "aurora", "appearance": "dark", "banner_logo": "L", "banner_hero": "H",
             "tool_prefix": "◇", "help_header": "?", "colors": {"fg": "#fff"}, "branding": {"x": "y"}}, True),

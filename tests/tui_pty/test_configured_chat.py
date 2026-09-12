@@ -211,3 +211,60 @@ def test_repeated_unicode_turns_resize_and_restart(tui_bundle, tui_env, tui_home
                 matches = [row for row in rows if row[1] == prompt]
                 assert len(matches) == 1, "every Unicode prompt survives exactly once"
                 sid = matches[0][0]
+
+
+@pytest.mark.live_system_guard_bypass
+@pytest.mark.timeout(120)
+@pytest.mark.parametrize("recovery", ["cancel", "gateway-death"])
+def test_native_command_watch_cancel_then_continue(tui_bundle, tui_env, tui_home, local_provider, recovery):
+    """Real Ctrl+C cancels native work without exiting or starting a model turn."""
+    import sqlite3
+    from contextlib import closing
+
+    endpoint, requests = local_provider
+    home = tui_home / ".superforecasting-agent"
+    (home / "config.yaml").write_text(json.dumps({
+        "model": {"default": "fixture-local", "provider": "custom", "base_url": endpoint},
+        "display": {"skin": "forecast"},
+    }), encoding="utf-8")
+    board = home / "native-command-test.db"
+    env = dict(tui_env, OPENAI_BASE_URL=endpoint, OPENAI_API_KEY="fixture-local-only",
+               SUPERFORECASTING_AGENT_KANBAN_DB=str(board))
+
+    def submit(session, text):
+        session.send(text.encode())
+        session.settle(quiet=0.1, max_wait=0.5)
+        session.send(b"\r")
+
+    with PtySession(["node", str(tui_bundle)], cwd=str(REPO_ROOT), env=env, rows=44, cols=120) as session:
+        session.wait_for(lambda s: "fixture-local" in s.text(), timeout=20, what="configured desk")
+        session.settle()
+        submit(session, "/kanban watch --interval 3600")
+        session.wait_for(lambda s: "Running /kanban" in s.text(), timeout=15, what="native command activity")
+        session.resize(rows=35, cols=100)
+        session.wait_for(lambda s: "Ctrl+C to cancel" in s.text(), timeout=5, what="command cancellation hint after resize")
+        if recovery == "cancel":
+            session.send(b"\x03")
+            session.wait_for(lambda s: "(stopped)" in s.text(), timeout=10, what="native watch cancellation result")
+        else:
+            import signal
+            from .test_gateway_respawn import gateway_processes, shows_reconnect_notice
+            psutil = pytest.importorskip("psutil")
+            children = gateway_processes(psutil, session._pgid)
+            assert len(children) == 1
+            original_pid = children[0].pid
+            children[0].send_signal(signal.SIGKILL)
+            session.wait_for(shows_reconnect_notice, timeout=15, what="gateway loss notice during command")
+            session.wait_for(lambda _: any(p.pid != original_pid for p in gateway_processes(psutil, session._pgid)),
+                             timeout=30, what="replacement gateway process")
+            session.wait_for(lambda s: "ready" in s.text() and "Running /kanban" not in s.text(),
+                             timeout=30, what="ready desk without stale command activity")
+        assert "Running /kanban" not in session.screen.text()
+        assert "Cancelling /kanban" not in session.screen.text()
+        submit(session, '/kanban create "after native cancellation"')
+        session.wait_for(lambda s: "Created" in s.text(), timeout=15, what="successful command after cancellation")
+        with closing(sqlite3.connect(board)) as conn:
+            assert conn.execute("SELECT COUNT(*) FROM tasks WHERE title=?", ("after native cancellation",)).fetchone()[0] == 1
+        assert not requests, "native commands must not make model calls"
+        session.send(b"\x03")
+        assert session.wait_exit(timeout=15, sweep=False) == 0

@@ -2627,3 +2627,21 @@ passed. The rendering check exercises running, output and cancelling text at a
 60-column terminal width. Type checking and scoped lint passed. A full native watch,
 Ctrl+C and continued-use interaction, including reconnect behavior, remains to be
 qualified; input-helper tests do not prove the actual keyboard route end to end.
+
+
+### Real terminal native-command recovery verification
+
+A rebuilt local TUI bundle now exercises the actual composer, gateway, command
+loop and SQLite board through the POSIX PTY harness. Both paths begin a watch with
+a one-hour interval, observe live command activity and resize the terminal. One
+sends actual Ctrl+C; the other kills the gateway, observes the reconnect notice
+and verifies a new gateway PID. Both then create a task exactly once, verify its
+durable row, make no model calls and exit normally. Both tests passed on this
+macOS/Python 3.13 runtime. This does not qualify remote-host or other-platform
+command recovery.
+
+The preceding progress-event push was blocked by the protocol registry test's
+explicit expected-name list: it omitted the three new command events. That list
+and wire round-trip cases now cover start/output/finish without relaxing the
+exact-registration assertion. The failed full run had 31,124 passing Python tests,
+148 skips and that one failure; its subsequent 428 terminal tests passed.
