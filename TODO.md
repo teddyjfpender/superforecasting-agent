@@ -12,15 +12,17 @@ changes, tests and their limits. The previous checklist is preserved in the
 - [ ] Migrate remaining classic slash-worker commands to shared operations.
   The TUI must not need a second classic CLI runtime to execute business behavior.
   Preserve aliases, validation, error semantics and state ownership.
-- [ ] Finish separating agent construction and notification wiring from RPC
-  orchestration. Deferred-build admission/retry now belongs to the host.
+- [ ] Finish separating agent construction from RPC orchestration. Deferred-build
+  admission/retry and notification polling/admission now belong to the host;
+  protocol event delivery remains an adapter responsibility.
 - [ ] Reduce the remaining frozen domain-to-runtime/tool import exceptions.
   Move a capability and its tests together; directory moves alone are insufficient.
 
 Already implemented: shared forecast review/resolution/scoring, command catalog
 and aliases, configured-command validation/execution, session selection and
-branching, native command handoffs before model initialization, and lazy legacy
-worker admission. The legacy dispatcher itself remains.
+branching, native command handoffs before model initialization, shared toolset/insights/
+quota/platform inspection and runtime selection, and lazy legacy worker admission.
+The legacy dispatcher itself remains.
 
 ## 2. Finish resource ownership and recovery
 
@@ -33,8 +35,10 @@ worker admission. The legacy dispatcher itself remains.
 - [ ] Extend installed remote-host/provider recovery exercises to longer sessions.
 
 Already implemented: host-owned workers, session registry/storage, profile
-configuration, device sign-in, build admission/retry, and command subprocess
-cleanup. Real Ink/dashboard/local-provider/SQLite recovery tests exist.
+configuration, device sign-in, build admission/retry, notification admission and
+command subprocess cleanup. SDK transports own socket teardown; client eviction
+detaches exact handles before cleanup so concurrent replacements survive. Real
+Ink/dashboard/local-provider/SQLite recovery tests exist.
 
 ## 3. Complete distribution qualification
 

@@ -1927,3 +1927,20 @@ contracts reject presentation dependencies through an intermediate module.
 The preceding integrated batch was pushed at `6100b9bce` after 30,936 Python
 tests passed and 148 skipped. This extraction and the later command/verifier
 follow-ups still require their integrated full gate.
+
+
+### Fresh-checkout development bootstrap qualification
+
+Created a separate depth-one clone at commit `f46b9b965` in
+`/tmp/forecast-fresh-bootstrap.ZV7Kj6`, verified it had neither `.venv` nor
+`ui-tui/node_modules`, then ran the documented single command:
+`python3 scripts/dev.py bootstrap`. It completed with exit 0. Frozen uv setup,
+`npm ci`, TUI build, Python lint/format/types, all 38 import contracts, generated
+protocol checks, TypeScript lint and type checking passed. Local Git settings
+were `.githooks` and `.git-blame-ignore-revs`; the resulting checkout was clean.
+
+Evidence: `/tmp/forecast-fresh-clone.log` and `/tmp/forecast-fresh-bootstrap.log`.
+This qualifies a fresh checkout on the current macOS host with prerequisite
+Python, uv and npm available; it does not prove bootstrap on untested platforms.
+The active TODO is reconciled with completed notification ownership and native
+inspection work; remaining construction and legacy-dispatch work stays open.
