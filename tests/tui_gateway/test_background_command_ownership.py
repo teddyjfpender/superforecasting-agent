@@ -95,8 +95,13 @@ def test_direct_dispatch_and_alias_inspect_the_live_session(background):
     assert server._host.sessions['runtime']['running'] is True
 
 
-def test_classic_cli_uses_shared_operations_with_standalone_scope(background, capsys):
+def test_classic_cli_uses_shared_operations_with_standalone_scope(background, capsys, monkeypatch):
+    import cli as cli_module
     from cli import HermesCLI
+
+    # The process-wide console can retain another test's stdout wrapper. This
+    # test checks command ownership/output, not prompt_toolkit capture plumbing.
+    monkeypatch.setattr(cli_module, "_cprint", print)
 
     cli = HermesCLI.__new__(HermesCLI)
     cli._agent_running = False

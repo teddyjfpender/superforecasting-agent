@@ -4049,3 +4049,11 @@ session's pause intact. Classic worker construction is forbidden throughout.
 The test passed on macOS through the dashboard WebSocket/PTY, stdio gateway and
 SQLite; Python quality gates passed. This qualifies pause handoff, not rendered
 nested-child interruption or cross-platform reconnects.
+
+
+The first background-command push gate found a test-order capture dependency:
+the classic CLI's cached console writer emitted the expected text into pytest's
+outer capture, bypassing the new test's capsys stream. The ownership test now
+installs its own console sink. The gate reported 31,639 other Python tests passing
+and 572 TUI tests passing; it correctly blocked the push until this fixture fix
+and a fresh full gate.
