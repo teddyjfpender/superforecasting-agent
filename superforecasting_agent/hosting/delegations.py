@@ -1,7 +1,7 @@
 """Process-local delegation control state with explicit root-session ownership.
 
-The tool runtime supplies child handles and owns execution/disposal. This owner
-serializes registration, snapshots, pause policy and cooperative interruption.
+The tool runtime supplies child handles and owns execution. This owner serializes
+registration, snapshots, pause policy, interruption and retryable child disposal.
 """
 
 from __future__ import annotations
@@ -113,3 +113,70 @@ def record_progress(subagent_id: str, *, tool_count: int, last_tool: str) -> Non
         if record is not None:
             record["tool_count"] = tool_count
             record["last_tool"] = last_tool
+
+
+_pending_cleanup: dict[int, ChildCleanup] = {}
+
+
+class ChildCleanup:
+    """Retain and serialize disposal of one exact child across failed retries."""
+
+    def __init__(self, agent: Any, *, subagent_id: str | None, session_key: str):
+        self.agent = agent
+        self.subagent_id = subagent_id
+        self.session_key = session_key
+        self.error = ""
+        self.closed = False
+        self._lock = threading.Lock()
+
+    def close(self) -> bool:
+        with self._lock:
+            if self.closed:
+                return True
+            try:
+                close = getattr(self.agent, "close", None)
+                if callable(close) and close() is False:
+                    raise RuntimeError("child cleanup reported incomplete")
+            except BaseException as exc:
+                self.error = str(exc) or type(exc).__name__
+                with _active_subagents_lock:
+                    _pending_cleanup[id(self)] = self
+                    record = _active_subagents.get(self.subagent_id or "")
+                    if record is not None and record.get("agent") is self.agent:
+                        record["status"] = "cleanup_pending"
+                logger.warning(
+                    "Child cleanup pending (%s): %s", self.subagent_id, self.error
+                )
+                if not isinstance(exc, Exception):
+                    raise
+                return False
+            self.closed = True
+            if self.subagent_id:
+                unregister_subagent(self.subagent_id, agent=self.agent)
+            with _active_subagents_lock:
+                _pending_cleanup.pop(id(self), None)
+            return True
+
+
+def pending_cleanup(*, session_key: str | None = None) -> list[dict[str, str]]:
+    with _active_subagents_lock:
+        return [
+            {
+                "subagent_id": child.subagent_id or "unregistered child",
+                "error": child.error,
+            }
+            for child in _pending_cleanup.values()
+            if session_key is None or child.session_key == session_key
+        ]
+
+
+def retry_cleanup(*, session_key: str | None = None) -> tuple[int, int]:
+    """Retry only retained failures; return completed and still-pending counts."""
+    with _active_subagents_lock:
+        children = [
+            child
+            for child in _pending_cleanup.values()
+            if session_key is None or child.session_key == session_key
+        ]
+    completed = sum(child.close() for child in children)
+    return completed, len(pending_cleanup(session_key=session_key))

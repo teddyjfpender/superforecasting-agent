@@ -4079,3 +4079,24 @@ run passed (including all 12 terminal cases), and 149 delegation/ownership tests
 passed after adding collision coverage. Shared Python gates passed with 58 import
 contracts. Child close failures are still handled by the existing tool execution
 cleanup; retained failed-close ownership remains an outstanding runtime task.
+
+
+### Retain delegated child cleanup failures
+
+Each delegated child now has a serialized cleanup handle. Failed closes and
+explicit False results retain the exact handle, session owner and diagnostic;
+success removes the live record only after disposal. Repeated calls on the same
+handle close once, and BaseException paths retain ownership before propagating.
+Completed model results remain available even when subsequent disposal fails.
+
+The shared /stop operation retries only retained failures belonging to its scope
+and reports remaining child IDs/errors. Session disposal also retries its own
+children and stays cleanup-pending until they finish, preserving completed parent
+cleanup steps. Session resource close returning False is now a failure too.
+
+The 171-test delegation/background/reset run and 42 host/registry/build tests
+passed; six focused cleanup tests passed after adding diagnostic text. Shared
+Python quality gates passed. This proves retained ownership for raised failures
+or explicit incomplete results, not that lower-level SDKs always report their
+cleanup failures truthfully. Process-death recovery of these in-memory handles
+and forced termination of hung closes are outside this evidence.

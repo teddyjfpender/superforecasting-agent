@@ -148,6 +148,7 @@ _MAX_SPAWN_DEPTH_CAP = 3
 # ---------------------------------------------------------------------------
 
 from superforecasting_agent.hosting.delegations import (
+    ChildCleanup,
     interrupt_subagent as interrupt_subagent,
     is_spawn_paused as is_spawn_paused,
     list_active_subagents as list_active_subagents,
@@ -1616,6 +1617,7 @@ def _run_single_child(
     child._delegation_owner_key = _delegation_session_key(parent_agent)
     _raw_sid = getattr(child, "_subagent_id", None)
     _subagent_id = _raw_sid if isinstance(_raw_sid, str) else None
+    cleanup = ChildCleanup(child, subagent_id=_subagent_id, session_key=child._delegation_owner_key)
     try:
         if _subagent_id:
             _raw_depth = getattr(child, "_delegate_depth", 1)
@@ -2023,11 +2025,6 @@ def _run_single_child(
         if _heartbeat_thread.ident is not None:
             _heartbeat_thread.join(timeout=5)
 
-        # Drop the TUI-facing registry entry.  Safe to call even if the
-        # child was never registered (e.g. ID missing on test doubles).
-        if _subagent_id:
-            _unregister_subagent(_subagent_id, agent=child)
-
         if child_pool is not None and leased_cred_id is not None:
             try:
                 child_pool.release_lease(leased_cred_id)
@@ -2059,11 +2056,7 @@ def _run_single_child(
         # Close tool resources (terminal sandboxes, browser daemons,
         # background processes, httpx clients) so subagent subprocesses
         # don't outlive the delegation.
-        try:
-            if hasattr(child, "close"):
-                child.close()
-        except Exception:
-            logger.debug("Failed to close child agent after delegation")
+        cleanup.close()
 
 
 def _recover_tasks_from_json_string(

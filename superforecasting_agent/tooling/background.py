@@ -7,6 +7,15 @@ an explicit session key; an empty key selects only legacy unowned records.
 from __future__ import annotations
 
 
+def _cleanup_lines(session_key: str | None) -> list[str]:
+    from superforecasting_agent.hosting.delegations import pending_cleanup
+
+    return [
+        f"  Cleanup pending: {child['subagent_id']} · {child['error']}"
+        for child in pending_cleanup(session_key=session_key)
+    ]
+
+
 def stop_background(*, session_key: str | None = None) -> str:
     """Stop processes and signal delegations, reporting actual registry results."""
     from tools.async_delegation import interrupt_all, list_async_delegations
@@ -22,7 +31,17 @@ def stop_background(*, session_key: str | None = None) -> str:
         for d in list_async_delegations(session_key=session_key)
         if d.get("status") == "running"
     ]
+    from superforecasting_agent.hosting.delegations import retry_cleanup
+
+    completed, pending = retry_cleanup(session_key=session_key)
     lines = []
+    if completed:
+        lines.append(f"  Completed cleanup for {completed} child agent(s).")
+    if pending:
+        lines.append(
+            f"  Cleanup still pending for {pending} child agent(s); retry /stop."
+        )
+    lines.extend(_cleanup_lines(session_key))
     if running:
         killed = process_registry.kill_all(session_key=session_key)
         lines.append(f"  Stopped {killed} background process(es).")
@@ -67,5 +86,6 @@ def describe_background(*, agent_running: bool, session_key: str | None = None) 
             lines.append(
                 f"    {delegation.get('delegation_id', '?')} · {delegation.get('status')} · {goal}"
             )
+    lines.extend(_cleanup_lines(session_key))
     lines.append(f"  Agent: {'running' if agent_running else 'idle'}")
     return "\n".join(lines)

@@ -65,7 +65,9 @@ Tool inventory and /tools list now use shared views without building an agent or
   failed cleanup. Membership now has no raw mapping removal/update APIs; callers
   must retire explicitly, and isolated fixtures verify quiescence before disposal.
 - [ ] Close remaining partial-construction and shutdown failure paths with
-  deterministic failure injection and retained cleanup handles. Child cleanup
+  deterministic failure injection and retained cleanup handles. Delegated child
+  close failures now retain exact handles and diagnostics; session-scoped /stop
+  and session disposal retry them, with session close remaining pending on failure. Child cleanup
   retries retain exact handles; failed SDK close remains pending because HTTPX
   can mark itself closed before transport disposal fails. Safe recovery of those
   transports and terminal/browser cleanup failures is still unfinished. Browser

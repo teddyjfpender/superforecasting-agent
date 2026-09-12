@@ -151,11 +151,18 @@ def dispose_session(
         if resource is None or disposed.get(name) is resource:
             continue
         try:
-            if hasattr(resource, "close"):
-                resource.close()
+            if hasattr(resource, "close") and resource.close() is False:
+                raise RuntimeError("resource cleanup reported incomplete")
             disposed[name] = resource
         except Exception as exc:
             errors.append(f"{name}: {exc}")
+    session_key = session.get("session_key")
+    if isinstance(session_key, str) and session_key:
+        from superforecasting_agent.hosting.delegations import retry_cleanup
+
+        _, pending = retry_cleanup(session_key=session_key)
+        if pending:
+            errors.append(f"{pending} delegated child cleanup(s) pending")
     if errors:
         raise RuntimeError(
             "Session cleanup incomplete; retry close: " + "; ".join(errors)
