@@ -4836,3 +4836,14 @@ homes and never access live credentials. Validation: 544 auth/provider, storage,
 metadata and boundary checks passed (one skip), plus three standalone storage
 compatibility/recovery checks. Shared quality checks passed all 72 import contracts
 and blocking Python/TUI/protocol checks. Refresh/discovery extraction remains open.
+
+
+### Deterministic background-cache verification
+
+The full push suite exposed a scheduling race in the achievements integration
+test: a fast successful refresh replaced the stale snapshot before the test
+asserted its timestamp. The production path can legitimately return that newer
+snapshot. The test now gates the background worker, proves immediate stale-data
+service, then releases and verifies fresh session totals. Fixture teardown drains
+workers before restoring patched modules/profile paths. Nine plugin checks pass.
+No production cache behavior was weakened to satisfy the test.

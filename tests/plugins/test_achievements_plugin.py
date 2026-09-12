@@ -56,7 +56,14 @@ def plugin_api(tmp_path, monkeypatch):
     # fake into later tests in the same xdist worker — breaking every
     # test that does ``from superforecasting_agent.storage.session import SessionDB``.
     module._test_monkeypatch = monkeypatch
-    yield module
+    try:
+        yield module
+    finally:
+        # Drain background work before monkeypatch restores modules and paths.
+        thread = module._BACKGROUND_SCAN_THREAD
+        if thread is not None:
+            thread.join(timeout=10)
+            assert not thread.is_alive(), "test leaked an achievements scan thread"
 
 
 class _FakeSessionDB:
@@ -244,20 +251,34 @@ def test_evaluate_all_stale_cache_serves_stale_and_refreshes_in_background(plugi
     }
     plugin_api.save_snapshot(stale_payload)
 
-    t0 = time.time()
-    result = plugin_api.evaluate_all()
-    elapsed = time.time() - t0
+    scan_started = threading.Event()
+    release = threading.Event()
+    original_run = plugin_api._run_scan_and_update_cache
 
-    assert elapsed < 1.0, f"evaluate_all blocked for {elapsed:.2f}s serving stale data"
-    assert result["generated_at"] == stale_generated_at
+    def gated_run(*args, **kwargs):
+        scan_started.set()
+        assert release.wait(timeout=5), "test never released the scan"
+        original_run(*args, **kwargs)
 
-    # Background scan should be running or have completed.
-    thread = plugin_api._BACKGROUND_SCAN_THREAD
-    assert thread is not None
-    thread.join(timeout=5)
+    plugin_api._run_scan_and_update_cache = gated_run
+    try:
+        t0 = time.monotonic()
+        result = plugin_api.evaluate_all()
+        elapsed = time.monotonic() - t0
+
+        assert elapsed < 1.0, f"evaluate_all blocked for {elapsed:.2f}s serving stale data"
+        assert result["generated_at"] == stale_generated_at
+        assert scan_started.wait(timeout=2)
+    finally:
+        release.set()
+        thread = plugin_api._BACKGROUND_SCAN_THREAD
+        if thread is not None:
+            thread.join(timeout=5)
+            assert not thread.is_alive()
 
     fresh = plugin_api.evaluate_all()
-    assert fresh["generated_at"] >= stale_generated_at
+    assert fresh["generated_at"] > stale_generated_at
+    assert fresh["scan_meta"]["sessions_total"] == 10
 
 
 def test_evaluate_all_force_runs_synchronously(plugin_api):
