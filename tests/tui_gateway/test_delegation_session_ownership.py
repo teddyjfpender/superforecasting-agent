@@ -109,3 +109,13 @@ def test_collision_during_child_start_closes_only_rejected_child(owners):
     child.close.assert_called_once()
     assert delegations._active_subagents['root-desk']['agent'] is owners['root-desk']
     owners['root-desk'].close.assert_not_called()
+
+
+def test_session_lookup_uses_the_registered_server_not_a_package_alias(owners, monkeypatch):
+    import tui_gateway
+
+    foreign_lookup = Mock(return_value=(None, server._err(1, 4001, 'unknown session')))
+    monkeypatch.setattr(tui_gateway, 'server', SimpleNamespace(_sess_nowait=foreign_lookup))
+    response = rpc('delegation.status')
+    assert [row['subagent_id'] for row in response['result']['active']] == ['root-desk']
+    foreign_lookup.assert_not_called()

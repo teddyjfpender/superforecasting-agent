@@ -4506,3 +4506,18 @@ Real desk and existing boundary qualification passed all 44 tests. The expanded
 failure-injection suite passes all 29 cases, including a new transport module
 importing classic CLI code: the package-wide rule rejects it. Updated the old
 README assertion that explicitly required the deleted subprocess architecture.
+
+### Delegation RPC server binding
+
+The integrated routing/plugin push was blocked: 31,766 Python tests passed, but
+seven delegation tests selected an unknown session; the 100 affected TUI tests
+passed. A deterministic fixture reproduced the same error by replacing the
+package-level server attribute while calling the registered server's RPC table.
+The delegation helper dynamically imported that attribute for each lookup.
+
+It now uses the server bound by register(), matching the other extracted RPC
+families and keeping session lookup tied to handler registration. The regression
+failed before the change and passes afterward; all 220 delegation/command/protocol
+tests passed. This establishes the lookup failure mechanism, not which preceding
+full-suite test originally left module references inconsistent. No gate was
+bypassed. The retired-worker deletion is integrated for the next push attempt.

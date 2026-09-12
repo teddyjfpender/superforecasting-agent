@@ -10,7 +10,8 @@ into ``_REGISTRARS``; ``server.py`` calls :func:`register` (at load AND on
 through the REAL ``server.rpc_validated`` / ``server.method`` so registration
 lands in the same ``tui_gateway.server._methods`` dispatch dict — byte-identical.
 
-No monkeypatched names are referenced. The spawn-tree disk helpers
+Session lookup uses the server bound at registration, so replacing a package
+attribute cannot redirect a request into another host registry. The spawn-tree disk helpers
 (``_spawn_trees_root`` / ``_spawn_tree_session_dir`` / ``_append_spawn_tree_index``
 / ``_read_spawn_tree_index`` + ``_SPAWN_TREE_INDEX``) stay in core and are
 imported bare (no ``_core.`` hop).
@@ -20,6 +21,8 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
+
+import tui_gateway.server as _core
 
 from tui_gateway.server import (
     _SPAWN_TREE_INDEX,
@@ -52,7 +55,8 @@ def method(name: str):
 
 def register(server) -> None:
     """(Re-)register every carved subagent/spawn-tree handler into ``_methods``."""
-    global _SPAWN_TREE_INDEX, _append_spawn_tree_index, _err, _ok, _read_spawn_tree_index, _spawn_tree_session_dir, _spawn_trees_root
+    global _core, _SPAWN_TREE_INDEX, _append_spawn_tree_index, _err, _ok, _read_spawn_tree_index, _spawn_tree_session_dir, _spawn_trees_root
+    _core = server
     _SPAWN_TREE_INDEX = server._SPAWN_TREE_INDEX
     _append_spawn_tree_index = server._append_spawn_tree_index
     _err = server._err
@@ -65,9 +69,7 @@ def register(server) -> None:
 
 
 def _session_owner(rid, params):
-    from tui_gateway import server
-
-    session, error = server._sess_nowait(params, rid)
+    session, error = _core._sess_nowait(params, rid)
     if error:
         return None, error
     key = session.get("session_key")
