@@ -608,7 +608,11 @@ def cli_main(argv=None, *, emit=print, confirm=None) -> int:
     if fn is None:
         parser.print_help()
         return 0
-    return int(fn(args, emit=emit, confirm=confirm) or 0)
+    try:
+        return int(fn(args, emit=emit, confirm=confirm) or 0)
+    except OSError as exc:
+        emit(f"curator: operation failed: {exc}")
+        return 1
 
 
 def command_output(argument: str, *, confirm=None) -> tuple[int, str]:

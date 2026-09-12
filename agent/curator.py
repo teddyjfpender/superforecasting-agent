@@ -89,6 +89,14 @@ def set_paused(paused: bool) -> None:
     _mutate_state(lambda state: state.update(paused=bool(paused)))
 
 
+def mark_summary_shown(last_run_at: str, summary: str) -> None:
+    """Acknowledge only the exact run summary the caller displayed."""
+    def mark(state):
+        if state.get("last_run_at") == last_run_at and state.get("last_run_summary") == summary:
+            state["last_run_summary_shown_at"] = last_run_at
+    _mutate_state(mark)
+
+
 def is_paused() -> bool:
     return bool(load_state().get("paused"))
 

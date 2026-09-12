@@ -66,3 +66,17 @@ def test_actual_review_does_not_overwrite_pause_during_report(tmp_path, monkeypa
     curator.run_curator_review(synchronous=True, dry_run=True)
     assert curator.is_paused()
     assert 'skipped' in curator.load_state()['last_run_summary']
+
+
+def test_notice_acknowledgement_preserves_newer_review_and_pause(tmp_path, monkeypatch):
+    from agent import curator
+    monkeypatch.setattr(curator, '_state_file', lambda: tmp_path / '.curator_state')
+    curator.save_state({'paused': True, 'last_run_at': 'new-run', 'last_run_summary': 'new-summary'})
+    curator.mark_summary_shown('old-run', 'old-summary')
+    assert curator.load_state()['last_run_summary_shown_at'] is None
+    curator.mark_summary_shown('new-run', 'old-summary')
+    assert curator.load_state()['last_run_summary_shown_at'] is None
+    curator.mark_summary_shown('new-run', 'new-summary')
+    state = curator.load_state()
+    assert state['last_run_summary_shown_at'] == 'new-run'
+    assert state['paused'] is True

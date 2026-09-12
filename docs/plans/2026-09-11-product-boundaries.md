@@ -2928,3 +2928,16 @@ parallel increments and failed-publication preservation are separately covered.
 Shared Python quality checks and all 49 import contracts passed. Production daemon
 admission and shutdown ownership remain unfinished; this storage fix does not claim
 to close that separate runtime-lifetime gap.
+
+
+### Curator error parity and summary acknowledgement
+
+Standalone and native curator command execution now translate storage OSError into
+a nonzero result with the underlying diagnostic. Failed pause/resume publication
+never prints success. The remaining production whole-state writer was the update
+notice: it now conditionally acknowledges the exact displayed run and summary under
+the storage lock, preserving concurrent pause changes and newer review summaries.
+
+126 command/gateway tests passed, followed by 15 focused persistence-error, notice
+and state-owner tests after the acknowledgement fix. Shared Python quality gates
+passed. The primary integrated full push is still running on the preceding batch.

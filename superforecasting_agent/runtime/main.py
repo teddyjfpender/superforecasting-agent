@@ -4684,8 +4684,7 @@ def _print_curator_recent_run_notice() -> None:
     if "\n" not in summary:
         # Still stamp it shown so we don't reconsider it on every update.
         try:
-            state["last_run_summary_shown_at"] = last_run_at
-            curator.save_state(state)
+            curator.mark_summary_shown(last_run_at, summary)
         except Exception:
             pass
         return
@@ -4703,8 +4702,7 @@ def _print_curator_recent_run_notice() -> None:
 
     # Stamp shown so we don't repeat on the next update.
     try:
-        state["last_run_summary_shown_at"] = last_run_at
-        curator.save_state(state)
+        curator.mark_summary_shown(last_run_at, summary)
     except Exception:
         pass
 
