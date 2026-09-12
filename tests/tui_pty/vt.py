@@ -56,6 +56,8 @@ class VTScreen:
         self._grid = [[" "] * cols for _ in range(rows)]
         self._row = 0
         self._col = 0
+        self._scroll_top = 0
+        self._scroll_bottom = rows - 1
         # Alternate-screen support: ``\x1b[?1049h`` swaps in a fresh buffer and
         # ``\x1b[?1049l`` swaps the primary one back.  The TUI lives in the alt
         # screen, so without this the primary buffer's boot noise (node warnings)
@@ -81,6 +83,7 @@ class VTScreen:
                 grid[r][c] = self._grid[r][c]
         self._grid = grid
         self.rows, self.cols = rows, cols
+        self._scroll_top, self._scroll_bottom = 0, rows - 1
         self._row = min(self._row, rows - 1)
         self._col = min(self._col, cols - 1)
         self._wrap_pending = False
@@ -222,9 +225,14 @@ class VTScreen:
                 self._grid[self._row][c] = " "
         elif final in "LM":  # insert / delete lines
             self._scroll_region(final, arg(0))
+        elif final == "r":  # DECSTBM: scrolling margins, one-based/inclusive
+            top, bottom = arg(0) - 1, arg(1, self.rows) - 1
+            if 0 <= top < bottom < self.rows:
+                self._scroll_top, self._scroll_bottom = top, bottom
+                self._row = self._col = 0
         elif final in "ST":  # scroll up / down
             self._scroll_screen(arg(0) if final == "S" else -arg(0))
-        # everything else (DSR, DECSTBM, SGR-mouse reports, …) is a no-op
+        # everything else (DSR, SGR-mouse reports, …) is a no-op
 
     def _alt_screen(self, enter: bool) -> None:
         if enter:
@@ -267,29 +275,30 @@ class VTScreen:
             self._grid[self._row] = [" "] * self.cols
 
     def _scroll_region(self, final: str, n: int) -> None:
-        if final == "L":  # insert blank lines at cursor
-            for _ in range(n):
+        if not self._scroll_top <= self._row <= self._scroll_bottom:
+            return
+        for _ in range(min(n, self._scroll_bottom - self._row + 1)):
+            if final == "L":  # insert blank lines at cursor
                 self._grid.insert(self._row, [" "] * self.cols)
-                self._grid.pop()
-        else:  # delete lines at cursor
-            for _ in range(n):
+                self._grid.pop(self._scroll_bottom + 1)
+            else:  # delete lines at cursor
                 del self._grid[self._row]
-                self._grid.append([" "] * self.cols)
+                self._grid.insert(self._scroll_bottom, [" "] * self.cols)
 
     def _scroll_screen(self, n: int) -> None:
-        for _ in range(abs(n)):
+        for _ in range(min(abs(n), self._scroll_bottom - self._scroll_top + 1)):
             if n > 0:
-                self._grid.pop(0)
-                self._grid.append([" "] * self.cols)
+                self._grid.pop(self._scroll_top)
+                self._grid.insert(self._scroll_bottom, [" "] * self.cols)
             else:
-                self._grid.insert(0, [" "] * self.cols)
-                self._grid.pop()
+                self._grid.insert(self._scroll_top, [" "] * self.cols)
+                self._grid.pop(self._scroll_bottom + 1)
 
     def _newline(self) -> None:
-        if self._row >= self.rows - 1:
+        if self._row == self._scroll_bottom:
             self._scroll_screen(1)
         else:
-            self._row += 1
+            self._row = min(self.rows - 1, self._row + 1)
 
     def _put(self, ch: str) -> None:
         width = _char_width(ch)

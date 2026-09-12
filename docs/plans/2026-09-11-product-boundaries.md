@@ -4344,3 +4344,20 @@ test failure (31,717 passed, 1 failed). The failure reproduces locally at the
 rendered /new status assertion. The new-session screen appears with corrupted
 status text in the test emulator; renderer versus emulator attribution remains
 unproven. No hook bypass or successful integrated-push claim is made.
+
+### Attribute and correct the handoff-reconnect test failure
+
+Captured the complete failing PTY byte stream and replayed it through the locally
+installed dashboard xterm parser. xterm displayed the correct /new status; the
+Python VTScreen emulator corrupted it. The trace uses DECSTBM (CSI 2;41r), scroll
+up (CSI 2S), then resets margins (CSI r). VTScreen ignored margins and scrolled the
+whole screen, moving the header/footer while Ink expected them to stay fixed.
+
+The emulator now tracks scrolling margins for scroll, newline and insert/delete
+line operations, and resets them on resize. All 45 captured screen rows match
+xterm after the change. Added minimal control-sequence regressions rather than
+loosening the lifecycle assertion or adding a delay. This attributes this test
+failure, not any historical SSL or native runtime incident.
+
+All 32 emulator and real desk lifecycle tests passed, including the unchanged
+handoff cancellation/reconnect assertion. Shared quality gates also passed.

@@ -185,3 +185,36 @@ def test_fragmented_utf8_preserves_unicode_and_cursor_columns():
         fragmented.feed(bytes([byte]))
     assert fragmented.text() == whole.text()
     assert "�" not in fragmented.text()
+
+
+def test_ink_scroll_region_preserves_header_and_footer():
+    screen = VTScreen(rows=6, cols=12)
+    screen.feed('header\r\nb\r\nc\r\nd\r\ne\r\nfooter')
+    # Same DECSTBM/SU/reset sequence as the failing /new PTY capture.
+    screen.feed('\x1b[2;5r\x1b[2S\x1b[r')
+    assert screen.rows_text() == ['header', 'd', 'e', '', '', 'footer']
+    screen.feed('\x1b[S')
+    assert screen.rows_text() == ['d', 'e', '', '', 'footer', '']
+
+
+def test_line_feed_and_reverse_scroll_respect_margins():
+    screen = VTScreen(rows=5, cols=12)
+    screen.feed('header\r\na\r\nb\r\nc\r\nfooter')
+    screen.feed('\x1b[2;4r\x1b[4;1H\n')
+    assert screen.rows_text() == ['header', 'b', 'c', '', 'footer']
+    screen.feed('\x1b[T')
+    assert screen.rows_text() == ['header', '', 'b', 'c', 'footer']
+
+
+def test_insert_delete_lines_and_resize_respect_region():
+    screen = VTScreen(rows=5, cols=12)
+    screen.feed('header\r\na\r\nb\r\nc\r\nfooter')
+    screen.feed('\x1b[2;4r\x1b[3;1H\x1b[L')
+    assert screen.rows_text() == ['header', 'a', '', 'b', 'footer']
+    screen.feed('\x1b[M')
+    assert screen.rows_text() == ['header', 'a', 'b', '', 'footer']
+    screen.feed('\x1b[5;1H\x1b[M')  # outside margins: no deletion
+    assert screen.rows_text()[-1] == 'footer'
+    screen.resize(6, 12)
+    screen.feed('\x1b[S')
+    assert screen.rows_text() == ['a', 'b', '', 'footer', '', '']
