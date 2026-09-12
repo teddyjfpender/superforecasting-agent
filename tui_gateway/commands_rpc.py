@@ -342,6 +342,36 @@ def _(rid, params: dict) -> dict:
     except Exception:
         pass
 
+    if name == "profile":
+        from superforecasting_agent.constants import display_agent_home, get_active_profile_name
+
+        output = f"Profile: {get_active_profile_name()}\nHome:    {display_agent_home()}"
+        return _ok(rid, {"type": "exec", "output": output})
+
+    if name == "bundles":
+        try:
+            from agent.skill_bundles import list_bundles, _bundles_dir
+
+            bundles = list_bundles()
+            if not bundles:
+                output = (
+                    "No skill bundles installed.\n"
+                    "Create one with: superforecasting-agent bundles create <name> --skill <s1> --skill <s2>\n"
+                    f"Directory: {_bundles_dir()}"
+                )
+            else:
+                lines = [f"Optional Skill Bundles ({len(bundles)} installed):", ""]
+                for bundle in bundles:
+                    skills = bundle.get("skills", [])
+                    description = bundle.get("description") or f"Load {len(skills)} skills"
+                    lines.append(f"/{bundle['slug']} — {description} ({len(skills)} skills)")
+                    lines.extend(f"    · {skill}" for skill in skills)
+                lines.extend(["", "Invoke a bundle with /<slug>. Manage with `superforecasting-agent bundles`."])
+                output = "\n".join(lines)
+            return _ok(rid, {"type": "exec", "output": output})
+        except Exception as exc:
+            return _err(rid, 5030, f"Bundle subsystem unavailable: {exc}")
+
     if name == "toolsets":
         from superforecasting_agent.tooling.inventory import toolset_inventory
         from tui_gateway.tools_rpc import _session_toolsets

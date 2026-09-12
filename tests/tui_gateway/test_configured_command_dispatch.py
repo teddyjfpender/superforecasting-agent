@@ -347,3 +347,41 @@ def test_toolset_command_shares_cli_inventory_without_worker(configure, monkeypa
     }
     server._SlashWorker.assert_not_called()
     server._start_agent_build.assert_not_called()
+
+
+
+def test_profile_command_matches_classic_identity_without_agent(configure, monkeypatch, capsys):
+    from superforecasting_agent.runtime.maintenance_commands import _handle_profile_command
+
+    configure({})
+    monkeypatch.setattr("superforecasting_agent.constants.get_active_profile_name", lambda: "fixture-profile")
+    monkeypatch.setattr("superforecasting_agent.constants.display_agent_home", lambda: "~/fixture-profile")
+    result = dispatch("profile")["result"]
+    _handle_profile_command(None)
+    assert "\n".join(line.removeprefix("  ") for line in capsys.readouterr().out.strip("\n").splitlines()) == result["output"]
+    assert result["type"] == "exec"
+    assert slash("profile")["error"]["data"]["dispatch"] == "command.dispatch"
+    server._start_agent_build.assert_not_called()
+    server._SlashWorker.assert_not_called()
+
+
+@pytest.mark.parametrize("installed", [False, True])
+def test_native_bundle_inspection_reads_shared_inventory(configure, monkeypatch, tmp_path, installed):
+    from agent.skill_bundles import save_bundle
+
+    configure({})
+    monkeypatch.setenv("HERMES_BUNDLES_DIR", str(tmp_path))
+    if installed:
+        save_bundle("review-pack", skills=["research", "calibration"], description="Review sources")
+    result = dispatch("bundles")["result"]
+    assert result["type"] == "exec"
+    if installed:
+        assert "/review-pack — Review sources (2 skills)" in result["output"]
+        assert "· research" in result["output"]
+        assert "· calibration" in result["output"]
+    else:
+        assert "No skill bundles installed." in result["output"]
+        assert str(tmp_path) in result["output"]
+    assert slash("bundles")["error"]["data"]["dispatch"] == "command.dispatch"
+    server._start_agent_build.assert_not_called()
+    server._SlashWorker.assert_not_called()

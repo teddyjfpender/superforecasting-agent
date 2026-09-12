@@ -1646,3 +1646,18 @@ Validation: 48 configuration/contract tests passed
 (`/tmp/forecast-config-registry-tests.log`). Python quality passed, including all
 35 import contracts (`/tmp/forecast-config-registry-quality.log`). No setting
 values, defaults or compatibility aliases were changed.
+
+### Native profile and bundle inspection
+
+`/profile` and `/bundles` now use native command dispatch. Profile identity comes
+from the same profile-aware constants as classic CLI; bundle listing uses the
+existing shared bundle inventory. The RPC adapter only renders those results.
+Both commands hand off from legacy RPC before model/worker construction. This
+lets a terminal attached to a remote host inspect that host's profile and bundles
+without starting a second classic CLI runtime.
+
+Validation: 80 native-command/shared-bundle tests passed
+(`/tmp/forecast-profile-bundle-native-tests.log`), including CLI profile output
+parity and real temporary-directory bundle inventory/empty state. Python quality
+and all 35 import contracts passed (`/tmp/forecast-profile-bundle-native-quality.log`).
+Other legacy command routes remain.
