@@ -439,7 +439,7 @@ def _(rid, params: dict) -> dict:
             max_turns = int(goals_cfg.get("max_turns", 20) or 20)
         except Exception:
             max_turns = 20
-        mgr = GoalManager(session_id=sid_key, default_max_turns=max_turns)
+        mgr = GoalManager(session_id=sid_key, default_max_turns=max_turns, database_provider=_core._get_db)
         if name == "subgoal":
             from superforecasting_agent.runtime.subgoal_commands import execute_subgoal
 

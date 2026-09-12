@@ -146,6 +146,8 @@ class SessionDB:
         for attempt in range(self._WRITE_MAX_RETRIES):
             try:
                 with self._lock:
+                    if self._conn is None:
+                        raise sqlite3.ProgrammingError("Cannot operate on a closed database.")
                     self._conn.execute("BEGIN IMMEDIATE")
                     try:
                         result = fn(self._conn)

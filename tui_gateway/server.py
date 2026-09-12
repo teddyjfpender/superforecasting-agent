@@ -4043,6 +4043,7 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
                         goal_mgr = GoalManager(
                             session_id=sid_key,
                             default_max_turns=goal_max_turns,
+                            database_provider=_get_db,
                         )
                         if goal_mgr.is_active():
                             decision = goal_mgr.evaluate_after_turn(

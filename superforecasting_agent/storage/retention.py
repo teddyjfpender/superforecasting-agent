@@ -204,6 +204,8 @@ def prune_sessions(
 def get_meta(self, key: str) -> Optional[str]:
     """Read a value from the state_meta key/value store."""
     with self._lock:
+        if self._conn is None:
+            raise sqlite3.ProgrammingError("Cannot operate on a closed database.")
         row = self._conn.execute(
             "SELECT value FROM state_meta WHERE key = ?", (key,)
         ).fetchone()

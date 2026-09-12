@@ -36,7 +36,7 @@ import re
 import time
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -486,11 +486,23 @@ class GoalManager:
       feed back into ``run_conversation``.
     """
 
-    def __init__(self, session_id: str, *, default_max_turns: int = DEFAULT_MAX_TURNS):
+    def __init__(
+        self, session_id: str, *, default_max_turns: int = DEFAULT_MAX_TURNS,
+        database_provider: Optional[Callable[[], Any]] = None,
+    ):
         self.session_id = session_id
         self.default_max_turns = int(default_max_turns or DEFAULT_MAX_TURNS)
-        self._state: Optional[GoalState] = load_goal(session_id)
-        self._expected_state = self._state.to_json() if self._state is not None else None
+        self._database = (database_provider or _get_session_db)()
+        if self._database is None:
+            raise RuntimeError("Goal storage is unavailable")
+        self._refresh()
+
+    def _refresh(self) -> None:
+        """Read from this manager's bound database, never a replacement profile."""
+        raw = self._database.get_meta(_meta_key(self.session_id))
+        state = GoalState.from_json(raw) if raw else None
+        self._expected_state = state.to_json() if state is not None else None
+        self._state = state if state is not None and state.status != "cleared" else None
 
     def _persist(self, state: GoalState, *, expected_state: Optional[str] = None) -> None:
         """Reject stale manager writes, including verdicts from an older judge."""
@@ -504,13 +516,13 @@ class GoalManager:
             return value
 
         try:
-            db = _get_session_db()
-            if db is None:
-                raise RuntimeError("Goal storage is unavailable")
-            db.mutate_meta(_meta_key(self.session_id), update)
+            self._database.mutate_meta(_meta_key(self.session_id), update)
         except Exception:
-            self._state = load_goal(self.session_id)
-            self._expected_state = self._state.to_json() if self._state is not None else None
+            try:
+                self._refresh()
+            except Exception:
+                self._state = None
+                self._expected_state = None
             raise
         self._state = state
         self._expected_state = value
@@ -520,15 +532,19 @@ class GoalManager:
 
     @property
     def state(self) -> Optional[GoalState]:
+        self._refresh()
         return self._state
 
     def is_active(self) -> bool:
+        self._refresh()
         return self._state is not None and self._state.status == "active"
 
     def has_goal(self) -> bool:
+        self._refresh()
         return self._state is not None and self._state.status in {"active", "paused"}
 
     def status_line(self) -> str:
+        self._refresh()
         s = self._state
         if s is None or s.status in {"cleared",}:
             return "No active goal. Set one with /goal <text>."
@@ -546,6 +562,7 @@ class GoalManager:
     # --- mutation -----------------------------------------------------
 
     def set(self, goal: str, *, max_turns: Optional[int] = None) -> GoalState:
+        self._refresh()
         goal = (goal or "").strip()
         if not goal:
             raise ValueError("goal text is empty")
@@ -562,6 +579,7 @@ class GoalManager:
         return state
 
     def pause(self, reason: str = "user-paused") -> Optional[GoalState]:
+        self._refresh()
         if not self._state:
             return None
         self._state.status = "paused"
@@ -570,6 +588,7 @@ class GoalManager:
         return self._state
 
     def resume(self, *, reset_budget: bool = True) -> Optional[GoalState]:
+        self._refresh()
         if not self._state:
             return None
         self._state.status = "active"
@@ -580,6 +599,7 @@ class GoalManager:
         return self._state
 
     def clear(self) -> None:
+        self._refresh()
         if self._state is None:
             return
         self._state.status = "cleared"
@@ -587,6 +607,7 @@ class GoalManager:
         self._state = None
 
     def mark_done(self, reason: str) -> None:
+        self._refresh()
         if not self._state:
             return
         self._state.status = "done"
@@ -602,7 +623,8 @@ class GoalManager:
 
         Returns the cleaned text so the caller can show it back to the user.
         """
-        if self._state is None or not self.has_goal():
+        self._refresh()
+        if self._state is None or self._state.status not in {"active", "paused"}:
             raise RuntimeError("no active goal")
         text = (text or "").strip()
         if not text:
@@ -613,7 +635,8 @@ class GoalManager:
 
     def remove_subgoal(self, index_1based: int) -> str:
         """Remove a subgoal by 1-based index. Returns the removed text."""
-        if self._state is None or not self.has_goal():
+        self._refresh()
+        if self._state is None or self._state.status not in {"active", "paused"}:
             raise RuntimeError("no active goal")
         idx = int(index_1based) - 1
         if idx < 0 or idx >= len(self._state.subgoals):
@@ -626,7 +649,8 @@ class GoalManager:
 
     def clear_subgoals(self) -> int:
         """Wipe all subgoals. Returns the previous count."""
-        if self._state is None or not self.has_goal():
+        self._refresh()
+        if self._state is None or self._state.status not in {"active", "paused"}:
             raise RuntimeError("no active goal")
         prev = len(self._state.subgoals)
         self._state.subgoals = []
@@ -635,6 +659,7 @@ class GoalManager:
 
     def render_subgoals(self) -> str:
         """Public helper for the /subgoal slash command."""
+        self._refresh()
         if self._state is None:
             return "(no active goal)"
         if not self._state.subgoals:
@@ -663,6 +688,7 @@ class GoalManager:
           - ``reason``: str
           - ``message``: user-visible one-liner to print/send
         """
+        self._refresh()
         state = self._state
         if state is None or state.status != "active":
             return {
@@ -768,6 +794,7 @@ class GoalManager:
         }
 
     def next_continuation_prompt(self) -> Optional[str]:
+        self._refresh()
         if not self._state or self._state.status != "active":
             return None
         if self._state.subgoals:

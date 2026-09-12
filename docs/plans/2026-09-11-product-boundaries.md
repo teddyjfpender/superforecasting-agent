@@ -1542,3 +1542,26 @@ state parity. Python quality and 32 import contracts passed
 (`/tmp/forecast-goal-storage-quality.log`). Goal database cache ownership and
 long-lived manager read refresh remain separate follow-up; the low-level public
 `save_goal` compatibility helper retains its existing behavior.
+
+### Host-bound goal storage and fresh manager reads
+
+GoalManager accepts a database provider, acquires its connection once, and keeps
+that storage identity for its lifetime. Native goal/subgoal commands and TUI
+post-turn judging supply the host's store. A missing supplied store fails instead
+of falling back to the compatibility connection cache; a closed connection is
+never reopened. Manager reads, controls and judging refresh current durable state.
+Newer criteria and external pause/clear changes are visible to long-lived managers,
+while in-flight verdicts still retain their frozen expected state for atomic
+stale-write rejection. Closed metadata reads and write transactions now report a
+SQLite closed-database error instead of a NoneType attribute error.
+
+Validation: 84 goal/TUI/storage tests passed
+(`/tmp/forecast-goal-owner-qualified-tests.log`), including a supplied store that
+closes, a missing store, long-lived readers and current criteria entering the
+judge. Python quality is recorded in `/tmp/forecast-goal-owner-final-quality.log`.
+The legacy default goal DB cache remains for non-host callers and is still an
+ownership follow-up.
+
+The integrated command/notification batch `cfcbbe136` passed 30,848 Python tests,
+148 skipped, 58 warnings in 590.25 seconds and pushed successfully
+(`/tmp/forecast-command-host-push.log`). Later goal changes require their own gate.
