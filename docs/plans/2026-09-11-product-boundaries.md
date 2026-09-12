@@ -2504,3 +2504,22 @@ process aliases never change. Nested scopes unwind on exceptions. 48 focused tes
 and the expanded 559 Kanban tests passed (one skip); shared Python quality checks
 passed. This removes a prerequisite concurrency bug; run_slash still captures
 process-global stdout/stderr and is not yet safe for native concurrent RPC use.
+
+
+### Command output does not replace process streams
+
+Kanban's shared run_slash operation no longer uses redirect_stdout/stderr. Its
+handlers emit through request-local output routing; a small argparse subclass
+sends nested help/errors through the same owner. Explicit non-console output
+files remain explicit destinations. Standard CLI execution prints normally, and
+existing CLI/messaging callers retain the same returned output. Captures nest and
+reset on exceptions without changing process streams. No global parser methods
+or builtins are patched. The output owner is covered by strict checks and a
+transitive dependency prohibition.
+
+561 Kanban tests passed with one skip, including overlapping requests with
+independent board/output contexts, unchanged stdout/stderr identity and nested
+capture failure. Shared quality checks passed before the final contract addition;
+the commit gate verifies the resulting 46-contract tree. Native TUI Kanban routing
+remains unfinished: long-running daemon/watch operations need host lifetime and
+cancellation admission, not an unbounded call on an RPC worker.

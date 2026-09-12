@@ -678,3 +678,9 @@ name = "snapshot storage never imports CLI management or consumers"
 type = "forbidden"
 source_modules = ["superforecasting_agent.storage.snapshots"]
 forbidden_modules = ["superforecasting_agent.runtime", "cli", "gateway", "tui_gateway", "agent"]
+
+[[tool.importlinter.contracts]]
+name = "command output owns no application state or product runtime"
+type = "forbidden"
+source_modules = ["superforecasting_agent.application.command_output"]
+forbidden_modules = ["superforecasting_agent.runtime", "superforecasting_agent.storage", "forecasting", "agent", "tools", "cli", "gateway", "tui_gateway"]

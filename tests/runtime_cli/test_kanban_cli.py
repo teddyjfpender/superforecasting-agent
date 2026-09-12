@@ -572,3 +572,47 @@ def test_nested_board_scope_restores_selection_on_exception(kanban_home, monkeyp
         assert kb.get_current_board() == "alpha"
     assert kb.get_current_board() == "beta"
     assert os.environ["SUPERFORECASTING_AGENT_KANBAN_BOARD"] == "beta"
+
+
+def test_concurrent_slash_outputs_do_not_replace_process_streams(kanban_home, monkeypatch, capsys):
+    import sys
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    kb.create_board("alpha")
+    kb.create_board("beta")
+    streams = sys.stdout, sys.stderr
+    barrier = Barrier(2, timeout=5)
+
+    def listing(args):
+        barrier.wait()
+        assert (sys.stdout, sys.stderr) == streams
+        kc._emit("output-" + kb.get_current_board())
+        kc._emit("error-" + kb.get_current_board(), file=sys.stderr)
+        barrier.wait()
+        return 0
+
+    monkeypatch.setattr(kc, "_cmd_list", listing)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda board: kc.run_slash(f"--board {board} list"), ["alpha", "beta"]))
+    assert results == ["output-alpha\nerror-alpha", "output-beta\nerror-beta"]
+    assert (sys.stdout, sys.stderr) == streams
+    assert capsys.readouterr().out == ""
+
+
+def test_nested_command_capture_restores_outer_on_failure():
+    import io
+    from superforecasting_agent.application.command_output import capture_output, emit
+
+    explicit = io.StringIO()
+    with capture_output() as (outer, _):
+        emit("outer-before")
+        with pytest.raises(RuntimeError):
+            with capture_output() as (inner, _):
+                emit("inner")
+                emit("explicit", file=explicit)
+                raise RuntimeError("interrupted")
+        emit("outer-after")
+    assert outer.getvalue() == "outer-before\nouter-after\n"
+    assert inner.getvalue() == "inner\n"
+    assert explicit.getvalue() == "explicit\n"
