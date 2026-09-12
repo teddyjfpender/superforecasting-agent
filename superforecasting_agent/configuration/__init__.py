@@ -183,7 +183,7 @@ def _merge_user_config(user_config: Dict[str, Any]) -> Dict[str, Any]:
         user_config.pop("max_turns", None)
 
     # Promote explicit model.model before defaults can shadow it.
-    if isinstance(user_config.get("model"), dict):
+    if not isinstance(user_config.get("model"), (str, type(None))):
         user_config["model"] = model_section(user_config)
     return _deep_merge(copy.deepcopy(DEFAULT_CONFIG), user_config)
 

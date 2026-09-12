@@ -2359,3 +2359,25 @@ The expanded runtime/CLI/TUI/AppConfig run passed 5,561 tests with 10 skips.
 Shared quality checks passed with 44 import contracts kept and none broken.
 The seven extracted normalization/lookup helper bodies were also compared by
 AST: identical apart from removing the import of their now-local model helper.
+
+
+### Domain profile reads leave CLI management
+
+Shared storage now provides read_configuration through the existing raw profile
+owner and independent value normalizer. It respects active profiles and all
+ignore-config aliases, returns independent dictionaries, expands the current
+environment on each read, and never creates a missing profile. Normalized values
+are not revision-bearing save snapshots. Invalid model lists, booleans and numbers
+now fail shared normalization instead of leaking into runtime settings; file
+readers retain their established fallback to defaults and report invalid input.
+
+Hook policy, estimate-first policy, model skill-weight settings and market
+deviation thresholds use this owner. Four frozen domain-to-runtime exceptions
+are removed (21 to 17). Other readers and legacy file-management caching remain.
+
+109 configuration/storage tests passed. The broader forecasting run passed 3,671
+tests with 11 skips and two numerical backend failures: the isolated environment
+lacked the declared NumPy 2.4.3 full-test dependency. After installing that exact
+dependency, both numerical modules and the new profile tests passed (63 tests).
+Shared Python quality checks passed, including all 44 import contracts. This
+is focused verification, not a new full-repository gate or release qualification.

@@ -92,3 +92,28 @@ class ProfileConfiguration:
         with self._lock:
             self._snapshot = None
             self.last_error = None
+
+
+_value_reader = ProfileConfiguration()
+
+
+def read_configuration(path: Path | None = None) -> dict[str, Any]:
+    """Read normalized runtime values without CLI initialization or file writes.
+
+    Returned values are independent and are not revision-bearing persistence
+    snapshots. Missing or malformed profiles retain the established defaults;
+    the raw reader reports file errors. Ignore-user-config flags apply here too.
+    """
+    from superforecasting_agent.configuration import resolve_config
+    from superforecasting_agent.constants import get_agent_home
+    from superforecasting_agent.profile_paths import ignore_user_config_requested
+
+    if ignore_user_config_requested():
+        return resolve_config({})
+    target = path if path is not None else Path(get_agent_home()) / "config.yaml"
+    raw = _value_reader.load(target)
+    try:
+        return resolve_config(raw)
+    except (TypeError, ValueError) as exc:
+        logger.warning("Configuration values unavailable at %s: %s", target, exc)
+        return resolve_config({})

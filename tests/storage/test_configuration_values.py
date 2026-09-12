@@ -1,0 +1,102 @@
+"""Read-only normalized profile access without CLI lifecycle side effects."""
+
+import json
+
+import pytest
+import yaml
+
+from superforecasting_agent.storage.configuration import read_configuration
+
+
+def test_missing_profile_returns_defaults_without_creating_home(tmp_path):
+    from superforecasting_agent.configuration import resolve_config
+
+    home = tmp_path / "missing-home"
+    assert read_configuration(home / "config.yaml") == resolve_config({})
+    assert not home.exists()
+
+
+def test_profile_switching_and_returned_mutation_do_not_leak(tmp_path, monkeypatch):
+    first, second = tmp_path / "first", tmp_path / "second"
+    for home, model in [(first, "first-model"), (second, "second-model")]:
+        home.mkdir()
+        (home / "config.yaml").write_text(json.dumps({"model": model}), encoding="utf-8")
+
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", str(first))
+    values = read_configuration()
+    assert values["model"] == "first-model"
+    values["terminal"]["backend"] = "mutated"
+    assert read_configuration()["terminal"]["backend"] == "local"
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", str(second))
+    assert read_configuration()["model"] == "second-model"
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", str(first))
+    assert read_configuration()["model"] == "first-model"
+
+
+@pytest.mark.parametrize("contents", ["model: [", "- invalid-root", "model: [invalid-model]"])
+def test_malformed_profile_uses_defaults_and_recovers(tmp_path, contents):
+    from superforecasting_agent.configuration import resolve_config
+
+    path = tmp_path / "config.yaml"
+    path.write_text(contents, encoding="utf-8")
+    assert read_configuration(path) == resolve_config({})
+    path.write_text("model: repaired\n", encoding="utf-8")
+    assert read_configuration(path)["model"] == "repaired"
+
+
+@pytest.mark.parametrize("flag", [
+    "SUPERFORECASTING_AGENT_IGNORE_USER_CONFIG", "FORECAST_IGNORE_USER_CONFIG",
+    "HERMES_IGNORE_USER_CONFIG",
+])
+def test_ignore_config_flags_apply_without_reading_profile(tmp_path, monkeypatch, flag):
+    from superforecasting_agent.configuration import resolve_config
+    from superforecasting_agent.storage import configuration
+
+    monkeypatch.setenv(flag, "1")
+    monkeypatch.setattr(configuration._value_reader, "load",
+                        lambda path: pytest.fail("ignored configuration was read"))
+    assert read_configuration(tmp_path / "config.yaml") == resolve_config({})
+
+
+def test_domain_consumers_share_profile_values(tmp_path, monkeypatch):
+    from forecasting.hooks.engine import load_hook_config
+    from forecasting.ledger.model_scoring import _skill_weights_enabled
+    from forecasting.ledger.snapshots import _market_deviation_threshold_pp
+    from forecasting.protocol import _estimate_first_enabled
+
+    home = tmp_path / "active-profile"
+    home.mkdir()
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", str(home))
+    path = home / "config.yaml"
+    raw = {
+        "forecasting": {
+            "hooks": {"enabled": False},
+            "models": {"skill_weights": False},
+            "practice": {"estimate_first": True},
+        },
+        "quorum": {"market_anchor_deviation_pp": 7.5},
+    }
+    path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+    assert load_hook_config()["enabled"] is False
+    assert _skill_weights_enabled(None) is False
+    assert _estimate_first_enabled() is True
+    assert _market_deviation_threshold_pp() == 7.5
+    assert list(home.iterdir()) == [path]
+
+
+@pytest.mark.parametrize("invalid", [[], ["model"], False, 12])
+def test_shared_normalization_rejects_invalid_model_shapes(invalid):
+    from superforecasting_agent.configuration import resolve_config
+
+    with pytest.raises(ValueError, match="model configuration must be a string or mapping"):
+        resolve_config({"model": invalid})
+
+
+def test_cached_raw_profile_expands_current_environment(tmp_path, monkeypatch):
+    path = tmp_path / "config.yaml"
+    path.write_text('model: "${FORECAST_TEST_PROFILE_MODEL}"\n', encoding="utf-8")
+    monkeypatch.setenv("FORECAST_TEST_PROFILE_MODEL", "first")
+    assert read_configuration(path)["model"] == "first"
+    monkeypatch.setenv("FORECAST_TEST_PROFILE_MODEL", "second")
+    assert read_configuration(path)["model"] == "second"
+    assert "${FORECAST_TEST_PROFILE_MODEL}" in path.read_text(encoding="utf-8")
