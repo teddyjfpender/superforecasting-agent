@@ -4521,3 +4521,19 @@ failed before the change and passes afterward; all 220 delegation/command/protoc
 tests passed. This establishes the lookup failure mechanism, not which preceding
 full-suite test originally left module references inconsistent. No gate was
 bypassed. The retired-worker deletion is integrated for the next push attempt.
+
+### Structured source dispatch without agent execution
+
+Moved adapter routing and option forwarding from the forecasting tool into
+`forecasting/sources/dispatch.py`; market refresh now calls that shared owner.
+Removed the frozen market-model-to-forecasting-tool import exception. Enforcing
+the new transitive source boundary exposed configuration diagnostics as an
+indirect route back into agents and tools. Extracted the read-only layered
+configuration reader into storage, with one shared singleton and compatibility
+exports; diagnostic report generation remains separate. Dispatch joins strict
+lint, format and type coverage; storage already has directory-wide coverage.
+
+Validation: 306 focused tests passed, covering tool ingestion, market refresh,
+configuration, themes, source contracts and injected forbidden dependencies.
+A fresh-process test blocks execution-layer imports while loading dispatch.
+Adapter option coercion and settlement semantics are unchanged by this move.

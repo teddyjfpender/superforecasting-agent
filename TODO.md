@@ -9,6 +9,12 @@ changes, tests and their limits. The previous checklist is preserved in the
 
 ## 1. Finish application and product boundaries
 
+- [x] Give structured source dispatch one owner independent of agent tools.
+  Market refresh and evidence ingestion share `forecasting/sources/dispatch.py`.
+  Read-only forecast configuration lives in storage; diagnostic runtime imports
+  remain in the compatibility facade. A transitive import contract blocks source
+  dispatch from importing execution and presentation layers.
+
 - [x] Remove the classic slash-worker implementation and cleanup scaffolding.
   TUI command execution no longer constructs or calls it. Every catalog command
   has a native backend or Ink owner, enforced by a cross-language parity test.

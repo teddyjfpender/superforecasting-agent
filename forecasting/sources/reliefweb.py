@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 import re
 from urllib.parse import urlencode, urlparse
-from forecasting import appconfig
+from superforecasting_agent.storage import forecast_configuration as appconfig
 from forecasting.models import ValidationError, parse_timestamp, timestamp_to_datetime
 from .public_records import ReliefWebReport
 from .dates import _optional_iso_timestamp

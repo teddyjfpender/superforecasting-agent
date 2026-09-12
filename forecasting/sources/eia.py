@@ -6,7 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import parse_qsl, quote, unquote, urlencode, urlparse
 
-from forecasting import appconfig
+from superforecasting_agent.storage import forecast_configuration as appconfig
 from forecasting.models import ValidationError, parse_timestamp, timestamp_to_datetime
 from .economic_records import EiaObservation
 from .eia_parser import (

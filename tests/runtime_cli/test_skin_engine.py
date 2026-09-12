@@ -428,13 +428,12 @@ class TestAgentNameBranding:
     def _build(self, environ):
         from superforecasting_agent.runtime import skin_engine as se
         from forecasting import appconfig
-        from forecasting.appconfig import AppConfig
 
-        appconfig._config = AppConfig(environ=environ, config_file={})
+        appconfig.configure(environ=environ, config_file={})
         try:
             return se._build_skin_config(se._BUILTIN_SKINS["default"])
         finally:
-            appconfig._config = AppConfig()
+            appconfig.configure()
 
     def test_unset_name_keeps_product_default(self, tmp_path, monkeypatch):
         monkeypatch.setattr("superforecasting_agent.constants.get_agent_home", lambda: tmp_path)
@@ -447,12 +446,11 @@ class TestAgentNameBranding:
     def test_custom_skin_theme_name_is_respected(self, tmp_path, monkeypatch):
         from superforecasting_agent.runtime import skin_engine as se
         from forecasting import appconfig
-        from forecasting.appconfig import AppConfig
 
         monkeypatch.setattr("superforecasting_agent.constants.get_agent_home", lambda: tmp_path)
-        appconfig._config = AppConfig(environ={"AGENT_NAME": "Ada"}, config_file={})
+        appconfig.configure(environ={"AGENT_NAME": "Ada"}, config_file={})
         try:
             custom = {"name": "custom", "branding": {"agent_name": "Nyx"}}
             assert se._build_skin_config(custom).branding["agent_name"] == "Nyx"
         finally:
-            appconfig._config = AppConfig()
+            appconfig.configure()

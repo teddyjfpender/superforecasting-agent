@@ -397,7 +397,6 @@ ignore_imports = [
     "forecasting.collab.directory -> tools.slack_tool",
     "forecasting.cron_runner -> tools.forecasting_tool",
     "forecasting.jobs.types.refresh -> tools.forecasting_tool",
-    "forecasting.market_model -> tools.forecasting_tool",
     "forecasting.market_model -> tools.market_presentation_tool",
     "forecasting.market_model -> tools.terminal_tool",
     "forecasting.notify -> tools.slack_tool",
@@ -768,3 +767,10 @@ type = "forbidden"
 source_modules = ["superforecasting_agent.hosting.background"]
 forbidden_modules = ["gateway", "tui_gateway", "cli"]
 allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "structured source dispatch never imports agent execution or presentation"
+type = "forbidden"
+source_modules = ["forecasting.sources.dispatch"]
+forbidden_modules = ["tools", "agent", "cli", "tui_gateway", "gateway", "forecasting.cli", "forecasting.application"]
+allow_indirect_imports = false

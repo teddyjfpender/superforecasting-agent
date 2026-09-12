@@ -18,7 +18,7 @@ from urllib.request import Request, urlopen
 from typing import Any
 from xml.etree import ElementTree
 
-from forecasting import appconfig
+from superforecasting_agent.storage import forecast_configuration as appconfig
 from forecasting.models import OutcomeSpace, ValidationError, parse_timestamp, timestamp_to_datetime
 from forecasting.pm import polymarket as _pm_polymarket
 from forecasting.observation_freshness import (

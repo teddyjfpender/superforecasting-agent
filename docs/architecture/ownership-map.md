@@ -762,3 +762,17 @@ refreshing while open and retaining a visible stale-state warning if inspection
 fails. Session changes clear the snapshot. Cleanup-pending records remain visible
 until the backend confirms successful disposal; the display points users to /stop.
 The protocol now names record kind and permits fractional Unix start timestamps.
+
+### Structured acquisition and configuration reads
+
+`forecasting/sources/dispatch.py` owns adapter selection and option forwarding
+for both market-model refresh and the forecasting tool. Fetchers and parsers
+retain their source-specific contracts; callers own evidence persistence.
+A transitive import gate prevents dispatch from loading tools, agents, CLI,
+gateways or forecasting application orchestration.
+
+`superforecasting_agent/storage/forecast_configuration.py` owns the layered
+forecast configuration reader and its process singleton. `forecasting/appconfig.py`
+re-exports that API and retains diagnostics, including optional runtime checks.
+Source adapters use the storage reader directly, sharing overrides and profile
+selection with existing callers without importing diagnostics.

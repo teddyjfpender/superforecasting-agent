@@ -25,6 +25,7 @@ STRICT_PYTHON = (
     "superforecasting_agent/configuration",
     "tools/environments/configuration.py",
     "forecasting/appconfig.py",
+    "forecasting/sources/dispatch.py",
     "forecasting/configuration",
     "superforecasting_agent/tooling",
     "superforecasting_agent/runtime/subgoal_commands.py",

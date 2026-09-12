@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from urllib.parse import quote, urlencode
 
-from forecasting import appconfig
+from superforecasting_agent.storage import forecast_configuration as appconfig
 from forecasting.models import ValidationError
 from .economic_records import BlsObservation
 from .dates import _fred_date

@@ -331,7 +331,7 @@ def _repull_series(spec: dict) -> tuple[list[dict], list[str]]:
             reasons.append("spec has no data series")
         return [], reasons
     try:
-        from tools.forecasting_tool import _load_source_adapter_items  # type: ignore
+        from forecasting.sources.dispatch import load_source_items
     except Exception:
         return [], reasons + ["data-adapter layer unavailable in this build"]
 
@@ -350,7 +350,7 @@ def _repull_series(spec: dict) -> tuple[list[dict], list[str]]:
     for s in runnable:
         tag = f"{s['source_type']}:{s['source']}"
         try:
-            items = _load_source_adapter_items(s["source_type"], s["source"], {"limit": int(s.get("limit") or 60)})
+            items = load_source_items(s["source_type"], s["source"], {"limit": int(s.get("limit") or 60)})
         except Exception as e:
             reasons.append(f"{tag} fetch error: {_clean_text(str(e), limit=80)}")
             continue
