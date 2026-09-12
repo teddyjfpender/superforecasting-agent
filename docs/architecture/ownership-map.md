@@ -430,3 +430,21 @@ callbacks; its historical routing helper delegates to the shared policy.
 decisions and session exclusion. Transport adapters supply formatting and delivery
 callbacks. A transitive import contract prohibits presentation, runtime, agent and
 tool implementation dependencies from this owner.
+
+
+### Numerical backend installation boundary
+
+`forecasting.bayes_toolkit` and `forecasting.market_compute` load installed
+scientific libraries but never run package installers. Their compatibility
+`ensure_industry_backends` functions now probe/load only. Core algorithms retain
+the existing standard-library fallbacks; advanced models report degraded results
+when their backend is unavailable. Installation belongs to environment setup.
+For an existing virtual environment, optional backends can be installed explicitly:
+
+```sh
+python -m pip install 'scipy==1.16.2' 'statsmodels==0.14.5'
+```
+
+Use that environment's Python, then restart the backend so availability probes
+reflect the new installation. The existing optional installer group names remain
+for compatibility; forecast refresh and numerical calls no longer invoke them.

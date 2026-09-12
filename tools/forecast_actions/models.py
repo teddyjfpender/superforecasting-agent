@@ -190,7 +190,7 @@ def bayes(args: dict[str, Any], ledger) -> str:
             + ")",
             success=False,
         )
-    # Provision NumPy/SciPy on first use; falls back to stdlib offline.
+    # Load installed NumPy/SciPy; fall back to stdlib without installing.
     ensure_industry_backends()
     payload = args.get("bayes_payload") or {}
     if not isinstance(payload, dict):

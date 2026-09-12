@@ -407,7 +407,6 @@ source_modules = ["forecasting"]
 forbidden_modules = ["tools"]
 allow_indirect_imports = "true"
 ignore_imports = [
-    "forecasting.bayes_toolkit -> tools.lazy_deps",
     "forecasting.cli.connect_admin -> tools.slack_tool",
     "forecasting.cli.core -> tools.forecasting_tool",
     "forecasting.cli.questions_admin -> tools.forecasting_tool",
@@ -418,7 +417,6 @@ ignore_imports = [
     "forecasting.collab.directory -> tools.slack_tool",
     "forecasting.cron_runner -> tools.forecasting_tool",
     "forecasting.jobs.types.refresh -> tools.forecasting_tool",
-    "forecasting.market_compute -> tools.lazy_deps",
     "forecasting.market_model -> tools.forecasting_tool",
     "forecasting.market_model -> tools.market_presentation_tool",
     "forecasting.market_model -> tools.terminal_tool",

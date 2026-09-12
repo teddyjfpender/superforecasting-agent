@@ -3,9 +3,9 @@
 Every number a Market Model presents is computed here, not narrated by the LLM,
 so results are auditable + reproducible (seeded). Mirrors the numpy-optional
 contract of ``forecasting/bayes_toolkit.py``: pure-Python/stdlib math by default,
-NumPy/SciPy accelerate when present (auto-provisioned via the ``forecast.bayes``
-lazy group), and the advanced econometrics families use statsmodels when present
-(``market.econometrics`` group) else return a typed ``degraded`` result.
+Installed NumPy/SciPy accelerate supported operations. Advanced econometric
+families use installed statsmodels or return a typed ``degraded`` result.
+Numerical operations never install dependencies.
 
 Each ``compute(model_type, payload)`` call returns:
     {"ok": bool, "block": <presentation block dict>, "degraded": bool,
@@ -48,7 +48,7 @@ def _get_scipy_stats():
 
 
 # statsmodels drags scipy in at import time and is only needed for the advanced
-# econometric families; keep it off the hot import path and provision it lazily
+# econometric families; keep it off the hot import path and load it lazily
 # via ``ensure_econometrics``. The sentinel stays ``None`` until then.
 _sm = None
 
@@ -65,22 +65,16 @@ def backends() -> dict[str, bool]:
     # rather than the lazy sentinel — the module docstring calls this out as an
     # intended trigger ("or when a diagnostic queries availability"), and it
     # matches ``bayes_toolkit.using_industry_libraries``. statsmodels stays a raw
-    # sentinel: it is only provisioned (heavily) via ``ensure_econometrics`` for
+    # sentinel: it is only loaded via ``ensure_econometrics`` for
     # the advanced families, so backends() must not drag it in.
     return {"numpy": _np is not None, "scipy": _get_scipy_stats() is not None, "statsmodels": _sm is not None}
 
 
 def ensure_industry_backends() -> dict[str, bool]:
-    """Provision numpy+scipy (forecast.bayes). No-op once present; safe offline."""
+    """Load installed numpy/scipy; computations never install packages."""
     global _np, _scipy_stats, _scipy_stats_probed
     if _np is not None and _get_scipy_stats() is not None:
         return backends()
-    try:
-        from tools.lazy_deps import ensure as _ensure
-
-        _ensure("forecast.bayes", prompt=False)
-    except Exception:
-        pass
     if _np is None:
         try:  # pragma: no cover
             import numpy as _m
@@ -100,27 +94,17 @@ def ensure_industry_backends() -> dict[str, bool]:
 
 
 def ensure_econometrics() -> dict[str, bool]:
-    """Provision statsmodels (market.econometrics) for advanced families."""
+    """Load installed statsmodels for advanced families, without provisioning."""
     global _sm
     ensure_industry_backends()
     if _sm is None:
         # Fast path: statsmodels already installed → import without touching
-        # lazy_deps (matches the old eager-import behavior for present installs).
+        # package installation. Missing backends keep the degraded-result path.
         try:  # pragma: no cover - depends on environment
             import statsmodels.api as _m0  # noqa: N813
 
             _sm = _m0
         except Exception:
-            pass
-    if _sm is None:
-        try:
-            from tools.lazy_deps import ensure as _ensure
-
-            _ensure("market.econometrics", prompt=False)
-            import statsmodels.api as _m  # noqa: N813
-
-            _sm = _m
-        except Exception:  # pragma: no cover - depends on environment
             pass
     return backends()
 

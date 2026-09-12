@@ -1822,3 +1822,19 @@ mutation/redaction/CLI tests remain unchanged.
 
 Validation: 19 API-key tests and the shared Python quality checks passed,
 including all 36 import contracts. Other domain configuration exceptions remain.
+
+
+### Numerical domain code does not provision packages
+
+Removed implicit package installation from Bayesian and Market Model backend
+loading, including ledger refresh callers. Installed NumPy/SciPy/statsmodels
+remain usable, and existing fallback/degraded behavior is retained. Setup
+instructions document explicit optional installation. This intentionally changes
+missing-backend behavior: a computation no longer mutates its Python environment
+or waits for pip/network access. Two domain-to-tools import exceptions are removed.
+
+Validation: 80 numerical/refresh tests passed, one optional SciPy parity test
+skipped because SciPy is unavailable. New tests block optional imports and record
+any attempted tool installer import, proving absent packages do not trigger
+installation even through compatibility backend-loading functions. Python quality
+and all 36 import contracts passed.

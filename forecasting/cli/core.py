@@ -6771,7 +6771,7 @@ def _cmd_bayes(args: argparse.Namespace) -> None:
         print("forecast bayes: payload must be a JSON object", file=sys.stderr)
         raise SystemExit(2)
 
-    # Provision NumPy/SciPy on first use; the toolkit falls back to stdlib math
+    # Load installed NumPy/SciPy; the toolkit falls back to stdlib math
     # offline so this never blocks the command.
     ensure_industry_backends()
     outcome = run_bayes_action(action, payload)
