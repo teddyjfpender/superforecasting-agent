@@ -12,7 +12,7 @@ changes, tests and their limits. The previous checklist is preserved in the
 - [ ] Migrate remaining classic slash-worker commands to shared operations.
   The TUI must not need a second classic CLI runtime to execute business behavior.
   Native handoff now uses host/session admission and the shared waiter: local timeouts now cancel only unclaimed pending work, and running/terminal gateway states cannot be overwritten by timeout. Attempt identity is now enforced on gateway transitions and CLI cancellation/waiting. Shared application observation/waiting returns durable outcomes on cancellation, and the CLI borrows host storage without opening a fallback connection; native progress/completion is verified through the real terminal with a simulated destination. Foreground/background admission now shares durable handoff validation, including reconnected sessions and read failures. A real terminal test now covers cancelling a claimed-transfer wait, retained-PTY dashboard reconnect, blocked source work and a new independent session. Interrupted gateway recovery and cross-platform handoff qualification remain to be completed.
-  Preserve aliases, validation, error semantics and state ownership. Snapshot
+  Preserve aliases, validation, error semantics and state ownership. Configured aliases already redispatch through the local TUI registry. Messaging-only commands now fail before worker construction; /whoami metadata no longer advertises unavailable terminal behavior. Snapshot
   listing, creation and pruning now share application/storage owners;
   host-coordinated live restoration remains to be implemented. Restore now stages
   all files before publication and rejects partial success. A versioned restore

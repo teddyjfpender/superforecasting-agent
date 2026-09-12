@@ -176,7 +176,12 @@ COMMANDS: list[CommandDef] = [
         args_hint="[text | remove N | clear]",
     ),
     CommandDef("status", "Show forecast session info", "Session"),
-    CommandDef("whoami", "Show your slash command access (admin / user)", "Info"),
+    CommandDef(
+        "whoami",
+        "Show your slash command access (admin / user)",
+        "Info",
+        gateway_only=True,
+    ),
     CommandDef("profile", "Show active profile name and home directory", "Info"),
     CommandDef(
         "sethome",

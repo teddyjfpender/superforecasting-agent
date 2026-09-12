@@ -5772,6 +5772,8 @@ def _(rid, params: dict) -> dict:
     # Otherwise registry aliases can initialize the classic worker even when
     # their canonical operation is already native (for example /gateway).
     definition = resolve_command(_cmd_base)
+    if definition is not None and definition.gateway_only:
+        return _err(rid, 4011, f"/{definition.name} is available only in messaging gateways")
     if definition is not None:
         _cmd_base = definition.name
 

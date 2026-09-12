@@ -4279,3 +4279,17 @@ every connection; adding that real-client behavior corrected the rendered /new
 assertion. This is retained-PTY reconnect coverage with a simulated destination,
 not backend restart recovery, real messaging service verification, or cross-platform
 qualification. A crashed gateway's claimed transfer remains an open recovery task.
+
+
+### Correct messaging-only command availability
+
+The remaining-dispatch audit confirmed configured aliases already re-enter the
+TUI's local registry. It found /whoami advertised in terminal help although its
+implementation is messaging access control. Its shared metadata is now gateway-only,
+so classic and TUI catalogs omit it while gateway menus and access policy retain it.
+Native slash dispatch rejects gateway-only definitions before constructing a
+worker, including manually entered hidden commands.
+
+329 catalog/dispatch/access-policy tests and shared quality gates passed. This
+corrects unsupported interface advertisement; the generic legacy fallback still
+exists and its direct-RPC compatibility cases require a separate migration audit.

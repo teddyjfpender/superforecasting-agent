@@ -1847,3 +1847,15 @@ class TestPluginCommandEnumeration:
         slack_names = set(slack_subcommand_map())
         assert "status" in tg_names
         assert "status" in slack_names
+
+
+def test_messaging_access_identity_is_not_advertised_to_terminals():
+    from tui_gateway import server
+
+    assert resolve_command('whoami').gateway_only
+    assert 'whoami' in GATEWAY_KNOWN_COMMANDS
+    assert any('/whoami' in line for line in gateway_help_lines())
+    assert '/whoami' not in COMMANDS
+    assert all('/whoami' not in commands for commands in COMMANDS_BY_CATEGORY.values())
+    response = server.handle_request({'id': 1, 'method': 'commands.catalog', 'params': {}})
+    assert '/whoami' not in response['result']['canon']

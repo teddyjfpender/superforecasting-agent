@@ -1239,3 +1239,10 @@ def test_native_debug_uses_shared_operation_without_worker(configure, monkeypatc
     else:
         assert response['result']['output'] == 'fixture diagnostics\n'
     assert not server._host.sessions['runtime'].get('_command_stops')
+
+
+@pytest.mark.parametrize('command', ['whoami', 'topic', 'approve', 'deny', 'sethome', 'restart'])
+def test_messaging_only_commands_do_not_construct_classic_worker(configure, command):
+    result = slash(command)
+    assert result['error']['code'] == 4011
+    assert 'only in messaging gateways' in result['error']['message']
