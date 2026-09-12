@@ -4680,3 +4680,20 @@ Validation: 30 sharing, card, CLI and multi-instance collaboration checks passed
 shared quality checks passed. All posting used fake transports; no Slack messages
 were sent. Application lint/format/type and transitive product-boundary checks
 cover the new file automatically.
+
+
+### Shared model-build operation and atomic links
+
+Moved forecast model building into `forecasting/application/model_build.py`; CLI
+and tool adapters share question-derived parameters and the build operation.
+Removed the CLI core's final tool dependency exception (two remain overall).
+Failure injection first reproduced silent success after a linking error and a
+partial link after interruption. Both link writes now use one ledger transaction.
+The durable model is retained and errors return its ID; the link operation can be
+retried independently without another build. KeyboardInterrupt propagates after
+rollback. The separate model-to-forecast seed conversion still needs the same
+partial-write audit; this change does not claim that flow is atomic.
+
+Validation: 56 model, ledger, tool and output tests passed, including CLI/tool/
+application parameter parity and failure/retry cases. All 66 import contracts and
+the shared lint, format, type, protocol and TUI quality checks passed.

@@ -6928,27 +6928,26 @@ def _cmd_apikey_unset(args: argparse.Namespace) -> None:
 def _cmd_model_build(args: argparse.Namespace) -> None:
     """`forecast model build <ref>` — build a deterministic Market Model as a
     forecast leg and link it to the question. ``<ref>`` may be an existing forecast
-    (id or name) OR free-text quant question. Delegates to the forecast_ledger
-    build_model action so the CLI and the agent share one code path."""
-    from tools.forecasting_tool import forecast_ledger_tool
+    (id or name) OR free-text quant question. Uses the same application operation as the forecast tool."""
+    from forecasting.application.model_build import build_model
 
     ref = (args.build_question or "").strip()
     if not ref:
         raise SystemExit("forecast model build requires a question ref or quant question text")
     ledger = _ledger(args)
-    tool_args: dict[str, Any] = {"action": "build_model", "db": getattr(args, "db", None)}
+    build_args: dict[str, Any] = {}
     # Attach to an existing forecast when the ref uniquely resolves; otherwise treat
     # it as free-text to build a standalone model for.
     resolution = resolve_question_ref(ledger, ref)
     if resolution.question is not None:
-        tool_args["question_id"] = resolution.question.id
+        build_args["question_id"] = resolution.question.id
     else:
-        tool_args["question"] = ref
+        build_args["question"] = ref
     if args.depth:
-        tool_args["depth"] = args.depth
+        build_args["depth"] = args.depth
     if args.analysis_type:
-        tool_args["analysis_type"] = args.analysis_type
-    result = json.loads(forecast_ledger_tool(tool_args))
+        build_args["analysis_type"] = args.analysis_type
+    result = build_model(build_args, ledger)
     if not result.get("success"):
         raise SystemExit(f"model build failed: {result.get('error') or result}")
     rec = result.get("recommended_model") or {}

@@ -853,3 +853,14 @@ and approval-required states post nothing. An overflow body must upload
 successfully before its metadata card can be posted; malformed or contradictory
 transport status cannot report success. Network execution belongs to the Slack
 transport and remains injectable for deterministic tests.
+
+
+### Forecast model building
+
+`forecasting/application/model_build.py` owns parameter preparation and model-build
+execution for the CLI and forecast tool. The CLI no longer calls the tool registry.
+`link_built_model` uses the ledger transaction owner for both reciprocal link writes;
+ordinary failures return a failed link result with the preserved model ID, while
+interruptions roll back and propagate. Retrying the link does not rebuild the model.
+This does not make model generation and link persistence one transaction, nor does
+it change the separate `model_to_forecast` seed conversion flow.
