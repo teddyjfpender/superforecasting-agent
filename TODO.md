@@ -1,7 +1,8 @@
 # Active engineering backlog
 
-The current priority is reusable product boundaries and enforceable repository
-hygiene. This is an implementation backlog, not a list of forecasting operations.
+The product-boundary implementation is delivered; final verification is recorded
+in the acceptance audit below. Open items are subsequent engineering qualification
+and maintenance, not a list of forecasting operations.
 The [current acceptance audit](docs/plans/2026-09-12-product-acceptance-audit.md)
 separates verified delivery evidence from remaining migration work.
 The [ownership map](docs/architecture/ownership-map.md) defines module owners;
@@ -29,10 +30,10 @@ changes, tests and their limits. The previous checklist is preserved in the
   Native handoff now uses host/session admission and the shared waiter: local timeouts now cancel only unclaimed pending work, and running/terminal gateway states cannot be overwritten by timeout. Attempt identity is now enforced on gateway transitions and CLI cancellation/waiting. Shared application observation/waiting returns durable outcomes on cancellation, and the CLI borrows host storage without opening a fallback connection; native progress/completion is verified through the real terminal with a simulated destination. Foreground/background admission now shares durable handoff validation, including reconnected sessions and read failures. A real terminal test now covers cancelling a claimed-transfer wait, retained-PTY dashboard reconnect, blocked source work and a new independent session. Interrupted gateway recovery and cross-platform handoff qualification remain to be completed.
   Preserve aliases, validation, error semantics and state ownership. Configured aliases already redispatch through the local TUI registry. Messaging-only commands now fail before worker construction; /whoami metadata no longer advertises unavailable terminal behavior. Snapshot
   listing, creation and pruning now share application/storage owners;
-  host-coordinated live restoration remains to be implemented. Restore now stages
+  restoration uses exclusive offline profile admission. Restore stages
   all files before publication and rejects partial success. A versioned restore
   journal retains hash-verified copies for idempotent recovery after process death;
-  profile leases now exclude restore/recovery while managed hosts, sessions and config/auth writers are active; failed shutdown retains admission and pending journals block new users. Offline restore/recover has a dedicated CLI path, and crashed SQLite WAL is drained before database replacement. Caller and backup-import admission still require a final audit before this is complete. Kanban now runs
+  profile leases now exclude restore/recovery while managed hosts, sessions and config/auth writers are active; failed shutdown retains admission and pending journals block new users. Offline restore/recover has a dedicated CLI path, and crashed SQLite WAL is drained before database replacement. Full backup import also takes exclusive admission; named profiles retain root admission so a full-home import cannot overwrite an active child profile. Kanban now runs
   natively with host/session cancellation and visible activity. Real terminal tests
   cover watch, resizing, Ctrl+C, gateway death/reconnect and continued command use.
   Extended remote-host command recovery remains to be qualified.
@@ -46,7 +47,7 @@ changes, tests and their limits. The previous checklist is preserved in the
   credential context and parent-scoped tools/approvals. Failed closes transfer
   exact handles to session-scoped retry ownership; /stop also interrupts these
   active background agents.
-- [ ] Reduce the remaining frozen domain-to-runtime/tool import exceptions.
+- [x] Remove the frozen direct domain-to-runtime/tool import exceptions.
   Move a capability and its tests together; directory moves alone are insufficient.
   Question candidate matching now has one read-only application owner shared by
   CLI and tool creation paths. Market artifact transfer and scoped prompt callbacks
@@ -149,8 +150,9 @@ and failed steering now apply the same session ownership rule.
 
 - [ ] Exercise additional supported platform combinations, especially native
   Windows and Android/Termux; POSIX PTY evidence does not establish their behavior.
-- [ ] Keep a retained prior backend artifact in release qualification and run
-  `verify_profiles.py --upgrade-from` against each candidate.
+- [x] Implement retained-artifact backend upgrade qualification with
+  `verify_profiles.py --upgrade-from`. The final candidate passed on Python
+  3.11.15 and 3.13.12 against the retained 0.21.2 wheel. Repeat for future candidates.
 - [ ] Qualify upgrades between terminal versions when a successor terminal
   artifact exists; the current independent terminal package is still 0.1.0.
 
@@ -168,12 +170,15 @@ See the work log for artifact hashes; this is not a published-release claim.
   older code elsewhere still has narrower checks.
 - [ ] Keep ownership documentation, generated protocol references and extension
   guides aligned with code. Reconcile older website guides and compatibility names.
-- [ ] Verify the final integrated batch with the shared gates before pushing.
+- [x] Enforce final integrated verification before pushing. The pre-push hook
+  blocks publication unless shared gates and the full Python suite pass; see
+  the acceptance audit for candidate evidence and the final push log.
 
 Already implemented: `python3 scripts/dev.py bootstrap` installs hooks and runs
 the same quality workflow as CI; `check` runs lint/format/types/import/protocol
 checks. Every push runs the full Python suite, matching the repository development policy.
-Import contracts enforce extracted owners; frozen exceptions remain explicit.
+All 76 import contracts pass; direct forecasting-to-tool/runtime exception lists
+are empty. Strict coverage remains scoped for inherited code.
 
 ## 5. Other engineering follow-up
 

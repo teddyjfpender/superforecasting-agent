@@ -5145,3 +5145,19 @@ only explicit facade references, global declarations and no-op pass statements.
 The post-split provider/credential selection again passed 2,533 tests with two
 skips. Strict checks and all 76 import contracts pass. Full integration and
 artifact verification remain outstanding.
+
+
+## Final acceptance closeout — 2026-09-12
+
+Fresh bootstrap at bbe02caae passed all shared gates and 76 import contracts.
+Separate installed backend/terminal/combined/web profiles passed on macOS arm64
+Python 3.11.15 and 3.13.12, including real local/remote Ink scoring and retained
+0.21.2 backend upgrades. The acceptance audit records artifact hashes and limits.
+
+The first full-suite push failed with 31,955 passes, 148 skips and six stale
+test-owner references: five source-branding assertions still inspected former
+credential locations, and an Ollama setup mock patched the credential service
+for a prompt owned by interactive authentication. The tests now inspect or patch
+the actual owners; no production change or gate relaxation was needed. Added a
+negative credential-boundary case proving transitive presentation imports fail.
+Final publication remains governed by the full pre-push suite.

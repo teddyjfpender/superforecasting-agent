@@ -2711,7 +2711,7 @@ def test_profile_runtime_exclusions_are_forecast_native():
 
 def test_xai_oauth_referrer_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
-    text = (root / 'superforecasting_agent/runtime' / "auth.py").read_text(encoding="utf-8")
+    text = (root / "superforecasting_agent/credentials/oauth" / "xai.py").read_text(encoding="utf-8")
 
     assert '"referrer": "superforecasting-agent"' in text
     assert "referrer=superforecasting-agent" in text
@@ -4500,6 +4500,7 @@ def test_runtime_credential_and_node_copy_is_forecast_native():
         root / "tools" / "env_passthrough.py",
         root / "tools" / "xai_http.py",
         root / "agent" / "azure_identity_adapter.py",
+        root / "superforecasting_agent/credentials" / "azure.py",
         root / "tools" / "browser_tool.py",
     ]
     text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
@@ -5019,7 +5020,7 @@ def test_diagnostic_env_aliases_are_forecast_native():
     runtime_helpers = (root / "agent" / "agent_runtime_helpers.py").read_text(
         encoding="utf-8"
     )
-    auth = (root / 'superforecasting_agent/runtime' / "auth.py").read_text(encoding="utf-8")
+    auth = (root / "superforecasting_agent/credentials/oauth" / "common.py").read_text(encoding="utf-8")
     interrupt = (root / "superforecasting_agent" / "tooling" / "interrupts.py").read_text(encoding="utf-8")
     env_base = (root / "tools" / "environments" / "base.py").read_text(
         encoding="utf-8"
@@ -5097,7 +5098,7 @@ def test_session_env_aliases_are_forecast_native():
 
 def test_oauth_file_env_aliases_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
-    anthropic_adapter = (root / "agent" / "anthropic_adapter.py").read_text(
+    anthropic_adapter = (root / "superforecasting_agent/credentials" / "anthropic.py").read_text(
         encoding="utf-8"
     )
     web_server = (root / 'superforecasting_agent/runtime' / "web_server.py").read_text(encoding="utf-8")
@@ -5297,8 +5298,8 @@ def test_software_development_tui_debug_skill_docs_prefer_tui_shorthand():
 
 def test_nous_runtime_env_aliases_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
-    nous_env = (root / 'superforecasting_agent/runtime' / "nous_env.py").read_text(encoding="utf-8")
-    auth = (root / 'superforecasting_agent/runtime' / "auth.py").read_text(encoding="utf-8")
+    nous_env = (root / "superforecasting_agent/configuration" / "nous_env.py").read_text(encoding="utf-8")
+    auth = (root / "superforecasting_agent/credentials/oauth" / "nous_runtime.py").read_text(encoding="utf-8")
     runtime_provider = (root / 'superforecasting_agent/runtime' / "runtime_provider.py").read_text(
         encoding="utf-8"
     )
