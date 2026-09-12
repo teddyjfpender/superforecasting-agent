@@ -240,3 +240,39 @@ def test_desk_screen_observation_retains_unchanged_rows():
     delta = until(ws, lambda out: b"TODAY" in out and b"resolved" in out, screen=screen)
     assert b"TODAY" not in delta
     assert b"loading" not in screen.text().encode()
+
+
+@pytest.mark.parametrize('fail_reset', [False, True], ids=['reset', 'failed-reset-new-session'])
+def test_real_desk_tool_reset_owns_agents_and_preserves_receipt(local_desk, monkeypatch, fail_reset):
+    import yaml
+    from tests.tui_pty.vt import VTScreen
+
+    client, home, _ = local_desk
+    monkeypatch.setenv('SUPERFORECASTING_AGENT_TUI_NO_CONFIRM', '1')
+    screen = VTScreen(rows=45, cols=160)
+    with client.websocket_connect('/api/pty?token=local-engineering&channel=tool-reset') as ws:
+        ws.send_text('\x1b[RESIZE:160;45]')
+        until(ws, lambda out: b'local-fixture' in out, screen=screen)
+        ws.send_text('complete before reset\r')
+        until(ws, lambda out: receipt(home) and receipt(home)['status'] == 'complete', screen=screen)
+        before = receipt(home)
+        if fail_reset:
+            (home / 'fail-next-agent-build').write_text('fail once', encoding='utf-8')
+        ws.send_text('/tools disable web\r')
+        expected = b'session reset failed' if fail_reset else b'new tool configuration is active'
+        until(ws, lambda out: expected in out, screen=screen)
+        assert receipt(home)['id'] == before['id']
+        assert receipt(home)['status'] == 'complete'
+        config = yaml.safe_load((home / 'config.yaml').read_text(encoding='utf-8'))
+        assert 'web' not in config['platform_toolsets']['cli']
+        events = [json.loads(line) for line in (home / 'agent-lifetime.jsonl').read_text(encoding='utf-8').splitlines()]
+        first = next(event['agent'] for event in events if event['event'] == 'created')
+        assert [event for event in events if event == {'event': 'closed', 'agent': first}] == [{'event': 'closed', 'agent': first}]
+        if fail_reset:
+            assert 'fixture rebuild unavailable' in ' '.join(screen.text().split())
+            ws.send_text('/new\r')
+            until(ws, lambda out: b'new forecast session started' in out, screen=screen)
+        ws.send_text('complete after reset\r')
+        until(ws, lambda out: receipt(home) and receipt(home)['id'] != before['id'] and receipt(home)['status'] == 'complete', screen=screen)
+        assert receipt(home)['partial_text'] == 'durable fixture prefix'
+        ws.close(code=1000)

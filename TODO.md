@@ -44,8 +44,9 @@ Tool inventory and /tools list now use shared views without building an agent or
 - [ ] Audit lower-level agent cleanup for concrete resource ownership.
   Tool-triggered resets now reserve host replacement before saving, dispose the
   previous agent/worker, and retain failed construction state and history. Saved
-  configuration may outlive a failed reset; close/recreate recovery remains to
-  qualify through the real terminal.
+  configuration may outlive a failed reset. The macOS real-terminal harness now
+  verifies successful reset and failed-reset/new-session recovery against saved
+  configuration, agent ownership and durable turn receipts.
   Live market conversation agents now have an explicit owner: per-call disposal,
   batch close for cached agents, and retained failed-close handles. The CLI releases
   the owner after recording, including failures. The existing market forecaster

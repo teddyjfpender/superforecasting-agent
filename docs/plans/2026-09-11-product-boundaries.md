@@ -3917,3 +3917,26 @@ RPC tests after preserving the busy error code. Shared quality checks passed.
 Tests reproduce retirement during configuration read, successful reset and save/
 construction failures through handle_request; they still do not substitute for
 rendered terminal recovery qualification.
+
+
+### Real terminal tool-reset recovery and composer clear fix
+
+The local desk harness now records fixture-agent creation/closure and supports a
+single injected reconstruction failure. New tests drive real Ink through the
+dashboard WebSocket/PTY and Python gateway, verify saved tool configuration and
+SQLite receipts, and complete another turn after successful reset or failed reset
+followed by a new session. The original agent is closed exactly once before recovery.
+
+This exercise exposed an input bug: the TextInput self-update flag treated a
+submit-time parent clear as an echo. Batched typing and submission could leave the
+submitted slash command in its internal buffer, turning the next /new into
+/tools disable web/new. Submission now forces reconciliation with the parent's
+controlled value even when that value is unchanged by the batch.
+
+All 10 local desk lifecycle tests passed on macOS, including existing auth/rate-limit/
+stream failure, cancellation and gateway reconnect cases. All 84 input/submission
+checks passed, along with shared quality gates and the production TUI build. The
+scoped design detector reported no findings. An initial test-observer rows/columns
+mistake was corrected, and wrapped error text is compared as normalized whitespace.
+These are local-provider macOS PTY results, not Windows/Termux or real-provider
+qualification; the dashboard transport is exercised through FastAPI TestClient.

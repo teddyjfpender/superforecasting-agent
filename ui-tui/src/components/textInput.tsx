@@ -375,6 +375,7 @@ export function TextInput({
   focus = true
 }: TextInputProps) {
   const [cur, setCur] = useState(value.length)
+  const [submission, setSubmission] = useState(0)
   const [sel, setSel] = useState<null | { end: number; start: number }>(null)
   const fwdDel = useFwdDelete(focus)
   const termFocus = useTerminalFocus()
@@ -479,7 +480,7 @@ export function TextInput({
       undo.current = []
       redo.current = []
     }
-  }, [value])
+  }, [value, submission])
 
   useEffect(() => {
     if (!focus) {
@@ -893,7 +894,11 @@ export function TextInput({
           commit(ins(vRef.current, curRef.current, '\n'), curRef.current + 1)
         } else {
           flushParentChange()
+          // Parent echo and submit-time clear may be batched into the same
+          // unchanged value. Reconcile after submission even in that case.
+          self.current = false
           cbSubmit.current?.(vRef.current)
+          setSubmission(current => current + 1)
         }
 
         return

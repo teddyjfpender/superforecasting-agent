@@ -5,6 +5,7 @@ def main():
     import os
     from pathlib import Path
     import threading
+    import uuid
     from urllib.request import urlopen
 
     import socket
@@ -23,12 +24,20 @@ def main():
     server._methods['setup.status'] = lambda rid, params: server._ok(rid, {'provider_configured': True})
 
 
+    home = Path(os.environ['SUPERFORECASTING_AGENT_HOME'])
+
+    def lifetime(event, identity):
+        with (home / 'agent-lifetime.jsonl').open('a', encoding='utf-8') as stream:
+            stream.write(json.dumps({'event': event, 'agent': identity}) + '\n')
+
     class LocalProvider:
         model = 'local-fixture'
         provider = 'fixture'
 
         def __init__(self, key):
             self.session_id = key
+            self.identity = uuid.uuid4().hex
+            lifetime('created', self.identity)
             self.stopped = threading.Event()
             if not server._get_db().get_session(key):
                 server._get_db().create_session(key, source='tui', model=self.model)
@@ -37,6 +46,7 @@ def main():
             self.stopped.set()
 
         def close(self):
+            lifetime('closed', self.identity)
             self.stopped.set()
 
         def run_conversation(self, message, *, stream_callback, conversation_history):
@@ -58,7 +68,14 @@ def main():
             raise RuntimeError('local provider stream ended without completion')
 
 
-    server._make_agent = lambda sid, key, session_id=None: LocalProvider(session_id or key)
+    def make_agent(sid, key, session_id=None):
+        failure = home / 'fail-next-agent-build'
+        if failure.exists():
+            failure.unlink()
+            raise RuntimeError('fixture rebuild unavailable')
+        return LocalProvider(session_id or key)
+
+    server._make_agent = make_agent
     Path(os.environ['FORECAST_TEST_GATEWAY_PID']).write_text(str(os.getpid()))
     from tui_gateway.entry import main as gateway_main
     gateway_main()
