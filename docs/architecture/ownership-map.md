@@ -667,3 +667,10 @@ its console; native TUI dispatch uses a bounded per-call console buffer under
 host command admission. This reuses skill operations without starting a second
 chat runtime. Fetching and installation still belong to the existing Skills Hub
 tool adapter; in-progress synchronous I/O is not cooperatively cancellable.
+
+
+Diagnostic report collection and sharing belong to `runtime.debug`; system dump
+collection belongs to `runtime.dump`. Both route textual output through the
+request-local application output sink. TUI /debug directly consumes the shared
+operation under host admission, preserving protocol stdout during nested dump
+collection; the classic CLI uses the same report operation with default streams.

@@ -4135,3 +4135,20 @@ The 178-test skills/command run and shared quality checks passed. Regression
 coverage includes actual successful and security-blocked install paths, mixed
 batch results, malformed quoting, and no export leakage to global stdout.
 Network exceptions continue to propagate to the caller's existing error handling.
+
+
+### Native diagnostic dispatch and output ownership
+
+/debug now invokes the existing runtime report/share operation under host command
+admission without constructing an agent or classic worker. Existing defaults and
+redaction remain unchanged. Upload failure exit codes become RPC errors instead
+of terminating the transport. The debug and dump commands use request-local
+output routing; collecting a dump no longer replaces process stdout. Nested
+capture restores its enclosing sink and concurrent captures cannot intercept
+protocol output.
+
+The 208-test debug/dump/gateway/configured-command run passed. Shared quality gates
+passed with 58 import contracts. Native dispatch tests forbid worker/agent
+construction, assert admitted command ownership, and cover success/failure. Uploads
+were mocked; this is engineering evidence, not live paste-service verification.
+Network operations remain synchronous and this does not add mid-upload cancellation.

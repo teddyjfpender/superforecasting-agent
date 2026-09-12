@@ -1218,3 +1218,24 @@ def test_skills_install_reports_operation_result(configure, monkeypatch, install
         'params': {'action': 'install', 'query': 'owner/fixture', 'session_id': 'runtime'},
     })
     assert response['result']['installed'] is installed
+
+
+@pytest.mark.parametrize('failed', [False, True])
+def test_native_debug_uses_shared_operation_without_worker(configure, monkeypatch, failed):
+    from superforecasting_agent.runtime import debug
+
+    def share(args):
+        assert server._host.sessions['runtime']['_command_stops']
+        assert args.lines == 200 and args.expire == 7 and args.local is False
+        debug.print('fixture diagnostics')
+        if failed:
+            raise SystemExit(1)
+
+    monkeypatch.setattr(debug, 'run_debug_share', share)
+    response = slash('debug')
+    if failed:
+        assert response['error']['code'] == 5030
+        assert 'fixture diagnostics' in response['error']['message']
+    else:
+        assert response['result']['output'] == 'fixture diagnostics\n'
+    assert not server._host.sessions['runtime'].get('_command_stops')
