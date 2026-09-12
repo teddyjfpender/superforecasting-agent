@@ -33,3 +33,20 @@ real desktop lifecycle, host shutdown ownership, headless transport, profile
 configuration ownership and injected forbidden imports. Fifteen PTY-related
 warnings were reported; passing these tests does not resolve historical native
 SSL or late bad-file-descriptor incidents.
+
+
+## Subsequent ownership work
+
+At source revision `cd6c7f62b`, the shared quality gate enforces 66 import
+contracts, all passing. Watched-source acquisition, question reuse, market output
+transfer, approval callbacks, Slack transport, card sharing, model building and
+triage now have shared owners. The direct forecast-to-tool ratchet has one
+remaining exception: supervisor web search. Quorum provider discovery still has
+its separate runtime exception. CLI model building and triage no longer invoke
+the registered forecast tool.
+
+Failure injection during these extractions also fixed partial model links,
+divergent triage label/alert writes and invalid expert-label persistence. Focused
+model checks (56) and the final triage/evidence checks (86) passed. These source
+checks supplement the earlier installed-product evidence; the wheel identities
+above still refer to their original source revision, not these later commits.
