@@ -3157,3 +3157,20 @@ The startup batch's full push gate remains running in the primary checkout.
   Python quality gates passed with all 51 import contracts.
 - Browser resource cleanup and connection orchestration still have separate
   adapters; this change does not establish shared resource ownership for them.
+
+### Browser supervisor lifecycle ownership
+
+- The supervisor registry now admits only one lifecycle mutation per task while
+  allowing unrelated tasks to progress. It retains exact handles until stop
+  succeeds, owns new handles before startup, and retains failed-start handles
+  when their cleanup also fails. Concurrent starts can no longer overwrite a
+  supervisor or publish over a shutdown operation.
+- `stop_all` attempts every captured handle, preserves failures for retry and
+  checks identity before stopping so a later replacement survives. A supervisor
+  whose thread misses its stop deadline raises instead of marking itself inactive.
+- Verification: 17 deterministic ownership/healthcheck/browser-cleanup tests
+  passed; the process completed teardown with exit 0. Shared Python quality gates
+  passed. No real browser or external provider was used for this evidence.
+- Remaining browser work: session/recording/cloud-provider resource ownership and
+  propagation of cleanup failures through browser connect/disconnect adapters.
+  The registry fix alone does not establish truthful end-to-end disconnect state.

@@ -379,6 +379,8 @@ class CDPSupervisor:
                 pass  # loop already shutting down
         if self._thread is not None:
             self._thread.join(timeout=timeout)
+            if self._thread.is_alive():
+                raise TimeoutError("Browser supervisor thread did not stop before the deadline")
         with self._state_lock:
             self._active = False
 
@@ -1371,11 +1373,15 @@ class _SupervisorRegistry:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._by_task: Dict[str, CDPSupervisor] = {}
+        self._busy: set[str] = set()
 
     def get(self, task_id: str) -> Optional[CDPSupervisor]:
         """Return the supervisor for ``task_id`` if running, else ``None``."""
         with self._lock:
-            return self._by_task.get(task_id)
+            if task_id in self._busy:
+                return None
+            supervisor = self._by_task.get(task_id)
+            return None if getattr(supervisor, "_stop_requested", False) else supervisor
 
     def get_or_start(
         self,
@@ -1392,49 +1398,74 @@ class _SupervisorRegistry:
         ``cdp_url``, the old one is stopped and a fresh one is started.
         """
         with self._lock:
+            if task_id in self._busy:
+                raise RuntimeError(f"Browser supervisor lifecycle change in progress for {task_id}")
             existing = self._by_task.get(task_id)
+            if existing is not None and existing.cdp_url == cdp_url:
+                thread_ok = existing._thread is not None and existing._thread.is_alive()
+                loop_ok = existing._loop is not None and existing._loop.is_running()
+                if thread_ok and loop_ok and not getattr(existing, "_stop_requested", False):
+                    return existing
+            self._busy.add(task_id)
+        try:
             if existing is not None:
-                if existing.cdp_url == cdp_url:
-                    thread_ok = existing._thread is not None and existing._thread.is_alive()
-                    loop_ok = existing._loop is not None and existing._loop.is_running()
-                    if thread_ok and loop_ok:
-                        return existing
-                    # Unhealthy — tear down and recreate.
-                # URL changed or unhealthy — tear down, fall through to re-create.
-                self._by_task.pop(task_id, None)
-        if existing is not None:
-            existing.stop()
-
-        supervisor = CDPSupervisor(
-            task_id=task_id,
-            cdp_url=cdp_url,
-            dialog_policy=dialog_policy,
-            dialog_timeout_s=dialog_timeout_s,
-        )
-        supervisor.start(timeout=start_timeout)
-        with self._lock:
-            # Guard against a concurrent get_or_start from another thread.
-            already = self._by_task.get(task_id)
-            if already is not None and already.cdp_url == cdp_url:
+                existing.stop()
+                with self._lock:
+                    del self._by_task[task_id]
+            supervisor = CDPSupervisor(
+                task_id=task_id,
+                cdp_url=cdp_url,
+                dialog_policy=dialog_policy,
+                dialog_timeout_s=dialog_timeout_s,
+            )
+            # Publish ownership before starting: a failed start can leave a live
+            # thread, which must remain reachable when cleanup also fails.
+            with self._lock:
+                self._by_task[task_id] = supervisor
+            try:
+                supervisor.start(timeout=start_timeout)
+            except BaseException:
                 supervisor.stop()
-                return already
-            self._by_task[task_id] = supervisor
-        return supervisor
+                with self._lock:
+                    del self._by_task[task_id]
+                raise
+            return supervisor
+        finally:
+            with self._lock:
+                self._busy.discard(task_id)
 
     def stop(self, task_id: str) -> None:
-        """Stop and discard the supervisor for ``task_id`` if it exists."""
+        """Stop the owned supervisor, retaining its handle on cleanup failure."""
+        self._stop_owned(task_id)
+
+    def _stop_owned(self, task_id: str, expected: Optional[CDPSupervisor] = None) -> None:
         with self._lock:
-            supervisor = self._by_task.pop(task_id, None)
-        if supervisor is not None:
+            supervisor = self._by_task.get(task_id)
+            if supervisor is None or (expected is not None and supervisor is not expected):
+                return
+            if task_id in self._busy:
+                raise RuntimeError(f"Browser supervisor lifecycle change in progress for {task_id}")
+            self._busy.add(task_id)
+        try:
             supervisor.stop()
+            with self._lock:
+                del self._by_task[task_id]
+        finally:
+            with self._lock:
+                self._busy.discard(task_id)
 
     def stop_all(self) -> None:
-        """Stop every running supervisor. For shutdown / test teardown."""
+        """Attempt every captured handle; never stop a later replacement."""
         with self._lock:
             items = list(self._by_task.items())
-            self._by_task.clear()
-        for _, supervisor in items:
-            supervisor.stop()
+        failures = []
+        for task_id, supervisor in items:
+            try:
+                self._stop_owned(task_id, supervisor)
+            except Exception as exc:
+                failures.append(exc)
+        if failures:
+            raise RuntimeError(f"Failed to stop {len(failures)} browser supervisor(s)") from failures[0]
 
 
 SUPERVISOR_REGISTRY = _SupervisorRegistry()
