@@ -3867,3 +3867,19 @@ argument behavior; read-only tool-display fallbacks no longer need its worker.
 All 147 focused application, RPC and CLI tool-configuration tests passed, along
 with shared quality gates. This lists saved configuration, not verified live MCP
 connectivity. Tool mutation and other legacy command paths remain separate work.
+
+
+### Shared tool-change validation and no-op preservation
+
+CLI and TUI now call one tool-selection edit operation. It validates action/target
+shape, applies platform restrictions in both interfaces, stages combined toolset
+and MCP changes in a detached copy, and reports whether configuration changed.
+Unknown/restricted targets, missing servers and unchanged MCP exclusions no longer
+trigger a save or session reset. Failed combined edits leave the caller's snapshot
+intact. Successful changes retain the existing persistence and reset adapters.
+
+All 165 focused CLI, application and RPC tests passed. Two older tests were updated
+to assert no write for an idempotent or invalid request, rather than expecting a
+redundant write. Shared quality gates passed. Successful TUI replacement still
+uses `_reset_session_agent`, whose direct replacement/admission requires a separate
+ownership fix; this batch does not establish safe reset during active execution.

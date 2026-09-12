@@ -587,3 +587,54 @@ def apply_mcp_change(config: dict, targets: List[str], action: str) -> Set[str]:
         tools_cfg["exclude"] = exclude
 
     return failed_servers
+
+
+def change_tools(config: dict, platform: str, targets: List[str], action: str) -> dict:
+    """Validate and apply one tool selection edit without persistence or reset."""
+    from copy import deepcopy
+
+    if action not in {"enable", "disable"}:
+        raise ValueError(f"Unknown tools action: {action}")
+    if not targets or any(
+        not isinstance(name, str) or not name.strip() for name in targets
+    ):
+        raise ValueError("Tool names must be nonempty strings")
+    targets = list(dict.fromkeys(name.strip() for name in targets))
+    if any(":" in name and not all(name.split(":", 1)) for name in targets):
+        raise ValueError("MCP targets must have server:tool form")
+    valid = {key for key, _, _ in CONFIGURABLE_TOOLSETS} | _get_plugin_toolset_keys()
+    unknown = [name for name in targets if ":" not in name and name not in valid]
+    restricted = [
+        name
+        for name in targets
+        if ":" not in name
+        and name in valid
+        and not _toolset_allowed_for_platform(name, platform)
+    ]
+    toolsets = [
+        name for name in targets if ":" not in name and name not in unknown + restricted
+    ]
+    mcp = [name for name in targets if ":" in name]
+    before = deepcopy(config)
+    # Prepare detached state so a malformed MCP configuration cannot leave a
+    # preceding toolset edit half applied in the caller's snapshot.
+    updated = deepcopy(config)
+    if toolsets:
+        apply_toolset_change(updated, platform, toolsets, action)
+    missing = apply_mcp_change(updated, mcp, action) if mcp else set()
+    accepted = [
+        name
+        for name in targets
+        if name not in unknown + restricted
+        and (":" not in name or name.split(":", 1)[0] not in missing)
+    ]
+    changed = accepted if updated != before else []
+    if changed:
+        config.clear()
+        config.update(updated)
+    return {
+        "changed": changed,
+        "unknown": unknown,
+        "restricted": restricted,
+        "missing_servers": sorted(missing),
+    }

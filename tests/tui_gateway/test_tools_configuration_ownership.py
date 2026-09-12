@@ -83,3 +83,38 @@ def test_cli_combined_configuration_also_saves_once(monkeypatch, broken_mcp):
         assert 'memory' not in writes[0]['platform_toolsets']['cli']
         assert writes[0]['mcp_servers']['fixture']['tools']['exclude'] == ['search']
     assert durable == original
+
+
+@pytest.mark.parametrize('names', [['definitely-unknown'], ['discord'], ['missing:read'], ['fixture:read']])
+def test_rejected_or_unchanged_tools_do_not_reset_session(monkeypatch, names):
+    from unittest.mock import Mock
+    from superforecasting_agent.hosting.runtime import RuntimeHost
+    from superforecasting_agent.runtime import config
+    from tui_gateway import server, tools_rpc
+
+    monkeypatch.setattr(server, '_host', RuntimeHost())
+    session = {'history': [{'role': 'user', 'content': 'preserve'}]}
+    server._host.sessions.register('runtime', session)
+    monkeypatch.setattr(config, 'load_config', lambda: {
+        'mcp_servers': {'fixture': {'tools': {'exclude': ['read']}}},
+    })
+    save, reset = Mock(), Mock()
+    monkeypatch.setattr(config, 'save_config', save)
+    monkeypatch.setattr(tools_rpc, '_reset_session_agent', reset)
+    response = server.handle_request({'id': 1, 'method': 'tools.configure',
+                                     'params': {'action': 'disable', 'names': names, 'session_id': 'runtime'}})
+    assert response['result']['changed'] == []
+    assert response['result']['reset'] is False
+    assert session['history'][0]['content'] == 'preserve'
+    save.assert_not_called()
+    reset.assert_not_called()
+
+
+def test_failed_combined_tool_edit_preserves_callers_snapshot():
+    from superforecasting_agent.tooling.selection import change_tools
+
+    config = {'platform_toolsets': {'cli': ['memory']}, 'mcp_servers': {'broken': None}}
+    before = deepcopy(config)
+    with pytest.raises((AttributeError, TypeError)):
+        change_tools(config, 'cli', ['memory', 'broken:read'], 'disable')
+    assert config == before

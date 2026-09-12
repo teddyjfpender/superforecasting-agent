@@ -2665,47 +2665,17 @@ def tools_disable_enable_command(args):
                           config.get("mcp_servers") or {}, platform)
         return
 
-    targets: List[str] = args.names
-    toolset_targets = [t for t in targets if ":" not in t]
-    mcp_targets = [t for t in targets if ":" in t]
+    from superforecasting_agent.tooling.selection import change_tools
 
-    valid_toolsets = {ts_key for ts_key, _, _ in CONFIGURABLE_TOOLSETS} | _get_plugin_toolset_keys()
-    unknown_toolsets = [t for t in toolset_targets if t not in valid_toolsets]
-    if unknown_toolsets:
-        for name in unknown_toolsets:
-            _print_error(f"Unknown toolset '{name}'")
-        toolset_targets = [t for t in toolset_targets if t in valid_toolsets]
-
-    # Reject platform-scoped toolsets on platforms that don't allow them.
-    restricted_targets = [
-        t for t in toolset_targets
-        if not _toolset_allowed_for_platform(t, platform)
-    ]
-    if restricted_targets:
-        for name in restricted_targets:
-            allowed = sorted(_TOOLSET_PLATFORM_RESTRICTIONS.get(name) or set())
-            _print_error(
-                f"Toolset '{name}' is not available on platform '{platform}' "
-                f"(only: {', '.join(allowed)})"
-            )
-        toolset_targets = [t for t in toolset_targets if t not in restricted_targets]
-
-    if toolset_targets:
-        from superforecasting_agent.tooling.selection import apply_toolset_change
-        apply_toolset_change(config, platform, toolset_targets, action)
-
-    failed_servers: Set[str] = set()
-    if mcp_targets:
-        failed_servers = _apply_mcp_change(config, mcp_targets, action)
-        for srv in failed_servers:
-            _print_error(f"MCP server '{srv}' not found in config")
-
-    save_config(config)
-
-    successful = [
-        t for t in targets
-        if t not in unknown_toolsets and (":" not in t or t.split(":")[0] not in failed_servers)
-    ]
-    if successful:
+    result = change_tools(config, platform, args.names, action)
+    for name in result["unknown"]:
+        _print_error(f"Unknown toolset '{name}'")
+    for name in result["restricted"]:
+        _print_error(f"Toolset '{name}' is not available on platform '{platform}'")
+    for name in result["missing_servers"]:
+        _print_error(f"MCP server '{name}' not found in config")
+    if result["changed"]:
+        save_config(config)
         verb = "Disabled" if action == "disable" else "Enabled"
-        _print_success(f"{verb}: {', '.join(successful)}")
+        _print_success(f"{verb}: {', '.join(result['changed'])}")
+    return result["changed"]

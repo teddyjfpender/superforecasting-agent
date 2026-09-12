@@ -3857,7 +3857,7 @@ class ForecastCLI:
         from io import StringIO
         from superforecasting_agent.runtime.tools_config import tools_disable_enable_command
 
-        def _run_capture(ns: Namespace) -> None:
+        def _run_capture(ns: Namespace):
             """Run tools_disable_enable_command, routing its ANSI-colored
             print() output through _cprint when inside the interactive TUI
             so escapes aren't mangled by patch_stdout's StdoutProxy into
@@ -3868,8 +3868,7 @@ class ForecastCLI:
             """
             # Standalone/tests, run as usual
             if getattr(self, "_app", None) is None:
-                tools_disable_enable_command(ns)
-                return
+                return tools_disable_enable_command(ns)
 
             # Buffer reports isatty()=True so color() in superforecasting_agent/runtime/colors.py
             # still emits ANSI escapes. StringIO.isatty() is False, which
@@ -3880,9 +3879,10 @@ class ForecastCLI:
 
             buf = _TTYBuf()
             with redirect_stdout(buf):
-                tools_disable_enable_command(ns)
+                result = tools_disable_enable_command(ns)
             for line in buf.getvalue().splitlines():
                 _cprint(line)
+            return result
 
         try:
             parts = shlex.split(cmd)
@@ -3912,7 +3912,9 @@ class ForecastCLI:
         label = ", ".join(names)
         _cprint(f"{_ACCENT}{verb} {label}...{_RST}")
 
-        _run_capture(Namespace(tools_action=subcommand, names=names, platform="cli"))
+        changed = _run_capture(Namespace(tools_action=subcommand, names=names, platform="cli"))
+        if not changed:
+            return
 
         # Reset session so the new tool config is picked up from a clean state
         from superforecasting_agent.tooling.selection import _get_platform_tools

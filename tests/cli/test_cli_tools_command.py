@@ -128,3 +128,13 @@ class TestToolsSlashEnableWithReset:
         cli_obj._handle_tools_command("/tools enable")
         out = capsys.readouterr().out
         assert "Usage" in out
+
+
+def test_invalid_tools_do_not_save_or_reset_history():
+    cli_obj = _make_cli()
+    with patch("superforecasting_agent.runtime.tools_config.load_config", return_value={}), \
+         patch("superforecasting_agent.runtime.tools_config.save_config") as save, \
+         patch.object(cli_obj, "new_session") as reset:
+        cli_obj._handle_tools_command("/tools disable definitely-unknown")
+    save.assert_not_called()
+    reset.assert_not_called()

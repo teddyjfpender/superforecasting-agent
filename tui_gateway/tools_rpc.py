@@ -119,41 +119,25 @@ def _(rid, params: dict) -> dict:
 
     try:
         from superforecasting_agent.runtime.config import load_config, save_config
-        from superforecasting_agent.tooling.selection import CONFIGURABLE_TOOLSETS, _get_platform_tools, _get_plugin_toolset_keys
-        from superforecasting_agent.tooling.selection import apply_mcp_change as _apply_mcp_change, apply_toolset_change as _apply_toolset_change
+        from superforecasting_agent.tooling.selection import change_tools, _get_platform_tools
 
         cfg = load_config()
-        valid_toolsets = {
-            ts_key for ts_key, _, _ in CONFIGURABLE_TOOLSETS
-        } | _get_plugin_toolset_keys()
-        toolset_targets = [name for name in targets if ":" not in name]
-        mcp_targets = [name for name in targets if ":" in name]
-        unknown = [name for name in toolset_targets if name not in valid_toolsets]
-        toolset_targets = [name for name in toolset_targets if name in valid_toolsets]
-
-        if toolset_targets:
-            _apply_toolset_change(cfg, "cli", toolset_targets, action)
-
-        missing_servers = (
-            _apply_mcp_change(cfg, mcp_targets, action) if mcp_targets else set()
-        )
-        save_config(cfg)
+        result = change_tools(cfg, "cli", targets, action)
+        changed = result["changed"]
+        unknown = result["unknown"] + result["restricted"]
+        missing_servers = result["missing_servers"]
+        if changed:
+            save_config(cfg)
 
         session = _core._host.sessions.get(params.get("session_id", ""))
         info = (
             _reset_session_agent(params.get("session_id", ""), session)
-            if session
+            if session and changed
             else None
         )
         enabled = sorted(
             _get_platform_tools(load_config(), "cli", include_default_mcp_servers=False)
         )
-        changed = [
-            name
-            for name in targets
-            if name not in unknown
-            and (":" not in name or name.split(":", 1)[0] not in missing_servers)
-        ]
 
         return _ok(
             rid,
@@ -162,7 +146,7 @@ def _(rid, params: dict) -> dict:
                 "enabled_toolsets": enabled,
                 "info": info,
                 "missing_servers": sorted(missing_servers),
-                "reset": bool(session),
+                "reset": bool(session and changed),
                 "unknown": unknown,
             },
         )
