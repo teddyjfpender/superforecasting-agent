@@ -2086,3 +2086,23 @@ between cleanup and completion, then proves no stale publication, execution or
 replacement cleanup occurs. Terminal cleanup-failure retention and file-operation
 cache cleanup races remain separate work; this does not claim all sandbox disposal
 paths are complete.
+
+### File-adapter ownership across environment replacement
+
+File-tool lazy creation now checks the same creation-lock identity as terminal
+creation, before using or publishing an environment. Cached adapters are reusable
+only when their environment object is still active. Adapter publication checks
+both environment and generation identity; stale creators cannot overwrite a new
+adapter. Working-directory bookkeeping likewise rejects stale cached environments.
+
+Terminal cleanup invalidates only an adapter for its exact detached environment,
+so delayed cleanup cannot clear the replacement's cache. Explicit empty task IDs
+no longer trigger a global cache clear; the no-argument compatibility operation
+still clears all adapters. Lock ordering remains environment, creation, then file
+cache; slow sandbox construction and disposal run outside those registry locks.
+
+118 file-tool, terminal-creation, lifecycle, patch-tracking and line-ending tests
+passed; shared quality checks passed. Deterministic tests cover creation interrupted
+by cleanup, retained replacement cache/environment, stale adapter rejection, live
+cwd selection, and empty-ID isolation. Active-operation leases and failed sandbox
+disposal ownership remain outside this change.

@@ -513,3 +513,8 @@ Terminal sandbox publication is tied to its per-task creation-lock identity.
 Cleanup invalidates that identity atomically with detaching the active environment.
 Retired creators and waiters cannot publish into or execute against a replacement
 session; unpublished sandbox disposal uses its direct object handle.
+
+File adapters bind to an exact environment object and creation generation. Both
+lazy environment and adapter publication reject retired generations. Terminal
+cleanup uses conditional cache invalidation against its detached environment, and
+live-path bookkeeping obtains cwd from the currently active environment.

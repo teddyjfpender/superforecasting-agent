@@ -1340,7 +1340,7 @@ def _cleanup_inactive_envs(lifetime_seconds: int = 300):
         # ShellFileOperations from referencing a dead sandbox)
         try:
             from tools.file_tools import clear_file_ops_cache
-            clear_file_ops_cache(task_id)
+            clear_file_ops_cache(task_id, expected_env=env)
         except ImportError:
             pass
 
@@ -1468,7 +1468,7 @@ def cleanup_vm(task_id: str):
     # Invalidate stale file_ops cache entry
     try:
         from tools.file_tools import clear_file_ops_cache
-        clear_file_ops_cache(task_id)
+        clear_file_ops_cache(task_id, expected_env=env)
     except ImportError:
         pass
 

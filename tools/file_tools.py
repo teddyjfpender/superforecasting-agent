@@ -93,21 +93,17 @@ def _get_live_tracking_cwd(task_id: str = "default") -> str | None:
     except Exception:
         container_key = task_id
 
-    with _file_ops_lock:
-        cached = _file_ops_cache.get(container_key) or _file_ops_cache.get(task_id)
-    if cached is not None:
-        live_cwd = getattr(getattr(cached, "env", None), "cwd", None) or getattr(
-            cached, "cwd", None
-        )
-        if live_cwd:
-            return live_cwd
-
     try:
         from tools.terminal_tool import _active_environments, _env_lock
 
-        with _env_lock:
+        with _env_lock, _file_ops_lock:
             env = _active_environments.get(container_key) or _active_environments.get(task_id)
-            live_cwd = getattr(env, "cwd", None) if env is not None else None
+            if env is None:
+                return None
+            cached = _file_ops_cache.get(container_key) or _file_ops_cache.get(task_id)
+            live_cwd = getattr(env, "cwd", None)
+            if not live_cwd and cached is not None and cached.env is env:
+                live_cwd = getattr(cached, "cwd", None)
         if live_cwd:
             return live_cwd
     except Exception:
@@ -377,13 +373,15 @@ def _get_file_ops(task_id: str = "default") -> ShellFileOperations:
         cached = _file_ops_cache.get(task_id)
     if cached is not None:
         with _env_lock:
-            if task_id in _active_environments:
+            if _active_environments.get(task_id) is cached.env:
                 _last_activity[task_id] = time.time()
                 return cached
             else:
-                # Environment was cleaned up -- invalidate stale cache entry
+                # Detach only the stale adapter we observed; a concurrent
+                # publisher may already have installed its replacement.
                 with _file_ops_lock:
-                    _file_ops_cache.pop(task_id, None)
+                    if _file_ops_cache.get(task_id) is cached:
+                        _file_ops_cache.pop(task_id, None)
 
     # Need to ensure the environment exists before building file_ops.
     # Acquire per-task lock so only one thread creates the sandbox.
@@ -393,8 +391,10 @@ def _get_file_ops(task_id: str = "default") -> ShellFileOperations:
         task_lock = _creation_locks[task_id]
 
     with task_lock:
-        # Double-check: another thread may have created it while we waited
-        with _env_lock:
+        # The waiter must still belong to the current creation generation.
+        with _env_lock, _creation_locks_lock:
+            if _creation_locks.get(task_id) is not task_lock:
+                raise RuntimeError("File environment creation cancelled by session cleanup")
             if task_id in _active_environments:
                 _last_activity[task_id] = time.time()
                 terminal_env = _active_environments[task_id]
@@ -464,26 +464,38 @@ def _get_file_ops(task_id: str = "default") -> ShellFileOperations:
                 host_cwd=config.get("host_cwd"),
             )
 
-            with _env_lock:
-                _active_environments[task_id] = terminal_env
-                _last_activity[task_id] = time.time()
+            with _env_lock, _creation_locks_lock:
+                retired = _creation_locks.get(task_id) is not task_lock
+                if not retired:
+                    _active_environments[task_id] = terminal_env
+                    _last_activity[task_id] = time.time()
+            if retired:
+                terminal_env.cleanup()
+                raise RuntimeError("File environment creation cancelled by session cleanup")
 
             _start_cleanup_thread()
             logger.info("%s environment ready for task %s", env_type, task_id[:8])
 
-    # Build file_ops from the (guaranteed live) environment and cache it
     file_ops = ShellFileOperations(terminal_env)
-    with _file_ops_lock:
+    with _env_lock, _creation_locks_lock, _file_ops_lock:
+        if (_creation_locks.get(task_id) is not task_lock or
+                _active_environments.get(task_id) is not terminal_env):
+            raise RuntimeError("File environment retired before adapter publication")
         _file_ops_cache[task_id] = file_ops
     return file_ops
 
 
-def clear_file_ops_cache(task_id: str = None):
-    """Clear the file operations cache."""
+_ANY_ENVIRONMENT = object()
+
+
+def clear_file_ops_cache(task_id: str = None, *, expected_env=_ANY_ENVIRONMENT):
+    """Invalidate a task adapter, optionally only for its retired environment."""
     with _file_ops_lock:
-        if task_id:
-            _file_ops_cache.pop(task_id, None)
-        else:
+        if task_id is not None:
+            cached = _file_ops_cache.get(task_id)
+            if expected_env is _ANY_ENVIRONMENT or (cached is not None and cached.env is expected_env):
+                _file_ops_cache.pop(task_id, None)
+        elif expected_env is _ANY_ENVIRONMENT:
             _file_ops_cache.clear()
 
 
