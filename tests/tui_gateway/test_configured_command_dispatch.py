@@ -453,3 +453,44 @@ def test_native_runtime_save_failure_does_not_fall_through(configure, monkeypatc
     response = dispatch("codex-runtime", "off")
     assert response["error"]["code"] == 5017
     assert "disk full" in response["error"]["message"]
+
+
+@pytest.mark.parametrize("scenario", ["quota", "empty", "signed-out", "provider-error", "invalid"])
+def test_google_quota_shared_with_cli_without_worker(configure, monkeypatch, scenario):
+    from types import SimpleNamespace
+    from agent.google_code_assist import QuotaBucket, CodeAssistError
+    from agent.google_oauth import GoogleOAuthError
+    from cli import ForecastCLI
+
+    configure({})
+    token = Mock(return_value="fixture-only-token")
+    lookup = Mock(return_value=[QuotaBucket("z-model", remaining_fraction=0.25),
+                               QuotaBucket("a-model", remaining_fraction=0.75)])
+    if scenario == "empty":
+        lookup.return_value = []
+    elif scenario == "signed-out":
+        token.side_effect = GoogleOAuthError("Sign in required")
+    elif scenario == "provider-error":
+        lookup.side_effect = CodeAssistError("quota unavailable")
+    monkeypatch.setattr("agent.google_oauth.get_valid_access_token", token)
+    monkeypatch.setattr("agent.google_oauth.load_credentials", lambda: SimpleNamespace(project_id="fixture-project"))
+    monkeypatch.setattr("agent.google_code_assist.retrieve_user_quota", lookup)
+    arg = "unexpected" if scenario == "invalid" else ""
+    response = dispatch("gquota", arg)
+    rendered = []
+    ForecastCLI._handle_gquota_command(SimpleNamespace(_console_print=rendered.append), "/gquota " + arg)
+    classic = "\n".join(rendered)
+    if scenario == "invalid":
+        assert response["error"]["code"] == 4004
+        assert response["error"]["message"] == classic
+        token.assert_not_called()
+        lookup.assert_not_called()
+    else:
+        assert response["result"]["output"] == classic
+        assert "fixture-only-token" not in classic
+        if scenario == "quota":
+            assert classic.index("a-model") < classic.index("z-model")
+            assert "75%" in classic and "25%" in classic
+    assert slash("/gquota")["error"]["data"]["execution_started"] is False
+    server._start_agent_build.assert_not_called()
+    server._SlashWorker.assert_not_called()

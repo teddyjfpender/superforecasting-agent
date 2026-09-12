@@ -342,6 +342,16 @@ def _(rid, params: dict) -> dict:
     except Exception:
         pass
 
+    if name == "gquota":
+        from superforecasting_agent.runtime.quota_commands import google_quota_lines
+
+        try:
+            return _ok(rid, {"type": "exec", "output": "\n".join(google_quota_lines(arg))})
+        except ValueError as exc:
+            return _err(rid, 4004, str(exc))
+        except Exception as exc:
+            return _err(rid, 5017, str(exc))
+
     if name == "codex-runtime":
         from superforecasting_agent.runtime import codex_runtime_switch
 

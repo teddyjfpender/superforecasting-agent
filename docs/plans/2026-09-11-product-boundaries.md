@@ -1876,3 +1876,18 @@ Evidence: `/tmp/forecast-host-boundary-build.log` and
 `/tmp/forecast-host-boundary-installed.log`. The verifier completed with exit 0.
 This qualifies these local artifacts, not publication, native Windows/Termux,
 a terminal cross-version upgrade, or long-duration remote recovery.
+
+
+### Native provider quota inspection
+
+`runtime/quota_commands.py` now owns Google credential/quota lookup orchestration
+and report lines, used by both classic CLI and native TUI `/gquota`. Provider
+adapters retain HTTP/authentication ownership. The command validates arguments
+before credential access, preserves active-console routing, and no longer needs
+an agent or classic slash worker. Reports use the same plain-text lines across
+surfaces, with stable model ordering and existing quota clamping.
+
+Validation: 56 command/CLI tests passed, including successful, empty, signed-out,
+provider-error and invalid-argument parity using fake providers. The new owner
+is in strict lint/format/type scope; all shared Python checks and 36 import
+contracts passed. No live credential-dependent quota request was performed.

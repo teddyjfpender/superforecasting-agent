@@ -448,3 +448,10 @@ python -m pip install 'scipy==1.16.2' 'statsmodels==0.14.5'
 Use that environment's Python, then restart the backend so availability probes
 reflect the new installation. The existing optional installer group names remain
 for compatibility; forecast refresh and numerical calls no longer invoke them.
+
+
+### Provider quota inspection
+
+`runtime/quota_commands.py` owns `/gquota` validation and report construction for
+CLI and native TUI. Existing Google OAuth and Code Assist adapters own credentials
+and HTTP requests. This operation does not construct an agent or classic worker.
