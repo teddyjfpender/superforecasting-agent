@@ -603,3 +603,131 @@ def test_cron_list_failure_is_not_reported_as_empty_schedule(configure, monkeypa
     output = dispatch('cron', argument)['result']['output']
     assert 'Failed to list jobs: unreadable schedule' in output
     assert 'No scheduled' not in output
+
+
+@pytest.mark.parametrize("argument,paused", [("pause", True), ("resume", False)])
+def test_curator_shared_operation_without_classic_worker(configure, monkeypatch, capsys, argument, paused):
+    from agent import curator
+    from superforecasting_agent.runtime.maintenance_commands import _handle_curator_command
+
+    configure({})
+    mutation = Mock()
+    monkeypatch.setattr(curator, "set_paused", mutation)
+    result = dispatch("curator", argument)
+    mutation.assert_called_once_with(paused)
+    _handle_curator_command(None, "/curator " + argument)
+    assert capsys.readouterr().out.strip() == result["result"]["output"]
+    assert mutation.call_count == 2
+    handoff = slash("/curator " + argument)
+    assert handoff["error"]["data"]["execution_started"] is False
+    assert mutation.call_count == 2
+    server._start_agent_build.assert_not_called()
+    server._SlashWorker.assert_not_called()
+
+
+@pytest.mark.parametrize("answer,approved", [("", False), ("No", False), ("Yes", True)])
+def test_curator_prune_confirmation_uses_preview_and_cancels_safely(configure, monkeypatch, answer, approved):
+    from superforecasting_agent.runtime import curator
+    from tools import skill_usage
+
+    configure({})
+    monkeypatch.setattr(skill_usage, "agent_created_report", lambda: [
+        {"name": "stale-weather-guidance", "state": "active", "pinned": False},
+    ])
+    monkeypatch.setattr(curator, "_idle_days", lambda record: 120)
+    archive = Mock(return_value=(True, "archived"))
+    monkeypatch.setattr(skill_usage, "archive_skill", archive)
+    prompt = Mock(return_value=answer)
+    monkeypatch.setattr(server, "_block", prompt)
+    response = dispatch("curator", "prune --days 90")
+    prompt.assert_called_once()
+    event, sid, payload = prompt.call_args.args
+    assert (event, sid) == ("clarify.request", "runtime")
+    assert "stale-weather-guidance" in payload["question"]
+    assert "120d" in payload["question"]
+    assert payload["choices"] == ["No", "Yes"]
+    if approved:
+        archive.assert_called_once_with("stale-weather-guidance")
+        assert "archived 1/1" in response["result"]["output"]
+    else:
+        archive.assert_not_called()
+        assert "aborted" in response["error"]["message"]
+        assert "data" not in response["error"]
+    server._SlashWorker.assert_not_called()
+    server._start_agent_build.assert_not_called()
+
+
+@pytest.mark.parametrize("argument", ['pin "unterminated', "pause --typo", "prune --days nope"])
+def test_curator_invalid_input_does_not_mutate_or_write_rpc_stdout(configure, monkeypatch, capsys, argument):
+    from agent import curator
+    from tools import skill_usage
+
+    configure({})
+    mutation = Mock(side_effect=AssertionError("invalid command mutated state"))
+    monkeypatch.setattr(curator, "set_paused", mutation)
+    monkeypatch.setattr(skill_usage, "archive_skill", mutation)
+    response = dispatch("curator", argument)
+    assert response["error"]["message"]
+    assert "data" not in response["error"]
+    mutation.assert_not_called()
+    captured = capsys.readouterr()
+    assert captured.out == captured.err == ""
+
+
+def test_curator_failure_cannot_trigger_worker_retry(configure, monkeypatch):
+    from agent import curator
+
+    configure({})
+    mutation = Mock(side_effect=OSError("state store unavailable"))
+    monkeypatch.setattr(curator, "set_paused", mutation)
+    response = dispatch("curator", "pause")
+    assert "state store unavailable" in response["error"]["message"]
+    assert "data" not in response["error"]
+    mutation.assert_called_once_with(True)
+    server._SlashWorker.assert_not_called()
+
+
+@pytest.mark.parametrize("answer,approved", [("", False), ("Yes", True)])
+def test_curator_rollback_confirmation_binds_displayed_snapshot(configure, monkeypatch, tmp_path, answer, approved):
+    from agent import curator_backup
+
+    configure({})
+    target = tmp_path / "20260912-snapshot"
+    monkeypatch.setattr(curator_backup, "_resolve_backup", lambda backup_id: target)
+    monkeypatch.setattr(curator_backup, "_read_manifest", lambda path: {
+        "reason": "before consolidation", "skill_files": 3,
+        "cron_jobs": {"backed_up": True, "jobs_count": 2},
+    })
+    restore = Mock(return_value=(True, "restored", {}))
+    monkeypatch.setattr(curator_backup, "rollback", restore)
+    prompt = Mock(return_value=answer)
+    monkeypatch.setattr(server, "_block", prompt)
+    result = dispatch("curator", "rollback")
+    question = prompt.call_args.args[2]["question"]
+    assert target.name in question
+    assert "before consolidation" in question
+    assert "skill files: 3" in question
+    assert "safety snapshot" in question
+    if approved:
+        restore.assert_called_once_with(backup_id=target.name)
+        assert "restored" in result["result"]["output"]
+    else:
+        restore.assert_not_called()
+        assert "cancelled" in result["error"]["message"]
+
+
+def test_concurrent_curator_commands_keep_output_separate(configure, monkeypatch, capsys):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from agent import curator
+
+    configure({})
+    barrier = Barrier(2)
+    monkeypatch.setattr(curator, "set_paused", lambda paused: barrier.wait(timeout=5))
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        pause = executor.submit(dispatch, "curator", "pause")
+        resume = executor.submit(dispatch, "curator", "resume")
+        assert pause.result(timeout=10)["result"]["output"] == "curator: paused"
+        assert resume.result(timeout=10)["result"]["output"] == "curator: resumed"
+    captured = capsys.readouterr()
+    assert captured.out == captured.err == ""

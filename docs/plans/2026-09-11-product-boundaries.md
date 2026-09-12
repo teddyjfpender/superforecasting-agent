@@ -2293,3 +2293,23 @@ Validation: the expanded CLI/runtime, TUI gateway, agent-factory and credential-
 run passed 6,028 tests with 10 skips. Shared quality checks passed, including all
 41 import contracts. No external inference calls were needed. The integrated
 batch still requires its full-suite pre-push gate.
+
+
+### Native curator command operations
+
+The TUI now hands /curator directly to shared command dispatch before legacy
+worker or agent initialization. The existing curator module owns the parser and
+operations; handlers accept output and confirmation callbacks. CLI keeps its
+terminal behavior, while TUI output stays in a per-request buffer without global
+stdout/stderr redirection. The TUI uses the existing session prompt broker for
+prune and rollback and includes the complete candidate/snapshot preview.
+
+Regression coverage verifies shared pause/resume output, exactly-once execution,
+invalid-input isolation, cancellation without mutations, rollback against the
+displayed snapshot, and concurrent requests with separate output. Operation
+failures never request fallback execution. 706 curator/TUI/gateway tests passed.
+This removes the curator command dependency on the classic worker; it does not
+complete migration of the other remaining commands or change curator review
+thread ownership.
+Shared quality checks passed, including the new transitive curator boundary:
+42 import contracts kept, none broken.

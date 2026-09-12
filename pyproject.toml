@@ -666,3 +666,9 @@ name = "startup tool selection does not depend on terminal presentation"
 type = "forbidden"
 source_modules = ["superforecasting_agent.tooling.startup_selection"]
 forbidden_modules = ["cli", "tui_gateway"]
+
+[[tool.importlinter.contracts]]
+name = "curator operations do not depend on terminal presentation"
+type = "forbidden"
+source_modules = ["superforecasting_agent.runtime.curator"]
+forbidden_modules = ["cli", "tui_gateway"]

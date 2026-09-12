@@ -21,7 +21,7 @@ changes, tests and their limits. The previous checklist is preserved in the
 Already implemented: shared forecast review/resolution/scoring, command catalog
 and aliases, configured-command validation/execution, session selection and
 branching, native command handoffs before model initialization, shared toolset/insights/
-quota/platform inspection and runtime selection, and lazy legacy worker admission.
+quota/platform inspection, curator operations and runtime selection, and lazy legacy worker admission.
 The legacy dispatcher itself remains.
 
 ## 2. Finish resource ownership and recovery

@@ -348,6 +348,25 @@ def _(rid, params: dict) -> dict:
     except Exception:
         pass
 
+    if name == "curator":
+        from superforecasting_agent.runtime.curator import command_output
+
+        def confirm(question):
+            if session is None:
+                raise ValueError("Curator confirmation requires an active session")
+            return _core._block(
+                "clarify.request", params.get("session_id", ""),
+                {"question": question, "choices": ["No", "Yes"]},
+            )
+
+        try:
+            code, output = command_output(arg, confirm=confirm)
+            if code:
+                return _err(rid, 5017, output or "Curator command failed")
+            return _ok(rid, {"type": "exec", "output": output})
+        except Exception as exc:
+            return _err(rid, 5017, f"Curator command failed: {exc}")
+
     if name == "cron":
         from superforecasting_agent.runtime.cron_commands import cron_command_output
 
