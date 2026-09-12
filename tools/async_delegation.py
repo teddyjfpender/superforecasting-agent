@@ -334,7 +334,7 @@ def _push_completion_event(
         )
 
 
-def list_async_delegations() -> List[Dict[str, Any]]:
+def list_async_delegations(*, session_key: str | None = None) -> List[Dict[str, Any]]:
     """Snapshot of async delegations (running + recently completed).
 
     Safe to call from any thread. Excludes the non-serialisable interrupt_fn.
@@ -343,10 +343,11 @@ def list_async_delegations() -> List[Dict[str, Any]]:
         return [
             {k: v for k, v in r.items() if k != "interrupt_fn"}
             for r in _records.values()
+            if session_key is None or r.get("session_key") == session_key
         ]
 
 
-def interrupt_all(reason: str = "shutdown") -> int:
+def interrupt_all(reason: str = "shutdown", *, session_key: str | None = None) -> int:
     """Signal every running async delegation to stop. Returns how many.
 
     Used on ``/stop`` and gateway shutdown so a dangling background subagent
@@ -357,6 +358,7 @@ def interrupt_all(reason: str = "shutdown") -> int:
     with _records_lock:
         targets = [
             r for r in _records.values() if r.get("status") == "running"
+            and (session_key is None or r.get("session_key") == session_key)
         ]
     for r in targets:
         fn = r.get("interrupt_fn")

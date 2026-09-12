@@ -3375,67 +3375,16 @@ class ForecastCLI:
     from superforecasting_agent.runtime.checkpoint_commands import _handle_snapshot_command as _handle_snapshot_command
 
     def _handle_stop_command(self):
-        """Handle /stop — kill all running background processes.
+        """Stop background work in this standalone CLI process."""
+        from superforecasting_agent.tooling.background import stop_background
 
-        Inspired by OpenAI Codex's separation of interrupt (stop current turn)
-        from /stop (clean up background processes). See openai/codex#14602.
-        """
-        from tools.async_delegation import active_count, interrupt_all
-        from tools.process_registry import process_registry
-
-        processes = process_registry.list_sessions()
-        running = [p for p in processes if p.get("status") == "running"]
-        # Background subagents live in the async-delegation registry, not the
-        # process registry — interrupt them here too or /stop misses them.
-        n_async = active_count()
-
-        if not running and not n_async:
-            print("  No running background processes.")
-            return
-
-        if running:
-            print(f"  Stopping {len(running)} background process(es)...")
-            killed = process_registry.kill_all()
-            print(f"  ✅ Stopped {killed} process(es).")
-
-        if n_async:
-            stopped = interrupt_all(reason="/stop")
-            print(f"  ✅ Interrupted {stopped} background delegation(s).")
+        print(stop_background())
 
     def _handle_agents_command(self):
-        """Handle /agents — show background processes and agent status."""
-        from tools.process_registry import format_uptime_short, process_registry
+        """Inspect background work using the same scope as /stop."""
+        from superforecasting_agent.tooling.background import describe_background
 
-        processes = process_registry.list_sessions()
-        running = [p for p in processes if p.get("status") == "running"]
-        finished = [p for p in processes if p.get("status") != "running"]
-
-        _cprint(f"  Running processes: {len(running)}")
-        for p in running:
-            cmd = p.get("command", "")[:80]
-            up = format_uptime_short(p.get("uptime_seconds", 0))
-            _cprint(f"    {p.get('session_id', '?')} · {up} · {cmd}")
-
-        if finished:
-            _cprint(f"  Recently finished: {len(finished)}")
-
-        # Background subagents (delegate_task(background=true)) live outside the
-        # process registry — surface them here too.
-        try:
-            from tools.async_delegation import list_async_delegations
-
-            delegations = list_async_delegations()
-            running_d = [d for d in delegations if d.get("status") == "running"]
-            if running_d:
-                _cprint(f"  Background delegations: {len(running_d)} running")
-                for d in running_d:
-                    goal = (d.get("goal", "") or "")[:60]
-                    _cprint(f"    {d.get('delegation_id', '?')} · {d.get('status')} · {goal}")
-        except Exception:
-            pass
-
-        agent_running = getattr(self, "_agent_running", False)
-        _cprint(f"  Agent: {'running' if agent_running else 'idle'}")
+        _cprint(describe_background(agent_running=bool(getattr(self, "_agent_running", False))))
 
     def _handle_paste_command(self):
         """Handle /paste — explicitly check clipboard for an image.

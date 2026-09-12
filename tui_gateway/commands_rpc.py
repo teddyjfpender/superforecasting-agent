@@ -350,6 +350,16 @@ def _(rid, params: dict) -> dict:
     except Exception:
         pass
 
+    if name in {"agents", "stop"}:
+        if session is None:
+            return _err(rid, 4001, "session not found")
+        try:
+            return _ok(rid, {"type": "exec", "output": _core._background_command_output(session, name)})
+        except ValueError as exc:
+            return _err(rid, 4004, str(exc))
+        except Exception as exc:
+            return _err(rid, 5030, f"Background command failed: {exc}")
+
     if name == "config":
         from superforecasting_agent.application.configuration_view import configuration_text
 

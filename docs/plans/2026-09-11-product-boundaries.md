@@ -3974,3 +3974,23 @@ tests and adapter coverage proving unauthenticated rows trigger no default looku
 Python quality gates passed with strict coverage for the new owner and 56 enforced
 import contracts. The existing runtime dependency exception remains honest: the
 quorum discovery adapter still uses the runtime catalog and credential inventory.
+
+
+### Native background commands with session ownership
+
+The TUI previously ran /stop in a classic worker, then mirrored a global process
+kill in the gateway. This missed gateway-owned async delegations and could affect
+other sessions. Shared tooling background operations now serve classic CLI and
+native slash/dispatch handlers for /agents (/tasks alias) and /stop. No agent or
+classic worker is initialized. Process and delegation registries accept an exact
+session-key filter; None retains standalone process-wide behavior, while an empty
+key is not a wildcard. Hosted commands reject a missing owner. Inspection filters
+before refreshing detached process state.
+
+All 202 focused registry, command and ownership tests passed, including another
+session's work surviving stop, live-agent inspection, direct dispatch parity,
+standalone CLI scope and failed interruption reporting. Delegation interruption
+remains a signal: completion records retain their actual running status until the
+worker finishes. This is not a guarantee of forced termination or distributed
+cancellation. Python quality gates passed; the new owner is in directory-wide
+strict coverage and has a presentation/runtime import prohibition.

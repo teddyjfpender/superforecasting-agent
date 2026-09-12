@@ -5673,10 +5673,6 @@ def _mirror_slash_side_effects(sid: str, session: dict, command: str) -> str:
             _emit("session.info", sid, _session_info(agent))
         elif name == "reload-mcp" and agent and hasattr(agent, "reload_mcp_tools"):
             agent.reload_mcp_tools()
-        elif name == "stop":
-            from tools.process_registry import process_registry
-
-            process_registry.kill_all()
     except Exception as e:
         # Expired/missing provider sign-in is fixable WITHOUT leaving the TUI
         # — point at /auth instead of echoing the CLI's "run
@@ -5689,6 +5685,17 @@ def _mirror_slash_side_effects(sid: str, session: dict, command: str) -> str:
             )
         return f"live session sync failed: {e}"
     return ""
+
+
+def _background_command_output(session: dict, name: str) -> str:
+    from superforecasting_agent.tooling.background import describe_background, stop_background
+
+    session_key = session.get("session_key")
+    if not session_key:
+        raise ValueError("session has no background-work owner")
+    if name == "stop":
+        return stop_background(session_key=session_key)
+    return describe_background(agent_running=bool(session.get("running")), session_key=session_key)
 
 
 def _command_handoff(rid, message: str, dispatch: str = "command.dispatch") -> dict:
@@ -5763,6 +5770,14 @@ def _(rid, params: dict) -> dict:
         selection = session_toolset_selection(session, _load_enabled_toolsets)
         definitions = get_tool_definitions(enabled_toolsets=selection, quiet_mode=True)
         return _ok(rid, {"output": describe_tools(definitions, get_toolset_for_tool)})
+
+    if _cmd_base in {"agents", "stop"}:
+        try:
+            return _ok(rid, {"output": _background_command_output(session, _cmd_base)})
+        except ValueError as exc:
+            return _err(rid, 4004, str(exc))
+        except Exception as exc:
+            return _err(rid, 5030, f"Background command failed: {exc}")
 
     if _cmd_base == "kanban":
         from superforecasting_agent.runtime.kanban import run_slash
