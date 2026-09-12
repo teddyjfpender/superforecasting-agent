@@ -3100,3 +3100,17 @@ prerequisites before that ownership extraction.
 the legacy CLI loader/registry unavailable while verifying configured policy and
 built-in alias protection. Shared Python quality gates and 51 import contracts passed.
 The startup batch's full push gate remains running in the primary checkout.
+
+### Plugin declaration ownership
+
+- `configuration/plugin_manifest.py` now owns the manifest type and decoded
+  declaration validation independently of filesystem access, registration and
+  plugin execution. The runtime manager retains discovery, diagnostic logging
+  and legacy source-text routing, and re-exports the identical manifest type.
+- Invalid names, declaration containers and declaration entries fail before
+  registration; unknown kinds retain the conservative standalone fallback.
+  All shipped plugin.yaml manifests satisfy the contract.
+- Verification: 159 plugin/parser/command tests passed; an additional shipped
+  manifest contract run passed (14 tests). Shared Python quality gates passed,
+  including strict configuration coverage and all 51 import contracts.
+- This is a declaration boundary, not completion of plugin runtime ownership.

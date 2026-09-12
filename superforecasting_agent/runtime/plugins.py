@@ -48,11 +48,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from superforecasting_agent.paths import get_install_root
-from typing import Any, Callable, Dict, List, Optional, Set, Union
+from typing import Any, Callable, Dict, List, Optional, Set
 
 from superforecasting_agent.constants import get_agent_home
 from superforecasting_agent.environment import env_var_enabled
 from superforecasting_agent.configuration import cfg_get
+from superforecasting_agent.configuration.plugin_manifest import (
+    PluginManifest, VALID_PLUGIN_KINDS as _VALID_PLUGIN_KINDS, parse_manifest,
+)
 
 
 _BUNDLED_PLUGIN_DIR_ENV_VARS = (
@@ -257,45 +260,6 @@ def _get_enabled_plugins() -> Optional[set]:
 # Data classes
 # ---------------------------------------------------------------------------
 
-_VALID_PLUGIN_KINDS: Set[str] = {"standalone", "backend", "exclusive", "platform", "model-provider"}
-
-
-@dataclass
-class PluginManifest:
-    """Parsed representation of a plugin.yaml manifest."""
-
-    name: str
-    version: str = ""
-    description: str = ""
-    author: str = ""
-    requires_env: List[Union[str, Dict[str, Any]]] = field(default_factory=list)
-    provides_tools: List[str] = field(default_factory=list)
-    provides_hooks: List[str] = field(default_factory=list)
-    source: str = ""        # "user", "project", or "entrypoint"
-    path: Optional[str] = None
-    # Plugin kind — see plugins.py module docstring for semantics.
-    # ``standalone`` (default): hooks/tools of its own; opt-in via
-    #                           ``plugins.enabled``.
-    # ``backend``: pluggable backend for an existing core tool (e.g.
-    #              image_gen). Built-in (bundled) backends auto-load;
-    #              user-installed still gated by ``plugins.enabled``.
-    # ``exclusive``: category with exactly one active provider (memory).
-    #              Selection via ``<category>.provider`` config key; the
-    #              category's own discovery system handles loading and the
-    #              general scanner skips these.
-    # ``platform``: gateway messaging platform adapter (e.g. IRC). Bundled
-    #              platform plugins auto-load so every shipped platform is
-    #              available out of the box; user-installed platform plugins
-    #              in the runtime-home plugins dir are still gated by
-    #              ``plugins.enabled``
-    #              (untrusted code).
-    kind: str = "standalone"
-    # Registry key — path-derived, used by ``plugins.enabled``/``disabled``
-    # lookups and by ``superforecasting-agent plugins list``. For a flat plugin at
-    # ``plugins/disk-cleanup/`` the key is ``disk-cleanup``; for a nested
-    # category plugin at ``plugins/image_gen/openai/`` the key is
-    # ``image_gen/openai``. When empty, falls back to ``name``.
-    key: str = ""
 
 
 @dataclass
@@ -1115,10 +1079,14 @@ class PluginManager:
             if yaml is None:
                 logger.warning("PyYAML not installed – cannot load %s", manifest_file)
                 return None
-            data = yaml.safe_load(manifest_file.read_text(encoding="utf-8")) or {}
+            data = yaml.safe_load(manifest_file.read_text(encoding="utf-8"))
+            manifest = parse_manifest(
+                {} if data is None else data, directory_name=plugin_dir.name,
+                path=str(plugin_dir), source=source, prefix=prefix,
+            )
 
-            name = data.get("name", plugin_dir.name)
-            key = f"{prefix}/{plugin_dir.name}" if prefix else name
+            data = {} if data is None else data
+            name, key = manifest.name, manifest.key
 
             raw_kind = data.get("kind", "standalone")
             if not isinstance(raw_kind, str):
@@ -1172,19 +1140,8 @@ class PluginManager:
                 "Parsed manifest: key=%s name=%s kind=%s source=%s path=%s",
                 key, name, kind, source, plugin_dir,
             )
-            return PluginManifest(
-                name=name,
-                version=str(data.get("version", "")),
-                description=data.get("description", ""),
-                author=data.get("author", ""),
-                requires_env=data.get("requires_env", []),
-                provides_tools=data.get("provides_tools", []),
-                provides_hooks=data.get("provides_hooks", []),
-                source=source,
-                path=str(plugin_dir),
-                kind=kind,
-                key=key,
-            )
+            manifest.kind = kind
+            return manifest
         except Exception as exc:
             logger.warning(
                 "Failed to parse %s: %s", manifest_file, exc, exc_info=_PLUGINS_DEBUG,
