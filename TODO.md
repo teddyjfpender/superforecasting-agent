@@ -121,7 +121,9 @@ Tool inventory and /tools list now use shared views without building an agent or
   handles and marks completion only after success. Malformed allocations and
   lower-level local daemon disposal remain to audit. Browser subprocess output
   descriptors now share a scoped owner that closes partial allocations in both
-  normal and Chrome-fallback launch paths. PID-file parsing now rejects
+  normal and Chrome-fallback launch paths. Shared configuration and auth-store
+  writers now keep raw descriptor ownership through text-wrapper construction;
+  wrapper failures and repeated teardown cannot leak or re-close those handles. PID-file parsing now rejects
   process-group selectors; invalid PID files and signaling failures retain local
   handles. Unreadable owner records no longer authorize orphan reaping. PID reuse
   and confirmation of daemon termination remain unqualified.

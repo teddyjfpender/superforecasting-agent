@@ -67,7 +67,7 @@ def _auth_command_hint() -> str:
 
 from superforecasting_agent.constants import OPENROUTER_BASE_URL
 from agent.credential_persistence import sanitize_borrowed_credential_payload
-from superforecasting_agent.storage.files import atomic_replace
+from superforecasting_agent.storage.files import atomic_replace, owned_text_descriptor
 from superforecasting_agent.environment import env_var_alias_enabled, is_truthy_value
 
 logger = logging.getLogger(__name__)
@@ -1047,7 +1047,7 @@ def _save_auth_store(auth_store: Dict[str, Any]) -> Path:
             os.O_WRONLY | os.O_CREAT | os.O_EXCL,
             stat.S_IRUSR | stat.S_IWUSR,
         )
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        with owned_text_descriptor(fd) as handle:
             handle.write(payload)
             handle.flush()
             os.fsync(handle.fileno())
@@ -1924,7 +1924,7 @@ def _save_qwen_cli_tokens(tokens: Dict[str, Any]) -> Path:
         stat.S_IRUSR | stat.S_IWUSR,
     )
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        with owned_text_descriptor(fd) as fh:
             fh.write(json.dumps(tokens, indent=2, sort_keys=True) + "\n")
             fh.flush()
             os.fsync(fh.fileno())
@@ -3782,7 +3782,7 @@ def _write_shared_nous_state(state: Dict[str, Any]) -> None:
                 stat.S_IRUSR | stat.S_IWUSR,
             )
             try:
-                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                with owned_text_descriptor(fd) as fh:
                     fh.write(json.dumps(shared, indent=2, sort_keys=True))
                     fh.flush()
                     os.fsync(fh.fileno())

@@ -4806,3 +4806,17 @@ checks passed, including existing TTL/invalidation behavior and isolation for
 both matching timestamps and missing auth files. Shared quality checks passed.
 This does not change live refresh behavior or claim concurrent process-wide
 profile mutation is safe.
+
+
+### Credential writer resource ownership
+
+Two negative controls reproduced leaked descriptors when `fdopen` failed in the
+shared atomic writer and native auth-store writer. A shared context now owns the
+raw descriptor while the text wrapper borrows it; all three native token writers
+use the same mechanism. The previous file and temporary-file cleanup survive
+construction failures. Early wrapper close, cancellation and repeated context
+teardown close the raw handle once and preserve other allocations.
+
+Validation: 27 descriptor, atomic JSON/YAML and credential-mode tests passed;
+shared quality checks passed. The historical SSL/native descriptor incidents
+remain unproven and are not attributed to this newly reproduced leak.

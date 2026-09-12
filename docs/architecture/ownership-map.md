@@ -933,3 +933,14 @@ reads defaults directly from the shared catalog. Runtime modules retain live
 catalog fetches and their caches. These snapshots are not claims of current
 provider availability. Credential-status discovery remains in the runtime auth
 implementation and is the remaining quorum adapter dependency.
+
+
+### Text descriptor ownership
+
+`storage/files.py::owned_text_descriptor` retains sole ownership of a raw file
+descriptor. Its text wrapper borrows it (`closefd=False`), so failed wrapper
+construction and early wrapper closure cannot leak or double-close the descriptor.
+Atomic configuration writers and the three native auth token writers use it.
+Failure and repeated-teardown tests preserve the previous target and unrelated
+open descriptors. This fixes a reproduced construction leak; it does not identify
+the historical native SSL or late bad-file-descriptor crash causes.

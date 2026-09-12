@@ -159,6 +159,21 @@ def atomic_replace(tmp_path: Union[str, Path], target: Union[str, Path]) -> str:
 
 
 @contextmanager
+def owned_text_descriptor(fd: int) -> Iterator[TextIO]:
+    """Own a descriptor through wrapper construction, use, and teardown.
+
+    The text wrapper borrows the descriptor. This context remains its sole owner
+    even if wrapper construction fails, so cleanup never depends on a partial
+    transfer of ownership inside fdopen.
+    """
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", closefd=False) as handle:
+            yield handle
+    finally:
+        os.close(fd)
+
+
+@contextmanager
 def _atomic_text_writer(path: Union[str, Path]) -> Iterator[TextIO]:
     """Commit a complete text write, preserving links and permissions on success."""
     path = Path(path)
@@ -170,7 +185,7 @@ def _atomic_text_writer(path: Union[str, Path]) -> Iterator[TextIO]:
         suffix=".tmp",
     )
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
+        with owned_text_descriptor(fd) as f:
             yield f
             f.flush()
             os.fsync(f.fileno())
