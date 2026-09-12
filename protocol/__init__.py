@@ -224,6 +224,7 @@ RPC_SPECS: list[RpcSpec] = [
 # them.
 EXTRA_MODELS: list[type[WireModel]] = [
     _rpc_config.ConfigMtimeResponse,
+    _rpc_config.ConfigProviderResponse,
     _rpc_config.ConfigGetValueResponse,
     _rpc_agents.SubagentEventPayload,
     _rpc_interact.GatewaySkin,

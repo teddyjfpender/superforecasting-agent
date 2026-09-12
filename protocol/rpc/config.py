@@ -110,10 +110,30 @@ class SetupStatusResponse(WireModel):
     provider_configured: bool | None = wire_optional()
 
 
+class ConfigProviderEntry(WireModel):
+    """Catalog identity; a configuration read never authenticates a provider."""
+
+    id: str
+    label: str
+    aliases: list[str]
+    authenticated: None = None
+
+
+class ConfigProviderResponse(WireModel):
+    """Configured selection, distinct from the credential-resolved live route."""
+
+    model: str
+    provider: str
+    authentication_status: Literal["not_checked"]
+    providers: list[ConfigProviderEntry]
+
+
 __all__ = [
     "ConfigDisplayConfig",
     "ConfigVoiceConfig",
     "ConfigFullConfig",
+    "ConfigProviderEntry",
+    "ConfigProviderResponse",
     "ConfigFullRequest",
     "ConfigFullResponse",
     "ConfigMtimeResponse",

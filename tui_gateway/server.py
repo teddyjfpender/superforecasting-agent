@@ -4446,19 +4446,40 @@ def _(rid, params: dict) -> dict:
     key = params.get("key", "")
     if key == "provider":
         try:
-            from superforecasting_agent.runtime.models import list_available_providers
-            from superforecasting_agent.configuration.providers import normalize_provider
+            from superforecasting_agent.configuration.provider_catalog import PROVIDER_LABELS
+            from superforecasting_agent.configuration.providers import (
+                PROVIDER_ALIASES,
+                configured_provider,
+            )
 
-            model = _resolve_model()
-            parts = model.split("/", 1)
+            cfg = _load_cfg()
+            if _host.configuration.last_error:
+                return _err(rid, 5013, "Cannot inspect provider: configuration could not be read")
+            overrides = _desk_launch_overrides()
+            # This is a configuration snapshot, not a login/refresh operation.
+            # Null is deliberate: configured material never proves usable access.
             return _ok(
                 rid,
                 {
-                    "model": model,
-                    "provider": (
-                        normalize_provider(parts[0]) if len(parts) > 1 else "unknown"
+                    "model": _resolve_model(cfg),
+                    "provider": configured_provider(
+                        cfg,
+                        override=overrides.get("provider", ""),
+                        environment=overrides.get("inference_provider", ""),
                     ),
-                    "providers": list_available_providers(),
+                    "authentication_status": "not_checked",
+                    "providers": [
+                        {
+                            "id": pid,
+                            "label": label,
+                            "aliases": [
+                                alias for alias, target in PROVIDER_ALIASES.items()
+                                if target == pid
+                            ],
+                            "authenticated": None,
+                        }
+                        for pid, label in PROVIDER_LABELS.items()
+                    ],
                 },
             )
         except Exception as e:

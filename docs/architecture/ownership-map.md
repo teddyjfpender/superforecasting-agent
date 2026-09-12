@@ -1037,3 +1037,11 @@ Z.AI detection captures the profile path before probing and publishes only its
 cache metadata after re-reading under that profile's auth lock. It neither
 changes the active provider nor overwrites intervening metadata. Cache-write
 failure reports a diagnostic without discarding a successfully detected endpoint.
+
+
+Provider configuration inspection uses `configuration.providers.configured_provider`.
+The TUI `config.get provider` RPC reports configured selection, not the live
+credential-resolved route, and never invokes authentication discovery. Its
+versioned protocol model distinguishes unknown authentication (`null`,
+`authentication_status: not_checked`) from verified access. Credential-aware
+model discovery remains runtime-owned; a configured key is not proof of access.

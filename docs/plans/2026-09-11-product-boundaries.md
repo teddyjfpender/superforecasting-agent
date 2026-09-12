@@ -4947,3 +4947,31 @@ No live provider calls were used; this does not attribute the historical SSL cra
 704 credential/provider/storage/boundary checks and the shared quality workflow
 passed (74 import contracts). The integrated commit still requires the full push
 gate. OAuth status/discovery extraction remains open.
+
+
+### Provider configuration is not authentication
+
+The credential storage batch is verified on the remote at `225250cab`:
+31,916 Python tests passed, 148 skipped, with 66 warnings in the full push gate.
+
+A negative-control RPC test reproduced `config.get provider` invoking credential
+discovery. The configuration getter now uses shared, pure provider-selection
+policy, honoring launch selection, config and the environment fallback. A model
+publisher prefix no longer masquerades as its serving provider. Automatic
+selection remains `auto`; resolving the live route is a separate runtime action.
+Unreadable configuration produces an error rather than a misleading auto result.
+
+The response now has a generated protocol model. Its catalog entries retain
+`id`, `label` and `aliases`; `authenticated` is explicitly null and the response
+says `authentication_status: not_checked`. Consumers must not interpret null as
+successful authentication. This corrects the previous boolean's mixed meanings
+(stored material, refreshed OAuth access, or configured local endpoint). The
+model picker's credential-aware inventory is unchanged. Catalog plugin metadata
+still uses the existing extension mechanism; arbitrary plugin code is not
+certified side-effect free by this change. Full passive credential inventory and
+the forecasting discovery exception remain open.
+
+107 focused provider/configuration/protocol tests pass. The shared quality
+workflow passed before the final null-only wire-model tightening; commit/push
+hooks recheck the final snapshot. The unreadable-profile test uses its own
+subdirectory because the hermetic fixture also creates a sibling test home.

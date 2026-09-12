@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
+from typing import Any
 
 PROVIDER_ALIASES = {
     "glm": "zai",
@@ -117,3 +118,24 @@ def split_provider_model(
         if separator and name.strip() and named_model.strip():
             return f"custom:{name.strip()}", named_model.strip()
     return normalize_provider(provider), rest
+
+
+def configured_provider(
+    config: Mapping[str, Any], *, override: str = "", environment: str = ""
+) -> str:
+    """Report provider selection without resolving credentials or model routing.
+
+    A model's publisher prefix is not its serving provider. Automatic selection
+    remains ``auto`` until the runtime resolves it. Launch selection takes
+    precedence over config, which takes precedence over the environment fallback.
+    """
+    section = config.get("model")
+    configured = section.get("provider") if isinstance(section, Mapping) else None
+    for candidate in (override, configured, environment):
+        if candidate is None:
+            continue
+        if not isinstance(candidate, str):
+            raise ValueError("model.provider must be a string")
+        if candidate.strip():
+            return normalize_provider(candidate)
+    return "auto"

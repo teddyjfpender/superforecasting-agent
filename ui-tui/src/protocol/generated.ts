@@ -279,6 +279,20 @@ export interface ConfigMtimeResponse {
   mtime?: number
 }
 
+export interface ConfigProviderEntry {
+  aliases: string[]
+  authenticated: null
+  id: string
+  label: string
+}
+
+export interface ConfigProviderResponse {
+  authentication_status: 'not_checked'
+  model: string
+  provider: string
+  providers: ConfigProviderEntry[]
+}
+
 export interface ConfigSetRequest {
   key: null | string
   session_id: null | string
