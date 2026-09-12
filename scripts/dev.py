@@ -149,10 +149,15 @@ def check_snapshot(ref: str | None = None) -> None:
             "Unstaged tracked changes would make checks differ from the commit. "
             "Stage the intended changes or set aside the remaining work first."
         )
-    if git("ls-files", "--others", "--exclude-standard", "-z"):
+    untracked = git("ls-files", "--others", "--exclude-standard", "-z")
+    if untracked:
+        paths = untracked.rstrip(b"\0").split(b"\0")
+        preview = ", ".join(repr(os.fsdecode(path)) for path in paths[:10])
+        remaining = f" (and {len(paths) - 10} more)" if len(paths) > 10 else ""
         raise RuntimeError(
             "Untracked files can affect imports and checks. "
-            "Track, ignore, or move them before running commit/push gates."
+            "Track, ignore, or move them before running commit/push gates. "
+            f"Found: {preview}{remaining}"
         )
     if ref is not None:
         tree = git("rev-parse", "--verify", ref + "^{tree}").strip()

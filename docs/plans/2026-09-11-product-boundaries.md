@@ -3659,3 +3659,12 @@ passed. Shared Python quality gates passed with 53 contracts. The preceding snap
 push failed one development-hook test (31,488 passed): an unexpected untracked file
 masked its intended second-ref rejection. That test's 11-test module passed in
 isolation; the historical file identity was not available from the retained output.
+
+
+### Actionable checkout-gate diagnostics
+
+The snapshot gate now names up to ten untracked paths using escaped representations
+and reports any remaining count. Its refusal policy is unchanged. The multi-ref
+hook regression includes fixture git status on assertion failure so a recurring
+unexpected file can be identified. All 11 development-workflow tests passed;
+this adds diagnostic evidence, not a claim to have attributed the earlier failure.

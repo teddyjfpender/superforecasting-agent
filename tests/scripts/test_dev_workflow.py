@@ -97,7 +97,9 @@ def test_snapshot_rejects_untracked_import_shadow(snapshot_repo):
     root, git, check = snapshot_repo
     (root / "json.py").write_text("raise RuntimeError('shadow')\n", encoding="utf-8")
     assert check().returncode != 0
-    assert "Untracked" in check().stderr
+    failure = check()
+    assert "Untracked" in failure.stderr
+    assert "'json.py'" in failure.stderr
     (root / "json.py").unlink()
     (root / ".gitignore").write_text(".venv/\n", encoding="utf-8")
     git("add", ".gitignore")
@@ -125,7 +127,9 @@ def test_pre_push_checks_second_ref_before_running_quality(snapshot_repo):
     result = subprocess.run(["bash", ".githooks/pre-push"], input=refs,
                             cwd=root, env=env, capture_output=True, text=True)
     assert result.returncode != 0
-    assert "pushed tree differs" in result.stderr
+    assert "pushed tree differs" in result.stderr, (
+        result.stderr + "\nFixture status: " + git("status", "--short", "--untracked-files=all")
+    )
     assert "Missing" not in result.stderr  # Never reached the missing linter.
 
 
