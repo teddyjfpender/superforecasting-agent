@@ -1213,7 +1213,7 @@ def _socket_safe_tmpdir() -> str:
 # cleanup_browser code paths — the key is opaque to those internals.
 #
 # Stores: session_name (always), bb_session_id + cdp_url (cloud mode only)
-_active_sessions: Dict[str, Dict[str, str]] = {}  # session_key -> {session_name, ...}
+_active_sessions: Dict[str, Dict[str, Any]] = {}  # session_key -> {session_name, ...}
 _recording_sessions: set = set()  # session_keys with active recordings
 
 # Tracks the most recent session_key used per task_id. Set by browser_navigate()
@@ -1711,7 +1711,7 @@ def _create_cdp_session(task_id: str, cdp_url: str) -> Dict[str, str]:
     }
 
 
-def _get_session_info(task_id: Optional[str] = None) -> Dict[str, str]:
+def _get_session_info(task_id: Optional[str] = None) -> Dict[str, Any]:
     """
     Get or create session info for the given session key.
 
@@ -1738,7 +1738,7 @@ def _get_session_info(task_id: Optional[str] = None) -> Dict[str, str]:
         return _get_or_create_session_info(task_id)
 
 
-def _get_or_create_session_info(task_id: str) -> Dict[str, str]:
+def _get_or_create_session_info(task_id: str) -> Dict[str, Any]:
     """Allocate while the caller owns this task's creation admission."""
     # Start the cleanup thread if not running (handles inactivity timeouts)
     _start_browser_cleanup_thread()
@@ -1749,7 +1749,10 @@ def _get_or_create_session_info(task_id: str) -> Dict[str, str]:
     with _cleanup_lock:
         # Check if we already have a session for this task
         if task_id in _active_sessions:
-            return _active_sessions[task_id]
+            existing = _active_sessions[task_id]
+            if existing.get("_cleanup_pending"):
+                raise RuntimeError("Browser session cleanup is pending; retry cleanup before reuse")
+            return existing
 
     # Hybrid routing: session keys ending with ``::local`` force a local
     # Chromium regardless of the globally-configured cloud provider.  Public
@@ -1773,6 +1776,8 @@ def _get_or_create_session_info(task_id: str) -> Dict[str, str]:
                 # Validate cloud provider returned a usable session
                 if not session_info or not isinstance(session_info, dict):
                     raise ValueError(f"Cloud provider returned invalid session: {session_info!r}")
+                session_info = dict(session_info)
+                session_info["_cloud_provider"] = provider
                 if session_info.get("cdp_url"):
                     # Some cloud providers (including Browser-Use v3) return an HTTP
                     # CDP discovery URL instead of a raw websocket endpoint.
@@ -3546,7 +3551,9 @@ def _cleanup_single_browser_session(task_id: str) -> None:
         session_info = _active_sessions.get(task_id)
 
     if session_info:
-        bb_session_id = session_info.get("bb_session_id", "unknown")
+        bb_session_id = session_info.get("bb_session_id")
+        if bb_session_id:
+            session_info["_cleanup_pending"] = True
         logger.debug("Found session for task %s: bb_session_id=%s", task_id, bb_session_id)
 
         # Stop auto-recording before closing (saves the file)
@@ -3559,23 +3566,15 @@ def _cleanup_single_browser_session(task_id: str) -> None:
         except Exception as e:
             logger.warning("agent-browser close failed for task %s: %s", task_id, e)
 
-        # Now remove from tracking under lock
-        with _cleanup_lock:
-            # Close completion belongs to the captured resource, not any later
-            # session published under the same task identifier.
-            if _active_sessions.get(task_id) is session_info:
-                _active_sessions.pop(task_id, None)
-                _session_last_activity.pop(task_id, None)
-
-        # Cloud mode: close the cloud browser session via provider API.
-        # Local sidecars have bb_session_id=None so this no-ops for them.
-        if bb_session_id:
-            provider = _get_cloud_provider()
-            if provider is not None:
-                try:
-                    provider.close_session(bb_session_id)
-                except Exception as e:
-                    logger.warning("Could not close cloud browser session: %s", e)
+        # A session belongs to its creating provider, not the current selection.
+        # Retain a failed resource so subsequent cleanup can retry that identity.
+        if bb_session_id and not session_info.get("_cloud_closed"):
+            provider = session_info.get("_cloud_provider")
+            if provider is None:
+                raise RuntimeError("Cloud browser session has no recorded provider owner")
+            if provider.close_session(bb_session_id) is not True:
+                raise RuntimeError("Cloud browser provider did not confirm session disposal")
+            session_info["_cloud_closed"] = True
 
         # Kill the daemon process and clean up socket directory
         session_name = session_info.get("session_name", "")
@@ -3592,6 +3591,11 @@ def _cleanup_single_browser_session(task_id: str) -> None:
                     except (ProcessLookupError, ValueError, PermissionError, OSError):
                         logger.debug("Could not kill daemon pid for %s (already dead or inaccessible)", session_name)
                 shutil.rmtree(socket_dir, ignore_errors=True)
+
+        with _cleanup_lock:
+            if _active_sessions.get(task_id) is session_info:
+                _active_sessions.pop(task_id, None)
+                _session_last_activity.pop(task_id, None)
 
         logger.debug("Removed task %s from active sessions", task_id)
     else:

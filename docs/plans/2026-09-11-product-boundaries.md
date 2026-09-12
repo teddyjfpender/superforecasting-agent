@@ -3338,3 +3338,20 @@ The startup batch's full push gate remains running in the primary checkout.
 - Verification: 86 disposal/browser/host/transition/hybrid tests passed; shared
   Python quality gates passed. Cloud-provider exact disposal ownership remains
   unfinished; aggregate reporting does not fix failures suppressed by a backend.
+
+### Cloud browser provider identity and failed disposal
+
+- Cloud session allocation retains the creating provider instance. Cleanup uses
+  that instance, checks its boolean close result, and retains the session until
+  remote disposal is confirmed. Unknown provider ownership fails explicitly
+  instead of guessing from current configuration. Pending cleanup blocks reuse.
+- A confirmed cloud close is recorded on the retained handle, avoiding repeated
+  provider disposal if later local cleanup needs retry. Tracking is removed only
+  after the remaining cleanup path completes and only for the captured owner.
+- Verification: 39 cloud/creation/cleanup/hybrid/CDP/replacement tests passed;
+  shared Python quality gates passed. The regression changes provider selection,
+  forces close failure, proves no current-provider lookup occurs, rejects reuse,
+  and retries the original remote ID successfully.
+- Remaining: bundled providers still reread credentials/endpoint configuration
+  inside their close methods. Capturing the provider instance does not yet freeze
+  its account/endpoint provenance. Local daemon disposal also remains best effort.
