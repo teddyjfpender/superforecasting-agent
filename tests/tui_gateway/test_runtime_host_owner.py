@@ -160,3 +160,93 @@ def test_commands_reject_foreign_session_ownership():
             pytest.fail("foreign session was admitted")
     host.workers.stop()
     assert host.workers.drain(0)
+
+
+def test_host_finalizes_drained_turn_without_transport(tmp_path):
+    from superforecasting_agent.storage.session import SessionDB
+    from superforecasting_agent.storage import turns
+
+    host = RuntimeHost()
+    path = tmp_path / 'state.db'
+    db = SessionDB(path)
+    host.store._connection = db
+    tid = turns.start(db, 'durable', 'preserve evidence')
+    turns.transition(db, tid, 'running', delta='partial result')
+    host.sessions.register('runtime', {'session_key': 'durable', 'turn_id': tid})
+    operations = callbacks(host)
+    retire = operations['close_session']
+    def close(sid, session, store):
+        assert turns.latest(store, 'durable')['status'] == 'interrupted'
+        retire(sid, session, store)
+    operations['close_session'] = close
+    assert host.shutdown(0, **operations)
+    reopened = SessionDB(path)
+    try:
+        receipt = turns.latest(reopened, 'durable')
+        assert receipt['status'] == 'interrupted'
+        assert receipt['partial_text'] == 'partial result'
+    finally:
+        reopened.close()
+
+
+def test_failed_durable_finalization_keeps_session_and_store_for_retry(tmp_path, monkeypatch):
+    from superforecasting_agent.storage.session import SessionDB
+    from superforecasting_agent.storage import turns
+
+    host = RuntimeHost()
+    db = SessionDB(tmp_path / 'state.db')
+    host.store._connection = db
+    tid = turns.start(db, 'durable', 'preserve evidence')
+    session = {'session_key': 'durable', 'turn_id': tid}
+    host.sessions.register('runtime', session)
+    operations = callbacks(host)
+    close = operations['close_session']
+    operations['close_session'] = Mock(side_effect=close)
+    with monkeypatch.context() as patch:
+        patch.setattr(db, '_execute_write', Mock(side_effect=OSError('disk unavailable')))
+        assert not host.shutdown(0, **operations)
+    assert host.sessions['runtime'] is session
+    assert host.store.current is db
+    operations['close_session'].assert_not_called()
+    assert turns.latest(db, 'durable')['status'] == 'starting'
+    assert host.shutdown(0, **operations)
+    operations['close_session'].assert_called_once()
+
+
+def test_missing_store_cannot_report_durable_turn_shutdown_complete():
+    host = RuntimeHost()
+    session = {'session_key': 'durable', 'turn_id': 'turn'}
+    host.sessions.register('runtime', session)
+    operations = callbacks(host)
+    operations['close_session'] = Mock()
+    assert not host.shutdown(0, **operations)
+    operations['close_session'].assert_not_called()
+    assert host.sessions['runtime'] is session
+
+
+@pytest.mark.parametrize('status', ['complete', 'error'])
+def test_host_shutdown_preserves_already_terminal_receipt(tmp_path, status):
+    from superforecasting_agent.storage.session import SessionDB
+    from superforecasting_agent.storage import turns
+
+    host = RuntimeHost()
+    path = tmp_path / 'state.db'
+    db = SessionDB(path)
+    host.store._connection = db
+    tid = turns.start(db, 'durable', 'request')
+    expected = turns.transition(db, tid, status, text='saved result', error='detail')
+    host.sessions.register('runtime', {'session_key': 'durable', 'turn_id': tid})
+    assert host.shutdown(0, **callbacks(host))
+    reopened = SessionDB(path)
+    try:
+        assert turns.latest(reopened, 'durable') == expected
+    finally:
+        reopened.close()
+
+
+def test_compatibility_turn_api_uses_storage_owner():
+    from superforecasting_agent.storage import turns
+    from tui_gateway import turn_journal
+
+    for name in ('start', 'transition', 'latest', 'reanchor'):
+        assert getattr(turn_journal, name) is getattr(turns, name)

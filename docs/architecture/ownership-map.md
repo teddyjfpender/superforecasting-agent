@@ -25,7 +25,7 @@ The formality layer of the modularization program
 | `superforecasting_agent/application/insights.py` | shared command arguments | Typed days/source query and slash argument parsing for CLI, messaging and native TUI | No storage, runtime or presentation imports; InsightsEngine retains reporting ownership |
 | `superforecasting_agent/application/sessions.py` | application services | Resumable-session selection, canonical title-setting and atomic branch-copy admission | No presentation or transport imports |
 | `agent/review_lifecycle.py` | background review lifetime | Worker admission/drain, child interruption and retained cleanup handles; agent session cleanup waits for completion | No agent construction, tool or presentation imports; enforced transitively |
-| `superforecasting_agent/hosting/runtime.py` | serving lifetime | `RuntimeHost` owns workers, registered command cancellation, session registry, store, configuration, device sign-in, shutdown ordering and restart admission | No presentation or runtime configuration imports; adapters supply protocol-specific interruption and turn-finalization callbacks |
+| `superforecasting_agent/hosting/runtime.py` | serving lifetime | `RuntimeHost` owns workers, registered command cancellation, session registry, store, configuration, device sign-in, shutdown ordering and restart admission | No presentation or runtime configuration imports; host finalizes durable receipts; adapters supply prompt interruption and session disposal callbacks |
 | `superforecasting_agent/hosting/{workers,sessions,registry}.py` | host resource ownership | Worker admission/drain; live runtime registration; session use, finalization, retryable disposal and replacement admission | No transport, CLI, agent or tool imports; enforced transitively |
 | `superforecasting_agent/hosting/legacy_commands.py` | compatibility worker lifetime | Lazy command acquisition, serialized use and retryable invalidation | No presentation, runtime, agent or tool imports; adapter supplies the worker factory |
 | `superforecasting_agent/hosting/builds.py` | deferred initialization ownership | Admission, completion-event identity and retry after cleanup | No presentation, runtime, agent or tool imports; adapter supplies construction and cleanup |
@@ -46,6 +46,7 @@ The formality layer of the modularization program
 | `superforecasting_agent/application/command_output.py` | command output routing | Request-local capture, explicit emit and an argparse output adapter; Kanban CLI and messaging share it | Standard library only; no application state, runtime or product dependencies |
 | `superforecasting_agent/application/snapshots.py` | snapshot command policy | `execute_snapshot` shares parsing, validation and operation output; host explicitly admits restoration | No presentation imports; CLI and native TUI use the same operation |
 | `superforecasting_agent/storage/snapshots.py` | profile snapshot persistence | Snapshot capture, listing, validated restore paths, retention and SQLite copying; runtime backup re-exports compatibility names | No CLI management, agent, gateway or TUI imports; transitive contract enforced |
+| `superforecasting_agent/storage/turns.py` | durable turn receipts | Atomic receipt creation, transitions, recovery and continuation reanchoring; host finalizes drained turns before session disposal | No hosting, runtime, agent, domain or presentation imports; transitive contract enforced |
 | `superforecasting_agent/storage/transcripts.py` | transcript export persistence | Shared unique, atomic JSON snapshots for CLI and TUI; callers capture concurrent histories under their own lock | No agent, runtime or presentation imports; no model initialization |
 | `superforecasting_agent/storage/` | session persistence | `superforecasting_agent.storage.session.SessionDB` binds operations from focused storage modules | Storage leaves do not import the SessionDB facade |
 | `protocol/` | kernel (wire contracts) | pydantic models under `protocol/rpc`, `protocol/events`; `generated.ts` is generated from it | **anything app-side** — `forecasting`, `tools`, `agent`, `gateway`, `tui_gateway`, `superforecasting_agent.runtime`, `run_agent`, `cli` (Tier-1 contract, enforced) |
@@ -652,5 +653,7 @@ Snapshot restore stages every validated member before replacing live files. A
 copy failure therefore leaves existing destinations untouched. Publication errors
 raise with confirmed progress and explicitly allow that the failing target may
 already have changed (for example, a post-rename fsync failure). Success means
-all members were published. Cross-file crash atomicity and host quiescence are
-still required before admitting live TUI restoration.
+all members were published. Journaled roll-forward recovery retains verified copies
+after interruption; host-wide writer quiescence is still required before admitting
+live TUI restoration.
+

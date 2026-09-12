@@ -714,3 +714,10 @@ type = "forbidden"
 source_modules = ["superforecasting_agent.application.goals"]
 forbidden_modules = ["superforecasting_agent.runtime", "superforecasting_agent.storage", "agent", "tools", "forecasting"]
 allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "durable turn receipts never depend on runtime or presentation"
+type = "forbidden"
+source_modules = ["superforecasting_agent.storage.turns"]
+forbidden_modules = ["superforecasting_agent.hosting", "superforecasting_agent.runtime", "agent", "tools", "forecasting", "cli", "gateway", "tui_gateway"]
+allow_indirect_imports = false

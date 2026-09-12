@@ -783,10 +783,6 @@ def _interrupt_runtime_delegations() -> None:
 
 
 def _close_drained_session(sid: str, session: dict, db) -> None:
-    if session.get("turn_id") and db is not None:
-        from tui_gateway import turn_journal
-        # Drained workers have relinquished the unfinished receipt.
-        turn_journal.transition(db, session["turn_id"], "interrupted")
     _close_runtime_session(sid, mark_ended=False, drained=True)
 
 
@@ -837,7 +833,7 @@ def write_json(obj: dict) -> bool:
 
 
 def _turn_recovery(db, session_key, *, recover=False):
-    from tui_gateway import turn_journal
+    from superforecasting_agent.storage import turns as turn_journal
     if not callable(getattr(db, "_execute_write", None)):
         return None
     result = turn_journal.latest(db, session_key, recover=recover)
@@ -853,7 +849,7 @@ def _emit(event: str, sid: str, payload: dict | None = None):
             return
         payload["turn_id"] = turn_id
         try:
-            from tui_gateway import turn_journal
+            from superforecasting_agent.storage import turns as turn_journal
             status = "error" if event == "error" else payload.get("status", "running")
             receipt = turn_journal.transition(_get_db(), turn_id, status,
                 delta=payload.get("text", "") if event == "message.delta" else None,
@@ -1773,7 +1769,7 @@ def _sync_session_key_after_compress(
         session["session_key"] = new_session_id
 
     if session.get("turn_id"):
-        from tui_gateway import turn_journal
+        from superforecasting_agent.storage import turns as turn_journal
         turn_journal.reanchor(_get_db(), session["turn_id"], new_session_id)
 
     if clear_pending_title:
@@ -3065,7 +3061,7 @@ def _(rid, params: dict) -> dict:
             f"Agent Running: {'Yes' if session.get('running') else 'No'}",
         ]
     )
-    from tui_gateway import turn_journal
+    from superforecasting_agent.storage import turns as turn_journal
     recovery = _turn_recovery(db, key) if db is not None else None
     if isinstance(recovery, dict):
         lines.append(f"Durable turn: {recovery['status']}")
@@ -3359,7 +3355,7 @@ def _(rid, params: dict) -> dict:
     session["cancel_requested"] = True
     commands_pending = _host.interrupt_commands(session)
     if session.get("turn_id"):
-        from tui_gateway import turn_journal
+        from superforecasting_agent.storage import turns as turn_journal
         turn_journal.transition(_get_db(), session["turn_id"], "cancelling")
     if hasattr(session.get("agent"), "interrupt"):
         session["agent"].interrupt()
@@ -3495,7 +3491,7 @@ def _(rid, params: dict) -> dict:
         session["running"] = True
 
     try:
-        from tui_gateway import turn_journal
+        from superforecasting_agent.storage import turns as turn_journal
         db = _get_db()
         session["turn_id"] = turn_journal.start(db, session["session_key"], text) if db is not None else None
     except Exception as exc:
@@ -3576,7 +3572,7 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
         images = list(session.get("attached_images", []))
         session["attached_images"] = []
     agent = session["agent"]
-    from tui_gateway import turn_journal
+    from superforecasting_agent.storage import turns as turn_journal
     db = _get_db()
     if db is not None:
         receipt = _turn_recovery(db, session["session_key"])

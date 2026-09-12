@@ -63,7 +63,8 @@ The legacy dispatcher itself remains.
 
 Already implemented: host-owned workers, session registry/storage, profile
 configuration, device sign-in, build admission/retry, notification admission and
-command subprocess cleanup. SDK transports own socket teardown; client eviction
+command subprocess cleanup. Durable turn receipts now belong to storage; the host
+finalizes drained turns before session disposal and retains resources on write failure. SDK transports own socket teardown; client eviction
 detaches exact handles before cleanup so concurrent replacements survive. Real
 Ink/dashboard/local-provider/SQLite recovery tests exist.
 

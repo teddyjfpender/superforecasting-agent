@@ -3603,3 +3603,24 @@ corrupt/missing/symlink copies, malformed journals, duplicate members, pending
 restore admission and interrupted cleanup. Shared Python quality gates passed
 with all 52 import contracts. Physical power loss and other platform behavior
 were not tested by these subprocess cases.
+
+
+### Storage-owned turn receipts and host-owned finalization
+
+Durable receipt persistence moved from `tui_gateway.turn_journal` into
+`superforecasting_agent.storage.turns`, with strict lint/format/type coverage and
+an enforced transitive import boundary. Gateway consumers now import storage;
+the former module only re-exports the public compatibility functions. Existing
+`tui_turns` table/index/trigger names and saved rows remain compatible.
+
+RuntimeHost now marks drained in-flight receipts interrupted before asking an
+adapter to dispose sessions. The transport no longer owns that state transition.
+Persistence failure or a missing owned store keeps shutdown incomplete and retains
+the session for retry. Completed/error receipts remain unchanged. This does not
+yet provide profile-wide restoration admission or cross-process writer exclusion.
+
+All 31 host/turn-journal/worker-ownership tests passed, including transport-free
+SQLite shutdown, failed writes, missing stores, terminal-receipt preservation and
+compatibility function identity. Shared Python gates passed with 53 import
+contracts. The preceding snapshot batch push remains in its existing full-suite
+gate; this extraction was developed in the isolated worktree.

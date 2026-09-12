@@ -14,6 +14,7 @@ from superforecasting_agent.hosting.registry import SessionRegistry
 from superforecasting_agent.hosting.sessions import use_session
 from superforecasting_agent.hosting.storage import SessionStore
 from superforecasting_agent.hosting.workers import RuntimeWorkers
+from superforecasting_agent.storage import turns
 
 logger = logging.getLogger(__name__)
 
@@ -138,7 +139,16 @@ class RuntimeHost:
             cleanup_failed = False
             for sid, session in self.sessions.items():
                 try:
-                    close_session(sid, session, self.store.current)
+                    db = self.store.current
+                    if session.get("turn_id"):
+                        if db is None:
+                            raise RuntimeError(
+                                "cannot finalize durable turn without its store"
+                            )
+                        # Workers have drained: a transport cannot report stopped
+                        # while the durable receipt still says running.
+                        turns.transition(db, session["turn_id"], "interrupted")
+                    close_session(sid, session, db)
                 except Exception:
                     cleanup_failed = True
                     logger.exception("runtime session cleanup incomplete: %s", sid)

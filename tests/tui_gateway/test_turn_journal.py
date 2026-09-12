@@ -2,7 +2,7 @@
 import threading
 import pytest
 from superforecasting_agent.storage.session import SessionDB
-from tui_gateway import turn_journal
+from superforecasting_agent.storage import turns as turn_journal
 
 
 @pytest.mark.parametrize('failure', ['authentication expired (401)', 'rate limit (429)', 'stream connection reset'])
