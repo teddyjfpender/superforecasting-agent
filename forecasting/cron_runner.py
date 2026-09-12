@@ -327,13 +327,13 @@ def run_due_reviews(
 
     # Deterministic proposal pass (no LLM): inject the watched-source fetcher so the
     # cadence sweep re-pulls, imports evidence, re-pools, and proposes an update.
-    # The ledger (data layer) never imports the tool/adapter layer, so the fetcher is
-    # built HERE and injected. A missing tool import degrades to "no refresh", not an
+    # The ledger never imports acquisition orchestration, so the shared fetcher is
+    # injected here. An unavailable source import degrades to "no refresh", not an
     # error — the alert self-check still runs.
     refresh_fetcher = None
     if refresh:
         try:
-            from tools.forecasting_tool import fetch_watched_source_payloads
+            from forecasting.sources.watched import fetch_watched_source_payloads
 
             refresh_fetcher = lambda specs: fetch_watched_source_payloads(specs, concurrency=4)  # noqa: E731
         except Exception:

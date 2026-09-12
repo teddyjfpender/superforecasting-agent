@@ -4595,3 +4595,18 @@ quality checks passed. Test teardown compares descriptor file identities before
 closing leaked fixtures so it cannot close another component's reused handle.
 This is a confirmed allocation leak; it does not establish the cause of either
 historical native crash.
+
+### Watched sources shared by refresh consumers
+
+Moved concurrent watched-source acquisition out of the forecasting tool. Scheduled
+reviews, batch refresh and CLI refresh now import the shared source owner,
+removing three frozen tool dependencies. Evidence payload formatting and filter
+normalization have separate pure owners. The agent tool keeps compatibility
+exports. A malformed adapter-options object is now caught per source instead of
+aborting the entire batch; output remains ordered and acquisition performs no
+ledger writes. Timestamp fallback and settlement semantics are unchanged here.
+
+Validation: 157 refresh, tool, CLI resolution, job and boundary tests passed;
+shared quality checks passed. Fresh-process acquisition succeeds with execution
+and ledger imports blocked. Both new owners have transitive import gates and
+strict lint/format/type coverage. Eleven frozen forecast-to-tool edges remain.

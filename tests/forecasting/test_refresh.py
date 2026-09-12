@@ -314,7 +314,7 @@ def test_fetch_watched_source_payloads_isolates_failures(monkeypatch):
             raise RuntimeError("adapter down")
         return [SimpleNamespace(probability=0.6)]
 
-    monkeypatch.setattr(ft, "_load_source_adapter_items", fake_load)
+    monkeypatch.setattr("forecasting.sources.watched.load_source_items", fake_load)
     out = ft.fetch_watched_source_payloads(
         [{"source_type": "manifold", "source": "good"}, {"source_type": "manifold", "source": "bad"}]
     )
@@ -329,7 +329,7 @@ def test_fetch_watched_source_payloads_isolates_failures(monkeypatch):
 
 
 def test_cli_refresh_commits(tmp_path, capsys, monkeypatch):
-    monkeypatch.setattr(ft, "fetch_watched_source_payloads", lambda specs, **k: _market_fetcher(0.72)(specs))
+    monkeypatch.setattr("forecasting.sources.watched.fetch_watched_source_payloads", lambda specs, **k: _market_fetcher(0.72)(specs))
     ledger = _ledger(tmp_path)
     q = _market_question(ledger)
     parser = _parser()
@@ -342,7 +342,7 @@ def test_cli_refresh_commits(tmp_path, capsys, monkeypatch):
 
 
 def test_cli_refresh_dry_run_json_does_not_commit(tmp_path, capsys, monkeypatch):
-    monkeypatch.setattr(ft, "fetch_watched_source_payloads", lambda specs, **k: _market_fetcher(0.72)(specs))
+    monkeypatch.setattr("forecasting.sources.watched.fetch_watched_source_payloads", lambda specs, **k: _market_fetcher(0.72)(specs))
     ledger = _ledger(tmp_path)
     q = _market_question(ledger)
     parser = _parser()
@@ -370,7 +370,7 @@ def test_cli_refresh_agent_routes_to_update_stage(tmp_path, capsys):
 
 
 def test_cli_pipeline_refresh_runs_then_renders_status(tmp_path, capsys, monkeypatch):
-    monkeypatch.setattr(ft, "fetch_watched_source_payloads", lambda specs, **k: _market_fetcher(0.72)(specs))
+    monkeypatch.setattr("forecasting.sources.watched.fetch_watched_source_payloads", lambda specs, **k: _market_fetcher(0.72)(specs))
     ledger = _ledger(tmp_path)
     q = _market_question(ledger)
     parser = _parser()

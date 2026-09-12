@@ -390,13 +390,10 @@ ignore_imports = [
     "forecasting.cli.connect_admin -> tools.slack_tool",
     "forecasting.cli.core -> tools.forecasting_tool",
     "forecasting.cli.questions_admin -> tools.forecasting_tool",
-    "forecasting.cli.refresh_cycle -> tools.forecasting_tool",
     "forecasting.cli.slack_admin -> tools.forecast_actions.share",
     "forecasting.cli.slack_admin -> tools.slack_tool",
     "forecasting.cli.triage_calibration -> tools.forecasting_tool",
     "forecasting.collab.directory -> tools.slack_tool",
-    "forecasting.cron_runner -> tools.forecasting_tool",
-    "forecasting.jobs.types.refresh -> tools.forecasting_tool",
     "forecasting.market_model -> tools.market_presentation_tool",
     "forecasting.market_model -> tools.terminal_tool",
     "forecasting.notify -> tools.slack_tool",
@@ -773,4 +770,18 @@ name = "structured source dispatch never imports agent execution or presentation
 type = "forbidden"
 source_modules = ["forecasting.sources.dispatch"]
 forbidden_modules = ["tools", "agent", "cli", "tui_gateway", "gateway", "forecasting.cli", "forecasting.application"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "watched source acquisition never imports execution or presentation"
+type = "forbidden"
+source_modules = ["forecasting.sources.watched"]
+forbidden_modules = ["tools", "agent", "cli", "gateway", "tui_gateway", "forecasting.application", "forecasting.ledger"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "source evidence formatting is independent of acquisition and persistence"
+type = "forbidden"
+source_modules = ["forecasting.sources.evidence"]
+forbidden_modules = ["tools", "agent", "cli", "gateway", "tui_gateway", "forecasting.source_adapters", "forecasting.sources.dispatch", "forecasting.sources.watched", "forecasting.ledger"]
 allow_indirect_imports = false

@@ -15,7 +15,9 @@ changes, tests and their limits. The previous checklist is preserved in the
   Market refresh and evidence ingestion share `forecasting/sources/dispatch.py`.
   Read-only forecast configuration lives in storage; diagnostic runtime imports
   remain in the compatibility facade. A transitive import contract blocks source
-  dispatch from importing execution and presentation layers.
+  dispatch from importing execution and presentation layers. Scheduled, batch and
+  CLI refresh now share watched-source acquisition directly; pure evidence payload
+  formatting has its own owner. Three further tool dependency exceptions are removed.
 
 - [x] Remove the classic slash-worker implementation and cleanup scaffolding.
   TUI command execution no longer constructs or calls it. Every catalog command

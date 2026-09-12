@@ -364,7 +364,7 @@ def _run_one(ledger: "ForecastLedger", question_id: str, args: argparse.Namespac
     failure so a batch run keeps going.
     """
 
-    from tools.forecasting_tool import fetch_watched_source_payloads
+    from forecasting.sources.watched import fetch_watched_source_payloads
 
     try:
         result = ledger.refresh_forecast(
@@ -546,7 +546,7 @@ def _cmd_refresh(args: argparse.Namespace) -> None:
         args.commit_policy = "commit_material"
         _cmd_agent(args)
         return
-    from tools.forecasting_tool import fetch_watched_source_payloads
+    from forecasting.sources.watched import fetch_watched_source_payloads
 
     concurrency = args.concurrency
     result = ledger.refresh_forecast(

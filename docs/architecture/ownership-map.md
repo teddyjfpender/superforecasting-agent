@@ -796,3 +796,15 @@ for cleanup immediately; a second-open failure cannot leak the first. Children
 retain their inherited descriptors independently after the parent closes its
 copies. This addresses a reproduced allocation leak, not the historical native
 SSL or late bad-file-descriptor incident.
+
+### Watched source acquisition and evidence payloads
+
+`forecasting/sources/watched.py` owns concurrent acquisition and ordered per-source
+results. Scheduled, batch and CLI refresh inject it into ledger operations; the
+agent tool re-exports it for compatibility. A malformed options object produces
+one source error without discarding successful peers. It never writes the ledger.
+
+`forecasting/sources/evidence.py` owns parsed-record-to-evidence formatting with no
+fetching, execution or persistence imports. `sources/filters.py` owns shared filter
+normalization. Transitive import gates enforce both boundaries; each extracted
+module has strict lint, formatting and type coverage.
