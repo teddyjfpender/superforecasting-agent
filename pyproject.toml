@@ -691,3 +691,9 @@ name = "installation policy never initializes runtime or consumers"
 type = "forbidden"
 source_modules = ["superforecasting_agent.installation"]
 forbidden_modules = ["superforecasting_agent.runtime", "agent", "tools", "gateway", "tui_gateway", "cli", "forecasting"]
+
+[[tool.importlinter.contracts]]
+name = "curator state persistence never imports orchestration or consumers"
+type = "forbidden"
+source_modules = ["superforecasting_agent.storage.curator_state"]
+forbidden_modules = ["agent", "tools", "superforecasting_agent.runtime", "cli", "gateway", "tui_gateway"]

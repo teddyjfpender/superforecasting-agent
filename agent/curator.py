@@ -23,9 +23,7 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
-import tempfile
 import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -68,57 +66,27 @@ def _state_file() -> Path:
 
 
 def _default_state() -> Dict[str, Any]:
-    return {
-        "last_run_at": None,
-        "last_run_duration_seconds": None,
-        "last_run_summary": None,
-        "last_run_summary_shown_at": None,
-        "last_report_path": None,
-        "paused": False,
-        "run_count": 0,
-    }
+    from superforecasting_agent.storage.curator_state import default_state
+    return default_state()
 
 
 def load_state() -> Dict[str, Any]:
-    path = _state_file()
-    if not path.exists():
-        return _default_state()
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        if isinstance(data, dict):
-            base = _default_state()
-            base.update({k: v for k, v in data.items() if k in base or k.startswith("_")})
-            return base
-    except (OSError, json.JSONDecodeError) as e:
-        logger.debug("Failed to read curator state: %s", e)
-    return _default_state()
+    from superforecasting_agent.storage.curator_state import load_state as load
+    return load(_state_file())
 
 
 def save_state(data: Dict[str, Any]) -> None:
-    path = _state_file()
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".curator_state_", suffix=".tmp")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2, sort_keys=True, ensure_ascii=False)
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(tmp, path)
-        except BaseException:
-            try:
-                os.unlink(tmp)
-            except OSError:
-                pass
-            raise
-    except Exception as e:
-        logger.debug("Failed to save curator state: %s", e, exc_info=True)
+    from superforecasting_agent.storage.curator_state import save_state as save
+    save(_state_file(), data)
+
+
+def _mutate_state(mutate) -> None:
+    from superforecasting_agent.storage.curator_state import mutate_state
+    mutate_state(_state_file(), mutate)
 
 
 def set_paused(paused: bool) -> None:
-    state = load_state()
-    state["paused"] = bool(paused)
-    save_state(state)
+    _mutate_state(lambda state: state.update(paused=bool(paused)))
 
 
 def is_paused() -> bool:
@@ -232,13 +200,16 @@ def should_run_now(now: Optional[datetime] = None) -> bool:
         if now is None:
             now = datetime.now(timezone.utc)
         try:
-            state["last_run_at"] = now.isoformat()
-            state["last_run_summary"] = (
-                "deferred first run — curator seeded, will run after one "
-                "interval; use `superforecasting-agent curator run --dry-run` "
-                "to preview now"
-            )
-            save_state(state)
+            def seed(current):
+                if _parse_iso(current.get("last_run_at")) is not None:
+                    return
+                current["last_run_at"] = now.isoformat()
+                current["last_run_summary"] = (
+                    "deferred first run — curator seeded, will run after one "
+                    "interval; use `superforecasting-agent curator run --dry-run` "
+                    "to preview now"
+                )
+            _mutate_state(seed)
         except Exception as e:  # pragma: no cover — best-effort persistence
             logger.debug("Failed to seed curator last_run_at: %s", e)
         return False
@@ -1440,13 +1411,13 @@ def run_curator_review(
     # last_run_at or run_count — a preview shouldn't push the next scheduled
     # real pass out. We still record a summary so `superforecasting-agent
     # curator status` shows that a preview ran.
-    state = load_state()
-    if not dry_run:
-        state["last_run_at"] = start.isoformat()
-        state["run_count"] = int(state.get("run_count", 0)) + 1
     prefix = "dry-run auto: " if dry_run else "auto: "
-    state["last_run_summary"] = f"{prefix}{auto_summary}"
-    save_state(state)
+    def started(state):
+        if not dry_run:
+            state["last_run_at"] = start.isoformat()
+            state["run_count"] = int(state.get("run_count", 0)) + 1
+        state["last_run_summary"] = f"{prefix}{auto_summary}"
+    _mutate_state(started)
 
     def _llm_pass():
         nonlocal auto_summary
@@ -1512,7 +1483,7 @@ def run_curator_review(
             logger.debug("Curator rename summary build failed: %s", e, exc_info=True)
 
         elapsed = (datetime.now(timezone.utc) - start).total_seconds()
-        state2 = load_state()
+        state2 = {}
         state2["last_run_duration_seconds"] = elapsed
         state2["last_run_summary"] = final_summary
 
@@ -1540,7 +1511,7 @@ def run_curator_review(
         except Exception as e:
             logger.debug("Curator report write failed: %s", e, exc_info=True)
 
-        save_state(state2)
+        _mutate_state(lambda state: state.update(state2))
 
         if on_summary:
             try:

@@ -2912,3 +2912,19 @@ A blocked fake review proves foreground stream identity/output and child cleanup
 preserved. 84 curator/state/report/backup tests and shared Python quality checks passed.
 The integrated full gate is still required before publishing these fixes. Broader
 production curator worker ownership and failed child disposal remain follow-up work.
+
+
+### Curator state owns atomic field changes
+
+Curator persistence now has an independent strict storage owner using existing
+cross-process locking and atomic JSON publication. Pause changes, initial scheduler
+seeding, run-count increments and review completion mutate current fields under one
+lock. Completion no longer replaces a stale whole-state snapshot after report writing.
+Publication errors propagate instead of allowing a command to claim persistence.
+
+87 curator/state/report/backup tests passed. A real synchronous review test changes
+pause state inside report publication and proves completion retains that change;
+parallel increments and failed-publication preservation are separately covered.
+Shared Python quality checks and all 49 import contracts passed. Production daemon
+admission and shutdown ownership remain unfinished; this storage fix does not claim
+to close that separate runtime-lifetime gap.
