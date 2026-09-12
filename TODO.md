@@ -123,7 +123,7 @@ Tool inventory and /tools list now use shared views without building an agent or
   descriptors now share a scoped owner that closes partial allocations in both
   normal and Chrome-fallback launch paths. Shared configuration and auth-store
   writers now keep raw descriptor ownership through text-wrapper construction;
-  wrapper failures and repeated teardown cannot leak or re-close those handles. PID-file parsing now rejects
+  wrapper failures and repeated teardown cannot leak or re-close those handles. Shared file-lock reentrancy now keys the process and resolved path, so nested independent stores cannot skip their OS locks. Interruption and real subprocess exclusion have regression coverage. PID-file parsing now rejects
   process-group selectors; invalid PID files and signaling failures retain local
   handles. Unreadable owner records no longer authorize orphan reaping. PID reuse
   and confirmation of daemon termination remain unqualified.

@@ -4858,3 +4858,18 @@ default homes are protected using the real HOME environment path. Owned-store
 recovery backups retain their existing behavior; logs only claim preservation
 when the copy actually succeeds. 158 auth/profile/storage checks and the shared
 quality workflow passed. No live credentials were read in the tests.
+
+
+### Resource-specific file-lock reentrancy
+
+A negative control reproduced the shared lock helper skipping the OS lock for a
+second path when callers reused a thread-local holder. Reentrancy now uses process
+identity and the resolved path. Nested independent stores acquire and release
+independent locks; interruption preserves the outer lock. Tests include a real
+POSIX subprocess denied access to both paths and simulated inherited bookkeeping
+that cannot bypass a new process acquisition. This does not establish forked
+file-descriptor cleanup or native Windows qualification.
+
+Validation: 157 auth/provider and lock checks passed; the shared quality workflow
+passed all 72 import contracts and blocking Python/TUI/protocol checks. The historical SSL and late descriptor incident
+causes remain unproven; this is a separately reproduced storage ownership defect.

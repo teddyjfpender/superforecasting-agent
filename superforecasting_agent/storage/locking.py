@@ -1,5 +1,6 @@
 """Reentrant cross-process file locking shared by credential and config stores."""
 
+import os
 import threading
 import time
 from contextlib import contextmanager
@@ -40,29 +41,31 @@ def file_lock(
 ):
     """Cross-process advisory flock helper.
 
-    Reentrant per-thread via ``holder.depth``. Falls back to a depth-only
-    guard when neither ``fcntl`` nor ``msvcrt`` is available (rare).
-    Callers supply their own ``threading.local`` so independent locks
-    (e.g. profile auth.json vs shared Nous store) don't share reentrancy
-    state — that would let one lock's reentrant acquisition silently skip
-    the other's kernel-level flock.
+    Reentrant per thread, process, and resolved lock path. Independent paths
+    always acquire their own OS lock, even when callers reuse the holder.
+    Without an OS backend this only tracks nesting, not cross-process exclusion.
     """
-    if getattr(holder, "depth", 0) > 0:
-        holder.depth += 1
+    lock_path = lock_path.resolve()
+    depths = getattr(holder, "depths", None)
+    if depths is None:
+        depths = holder.depths = {}
+    key = (os.getpid(), str(lock_path))
+    if depths.get(key, 0) > 0:
+        depths[key] += 1
         try:
             yield
         finally:
-            holder.depth -= 1
+            depths[key] -= 1
         return
 
     lock_path.parent.mkdir(parents=True, exist_ok=True)
 
     if posix is None and windows is None:
-        holder.depth = 1
+        depths[key] = 1
         try:
             yield
         finally:
-            holder.depth = 0
+            depths.pop(key, None)
         return
 
     # On Windows, windows.locking needs the file to have content and the
@@ -86,11 +89,11 @@ def file_lock(
                     raise TimeoutError(timeout_message)
                 time.sleep(0.05)
 
-        holder.depth = 1
+        depths[key] = 1
         try:
             yield
         finally:
-            holder.depth = 0
+            depths.pop(key, None)
             if posix:
                 try:
                     posix.flock(lock_file.fileno(), posix.LOCK_UN)
