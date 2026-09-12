@@ -5774,6 +5774,13 @@ def _(rid, params: dict) -> dict:
         # error would make the client's fallback repeat a failed shell command.
         return _command_handoff(rid, "configured command: use command.dispatch")
 
+    # Match dispatch's canonical command identity before selecting an owner.
+    # Otherwise registry aliases can initialize the classic worker even when
+    # their canonical operation is already native (for example /gateway).
+    definition = resolve_command(_cmd_base)
+    if definition is not None:
+        _cmd_base = definition.name
+
     if _cmd_base in {"plugins", "toolsets", "profile", "bundles", "insights", "codex-runtime", "gquota", "platforms", "cron", "curator"}:
         return _command_handoff(rid, "native command: use command.dispatch")
 

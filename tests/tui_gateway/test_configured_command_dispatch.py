@@ -731,3 +731,38 @@ def test_concurrent_curator_commands_keep_output_separate(configure, monkeypatch
         assert resume.result(timeout=10)["result"]["output"] == "curator: resumed"
     captured = capsys.readouterr()
     assert captured.out == captured.err == ""
+
+
+@pytest.mark.parametrize("canonical", [
+    "plugins", "toolsets", "profile", "bundles", "insights", "codex-runtime",
+    "gquota", "platforms", "cron", "curator",
+])
+def test_native_handoff_covers_registry_aliases(configure, canonical):
+    from superforecasting_agent.application.command_catalog import resolve_command
+
+    configure({})
+    definition = resolve_command(canonical)
+    for name in (definition.name, *definition.aliases):
+        response = slash(f"/{name.upper()}")
+        assert response["error"]["data"] == {
+            "dispatch": "command.dispatch", "execution_started": False,
+        }
+    server._SlashWorker.assert_not_called()
+    server._start_agent_build.assert_not_called()
+
+
+def test_runtime_alias_executes_shared_operation_once(configure, monkeypatch):
+    configure({})
+    monkeypatch.setattr(server, "_load_cfg", lambda: {
+        "model": {"openai_runtime": "codex_app_server"},
+    })
+    save = Mock()
+    monkeypatch.setattr(server, "_save_cfg", save)
+    handoff = slash("/codex_runtime off")
+    assert handoff["error"]["data"]["execution_started"] is False
+    save.assert_not_called()
+    response = dispatch("codex_runtime", "off")
+    assert response["result"]["type"] == "exec"
+    save.assert_called_once()
+    server._SlashWorker.assert_not_called()
+    server._start_agent_build.assert_not_called()

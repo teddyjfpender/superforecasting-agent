@@ -2398,3 +2398,19 @@ Existing command-only test fixtures retain their CLI seam. Shared Python lint,
 format, scoped types, protocol generation and all 44 import contracts passed.
 Broader forecasting verification is running separately; this entry does not
 claim that pending run or the full-repository push gate has passed.
+
+
+### Native command aliases retain their operation owner
+
+The slash handoff used raw names while command.dispatch resolved registry aliases.
+Consequently /codex_runtime and /gateway could create a classic CLI worker even
+though /codex-runtime and /platforms already had native operations. The handoff
+now canonicalizes through the shared registry before selecting an owner; custom
+command validation still occurs first and legacy commands retain their arguments.
+
+Regression coverage enumerates every registered alias of the ten native command
+families (including uppercase invocations), forbids worker/agent construction,
+and verifies a runtime-setting alias performs no write during handoff and exactly
+one write during dispatch. 672 TUI gateway tests passed, along with shared
+Python quality checks and all 44 import contracts. This fixes alias routing; it
+does not claim that the remaining classic command operations are migrated.
