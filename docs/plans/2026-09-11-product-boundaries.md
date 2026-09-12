@@ -3496,3 +3496,19 @@ now include the rendered screen. No production timeout or test deadline changed.
 All 22 real desk lifecycle and VT emulator tests passed in 10.04 seconds. This
 fixes an invalid test observation boundary; it does not attribute the historical
 native SSL incident.
+
+
+### Provider/model syntax parity
+
+Quorum parsing previously retained alias prefixes such as `glm`, so connected
+canonical `zai` credentials could be rejected during panel validation. It also
+parsed `custom:local:model` as provider `custom`, model `local:model`, unlike the
+interactive picker. A shared pure configuration parser now normalizes aliases
+and preserves named endpoint identity for both consumers. Colon-containing model
+IDs, URLs and existing incomplete custom syntax retain interactive compatibility.
+Credential/known-provider catalog discovery remains outside this parser.
+
+Four new cases failed before the fix. After extraction, 208 focused syntax, model
+validation and quorum tests passed, including one- and two-turn agent construction
+receiving the named endpoint and bare model separately. Shared Python quality
+gates passed with 52 contracts.

@@ -226,20 +226,13 @@ def _split_provider_model(model_id: str) -> tuple[str | None, str]:
     auto-resolution. Returns ``(None, model_id)`` when there is no provider prefix.
     """
 
-    if ":" not in model_id:
-        return None, model_id
-    head, rest = model_id.split(":", 1)
-    head_n = head.strip().lower()
-    rest = rest.strip()
-    if not rest:
-        return None, model_id
+    from superforecasting_agent.configuration.providers import split_provider_model
+
     try:
         from superforecasting_agent.runtime.models import _KNOWN_PROVIDER_NAMES
-
-        known = head_n in _KNOWN_PROVIDER_NAMES
     except Exception:  # noqa: BLE001 — without the catalog, never split
-        known = False
-    return (head_n, rest) if known else (None, model_id)
+        return None, model_id
+    return split_provider_model(model_id, _KNOWN_PROVIDER_NAMES)
 
 
 def resolve_connected_panel(

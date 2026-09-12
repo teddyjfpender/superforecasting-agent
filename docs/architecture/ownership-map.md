@@ -619,3 +619,13 @@ startup failure emits diagnostics while preserving the existing best-effort
 registered-provider behavior. Job state and exit-status semantics are unchanged.
 This removes the job entrypoint's direct domain-to-runtime import exception; it
 does not claim that the compatibility entrypoint is a pure domain module.
+
+
+### Explicit provider/model syntax
+
+`configuration.providers.split_provider_model` owns parsing of known provider
+prefixes, canonical aliases and `custom:<endpoint>:<model>` selections. Interactive
+model commands and quorum agent construction consume the same pure policy.
+Callers supply their known-provider catalog and own implicit routing. Catalog
+discovery and credential availability remain runtime responsibilities; the quorum
+catalog dependency is not yet removed. Unknown prefixes remain part of the model.

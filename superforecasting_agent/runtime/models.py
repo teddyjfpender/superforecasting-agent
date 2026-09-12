@@ -20,6 +20,7 @@ from typing import Any, NamedTuple, Optional
 from superforecasting_agent.configuration.providers import (
     PROVIDER_ALIASES as _PROVIDER_ALIASES,
     normalize_provider,
+    split_provider_model,
 )
 
 from superforecasting_agent.runtime import __version__ as _HERMES_VERSION
@@ -1618,23 +1619,8 @@ def parse_model_input(raw: str, current_provider: str) -> tuple[str, str]:
     Returns ``(provider, model)`` where *provider* is either the explicit
     provider from the input or *current_provider* if none was specified.
     """
-    stripped = raw.strip()
-    colon = stripped.find(":")
-    if colon > 0:
-        provider_part = stripped[:colon].strip().lower()
-        model_part = stripped[colon + 1:].strip()
-        if provider_part and model_part and provider_part in _KNOWN_PROVIDER_NAMES:
-            # Support custom:name:model triple syntax for named custom
-            # providers.  ``custom:local:qwen`` → ("custom:local", "qwen").
-            # Single colon ``custom:qwen`` → ("custom", "qwen") as before.
-            if provider_part == "custom" and ":" in model_part:
-                second_colon = model_part.find(":")
-                custom_name = model_part[:second_colon].strip()
-                actual_model = model_part[second_colon + 1:].strip()
-                if custom_name and actual_model:
-                    return (f"custom:{custom_name}", actual_model)
-            return (normalize_provider(provider_part), model_part)
-    return (current_provider, stripped)
+    provider, model = split_provider_model(raw, _KNOWN_PROVIDER_NAMES)
+    return provider or current_provider, model
 
 
 def _get_custom_base_url() -> str:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Collection
+
 PROVIDER_ALIASES = {
     "glm": "zai",
     "z-ai": "zai",
@@ -93,3 +95,25 @@ def normalize_provider(provider: str | None) -> str:
     """
     normalized = (provider or "openrouter").strip().lower()
     return PROVIDER_ALIASES.get(normalized, normalized)
+
+
+def split_provider_model(
+    raw: str, known_providers: Collection[str]
+) -> tuple[str | None, str]:
+    """Interpret an explicit provider without discovering providers or credentials.
+
+    Unrecognized prefixes belong to the model identifier. Explicit ``custom``
+    triple syntax selects a named endpoint; aliases resolve to canonical IDs.
+    The caller supplies its current catalog and owns any implicit-provider policy.
+    """
+    model = raw.strip()
+    head, separator, rest = model.partition(":")
+    provider = head.strip().lower()
+    rest = rest.strip()
+    if not separator or not provider or not rest or provider not in known_providers:
+        return None, model
+    if provider == "custom":
+        name, separator, named_model = rest.partition(":")
+        if separator and name.strip() and named_model.strip():
+            return f"custom:{name.strip()}", named_model.strip()
+    return normalize_provider(provider), rest
