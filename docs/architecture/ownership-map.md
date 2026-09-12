@@ -546,3 +546,10 @@ Tool selection distinguishes absent configuration from a saved empty list.
 `tooling/selection.py` owns this policy: saved `[]` enables no tools, including
 implicit plugin/MCP/credential additions. TUI startup forwards the resolved list
 unchanged; it must not translate `[]` into the agent's `None` (all-tools) sentinel.
+
+`tooling/startup_selection.py` owns startup toolset override validation, plugin
+lookup, enabled/disabled MCP classification and configured-selection fallback.
+The TUI passes its override string and setting label and renders returned notices
+through a callback. The shared owner has strict lint/format/type checks and a
+transitive import contract prohibiting classic CLI and TUI dependencies. Empty
+configured selections remain empty; explicit all-tool overrides remain `None`.

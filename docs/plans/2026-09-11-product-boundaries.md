@@ -2174,3 +2174,19 @@ checks passed. Construction regression coverage asserts `enabled_toolsets=[]`
 reaches the shared agent factory. Additional shared-resolver coverage supplies a
 new plugin, enabled MCP server and available xAI credentials and requires that
 an explicitly empty selection remain empty.
+
+### Startup tool selection outside the TUI adapter
+
+Moved startup tool selection from the TUI server to
+`superforecasting_agent/tooling/startup_selection.py`. The adapter now supplies an
+override value, setting label and notice renderer. The shared owner retains
+built-in/plugin resolution, disabled MCP handling, all-tool overrides and fallback
+behavior, including the explicit-empty selection repair. No presentation globals
+or process-wide output redirection are used by the shared operation.
+
+405 focused TUI, configuration, command and import-boundary tests passed. Strict
+lint/format/type checks pass for the new owner; the complete quality workflow
+reports 41 kept import contracts and no broken contracts. The extraction required
+explicit optional-validator typing and narrowing MCP config before iteration.
+Foreground startup configuration assembly still has other adapter-owned pieces;
+this extraction does not mark that broader item complete.

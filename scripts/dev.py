@@ -44,6 +44,7 @@ STRICT_PYTHON = (
     "superforecasting_agent/platform_registry.py",
     "superforecasting_agent/session_context.py",
     "superforecasting_agent/tooling/selection.py",
+    "superforecasting_agent/tooling/startup_selection.py",
     "forecasting/application",
     "forecasting/distribution_summary.py",
     "forecasting/distribution_parameters.py",
