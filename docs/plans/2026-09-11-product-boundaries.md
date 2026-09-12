@@ -1838,3 +1838,17 @@ skipped because SciPy is unavailable. New tests block optional imports and recor
 any attempted tool installer import, proving absent packages do not trigger
 installation even through compatibility backend-loading functions. Python quality
 and all 36 import contracts passed.
+
+
+### Qualify toolset parity at the rendering boundary
+
+The runtime batch's full gate failed one empty-selection toolset parity case:
+30,923 passed and 148 skipped; no push occurred. Its shared stdout capture and
+first-matching-row assertion did not identify the failing surface. The test now
+captures the CLI renderer directly, requires exactly one fixture row per surface,
+and names the surface on failure. TUI and CLI selection assertions remain intact.
+The original failure source is not conclusively attributed; this removes an
+ambiguous observation boundary rather than claiming a runtime defect is fixed.
+
+Validation: all 67 command/inventory tests and Python quality checks passed.
+The final integrated full gate is still required.

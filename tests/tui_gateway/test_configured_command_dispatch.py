@@ -323,7 +323,7 @@ def test_native_builtin_cannot_be_overridden_by_plugin(configure, monkeypatch):
 
 
 @pytest.mark.parametrize("selection,marker", [(None, "(*)"), ([], ""), (["forecasting"], "(*)")])
-def test_toolset_command_shares_cli_inventory_without_worker(configure, monkeypatch, capsys, selection, marker):
+def test_toolset_command_shares_cli_inventory_without_worker(configure, monkeypatch, selection, marker):
     from types import SimpleNamespace
     from cli import ForecastCLI
 
@@ -335,12 +335,18 @@ def test_toolset_command_shares_cli_inventory_without_worker(configure, monkeypa
     })
     response = dispatch("toolsets")["result"]
     assert response["type"] == "exec"
+    rendered = []
+    monkeypatch.setitem(
+        ForecastCLI.show_toolsets.__globals__, "print",
+        lambda *parts, **kwargs: rendered.append(" ".join(str(part) for part in parts)),
+    )
     ForecastCLI.show_toolsets(SimpleNamespace(enabled_toolsets=selection))
-    classic = capsys.readouterr().out
+    classic = "\n".join(rendered)
     expected = f"{marker} forecasting [1 tools] - Fixture tools".strip()
-    for output in (response["output"], classic):
-        row = next(line for line in output.splitlines() if "Fixture tools" in line)
-        assert " ".join(row.split()).replace("[ ", "[") == expected
+    for surface, output in (("TUI", response["output"]), ("CLI", classic)):
+        rows = [line for line in output.splitlines() if "Fixture tools" in line]
+        assert len(rows) == 1, (surface, output)
+        assert " ".join(rows[0].split()).replace("[ ", "[") == expected, (surface, output)
         assert "hermes-legacy" not in output
     assert slash("toolsets")["error"]["data"] == {
         "dispatch": "command.dispatch", "execution_started": False,
