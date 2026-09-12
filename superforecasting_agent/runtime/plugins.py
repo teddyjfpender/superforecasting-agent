@@ -52,7 +52,7 @@ from typing import Any, Callable, Dict, List, Optional, Set, Union
 
 from superforecasting_agent.constants import get_agent_home
 from superforecasting_agent.environment import env_var_enabled
-from superforecasting_agent.runtime.config import cfg_get
+from superforecasting_agent.configuration import cfg_get
 
 
 _BUNDLED_PLUGIN_DIR_ENV_VARS = (
@@ -215,8 +215,8 @@ def _get_disabled_plugins() -> set:
     ``plugins.enabled``.
     """
     try:
-        from superforecasting_agent.runtime.config import load_config
-        config = load_config()
+        from superforecasting_agent.storage.configuration import read_configuration
+        config = read_configuration(get_agent_home() / "config.yaml")
         disabled = cfg_get(config, "plugins", "disabled", default=[])
         return set(disabled) if isinstance(disabled, list) else set()
     except Exception:
@@ -238,8 +238,8 @@ def _get_enabled_plugins() -> Optional[set]:
     * ``set(...)`` — the concrete allow-list.
     """
     try:
-        from superforecasting_agent.runtime.config import load_config
-        config = load_config()
+        from superforecasting_agent.storage.configuration import read_configuration
+        config = read_configuration(get_agent_home() / "config.yaml")
         plugins_cfg = config.get("plugins")
         if not isinstance(plugins_cfg, dict):
             return None
@@ -475,7 +475,7 @@ class PluginContext:
 
         # Reject if it conflicts with a built-in command
         try:
-            from superforecasting_agent.runtime.commands import resolve_command
+            from superforecasting_agent.application.command_catalog import resolve_command
             if resolve_command(clean) is not None:
                 logger.warning(
                     "Plugin '%s' tried to register command '/%s' which conflicts "

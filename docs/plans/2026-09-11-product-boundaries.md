@@ -3086,3 +3086,17 @@ repair could overwrite that intervening write.
 tests after test-environment cleanup was tightened. Shared Python quality checks and
 all 51 import contracts passed. The preceding integrated batch pushed at 22e3f6445;
 environment metadata/startup extraction and this lock fix await their next full gate.
+
+
+### Plugin policy reads and command conflicts use shared owners
+
+Plugin enable/disable reads now use explicit-profile storage and shared nested lookup.
+Command registration checks the application command catalog directly, including
+aliases, without importing the classic command registry. The remaining runtime plugin
+manager still owns discovery and execution; this removes its configuration/command
+prerequisites before that ownership extraction.
+
+150 plugin, malformed-manifest, command and shared-owner tests passed. New tests make
+the legacy CLI loader/registry unavailable while verifying configured policy and
+built-in alias protection. Shared Python quality gates and 51 import contracts passed.
+The startup batch's full push gate remains running in the primary checkout.
