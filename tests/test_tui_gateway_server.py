@@ -1714,6 +1714,9 @@ def test_init_session_fires_reset_hook(monkeypatch):
 
 def test_session_title_queues_when_db_row_not_ready(monkeypatch):
     class _FakeDB:
+        from superforecasting_agent.storage.session import SessionDB
+        sanitize_title = staticmethod(SessionDB.sanitize_title)
+
         def get_session_title(self, _key):
             return None
 
@@ -1748,6 +1751,9 @@ def test_session_title_queues_when_db_row_not_ready(monkeypatch):
 
 def test_session_title_clears_pending_after_persist(monkeypatch):
     class _FakeDB:
+        from superforecasting_agent.storage.session import SessionDB
+        sanitize_title = staticmethod(SessionDB.sanitize_title)
+
         def __init__(self):
             self.title = "old"
 
@@ -1782,6 +1788,9 @@ def test_session_title_clears_pending_after_persist(monkeypatch):
 
 def test_session_title_does_not_queue_noop_when_row_exists(monkeypatch):
     class _FakeDB:
+        from superforecasting_agent.storage.session import SessionDB
+        sanitize_title = staticmethod(SessionDB.sanitize_title)
+
         def __init__(self):
             self.title = "same title"
 
@@ -1813,9 +1822,12 @@ def test_session_title_does_not_queue_noop_when_row_exists(monkeypatch):
         server._host.sessions.pop("sid", None)
 
 
-def test_session_title_get_falls_back_to_pending_when_db_read_throws(monkeypatch):
+def test_session_title_get_reports_failure_and_retains_pending_title(monkeypatch):
     class _FakeDB:
-        def get_session_title(self, _key):
+        from superforecasting_agent.storage.session import SessionDB
+        sanitize_title = staticmethod(SessionDB.sanitize_title)
+
+        def set_session_title(self, _key, _title):
             raise RuntimeError("db temporarily locked")
 
     server._host.sessions["sid"] = _session(pending_title="queued title")
@@ -1824,13 +1836,18 @@ def test_session_title_get_falls_back_to_pending_when_db_read_throws(monkeypatch
         resp = server.handle_request(
             {"id": "1", "method": "session.title", "params": {"session_id": "sid"}}
         )
-        assert resp["result"]["title"] == "queued title"
+        assert resp["error"]["code"] == 5007
+        assert "temporarily locked" in resp["error"]["message"]
+        assert server._host.sessions["sid"]["pending_title"] == "queued title"
     finally:
         server._host.sessions.pop("sid", None)
 
 
 def test_session_title_get_retries_persist_for_pending_title(monkeypatch):
     class _FakeDB:
+        from superforecasting_agent.storage.session import SessionDB
+        sanitize_title = staticmethod(SessionDB.sanitize_title)
+
         def __init__(self):
             self.title = ""
 
@@ -1859,6 +1876,9 @@ def test_session_title_get_retries_persist_for_pending_title(monkeypatch):
 
 def test_session_title_get_retries_pending_even_when_db_has_title(monkeypatch):
     class _FakeDB:
+        from superforecasting_agent.storage.session import SessionDB
+        sanitize_title = staticmethod(SessionDB.sanitize_title)
+
         def __init__(self):
             self.title = "auto title"
 
@@ -1887,6 +1907,9 @@ def test_session_title_get_retries_pending_even_when_db_has_title(monkeypatch):
 
 def test_session_title_rejects_empty_title_with_specific_error_code(monkeypatch):
     class _FakeDB:
+        from superforecasting_agent.storage.session import SessionDB
+        sanitize_title = staticmethod(SessionDB.sanitize_title)
+
         def get_session_title(self, _key):
             return ""
 
@@ -1908,6 +1931,9 @@ def test_session_title_rejects_empty_title_with_specific_error_code(monkeypatch)
 
 def test_session_title_set_maps_valueerror_to_user_error(monkeypatch):
     class _FakeDB:
+        from superforecasting_agent.storage.session import SessionDB
+        sanitize_title = staticmethod(SessionDB.sanitize_title)
+
         def get_session_title(self, _key):
             return ""
 
@@ -1936,6 +1962,9 @@ def test_session_title_set_maps_valueerror_to_user_error(monkeypatch):
 
 def test_session_title_set_errors_when_row_lookup_fails_after_noop(monkeypatch):
     class _FakeDB:
+        from superforecasting_agent.storage.session import SessionDB
+        sanitize_title = staticmethod(SessionDB.sanitize_title)
+
         def get_session_title(self, _key):
             return ""
 

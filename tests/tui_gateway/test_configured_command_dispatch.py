@@ -933,3 +933,21 @@ def test_native_command_event_delivery_failure_does_not_repeat_mutation(configur
     with kanban_db.connection() as db:
         assert [task.title for task in kanban_db.list_tasks(db)] == ["single durable mutation"]
     assert not server._host.sessions["runtime"].get("_command_stops")
+
+
+def test_toolset_command_uses_its_host_when_sibling_adapter_is_rebound(configure, monkeypatch):
+    from types import SimpleNamespace
+    from tui_gateway import tools_rpc
+
+    configure({})
+    monkeypatch.setattr(server, '_load_enabled_toolsets', lambda: [])
+    monkeypatch.setattr(tools_rpc, '_core', SimpleNamespace(
+        _host=SimpleNamespace(sessions={}), _load_enabled_toolsets=lambda: ['forecasting'],
+    ))
+    monkeypatch.setattr('superforecasting_agent.tooling.toolsets.get_all_toolsets', lambda: {'forecasting': {}})
+    monkeypatch.setattr('superforecasting_agent.tooling.toolsets.get_toolset_info', lambda name: {
+        'description': 'Owned selection', 'tool_count': 1, 'resolved_tools': ['fixture'],
+    })
+    output = dispatch('toolsets')['result']['output']
+    row = next(line for line in output.splitlines() if 'Owned selection' in line)
+    assert '(*)' not in row

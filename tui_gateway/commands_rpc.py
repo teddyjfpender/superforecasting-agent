@@ -465,11 +465,14 @@ def _(rid, params: dict) -> dict:
             return _err(rid, 5030, f"Bundle subsystem unavailable: {exc}")
 
     if name == "toolsets":
-        from superforecasting_agent.tooling.inventory import toolset_inventory
-        from tui_gateway.tools_rpc import _session_toolsets
+        from superforecasting_agent.tooling.inventory import toolset_inventory, session_toolset_selection
 
         try:
-            items = toolset_inventory(_session_toolsets(params), include_legacy=False)
+            selection = session_toolset_selection(
+                _core._host.sessions.get(params.get("session_id", "")),
+                _core._load_enabled_toolsets,
+            )
+            items = toolset_inventory(selection, include_legacy=False)
             lines = ["Forecast Desk Toolsets", ""]
             for item in items:
                 marker = "(*)" if item["enabled"] else "   "

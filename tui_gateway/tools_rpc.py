@@ -53,11 +53,11 @@ __all__ = ["register"]
 
 def _session_toolsets(params: dict):
     """Use a live agent's selection, or configured selection before its build."""
-    session = _core._host.sessions.get(params.get("session_id", ""))
-    agent = session.get("agent") if session else None
-    if agent is not None:
-        return getattr(agent, "enabled_toolsets", None)
-    return _core._load_enabled_toolsets()
+    from superforecasting_agent.tooling.inventory import session_toolset_selection
+    return session_toolset_selection(
+        _core._host.sessions.get(params.get("session_id", "")),
+        _core._load_enabled_toolsets,
+    )
 
 
 @method("tools.list")

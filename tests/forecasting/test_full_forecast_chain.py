@@ -467,9 +467,9 @@ def test_draft_resolution_criteria_sanitizes_and_rejects_junk(monkeypatch):
     import forecasting.quorum as quorum_mod
     from types import SimpleNamespace
 
-    import superforecasting_agent.runtime.config as cfgmod
+    import superforecasting_agent.storage.configuration as cfgmod
 
-    monkeypatch.setattr(cfgmod, "load_config", lambda: {"model": {"default": "openai/gpt-5.5"}})
+    monkeypatch.setattr(cfgmod, "read_configuration", lambda: {"model": {"default": "openai/gpt-5.5"}})
     spec = SimpleNamespace(title="Will X happen?", close_time="2026-09-30")
 
     def _factory(reply):

@@ -1,7 +1,7 @@
 """Shared toolset inventory, independent of command and transport rendering."""
 
-from collections.abc import Sequence
-from typing import TypedDict
+from collections.abc import Callable, Mapping, Sequence
+from typing import Any, TypedDict
 
 
 class ToolsetInventoryItem(TypedDict):
@@ -36,3 +36,14 @@ def toolset_inventory(
                 "tools": list(info["resolved_tools"]),
             })
     return items
+
+
+def session_toolset_selection(
+    session: Mapping[str, Any] | None,
+    configured: Callable[[], Sequence[str] | None],
+) -> Sequence[str] | None:
+    """Read a live agent's selection or defer to this host's configuration."""
+    agent = session.get("agent") if session else None
+    if agent is not None:
+        return getattr(agent, "enabled_toolsets", None)
+    return configured()

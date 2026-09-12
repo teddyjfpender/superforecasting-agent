@@ -782,18 +782,27 @@ def _quorum_config(rest: list[str]) -> None:
 
 
 def _quorum_default(rest: list[str], *, scope: str | None) -> None:
-    from superforecasting_agent.runtime.config import load_config, set_config_value
+    from forecasting.configuration.quorum import default_policy_changes
+    from superforecasting_agent.constants import get_agent_home
+    from superforecasting_agent.runtime.config import is_managed, managed_error
+    from superforecasting_agent.storage.configuration import ProfileConfiguration, read_configuration
 
-    state = rest[0].strip().lower() if rest else None
-    if state in {"on", "off"}:
-        set_config_value("quorum.default_enabled", "true" if state == "on" else "false")
-        print(f"✓ quorum-by-default {'enabled' if state == 'on' else 'disabled'}")
-    elif state is not None:
+    if len(rest) > 1:
         raise SystemExit("forecast quorum default on|off")
-    if scope:
-        set_config_value("quorum.default_scope", scope)
-        print(f"✓ quorum default scope = {scope}")
-    cfg = load_config().get("quorum", {})
+    try:
+        changes = default_policy_changes(rest[0] if rest else None, scope)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    if changes:
+        if is_managed():
+            managed_error("set quorum defaults")
+            return
+        ProfileConfiguration().update_many(get_agent_home() / "config.yaml", changes)
+        if "quorum.default_enabled" in changes:
+            print(f"✓ quorum-by-default {'enabled' if changes['quorum.default_enabled'] else 'disabled'}")
+        if "quorum.default_scope" in changes:
+            print(f"✓ quorum default scope = {scope}")
+    cfg = read_configuration().get("quorum", {})
     print(f"quorum default_enabled: {bool(cfg.get('default_enabled'))}  "
           f"scope: {cfg.get('default_scope', 'high_impact')}")
 

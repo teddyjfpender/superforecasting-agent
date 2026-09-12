@@ -2782,3 +2782,29 @@ owner receives strict lint/format/type checks and its own import contract; all 4
 contracts and shared Python quality gates pass. This does not resolve SDK transports
 that cannot safely retry disposal after their own failed close, or other terminal/
 browser resource ownership gaps recorded in TODO.md.
+
+
+### Quorum defaults publish only after validation and successful persistence
+
+A presentation-independent quorum policy validator produces the enable/scope changes.
+The CLI validates all input before mutation and publishes both fields atomically via
+ProfileConfiguration.update_many. Invalid scopes do not partially enable quorum;
+managed-install refusal returns without printing success. Existing managed-install
+policy stays in its current runtime owner pending broader extraction.
+
+The latest full push found stale criteria-loader/title test doubles and a toolset
+selection mismatch. Criteria tests now target the shared reader; title doubles use
+real storage sanitization, and failed pending reconciliation is asserted as an error
+with preserved retry state. Exact title persistence/uniqueness checks remain.
+
+Toolset command dispatch previously borrowed a sibling adapter's mutable host pointer.
+A deterministic rebind reproduction now proves it consumes its own host's selection:
+both adapters pass their session and configuration reader to the shared inventory
+owner. Explicit empty selection is preserved. This establishes the dependency hazard
+without claiming a complete reconstruction of the full-suite test ordering.
+
+399 combined forecasting, legacy gateway and configured-command tests passed, including
+atomic quorum publication, managed refusal, invalid-scope rollback and sibling-host
+isolation. Shared Python quality checks and 47 import contracts passed. The preceding
+full push remained blocked (10 failures, 31,137 passing Python tests, 148 skips; 458
+terminal tests passed). A fresh integrated gate is still required.
