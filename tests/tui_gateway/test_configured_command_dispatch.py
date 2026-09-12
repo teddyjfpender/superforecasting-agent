@@ -1,5 +1,7 @@
 """Configured commands share validation and never execute in a second CLI runtime."""
 
+from importlib import import_module
+
 import shlex
 import sys
 from unittest.mock import Mock
@@ -147,7 +149,7 @@ def test_native_handoff_does_not_need_provider_initialization(configure, command
 def test_skill_handoff_does_not_need_provider_initialization(configure, monkeypatch):
     configure({})
     monkeypatch.setattr(
-        "agent.skill_commands.get_skill_commands",
+        import_module("agent.skill_commands"), "get_skill_commands",
         lambda: {"/fixture-skill": {"name": "fixture-skill"}},
     )
     assert "skill command" in slash("fixture-skill note")["error"]["message"]
@@ -157,7 +159,7 @@ def test_skill_handoff_does_not_need_provider_initialization(configure, monkeypa
 
 def test_plugin_command_does_not_construct_an_unrelated_agent(configure, monkeypatch):
     configure({})
-    monkeypatch.setattr("agent.skill_commands.get_skill_commands", lambda: {})
+    monkeypatch.setattr(import_module("agent.skill_commands"), "get_skill_commands", lambda: {})
     plugin = Mock(return_value="fixture output")
     monkeypatch.setattr(
         "superforecasting_agent.runtime.plugins.get_plugin_command_handler",
@@ -172,7 +174,7 @@ def test_plugin_command_does_not_construct_an_unrelated_agent(configure, monkeyp
 def test_native_known_legacy_command_hands_off_without_execution(configure, monkeypatch):
     configure({})
     monkeypatch.setattr("superforecasting_agent.runtime.plugins.get_plugin_command_handler", lambda name: None)
-    monkeypatch.setattr("agent.skill_commands.scan_skill_commands", lambda: {})
+    monkeypatch.setattr(import_module("agent.skill_commands"), "scan_skill_commands", lambda: {})
     response = dispatch("help")
     assert response["error"]["data"] == {"dispatch": "slash.exec", "execution_started": False}
     server._start_agent_build.assert_not_called()
@@ -196,9 +198,9 @@ def test_native_plugin_failure_never_becomes_a_legacy_handoff(configure, monkeyp
 def test_owned_skill_failure_does_not_fall_back_to_legacy(configure, monkeypatch, result):
     configure({})
     monkeypatch.setattr("superforecasting_agent.runtime.plugins.get_plugin_command_handler", lambda name: None)
-    monkeypatch.setattr("agent.skill_commands.scan_skill_commands", lambda: {"/fixture-skill": {"name": "fixture-skill"}})
+    monkeypatch.setattr(import_module("agent.skill_commands"), "scan_skill_commands", lambda: {"/fixture-skill": {"name": "fixture-skill"}})
     build = Mock(side_effect=result) if isinstance(result, Exception) else Mock(return_value=result)
-    monkeypatch.setattr("agent.skill_commands.build_skill_invocation_message", build)
+    monkeypatch.setattr(import_module("agent.skill_commands"), "build_skill_invocation_message", build)
     response = dispatch("fixture-skill")
     assert "error" in response
     assert "data" not in response["error"]
@@ -211,8 +213,8 @@ def test_owned_skill_failure_does_not_fall_back_to_legacy(configure, monkeypatch
 def test_unknown_command_rejected_before_runtime_construction(configure, monkeypatch, invoke, command):
     configure({})
     monkeypatch.setattr("superforecasting_agent.runtime.plugins.get_plugin_command_handler", lambda name: None)
-    monkeypatch.setattr("agent.skill_commands.scan_skill_commands", lambda: {})
-    monkeypatch.setattr("agent.skill_commands.get_skill_commands", lambda: {})
+    monkeypatch.setattr(import_module("agent.skill_commands"), "scan_skill_commands", lambda: {})
+    monkeypatch.setattr(import_module("agent.skill_commands"), "get_skill_commands", lambda: {})
     response = invoke(command)
     assert response["error"] == {"code": 4011, "message": "unknown command: fixture-unknown"}
     server._start_agent_build.assert_not_called()
@@ -229,7 +231,7 @@ def test_plugin_inspection_matches_classic_without_agent(configure, monkeypatch,
 
     configure({})
     monkeypatch.setattr("superforecasting_agent.runtime.plugins.get_plugin_command_handler", lambda name: None)
-    monkeypatch.setattr("agent.skill_commands.scan_skill_commands", lambda: {})
+    monkeypatch.setattr(import_module("agent.skill_commands"), "scan_skill_commands", lambda: {})
     manager = Mock()
     manager.list_plugins.return_value = plugins
     monkeypatch.setattr("superforecasting_agent.runtime.plugins.get_plugin_manager", lambda: manager)
@@ -249,7 +251,7 @@ def test_plugin_inspection_matches_classic_without_agent(configure, monkeypatch,
 def test_plugin_inspection_failure_preserves_native_error(configure, monkeypatch):
     configure({})
     monkeypatch.setattr("superforecasting_agent.runtime.plugins.get_plugin_command_handler", lambda name: None)
-    monkeypatch.setattr("agent.skill_commands.scan_skill_commands", lambda: {})
+    monkeypatch.setattr(import_module("agent.skill_commands"), "scan_skill_commands", lambda: {})
     monkeypatch.setattr("superforecasting_agent.runtime.plugins.get_plugin_manager", Mock(side_effect=RuntimeError("inspection failed")))
     assert dispatch("plugins")["error"] == {"code": 5030, "message": "Plugin system error: inspection failed"}
     server._start_agent_build.assert_not_called()
@@ -260,12 +262,12 @@ def test_plugin_inspection_failure_preserves_native_error(configure, monkeypatch
 def bundle_command(configure, monkeypatch):
     configure({})
     monkeypatch.setattr("superforecasting_agent.runtime.plugins.get_plugin_command_handler", lambda name: None)
-    monkeypatch.setattr("agent.skill_bundles.get_skill_bundles", lambda: {"/fixture-bundle": {"name": "Review pack"}})
+    monkeypatch.setattr(import_module("agent.skill_bundles"), "get_skill_bundles", lambda: {"/fixture-bundle": {"name": "Review pack"}})
     skill = Mock(side_effect=AssertionError("bundle must precede individual skill"))
-    monkeypatch.setattr("agent.skill_commands.build_skill_invocation_message", skill)
-    monkeypatch.setattr("agent.skill_commands.scan_skill_commands", lambda: {"/fixture-bundle": {"name": "shadowed"}})
+    monkeypatch.setattr(import_module("agent.skill_commands"), "build_skill_invocation_message", skill)
+    monkeypatch.setattr(import_module("agent.skill_commands"), "scan_skill_commands", lambda: {"/fixture-bundle": {"name": "shadowed"}})
     build = Mock(return_value=("shared payload", ["review"], ["missing"]))
-    monkeypatch.setattr("agent.skill_bundles.build_bundle_invocation_message", build)
+    monkeypatch.setattr(import_module("agent.skill_bundles"), "build_bundle_invocation_message", build)
     return build
 
 
@@ -309,7 +311,7 @@ def test_bundle_catalog_exposes_one_entry_with_bundle_precedence(bundle_command)
 
 
 def test_bundle_cannot_override_builtin_command(bundle_command, monkeypatch):
-    monkeypatch.setattr("agent.skill_bundles.get_skill_bundles", lambda: {"/retry": {"name": "shadow"}})
+    monkeypatch.setattr(import_module("agent.skill_bundles"), "get_skill_bundles", lambda: {"/retry": {"name": "shadow"}})
     assert "no previous" in dispatch("retry")["error"]["message"]
     bundle_command.assert_not_called()
 
@@ -404,7 +406,7 @@ def test_native_insights_uses_host_store_without_closing_it(configure, monkeypat
     if failure:
         engine.generate.side_effect = RuntimeError("fixture generation failure")
     constructor = Mock(return_value=engine)
-    monkeypatch.setattr("agent.insights.InsightsEngine", constructor)
+    monkeypatch.setattr(import_module("agent.insights"), "InsightsEngine", constructor)
     response = dispatch("insights", "—days 7 --source cli")
     constructor.assert_called_once_with(database)
     engine.generate.assert_called_once_with(days=7, source="cli")
@@ -472,8 +474,8 @@ def test_google_quota_shared_with_cli_without_worker(configure, monkeypatch, sce
         token.side_effect = GoogleOAuthError("Sign in required")
     elif scenario == "provider-error":
         lookup.side_effect = CodeAssistError("quota unavailable")
-    monkeypatch.setattr("agent.google_oauth.get_valid_access_token", token)
-    monkeypatch.setattr("agent.google_oauth.load_credentials", lambda: SimpleNamespace(project_id="fixture-project"))
+    monkeypatch.setattr(import_module("agent.google_oauth"), "get_valid_access_token", token)
+    monkeypatch.setattr(import_module("agent.google_oauth"), "load_credentials", lambda: SimpleNamespace(project_id="fixture-project"))
     monkeypatch.setattr("agent.google_code_assist.retrieve_user_quota", lookup)
     arg = "unexpected" if scenario == "invalid" else ""
     response = dispatch("gquota", arg)
@@ -1079,3 +1081,14 @@ def test_learn_handoff_preserves_prompt_without_starting_classic_worker(configur
     assert result['result'] == {'type': 'send', 'message': build_learn_prompt(user_request)}
     server._start_agent_build.assert_not_called()
     server._SlashWorker.assert_not_called()
+
+
+def test_native_skill_handoff_with_cached_module_without_package_attribute(configure, monkeypatch):
+    import agent
+
+    module = import_module('agent.skill_commands')
+    monkeypatch.delattr(agent, 'skill_commands', raising=False)
+    # This is the cache/package mismatch observed in the full suite:
+    # normal imports find the cached module, dotted getattr traversal does not.
+    assert import_module('agent.skill_commands') is module
+    test_skill_handoff_does_not_need_provider_initialization(configure, monkeypatch)

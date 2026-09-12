@@ -3543,3 +3543,20 @@ provider syntax and quorum tests passed, including timeout ownership and cleanup
 error context. The agent factory now joins strict lint/format/type scope, and all
 52 import contracts pass. This establishes normal scoped cleanup, not forced
 cancellation or retry ownership for a close that itself fails.
+
+
+### Command-test module patch identity
+
+The integrated gate stopped with 19 failures and 5 setup errors in command tests
+after 31,420 passes. The failures were dotted monkeypatch lookups: cached agent
+submodules existed, but the parent package lacked their attributes. A direct
+fixture reproduced the exact failure by retaining `agent.skill_commands` in the
+module cache and removing only the package attribute. Normal import still returns
+the module, whereas dotted getattr-based patch resolution fails.
+
+Affected patches now target `import_module(...)` results, matching production
+imports without repairing or hiding package state. The originating full-suite
+package mutation is not conclusively attributed; the former candidate ordering
+(browser-provider tests followed by command tests) passed in isolation. The new
+regression failed before the patch change; all 128 command/provider tests passed
+afterward. No production module loading behavior changed.
