@@ -47,7 +47,9 @@ Tool inventory and /tools list now use shared views without building an agent or
   A real-terminal pause/new-session/resume exercise now verifies distinct backend
   pause owners and successful continued conversation.
   Ink /stop consumes the shared session-scoped operation, and legacy process.stop
-  rejects missing session ownership. Pause flags remain process-lifetime state.
+  rejects missing session ownership. The hosting delegation owner now centralizes
+  pause/registry state and rejects replacement or stale retirement of a live child.
+  Pause flags remain process-lifetime state.
 - [ ] Audit lower-level agent cleanup for concrete resource ownership.
   Tool-triggered resets now reserve host replacement before saving, dispose the
   previous agent/worker, and retain failed construction state and history. Saved

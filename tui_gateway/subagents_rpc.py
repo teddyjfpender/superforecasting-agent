@@ -83,9 +83,8 @@ def _(rid, params: dict) -> dict:
     if error:
         return error
 
+    from superforecasting_agent.hosting.delegations import is_spawn_paused, list_active_subagents
     from tools.delegate_tool import (
-        is_spawn_paused,
-        list_active_subagents,
         _get_max_async_children,
         _get_max_concurrent_children,
         _get_max_spawn_depth,
@@ -119,7 +118,7 @@ def _(rid, params: dict) -> dict:
     if error:
         return error
 
-    from tools.delegate_tool import set_spawn_paused
+    from superforecasting_agent.hosting.delegations import set_spawn_paused
 
     paused = params.get("paused", True)
     if not isinstance(paused, bool):
@@ -133,7 +132,7 @@ def _(rid, params: dict) -> dict:
     if error:
         return error
 
-    from tools.delegate_tool import interrupt_subagent
+    from superforecasting_agent.hosting.delegations import interrupt_subagent
 
     subagent_id = str(params.get("subagent_id") or "").strip()
     if not subagent_id:

@@ -6,6 +6,7 @@ import pytest
 
 from superforecasting_agent.hosting.runtime import RuntimeHost
 from tools import async_delegation, delegate_tool
+from superforecasting_agent.hosting import delegations
 from tui_gateway import server
 
 
@@ -14,10 +15,10 @@ def owners(monkeypatch):
     monkeypatch.setattr(server, '_host', RuntimeHost())
     server._host.sessions.register('desk', {'session_key': 'root-desk', 'history': []})
     server._host.sessions.register('other', {'session_key': 'root-other', 'history': []})
-    monkeypatch.setattr(delegate_tool, '_spawn_paused', False)
-    monkeypatch.setattr(delegate_tool, '_spawn_paused_sessions', set())
+    monkeypatch.setattr(delegations, '_spawn_paused', False)
+    monkeypatch.setattr(delegations, '_spawn_paused_sessions', set())
     agents = {key: Mock() for key in ('root-desk', 'root-other', '')}
-    monkeypatch.setattr(delegate_tool, '_active_subagents', {
+    monkeypatch.setattr(delegations, '_active_subagents', {
         key: {'subagent_id': key, 'session_key': key, 'agent': agent}
         for key, agent in agents.items()
     })
@@ -62,6 +63,8 @@ def test_missing_owner_never_selects_global_scope(owners, method):
 @pytest.mark.parametrize('value', ['false', 0, None, [], {}])
 def test_pause_requires_actual_boolean(owners, value):
     assert rpc('delegation.pause', paused=value)['error']['code'] == 4004
+    with pytest.raises(ValueError, match='boolean'):
+        delegations.set_spawn_paused(value, session_key='root-desk')
     assert not delegate_tool.is_spawn_paused(session_key='root-desk')
 
 
@@ -79,3 +82,30 @@ def test_nested_dispatch_obeys_root_pause_before_building(owners):
     child = SimpleNamespace(session_id='child-session', _delegation_owner_key='root-desk')
     result = json.loads(delegate_tool.delegate_task(goal='grandchild', parent_agent=child))
     assert 'paused' in result['error']
+
+
+def test_duplicate_registration_and_stale_retirement_preserve_live_owner(owners):
+    original = delegations._active_subagents['root-desk']
+    replacement = Mock()
+    with pytest.raises(RuntimeError, match='already registered'):
+        delegations.register_subagent({'subagent_id': 'root-desk', 'agent': replacement})
+    delegations.unregister_subagent('root-desk', agent=replacement)
+    assert delegations._active_subagents['root-desk'] is original
+    delegations.unregister_subagent('root-desk', agent=owners['root-desk'])
+    assert 'root-desk' not in delegations._active_subagents
+
+
+def test_collision_during_child_start_closes_only_rejected_child(owners):
+    from unittest.mock import MagicMock
+    from tests.tools.test_delegate import _make_mock_parent
+
+    child = MagicMock()
+    child._subagent_id = 'root-desk'
+    child._credential_pool = None
+    result = delegate_tool._run_single_child(0, 'collision', child, _make_mock_parent())
+    assert result['status'] == 'error'
+    assert 'already registered' in result['error']
+    child.run_conversation.assert_not_called()
+    child.close.assert_called_once()
+    assert delegations._active_subagents['root-desk']['agent'] is owners['root-desk']
+    owners['root-desk'].close.assert_not_called()

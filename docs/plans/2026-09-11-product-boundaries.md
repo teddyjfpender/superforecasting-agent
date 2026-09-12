@@ -4057,3 +4057,25 @@ outer capture, bypassing the new test's capsys stream. The ownership test now
 installs its own console sink. The gate reported 31,639 other Python tests passing
 and 572 TUI tests passing; it correctly blocked the push until this fixture fix
 and a fresh full gate.
+
+
+### Hosting owner for delegation control state
+
+Pause state and the active-child registry now live in hosting.delegations. Tool
+execution uses its registration/progress/retirement operations; existing exported
+control functions in delegate_tool remain compatibility imports. The gateway
+consumes the hosting controls directly. A transitive import contract prohibits
+tools, agent, runtime and presentation dependencies, with strict lint/format/types
+from the hosting directory. Runtime model construction and async execution remain
+in their existing owners; this extraction does not claim per-RuntimeHost registry
+instances or durable pause state.
+
+Registration refuses to replace a live record, and retirement requires the exact
+child handle. Registration is inside the child cleanup region, so a rejected
+collision releases the new child without removing or closing the original. Tests
+prove this path and stale retirement. The owner also validates boolean pause
+values independently of RPC validation. The 226-test delegation/protocol/real-desk
+run passed (including all 12 terminal cases), and 149 delegation/ownership tests
+passed after adding collision coverage. Shared Python gates passed with 58 import
+contracts. Child close failures are still handled by the existing tool execution
+cleanup; retained failed-close ownership remains an outstanding runtime task.

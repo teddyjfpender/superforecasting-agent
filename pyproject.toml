@@ -749,3 +749,9 @@ type = "forbidden"
 source_modules = ["superforecasting_agent.tooling.background"]
 forbidden_modules = ["superforecasting_agent.runtime", "tui_gateway", "cli", "gateway"]
 allow_indirect_imports = "true"
+
+[[tool.importlinter.contracts]]
+name = "delegation control state is independent of tools and presentation"
+type = "forbidden"
+source_modules = ["superforecasting_agent.hosting.delegations"]
+forbidden_modules = ["tools", "agent", "superforecasting_agent.runtime", "tui_gateway", "gateway", "cli"]
