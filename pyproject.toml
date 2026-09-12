@@ -730,8 +730,8 @@ forbidden_modules = ["superforecasting_agent.runtime", "forecasting", "tools", "
 allow_indirect_imports = false
 
 [[tool.importlinter.contracts]]
-name = "retry preparation never mutates storage or imports runtime consumers"
+name = "history edit preparation never mutates storage or imports runtime consumers"
 type = "forbidden"
-source_modules = ["superforecasting_agent.application.retry"]
+source_modules = ["superforecasting_agent.application.retry", "superforecasting_agent.application.history"]
 forbidden_modules = ["superforecasting_agent.storage", "superforecasting_agent.runtime", "agent", "tools", "forecasting", "cli", "gateway", "tui_gateway"]
 allow_indirect_imports = false

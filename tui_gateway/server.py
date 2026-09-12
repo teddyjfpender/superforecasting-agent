@@ -3105,30 +3105,20 @@ def _(rid, params: dict) -> dict:
 
 @rpc_validated("session.undo")
 def _(rid, params: dict) -> dict:
-    session, err = _sess(params, rid)
+    session, err = _sess_nowait(params, rid)
     if err:
         return err
-    # Reject during an in-flight turn.  If we mutated history while
-    # the agent thread is running, prompt.submit's post-run history
-    # write would either clobber the undo (version matches) or
-    # silently drop the agent's output (version mismatch, see below).
-    # Neither is what the user wants — make them /interrupt first.
-    if session.get("running"):
-        return _err(
-            rid, 4009, "session busy — /interrupt the current turn before /undo"
-        )
-    removed = 0
+    from superforecasting_agent.application.history import prepare_undo
+
     with session["history_lock"]:
-        history = session.get("history", [])
-        while history and history[-1].get("role") in {"assistant", "tool"}:
-            history.pop()
-            removed += 1
-        if history and history[-1].get("role") == "user":
-            history.pop()
-            removed += 1
-        if removed:
+        # Admission and mutation share the same lock as prompt submission.
+        if session.get("running"):
+            return _err(rid, 4009, "session busy — /interrupt the current turn before /undo")
+        plan = prepare_undo(session.get("history", []))
+        if plan is not None:
+            session["history"] = plan.history
             session["history_version"] = int(session.get("history_version", 0)) + 1
-    return _ok(rid, {"removed": removed})
+    return _ok(rid, {"removed": plan.removed if plan is not None else 0})
 
 
 @rpc_validated("session.compress")

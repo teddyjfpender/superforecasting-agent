@@ -1115,3 +1115,42 @@ def test_retry_commits_text_plan_and_version_together(configure):
     assert result['result'] == {'type': 'send', 'message': 'retry'}
     assert session['history'] == [{'role': 'system', 'content': 'policy'}]
     assert session['history_version'] == 8
+
+
+@pytest.mark.parametrize('history,removed', [
+    ([{'role': 'assistant', 'content': 'orphan'}], 0),
+    ([{'role': 'system', 'content': 'policy'}, {'role': 'user', 'content': 'note'},
+      {'role': 'system', 'content': 'context'}, {'role': 'assistant', 'content': 'response'}], 3),
+])
+def test_undo_uses_shared_history_semantics_without_model_build(configure, history, removed):
+    import threading
+
+    session = server._host.sessions['runtime']
+    session.update(history=history, history_lock=threading.Lock(), history_version=7)
+    result = server.handle_request({'id': 4, 'method': 'session.undo',
+                                    'params': {'session_id': 'runtime'}})
+    assert result['result']['removed'] == removed
+    expected = history[:len(history) - removed] if removed else history
+    assert session['history'] == expected
+    assert session['history_version'] == (8 if removed else 7)
+    server._start_agent_build.assert_not_called()
+
+
+def test_undo_checks_running_after_acquiring_history_lock(configure):
+    session = server._host.sessions['runtime']
+    history = [{'role': 'user', 'content': 'keep'}]
+
+    class AdmissionRace:
+        def __enter__(self):
+            session['running'] = True
+
+        def __exit__(self, *args):
+            return False
+
+    session.update(history=history, history_lock=AdmissionRace(), history_version=7)
+    result = server.handle_request({'id': 4, 'method': 'session.undo',
+                                    'params': {'session_id': 'runtime'}})
+    assert result['error']['code'] == 4009
+    assert session['history'] is history
+    assert session['history_version'] == 7
+    server._start_agent_build.assert_not_called()

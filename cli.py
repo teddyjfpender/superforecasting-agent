@@ -4566,32 +4566,17 @@ class ForecastCLI:
         Walks backwards and removes all messages from the last user message
         onward (including forecaster responses, tool calls, etc.).
         """
-        if not self.conversation_history:
-            print("No messages to undo.")
+        from superforecasting_agent.application.history import prepare_undo
+
+        plan = prepare_undo(self.conversation_history)
+        if plan is None:
+            print("No user message found to undo." if self.conversation_history else "No messages to undo.")
             return
-        
-        # Walk backwards to find the last user message
-        last_user_idx = None
-        for i in range(len(self.conversation_history) - 1, -1, -1):
-            if self.conversation_history[i].get("role") == "user":
-                last_user_idx = i
-                break
-        
-        if last_user_idx is None:
-            print("No user message found to undo.")
-            return
-        
-        # Count how many messages we're removing
-        removed_count = len(self.conversation_history) - last_user_idx
-        removed_msg = self.conversation_history[last_user_idx].get("content", "")
-        
-        # Truncate history to before the last user message
-        self.conversation_history = self.conversation_history[:last_user_idx]
-        
-        print(f"Undid {removed_count} message(s). Removed: \"{removed_msg[:60]}{'...' if len(removed_msg) > 60 else ''}\"")
-        remaining = len(self.conversation_history)
-        print(f"  {remaining} message(s) remaining in history.")
-    
+        self.conversation_history = plan.history
+        preview = plan.preview[:60] + ('...' if len(plan.preview) > 60 else '')
+        print(f'Undid {plan.removed} message(s). Removed: "{preview}"')
+        print(f"  {len(plan.history)} message(s) remaining in history.")
+
     def _run_curses_picker(self, title: str, items: list[str], default_index: int = 0) -> int | None:
         """Run curses_single_select via run_in_terminal so prompt_toolkit handles terminal ownership cleanly."""
         import threading

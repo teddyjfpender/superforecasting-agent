@@ -11552,24 +11552,16 @@ class GatewayRunner:
         session_entry = self.session_store.get_or_create_session(source)
         history = self.session_store.load_transcript(session_entry.session_id)
         
-        # Find the last user message and remove everything from it onward
-        last_user_idx = None
-        for i in range(len(history) - 1, -1, -1):
-            if history[i].get("role") == "user":
-                last_user_idx = i
-                break
-        
-        if last_user_idx is None:
+        from superforecasting_agent.application.history import prepare_undo
+
+        plan = prepare_undo(history)
+        if plan is None:
             return t("gateway.undo.nothing")
-        
-        removed_msg = history[last_user_idx].get("content", "")
-        removed_count = len(history) - last_user_idx
-        self.session_store.rewrite_transcript(session_entry.session_id, history[:last_user_idx])
-        # Reset stored token count — transcript was truncated
+        self.session_store.rewrite_transcript(session_entry.session_id, plan.history)
+        # Reset accounting only after the durable rewrite succeeds.
         session_entry.last_prompt_tokens = 0
-        
-        preview = removed_msg[:40] + "..." if len(removed_msg) > 40 else removed_msg
-        return t("gateway.undo.removed", count=removed_count, preview=preview)
+        preview = plan.preview[:40] + "..." if len(plan.preview) > 40 else plan.preview
+        return t("gateway.undo.removed", count=plan.removed, preview=preview)
 
     async def _handle_set_home_command(self, event: MessageEvent) -> str:
         """Handle /sethome command -- set the current chat as the platform's home channel."""

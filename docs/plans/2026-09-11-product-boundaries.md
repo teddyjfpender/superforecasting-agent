@@ -3763,3 +3763,26 @@ including successful same-session shell, interpolation and steering fallback pat
 Full shared quality checks passed with 55 import contracts, and the production TUI
 build passed. These are deferred-callback tests with mocked hook plumbing, not a
 rendered terminal or network recovery qualification.
+
+
+### Shared complete-exchange undo and retry regression reconciliation
+
+CLI, messaging and TUI now prepare undo through a pure application owner. It
+removes everything from the last user note onward, preserves history with no user
+note, and returns a detached prefix and structured-content-safe preview. Messaging
+updates token accounting only after persistence succeeds. The TUI no longer builds
+an agent to undo history; its running check and history mutation share the prompt
+admission lock. The existing TUI in-memory persistence behavior is unchanged.
+
+All 431 combined command, retry, undo and gateway tests passed, including a
+lock-admission race, orphan history, intervening system messages, long structured
+notes and failed durable writes. Strict application checks and the transitive
+history-preparation import contract cover the new owner.
+
+The previous push gate failed on two outdated retry expectations (empty-history
+wording and stripping an image). Tests now assert the shared error and unchanged
+attachment-bearing history. A separate combined run reproduced a stale agent-factory
+mock: the CLI fixture restored the entire sys.modules dictionary after importing
+new child modules, leaving parent attributes behind. It now restores only its
+prompt-toolkit stubs; the combined test run passes without weakening provider
+validation. This finding does not attribute the historical SSL or SQLite incidents.

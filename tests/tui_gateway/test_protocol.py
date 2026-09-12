@@ -833,8 +833,8 @@ def test_command_dispatch_retry_empty_history(server):
     assert resp["error"]["code"] == 4018
 
 
-def test_command_dispatch_retry_handles_multipart_content(server):
-    """command.dispatch /retry extracts text from multipart content lists."""
+def test_command_dispatch_retry_preserves_unsupported_multipart_content(server):
+    """Text-only retry must not silently drop the original image."""
     sid = "test-session"
     history = [
         {"role": "user", "content": [
@@ -857,10 +857,11 @@ def test_command_dispatch_retry_handles_multipart_content(server):
         "params": {"name": "retry", "session_id": sid},
     })
 
-    assert "error" not in resp
-    result = resp["result"]
-    assert result["type"] == "send"
-    assert result["message"] == "analyze this"
+    assert resp["error"]["code"] == 4018
+    assert "attachments" in resp["error"]["message"]
+    assert server._host.sessions[sid]["history"] is history
+    assert len(history) == 2
+    assert server._host.sessions[sid]["history_version"] == 0
 
 
 def test_command_dispatch_returns_skill_payload(server):

@@ -56,8 +56,12 @@ def _make_cli(env_overrides=None, config_overrides=None, **kwargs):
         "prompt_toolkit.formatted_text": MagicMock(),
         "prompt_toolkit.auto_suggest": MagicMock(),
     }
-    with patch.dict(sys.modules, prompt_toolkit_stubs), \
+    # Restore only the stubbed keys. A whole sys.modules snapshot discards
+    # newly imported children while leaving stale attributes on parent packages.
+    with pytest.MonkeyPatch.context() as modules, \
          patch.dict("os.environ", clean_env, clear=False):
+        for name, stub in prompt_toolkit_stubs.items():
+            modules.setitem(sys.modules, name, stub)
         import cli as _cli_mod
         _cli_mod = importlib.reload(_cli_mod)
         with patch.object(_cli_mod, "get_tool_definitions", return_value=[]), \
