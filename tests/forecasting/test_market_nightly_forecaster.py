@@ -248,7 +248,7 @@ def test_cli_run_resolves_model_with_quorum_logic(tmp_path, monkeypatch):
         "forecasting.market_nightly_forecaster.build_informed_market_forecaster", fake_build
     )
     monkeypatch.setattr(
-        "superforecasting_agent.runtime.config.load_config",
+        "superforecasting_agent.storage.configuration.read_configuration",
         lambda: {"model": {"default": "openrouter/some-model", "provider": "openrouter"}},
     )
 
@@ -492,7 +492,7 @@ def test_cli_run_arm_defaults_from_config_when_flag_absent(tmp_path, monkeypatch
         "forecasting.market_nightly_forecaster.build_informed_market_forecaster", fake_build
     )
     monkeypatch.setattr(
-        "superforecasting_agent.runtime.config.load_config",
+        "superforecasting_agent.storage.configuration.read_configuration",
         lambda: {
             "model": {"default": "openrouter/m", "provider": "openrouter"},
             "forecasting": {"market_nightly": {"research_arm": "voi"}},

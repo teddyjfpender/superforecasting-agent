@@ -2933,10 +2933,10 @@ def _draft_resolution_criteria(spec: Any, *, model: str | None = None, provider:
     is never trusted — it still passes the full spec validation before commit."""
 
     try:
-        from superforecasting_agent.runtime.config import load_config
+        from superforecasting_agent.storage.configuration import read_configuration
         from forecasting.quorum import make_aiagent_runner
 
-        active = model or _resolve_active_model_id(load_config().get("model"))
+        active = model or _resolve_active_model_id(read_configuration().get("model"))
         if not active:
             return None
         runner = make_aiagent_runner(max_iterations=1, toolsets=(), quiet=True, timeout=120)

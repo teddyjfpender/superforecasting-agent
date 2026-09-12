@@ -2681,3 +2681,20 @@ pending value remains intact for retry and is cleared only after successful stor
 prove canonical pending/persisted reads, injected write failure followed by successful
 retry, no write after failed messaging session creation, and no attempt to recreate
 an existing untitled session. Python quality gates and all 46 import contracts passed.
+
+
+### Forecast CLI value readers no longer initialize runtime configuration
+
+Resolution-criteria drafting, market-nightly command setup and reforecast batch
+admission read normalized profile values through storage.read_configuration and
+the independent configuration lookup helper. They no longer import the runtime
+configuration module. The corresponding three frozen import exceptions were
+removed: six forecasting-to-runtime exceptions remain. Mutation-capable quorum
+and collaboration configuration commands retain their existing ownership pending
+separate extraction.
+
+48 focused forecasting CLI, market-nightly and reforecast tests passed. Tests use
+an isolated real config.yaml to establish model and batch-limit selection, reject
+calls to either CLI configuration loader and verify that the profile acquires no
+new files or content changes. Existing market-arm/model tests now patch the shared
+reader. All 46 import contracts and shared Python quality checks pass.

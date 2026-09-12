@@ -214,7 +214,8 @@ def _cmd_market_nightly_run(args: argparse.Namespace) -> None:
         build_informed_market_forecaster,
         load_open_markets,
     )
-    from superforecasting_agent.runtime.config import cfg_get, load_config
+    from superforecasting_agent.configuration import cfg_get
+    from superforecasting_agent.storage.configuration import read_configuration
 
     # available_at / evidence stamping is NOW (live): the whole point is the agent
     # uses fresh search on an OPEN market whose outcome does not exist yet. There is
@@ -224,7 +225,7 @@ def _cmd_market_nightly_run(args: argparse.Namespace) -> None:
     source = getattr(args, "source", "manifold") or "manifold"
     seed = int(getattr(args, "rng_seed", 0) or 0)
 
-    cfg = load_config()
+    cfg = read_configuration()
     # Resolve the agent model with the SAME logic the quorum uses (config["model"]
     # is a structured dict since the codex auth overhaul).
     model = getattr(args, "model", None) or _resolve_active_model_id(cfg.get("model"))
