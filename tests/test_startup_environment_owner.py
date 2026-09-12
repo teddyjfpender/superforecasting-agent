@@ -33,3 +33,45 @@ def test_legacy_import_shares_the_same_mutable_owner():
     assert env_loader is startup_environment
     assert env_loader._SECRET_SOURCES is startup_environment._SECRET_SOURCES
     assert env_loader._WARNED_KEYS is startup_environment._WARNED_KEYS
+
+
+def test_startup_repair_preserves_concurrent_credential_write(tmp_path, monkeypatch):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    from superforecasting_agent import startup_environment
+    from superforecasting_agent.configuration import env_lines
+    from superforecasting_agent.runtime import config
+    path = tmp_path / '.env'
+    path.write_text('OPENAI_API_KEY=firstANTHROPIC_API_KEY=second\n', encoding='utf-8')
+    monkeypatch.setattr(config, 'get_env_path', lambda: path)
+    monkeypatch.setattr(config, 'ensure_hermes_home', lambda: None)
+    monkeypatch.setattr(config, 'is_managed', lambda: False)
+    monkeypatch.delenv('EXA_API_KEY', raising=False)
+    original = env_lines.sanitize_env_lines
+    repair_read, release = threading.Event(), threading.Event()
+    writer_started, writer_done = threading.Event(), threading.Event()
+    def paused_parse(lines, known_keys):
+        if not repair_read.is_set():
+            repair_read.set()
+            assert release.wait(5)
+        return original(lines, known_keys)
+    monkeypatch.setattr(env_lines, 'sanitize_env_lines', paused_parse)
+    def write_key():
+        writer_started.set()
+        config.save_env_value('EXA_API_KEY', 'third')
+        writer_done.set()
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        repair = pool.submit(startup_environment._sanitize_env_file_if_needed, path)
+        try:
+            assert repair_read.wait(5)
+            writer = pool.submit(write_key)
+            assert writer_started.wait(5)
+            writer_done.wait(0.2)
+        finally:
+            release.set()
+        repair.result(timeout=5)
+        writer.result(timeout=5)
+    text = path.read_text(encoding='utf-8')
+    assert 'OPENAI_API_KEY=first\n' in text
+    assert 'ANTHROPIC_API_KEY=second\n' in text
+    assert 'EXA_API_KEY=third' in text

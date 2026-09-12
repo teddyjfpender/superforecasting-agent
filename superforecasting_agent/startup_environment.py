@@ -9,7 +9,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from superforecasting_agent.constants import get_agent_home
-from superforecasting_agent.storage.files import atomic_replace
+from superforecasting_agent.storage.files import atomic_replace, yaml_update_lock
 
 # Env var name suffixes that indicate credential values.  These are the
 # only env vars whose values we sanitize on load — we must not silently
@@ -141,31 +141,32 @@ def _sanitize_env_file_if_needed(path: Path) -> None:
     )
 
     try:
-        with open(path, encoding="utf-8-sig", errors="replace") as f:
-            original = f.readlines()
-        keys = set(OPTIONAL_ENV_VARS) | _EXTRA_ENV_KEYS
-        keys.update(
-            read_platform_environment(get_install_root() / "plugins" / "platforms")
-        )
-        sanitized = sanitize_env_lines(original, keys)
-        if sanitized != original:
-            import tempfile
-
-            fd, tmp = tempfile.mkstemp(
-                dir=str(path.parent), suffix=".tmp", prefix=".env_"
+        with yaml_update_lock(path):
+            with open(path, encoding="utf-8-sig", errors="replace") as f:
+                original = f.readlines()
+            keys = set(OPTIONAL_ENV_VARS) | _EXTRA_ENV_KEYS
+            keys.update(
+                read_platform_environment(get_install_root() / "plugins" / "platforms")
             )
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    f.writelines(sanitized)
-                    f.flush()
-                    os.fsync(f.fileno())
-                atomic_replace(tmp, path)
-            except BaseException:
+            sanitized = sanitize_env_lines(original, keys)
+            if sanitized != original:
+                import tempfile
+
+                fd, tmp = tempfile.mkstemp(
+                    dir=str(path.parent), suffix=".tmp", prefix=".env_"
+                )
                 try:
-                    os.unlink(tmp)
-                except OSError:
-                    pass
-                raise
+                    with os.fdopen(fd, "w", encoding="utf-8") as f:
+                        f.writelines(sanitized)
+                        f.flush()
+                        os.fsync(f.fileno())
+                    atomic_replace(tmp, path)
+                except BaseException:
+                    try:
+                        os.unlink(tmp)
+                    except OSError:
+                        pass
+                    raise
     except Exception:
         pass  # best-effort — don't block gateway startup
 

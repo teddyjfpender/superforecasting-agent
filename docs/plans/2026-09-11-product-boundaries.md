@@ -3072,3 +3072,17 @@ owner tests (one existing skip). A fresh subprocess loads and repairs a plugin-d
 credential while proving runtime configuration stays unimported. Shared quality
 checks and all 51 import contracts passed. The primary checkout is still running
 the prior batch's push gate; this extraction awaits integrated qualification.
+
+
+### Startup repair shares credential writer locking
+
+Startup dotenv repair now holds the same cross-process/path-aware lock as credential
+updates across its complete read/repair/replace sequence. The regression pauses repair
+after reading, writes a new credential concurrently through the real runtime writer,
+and confirms both repaired entries and the new key survive. Previously the stale
+repair could overwrite that intervening write.
+
+35 loader/repair/configuration-writer tests passed, followed by three startup-owner
+tests after test-environment cleanup was tightened. Shared Python quality checks and
+all 51 import contracts passed. The preceding integrated batch pushed at 22e3f6445;
+environment metadata/startup extraction and this lock fix await their next full gate.
