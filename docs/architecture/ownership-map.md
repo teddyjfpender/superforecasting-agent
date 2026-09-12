@@ -922,3 +922,14 @@ entries. The runtime model picker re-exports the same objects; quorum prefix
 parsing reads the shared owner. The catalog has a transitive runtime/presentation
 import prohibition. Model defaults and credential status still have their own
 remaining extraction work; moving identities does not qualify provider callability.
+
+
+### Offline model defaults
+
+`agent/model_catalog.py` owns fallback provider model lists and offline curation;
+`configuration/codex_catalog.py` owns Codex fallback IDs and forward-compatible
+catalog rules. Runtime pickers re-export the same lists/functions, while quorum
+reads defaults directly from the shared catalog. Runtime modules retain live
+catalog fetches and their caches. These snapshots are not claims of current
+provider availability. Credential-status discovery remains in the runtime auth
+implementation and is the remaining quorum adapter dependency.

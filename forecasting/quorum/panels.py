@@ -202,7 +202,7 @@ def _provider_default_model(slug: str) -> str | None:
     """The provider's own default/best model id (native form), or ``None``."""
 
     try:
-        from superforecasting_agent.runtime.models import get_default_model_for_provider
+        from agent.model_catalog import get_default_model_for_provider
 
         model = (get_default_model_for_provider(slug) or "").strip()
     except Exception:  # noqa: BLE001 — best-effort; a provider with no default is skipped

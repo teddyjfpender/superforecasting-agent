@@ -41,6 +41,7 @@ STRICT_PYTHON = (
     "forecasting/hooks/store.py",
     "superforecasting_agent/runtime/quick_commands.py",
     "agent/forecast_stage.py",
+    "agent/model_catalog.py",
     "agent/agent_factory.py",
     "agent/background_options.py",
     "agent/startup_prompt.py",

@@ -818,3 +818,18 @@ type = "forbidden"
 source_modules = ["superforecasting_agent.configuration.provider_catalog"]
 forbidden_modules = ["tools", "agent", "cli", "gateway", "tui_gateway", "superforecasting_agent.runtime"]
 allow_indirect_imports = false
+
+
+[[tool.importlinter.contracts]]
+name = "offline model catalogs never import runtime or presentation"
+type = "forbidden"
+source_modules = ["agent.model_catalog"]
+forbidden_modules = ["tools", "cli", "gateway", "tui_gateway", "superforecasting_agent.runtime"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "Codex catalog rules never import runtime or execution"
+type = "forbidden"
+source_modules = ["superforecasting_agent.configuration.codex_catalog"]
+forbidden_modules = ["tools", "agent", "cli", "gateway", "tui_gateway", "superforecasting_agent.runtime"]
+allow_indirect_imports = false

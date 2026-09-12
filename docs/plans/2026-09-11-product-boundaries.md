@@ -4778,3 +4778,18 @@ Validation: 195 model picker, inventory, provider and quorum checks passed;
 shared quality checks passed. Three injected-import checks confirm the new
 provider identity, shared search and cancellation gates reject transitive
 presentation dependencies.
+
+
+### Shared offline model catalogs
+
+Extracted fallback model lists and offline curation into `agent/model_catalog.py`,
+with pure Codex fallback/forward-compatibility rules in configuration ownership.
+Runtime model pickers preserve compatibility exports, and quorum defaults consume
+the shared owner directly. Live network catalogs and their caches remain separate.
+Strict lint/format/types cover the new owners, with transitive runtime/presentation
+import prohibitions. Credential-status discovery remains explicitly unextracted.
+
+Validation: 264 model, Codex, inventory, provider, quorum and injected-boundary
+checks passed; the shared quality workflow passed all 71 import contracts plus
+blocking Python/TUI/protocol checks. Model IDs and fallback ordering were preserved;
+this is not a live-provider or model-availability qualification.
