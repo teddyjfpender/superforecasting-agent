@@ -1804,12 +1804,6 @@ class AIAgent:
         from agent.agent_runtime_helpers import create_openai_client
         return create_openai_client(self, client_kwargs, reason=reason, shared=shared)
 
-    @staticmethod
-    def _force_close_tcp_sockets(client: Any) -> int:
-        """Forwarder — see ``agent.agent_runtime_helpers.force_close_tcp_sockets``."""
-        from agent.agent_runtime_helpers import force_close_tcp_sockets
-        return force_close_tcp_sockets(client)
-
     from agent.openai_clients import _close_openai_client as _close_openai_client
 
     from agent.openai_clients import _replace_primary_openai_client as _replace_primary_openai_client

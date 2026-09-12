@@ -2101,66 +2101,6 @@ def apply_pending_steer_to_tool_results(agent, messages: list, num_tool_msgs: in
 
 
 
-def force_close_tcp_sockets(client: Any) -> int:
-    """Force-close underlying TCP sockets to prevent CLOSE-WAIT accumulation.
-
-    When a provider drops a connection mid-stream, httpx's ``client.close()``
-    performs a graceful shutdown which leaves sockets in CLOSE-WAIT until the
-    OS times them out (often minutes).  This method walks the httpx transport
-    pool and issues ``socket.shutdown(SHUT_RDWR)`` + ``socket.close()`` to
-    force an immediate TCP RST, freeing the file descriptors.
-
-    Returns the number of sockets force-closed.
-    """
-    import socket as _socket
-
-    closed = 0
-    try:
-        http_client = getattr(client, "_client", None)
-        if http_client is None:
-            return 0
-        transport = getattr(http_client, "_transport", None)
-        if transport is None:
-            return 0
-        pool = getattr(transport, "_pool", None)
-        if pool is None:
-            return 0
-        # httpx uses httpcore connection pools; connections live in
-        # _connections (list) or _pool (list) depending on version.
-        connections = (
-            getattr(pool, "_connections", None)
-            or getattr(pool, "_pool", None)
-            or []
-        )
-        for conn in list(connections):
-            stream = (
-                getattr(conn, "_network_stream", None)
-                or getattr(conn, "_stream", None)
-            )
-            if stream is None:
-                continue
-            sock = getattr(stream, "_sock", None)
-            if sock is None:
-                sock = getattr(stream, "stream", None)
-                if sock is not None:
-                    sock = getattr(sock, "_sock", None)
-            if sock is None:
-                continue
-            try:
-                sock.shutdown(_socket.SHUT_RDWR)
-            except OSError:
-                pass
-            try:
-                sock.close()
-            except OSError:
-                pass
-            closed += 1
-    except Exception as exc:
-        _ra().logger.debug("Force-close TCP sockets sweep error: %s", exc)
-    return closed
-
-
-
 __all__ = [
     "convert_to_trajectory_format",
     "sanitize_tool_call_arguments",
@@ -2183,5 +2123,4 @@ __all__ = [
     "cleanup_dead_connections",
     "extract_api_error_context",
     "apply_pending_steer_to_tool_results",
-    "force_close_tcp_sockets",
 ]

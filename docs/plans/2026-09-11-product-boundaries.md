@@ -1714,3 +1714,22 @@ after success. Existing migration behavior remains in its established owner.
 
 Validation: 82 runtime-switch/native-command tests passed; Python quality,
 35 import contracts and generated protocol checks passed.
+
+
+### Delegate network teardown to the client owner
+
+Removed the private HTTPX pool/socket traversal performed before every SDK
+client close, including its unused runtime forwarding helper. The installed
+HTTPX client closes transport and proxy mounts; httpcore removes its connection
+list under its pool lock before closing those connections. Agent teardown now
+uses that public owner instead of independently shutting down private sockets.
+The old comment claiming graceful close necessarily left CLOSE-WAIT sockets
+until an OS timeout and that shutdown/close forced RST was unsupported.
+
+Validation: six client/resource-ownership tests passed, including a real local
+TCP keep-alive exchange through OpenAI's HTTPX client, observed peer EOF after
+SDK close, and an independently allocated socket surviving repeated close. A
+guard test rejects private transport traversal. Python quality, 35 import
+contracts and protocol generation checks passed. This is not reproduction or
+attribution of the historical SSL or bad-file-descriptor incidents. Lower-level
+task-ID tool cleanup ownership and failure retention remain separate work.

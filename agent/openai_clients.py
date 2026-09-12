@@ -91,16 +91,14 @@ def _build_keepalive_http_client(base_url: str = "") -> Any:
 def _close_openai_client(self, client: Any, *, reason: str, shared: bool) -> None:
     if client is None:
         return
-    # Force-close TCP sockets first to prevent CLOSE-WAIT accumulation,
-    # then do the graceful SDK-level close.
-    force_closed = self._force_close_tcp_sockets(client)
+    # The SDK/transport owns its pools, proxy mounts and socket lifetime.
+    # Closing private sockets here bypasses that ownership and synchronization.
     try:
         client.close()
         logger.info(
-            "OpenAI client closed (%s, shared=%s, tcp_force_closed=%d) %s",
+            "OpenAI client closed (%s, shared=%s) %s",
             reason,
             shared,
-            force_closed,
             self._client_log_context(),
         )
     except Exception as exc:
