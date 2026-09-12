@@ -610,3 +610,11 @@ type = "forbidden"
 source_modules = ["superforecasting_agent.hosting.builds"]
 forbidden_modules = ["gateway", "tui_gateway", "cli", "superforecasting_agent.runtime", "agent", "tools"]
 allow_indirect_imports = false
+
+
+[[tool.importlinter.contracts]]
+name = "toolset inventory never imports presentation"
+type = "forbidden"
+source_modules = ["superforecasting_agent.tooling.inventory"]
+forbidden_modules = ["gateway", "tui_gateway", "cli"]
+allow_indirect_imports = false

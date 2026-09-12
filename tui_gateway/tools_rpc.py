@@ -58,25 +58,9 @@ def _session_toolsets(params: dict):
 @method("tools.list")
 def _(rid, params: dict) -> dict:
     try:
-        from superforecasting_agent.tooling.toolsets import get_all_toolsets, get_toolset_info
+        from superforecasting_agent.tooling.inventory import toolset_inventory
 
-        selection = _session_toolsets(params)
-        enabled = set(selection) if selection is not None else None
-
-        items = []
-        for name in sorted(get_all_toolsets().keys()):
-            info = get_toolset_info(name)
-            if not info:
-                continue
-            items.append(
-                {
-                    "name": name,
-                    "description": info["description"],
-                    "tool_count": info["tool_count"],
-                    "enabled": enabled is None or name in enabled,
-                    "tools": info["resolved_tools"],
-                }
-            )
+        items = toolset_inventory(_session_toolsets(params))
         return _ok(rid, {"toolsets": items})
     except Exception as e:
         return _err(rid, 5031, str(e))
@@ -185,24 +169,12 @@ def _(rid, params: dict) -> dict:
 @method("superforecasting_agent.tooling.toolsets.list")
 def _(rid, params: dict) -> dict:
     try:
-        from superforecasting_agent.tooling.toolsets import get_all_toolsets, get_toolset_info
+        from superforecasting_agent.tooling.inventory import toolset_inventory
 
-        selection = _session_toolsets(params)
-        enabled = set(selection) if selection is not None else None
-
-        items = []
-        for name in sorted(get_all_toolsets().keys()):
-            info = get_toolset_info(name)
-            if not info:
-                continue
-            items.append(
-                {
-                    "name": name,
-                    "description": info["description"],
-                    "tool_count": info["tool_count"],
-                    "enabled": enabled is None or name in enabled,
-                }
-            )
+        items = [
+            {key: value for key, value in item.items() if key != "tools"}
+            for item in toolset_inventory(_session_toolsets(params))
+        ]
         return _ok(rid, {"toolsets": items})
     except Exception as e:
         return _err(rid, 5032, str(e))

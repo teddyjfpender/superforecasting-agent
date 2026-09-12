@@ -320,3 +320,30 @@ def test_native_builtin_cannot_be_overridden_by_plugin(configure, monkeypatch):
     monkeypatch.setattr("superforecasting_agent.runtime.plugins.get_plugin_command_handler", lambda name: plugin)
     assert "no previous" in dispatch("retry")["error"]["message"]
     plugin.assert_not_called()
+
+
+@pytest.mark.parametrize("selection,marker", [(None, "(*)"), ([], ""), (["forecasting"], "(*)")])
+def test_toolset_command_shares_cli_inventory_without_worker(configure, monkeypatch, capsys, selection, marker):
+    from types import SimpleNamespace
+    from cli import ForecastCLI
+
+    configure({})
+    monkeypatch.setattr(server, "_load_enabled_toolsets", lambda: selection)
+    monkeypatch.setattr("superforecasting_agent.tooling.toolsets.get_all_toolsets", lambda: {"forecasting": {}, "hermes-legacy": {}})
+    monkeypatch.setattr("superforecasting_agent.tooling.toolsets.get_toolset_info", lambda name: {
+        "description": "Fixture tools", "tool_count": 1, "resolved_tools": ["fixture"],
+    })
+    response = dispatch("toolsets")["result"]
+    assert response["type"] == "exec"
+    ForecastCLI.show_toolsets(SimpleNamespace(enabled_toolsets=selection))
+    classic = capsys.readouterr().out
+    expected = f"{marker} forecasting [1 tools] - Fixture tools".strip()
+    for output in (response["output"], classic):
+        row = next(line for line in output.splitlines() if "Fixture tools" in line)
+        assert " ".join(row.split()).replace("[ ", "[") == expected
+        assert "hermes-legacy" not in output
+    assert slash("toolsets")["error"]["data"] == {
+        "dispatch": "command.dispatch", "execution_started": False,
+    }
+    server._SlashWorker.assert_not_called()
+    server._start_agent_build.assert_not_called()

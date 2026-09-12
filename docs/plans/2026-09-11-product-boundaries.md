@@ -1581,3 +1581,19 @@ Validation: 78 inventory/protocol tests passed
 pre-build configuration, empty selections, live selections and schema-resolution
 arguments. Python quality and all 32 import contracts passed
 (`/tmp/forecast-toolset-inventory-quality.log`).
+
+### Shared toolset inventory and native terminal inspection
+
+`superforecasting_agent/tooling/inventory.py` owns typed inventory records,
+selection flags, sorting and optional legacy filtering. Classic CLI presentation
+and both inventory RPCs consume it. Native `/toolsets` uses the same operation
+with the live or configured selection and never constructs a compatibility worker;
+direct legacy invocation hands off before agent admission. RPC response fields
+remain compatible and presentation formatting stays in the consumers.
+
+The owner is covered by strict lint/format/types and a new transitive import
+contract forbidding CLI/gateway/TUI presentation dependencies. Validation:
+120 inventory, command and protocol tests passed
+(`/tmp/forecast-shared-inventory-qualified-tests.log`), including CLI/native
+record parity and no-worker admission. Python quality passed with all 33 import
+contracts (`/tmp/forecast-shared-inventory-final-quality.log`).

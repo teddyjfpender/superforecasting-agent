@@ -39,6 +39,7 @@ The formality layer of the modularization program
 | `forecasting/hooks/loader.py` | validation policy loading | Compile current inline and profile rule specifications | No runtime configuration import; uses shared profile identity, never caches by object identity or file timestamps |
 | `forecasting/ledger/` | domain leaf | `forecasting/ledger/__init__` (monkeypatch-forwarding façade over `core.py` + leaves) | `forecasting.cli` (Tier-1) |
 | `forecasting/cli/` | surface (argparse assembler) | `forecasting/cli/__init__` (`_CliPackage` forwarding façade) | — |
+| `superforecasting_agent/tooling/inventory.py` | shared tool inspection | Typed toolset inventory, selection flags and legacy filtering for CLI and native TUI | No CLI, gateway or TUI imports, enforced transitively |
 | `superforecasting_agent/tooling/skill_types.py` | skill source contracts | `SkillMeta`, `SkillBundle`, `SkillSource`; re-exported by `tools.skills_hub` | Standard library only; importing contracts does not load source adapters |
 | `superforecasting_agent/tooling/github_auth.py` | skill source authentication | `GitHubAuth`, re-exported by `tools.skills_hub` | Credentials resolve lazily; importing the module does not load source adapters |
 | `superforecasting_agent/tooling/skill_paths.py` | skill bundle path validation | Shared name, category, and relative-file validators, re-exported by `tools.skills_hub` | Standard-library-only validation before filesystem access |

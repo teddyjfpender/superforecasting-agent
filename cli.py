@@ -3968,7 +3968,9 @@ class ForecastCLI:
 
     def show_toolsets(self):
         """Display available toolsets with forecast-desk ASCII framing."""
-        toolset_names = get_public_toolset_names(include_legacy=False)
+        from superforecasting_agent.tooling.inventory import toolset_inventory
+
+        items = toolset_inventory(self.enabled_toolsets, include_legacy=False)
         
         # Header
         print()
@@ -3980,16 +3982,11 @@ class ForecastCLI:
         print("+" + "-" * width + "+")
         print()
         
-        for name in toolset_names:
-            info = get_toolset_info(name)
-            if info:
-                tool_count = info["tool_count"]
-                desc = info["description"]
-                
-                # Mark if currently enabled
-                marker = "(*)" if self.enabled_toolsets and name in self.enabled_toolsets else "   "
-                print(f"  {marker} {name:<18} [{tool_count:>2} tools] - {desc}")
-        
+        for info in items:
+            name = info["name"]
+            marker = "(*)" if info["enabled"] else "   "
+            print(f"  {marker} {name:<18} [{info['tool_count']:>2} tools] - {info['description']}")
+
         print()
         print("  (*) = currently enabled")
         print()

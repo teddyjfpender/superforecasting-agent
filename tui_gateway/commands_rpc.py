@@ -342,6 +342,21 @@ def _(rid, params: dict) -> dict:
     except Exception:
         pass
 
+    if name == "toolsets":
+        from superforecasting_agent.tooling.inventory import toolset_inventory
+        from tui_gateway.tools_rpc import _session_toolsets
+
+        try:
+            items = toolset_inventory(_session_toolsets(params), include_legacy=False)
+            lines = ["Forecast Desk Toolsets", ""]
+            for item in items:
+                marker = "(*)" if item["enabled"] else "   "
+                lines.append(f"{marker} {item['name']} [{item['tool_count']} tools] - {item['description']}")
+            lines.extend(["", "(*) = currently enabled"])
+            return _ok(rid, {"type": "exec", "output": "\n".join(lines)})
+        except Exception as exc:
+            return _err(rid, 5032, str(exc))
+
     if name == "plugins":
         from superforecasting_agent.runtime.plugin_commands import describe_plugins
 
