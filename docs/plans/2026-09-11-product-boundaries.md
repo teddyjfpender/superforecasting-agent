@@ -2414,3 +2414,25 @@ and verifies a runtime-setting alias performs no write during handoff and exactl
 one write during dispatch. 672 TUI gateway tests passed, along with shared
 Python quality checks and all 44 import contracts. This fixes alias routing; it
 does not claim that the remaining classic command operations are migrated.
+
+
+Background-reader expanded verification completed: 3,673 forecasting tests passed
+with 11 skips, including the smoke subprocess and numerical backends.
+
+### Snapshot storage prerequisites for native commands
+
+The next command extraction exposed storage defects: snapshots created in the
+same second reused directories, labels and manifest paths were trusted, negative
+retention counts sliced the deletion list, and database restore unlinked the
+current file before replacement. Shared backup functions now use unique IDs,
+validate names and every supported manifest path before writes, reject symbolic
+link restore paths, publish manifests atomically, and ignore unpublished snapshots
+when pruning. Each restored file is staged, fsynced and atomically replaced; a
+failed replacement preserves its previous contents and removes the temporary file.
+
+127 backup/integrity tests passed, including simultaneous same-instant creation,
+malicious later manifest entries preventing earlier writes, source/destination
+symlinks, invalid retention and injected replacement failure. Shared Python quality
+checks passed. This is per-file atomicity, not a multi-file transaction or proof
+that replacing an open SQLite database is safe. Native TUI restore remains blocked;
+host-coordinated restoration and command extraction remain unfinished.

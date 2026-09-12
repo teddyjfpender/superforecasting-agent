@@ -18,13 +18,14 @@ import sys
 import tempfile
 import time
 import zipfile
+import uuid
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from superforecasting_agent.constants import get_default_agent_root, get_agent_home, display_agent_home
-from superforecasting_agent.storage.files import atomic_replace
+from superforecasting_agent.storage.files import atomic_replace, atomic_json_write
 
 logger = logging.getLogger(__name__)
 
@@ -597,6 +598,33 @@ def _quick_snapshot_root(hermes_home: Optional[Path] = None) -> Path:
     return home / _QUICK_SNAPSHOTS_DIR
 
 
+def _snapshot_name(value: str) -> str:
+    if not isinstance(value, str) or not value or value in {".", ".."} or any(
+        char in value for char in ("/", "\\", "\x00")
+    ):
+        raise ValueError("Snapshot name must be a single nonempty path component")
+    return value
+
+
+def _snapshot_member(base: Path, relative: str) -> Path:
+    """Validate every manifest member before any restore writes occur."""
+    if not isinstance(relative, str) or "\\" in relative or "\x00" in relative:
+        raise ValueError("Invalid snapshot member path")
+    parts = relative.split("/")
+    if any(part in {"", ".", ".."} for part in parts):
+        raise ValueError("Invalid snapshot member path")
+    if relative not in _QUICK_STATE_FILES and not relative.startswith(
+        ("pairing/", "platforms/pairing/")
+    ):
+        raise ValueError("Snapshot member is not a supported state file")
+    candidate = base
+    for part in parts:
+        candidate = candidate / part
+        if candidate.is_symlink():
+            raise ValueError("Snapshot members must not traverse symbolic links")
+    return candidate
+
+
 def create_quick_snapshot(
     label: Optional[str] = None,
     hermes_home: Optional[Path] = None,
@@ -611,11 +639,16 @@ def create_quick_snapshot(
     """
     home = hermes_home or get_agent_home()
     root = _quick_snapshot_root(home)
+    if root.is_symlink():
+        raise ValueError("Snapshot directory must not be a symbolic link")
 
-    ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-    snap_id = f"{ts}-{label}" if label else ts
+    if label is not None:
+        _snapshot_name(label)
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
+    unique = f"{ts}-{uuid.uuid4().hex[:12]}"
+    snap_id = f"{unique}-{label}" if label else unique
     snap_dir = root / snap_id
-    snap_dir.mkdir(parents=True, exist_ok=True)
+    snap_dir.mkdir(parents=True, exist_ok=False)
 
     manifest: Dict[str, int] = {}  # rel_path -> file size
 
@@ -670,8 +703,7 @@ def create_quick_snapshot(
         "total_size": sum(manifest.values()),
         "files": manifest,
     }
-    with open(snap_dir / "manifest.json", "w", encoding="utf-8") as f:
-        json.dump(meta, f, indent=2)
+    atomic_json_write(snap_dir / "manifest.json", meta)
 
     # Auto-prune
     _prune_quick_snapshots(root, keep=_QUICK_DEFAULT_KEEP)
@@ -717,7 +749,9 @@ def restore_quick_snapshot(
     """
     home = hermes_home or get_agent_home()
     root = _quick_snapshot_root(home)
-    snap_dir = root / snapshot_id
+    snap_dir = root / _snapshot_name(snapshot_id)
+    if root.is_symlink() or snap_dir.is_symlink():
+        raise ValueError("Snapshot directories must not be symbolic links")
 
     if not snap_dir.is_dir():
         return False
@@ -726,27 +760,35 @@ def restore_quick_snapshot(
     if not manifest_path.exists():
         return False
 
+    if manifest_path.is_symlink():
+        raise ValueError("Snapshot manifest must not be a symbolic link")
     with open(manifest_path, encoding="utf-8") as f:
         meta = json.load(f)
+    if not isinstance(meta, dict) or not isinstance(meta.get("files"), dict):
+        raise ValueError("Snapshot manifest must contain a file mapping")
+    members = []
+    for rel in meta["files"]:
+        src = _snapshot_member(snap_dir, rel)
+        dst = _snapshot_member(home, rel)
+        if not src.is_file() or (dst.exists() and not dst.is_file()):
+            raise ValueError("Snapshot member must be a regular file")
+        members.append((rel, src, dst))
 
     restored = 0
-    for rel in meta.get("files", {}):
-        src = snap_dir / rel
-        if not src.exists():
-            continue
-
-        dst = home / rel
+    for rel, src, dst in members:
         dst.parent.mkdir(parents=True, exist_ok=True)
 
         try:
-            if dst.suffix == ".db":
-                # Atomic-ish replace for databases
-                tmp = dst.parent / f".{dst.name}.snap_restore"
+            fd, name = tempfile.mkstemp(prefix=f".{dst.name}.snap_restore-", dir=dst.parent)
+            os.close(fd)
+            tmp = Path(name)
+            try:
                 shutil.copy2(src, tmp)
-                dst.unlink(missing_ok=True)
-                shutil.move(str(tmp), str(dst))
-            else:
-                shutil.copy2(src, dst)
+                with tmp.open("rb") as stream:
+                    os.fsync(stream.fileno())
+                atomic_replace(tmp, dst)
+            finally:
+                tmp.unlink(missing_ok=True)
             restored += 1
         except (OSError, PermissionError) as exc:
             logger.error("Failed to restore %s: %s", rel, exc)
@@ -757,11 +799,14 @@ def restore_quick_snapshot(
 
 def _prune_quick_snapshots(root: Path, keep: int = _QUICK_DEFAULT_KEEP) -> int:
     """Remove oldest quick snapshots beyond the keep limit. Returns count deleted."""
+    if type(keep) is not int or keep < 0:
+        raise ValueError("Snapshot keep count must be a nonnegative integer")
     if not root.exists():
         return 0
 
     dirs = sorted(
-        (d for d in root.iterdir() if d.is_dir()),
+        (d for d in root.iterdir() if d.is_dir() and not d.is_symlink()
+         and (d / "manifest.json").is_file()),
         key=lambda d: d.name,
         reverse=True,
     )
