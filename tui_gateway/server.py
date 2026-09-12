@@ -2998,23 +2998,11 @@ def _(rid, params: dict) -> dict:
     if not title:
         return _err(rid, 4021, "title required")
     try:
-        if db.set_session_title(key, title):
-            session["pending_title"] = None
-            return _ok(rid, {"pending": False, "title": title})
-        # rowcount == 0 can mean "same value" as well as "missing row".
-        # Queue only when the session row truly does not exist yet.
-        existing_row = db.get_session(key)
-        if existing_row:
-            session["pending_title"] = None
-            return _ok(
-                rid,
-                {
-                    "pending": False,
-                    "title": (existing_row.get("title") or title),
-                },
-            )
-        session["pending_title"] = title
-        return _ok(rid, {"pending": True, "title": title})
+        from superforecasting_agent.application.sessions import set_session_title
+
+        title, pending = set_session_title(db, key, title)
+        session["pending_title"] = title if pending else None
+        return _ok(rid, {"pending": pending, "title": title})
     except ValueError as e:
         return _err(rid, 4022, str(e))
     except Exception as e:

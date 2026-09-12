@@ -2645,3 +2645,21 @@ explicit expected-name list: it omitted the three new command events. That list
 and wire round-trip cases now cover start/output/finish without relaxing the
 exact-registration assertion. The failed full run had 31,124 passing Python tests,
 148 skips and that one failure; its subsequent 428 terminal tests passed.
+
+
+### Canonical title-setting is shared by CLI and native TUI
+
+The shared session application owner now validates and sets titles, returning the
+canonical value and whether it awaits session creation. Classic CLI and session.title
+RPC both consume it and update their pending title only after success. Previously,
+the RPC returned and queued raw input despite storage removing controls/collapsing
+whitespace; control-only input could clear a stored title while reporting success.
+Both paths now reject an empty cleaned title and preserve existing state on failure.
+Storage remains the owner of transactional uniqueness checks, including conflicts
+when the target session does not exist yet. Queued titles are not reservations.
+
+499 focused session, CLI branch, lazy-session and gateway tests passed. New tests
+exercise the actual CLI and RPC handlers against SQLite for persisted and pending
+titles, response/storage parity, conflicting names and control-only input. Shared
+Python quality gates and 46 import contracts passed. Read-side pending-title
+reconciliation and messaging's translated title presentation remain separate paths.

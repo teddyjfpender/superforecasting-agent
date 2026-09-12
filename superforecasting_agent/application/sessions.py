@@ -93,3 +93,24 @@ def branch_session(
         end_parent=end_parent,
     )
     return title
+
+
+def set_session_title(db: SessionDB, session_id: str, title: str) -> tuple[str, bool]:
+    """Return the canonical title and whether it awaits session creation.
+
+    Storage owns validation and transactional uniqueness. Never queue or report
+    an unsanitized value, and never claim that an absent session was updated.
+    """
+    if not isinstance(title, str):
+        raise ValueError("session title must be text")
+    clean = db.sanitize_title(title)
+    if not clean:
+        raise ValueError(
+            "Title is empty after cleanup. Please use printable characters."
+        )
+    if db.set_session_title(session_id, clean):
+        return clean, False
+    existing = db.get_session(session_id)
+    if existing:
+        return existing.get("title") or clean, False
+    return clean, True

@@ -5561,33 +5561,16 @@ class ForecastCLI:
                 raw_title = parts[1].strip()
                 if raw_title:
                     if self._session_db:
-                        # Sanitize the title early so feedback matches what gets stored
+                        from superforecasting_agent.application.sessions import set_session_title
                         try:
-                            from superforecasting_agent.storage.session import SessionDB
-                            new_title = SessionDB.sanitize_title(raw_title)
+                            new_title, pending = set_session_title(self._session_db, self.session_id, raw_title)
+                            self._pending_title = new_title if pending else None
+                            if pending:
+                                _cprint(f"  Forecast session title queued: {new_title} (will be saved on first message)")
+                            else:
+                                _cprint(f"  Forecast session title set: {new_title}")
                         except ValueError as e:
                             _cprint(f"  {e}")
-                            new_title = None
-                        if not new_title:
-                            _cprint("  Title is empty after cleanup. Please use printable characters.")
-                        elif self._session_db.get_session(self.session_id):
-                            # Session exists in DB — set title directly
-                            try:
-                                if self._session_db.set_session_title(self.session_id, new_title):
-                                    _cprint(f"  Forecast session title set: {new_title}")
-                                else:
-                                    _cprint("  Forecast session not found in database.")
-                            except ValueError as e:
-                                _cprint(f"  {e}")
-                        else:
-                            # Session not created yet — defer the title
-                            # Check uniqueness proactively with the sanitized title
-                            existing = self._session_db.get_session_by_title(new_title)
-                            if existing:
-                                _cprint(f"  Title '{new_title}' is already in use by session {existing['id']}")
-                            else:
-                                self._pending_title = new_title
-                                _cprint(f"  Forecast session title queued: {new_title} (will be saved on first message)")
                     else:
                         from superforecasting_agent.storage.session import format_session_db_unavailable
                         _cprint(f"  {format_session_db_unavailable()}")
