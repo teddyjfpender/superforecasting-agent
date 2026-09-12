@@ -248,3 +248,12 @@ def test_malformed_destructive_subgoal_command_preserves_criteria(server, sessio
     result = _call(server, "command.dispatch", name="subgoal", arg=argument, session_id=sid)
     assert "✓" not in result["result"]["output"]
     assert GoalManager(session_id=key).state.subgoals == ["Keep this criterion"]
+
+
+@pytest.mark.parametrize('value, budget', [(True, 20), (2.5, 20), (-1, 20), ('7', 7)])
+def test_goal_command_uses_shared_budget_policy(server, session, monkeypatch, value, budget):
+    sid, _, _ = session
+    monkeypatch.setattr(server, '_load_cfg', lambda: {'goals': {'max_turns': value}})
+    result = _call(server, 'command.dispatch', name='goal', arg='Check sources', session_id=sid)
+    assert result['result']['type'] == 'send'
+    assert f'{budget}-turn budget' in result['result']['notice']

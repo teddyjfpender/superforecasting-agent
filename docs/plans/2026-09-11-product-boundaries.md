@@ -3411,3 +3411,17 @@ Validation: 91 focused SQLite-backed application, goal-manager, TUI and gateway
 tests passed; shared quality checks passed with 52 import contracts. Invalid
 subgoal indices/clear arguments preserve stored criteria and compatibility
 imports resolve to the same operation.
+
+
+### Shared goal budget configuration
+
+Four CLI/gateway/TUI budget readers now delegate to a pure configuration owner.
+The prior integer coercion accepted booleans and truncated fractional values.
+Configured budgets now require positive integers or integer strings; malformed
+settings retain the established default of 20. Runtime exports the shared default
+for compatibility. Loaders retain their acquisition/failure policy; saved profiles
+and stored goal records are untouched.
+
+Validation: 124 focused configuration/application/CLI/gateway/TUI tests passed,
+including malformed settings through real native TUI dispatch. Shared Python
+quality gates passed with all 52 import contracts.

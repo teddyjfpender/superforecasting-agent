@@ -16,6 +16,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+from superforecasting_agent.configuration.goals import configured_goal_turn_budget
+
 from superforecasting_agent.constants import get_agent_home
 from superforecasting_agent.runtime.env_loader import load_forecast_dotenv
 from superforecasting_agent.environment import INTERACTIVE_ENV_NAMES, is_truthy_value
@@ -3788,9 +3790,9 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
                     if sid_key:
                         try:
                             goals_cfg = _load_cfg().get("goals") or {}
-                            goal_max_turns = int(goals_cfg.get("max_turns", 20) or 20)
+                            goal_max_turns = configured_goal_turn_budget(goals_cfg)
                         except Exception:
-                            goal_max_turns = 20
+                            goal_max_turns = configured_goal_turn_budget(None)
                         goal_mgr = GoalManager(
                             session_id=sid_key,
                             default_max_turns=goal_max_turns,

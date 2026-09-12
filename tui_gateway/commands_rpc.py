@@ -21,6 +21,8 @@ import os
 import subprocess
 import sys
 
+from superforecasting_agent.configuration.goals import configured_goal_turn_budget
+
 import tui_gateway.server as _core
 from tui_gateway.server import _TUI_EXTRA, _TUI_HIDDEN, _err, _ok
 
@@ -584,9 +586,9 @@ def _(rid, params: dict) -> dict:
 
         try:
             goals_cfg = _core._load_cfg().get("goals") or {}
-            max_turns = int(goals_cfg.get("max_turns", 20) or 20)
+            max_turns = configured_goal_turn_budget(goals_cfg)
         except Exception:
-            max_turns = 20
+            max_turns = configured_goal_turn_budget(None)
         mgr = GoalManager(session_id=sid_key, default_max_turns=max_turns, database_provider=_core._get_db)
         if name == "subgoal":
             from superforecasting_agent.application.goals import execute_subgoal

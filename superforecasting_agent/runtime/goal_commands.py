@@ -2,6 +2,8 @@
 
 import logging
 
+from superforecasting_agent.configuration.goals import configured_goal_turn_budget
+
 from .commands import _looks_like_slash_command
 from .console_output import _cprint, _DIM, _RST
 
@@ -35,9 +37,9 @@ def _get_goal_manager(self):
     try:
         cfg = load_config() or {}
         goals_cfg = cfg.get("goals") or {}
-        max_turns = int(goals_cfg.get("max_turns", 20) or 20)
+        max_turns = configured_goal_turn_budget(goals_cfg)
     except Exception:
-        max_turns = 20
+        max_turns = configured_goal_turn_budget(None)
 
     mgr = GoalManager(session_id=sid, default_max_turns=max_turns,
                       database_provider=lambda: database)

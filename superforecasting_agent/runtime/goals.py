@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 # Constants & defaults
 # ──────────────────────────────────────────────────────────────────────
 
-DEFAULT_MAX_TURNS = 20
+from superforecasting_agent.configuration.goals import DEFAULT_MAX_TURNS
 DEFAULT_JUDGE_TIMEOUT = 30.0
 # Judge output budget. The freeform judge returns a one-line JSON verdict, but
 # reasoning models (deepseek-v4, qwq, etc.) burn tokens on hidden reasoning

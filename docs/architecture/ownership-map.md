@@ -600,3 +600,10 @@ through a manager port. All three consumers call it directly; the prior runtime
 module is a compatibility re-export. A dedicated transitive import contract now
 forbids runtime, storage, agent, tool and forecasting implementations from the
 goal application owner, supplementing the existing presentation restrictions.
+
+`configuration/goals.py` owns interpretation of configured goal turn budgets.
+CLI manager acquisition, gateway manager acquisition, TUI goal commands and TUI
+post-turn continuation use it. Positive integers and numeric strings are accepted;
+booleans, fractions, nonpositive values and malformed sections use the 20-turn
+default. Existing stored goal history and explicit manager mutation arguments
+are not reinterpreted by this configuration reader.

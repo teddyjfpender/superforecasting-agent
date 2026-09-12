@@ -51,6 +51,7 @@ from typing import Dict, Optional, Any, List, Union
 # `gateway.run.fetch_account_usage` as a module-level attribute. The
 # gateway is a long-running daemon, so its boot cost matters less than
 # preserving the established test-patch surface.
+from superforecasting_agent.configuration.goals import configured_goal_turn_budget
 from agent.account_usage import fetch_account_usage, render_account_usage_lines
 from agent.async_utils import safe_schedule_threadsafe
 from agent.i18n import t
@@ -11293,9 +11294,9 @@ class GatewayRunner:
                 from superforecasting_agent.runtime.config import load_config
 
                 goals_cfg = (load_config() or {}).get("goals") or {}
-            return int(goals_cfg.get("max_turns", 20) or 20)
+            return configured_goal_turn_budget(goals_cfg)
         except Exception:
-            return 20
+            return configured_goal_turn_budget(None)
 
     def _get_goal_manager_for_event(self, event: "MessageEvent"):
         """Return a GoalManager bound to the session for this gateway event.
