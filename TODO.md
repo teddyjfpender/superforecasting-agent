@@ -29,7 +29,10 @@ The legacy dispatcher itself remains.
 - [ ] Audit lower-level agent cleanup for concrete resource ownership.
   Do not retry task-ID cleanup if it could close a replacement component's resources.
 - [ ] Close remaining partial-construction and shutdown failure paths with
-  deterministic failure injection and retained cleanup handles.
+  deterministic failure injection and retained cleanup handles. Child cleanup
+  retries retain exact handles; failed SDK close remains pending because HTTPX
+  can mark itself closed before transport disposal fails. Safe recovery of those
+  transports and terminal/browser cleanup failures is still unfinished.
 - [ ] Consolidate the legacy goal database cache outside the TUI host. Native
   TUI goals use host-owned storage; manager reads refresh and writes reject stale state.
 - [ ] Extend installed remote-host/provider recovery exercises to longer sessions.

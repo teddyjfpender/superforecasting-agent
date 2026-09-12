@@ -4,7 +4,7 @@ import logging
 import threading
 from typing import Any
 
-from agent.openai_clients import detach_primary_client
+from agent.openai_clients import detach_primary_client, require_client_cleanup_complete
 from tools.browser_tool import cleanup_browser
 from tools.terminal_tool import cleanup_vm
 
@@ -144,6 +144,7 @@ def release_clients(self) -> None:
             return
         _release_clients(self)
         _require_children_disposed(self)
+        require_client_cleanup_complete(self)
 
 
 def _release_clients(self) -> None:
@@ -225,12 +226,14 @@ def close(self) -> None:
             # Retry only retained object handles, never session/task-ID lookups.
             _close_children(self, release_only=False, collect_active=False)
             _require_children_disposed(self)
+            require_client_cleanup_complete(self)
             return
         # Claim once before callbacks: teardown may re-enter close(). A later
         # agent can reuse this session ID, so repeated cleanup is destructive.
         self._resources_closed = True
         _close_resources(self)
         _require_children_disposed(self)
+        require_client_cleanup_complete(self)
 
 
 def _close_resources(self) -> None:

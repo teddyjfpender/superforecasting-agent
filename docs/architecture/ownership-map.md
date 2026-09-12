@@ -502,3 +502,9 @@ fails. Cleanup reports incomplete disposal to the host after attempting independ
 resources. Retries operate on those exact handles; task-ID cleanup remains once per
 parent owner. Reentrant child disposal is guarded independently from the parent's
 resource lock, so callbacks cannot replay an in-flight batch.
+
+`agent/openai_clients.py` retains failed SDK close handles. Lifecycle teardown
+refuses to report complete while these remain unconfirmed: HTTPX can set its
+closed flag before transport disposal raises, making subsequent public close calls
+no-ops. Retention is diagnostic containment, not a promise of automatic transport
+recovery; private SDK/socket internals remain outside agent ownership.

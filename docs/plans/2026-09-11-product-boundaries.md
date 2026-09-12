@@ -2044,3 +2044,26 @@ sibling continuation, reentrancy, and a replacement terminal environment survivi
 the old parent's retry. Shared quality checks passed. This fixes child ownership;
 SDK client-close failure retention and terminal/browser cleanup failure ownership
 remain separate open work. It does not attribute the historical native crash.
+
+### SDK failure state and transport-close limits
+
+Inspected the installed HTTPX and httpcore close implementations. HTTPX marks a
+client CLOSED before invoking transport close; an exception there leaves subsequent
+client.close() calls as no-ops. The old agent helper swallowed that exception and
+lost the detached SDK handle, so host disposal could report success without proof.
+
+Failed SDK handles now remain owned, failures are logged at warning level, and
+host disposal stays pending. A later successful no-op is not accepted as recovery.
+No private socket traversal was restored. A deterministic test with a real OpenAI
+client, real HTTPX client and injected failing BaseTransport reproduces the closed
+flag/no-retry behavior and checks host pending state. Additional tests preserve
+replacement clients and deduplicate retained failed handles. 362 focused runtime
+and ownership tests passed; shared quality checks passed.
+
+This establishes truthful failure containment, not safe transport recovery after a
+partial close. That still needs an ownership-aware transport solution or verified
+process-level isolation. It does not establish either historical crash cause.
+
+The earlier integrated construction/provenance batch pushed at `c76034948` after
+30,958 tests passed (148 skipped, 58 warnings). The subsequent CLI factory, native
+cron, child cleanup and SDK diagnostics commits require their own integrated gate.

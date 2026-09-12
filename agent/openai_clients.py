@@ -100,6 +100,12 @@ def _build_keepalive_http_client(base_url: str = "") -> Any:
 def _close_openai_client(self, client: Any, *, reason: str, shared: bool) -> None:
     if client is None:
         return
+    with _openai_client_lock(self):
+        failures = getattr(self, "_failed_client_closes", [])
+        if any(failed is client for failed in failures):
+            # HTTPX may mark itself closed before transport close raises. A
+            # second successful no-op is not evidence that sockets were freed.
+            return
     # The SDK/transport owns its pools, proxy mounts and socket lifetime.
     # Closing private sockets here bypasses that ownership and synchronization.
     try:
@@ -111,13 +117,28 @@ def _close_openai_client(self, client: Any, *, reason: str, shared: bool) -> Non
             self._client_log_context(),
         )
     except Exception as exc:
-        logger.debug(
+        with _openai_client_lock(self):
+            failures = getattr(self, "_failed_client_closes", None)
+            if failures is None:
+                failures = self._failed_client_closes = []
+            if not any(failed is client for failed in failures):
+                failures.append(client)
+        logger.warning(
             "OpenAI client close failed (%s, shared=%s) %s error=%s",
             reason,
             shared,
             self._client_log_context(),
             exc,
         )
+
+
+def require_client_cleanup_complete(self) -> None:
+    """Do not let a host retire an owner whose SDK cleanup was unconfirmed."""
+    with _openai_client_lock(self):
+        if getattr(self, "_failed_client_closes", []):
+            raise RuntimeError(
+                "SDK client cleanup failed; retained handles require investigation"
+            )
 
 
 def _replace_primary_openai_client(self, *, reason: str) -> bool:
