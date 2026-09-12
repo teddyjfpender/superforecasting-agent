@@ -1,0 +1,35 @@
+# Product boundary acceptance audit
+
+Scope: the five deliverables in the original repository architecture objective.
+This audit records current evidence, not completion of the whole migration.
+Source revision: `de453c2072ac2bc16b721ccfb3e9f60119e3db74`.
+
+| Deliverable | Current evidence | Remaining qualification or work |
+| --- | --- | --- |
+| Domain, application, infrastructure, transport and product ownership | Shared forecast/session application packages; ownership map; 61 import contracts, with injected forbidden-edge tests. Source dispatch and panel rules have transitive execution/presentation prohibitions. | Fourteen direct forecast-to-tool exceptions remain. Scheduled and batch refresh still import the forecasting tool solely for watched-source acquisition. Quorum provider discovery retains a runtime exception. |
+| TUI first consumer of shared services, with CLI parity | Real Ink review/resolution/scoring and recovery checks passed. Native command inventory is enforced across the backend and Ink. The classic slash worker is deleted; host construction uses shared agent factories. | Complete the remaining legacy adapter extractions without changing validation or provenance. Live snapshot restoration still requires host-wide writer quiescence. |
+| Reliable development gates | `scripts/dev.py` owns bootstrap/check; hooks and Product quality CI invoke it. Hooks are installed. Strict lint, formatting and types cover extracted owners; import and generated-contract checks block failures. | Strict coverage remains incremental outside extracted owners. Fresh bootstrap was previously verified; this audit inspected the same entrypoint and CI wiring but did not repeat bootstrap on every platform. |
+| Presentation-independent runtime host | Configuration/session owner, shutdown, authenticated headless WebSocket and real-desk tests passed (77 tests total across the selected acceptance files). Installed local and remote terminal negotiation and clean host shutdown passed. | Lower-level browser PID identity and confirmed termination remain open. Snapshot restore admission and longer remote recovery qualification remain open. |
+| Independent product profiles | Fresh backend, terminal, combined and optional web installations passed outside the checkout. Backend create/update/resolve/score, durable worker execution and numerical fallback passed without Node. Installed terminal scored against both local and remote hosts. | This run qualifies macOS arm64/Python 3.13.12. It does not establish native Windows/Termux behavior or a published release. |
+
+## Retained artifact identity
+
+Built with `scripts/build_profiles.py`; verified with `scripts/verify_profiles.py`.
+Artifacts were written to `/tmp/forecast-boundary-audit-wheels`.
+
+- Backend `superforecasting_agent-0.22.0-py3-none-any.whl`:
+  `dd1a6a4575deff6e1606e25304615b234b3e343dc6bdb41bfada6e517db5f7aa`
+- Terminal `superforecasting_agent_tui-0.1.0-py3-none-any.whl`:
+  `6a60e2328b6161b9cecdaf2a899a3a1496933e4ff0c80d9f2c9d4b7cd1484a76`
+
+The installed checks exercise real packaged entrypoints, a durable forecast,
+headless authentication and protocol negotiation. They use isolated profiles and
+local providers; they do not claim live credential-dependent integration coverage.
+
+Local verification logs: `/tmp/forecast-boundary-audit-build.log`,
+`/tmp/forecast-boundary-audit-install.log`, and
+`/tmp/forecast-boundary-audit-runtime-tests.log`. The selected runtime tests cover
+real desktop lifecycle, host shutdown ownership, headless transport, profile
+configuration ownership and injected forbidden imports. Fifteen PTY-related
+warnings were reported; passing these tests does not resolve historical native
+SSL or late bad-file-descriptor incidents.

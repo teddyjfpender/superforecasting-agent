@@ -2,6 +2,8 @@
 
 The current priority is reusable product boundaries and enforceable repository
 hygiene. This is an implementation backlog, not a list of forecasting operations.
+The [current acceptance audit](docs/plans/2026-09-12-product-acceptance-audit.md)
+separates verified delivery evidence from remaining migration work.
 The [ownership map](docs/architecture/ownership-map.md) defines module owners;
 the [architecture work log](docs/plans/2026-09-11-product-boundaries.md) records
 changes, tests and their limits. The previous checklist is preserved in the
