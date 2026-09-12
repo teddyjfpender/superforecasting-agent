@@ -2951,3 +2951,20 @@ setup to inspect settings. The real-profile regression test forbids that old loa
 checks non-default settings, and verifies unchanged bytes and directory contents.
 75 curator/backup/stream tests passed; shared Python quality gates passed. Provider
 credential resolution remains a runtime adapter and daemon lifetime remains separate.
+
+
+### Native curator background work belongs to the host
+
+Native command dispatch supplies its host worker registry to curator execution.
+A background review is admitted before review mutations and runs synchronously inside
+that owned worker, avoiding a nested untracked daemon. The full state/report pass
+remains counted after the initiating command returns. A deterministic gateway test
+blocks review completion, verifies shutdown refuses session disposal and subsequent
+review admission, then releases it and verifies cleanup can finish.
+
+118 native-command/curator tests and shared Python quality gates passed. This change
+establishes native host lifetime accounting; active curator agent interruption,
+failed child disposal and standalone CLI daemon ownership remain outstanding.
+
+The preceding integrated batch pushed at c5297474c with 31,257 Python tests passing
+and 148 skipped. Subsequent curator state and admission changes require a new full gate.

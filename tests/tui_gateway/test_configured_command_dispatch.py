@@ -1012,3 +1012,41 @@ def test_config_inspection_uses_one_profile_snapshot(configure, monkeypatch):
     assert rows['Model'] == 'first-model'
     assert rows['Toolsets'] == 'none'
     assert len(reads) == 1
+
+
+def test_background_curator_remains_owned_until_review_finishes(configure, monkeypatch):
+    import threading
+    from agent import curator
+    configure({})
+    monkeypatch.setattr(curator, 'is_enabled', lambda: True)
+    entered, release = threading.Event(), threading.Event()
+    calls = []
+    def review(*, synchronous, dry_run):
+        calls.append((synchronous, dry_run))
+        entered.set()
+        assert release.wait(5)
+        return {}
+    monkeypatch.setattr(curator, 'run_curator_review', review)
+    host = server._host
+    closed = []
+    def close_session(sid, session, db):
+        closed.append(sid)
+        host.sessions.pop(sid)
+    shutdown_args = dict(stop_services=lambda: None, release_prompts=lambda *args: None,
+                         interrupt_delegations=lambda: None, close_session=close_session)
+    try:
+        response = dispatch('curator', 'run --background --dry-run')
+        assert 'error' not in response, response
+        assert entered.wait(5)
+        assert calls == [(True, True)]  # No nested unowned daemon.
+        assert host.shutdown(0, **shutdown_args) is False
+        assert closed == []
+        rejected = dispatch('curator', 'run --background')
+        assert rejected['error']['code'] == 5017
+        assert calls == [(True, True)]
+    finally:
+        release.set()
+        host.workers.stop()
+        assert host.workers.drain(5)
+    assert host.shutdown(0, **shutdown_args) is True
+    assert closed == ['runtime']

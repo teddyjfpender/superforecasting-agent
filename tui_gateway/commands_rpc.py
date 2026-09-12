@@ -368,7 +368,7 @@ def _(rid, params: dict) -> dict:
             )
 
         try:
-            code, output = command_output(arg, confirm=confirm)
+            code, output = command_output(arg, confirm=confirm, workers=_core._host.workers)
             if code:
                 return _err(rid, 5017, output or "Curator command failed")
             return _ok(rid, {"type": "exec", "output": output})
