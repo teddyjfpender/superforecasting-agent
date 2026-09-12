@@ -3224,3 +3224,12 @@ The startup batch's full push gate remains running in the primary checkout.
 - Verification: 55 cleanup/recording/hybrid tests passed; shared Python quality
   gates passed. This fixes delayed completion ownership, not admission across
   all browser operations or cloud-provider disposal failure recovery.
+
+### Integrated plugin branding gate repair
+
+- The full push gate stopped on the branding test's stale assumption that
+  activation guidance still lives in runtime/plugins.py (31,373 tests passed,
+  one failed). The test now includes the shared application policy source while
+  retaining all required native wording and forbidden compatibility-brand checks.
+- Focused metadata/plugin/connection/replacement verification: 207 passed,
+  one skipped. This is not a successful full-suite or push claim.

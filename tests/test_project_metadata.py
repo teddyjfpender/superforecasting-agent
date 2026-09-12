@@ -1851,6 +1851,7 @@ def test_skill_runtime_surfaces_use_active_home_guidance():
 def test_plugin_and_session_recap_guidance_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     plugins = (root / 'superforecasting_agent/runtime' / "plugins.py").read_text(encoding="utf-8")
+    plugins += (root / "superforecasting_agent/application/plugins.py").read_text(encoding="utf-8")
     recap = (root / 'superforecasting_agent/runtime' / "session_recap.py").read_text(
         encoding="utf-8"
     )
