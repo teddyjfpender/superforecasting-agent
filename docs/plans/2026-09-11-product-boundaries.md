@@ -3728,3 +3728,22 @@ boundary forbidding storage, runtime and presentation imports. This preserves th
 existing commit-then-send flow; crash-safe retry delivery after a committed history
 change is not established by these tests, and attachment replay in text-only
 transports still requires a future transport capability.
+
+
+### Submission callbacks retain their originating TUI session
+
+useSubmission previously captured a session for file detection, then reread the
+current session when detection completed. Switching sessions during that request
+could submit the original file text into the replacement session. A late prompt
+failure could also queue text or reset busy/status state in a different session.
+The send operation now captures its session once and checks it before submission,
+file activity and error handling. Detection failure uses the same guarded fallback.
+
+Four regressions failed before the fix. All seven submission/session-state checks
+passed afterward, including normal same-session file submission and busy queueing.
+The tests drive the real hook's deferred callbacks with mocked React hook plumbing;
+they do not claim a rendered terminal or network lifecycle exercise. Full shared
+Python/TypeScript quality gates and the production TUI build passed. The scoped
+design detector reported no findings; no visual layout changed. A session switch
+invalidates the delayed submission rather than sending it into another session;
+this change does not introduce durable draft recovery for that unsent input.

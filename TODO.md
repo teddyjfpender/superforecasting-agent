@@ -74,7 +74,9 @@ configuration, device sign-in, build admission/retry, notification admission and
 command subprocess cleanup. Durable turn receipts now belong to storage; the host
 finalizes drained turns before session disposal and retains resources on write failure. SDK transports own socket teardown; client eviction
 detaches exact handles before cleanup so concurrent replacements survive. Real
-Ink/dashboard/local-provider/SQLite recovery tests exist.
+Ink/dashboard/local-provider/SQLite recovery tests exist. TUI submission callbacks
+now retain their originating session: delayed file detection and request errors
+cannot send into or reset a replacement session.
 
 ## 3. Complete distribution qualification
 

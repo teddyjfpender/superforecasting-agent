@@ -95,9 +95,13 @@ export function useSubmission(opts: UseSubmissionOptions) {
   const send = useCallback(
     (text: string, showUserMessage = true) => {
       const expand = expandSnips(composerState.pasteSnips)
+      const sid = getUiState().sid
+      const stale = () => getUiState().sid !== sid
 
       const startSubmit = (displayText: string, submitText: string, showUserMessage = true) => {
-        const sid = getUiState().sid
+        if (stale()) {
+          return
+        }
 
         if (!sid) {
           return sys('forecast session not ready yet')
@@ -116,6 +120,10 @@ export function useSubmission(opts: UseSubmissionOptions) {
         turnController.interrupted = false
 
         gw.request<PromptSubmitResponse>('prompt.submit', { session_id: sid, text: submitText }).catch((e: Error) => {
+          if (stale()) {
+            return
+          }
+
           if (isSessionBusyError(e)) {
             composerActions.enqueue(submitText)
             patchUiState({ busy: true, status: 'queued for next turn' })
@@ -127,8 +135,6 @@ export function useSubmission(opts: UseSubmissionOptions) {
           patchUiState({ busy: false, status: 'ready' })
         })
       }
-
-      const sid = getUiState().sid
 
       if (!sid) {
         return sys('forecast session not ready yet')
@@ -150,6 +156,10 @@ export function useSubmission(opts: UseSubmissionOptions) {
       // letters, and escaped characters correctly.
       gw.request<InputDetectDropResponse>('input.detect_drop', { session_id: sid, text })
         .then(r => {
+          if (stale()) {
+            return
+          }
+
           if (!r?.matched) {
             return startSubmit(text, expand(text), showUserMessage)
           }
