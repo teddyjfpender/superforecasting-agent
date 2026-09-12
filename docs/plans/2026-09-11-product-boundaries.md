@@ -3276,3 +3276,18 @@ The startup batch's full push gate remains running in the primary checkout.
 - Verification: 40 host/transition/creation/cleanup/hybrid tests passed; shared
   Python quality gates passed. Active browser commands still need admission;
   current coverage establishes allocation/cleanup exclusion, not command exclusion.
+
+### Active agent-browser command admission
+
+- `_run_browser_command` now holds task lifecycle admission through process
+  completion, output parsing and fallback handling. Nested session lookup and
+  cleanup commands use the same reentrant owner; global endpoint transitions
+  wait until the admitted command finishes.
+- A deterministic test pauses the actual command runner at process wait with a
+  fake local process, starts an endpoint transition, proves cleanup has not run,
+  then releases the command and verifies success followed by endpoint publication.
+- Verification: 61 host/browser/creation/cleanup/hardening tests passed; shared
+  Python quality gates passed. AST comparison proves the existing command body
+  is unchanged inside the new admission scope.
+- Scope: agent-browser execution only. Direct CDP and Camofox paths and whole-tool
+  work outside the command runner still require lifecycle admission review.

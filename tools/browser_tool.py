@@ -1965,305 +1965,308 @@ def _run_browser_command(
     Returns:
         Parsed JSON response from agent-browser
     """
-    if timeout is None:
-        timeout = _get_command_timeout()
-    args = args or []
+    from superforecasting_agent.hosting.browser_sessions import browser_session_lifecycle
 
-    # Build the command
-    try:
-        browser_cmd = _find_agent_browser()
-    except FileNotFoundError as e:
-        logger.warning("agent-browser CLI not found: %s", e)
-        return {"success": False, "error": str(e)}
+    with browser_session_lifecycle((task_id or "default").removesuffix(_LOCAL_SUFFIX)):
+        if timeout is None:
+            timeout = _get_command_timeout()
+        args = args or []
 
-    if _requires_real_termux_browser_install(browser_cmd):
-        error = _termux_browser_install_error()
-        logger.warning("browser command blocked on Termux: %s", error)
-        return {"success": False, "error": error}
-
-    # Local mode with no Chromium on disk: fail fast with an actionable
-    # message instead of hanging for _command_timeout seconds per call.
-    # Skip when engine=lightpanda — LP doesn't need Chromium for navigation.
-    if _is_local_mode() and not _chromium_installed() and _get_browser_engine() != "lightpanda":
-        if _running_in_docker():
-            hint = (
-                "Chromium browser is missing. You're running in Docker — pull "
-                "the latest image to get the bundled Chromium: "
-                "docker pull teddyjfpender/superforecasting-agent:latest"
-            )
-        else:
-            hint = (
-                "Chromium browser is missing. Install it with: "
-                "npx agent-browser install --with-deps "
-                "(or: npx playwright install --with-deps chromium)"
-            )
-        logger.warning("browser command blocked: %s", hint)
-        return {"success": False, "error": hint}
-
-    from tools.interrupt import is_interrupted
-    if is_interrupted():
-        return {"success": False, "error": "Interrupted"}
-
-    # Get session info (creates Browserbase session with proxies if needed)
-    if _session_info is not None:
-        session_info = _session_info
-    else:
+        # Build the command
         try:
-            session_info = _get_session_info(task_id)
-        except Exception as e:
-            logger.warning("Failed to create browser session for task=%s: %s", task_id, e)
-            return {"success": False, "error": f"Failed to create browser session: {str(e)}"}
+            browser_cmd = _find_agent_browser()
+        except FileNotFoundError as e:
+            logger.warning("agent-browser CLI not found: %s", e)
+            return {"success": False, "error": str(e)}
 
-    # Build the command with the appropriate backend flag.
-    # Cloud mode: --cdp <websocket_url> connects to Browserbase.
-    # Local mode: --session <name> launches a local headless Chromium.
-    # The rest of the command (--json, command, args) is identical.
-    if session_info.get("cdp_url"):
-        # Cloud mode — connect to remote Browserbase browser via CDP
-        # IMPORTANT: Do NOT use --session with --cdp. In agent-browser >=0.13,
-        # --session creates a local browser instance and silently ignores --cdp.
-        backend_args = ["--cdp", session_info["cdp_url"]]
-    else:
-        # Local mode — launch a headless Chromium instance
-        backend_args = ["--session", session_info["session_name"]]
+        if _requires_real_termux_browser_install(browser_cmd):
+            error = _termux_browser_install_error()
+            logger.warning("browser command blocked on Termux: %s", error)
+            return {"success": False, "error": error}
 
-    # Lightpanda engine injection (local mode only, agent-browser v0.25.3+).
-    # Use the resolved session backend rather than global cloud-provider state:
-    # hybrid private-URL routing can create a local sidecar while a cloud
-    # provider remains configured for public URLs.
-    engine = _engine_override or _get_browser_engine()
-    if engine != "auto" and not _is_camofox_mode() and not session_info.get("cdp_url"):
-        backend_args += ["--engine", engine]
-
-    # Keep concrete executable paths intact, even when they contain spaces.
-    # Only the synthetic npx fallback needs to expand into multiple argv items.
-    # shutil.which resolves npx → npx.cmd on Windows; bare "npx" stays on POSIX.
-    if browser_cmd == "npx agent-browser":
-        _npx_bin = shutil.which("npx") or "npx"
-        cmd_prefix = [_npx_bin, "agent-browser"]
-    else:
-        cmd_prefix = [browser_cmd]
-
-    cmd_parts = cmd_prefix + backend_args + [
-        "--json",
-        command
-    ] + args
-
-    try:
-        # Give each task its own socket directory to prevent concurrency conflicts.
-        # Without this, parallel workers fight over the same default socket path,
-        # causing "Failed to create socket directory: Permission denied" errors.
-        task_socket_dir = os.path.join(
-            _socket_safe_tmpdir(),
-            f"agent-browser-{session_info['session_name']}"
-        )
-        os.makedirs(task_socket_dir, mode=0o700, exist_ok=True)
-        # Record this hermes PID as the session owner (cross-process safe
-        # orphan detection — see _write_owner_pid).
-        _write_owner_pid(task_socket_dir, session_info['session_name'])
-        logger.debug("browser cmd=%s task=%s socket_dir=%s (%d chars)",
-                     command, task_id, task_socket_dir, len(task_socket_dir))
-
-        browser_env = {**os.environ}
-
-        # Ensure subprocesses inherit the same browser-specific PATH fallbacks
-        # used during CLI discovery.
-        browser_env["PATH"] = _merge_browser_path(browser_env.get("PATH", ""))
-        browser_env["AGENT_BROWSER_SOCKET_DIR"] = task_socket_dir
-
-        # Tell the agent-browser daemon to self-terminate after being idle
-        # for our configured inactivity timeout.  This is the daemon-side
-        # counterpart to our Python-side _cleanup_inactive_browser_sessions
-        # — the daemon kills itself and its Chrome children when no CLI
-        # commands arrive within the window.  Added in agent-browser 0.24.
-        if "AGENT_BROWSER_IDLE_TIMEOUT_MS" not in browser_env:
-            idle_ms = str(BROWSER_SESSION_INACTIVITY_TIMEOUT * 1000)
-            browser_env["AGENT_BROWSER_IDLE_TIMEOUT_MS"] = idle_ms
-
-        # Inject --no-sandbox when needed (issue #15765):
-        # - Running as root: Chromium always refuses to start without it
-        # - Ubuntu 23.10+ / AppArmor systems: unprivileged user namespaces
-        #   are restricted, causing Chromium to exit with "No usable sandbox"
-        #   even for non-root users running under systemd or containers.
-        # Honour either the legacy AGENT_BROWSER_CHROME_FLAGS (never consumed by
-        # agent-browser itself, but documented in older notes) or the real
-        # AGENT_BROWSER_ARGS — if the user pre-sets either, don't overwrite it.
-        if (
-            "AGENT_BROWSER_ARGS" not in browser_env
-            and "AGENT_BROWSER_CHROME_FLAGS" not in browser_env
-        ):
-            _needs_sandbox_bypass = False
-            if hasattr(os, "geteuid") and os.geteuid() == 0:
-                _needs_sandbox_bypass = True
-                logger.debug("browser: running as root — injecting --no-sandbox")
-            else:
-                # Detect AppArmor user namespace restrictions (Ubuntu 23.10+)
-                _userns_restrict = "/proc/sys/kernel/apparmor_restrict_unprivileged_userns"
-                try:
-                    with open(_userns_restrict, encoding="utf-8") as _f:
-                        if _f.read().strip() == "1":
-                            _needs_sandbox_bypass = True
-                            logger.debug(
-                                "browser: AppArmor userns restrictions detected — "
-                                "injecting --no-sandbox"
-                            )
-                except OSError:
-                    pass
-            if _needs_sandbox_bypass:
-                browser_env["AGENT_BROWSER_ARGS"] = (
-                    "--no-sandbox,--disable-dev-shm-usage"
+        # Local mode with no Chromium on disk: fail fast with an actionable
+        # message instead of hanging for _command_timeout seconds per call.
+        # Skip when engine=lightpanda — LP doesn't need Chromium for navigation.
+        if _is_local_mode() and not _chromium_installed() and _get_browser_engine() != "lightpanda":
+            if _running_in_docker():
+                hint = (
+                    "Chromium browser is missing. You're running in Docker — pull "
+                    "the latest image to get the bundled Chromium: "
+                    "docker pull teddyjfpender/superforecasting-agent:latest"
                 )
+            else:
+                hint = (
+                    "Chromium browser is missing. Install it with: "
+                    "npx agent-browser install --with-deps "
+                    "(or: npx playwright install --with-deps chromium)"
+                )
+            logger.warning("browser command blocked: %s", hint)
+            return {"success": False, "error": hint}
 
-        # Use temp files for stdout/stderr instead of pipes.
-        # agent-browser starts a background daemon that inherits file
-        # descriptors.  With capture_output=True (pipes), the daemon keeps
-        # the pipe fds open after the CLI exits, so communicate() never
-        # sees EOF and blocks until the timeout fires.
-        stdout_path = os.path.join(task_socket_dir, f"_stdout_{command}")
-        stderr_path = os.path.join(task_socket_dir, f"_stderr_{command}")
-        stdout_fd = os.open(stdout_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        stderr_fd = os.open(stderr_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        try:
-            # See matching comment at the other Popen site above — on
-            # Windows we put agent-browser in its own process group, force
-            # STARTF_USESTDHANDLES so CreateProcess hands the child ONLY our
-            # three explicit handles (no leaked parent-console handles to
-            # confuse the Rust binary's daemon-spawn), and close_fds=True to
-            # block inheritance of everything else.
-            _popen_extra: dict = {}
-            if os.name == "nt":
-                # See matching block at the other Popen site — CREATE_NO_WINDOW
-                # only, NO CREATE_NEW_PROCESS_GROUP (cancels asyncio loop task
-                # on Python 3.11 Windows → KeyboardInterrupt in CLI MainThread).
-                _CREATE_NO_WINDOW = 0x08000000
-                _popen_extra["creationflags"] = _CREATE_NO_WINDOW
-                _popen_extra["close_fds"] = True
-                _si = subprocess.STARTUPINFO()
-                _si.dwFlags |= subprocess.STARTF_USESTDHANDLES
-                _popen_extra["startupinfo"] = _si
-            proc = subprocess.Popen(
-                cmd_parts,
-                stdout=stdout_fd,
-                stderr=stderr_fd,
-                stdin=subprocess.DEVNULL,
-                env=browser_env,
-                **_popen_extra,
-            )
-        finally:
-            os.close(stdout_fd)
-            os.close(stderr_fd)
+        from tools.interrupt import is_interrupted
+        if is_interrupted():
+            return {"success": False, "error": "Interrupted"}
 
-        try:
-            _wait_browser_process(proc, timeout)
-        except subprocess.TimeoutExpired:
-            logger.warning("browser '%s' timed out after %ds (task=%s, socket_dir=%s)",
-                           command, timeout, task_id, task_socket_dir)
-            result = {"success": False, "error": f"Command timed out after {timeout} seconds"}
-            # Fall through to fallback check below
+        # Get session info (creates Browserbase session with proxies if needed)
+        if _session_info is not None:
+            session_info = _session_info
         else:
-            with open(stdout_path, "r", encoding="utf-8") as f:
-                stdout = f.read()
-            with open(stderr_path, "r", encoding="utf-8") as f:
-                stderr = f.read()
-            returncode = proc.returncode
+            try:
+                session_info = _get_session_info(task_id)
+            except Exception as e:
+                logger.warning("Failed to create browser session for task=%s: %s", task_id, e)
+                return {"success": False, "error": f"Failed to create browser session: {str(e)}"}
 
-            # Clean up temp files (best-effort)
-            for p in (stdout_path, stderr_path):
-                try:
-                    os.unlink(p)
-                except OSError:
-                    pass
+        # Build the command with the appropriate backend flag.
+        # Cloud mode: --cdp <websocket_url> connects to Browserbase.
+        # Local mode: --session <name> launches a local headless Chromium.
+        # The rest of the command (--json, command, args) is identical.
+        if session_info.get("cdp_url"):
+            # Cloud mode — connect to remote Browserbase browser via CDP
+            # IMPORTANT: Do NOT use --session with --cdp. In agent-browser >=0.13,
+            # --session creates a local browser instance and silently ignores --cdp.
+            backend_args = ["--cdp", session_info["cdp_url"]]
+        else:
+            # Local mode — launch a headless Chromium instance
+            backend_args = ["--session", session_info["session_name"]]
 
-            # Log stderr for diagnostics — use warning level on failure so it's visible
-            if stderr and stderr.strip():
-                level = logging.WARNING if returncode != 0 else logging.DEBUG
-                logger.log(level, "browser '%s' stderr: %s", command, stderr.strip()[:500])
+        # Lightpanda engine injection (local mode only, agent-browser v0.25.3+).
+        # Use the resolved session backend rather than global cloud-provider state:
+        # hybrid private-URL routing can create a local sidecar while a cloud
+        # provider remains configured for public URLs.
+        engine = _engine_override or _get_browser_engine()
+        if engine != "auto" and not _is_camofox_mode() and not session_info.get("cdp_url"):
+            backend_args += ["--engine", engine]
 
-            stdout_text = stdout.strip()
+        # Keep concrete executable paths intact, even when they contain spaces.
+        # Only the synthetic npx fallback needs to expand into multiple argv items.
+        # shutil.which resolves npx → npx.cmd on Windows; bare "npx" stays on POSIX.
+        if browser_cmd == "npx agent-browser":
+            _npx_bin = shutil.which("npx") or "npx"
+            cmd_prefix = [_npx_bin, "agent-browser"]
+        else:
+            cmd_prefix = [browser_cmd]
 
-            # Empty output with rc=0 is a broken state — treat as failure rather
-            # than silently returning {"success": True, "data": {}}.
-            # Some commands (close, record) legitimately return no output.
-            if not stdout_text and returncode == 0 and command not in _EMPTY_OK_COMMANDS:
-                logger.warning("browser '%s' returned empty output (rc=0)", command)
-                result = {"success": False, "error": f"Browser command '{command}' returned no output"}
-            elif stdout_text:
-                try:
-                    parsed = json.loads(stdout_text)
-                    # Warn if snapshot came back empty (common sign of daemon/CDP issues)
-                    if command == "snapshot" and parsed.get("success"):
-                        snap_data = parsed.get("data", {})
-                        if not snap_data.get("snapshot") and not snap_data.get("refs"):
-                            logger.warning("snapshot returned empty content. "
-                                           "Possible stale daemon or CDP connection issue. "
-                                           "returncode=%s", returncode)
-                    result = parsed
-                except json.JSONDecodeError:
-                    raw = stdout_text[:2000]
-                    logger.warning("browser '%s' returned non-JSON output (rc=%s): %s",
-                                   command, returncode, raw[:500])
+        cmd_parts = cmd_prefix + backend_args + [
+            "--json",
+            command
+        ] + args
 
-                    if command == "screenshot":
-                        stderr_text = (stderr or "").strip()
-                        combined_text = "\n".join(
-                            part for part in [stdout_text, stderr_text] if part
-                        )
-                        recovered_path = _extract_screenshot_path_from_text(combined_text)
+        try:
+            # Give each task its own socket directory to prevent concurrency conflicts.
+            # Without this, parallel workers fight over the same default socket path,
+            # causing "Failed to create socket directory: Permission denied" errors.
+            task_socket_dir = os.path.join(
+                _socket_safe_tmpdir(),
+                f"agent-browser-{session_info['session_name']}"
+            )
+            os.makedirs(task_socket_dir, mode=0o700, exist_ok=True)
+            # Record this hermes PID as the session owner (cross-process safe
+            # orphan detection — see _write_owner_pid).
+            _write_owner_pid(task_socket_dir, session_info['session_name'])
+            logger.debug("browser cmd=%s task=%s socket_dir=%s (%d chars)",
+                         command, task_id, task_socket_dir, len(task_socket_dir))
 
-                        if recovered_path and Path(recovered_path).exists():
-                            logger.info(
-                                "browser 'screenshot' recovered file from non-JSON output: %s",
-                                recovered_path,
+            browser_env = {**os.environ}
+
+            # Ensure subprocesses inherit the same browser-specific PATH fallbacks
+            # used during CLI discovery.
+            browser_env["PATH"] = _merge_browser_path(browser_env.get("PATH", ""))
+            browser_env["AGENT_BROWSER_SOCKET_DIR"] = task_socket_dir
+
+            # Tell the agent-browser daemon to self-terminate after being idle
+            # for our configured inactivity timeout.  This is the daemon-side
+            # counterpart to our Python-side _cleanup_inactive_browser_sessions
+            # — the daemon kills itself and its Chrome children when no CLI
+            # commands arrive within the window.  Added in agent-browser 0.24.
+            if "AGENT_BROWSER_IDLE_TIMEOUT_MS" not in browser_env:
+                idle_ms = str(BROWSER_SESSION_INACTIVITY_TIMEOUT * 1000)
+                browser_env["AGENT_BROWSER_IDLE_TIMEOUT_MS"] = idle_ms
+
+            # Inject --no-sandbox when needed (issue #15765):
+            # - Running as root: Chromium always refuses to start without it
+            # - Ubuntu 23.10+ / AppArmor systems: unprivileged user namespaces
+            #   are restricted, causing Chromium to exit with "No usable sandbox"
+            #   even for non-root users running under systemd or containers.
+            # Honour either the legacy AGENT_BROWSER_CHROME_FLAGS (never consumed by
+            # agent-browser itself, but documented in older notes) or the real
+            # AGENT_BROWSER_ARGS — if the user pre-sets either, don't overwrite it.
+            if (
+                "AGENT_BROWSER_ARGS" not in browser_env
+                and "AGENT_BROWSER_CHROME_FLAGS" not in browser_env
+            ):
+                _needs_sandbox_bypass = False
+                if hasattr(os, "geteuid") and os.geteuid() == 0:
+                    _needs_sandbox_bypass = True
+                    logger.debug("browser: running as root — injecting --no-sandbox")
+                else:
+                    # Detect AppArmor user namespace restrictions (Ubuntu 23.10+)
+                    _userns_restrict = "/proc/sys/kernel/apparmor_restrict_unprivileged_userns"
+                    try:
+                        with open(_userns_restrict, encoding="utf-8") as _f:
+                            if _f.read().strip() == "1":
+                                _needs_sandbox_bypass = True
+                                logger.debug(
+                                    "browser: AppArmor userns restrictions detected — "
+                                    "injecting --no-sandbox"
+                                )
+                    except OSError:
+                        pass
+                if _needs_sandbox_bypass:
+                    browser_env["AGENT_BROWSER_ARGS"] = (
+                        "--no-sandbox,--disable-dev-shm-usage"
+                    )
+
+            # Use temp files for stdout/stderr instead of pipes.
+            # agent-browser starts a background daemon that inherits file
+            # descriptors.  With capture_output=True (pipes), the daemon keeps
+            # the pipe fds open after the CLI exits, so communicate() never
+            # sees EOF and blocks until the timeout fires.
+            stdout_path = os.path.join(task_socket_dir, f"_stdout_{command}")
+            stderr_path = os.path.join(task_socket_dir, f"_stderr_{command}")
+            stdout_fd = os.open(stdout_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            stderr_fd = os.open(stderr_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            try:
+                # See matching comment at the other Popen site above — on
+                # Windows we put agent-browser in its own process group, force
+                # STARTF_USESTDHANDLES so CreateProcess hands the child ONLY our
+                # three explicit handles (no leaked parent-console handles to
+                # confuse the Rust binary's daemon-spawn), and close_fds=True to
+                # block inheritance of everything else.
+                _popen_extra: dict = {}
+                if os.name == "nt":
+                    # See matching block at the other Popen site — CREATE_NO_WINDOW
+                    # only, NO CREATE_NEW_PROCESS_GROUP (cancels asyncio loop task
+                    # on Python 3.11 Windows → KeyboardInterrupt in CLI MainThread).
+                    _CREATE_NO_WINDOW = 0x08000000
+                    _popen_extra["creationflags"] = _CREATE_NO_WINDOW
+                    _popen_extra["close_fds"] = True
+                    _si = subprocess.STARTUPINFO()
+                    _si.dwFlags |= subprocess.STARTF_USESTDHANDLES
+                    _popen_extra["startupinfo"] = _si
+                proc = subprocess.Popen(
+                    cmd_parts,
+                    stdout=stdout_fd,
+                    stderr=stderr_fd,
+                    stdin=subprocess.DEVNULL,
+                    env=browser_env,
+                    **_popen_extra,
+                )
+            finally:
+                os.close(stdout_fd)
+                os.close(stderr_fd)
+
+            try:
+                _wait_browser_process(proc, timeout)
+            except subprocess.TimeoutExpired:
+                logger.warning("browser '%s' timed out after %ds (task=%s, socket_dir=%s)",
+                               command, timeout, task_id, task_socket_dir)
+                result = {"success": False, "error": f"Command timed out after {timeout} seconds"}
+                # Fall through to fallback check below
+            else:
+                with open(stdout_path, "r", encoding="utf-8") as f:
+                    stdout = f.read()
+                with open(stderr_path, "r", encoding="utf-8") as f:
+                    stderr = f.read()
+                returncode = proc.returncode
+
+                # Clean up temp files (best-effort)
+                for p in (stdout_path, stderr_path):
+                    try:
+                        os.unlink(p)
+                    except OSError:
+                        pass
+
+                # Log stderr for diagnostics — use warning level on failure so it's visible
+                if stderr and stderr.strip():
+                    level = logging.WARNING if returncode != 0 else logging.DEBUG
+                    logger.log(level, "browser '%s' stderr: %s", command, stderr.strip()[:500])
+
+                stdout_text = stdout.strip()
+
+                # Empty output with rc=0 is a broken state — treat as failure rather
+                # than silently returning {"success": True, "data": {}}.
+                # Some commands (close, record) legitimately return no output.
+                if not stdout_text and returncode == 0 and command not in _EMPTY_OK_COMMANDS:
+                    logger.warning("browser '%s' returned empty output (rc=0)", command)
+                    result = {"success": False, "error": f"Browser command '{command}' returned no output"}
+                elif stdout_text:
+                    try:
+                        parsed = json.loads(stdout_text)
+                        # Warn if snapshot came back empty (common sign of daemon/CDP issues)
+                        if command == "snapshot" and parsed.get("success"):
+                            snap_data = parsed.get("data", {})
+                            if not snap_data.get("snapshot") and not snap_data.get("refs"):
+                                logger.warning("snapshot returned empty content. "
+                                               "Possible stale daemon or CDP connection issue. "
+                                               "returncode=%s", returncode)
+                        result = parsed
+                    except json.JSONDecodeError:
+                        raw = stdout_text[:2000]
+                        logger.warning("browser '%s' returned non-JSON output (rc=%s): %s",
+                                       command, returncode, raw[:500])
+
+                        if command == "screenshot":
+                            stderr_text = (stderr or "").strip()
+                            combined_text = "\n".join(
+                                part for part in [stdout_text, stderr_text] if part
                             )
-                            result = {
-                                "success": True,
-                                "data": {
-                                    "path": recovered_path,
-                                    "raw": raw,
-                                },
-                            }
+                            recovered_path = _extract_screenshot_path_from_text(combined_text)
+
+                            if recovered_path and Path(recovered_path).exists():
+                                logger.info(
+                                    "browser 'screenshot' recovered file from non-JSON output: %s",
+                                    recovered_path,
+                                )
+                                result = {
+                                    "success": True,
+                                    "data": {
+                                        "path": recovered_path,
+                                        "raw": raw,
+                                    },
+                                }
+                            else:
+                                result = {
+                                    "success": False,
+                                    "error": f"Non-JSON output from agent-browser for '{command}': {raw}"
+                                }
                         else:
                             result = {
                                 "success": False,
                                 "error": f"Non-JSON output from agent-browser for '{command}': {raw}"
                             }
-                    else:
-                        result = {
-                            "success": False,
-                            "error": f"Non-JSON output from agent-browser for '{command}': {raw}"
-                        }
-            elif returncode != 0:
-                # Check for errors
-                error_msg = stderr.strip() if stderr else f"Command failed with code {returncode}"
-                logger.warning("browser '%s' failed (rc=%s): %s", command, returncode, error_msg[:300])
-                result = {"success": False, "error": error_msg}
+                elif returncode != 0:
+                    # Check for errors
+                    error_msg = stderr.strip() if stderr else f"Command failed with code {returncode}"
+                    logger.warning("browser '%s' failed (rc=%s): %s", command, returncode, error_msg[:300])
+                    result = {"success": False, "error": error_msg}
+                else:
+                    result = {"success": True, "data": {}}
+
+        except Exception as e:
+            logger.warning("browser '%s' exception: %s", command, e, exc_info=True)
+            result = {"success": False, "error": str(e)}
+
+        # --- Lightpanda automatic Chrome fallback ---
+        # If engine is lightpanda and the result looks broken, retry with Chrome.
+        # This runs for ALL exit paths (timeout, empty, non-JSON, nonzero rc, parsed).
+        fallback_reason = _lightpanda_fallback_reason(engine, command, result)
+        if fallback_reason:
+            logger.info(
+                "Lightpanda fallback: retrying '%s' with Chrome (task=%s): %s",
+                command,
+                task_id,
+                fallback_reason,
+            )
+            # For screenshots, use the dedicated Chrome fallback helper
+            # (spins up a separate Chrome session to the same URL).
+            if command == "screenshot":
+                fallback_result = _chrome_fallback_screenshot(task_id, args or [], timeout)
             else:
-                result = {"success": True, "data": {}}
+                fallback_result = _run_chrome_fallback_command(task_id, command, args, timeout)
+            return _annotate_lightpanda_fallback(fallback_result, fallback_reason)
 
-    except Exception as e:
-        logger.warning("browser '%s' exception: %s", command, e, exc_info=True)
-        result = {"success": False, "error": str(e)}
-
-    # --- Lightpanda automatic Chrome fallback ---
-    # If engine is lightpanda and the result looks broken, retry with Chrome.
-    # This runs for ALL exit paths (timeout, empty, non-JSON, nonzero rc, parsed).
-    fallback_reason = _lightpanda_fallback_reason(engine, command, result)
-    if fallback_reason:
-        logger.info(
-            "Lightpanda fallback: retrying '%s' with Chrome (task=%s): %s",
-            command,
-            task_id,
-            fallback_reason,
-        )
-        # For screenshots, use the dedicated Chrome fallback helper
-        # (spins up a separate Chrome session to the same URL).
-        if command == "screenshot":
-            fallback_result = _chrome_fallback_screenshot(task_id, args or [], timeout)
-        else:
-            fallback_result = _run_chrome_fallback_command(task_id, command, args, timeout)
-        return _annotate_lightpanda_fallback(fallback_result, fallback_reason)
-
-    return result
+        return result
 
 
 def _extract_relevant_content(

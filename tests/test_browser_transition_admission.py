@@ -70,3 +70,56 @@ def test_task_cannot_deadlock_by_upgrading_to_global_transition():
                 pytest.fail("upgrade must not be admitted")
     with browser_endpoint_transition(), browser_session_lifecycle("task"):
         pass
+
+
+def test_endpoint_change_waits_for_running_browser_command(monkeypatch, tmp_path):
+    import os
+    from types import SimpleNamespace
+    from tools import browser_tool as browser
+
+    monkeypatch.setattr(browser, "_find_agent_browser", lambda: "/fake/agent-browser")
+    monkeypatch.setattr(browser, "_requires_real_termux_browser_install", lambda cmd: False)
+    monkeypatch.setattr(browser, "_is_local_mode", lambda: False)
+    monkeypatch.setattr(browser, "_get_browser_engine", lambda: "auto")
+    monkeypatch.setattr(browser, "_socket_safe_tmpdir", lambda: str(tmp_path))
+    monkeypatch.setattr(browser, "_start_browser_cleanup_thread", lambda: None)
+    monkeypatch.setattr(browser, "_update_session_activity", lambda task: None)
+    monkeypatch.setattr(browser, "_active_sessions", {"task": {"session_name": "owned"}})
+    entered, release, cleaned = threading.Event(), threading.Event(), threading.Event()
+    def popen(cmd, **kwargs):
+        os.write(kwargs["stdout"], b'{"success":true,"data":{}}')
+        return SimpleNamespace(returncode=0)
+    def wait(proc, timeout):
+        entered.set()
+        assert release.wait(3)
+    monkeypatch.setattr(browser.subprocess, "Popen", popen)
+    monkeypatch.setattr(browser, "_wait_browser_process", wait)
+    results, failures = [], []
+    environment = {"BROWSER_CDP_URL": "old"}
+    def run():
+        try:
+            results.append(browser._run_browser_command("task", "snapshot", [], timeout=3))
+        except BaseException as exc:
+            failures.append(exc)
+    def change():
+        try:
+            change_browser_endpoint("new", environment=environment, cleanup=cleaned.set)
+        except BaseException as exc:
+            failures.append(exc)
+    command, transition = threading.Thread(target=run), threading.Thread(target=change)
+    command.start()
+    try:
+        assert entered.wait(3)
+        transition.start()
+        assert not cleaned.wait(0.2)
+        assert environment["BROWSER_CDP_URL"] == "old"
+    finally:
+        release.set()
+        command.join(3)
+        if transition.ident is not None:
+            transition.join(3)
+    assert not command.is_alive() and not transition.is_alive()
+    assert not failures
+    assert results[0]["success"] is True
+    assert cleaned.is_set()
+    assert environment["BROWSER_CDP_URL"] == "new"
