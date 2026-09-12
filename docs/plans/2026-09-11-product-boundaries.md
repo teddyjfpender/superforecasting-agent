@@ -2895,3 +2895,20 @@ test adds a new module beneath a strict directory, runs the real type checker, p
 an unknown keyword argument blocks subsequent gates, then repairs it and verifies
 checks continue. That failure-injection test passed, as did the shared Python quality
 workflow. Repository-wide advisory diagnostics remain separate from strict enforcement.
+
+
+### Curator worker isolation and foreground stream ownership
+
+The configuration-batch full push failed with one curator temporary-file assertion
+(31,166 passing Python tests, 148 skipped). The eligible-run test started a daemon
+review and returned without joining it, while subsequent fixtures reloaded its module
+and changed profile globals. The fixture now retains and joins exactly its own threads
+before restoring those globals. This closes an observed lifetime hazard; the historical
+temporary file's exact interleaving is not reconstructed.
+
+The curator also redirected process-wide stdout/stderr around its background model
+call. That redirect is removed; the existing quiet_mode remains the display control.
+A blocked fake review proves foreground stream identity/output and child cleanup are
+preserved. 84 curator/state/report/backup tests and shared Python quality checks passed.
+The integrated full gate is still required before publishing these fixes. Broader
+production curator worker ownership and failed child disposal remain follow-up work.
