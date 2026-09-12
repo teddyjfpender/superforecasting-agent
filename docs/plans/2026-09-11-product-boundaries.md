@@ -4413,3 +4413,26 @@ providers, exercise the full provider-catalog resolution path, reject lookalike
 hosts/userinfo/path matches, and retain custom/local discovery. This fixes the
 observed unsupported request; it does not establish the historical native SSL
 crash cause or bound DNS latency for supported network discovery.
+
+### Stable provider snapshots at quorum selection
+
+The quorum adapter previously replaced caller-supplied default-model values with
+live catalog values. It now enriches only legacy rows missing the field; an
+explicit value, including None, remains authoritative. This permits deterministic
+selection from a complete supplied snapshot without provider discovery.
+
+The pure selector rejects non-string/blank defaults before constructing seats.
+Missing catalog entries no longer turn several authenticated providers into a
+misleading single-provider fallback, and an explicitly different active provider
+cannot supply that fallback. Unknown/incomplete selection retains the existing
+preset behavior; it is not a claim that the preset is callable. Shared provider
+alias normalization now applies to active-provider matching and judge selection.
+Seven new regression cases failed before the fix; all 400 CLI/quorum consumer
+tests and the shared quality workflow pass after it. These changes do not establish
+credential validity, quota availability or successful model execution.
+
+The preceding integrated construction/background/metadata batch passed the full
+push gate: 31,755 Python tests (148 skipped) and 672 affected TUI tests. Remote
+branch codex/learning-settlement-runtime advanced to 78d8e5e1e. This supersedes
+the earlier blocked-push notes above; the snapshot-selection change still needs
+its own integrated push gate.

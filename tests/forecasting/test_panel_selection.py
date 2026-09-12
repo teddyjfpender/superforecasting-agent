@@ -62,3 +62,59 @@ def test_resolver_does_not_lookup_defaults_for_unauthenticated_rows(monkeypatch)
     ])
     assert looked_up == ['anthropic']
     assert result['self_fusion'] is True
+
+
+def test_resolver_preserves_explicit_model_snapshot(monkeypatch):
+    from forecasting.quorum import panels
+
+    def unexpected_lookup(slug):
+        raise AssertionError(f'live catalog read for frozen provider {slug}')
+
+    monkeypatch.setattr(panels, '_provider_default_model', unexpected_lookup)
+    rows = [
+        {'id': 'anthropic', 'default_model': 'frozen-claude'},
+        {'id': 'gemini', 'default_model': 'frozen-gemini'},
+        {'id': 'deepseek', 'default_model': None},
+    ]
+    result = panels.resolve_connected_panel('frontier', active_model='native', providers=rows)
+    assert result['models'] == ['anthropic:frozen-claude', 'gemini:frozen-gemini']
+    assert rows[-1]['default_model'] is None
+
+
+@pytest.mark.parametrize('bad_model', [None, '', '  ', 42, {'id': 'plausible-model'}])
+def test_incomplete_catalog_cannot_claim_single_provider_fusion(bad_model):
+    result = select_connected_panel([
+        {'id': 'anthropic', 'default_model': 'claude'},
+        {'id': 'gemini', 'default_model': bad_model},
+    ], panel_size=3, active_model='claude', active_provider='anthropic')
+    assert result['rebuilt'] is False
+    assert result['self_fusion'] is False
+    assert result['models'] is None
+    assert result['providers_used'] == ['anthropic', 'gemini']
+
+
+def test_single_provider_does_not_rebuild_with_another_active_provider():
+    result = select_connected_panel([
+        {'id': 'anthropic', 'default_model': 'claude'},
+    ], panel_size=3, active_model='gemini-model', active_provider='gemini')
+    assert result['rebuilt'] is False
+    assert result['models'] is None
+
+
+def test_active_single_provider_does_not_require_a_catalog_default():
+    result = select_connected_panel([
+        {'id': 'custom:desk', 'default_model': None},
+    ], panel_size=3, active_model='custom:desk:local-model', active_provider='custom:desk')
+    assert result['self_fusion'] is True
+    assert result['models'] == ['custom:desk:local-model'] * 3
+    assert result['providers_used'] == ['custom:desk']
+
+
+def test_active_provider_alias_uses_the_shared_identity_policy():
+    rows = [{'id': 'gemini', 'default_model': 'gemini-native'}]
+    single = select_connected_panel(rows, panel_size=3, active_model='gemini-native', active_provider='google')
+    assert single['self_fusion'] is True
+    multi = select_connected_panel([
+        {'id': 'anthropic', 'default_model': 'claude'}, *rows,
+    ], panel_size=3, active_model='gemini-native', active_provider='google')
+    assert multi['judge'] == 'gemini:gemini-native'

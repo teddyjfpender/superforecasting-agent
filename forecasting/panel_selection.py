@@ -9,6 +9,8 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from superforecasting_agent.configuration.providers import normalize_provider
+
 _AGGREGATOR_PROVIDER_SLUGS = frozenset({"openrouter", "nous", "ai-gateway"})
 _NON_PANEL_PROVIDER_SLUGS = frozenset({"custom"})
 
@@ -59,16 +61,16 @@ def select_connected_panel(
         if slug in seen:
             continue
         model = row.get("default_model")
-        if not model:
+        if not isinstance(model, str) or not model.strip():
             continue
         seen.add(slug)
-        pairs.append((slug, f"{slug}:{model}"))
+        pairs.append((slug, f"{slug}:{model.strip()}"))
 
     if len(pairs) >= 2:
         want = max(2, min(panel_size, len(pairs)))
         chosen = pairs[:want]
         models = [qm for _, qm in chosen]
-        active_norm = (active_provider or "").strip().lower()
+        active_norm = normalize_provider(active_provider) if active_provider else ""
         judge = next((qm for slug, qm in chosen if slug == active_norm), models[0])
         label = f"{len(chosen)} providers connected -> multi-model panel: " + ", ".join(
             slug for slug, _ in chosen
@@ -82,15 +84,15 @@ def select_connected_panel(
             "providers_used": [slug for slug, _ in chosen],
         }
 
-    # ZERO usable providers: the docstring's contract — nothing usable was
-    # found -> rebuilt=False (fail-open, preset verbatim). Claiming
-    # "1 provider connected" here would be a lie, and self-fusing an active
-    # model with no live provider behind it reproduces the empty-response
-    # failure this function exists to prevent.
-    if not pairs and not authed:
+    # Missing catalog defaults do not turn multiple authenticated providers
+    # into a single-provider snapshot. Keep the preset when evidence cannot
+    # support a multi-model rebuild or an actual single-provider fallback.
+    if len(authed) != 1:
+        return base
+    if active_provider and normalize_provider(active_provider) not in authed:
         return base
 
-    # Exactly 1 native provider reachable — honest single-provider self-fusion.
+    # One authenticated provider can sample its active model.
     if active_model:
         n = max(1, int(samples))
         label = (
@@ -102,7 +104,7 @@ def select_connected_panel(
             "models": [active_model] * n,
             "judge": active_model,
             "label": label,
-            "providers_used": [pairs[0][0]] if pairs else sorted(authed),
+            "providers_used": sorted(authed),
         }
 
     # Nothing usable to rebuild with (no aggregator, <2 providers, no active model).

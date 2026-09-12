@@ -250,6 +250,8 @@ def resolve_connected_panel(
         reachable: ``active_model`` sampled ``samples`` times, with the HONEST label
         "1 provider connected -> self-fusion; multi-model needs a second provider".
 
+    Supplied default_model fields are authoritative, including None (unknown).
+    Legacy rows without that field are enriched from the provider catalog.
     A rebuilt panel uses provider-native defaults. Credential detection does not
     prove quota, model access, or successful inference; execution must still report
     provider failures.
@@ -264,7 +266,10 @@ def resolve_connected_panel(
 
     if detail is not None:
         detail = [
-            {**row, "default_model": _provider_default_model(str(row["id"]))}
+            {**row, "default_model": (
+                row["default_model"] if "default_model" in row
+                else _provider_default_model(str(row["id"]))
+            )}
             for row in detail
             if row.get("id") and row.get("authenticated", True) is True
         ]
