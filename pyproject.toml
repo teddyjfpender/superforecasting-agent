@@ -387,13 +387,9 @@ source_modules = ["forecasting"]
 forbidden_modules = ["tools"]
 allow_indirect_imports = "true"
 ignore_imports = [
-    "forecasting.cli.connect_admin -> tools.slack_tool",
     "forecasting.cli.core -> tools.forecasting_tool",
     "forecasting.cli.slack_admin -> tools.forecast_actions.share",
-    "forecasting.cli.slack_admin -> tools.slack_tool",
     "forecasting.cli.triage_calibration -> tools.forecasting_tool",
-    "forecasting.collab.directory -> tools.slack_tool",
-    "forecasting.notify -> tools.slack_tool",
     "forecasting.supervisor_search -> tools.web_tools",
 ]
 
@@ -795,4 +791,11 @@ name = "market artifact transfer never imports consumers"
 type = "forbidden"
 source_modules = ["forecasting.application.market_output"]
 forbidden_modules = ["tools", "agent", "cli", "gateway", "tui_gateway", "superforecasting_agent.runtime"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "Slack transport never imports agent execution or presentation"
+type = "forbidden"
+source_modules = ["forecasting.transports.slack"]
+forbidden_modules = ["tools", "agent", "cli", "gateway", "tui_gateway", "forecasting.cli", "forecasting.application"]
 allow_indirect_imports = false

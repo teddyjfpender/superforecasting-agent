@@ -6,17 +6,18 @@ from __future__ import annotations
 import json
 
 from tools import slack_tool as st
+from forecasting.transports import slack as transport
 
 
 def test_no_token_returns_error(monkeypatch):
-    monkeypatch.setattr(st, "_resolve_bot_token", lambda team_id=None: None)
+    monkeypatch.setattr(transport, "resolve_bot_token", lambda team_id=None: None)
     out = json.loads(st.slack_tool({"action": "post_message", "channel": "C1", "text": "hi"}))
     assert out["success"] is False and "token" in out["error"]
 
 
 def _stub(monkeypatch):
     calls: dict = {}
-    monkeypatch.setattr(st, "_resolve_bot_token", lambda team_id=None: "xoxb-test")
+    monkeypatch.setattr(transport, "resolve_bot_token", lambda team_id=None: "xoxb-test")
 
     def _api(method, token, **params):
         calls["method"] = method
@@ -24,7 +25,7 @@ def _stub(monkeypatch):
         calls["params"] = params
         return {"ok": True}
 
-    monkeypatch.setattr(st, "_slack_api_call", _api)
+    monkeypatch.setattr(transport, "api_call", _api)
     return calls
 
 

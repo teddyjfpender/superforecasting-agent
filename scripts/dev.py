@@ -29,6 +29,7 @@ STRICT_PYTHON = (
     "forecasting/sources/evidence.py",
     "forecasting/sources/filters.py",
     "forecasting/sources/watched.py",
+    "forecasting/transports/slack.py",
     "forecasting/configuration",
     "superforecasting_agent/tooling",
     "superforecasting_agent/runtime/subgoal_commands.py",

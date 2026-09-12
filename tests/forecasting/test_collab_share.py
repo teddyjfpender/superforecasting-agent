@@ -141,7 +141,7 @@ def test_tool_handler_posts_via_slack_tool(seeded, monkeypatch):
         captured.append((method, params))
         return {"ok": True, "ts": "1700000000.000200"}
 
-    monkeypatch.setattr("tools.slack_tool._slack_api_call", fake_api)
+    monkeypatch.setattr("forecasting.transports.slack.api_call", fake_api)
 
     result = json.loads(forecast_ledger_tool({
         "db": db, "action": "share_forecast", "question_id": qid, "channel": "C999",
@@ -163,7 +163,7 @@ def test_cli_share_verb(seeded, monkeypatch, capsys):
     monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-test")
     monkeypatch.setenv("AGENT_NAME", "Ada")
     monkeypatch.setenv("AGENT_INSTANCE_ID", "inst-abc")
-    monkeypatch.setattr("tools.slack_tool._slack_api_call",
+    monkeypatch.setattr("forecasting.transports.slack.api_call",
                         lambda method, token, **p: {"ok": True, "ts": "1700000000.000300"})
 
     ns = argparse.Namespace(db=db, question=qid, channel="C777", thread_ts=None,

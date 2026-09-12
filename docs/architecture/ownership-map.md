@@ -830,3 +830,16 @@ callback slots. Terminal adapters re-export the existing API. Interactive market
 builds use a temporary approval scope covering construction and conversation,
 restoring the exact prior callback on success, failure and interruption. Both
 owners have transitive consumer-import prohibitions and strict directory gates.
+
+### Slack transport ownership
+
+`forecasting/transports/slack.py` owns token resolution, HTTP action dispatch and
+structured success/error results. Notifications, collaboration and connection
+checks use it directly. `tools/slack_tool.py` owns the agent schema/registration
+and JSON serialization, retaining compatibility exports for low-level callers.
+
+Wire responses require an object with a boolean `ok`; the transport computes the
+canonical `success` field. Explicit OAuth-store workspace lookups cannot fall
+through to a different entry, and non-string tokens are ignored. The existing
+SLACK_BOT_TOKEN environment override still takes precedence. A transitive import
+gate prevents the transport from importing agent execution or presentation.

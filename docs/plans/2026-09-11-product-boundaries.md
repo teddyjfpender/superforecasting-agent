@@ -4642,3 +4642,23 @@ cover isolation and interruption restoration. Validation: 83 market/tool/CLI/
 background/boundary tests plus three ownership tests passed; shared quality checks
 passed. Eight direct forecast-to-tool exceptions remain. This does not claim full
 SDK/child-worker cleanup qualification for every market build failure path.
+
+### Forecast Slack consumers use a shared transport
+
+Extracted Slack token resolution and API dispatch from the registered tool into
+`forecasting/transports/slack.py`. Forecast notifications, collaboration directory
+posting and both connection-admin paths consume structured results directly.
+Removed four frozen tool dependencies; four remain. The tool retains schema,
+registration and JSON serialization. The shared transport has strict quality
+coverage and a transitive consumer-import gate.
+
+Hardened response handling: non-object responses and non-boolean `ok` fields
+become structured failures; a remote `success` field cannot override Slack's
+failure. Notification delivery uses the canonical success result. Explicit OAuth
+store lookups no longer fall back to another workspace, and malformed token
+values are ignored. Environment-token precedence is unchanged; this is not a
+claim that an environment token's workspace has been verified.
+
+Validation: 118 transport/tool/collaboration/notification/connection and boundary
+tests passed; shared quality checks passed. HTTP was replaced by fake transports;
+no Slack messages were sent and no live integration qualification is claimed.

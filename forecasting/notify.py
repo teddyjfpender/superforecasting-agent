@@ -368,7 +368,7 @@ def send_telegram(route: NotifyRoute, event: NotifyEvent) -> DeliveryResult:
 
 
 def send_slack(route: NotifyRoute, event: NotifyEvent) -> DeliveryResult:
-    from tools.slack_tool import slack_tool
+    from forecasting.transports.slack import execute_slack_action
 
     card = event.card
     if card is not None and getattr(card, "blocks", None):
@@ -385,11 +385,11 @@ def send_slack(route: NotifyRoute, event: NotifyEvent) -> DeliveryResult:
         text = (f"*{event.title}*\n{event.body}" if event.title and event.body else (event.title or event.body))
         args = {"action": "post_message", "channel": route.target, "text": text, "thread_ts": route.thread_id}
     try:
-        raw = json.loads(slack_tool(args))
-    except Exception as exc:  # pragma: no cover — slack_tool already guards
+        raw = execute_slack_action(args)
+    except Exception as exc:  # pragma: no cover — transport already guards
         return DeliveryResult(route_id=route.id, surface=route.surface, target=route.target,
-                              ok=False, error=f"slack tool error: {exc}")
-    if raw.get("success") or raw.get("ok"):
+                              ok=False, error=f"slack transport error: {exc}")
+    if raw.get("success") is True:
         return DeliveryResult(route_id=route.id, surface=route.surface, target=route.target,
                               ok=True, detail=f"ts={raw.get('ts')}")
     return DeliveryResult(route_id=route.id, surface=route.surface, target=route.target,
@@ -594,7 +594,7 @@ def _maybe_alert_dead_destinations(
 def connections_report(router: Optional[NotifyRouter] = None) -> dict[str, Any]:
     """The ``connections`` section for ``forecast config doctor``."""
     from forecasting.transports import telegram as tg
-    from tools.slack_tool import _resolve_bot_token
+    from forecasting.transports.slack import resolve_bot_token as _resolve_bot_token
 
     r = router or NotifyRouter()
     rows = r.status_rows()
