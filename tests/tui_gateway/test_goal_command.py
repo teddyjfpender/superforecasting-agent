@@ -197,7 +197,7 @@ def test_pending_input_commands_includes_goal(server):
 
 
 @pytest.mark.parametrize("argument", ["", "Evidence must be timestamped", "remove", "remove nope", "remove 1", "clear", "remove 1 2", "clear extra", "Preserve  internal spacing"])
-def test_subgoal_consumers_share_results_and_durable_state(server, session, monkeypatch, capsys, argument):
+def test_subgoal_consumers_share_results_and_durable_state(server, session, monkeypatch, argument):
     import asyncio
     from types import SimpleNamespace
     from unittest.mock import Mock
@@ -217,8 +217,12 @@ def test_subgoal_consumers_share_results_and_durable_state(server, session, monk
     native = _call(server, "command.dispatch", name="subgoal", arg=argument, session_id=sid)
     assert native["result"]["type"] == "exec"
     expected = native["result"]["output"]
+    # Capture the command's rendering boundary: prompt_toolkit can retain an
+    # output stream created before pytest installs this test's sys.stdout capture.
+    rendered = []
+    monkeypatch.setattr("superforecasting_agent.runtime.goal_commands._cprint", rendered.append)
     _handle_subgoal_command(SimpleNamespace(_get_goal_manager=lambda: managers[1]), f"/subgoal {argument}")
-    assert "\n".join(line.removeprefix("  ") for line in capsys.readouterr().out.splitlines()) == expected
+    assert "\n".join(line.removeprefix("  ") for line in rendered) == expected
     messaging = SimpleNamespace(_get_goal_manager_for_event=lambda event: (managers[2], None))
     event = SimpleNamespace(get_command_args=lambda: argument)
     assert asyncio.run(GatewayRunner._handle_subgoal_command(messaging, event)) == expected

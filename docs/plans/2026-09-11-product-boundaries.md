@@ -1615,3 +1615,18 @@ strict lint/format/type coverage and an injected-forbidden-import regression.
 Validation: 67 configuration/flag/ownership/contract tests passed
 (`/tmp/forecast-domain-config-qualified-tests.log`). Python quality passed with
 34 contracts (`/tmp/forecast-domain-config-final-quality.log`).
+
+### Correct the goal parity test's output boundary
+
+The full gate for `edad22fbb` ended with nine failures, 30,859 passes and 148
+skips (`/tmp/forecast-goal-owner-push.log`); no push occurred. All nine failures
+were CLI parity output capture: the expected CLI text was present in pytest's
+captured stdout report, but the test-local `capsys` buffer was empty. The command
+uses prompt_toolkit rendering, whose output may have been initialized before
+that sys.stdout capture. The parity test now captures `_cprint` arguments at the
+command's rendering boundary. It still executes each consumer and compares the
+complete output and independently reloaded durable goal state.
+
+Validation: 80 goal/command tests passed
+(`/tmp/forecast-goal-render-boundary-tests.log`). The integrated batch still needs
+a fresh full gate; the previous failure is not counted as qualification.
