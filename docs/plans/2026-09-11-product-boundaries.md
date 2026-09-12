@@ -4994,3 +4994,23 @@ extraction. Credential presence still does not prove quota or model access.
 60 focused discovery, panel-selection and autonomy checks passed before the
 expanded regression run and commit gates.
 The expanded catalog/quorum/jobs regression run passed all 216 tests.
+
+### Construction fixtures follow the actual owner
+
+The provider-configuration batch is verified on the remote at `2f44b49b5`:
+31,929 Python tests, 458 affected TUI tests and all 74 import contracts passed.
+Its independent wheels also passed installation, upgrade from 0.21.2, backend
+without Node, and local/authenticated remote Ink checks on macOS arm64 with
+Python 3.13.12 and 3.11.15. Artifact identities and exact scope are recorded in
+`/tmp/forecast-provider-boundary-wheels/VERIFICATION.md`.
+
+The quorum follow-up's full gate stopped on a Gemini construction fixture:
+31,931 tests passed, one failed, 148 skipped. Its mock targeted the old
+`run_agent.ContextCompressor` import, while construction uses
+`agent.agent_init.ContextCompressor`. The real compressor attempted DNS against
+the fixture proxy URL and exceeded the test deadline. Updated all four remaining
+stale compressor patches (three Gemini cases and one compression-feasibility
+case) and added assertions proving the replacement is used. All 62 affected
+provider/compression tests pass. This is a conclusive test-isolation failure,
+not attribution of the historical native SSL crash. The corrected batch still
+requires a successful full push gate.
