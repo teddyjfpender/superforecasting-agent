@@ -1611,12 +1611,12 @@ def resolve_runtime_provider(
 
     # AWS Bedrock (native Converse API via boto3)
     if provider == "bedrock":
-        from agent.bedrock_adapter import (
+        from superforecasting_agent.hosting.aws_credentials import (
             has_aws_credentials,
             resolve_aws_auth_env_var,
             resolve_bedrock_region,
-            is_anthropic_bedrock_model,
         )
+        from agent.bedrock_adapter import is_anthropic_bedrock_model
         # When the user explicitly selected bedrock (not auto-detected),
         # trust boto3's credential chain — it handles IMDS, ECS task roles,
         # Lambda execution roles, SSO, and other implicit sources that our

@@ -105,12 +105,12 @@ def _model_flow_bedrock(config, current_model=""):
 
     # 1. Check for AWS credentials
     try:
-        from agent.bedrock_adapter import (
+        from superforecasting_agent.hosting.aws_credentials import (
             has_aws_credentials,
             resolve_aws_auth_env_var,
             resolve_bedrock_region,
-            discover_bedrock_models,
         )
+        from agent.bedrock_adapter import discover_bedrock_models
     except ImportError:
         print("  ✗ boto3 is not installed. Install it with:")
         print("    pip install boto3")

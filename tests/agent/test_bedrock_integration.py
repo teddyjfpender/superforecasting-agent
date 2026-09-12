@@ -533,7 +533,7 @@ class TestAuxiliaryClientBedrockResolution:
 
     def test_bedrock_returns_none_without_credentials(self, monkeypatch):
         """Without AWS credentials, Bedrock should return (None, None) gracefully."""
-        with patch("agent.bedrock_adapter.has_aws_credentials", return_value=False):
+        with patch("superforecasting_agent.hosting.aws_credentials.has_aws_credentials", return_value=False):
             from agent.auxiliary_client import resolve_provider_client
             client, model = resolve_provider_client("bedrock", None)
 

@@ -5014,3 +5014,31 @@ case) and added assertions proving the replacement is used. All 62 affected
 provider/compression tests pass. This is a conclusive test-isolation failure,
 not attribution of the historical native SSL crash. The corrected batch still
 requires a successful full push gate.
+
+
+### AWS credential discovery ownership
+
+Moved AWS source and region discovery from the Bedrock execution adapter into
+`hosting/aws_credentials.py`. CLI/status, TUI inventory, routing, doctor and
+auxiliary-client consumers now use this shared owner. Legacy adapter names remain
+identity-preserving exports. A transitive import contract rejects execution and
+presentation dependencies; the new module joins strict lint, format and type gates.
+
+Two negative controls proved import-time dependency installation and duplicate
+SDK credential lookup after a failed probe. SDK installation now occurs only on
+explicit client construction, including the Anthropic Bedrock path, and failed
+credential detection consults the SDK once. Credential/region discovery still
+uses the installed SDK chain when needed; it may query metadata or refresh
+credentials and is not claimed to be passive authentication verification.
+
+Updated affected mocks to the actual shared owner. The first focused run exposed
+one stale picker mock (371 other tests passed); the corrected focused run passed
+548 tests and the broader runtime/doctor/auxiliary checks passed 430. All 75 import
+contracts and strict Python quality checks pass. The final commit and full push
+gates remain required.
+
+Closeout scope after the user's duration concern: complete credential-service
+ownership and host-wide live-restore coordination, then audit the original five
+deliverables against current evidence. Adjacent cleanup should not silently add
+new completion requirements. Historical SSL attribution and extra platforms stay
+explicitly unverified unless they block an original acceptance requirement.

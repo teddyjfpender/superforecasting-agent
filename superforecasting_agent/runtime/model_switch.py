@@ -1165,7 +1165,7 @@ def list_authenticated_providers(
         if slug_norm != current_norm:
             return False
         try:
-            from agent.bedrock_adapter import has_aws_credentials
+            from superforecasting_agent.hosting.aws_credentials import has_aws_credentials
             return bool(has_aws_credentials())
         except Exception:
             return False

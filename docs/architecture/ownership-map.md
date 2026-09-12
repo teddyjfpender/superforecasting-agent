@@ -1045,3 +1045,12 @@ credential-resolved route, and never invokes authentication discovery. Its
 versioned protocol model distinguishes unknown authentication (`null`,
 `authentication_status: not_checked`) from verified access. Credential-aware
 model discovery remains runtime-owned; a configured key is not proof of access.
+
+
+AWS source and region discovery is owned by `hosting/aws_credentials.py`.
+Status, routing, setup, doctor and auxiliary-client consumers share that owner;
+the Bedrock execution adapter retains compatibility exports. Its enforced import
+boundary excludes runtime, agent, tool and presentation modules. Importing it
+loads no SDK or installer. Explicit discovery can consult the installed SDK
+credential chain; it is not a passive or verified-access guarantee. Optional SDK
+installation belongs to actual Converse or Anthropic Bedrock client construction.

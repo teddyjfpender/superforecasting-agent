@@ -324,7 +324,7 @@ class TestResolveProvider:
         # the specific "GitHub token alone shouldn't auto-pick copilot"
         # behavior, not the Bedrock fallback.
         monkeypatch.setattr(
-            "agent.bedrock_adapter.has_aws_credentials",
+            "superforecasting_agent.hosting.aws_credentials.has_aws_credentials",
             lambda env=None: False,
         )
         monkeypatch.setenv("GITHUB_TOKEN", "gh-test-token")

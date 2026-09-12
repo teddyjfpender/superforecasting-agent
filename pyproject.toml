@@ -855,3 +855,9 @@ type = "forbidden"
 source_modules = ["superforecasting_agent.storage.environment"]
 forbidden_modules = ["tools", "agent", "cli", "gateway", "tui_gateway", "superforecasting_agent.runtime"]
 allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "AWS discovery never imports execution or presentation"
+type = "forbidden"
+source_modules = ["superforecasting_agent.hosting.aws_credentials"]
+forbidden_modules = ["agent", "tools", "superforecasting_agent.runtime", "cli", "gateway", "tui_gateway"]

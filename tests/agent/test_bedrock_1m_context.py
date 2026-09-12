@@ -46,9 +46,13 @@ class TestBedrockContext1MBeta:
         fake_sdk = MagicMock()
         fake_sdk.AnthropicBedrock = MagicMock()
 
-        with patch.object(adapter, "_anthropic_sdk", fake_sdk):
+        with (
+            patch.object(adapter, "_anthropic_sdk", fake_sdk),
+            patch("agent.bedrock_adapter._require_boto3") as require_sdk,
+        ):
             adapter.build_anthropic_bedrock_client(region="us-west-2")
 
+        require_sdk.assert_called_once()
         call_kwargs = fake_sdk.AnthropicBedrock.call_args.kwargs
         assert call_kwargs["aws_region"] == "us-west-2"
 

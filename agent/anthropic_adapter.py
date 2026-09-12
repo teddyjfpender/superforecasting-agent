@@ -785,6 +785,9 @@ def build_anthropic_bedrock_client(region: str):
             "anthropic.AnthropicBedrock not available. "
             "Upgrade with: pip install 'anthropic>=0.39.0'"
         )
+    from agent.bedrock_adapter import _require_boto3
+
+    _require_boto3()
     from httpx import Timeout
 
     return _anthropic_sdk.AnthropicBedrock(
