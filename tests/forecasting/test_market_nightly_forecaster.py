@@ -521,3 +521,37 @@ def test_looks_personal_heuristic_excludes_self_referential_markets():
         "Will Serena Williams play singles at Wimbledon 2026?",
     ]:
         assert not _looks_personal(q), q
+
+
+@pytest.mark.parametrize('failure', [False, True])
+def test_cli_releases_forecaster_after_recording_or_failure(tmp_path, monkeypatch, failure):
+    from unittest.mock import Mock
+    from forecasting import market_nightly
+
+    forecaster = Mock(return_value=0.65)
+    forecaster.close.return_value = None
+    monkeypatch.setattr(mnf, 'load_open_markets', lambda source, **kwargs: [_open_market('owned')])
+    monkeypatch.setattr(mnf, 'build_informed_market_forecaster', lambda **kwargs: forecaster)
+    if failure:
+        monkeypatch.setattr(market_nightly, 'record_pending', Mock(side_effect=OSError('ledger unavailable')))
+        with pytest.raises(OSError, match='ledger unavailable'):
+            cli._cmd_market_nightly_run(_run_args(tmp_path))
+    else:
+        cli._cmd_market_nightly_run(_run_args(tmp_path))
+    forecaster.close.assert_called_once()
+
+
+def test_real_forecaster_exposes_reusable_agent_cleanup():
+    from unittest.mock import Mock
+
+    agent = Mock()
+    agent.run_conversation.return_value = '{"probability": 0.6}'
+    agent.close.return_value = None
+    forecaster = mnf.build_informed_market_forecaster(
+        model='test', agent_factory=lambda **kwargs: agent, discover=False,
+    )
+    assert forecaster(_open_market()) == 0.6
+    agent.close.assert_not_called()
+    forecaster.close()
+    forecaster.close()
+    agent.close.assert_called_once()

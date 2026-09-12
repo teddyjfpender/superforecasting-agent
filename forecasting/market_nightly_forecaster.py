@@ -320,12 +320,12 @@ def build_informed_market_forecaster(
     ``fresh_agent_per_call`` (default ``False``) controls agent REUSE. The default
     builds ONE agent on the first market and reuses it across the sweep — fine for
     the SEQUENTIAL path, but that single agent carries conversation state and is
-    NOT thread-safe. When the caller forecasts markets CONCURRENTLY (e.g.
+    serialized by its owner. When the caller forecasts markets CONCURRENTLY (e.g.
     :func:`forecasting.market_nightly.record_pending` with ``max_workers > 1``),
     pass ``fresh_agent_per_call=True`` so each forecast builds its OWN isolated
-    agent — no shared state can race between worker threads. This is the correct
-    fix for parallel use (isolation, not a lock: the agent call is the whole cost,
-    so locking it would serialize the slow part and defeat the parallelism).
+    agent, disposed after each call. Call `forecaster.close()` at batch end to
+    release the cached agent or retry failed disposals. Close rejects active calls;
+    retry after they exit. Fresh agents permit parallel calls without shared state.
     """
 
     if not model:
@@ -353,13 +353,6 @@ def build_informed_market_forecaster(
     if factory is None:
         from agent.agent_factory import build_agent as factory  # type: ignore[no-redef]
 
-    # The agent is expensive to construct; by default build it once on the first
-    # market and reuse it across the sweep (one search-enabled agent forecasts
-    # every market). Under ``fresh_agent_per_call`` we skip the cache and build a
-    # NEW agent on every forecast so concurrent workers never share one agent's
-    # (non-thread-safe) conversation state.
-    _agent_cell: dict[str, Any] = {}
-
     # ``timeout`` is part of the public budget contract (callers may pass it) but
     # AIAgent's constructor has NO ``timeout`` kwarg — forwarding it would crash
     # construction — so it is accepted-and-held here, NOT passed to the factory.
@@ -373,12 +366,9 @@ def build_informed_market_forecaster(
             platform="cli",
         )
 
-    def _get_agent() -> Any:
-        if fresh_agent_per_call:
-            return _build_agent()  # isolated per call — safe for parallel workers
-        if "agent" not in _agent_cell:
-            _agent_cell["agent"] = _build_agent()
-        return _agent_cell["agent"]
+    from agent.conversation_lifecycle import AgentConversations
+
+    conversations = AgentConversations(_build_agent, fresh=fresh_agent_per_call)
 
     def forecaster(market: Mapping[str, Any]) -> float | None:
         try:
@@ -388,8 +378,7 @@ def build_informed_market_forecaster(
             # would suppress the search this experiment exists to measure. The
             # research_arm selects plain vs the VOI research-disciplined variant.
             messages = build_messages(case)
-            agent = _get_agent()
-            result = agent.run_conversation(
+            result = conversations.run(
                 messages[1]["content"],
                 system_message=messages[0]["content"],
             )
@@ -405,6 +394,8 @@ def build_informed_market_forecaster(
         except Exception:  # noqa: BLE001 — any failure -> None; record_pending skips it
             return None
 
+    # Preserve the callable API while exposing explicit batch ownership.
+    forecaster.close = conversations.close
     return forecaster
 
 

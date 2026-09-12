@@ -41,6 +41,10 @@ The legacy dispatcher itself remains.
 ## 2. Finish resource ownership and recovery
 
 - [ ] Audit lower-level agent cleanup for concrete resource ownership.
+  Live market conversation agents now have an explicit owner: per-call disposal,
+  batch close for cached agents, and retained failed-close handles. The CLI releases
+  the owner after recording, including failures. The existing market forecaster
+  timeout argument still does not enforce an execution deadline.
   Do not retry task-ID cleanup if it could close a replacement component's resources.
   Registry assignment rejects a different existing owner, including builds and
   failed cleanup. Membership now has no raw mapping removal/update APIs; callers

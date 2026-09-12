@@ -267,17 +267,22 @@ def _cmd_market_nightly_run(args: argparse.Namespace) -> None:
         if max_workers > 1:
             forecaster_kwargs["fresh_agent_per_call"] = True
         forecaster = build_informed_market_forecaster(**forecaster_kwargs)
-        runs.append(
-            record_pending(
-                ledger,
-                picked["sampled"],
-                as_of,
-                forecaster,
-                default_market_devig,
-                max_workers=max_workers,
-                arm=arm,
+        try:
+            runs.append(
+                record_pending(
+                    ledger,
+                    picked["sampled"],
+                    as_of,
+                    forecaster,
+                    default_market_devig,
+                    max_workers=max_workers,
+                    arm=arm,
+                )
             )
-        )
+        finally:
+            close = getattr(forecaster, "close", None)
+            if callable(close):
+                close()
 
     if getattr(args, "json", False):
         out = {

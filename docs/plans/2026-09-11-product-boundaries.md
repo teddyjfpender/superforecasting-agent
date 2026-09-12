@@ -3668,3 +3668,24 @@ and reports any remaining count. Its refusal policy is unchanged. The multi-ref
 hook regression includes fixture git status on assertion failure so a recurring
 unexpected file can be identified. All 11 development-workflow tests passed;
 this adds diagnostic evidence, not a claim to have attributed the earlier failure.
+
+
+### Explicit ownership for market conversation agents
+
+Live market forecasting previously leaked agents: fresh-per-call instances were
+never closed, and the cached sequential agent had no close API. AgentConversations
+now owns construction handles, admitted calls and disposal independently of forecast
+or presentation code. Fresh instances close after call success or failure. Cached
+instances are serialized and close at batch end. Close rejects active/queued work,
+blocks new admission and retains failed handles for retry; successful closes are
+not repeated. Minimal injected agents without a close method remain supported.
+
+The returned forecaster remains callable and exposes close(); the CLI calls it in
+finally after record_pending. It preserves provider/forecast failure handling and
+probability parsing. This does not change the pre-existing timeout argument, which
+still has no execution-deadline enforcement and is recorded in TODO.
+
+All 63 conversation-owner, live-market, model-lookup and CLI tests passed. They cover
+success/failure disposal, active-call close rejection, exact failed-handle retries,
+reused-agent release and CLI cleanup after ledger failure. Shared Python gates pass
+with 54 contracts, including a transitive boundary around the new strict owner.

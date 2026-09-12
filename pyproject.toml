@@ -721,3 +721,10 @@ type = "forbidden"
 source_modules = ["superforecasting_agent.storage.turns"]
 forbidden_modules = ["superforecasting_agent.hosting", "superforecasting_agent.runtime", "agent", "tools", "forecasting", "cli", "gateway", "tui_gateway"]
 allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "conversation ownership never constructs runtime or presentation"
+type = "forbidden"
+source_modules = ["agent.conversation_lifecycle"]
+forbidden_modules = ["superforecasting_agent.runtime", "forecasting", "tools", "cli", "gateway", "tui_gateway"]
+allow_indirect_imports = false
