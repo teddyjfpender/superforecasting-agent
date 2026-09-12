@@ -912,3 +912,13 @@ separate migration surfaces; this does not claim every plugin is independent of
 legacy tool modules. Provider calls remain cooperatively cancellable. Late
 results are discarded after cancellation, and tool diagnostic failures do not
 invalidate a successful search.
+
+
+### Provider identity
+
+`superforecasting_agent/configuration/provider_catalog.py` owns ordered provider
+identities, labels and recognized provider-prefix names, including plugin-derived
+entries. The runtime model picker re-exports the same objects; quorum prefix
+parsing reads the shared owner. The catalog has a transitive runtime/presentation
+import prohibition. Model defaults and credential status still have their own
+remaining extraction work; moving identities does not qualify provider callability.

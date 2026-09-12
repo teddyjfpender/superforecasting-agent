@@ -225,12 +225,12 @@ def _split_provider_model(model_id: str) -> tuple[str | None, str]:
 
 
 def _known_provider_names() -> set[str]:
-    """Capture syntax names at the runtime adapter boundary."""
+    """Capture syntax names from the shared provider identity catalog."""
     try:
-        from superforecasting_agent.runtime.models import _KNOWN_PROVIDER_NAMES
+        from superforecasting_agent.configuration.provider_catalog import KNOWN_PROVIDER_NAMES
     except Exception:  # noqa: BLE001 — without the catalog, never split
         return set()
-    return set(_KNOWN_PROVIDER_NAMES)
+    return set(KNOWN_PROVIDER_NAMES)
 
 
 def resolve_connected_panel(

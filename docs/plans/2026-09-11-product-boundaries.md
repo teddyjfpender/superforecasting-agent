@@ -4764,3 +4764,17 @@ Validation: 296 web/provider/supervisor tests passed. The shared quality workflo
 passes 68 import contracts, blocking Python lint/format/types, protocol generation
 and TUI lint/types. Extract/crawl compatibility routing and provider-internal
 legacy tool imports remain outside this extraction.
+
+
+### Shared provider identities
+
+Moved canonical provider entries, labels and provider-prefix names into shared
+configuration ownership; quorum syntax recognition and the runtime model picker
+consume the same catalog. Plugin extension and compatibility object identities
+are preserved. Model defaults and credential-status discovery remain explicit
+runtime dependencies until their implementations are separated.
+
+Validation: 195 model picker, inventory, provider and quorum checks passed;
+shared quality checks passed. Three injected-import checks confirm the new
+provider identity, shared search and cancellation gates reject transitive
+presentation dependencies.

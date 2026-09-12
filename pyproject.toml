@@ -810,3 +810,11 @@ type = "forbidden"
 source_modules = ["superforecasting_agent.tooling.web_search"]
 forbidden_modules = ["tools", "cli", "gateway", "tui_gateway", "forecasting.cli", "superforecasting_agent.runtime"]
 allow_indirect_imports = false
+
+
+[[tool.importlinter.contracts]]
+name = "provider identity catalog never imports runtime or presentation"
+type = "forbidden"
+source_modules = ["superforecasting_agent.configuration.provider_catalog"]
+forbidden_modules = ["tools", "agent", "cli", "gateway", "tui_gateway", "superforecasting_agent.runtime"]
+allow_indirect_imports = false
