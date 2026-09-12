@@ -21,24 +21,27 @@ logger = logging.getLogger(__name__)
 
 
 def _safe_copy_db(src: Path, dst: Path) -> bool:
-    """Copy a SQLite database safely using the backup() API.
-
-    Handles WAL mode — produces a consistent snapshot even while
-    the DB is being written to.  Falls back to raw copy on failure.
-    """
+    """Use SQLite backup only; failed copies never replace the destination."""
+    staged: Path | None = None
     try:
-        with closing(sqlite3.connect(f"file:{src}?mode=ro", uri=True)) as conn:
-            with closing(sqlite3.connect(str(dst))) as backup_conn:
+        fd, name = tempfile.mkstemp(prefix=f".{dst.name}.backup-", dir=dst.parent)
+        os.close(fd)
+        staged = Path(name)
+        with closing(
+            sqlite3.connect(src.resolve().as_uri() + "?mode=ro", uri=True)
+        ) as conn:
+            with closing(sqlite3.connect(str(staged))) as backup_conn:
                 conn.backup(backup_conn)
+        with staged.open("rb") as stream:
+            os.fsync(stream.fileno())
+        atomic_replace(staged, dst)
         return True
     except Exception as exc:
         logger.warning("SQLite safe copy failed for %s: %s", src, exc)
-        try:
-            shutil.copy2(src, dst)
-            return True
-        except Exception as exc2:
-            logger.error("Raw copy also failed for %s: %s", src, exc2)
-            return False
+        return False
+    finally:
+        if staged is not None:
+            staged.unlink(missing_ok=True)
 
 
 _QUICK_STATE_FILES = (
@@ -102,7 +105,8 @@ def create_quick_snapshot(
 ) -> Optional[str]:
     """Create a quick state snapshot of critical files.
 
-    Copies STATE_FILES to a timestamped directory under state-snapshots/.
+    Capture existing state files privately and publish only after all copies
+    succeed. Missing optional files are skipped; copy failures abort publication.
     Auto-prunes old snapshots beyond the keep limit.
 
     Returns:
@@ -118,63 +122,44 @@ def create_quick_snapshot(
     ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
     unique = f"{ts}-{uuid.uuid4().hex[:12]}"
     snap_id = f"{unique}-{label}" if label else unique
-    snap_dir = root / snap_id
-    snap_dir.mkdir(parents=True, exist_ok=False)
-
-    manifest: Dict[str, int] = {}  # rel_path -> file size
-
-    for rel in _QUICK_STATE_FILES:
-        src = home / rel
-        if not src.exists():
-            continue
-
-        if src.is_dir():
-            # Walk the directory and record each file individually in the
-            # manifest so restore can treat them uniformly.  Empty dirs are
-            # skipped (nothing to snapshot).
-            for sub in src.rglob("*"):
-                if not sub.is_file():
+    root.mkdir(parents=True, exist_ok=True)
+    staged = Path(tempfile.mkdtemp(prefix=".pending-", dir=root))
+    manifest: Dict[str, int] = {}
+    try:
+        for rel in _QUICK_STATE_FILES:
+            src = home / rel
+            if not src.exists():
+                continue
+            candidates = src.rglob("*") if src.is_dir() else (src,)
+            for candidate in candidates:
+                if not candidate.is_file():
                     continue
-                sub_rel = sub.relative_to(home).as_posix()
-                dst = snap_dir / sub_rel
+                relative = candidate.relative_to(home).as_posix()
+                dst = staged / relative
                 dst.parent.mkdir(parents=True, exist_ok=True)
-                try:
-                    shutil.copy2(sub, dst)
-                    manifest[sub_rel] = dst.stat().st_size
-                except (OSError, PermissionError) as exc:
-                    logger.warning("Could not snapshot %s: %s", sub_rel, exc)
-            continue
-
-        if not src.is_file():
-            continue
-
-        dst = snap_dir / rel
-        dst.parent.mkdir(parents=True, exist_ok=True)
-
-        try:
-            if src.suffix == ".db":
-                if not _safe_copy_db(src, dst):
-                    continue
-            else:
-                shutil.copy2(src, dst)
-            manifest[rel] = dst.stat().st_size
-        except (OSError, PermissionError) as exc:
-            logger.warning("Could not snapshot %s: %s", rel, exc)
-
-    if not manifest:
-        shutil.rmtree(snap_dir, ignore_errors=True)
-        return None
-
-    # Write manifest
-    meta = {
-        "id": snap_id,
-        "timestamp": ts,
-        "label": label,
-        "file_count": len(manifest),
-        "total_size": sum(manifest.values()),
-        "files": manifest,
-    }
-    atomic_json_write(snap_dir / "manifest.json", meta)
+                if candidate.suffix == ".db":
+                    if not _safe_copy_db(candidate, dst):
+                        raise OSError(f"Could not snapshot database: {relative}")
+                else:
+                    shutil.copy2(candidate, dst)
+                    with dst.open("rb") as stream:
+                        os.fsync(stream.fileno())
+                manifest[relative] = dst.stat().st_size
+        if not manifest:
+            return None
+        meta = {
+            "id": snap_id,
+            "timestamp": ts,
+            "label": label,
+            "file_count": len(manifest),
+            "total_size": sum(manifest.values()),
+            "files": manifest,
+        }
+        atomic_json_write(staged / "manifest.json", meta)
+        os.replace(staged, root / snap_id)
+    finally:
+        if staged.exists():
+            shutil.rmtree(staged)
 
     # Auto-prune
     _prune_quick_snapshots(root, keep=_QUICK_DEFAULT_KEEP)
@@ -194,7 +179,7 @@ def list_quick_snapshots(
 
     results = []
     for d in sorted(root.iterdir(), reverse=True):
-        if not d.is_dir():
+        if not d.is_dir() or d.is_symlink() or d.name.startswith("."):
             continue
         manifest_path = d / "manifest.json"
         if manifest_path.exists():
@@ -281,7 +266,10 @@ def _prune_quick_snapshots(root: Path, keep: int = _QUICK_DEFAULT_KEEP) -> int:
         (
             d
             for d in root.iterdir()
-            if d.is_dir() and not d.is_symlink() and (d / "manifest.json").is_file()
+            if d.is_dir()
+            and not d.is_symlink()
+            and not d.name.startswith(".")
+            and (d / "manifest.json").is_file()
         ),
         key=lambda d: d.name,
         reverse=True,

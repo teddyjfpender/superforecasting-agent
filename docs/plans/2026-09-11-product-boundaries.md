@@ -2461,3 +2461,28 @@ gate stopped with five metadata assertions still reading moved defaults from
 runtime/config.py (31,044 other tests passed, 148 skipped); these now inspect both
 configuration owners without dropping their branding assertions and pass in the
 expanded run. A fresh full push gate is still required for the integrated batch.
+
+
+### Snapshot publication fails closed
+
+The extracted SQLite copier still treated a failed SQLite backup as permission
+to copy raw database bytes. It now uses an escaped read-only URI, stages the
+SQLite backup, closes both connections, fsyncs and replaces the destination only
+on success. Failure returns false without overwriting a previous destination or
+leaving a temporary database. Runtime backup compatibility callers share this
+behavior; corrupt or inaccessible databases are no longer raw-copied.
+
+Quick snapshot creation now captures existing files in a private pending directory
+and publishes the completed directory only after every copy and manifest write
+succeeds. Any copy failure aborts publication. Listing and pruning ignore pending
+directories even during the manifest-to-directory-publication interval. Ordinary
+exceptions remove staging; abrupt process death may leave an unpublished pending
+directory, which is not advertised as a recovery artifact. Missing optional files
+remain allowed. These snapshots do not establish a simultaneous transaction across
+independently changing profile files.
+
+237 backup, integrity and native command tests passed. Failure injection covers
+corrupt databases, destination preservation, SQLite URI metacharacters, a later
+file-copy failure, manifest failure and prune/list during pending publication. The
+existing connection-lifetime regression still proves both SQLite handles close.
+Shared Python quality checks and all 45 import contracts passed.
