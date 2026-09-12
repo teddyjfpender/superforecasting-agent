@@ -2226,3 +2226,18 @@ server's value. This checks an ownership relationship rather than a fixed family
 count. 644 TUI/gateway tests passed; shared quality checks passed. This establishes
 re-registration correctness for the existing process-level server owner, not
 simultaneous multiple server module instances sharing RPC globals.
+
+### Capture TUI startup settings once
+
+A foreground TUI build now passes its configuration snapshot through model,
+reasoning, service tier, tool progress and toolset selection. Previously each
+helper could reload settings, mixing revisions during one construction.
+The shared startup toolset resolver accepts that same snapshot, including MCP
+enablement, while standalone callers retain their existing loading behavior.
+
+Deterministic tests forbid configuration rereads at the factory boundary and
+assert the actual model/options/prompt and empty tool selection. A separate MCP
+case proves disabled servers remain excluded using supplied settings.
+646 TUI/gateway tests and the shared quality workflow passed. Provider credential
+resolution and configuration reads inside agent construction remain separate
+paths; this change does not establish a fully frozen provider build.

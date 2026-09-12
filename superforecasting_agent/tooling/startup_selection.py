@@ -1,10 +1,15 @@
 """Resolve startup tool choices independently of terminal presentation."""
 
 from collections.abc import Callable
+from typing import Any
 
 
 def resolve_startup_toolsets(
-    explicit_value: str, *, setting_label: str, warn: Callable[[str], None]
+    explicit_value: str,
+    *,
+    setting_label: str,
+    warn: Callable[[str], None],
+    config: dict[str, Any] | None = None,
 ) -> list[str] | None:
     explicit = [item.strip() for item in explicit_value.split(",") if item.strip()]
     fallback_notice = None
@@ -54,7 +59,7 @@ def resolve_startup_toolsets(
             from superforecasting_agent.runtime.config import read_raw_config
             from superforecasting_agent.tooling.selection import _parse_enabled_flag
 
-            raw_cfg = read_raw_config()
+            raw_cfg = config if config is not None else read_raw_config()
             mcp_servers = raw_cfg.get("mcp_servers")
             if not isinstance(mcp_servers, dict):
                 mcp_servers = {}
@@ -100,7 +105,7 @@ def resolve_startup_toolsets(
         from superforecasting_agent.runtime.config import load_config
         from superforecasting_agent.tooling.selection import _get_platform_tools
 
-        cfg = load_config()
+        cfg = config if config is not None else load_config()
 
         # Runtime toolset resolution must include default MCP servers so the
         # agent can actually call them. Passing ``False`` here is the

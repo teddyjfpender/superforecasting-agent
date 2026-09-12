@@ -1352,11 +1352,11 @@ def resolve_skin() -> dict:
         return {}
 
 
-def _resolve_model() -> str:
+def _resolve_model(cfg: dict | None = None) -> str:
     env = _first_runtime_env_value(("MODEL", "INFERENCE_MODEL"))
     if env:
         return env
-    m = _load_cfg().get("model", "")
+    m = (cfg if cfg is not None else _load_cfg()).get("model", "")
     if isinstance(m, dict):
         return str(m.get("default", "") or "").strip()
     if isinstance(m, str) and m:
@@ -1364,8 +1364,8 @@ def _resolve_model() -> str:
     return "anthropic/claude-sonnet-4"
 
 
-def _resolve_startup_runtime() -> tuple[str, str | None]:
-    model = _resolve_model()
+def _resolve_startup_runtime(cfg: dict | None = None) -> tuple[str, str | None]:
+    model = _resolve_model(cfg) if cfg is not None else _resolve_model()
     explicit_provider = _tui_env("PROVIDER").strip()
     if explicit_provider:
         return model, explicit_provider
@@ -1377,7 +1377,7 @@ def _resolve_startup_runtime() -> tuple[str, str | None]:
     try:
         from superforecasting_agent.runtime.models import detect_static_provider_for_model
 
-        cfg = _load_cfg().get("model") or {}
+        cfg = (cfg if cfg is not None else _load_cfg()).get("model") or {}
         current_provider = (
             (
                 str(cfg.get("provider") or "").strip().lower()
@@ -1427,29 +1427,29 @@ def _display_mouse_tracking(display: dict) -> bool:
     return True
 
 
-def _load_reasoning_config() -> dict | None:
+def _load_reasoning_config(cfg: dict | None = None) -> dict | None:
     from superforecasting_agent.constants import parse_reasoning_effort
 
     effort = str(
-        (_load_cfg().get("agent") or {}).get("reasoning_effort", "") or ""
+        ((cfg if cfg is not None else _load_cfg()).get("agent") or {}).get("reasoning_effort", "") or ""
     ).strip()
     return parse_reasoning_effort(effort)
 
 
-def _load_service_tier() -> str | None:
+def _load_service_tier(cfg: dict | None = None) -> str | None:
     from superforecasting_agent.constants import parse_service_tier
-    return parse_service_tier((_load_cfg().get("agent") or {}).get("service_tier"))
+    return parse_service_tier(((cfg if cfg is not None else _load_cfg()).get("agent") or {}).get("service_tier"))
 
 
 def _load_show_reasoning() -> bool:
     return bool((_load_cfg().get("display") or {}).get("show_reasoning", False))
 
 
-def _load_tool_progress_mode() -> str:
+def _load_tool_progress_mode(cfg: dict | None = None) -> str:
     env = _tui_env("TOOL_PROGRESS").strip().lower()
     if env in {"off", "new", "all", "verbose"}:
         return env
-    raw = (_load_cfg().get("display") or {}).get("tool_progress", "all")
+    raw = ((cfg if cfg is not None else _load_cfg()).get("display") or {}).get("tool_progress", "all")
     if raw is False:
         return "off"
     if raw is True:
@@ -1458,11 +1458,11 @@ def _load_tool_progress_mode() -> str:
     return mode if mode in {"off", "new", "all", "verbose"} else "all"
 
 
-def _load_enabled_toolsets() -> list[str] | None:
+def _load_enabled_toolsets(cfg: dict | None = None) -> list[str] | None:
     from superforecasting_agent.tooling.startup_selection import resolve_startup_toolsets
 
     return resolve_startup_toolsets(
-        _tui_env("TOOLSETS"), setting_label="SUPERFORECASTING_AGENT_TUI_TOOLSETS",
+        _tui_env("TOOLSETS"), setting_label="SUPERFORECASTING_AGENT_TUI_TOOLSETS", config=cfg,
         warn=lambda message: print(f"[tui] {message}", file=sys.stderr, flush=True),
     )
 
@@ -2471,7 +2471,7 @@ def _make_agent(sid: str, key: str, session_id: str | None = None):
         agent_cfg.get("system_prompt"), _parse_tui_skills_env(),
         session_id=session_id or key,
     )
-    model, requested_provider = _resolve_startup_runtime()
+    model, requested_provider = _resolve_startup_runtime(cfg=cfg)
     from agent.agent_factory import build_agent
     from forecasting.protocol import build_forecast_chat_system_prompt
 
@@ -2483,10 +2483,10 @@ def _make_agent(sid: str, key: str, session_id: str | None = None):
         requested_provider=requested_provider,
         max_iterations=_cfg_max_turns(cfg, 90),
         quiet_mode=True,
-        verbose_logging=_load_tool_progress_mode() == "verbose",
-        reasoning_config=_load_reasoning_config(),
-        service_tier=_load_service_tier(),
-        enabled_toolsets=_load_enabled_toolsets(),
+        verbose_logging=_load_tool_progress_mode(cfg=cfg) == "verbose",
+        reasoning_config=_load_reasoning_config(cfg=cfg),
+        service_tier=_load_service_tier(cfg=cfg),
+        enabled_toolsets=_load_enabled_toolsets(cfg=cfg),
         platform="tui",
         session_id=session_id or key,
         session_db=_get_db(),

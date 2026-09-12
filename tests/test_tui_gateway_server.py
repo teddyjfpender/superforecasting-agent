@@ -5,7 +5,7 @@ import threading
 import time
 import types
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -5641,7 +5641,7 @@ def test_reload_env_rpc_surfaces_errors(monkeypatch):
 def _setup_make_agent_mocks(monkeypatch, cfg):
     monkeypatch.setattr(server, "_load_cfg", lambda: cfg)
     monkeypatch.setattr(
-        server, "_resolve_startup_runtime", lambda: ("test-model", None)
+        server, "_resolve_startup_runtime", lambda **kwargs: ("test-model", None)
     )
     monkeypatch.setattr(
         "superforecasting_agent.runtime.runtime_provider.resolve_runtime_provider",
@@ -5657,10 +5657,10 @@ def _setup_make_agent_mocks(monkeypatch, cfg):
             "credential_pool": None,
         },
     )
-    monkeypatch.setattr(server, "_load_tool_progress_mode", lambda: "off")
-    monkeypatch.setattr(server, "_load_reasoning_config", lambda: None)
-    monkeypatch.setattr(server, "_load_service_tier", lambda: None)
-    monkeypatch.setattr(server, "_load_enabled_toolsets", lambda: None)
+    monkeypatch.setattr(server, "_load_tool_progress_mode", lambda **kwargs: "off")
+    monkeypatch.setattr(server, "_load_reasoning_config", lambda **kwargs: None)
+    monkeypatch.setattr(server, "_load_service_tier", lambda **kwargs: None)
+    monkeypatch.setattr(server, "_load_enabled_toolsets", lambda **kwargs: None)
     monkeypatch.setattr(server, "_get_db", lambda: None)
     monkeypatch.setattr(server, "_agent_cbs", lambda sid: {})
 
@@ -6285,7 +6285,7 @@ def test_empty_configured_toolsets_are_not_widened_to_all(monkeypatch):
 
 def test_make_agent_preserves_empty_configured_toolsets(monkeypatch):
     loader = server._load_enabled_toolsets
-    _setup_make_agent_mocks(monkeypatch, {})
+    _setup_make_agent_mocks(monkeypatch, {"platform_toolsets": {"cli": []}, "mcp_servers": {}})
     monkeypatch.setattr(server, '_load_enabled_toolsets', loader)
     monkeypatch.delenv('SUPERFORECASTING_AGENT_TUI_TOOLSETS', raising=False)
     monkeypatch.delenv('HERMES_TUI_TOOLSETS', raising=False)
@@ -6300,3 +6300,67 @@ def test_make_agent_preserves_empty_configured_toolsets(monkeypatch):
     monkeypatch.setattr('agent.agent_factory._aiagent_cls', lambda: Agent)
     server._make_agent('runtime', 'durable')
     assert captured['enabled_toolsets'] == []
+
+
+def test_make_agent_uses_one_configuration_snapshot(monkeypatch):
+    from agent import agent_factory
+    from superforecasting_agent.runtime import config as runtime_config
+
+    cfg = {
+        "model": {"default": "snapshot-model"},
+        "agent": {
+            "max_turns": 37,
+            "system_prompt": "Use the captured configuration.",
+            "reasoning_effort": "high",
+            "service_tier": "fast",
+        },
+        "display": {"tool_progress": "verbose"},
+        "platform_toolsets": {"cli": []},
+    }
+    load = Mock(side_effect=[cfg, AssertionError("configuration reread during build")])
+    monkeypatch.setattr(server, "_load_cfg", load)
+    monkeypatch.setattr(server, "_tui_env", lambda name: "")
+    monkeypatch.setattr(server, "_first_runtime_env_value", lambda names: "")
+    monkeypatch.setattr(server, "_get_db", lambda: None)
+    monkeypatch.setattr(server, "_agent_cbs", lambda sid: {})
+    monkeypatch.setattr(runtime_config, "load_config", Mock(side_effect=AssertionError("uncaptured config")))
+    monkeypatch.setattr(runtime_config, "read_raw_config", Mock(side_effect=AssertionError("uncaptured raw config")))
+    build = Mock()
+    monkeypatch.setattr(agent_factory, "build_agent", build)
+
+    assert server._make_agent("sid", "key") is build.return_value
+
+    load.assert_called_once_with()
+    options = build.call_args.kwargs
+    assert options["model"] == "snapshot-model"
+    assert options["max_iterations"] == 37
+    assert options["reasoning_config"] == {"enabled": True, "effort": "high"}
+    assert options["service_tier"] == "priority"
+    assert options["verbose_logging"] is True
+    assert options["enabled_toolsets"] == []
+    assert "Use the captured configuration." in options["ephemeral_system_prompt"]
+    runtime_config.load_config.assert_not_called()
+    runtime_config.read_raw_config.assert_not_called()
+
+
+def test_startup_toolsets_use_supplied_mcp_snapshot(monkeypatch):
+    from superforecasting_agent.runtime import config, plugins
+    from superforecasting_agent.tooling import toolsets
+    from superforecasting_agent.tooling.startup_selection import resolve_startup_toolsets
+
+    monkeypatch.setattr(toolsets, "validate_toolset", lambda name: False)
+    monkeypatch.setattr(plugins, "discover_plugins", lambda: None)
+    monkeypatch.setattr(config, "read_raw_config", Mock(side_effect=AssertionError("config reread")))
+    notices = []
+    selected = resolve_startup_toolsets(
+        "enabled_source,disabled_source",
+        setting_label="TEST_TOOLSETS",
+        warn=notices.append,
+        config={"mcp_servers": {
+            "enabled_source": {"enabled": True},
+            "disabled_source": {"enabled": False},
+        }},
+    )
+    assert selected == ["enabled_source"]
+    assert any("disabled_source" in notice for notice in notices)
+    config.read_raw_config.assert_not_called()
