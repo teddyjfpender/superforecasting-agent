@@ -4731,3 +4731,13 @@ Validation: six negative controls failed before the fix. 86 triage, trust, CLI,
 scoring and evidence-autopilot checks now pass, including malformed batch rollback
 and canonical alias storage. Shared quality checks passed. Existing gold records
 that were previously coerced cannot be retrospectively certified by this change.
+
+
+### Shared cancellation signaling
+
+Moved per-thread interrupt state into the shared tooling package in preparation
+for extracting supervisor search from the registered web tool. Legacy functions
+and the event proxy retain identity and share the same state. A transitive
+consumer-import gate covers the owner. Seventeen interrupt propagation,
+concurrency and CLI checks passed, including old/new API interoperability; shared
+quality checks passed. Blocking providers still require cooperative cancellation.

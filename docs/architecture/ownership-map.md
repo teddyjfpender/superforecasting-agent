@@ -883,3 +883,13 @@ classes. Model-generated suggestions retain the tolerant skim fallback. An inval
 adjudication batch rolls back all its writes. Historical records already coerced
 into a valid class cannot be distinguished from intentional labels by this check;
 this change does not retroactively certify those records.
+
+
+### Tool cancellation signaling
+
+`superforecasting_agent/tooling/interrupts.py` owns the shared thread-scoped
+interrupt state and compatibility event proxy. `tools/interrupt.py` only re-exports
+the same objects. Host/application integrations can now check cancellation without
+importing a tool implementation. The transitive import gate prohibits consumer
+imports. This preserves the existing thread-ID signaling model; it does not add
+forced cancellation of blocking provider calls or solve thread-ID reuse.

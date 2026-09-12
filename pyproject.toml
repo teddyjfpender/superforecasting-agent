@@ -796,3 +796,11 @@ type = "forbidden"
 source_modules = ["forecasting.transports.slack"]
 forbidden_modules = ["tools", "agent", "cli", "gateway", "tui_gateway", "forecasting.cli", "forecasting.application"]
 allow_indirect_imports = false
+
+
+[[tool.importlinter.contracts]]
+name = "cancellation signaling never imports consumers"
+type = "forbidden"
+source_modules = ["superforecasting_agent.tooling.interrupts"]
+forbidden_modules = ["tools", "agent", "cli", "gateway", "tui_gateway", "superforecasting_agent.runtime"]
+allow_indirect_imports = false
