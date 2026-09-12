@@ -1,9 +1,8 @@
 """Serialize browser endpoint changes and surface incomplete cleanup."""
 
-import threading
 from collections.abc import Callable, MutableMapping
 
-_change_lock = threading.Lock()
+from superforecasting_agent.hosting.browser_sessions import browser_endpoint_transition
 
 
 def change_browser_endpoint(
@@ -14,11 +13,11 @@ def change_browser_endpoint(
 ) -> None:
     """Drain old resources before publishing, then drain resources from the swap.
 
-    The lock serializes connection commands, not browser tool execution. A failure
+    The guard drains admitted browser lifecycles before publication. A failure
     before publication preserves the old setting. After publication the desired
     setting remains visible and the caller must report incomplete cleanup.
     """
-    with _change_lock:
+    with browser_endpoint_transition():
         cleanup()
         if endpoint is None:
             # Empty is an explicit process override: do not fall back to config.

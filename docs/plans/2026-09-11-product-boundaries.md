@@ -3262,3 +3262,17 @@ The startup batch's full push gate remains running in the primary checkout.
 - Verification: 31 creation/cleanup/hybrid/replacement tests passed; shared Python
   quality gates passed. Endpoint-wide transitions and active browser commands
   still need admission coordination; this change covers allocation and cleanup.
+
+### Exclusive browser endpoint transitions
+
+- The browser lifecycle owner now admits exclusive process-wide transitions.
+  Endpoint connect/disconnect and all-browser cleanup drain existing task
+  allocations/cleanup and block new ones until publication and cleanup complete.
+  Nested cleanup by the transition owner is supported; attempting to upgrade a
+  task operation into a global transition raises instead of deadlocking.
+- Deterministic tests hold an old operation, prove transition cleanup cannot run
+  early, then hold cleanup and prove a new task cannot enter until the new
+  endpoint is published. Failure-reporting and allocation tests remain green.
+- Verification: 40 host/transition/creation/cleanup/hybrid tests passed; shared
+  Python quality gates passed. Active browser commands still need admission;
+  current coverage establishes allocation/cleanup exclusion, not command exclusion.

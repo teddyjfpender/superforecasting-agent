@@ -3559,6 +3559,14 @@ def cleanup_all_browsers() -> None:
 
     Useful for cleanup on shutdown.
     """
+    from superforecasting_agent.hosting.browser_sessions import browser_endpoint_transition
+
+    with browser_endpoint_transition():
+        _cleanup_all_browsers_owned()
+
+
+def _cleanup_all_browsers_owned() -> None:
+    """Drain the registry while no other thread can allocate a browser session."""
     with _cleanup_lock:
         task_ids = list(_active_sessions.keys())
     for task_id in task_ids:
