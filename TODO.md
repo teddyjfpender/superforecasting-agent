@@ -30,7 +30,7 @@ changes, tests and their limits. The previous checklist is preserved in the
 
 Already implemented: shared forecast review/resolution/scoring, command catalog
 and aliases, configured-command validation/execution, session selection and
-branching, native command handoffs before model initialization, shared configuration inspection
+branching, native command handoffs before model initialization, shared goal-command transitions, shared configuration inspection
 (including live session settings and credential-safe reporting), shared toolset/insights/
 quota/platform inspection, curator operations and runtime selection, and lazy legacy worker admission.
 The legacy dispatcher itself remains.
@@ -46,8 +46,11 @@ The legacy dispatcher itself remains.
   transports and terminal/browser cleanup failures is still unfinished. Browser
   supervisors now retain failed startup/stop handles and reject overlapping
   lifecycle mutations. CLI/TUI now share endpoint transitions and surface
-  supervisor cleanup failures. Browser session cleanup ownership, concurrent
-  tool admission remain unfinished. Disconnect now suppresses the saved CDP
+  supervisor cleanup failures. Browser tool admission now drains before global
+  endpoint changes; failed cloud/Camofox disposal retains exact handles, and
+  bundled cloud disposers retain allocation credentials. Emergency bulk cleanup,
+  malformed allocations and lower-level local daemon disposal remain to audit.
+  Disconnect now suppresses the saved CDP
   endpoint for the running process without rewriting the profile.
 - [x] Remove the legacy global goal database cache. Standalone managers own
   closable connections; CLI, gateway and TUI managers borrow their host storage.

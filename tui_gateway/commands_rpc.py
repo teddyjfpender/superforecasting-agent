@@ -594,15 +594,19 @@ def _(rid, params: dict) -> dict:
             return _ok(rid, {"type": "exec", "output": execute_subgoal(mgr, arg)})
 
 
-        lower = arg.strip().lower()
-        if not arg.strip() or lower == "status":
-            return _ok(rid, {"type": "exec", "output": mgr.status_line()})
-        if lower == "pause":
-            state = mgr.pause(reason="user-paused")
+        from superforecasting_agent.application.goals import execute_goal
+
+        try:
+            result = execute_goal(mgr, arg)
+        except ValueError as exc:
+            return _err(rid, 4004, f"invalid goal: {exc}")
+        state = result.state
+        if result.action == "status":
+            return _ok(rid, {"type": "exec", "output": result.status})
+        if result.action == "pause":
             out = "No goal set." if state is None else f"⏸ Goal paused: {state.goal}"
             return _ok(rid, {"type": "exec", "output": out})
-        if lower == "resume":
-            state = mgr.resume()
+        if result.action == "resume":
             if state is None:
                 return _ok(rid, {"type": "exec", "output": "No goal to resume."})
             return _ok(
@@ -615,22 +619,16 @@ def _(rid, params: dict) -> dict:
                     ),
                 },
             )
-        if lower in {"clear", "stop", "done"}:
-            had = mgr.has_goal()
-            mgr.clear()
+        if result.action == "clear":
             return _ok(
                 rid,
                 {
                     "type": "exec",
-                    "output": "✓ Goal cleared." if had else "No active goal.",
+                    "output": "✓ Goal cleared." if result.had_goal else "No active goal.",
                 },
             )
 
-        # Otherwise — treat the remaining text as the new goal.
-        try:
-            state = mgr.set(arg)
-        except ValueError as exc:
-            return _err(rid, 4004, f"invalid goal: {exc}")
+        assert state is not None
 
         notice = (
             f"⊙ Goal set ({state.max_turns}-turn budget): {state.goal}\n"

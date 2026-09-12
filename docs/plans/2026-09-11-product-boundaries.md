@@ -3382,3 +3382,18 @@ Same-task helpers remain reentrant, and exclusive cleanup can acquire multiple
 tasks. A rejection leaves no admission state behind. Fifteen focused admission,
 allocation and disposal tests passed, including explicit rejection and subsequent
 per-task/global reuse.
+
+
+### Shared goal command application operation
+
+CLI, messaging gateway and native TUI now invoke `application.goals.execute_goal`
+for status/set/pause/resume/clear and compatibility aliases. Parsing and manager
+mutation have one owner; immutable returned snapshots prevent subsequent manager
+changes from altering an already-produced result. Presentation, localization,
+continuation queue cleanup and initial prompt delivery remain with each adapter.
+The operation propagates failed writes instead of replaying them. Existing
+consumer tests and new SQLite-backed transitions verify persistence, aliases,
+result isolation and classic CLI kickoff behavior.
+
+Validation: 39 focused application/CLI/TUI/gateway tests passed; shared Python
+quality gates passed with all 51 import contracts intact.

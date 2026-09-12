@@ -11337,17 +11337,22 @@ class GatewayRunner:
         continuation hook then takes over from there.
         """
         args = (event.get_command_args() or "").strip()
-        lower = args.lower()
 
         mgr, session_entry = self._get_goal_manager_for_event(event)
         if mgr is None:
             return t("gateway.goal.unavailable")
 
-        if not args or lower == "status":
-            return mgr.status_line()
+        from superforecasting_agent.application.goals import execute_goal
 
-        if lower == "pause":
-            state = mgr.pause(reason="user-paused")
+        try:
+            result = execute_goal(mgr, args)
+        except ValueError as exc:
+            return t("gateway.goal.invalid", error=str(exc))
+        state = result.state
+        if result.action == "status":
+            return result.status
+
+        if result.action == "pause":
             if state is None:
                 return t("gateway.goal.no_goal_set")
             try:
@@ -11359,15 +11364,12 @@ class GatewayRunner:
                 logger.debug("goal pause: pending continuation cleanup failed: %s", exc)
             return t("gateway.goal.paused", goal=state.goal)
 
-        if lower == "resume":
-            state = mgr.resume()
+        if result.action == "resume":
             if state is None:
                 return t("gateway.goal.no_resume")
             return t("gateway.goal.resumed", goal=state.goal)
 
-        if lower in {"clear", "stop", "done"}:
-            had = mgr.has_goal()
-            mgr.clear()
+        if result.action == "clear":
             try:
                 adapter = self.adapters.get(event.source.platform) if event.source else None
                 _quick_key = self._session_key_for_source(event.source) if event.source else None
@@ -11375,13 +11377,9 @@ class GatewayRunner:
                     self._clear_goal_pending_continuations(_quick_key, adapter)
             except Exception as exc:
                 logger.debug("goal clear: pending continuation cleanup failed: %s", exc)
-            return t("gateway.goal_cleared") if had else t("gateway.no_active_goal")
+            return t("gateway.goal_cleared") if result.had_goal else t("gateway.no_active_goal")
 
-        # Otherwise — treat the remaining text as the new goal.
-        try:
-            state = mgr.set(args)
-        except ValueError as exc:
-            return t("gateway.goal.invalid", error=str(exc))
+        assert state is not None
 
         # Queue the goal text as an immediate first turn so the agent
         # starts making progress. The post-turn hook takes over after.

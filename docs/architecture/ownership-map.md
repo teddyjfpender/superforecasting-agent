@@ -583,3 +583,14 @@ server owner; it does not support simultaneously serving multiple server module
 instances through the same module globals. Closure-based families already capture
 the receiving server. The registration-owner regression discovers import-bound
 families and checks every imported dependency against its registered owner.
+
+
+### Goal command transitions
+
+`application/goals.py` owns goal command parsing, aliases and one-shot manager
+mutation for classic CLI, messaging gateway and native TUI. It returns immutable
+value snapshots; the application owner imports no runtime, storage or product.
+Adapters retain session-manager acquisition, localized rendering, pending-message
+cleanup and kickoff delivery. Storage and concurrent-state checks remain with
+GoalManager. The application package import contract and strict directory-wide
+lint, formatting and types cover this owner automatically.

@@ -57,23 +57,28 @@ def _handle_goal_command(self, cmd: str) -> None:
         _cprint(f"  {_DIM}Goals unavailable (no active forecast session).{_RST}")
         return
 
-    lower = arg.lower()
+    from superforecasting_agent.application.goals import execute_goal
+
+    try:
+        result = execute_goal(mgr, arg)
+    except ValueError as exc:
+        _cprint(f"  Invalid goal: {exc}")
+        return
+    state = result.state
 
     # Bare /goal or /goal status → show current state
-    if not arg or lower == "status":
-        _cprint(f"  {mgr.status_line()}")
+    if result.action == "status":
+        _cprint(f"  {result.status}")
         return
 
-    if lower == "pause":
-        state = mgr.pause(reason="user-paused")
+    if result.action == "pause":
         if state is None:
             _cprint(f"  {_DIM}No goal set.{_RST}")
         else:
             _cprint(f"  ⏸ Goal paused: {state.goal}")
         return
 
-    if lower == "resume":
-        state = mgr.resume()
+    if result.action == "resume":
         if state is None:
             _cprint(f"  {_DIM}No goal to resume.{_RST}")
         else:
@@ -84,21 +89,14 @@ def _handle_goal_command(self, cmd: str) -> None:
             )
         return
 
-    if lower in {"clear", "stop", "done"}:
-        had = mgr.has_goal()
-        mgr.clear()
-        if had:
+    if result.action == "clear":
+        if result.had_goal:
             _cprint("  ✓ Goal cleared.")
         else:
             _cprint(f"  {_DIM}No active goal.{_RST}")
         return
 
-    # Otherwise treat the arg as the goal text.
-    try:
-        state = mgr.set(arg)
-    except ValueError as exc:
-        _cprint(f"  Invalid goal: {exc}")
-        return
+    assert state is not None
 
     _cprint(f"  ⊙ Goal set ({state.max_turns}-turn budget): {state.goal}")
     _cprint(
