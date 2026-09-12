@@ -3464,3 +3464,16 @@ SHA-256:
 Evidence: `/tmp/forecast-worker-profile-build.log` and
 `/tmp/forecast-worker-profile-execution.log`. Shared Python quality gates also
 passed after the verifier change.
+
+
+### Learning-command compatibility handoff
+
+The legacy `slash.exec` path omitted `/learn` from commands whose input must be
+delivered to the live session. It could construct an unnecessary agent and classic
+worker, then enqueue the learning prompt where no input reader consumes it. The
+command now hands off before execution to the existing native `command.dispatch`
+operation. Both empty and explicit learning requests retain their exact prompt.
+
+The new regression first failed on unexpected agent construction in both cases.
+After the fix, all 178 configured-command/protocol tests passed. Modern clients
+already use native dispatch first; this closes the older-client entry path.

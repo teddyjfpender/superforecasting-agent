@@ -1063,3 +1063,19 @@ def test_curator_status_reports_damaged_state_to_native_client(configure, monkey
     assert 'operation failed' in response['error']['message']
     assert 'ENABLED' not in response['error']['message']
     assert path.read_text(encoding='utf-8') == '{broken'
+
+
+@pytest.mark.parametrize('user_request', ['', 'summarize the source review workflow'])
+def test_learn_handoff_preserves_prompt_without_starting_classic_worker(configure, user_request):
+    from agent.learn_prompt import build_learn_prompt
+
+    configure({})
+    handoff = slash('learn ' + user_request)
+    assert handoff['error']['code'] == 4018
+    assert handoff['error']['data'] == {
+        'dispatch': 'command.dispatch', 'execution_started': False,
+    }
+    result = dispatch('learn', user_request)
+    assert result['result'] == {'type': 'send', 'message': build_learn_prompt(user_request)}
+    server._start_agent_build.assert_not_called()
+    server._SlashWorker.assert_not_called()
