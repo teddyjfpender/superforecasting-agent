@@ -4207,3 +4207,19 @@ post-migration assertions now expect v12. Native handoff admission and recovery 
 claimed work after gateway death remain unimplemented. This does not establish
 compatibility with simultaneously running older gateway code that lacks attempt
 checks.
+
+
+### Shared handoff observation and waiting
+
+`application.handoff` owns attempt-scoped observation and waiting with immutable
+results. It uses a monotonic finite deadline and an interruptible event wait.
+Local cancellation can cancel only the expected pending attempt; returned state
+is read after the transition, preserving a gateway claim that wins the race.
+Unknown or replaced attempts are surfaced without inferring success. The CLI
+consumes this service and no longer opens an implicit fallback SessionDB.
+
+250 storage/handoff/branch tests and shared quality gates passed. Cancellation
+and completion tests use real SQLite state with event-driven control and no
+wall-clock sleeps. Invalid or unbounded deadlines are rejected. Native TUI
+handoff still requires host admission and durable pending-state presentation;
+this extraction supplies the shared behavior but does not claim that integration.

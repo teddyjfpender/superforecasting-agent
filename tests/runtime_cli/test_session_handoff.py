@@ -269,6 +269,48 @@ class TestHandoffStateDB:
             assert reopened.claim_handoff(sid, attempt_id=attempt)
 
 
+    @pytest.mark.parametrize('claimed', [False, True])
+    def test_shared_wait_cancellation_preserves_gateway_ownership(self, db, claimed):
+        from threading import Event
+        from superforecasting_agent.application.handoff import wait_for_handoff
+
+        sid = 'cancel-wait'
+        self._make_session(db, sid)
+        assert db.request_handoff(sid, 'telegram')
+        attempt = db.get_handoff_state(sid)['attempt_id']
+        if claimed:
+            assert db.claim_handoff(sid, attempt_id=attempt)
+        stop = Event()
+        stop.set()
+        result = wait_for_handoff(db, sid, attempt, stop=stop)
+        assert result.wait_ended
+        assert result.state == ('running' if claimed else 'failed')
+        assert db.get_handoff_state(sid)['state'] == result.state
+
+    def test_shared_wait_observes_completion_without_sleep(self, db):
+        from threading import Event
+        from superforecasting_agent.application.handoff import wait_for_handoff
+
+        sid = 'complete-wait'
+        self._make_session(db, sid)
+        assert db.request_handoff(sid, 'telegram')
+        attempt = db.get_handoff_state(sid)['attempt_id']
+        class CompleteOnWait(Event):
+            def wait(self, timeout=None):
+                assert db.claim_handoff(sid, attempt_id=attempt)
+                assert db.complete_handoff(sid, attempt_id=attempt)
+                return False
+        result = wait_for_handoff(db, sid, attempt, stop=CompleteOnWait())
+        assert result.state == 'completed'
+        assert not result.wait_ended
+
+    @pytest.mark.parametrize('timeout', [float('inf'), float('nan'), -1, True])
+    def test_shared_wait_rejects_unbounded_deadline(self, db, timeout):
+        from superforecasting_agent.application.handoff import wait_for_handoff
+        with pytest.raises(ValueError, match='finite and non-negative'):
+            wait_for_handoff(db, 'missing', 'attempt', timeout=timeout)
+
+
 class TestHandoffCommandRegistration:
     """Slash-command surface checks."""
 
@@ -296,8 +338,8 @@ class TestHandoffCommandRegistration:
     ('failed', False, 'pending handoff was cancelled'),
 ])
 def test_cli_timeout_reports_durable_state(monkeypatch, capsys, state, exit_expected, visible):
-    import sys
     from types import SimpleNamespace
+    from superforecasting_agent.application import handoff
     from unittest.mock import Mock
     import gateway.config as gateway_config
     from superforecasting_agent.runtime import handoff_commands
@@ -312,12 +354,11 @@ def test_cli_timeout_reports_durable_state(monkeypatch, capsys, state, exit_expe
     db.get_session.return_value = {'title': 'fixture'}
     db.request_handoff.return_value = True
     db.cancel_pending_handoff.return_value = state == 'failed'
-    db.get_handoff_state.side_effect = lambda sid: {'state': state, 'attempt_id': db.request_handoff.call_args.kwargs['attempt_id']}
+    db.get_handoff_state.side_effect = lambda sid: {'state': state, 'error': 'timed out waiting for gateway' if state == 'failed' else None, 'attempt_id': db.request_handoff.call_args.kwargs['attempt_id']}
     shell = SimpleNamespace(session_id='fixture-session', _session_db=db, _agent_running=False, _should_exit=False)
     ticks = iter([0.0, 61.0])
-    with monkeypatch.context() as patch_time:
-        patch_time.setitem(sys.modules, 'time', SimpleNamespace(monotonic=lambda: next(ticks)))
-        keep_running = handoff_commands._handle_handoff_command(shell, '/handoff telegram')
+    monkeypatch.setattr(handoff, 'monotonic', lambda: next(ticks))
+    keep_running = handoff_commands._handle_handoff_command(shell, '/handoff telegram')
     assert keep_running is not exit_expected
     assert shell._should_exit is exit_expected
     assert visible in capsys.readouterr().out

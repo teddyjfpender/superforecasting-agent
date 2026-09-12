@@ -680,3 +680,10 @@ collection; the classic CLI uses the same report operation with default streams.
 transitions through the shared storage writer. CLI and native TUI consume its
 textual operation; messaging consumes its mutation and retains platform-specific
 status rendering. A platform override cannot become the input to a global toggle.
+
+
+`application.handoff` owns attempt-scoped durable observation and interruptible
+waiting. Storage owns compare-and-set transitions; callers own session admission,
+platform validation, and presentation. The classic command borrows host storage
+and interprets the shared immutable outcome, without creating another database
+owner. Gateway-specific configuration does not enter the application service.
