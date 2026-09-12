@@ -502,17 +502,17 @@ def test_async_completion_routes_to_originating_session():
     R = server._route_async_completion
     # an async-delegation result is consumed only by its own session's poller
     assert R({"type": "async_delegation", "session_key": "A"}, "A") == "consume"
-    # a foreign session re-enqueues it for the right poller (and counts the bounce)
+    # a foreign session re-enqueues it without mutating provenance
     foreign = {"type": "async_delegation", "session_key": "A"}
     assert R(foreign, "B") == "requeue"
-    assert foreign["_route_attempts"] == 1
+    assert foreign == {"type": "async_delegation", "session_key": "A"}
     # CLI single-session (no key) and non-async events are always consumed
     assert R({"type": "async_delegation", "session_key": ""}, "B") == "consume"
     assert R({"type": "async_delegation"}, "B") == "consume"
     assert R({"type": "completion", "session_id": "X"}, "B") == "consume"
-    # orphan fallback: a foreign event no live session claims is taken, never dropped
-    orphan = {"type": "async_delegation", "session_key": "A", "_route_attempts": server._MAX_ASYNC_ROUTE_ATTEMPTS}
-    assert R(orphan, "B") == "consume"
+    # a high retry count cannot authorize delivery to another session
+    orphan = {"type": "async_delegation", "session_key": "A", "_route_attempts": 1000000}
+    assert R(orphan, "B") == "requeue"
 
 
 def _fake_calibration_ledger(*, bias_raises: bool = False):

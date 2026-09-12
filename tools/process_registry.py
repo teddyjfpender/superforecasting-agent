@@ -824,6 +824,7 @@ class ProcessRegistry:
             notification = {
                 "type": "completion",
                 "session_id": session.id,
+                "session_key": session.session_key,
                 "command": session.command,
                 "exit_code": session.exit_code,
                 "output": output_tail,

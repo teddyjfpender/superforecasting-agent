@@ -1760,3 +1760,21 @@ CI. Canonical formatting/import order and nullable message parameter annotations
 were corrected; no diagnostic baseline or suppression was introduced. The
 12 focused cleanup/rebuild tests and all Python quality checks passed, including
 35 import contracts and protocol generation checks.
+
+
+### Session-bound notification routing
+
+`hosting/notifications.py` owns the pure session-routing policy. The TUI's
+compatibility helper delegates to it. Removed the 200-bounce orphan fallback:
+retry count cannot authorize delivery of a session-bound result to another
+conversation. The policy applies to every event carrying a session key, including
+process completions and watch events. Process completion production now retains
+the conversation key already stored on ProcessSession; a process ID is not used
+as a conversation ID. Legacy unscoped events retain their existing behavior.
+
+Validation: 293 notification/server/process-registry tests passed (one existing
+forkpty warning), including high-retry foreign events remaining queued without
+display or model execution, correct-owner admission, and producer key retention
+alongside secret redaction. Python quality, 35 import contracts and protocol
+checks passed. The queue remains process-local: orphan retention is not durable
+across host death, and the polling/admission wiring still lives in the transport.

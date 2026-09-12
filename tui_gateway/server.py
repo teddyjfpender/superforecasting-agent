@@ -3711,29 +3711,11 @@ def _(rid, params: dict) -> dict:
     return _ok(rid, {"status": "streaming"})
 
 
-# How many times a foreign async-delegation completion may bounce between session
-# pollers before the next poller takes it as an orphan (originating session gone) —
-# so a background result is routed to the right session, but NEVER silently lost.
-_MAX_ASYNC_ROUTE_ATTEMPTS = 200
-
-
 def _route_async_completion(evt: dict, my_session_key: str | None) -> str:
-    """Decide whether THIS session's poller should CONSUME an async-delegation
-    completion event or REQUEUE it for the originating session's poller. Pure +
-    unit-testable. An async event carries ``session_key`` (the session that dispatched
-    it); only that session's poller may consume it — otherwise a background subagent's
-    result surfaces in the WRONG session's chat on a multi-session gateway. A
-    session-less event (CLI single-session) or a non-async event is always consumed; a
-    foreign event that no live session claims after _MAX_ASYNC_ROUTE_ATTEMPTS bounces
-    is consumed as an orphan rather than dropped."""
-    if evt.get("type") != "async_delegation":
-        return "consume"
-    evt_key = evt.get("session_key") or ""
-    if not evt_key or evt_key == (my_session_key or ""):
-        return "consume"
-    attempts = int(evt.get("_route_attempts", 0) or 0) + 1
-    evt["_route_attempts"] = attempts
-    return "consume" if attempts > _MAX_ASYNC_ROUTE_ATTEMPTS else "requeue"
+    """Compatibility name for shared host notification ownership policy."""
+    from superforecasting_agent.hosting.notifications import route_notification
+
+    return route_notification(evt, my_session_key)
 
 
 def _notification_poller_loop(
@@ -3747,8 +3729,8 @@ def _notification_poller_loop(
 
     NOTE: The completion_queue is global (one per process). If multiple
     TUI sessions coexist, whichever poller wakes first grabs the event,
-    even if the process was started by a different session. This matches
-    CLI/gateway behavior (single session per process).
+    but session-bound events remain queued for their owner. Unscoped legacy
+    events retain single-session delivery behavior.
     """
     from tools.process_registry import process_registry, format_process_notification
 

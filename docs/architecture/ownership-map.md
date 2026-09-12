@@ -416,3 +416,12 @@ readiness checks and change/migration results for CLI, messaging and native TUI.
 Consumers supply persistence. TUI supplies the host snapshot owner and preserves
 the current agent until a new session. Failed persistence leaves the caller
 snapshot unchanged; successful persistence retains its updated revision.
+
+
+### Notification routing
+
+`hosting/notifications.py` owns conversation-key matching for background events.
+Session-bound events may only be consumed by their named conversation; retry
+counts cannot redirect ownership. The process registry retains that key when
+producing completions. TUI polling supplies queue access and rendering/turn
+callbacks; its historical routing helper delegates to the shared policy.

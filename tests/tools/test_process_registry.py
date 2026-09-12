@@ -992,12 +992,14 @@ def test_completion_notification_redacts_secret(monkeypatch):
     monkeypatch.setattr(redact, "_REDACT_ENABLED", True)
     registry = ProcessRegistry()
     session = _make_session(command="env", output="OPENAI_API_KEY=sk-proj-secret123")
+    session.session_key = "originating-conversation"
     session.notify_on_complete = True
     registry._running[session.id] = session
 
     registry._move_to_finished(session)
 
     event, text = registry.drain_notifications()[0]
+    assert event["session_key"] == "originating-conversation"
     assert "sk-proj-secret123" not in event["output"]
     assert "sk-proj-secret123" not in text
 
