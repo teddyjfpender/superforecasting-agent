@@ -78,12 +78,8 @@ def _handle_handoff_command(self, cmd_original: str) -> bool:
     try:
         row = self._session_db.get_session(self.session_id)
         if not row:
-            # Nothing has flushed yet. Create a stub so the gateway has
-            # something to switch_session onto. Inserting via title-set
-            # is the simplest path because set_session_title's INSERT OR
-            # IGNORE creates the row.
-            placeholder_title = f"handoff-{self.session_id[:8]}"
-            self._session_db.set_session_title(self.session_id, placeholder_title)
+            self._session_db.create_session(self.session_id, source="cli")
+            self._session_db.set_session_title(self.session_id, f"handoff-{self.session_id[:8]}")
     except Exception as exc:
         _cprint(f"  Could not ensure session row in state.db: {exc}")
         return True

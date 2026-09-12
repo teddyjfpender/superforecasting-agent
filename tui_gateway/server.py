@@ -3462,7 +3462,19 @@ def _(rid, params: dict) -> dict:
     session, err = _sess_nowait(params, rid)
     if err:
         return err
+    if session.get("handoff_attempt"):
+        from superforecasting_agent.application.handoff import observe_handoff
+        try:
+            state = observe_handoff(_get_db(), session["session_key"], session["handoff_attempt"])
+            if state.state == "completed":
+                session["handoff_complete"] = True
+            elif state.state in {"unknown", "replaced"}:
+                return _err(rid, 4009, "handoff state is unavailable or changed; check the transfer before continuing")
+        except Exception as exc:
+            return _err(rid, 5030, f"Cannot verify handoff state: {exc}")
     with session["history_lock"]:
+        if session.get("handoff_complete"):
+            return _err(rid, 4009, "session handed off; use /new or explicitly /resume before continuing")
         if session.get("running"):
             return _err(rid, 4009, "session busy")
         session["running"] = True
@@ -5784,6 +5796,71 @@ def _(rid, params: dict) -> dict:
             return _err(rid, 4004, str(exc))
         except Exception as exc:
             return _err(rid, 5030, f"Background command failed: {exc}")
+
+    if _cmd_base == "handoff":
+        from superforecasting_agent.application.handoff import wait_for_handoff
+        from gateway.config import Platform, load_gateway_config
+
+        try:
+            platform = Platform(_cmd_arg.strip().lower())
+            config = load_gateway_config()
+            configured = config.platforms.get(platform)
+            home = config.get_home_channel(platform)
+            if not configured or not configured.enabled or not home or not home.chat_id:
+                return _err(rid, 4004, "Handoff requires an enabled platform with a home channel")
+        except ValueError:
+            return _err(rid, 4004, "Usage: /handoff <configured-platform>")
+        except Exception as exc:
+            return _err(rid, 5030, f"Cannot load handoff destination: {exc}")
+        with session.setdefault("history_lock", threading.Lock()):
+            busy = [label for key, label in (("running", "turn"), ("_command_stops", "command"), ("_background_jobs", "background job"), ("_background_agents", "background agent")) if session.get(key)]
+            if session.get("_active_calls", 0) > 1:
+                busy.append("session operation")
+            if session.get("agent_build_started") and session.get("agent_ready") is not None and not session["agent_ready"].is_set():
+                busy.append("agent initialization")
+            if busy:
+                return _err(rid, 4009, f"session busy ({', '.join(busy)}); finish active work before handoff")
+            session["running"] = True
+        try:
+            with _host.command(session) as stop:
+                if stop.is_set():
+                    return _err(rid, 5030, "Handoff cancelled before execution")
+                db = _get_db()
+                if db is None:
+                    return _err(rid, 5030, "Session storage unavailable for handoff")
+                key = session["session_key"]
+                if not db.get_session(key):
+                    db.create_session(key, source="tui")
+                attempt_id = uuid.uuid4().hex
+                if not db.request_handoff(key, platform.value, attempt_id=attempt_id):
+                    return _err(rid, 4009, "Session already has a handoff or active durable turn")
+                session["handoff_attempt"] = attempt_id
+                def notify(event, payload):
+                    try:
+                        _emit(event, params.get("session_id", ""), {"command_id": attempt_id, **payload})
+                    except Exception:
+                        logger.exception("Handoff event delivery failed")
+                notify("command.started", {"request_id": str(rid), "name": "handoff"})
+                notify("command.output", {"stream": "stdout", "text": f"Queued handoff to {platform.value}; waiting for gateway pickup.\n"})
+                status = "failed"
+                try:
+                    result = wait_for_handoff(db, key, attempt_id, stop=stop)
+                    status = "cancelled" if stop.is_set() else "finished"
+                finally:
+                    notify("command.finished", {"status": status})
+                session["handoff_complete"] = result.state == "completed"
+                if result.state == "completed":
+                    output = f"Handoff complete to {platform.value}. Use /new to continue here. Close this session before resuming it locally later."
+                elif result.state == "running":
+                    output = "Gateway transfer is still running. Local turns remain blocked until it settles."
+                else:
+                    output = f"Handoff {result.state}: {result.error or 'no transfer completed'}"
+                return _ok(rid, {"output": output})
+        except Exception as exc:
+            return _err(rid, 5030, f"Handoff failed: {exc}")
+        finally:
+            with session["history_lock"]:
+                session["running"] = False
 
     if _cmd_base == "footer":
         from superforecasting_agent.application.footer import footer_command

@@ -360,3 +360,34 @@ def test_real_desk_native_skills_preserves_session(local_desk, monkeypatch):
         until(ws, lambda out: receipt(home) and receipt(home)['id'] != before['id'] and receipt(home)['status'] == 'complete', screen=screen)
         assert receipt(home)['session_id'] == before['session_id']
         ws.close(code=1000)
+
+
+def test_real_desk_native_handoff_preserves_agent_and_receipt(local_desk, monkeypatch):
+    from tests.tui_pty.vt import VTScreen
+
+    client, home, _ = local_desk
+    monkeypatch.setenv('FORECAST_TEST_FORBID_CLASSIC_WORKER', '1')
+    monkeypatch.setenv('FORECAST_TEST_HANDOFF', '1')
+    monkeypatch.setenv('SUPERFORECASTING_AGENT_TUI_NO_CONFIRM', '1')
+    screen = VTScreen(rows=45, cols=160)
+    with client.websocket_connect('/api/pty?token=local-engineering&channel=handoff-command') as ws:
+        ws.send_text('\x1b[RESIZE:160;45]')
+        until(ws, lambda out: b'local-fixture' in out, screen=screen)
+        ws.send_text('complete before handoff\r')
+        until(ws, lambda out: receipt(home) and receipt(home)['status'] == 'complete', screen=screen)
+        before = receipt(home)
+        lifetime = (home / 'agent-lifetime.jsonl').read_text(encoding='utf-8')
+        ws.send_text('/handoff telegram\r')
+        until(ws, lambda out: b'Handoff complete to telegram' in out or b'error:' in out, screen=screen)
+        assert 'Handoff complete to telegram' in screen.text()
+        assert (home / 'agent-lifetime.jsonl').read_text(encoding='utf-8') == lifetime
+        assert receipt(home)['id'] == before['id']
+        with closing(sqlite3.connect(home / 'state.db')) as db:
+            rows = db.execute("SELECT id, handoff_state, handoff_attempt_id FROM sessions WHERE handoff_state IS NOT NULL").fetchall()
+        assert len(rows) == 1 and rows[0][1] == 'completed' and rows[0][2]
+        ws.send_text('/new\r')
+        until(ws, lambda out: b'new forecast session started' in out, screen=screen)
+        ws.send_text('complete after native handoff\r')
+        until(ws, lambda out: receipt(home) and receipt(home)['id'] != before['id'] and receipt(home)['status'] == 'complete', screen=screen)
+        assert receipt(home)['session_id'] != rows[0][0]
+        ws.close(code=1000)

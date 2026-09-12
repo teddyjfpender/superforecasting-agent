@@ -11,7 +11,7 @@ changes, tests and their limits. The previous checklist is preserved in the
 
 - [ ] Migrate remaining classic slash-worker commands to shared operations.
   The TUI must not need a second classic CLI runtime to execute business behavior.
-  Handoff remains to migrate with host/session admission: local timeouts now cancel only unclaimed pending work, and running/terminal gateway states cannot be overwritten by timeout. Attempt identity is now enforced on gateway transitions and CLI cancellation/waiting. Shared application observation/waiting returns durable outcomes on cancellation, and the CLI borrows host storage without opening a fallback connection; interrupted gateway recovery and native handoff presentation remain to be completed.
+  Native handoff now uses host/session admission and the shared waiter: local timeouts now cancel only unclaimed pending work, and running/terminal gateway states cannot be overwritten by timeout. Attempt identity is now enforced on gateway transitions and CLI cancellation/waiting. Shared application observation/waiting returns durable outcomes on cancellation, and the CLI borrows host storage without opening a fallback connection; native progress/completion is verified through the real terminal with a simulated destination. Interrupted gateway recovery and broader handoff admission/reconnect qualification remain to be completed.
   Preserve aliases, validation, error semantics and state ownership. Snapshot
   listing, creation and pruning now share application/storage owners;
   host-coordinated live restoration remains to be implemented. Restore now stages

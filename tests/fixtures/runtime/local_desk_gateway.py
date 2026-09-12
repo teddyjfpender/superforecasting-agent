@@ -42,6 +42,27 @@ def main():
             return result
         delegations.set_spawn_paused = audited_pause
 
+    if os.environ.get('FORECAST_TEST_HANDOFF') == '1':
+        from contextlib import closing
+        from types import SimpleNamespace
+        import gateway.config as gateway_config
+        from superforecasting_agent.storage.session import SessionDB
+        gateway_config.load_gateway_config = lambda: SimpleNamespace(
+            platforms={gateway_config.Platform.TELEGRAM: SimpleNamespace(enabled=True)},
+            get_home_channel=lambda platform: SimpleNamespace(chat_id='local-fixture'),
+        )
+        original_request = SessionDB.request_handoff
+        def request_handoff(db, key, platform, *, attempt_id=None):
+            result = original_request(db, key, platform, attempt_id=attempt_id)
+            if result:
+                def transfer():
+                    with closing(SessionDB(db_path=db.db_path)) as remote:
+                        if remote.claim_handoff(key, attempt_id=attempt_id):
+                            remote.complete_handoff(key, attempt_id=attempt_id)
+                threading.Thread(target=transfer, daemon=True).start()
+            return result
+        SessionDB.request_handoff = request_handoff
+
     def lifetime(event, identity):
         with (home / 'agent-lifetime.jsonl').open('a', encoding='utf-8') as stream:
             stream.write(json.dumps({'event': event, 'agent': identity}) + '\n')

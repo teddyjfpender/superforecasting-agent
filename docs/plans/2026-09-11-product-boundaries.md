@@ -4223,3 +4223,24 @@ and completion tests use real SQLite state with event-driven control and no
 wall-clock sleeps. Invalid or unbounded deadlines are rejected. Native TUI
 handoff still requires host admission and durable pending-state presentation;
 this extraction supplies the shared behavior but does not claim that integration.
+
+
+### Native TUI handoff and durable turn exclusion
+
+Native /handoff validates the configured destination, rejects active session work,
+retains host command ownership and calls the shared attempt-scoped waiter. It
+emits command activity and reads durable outcomes. A completed source session
+requires a new session or explicit later resume; completion after the local wait
+also blocks a subsequent source turn. TUI turn creation and handoff requests
+exclude each other inside the same SQLite write transaction. Empty sessions are
+created explicitly; the prior CLI title update did not create its claimed stub.
+
+178 focused command/journal/handoff tests, shared quality gates and a real
+Ink/dashboard PTY handoff test passed. The real test uses a separate SQLite
+connection as the simulated destination, forbids classic worker construction,
+checks unchanged source agent lifetime and receipt, and completes a turn after
+/new. Its first version incorrectly assumed real TUI startup did not begin agent
+construction; the busy guard correctly rejected that race. The corrected test
+finishes startup before handoff. This validates the local macOS transport, not a
+live messaging provider or interrupted remote gateway. Further admission/reconnect
+qualification and claimed-transfer recovery remain open.

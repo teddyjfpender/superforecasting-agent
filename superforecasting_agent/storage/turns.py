@@ -39,6 +39,13 @@ def start(db: TurnStore, session_id: str, prompt: str) -> str:
 
     def write(conn: sqlite3.Connection):
         _schema(conn)
+        handoff = conn.execute(
+            "SELECT handoff_state FROM sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        if handoff and handoff[0] in {"pending", "running"}:
+            raise ValueError(
+                "session handoff is in progress; wait for gateway transfer"
+            )
         conn.execute(
             "INSERT INTO tui_turns(id,session_id,status,prompt,created_at,updated_at,owner_pid,owner_started) VALUES (?,?,?,?,?,?,?,?)",
             (

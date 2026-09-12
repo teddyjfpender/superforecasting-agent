@@ -18,6 +18,15 @@ def request_handoff(
         raise ValueError("handoff attempt_id must be a non-empty string")
 
     def _do(conn):
+        if conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='tui_turns'"
+        ).fetchone():
+            active = conn.execute(
+                "SELECT 1 FROM tui_turns WHERE session_id=? AND status NOT IN ('complete','error','interrupted') LIMIT 1",
+                (session_id,),
+            ).fetchone()
+            if active:
+                return False
         cur = conn.execute(
             "UPDATE sessions "
             "SET handoff_state = 'pending', "

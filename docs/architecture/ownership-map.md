@@ -687,3 +687,10 @@ waiting. Storage owns compare-and-set transitions; callers own session admission
 platform validation, and presentation. The classic command borrows host storage
 and interprets the shared immutable outcome, without creating another database
 owner. Gateway-specific configuration does not enter the application service.
+
+
+Native TUI handoff consumes the shared application waiter under host command
+ownership. Destination configuration and command events remain transport/runtime
+adapters. SQLite admission excludes pending/running handoffs from new durable TUI
+turns and excludes active durable turns from handoff requests. The adapter retains
+the source attempt to recognize completion after a local waiting deadline.
