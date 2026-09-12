@@ -126,15 +126,22 @@ def _(rid, params: dict) -> dict:
         changed = result["changed"]
         unknown = result["unknown"] + result["restricted"]
         missing_servers = result["missing_servers"]
-        if changed:
-            save_config(cfg)
-
         session = _core._host.sessions.get(params.get("session_id", ""))
-        info = (
-            _reset_session_agent(params.get("session_id", ""), session)
-            if session and changed
-            else None
-        )
+        info = None
+        if changed:
+            from contextlib import nullcontext
+            from superforecasting_agent.hosting.sessions import replacement
+
+            with replacement(session) if session is not None else nullcontext():
+                save_config(cfg)
+                if session is not None:
+                    try:
+                        info = _reset_session_agent(params.get("session_id", ""), session, reserved=True)
+                    except Exception as exc:
+                        raise RuntimeError(
+                            "Tool configuration saved, but session reset failed; "
+                            "close or recreate the session to recover. " + str(exc)
+                        ) from exc
         enabled = sorted(
             _get_platform_tools(load_config(), "cli", include_default_mcp_servers=False)
         )

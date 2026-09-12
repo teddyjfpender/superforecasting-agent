@@ -1092,6 +1092,33 @@ def _wait_agent(session: dict, rid: str, timeout: float = 30.0) -> dict | None:
     return _err(rid, 5032, err) if err else None
 
 
+def _initialize_built_agent(sid: str, session: dict, agent) -> None:
+    key = session["session_key"]
+    try:
+        from tools.approval import register_gateway_notify, load_permanent_allowlist
+
+        register_gateway_notify(key, lambda data: _emit("approval.request", sid, data))
+        session.pop("_build_notifications_released", None)
+        load_permanent_allowlist()
+    except Exception:
+        pass
+
+    _wire_callbacks(sid)
+    _notify_session_boundary("on_session_reset", key)
+
+    info = _session_info(agent)
+    warn = _probe_credentials(agent)
+    if warn:
+        info["credential_warning"] = warn
+    cfg_warn = _probe_config_health(_load_cfg())
+    if cfg_warn:
+        info["config_warning"] = cfg_warn
+        logger.warning(cfg_warn)
+    _emit("session.info", sid, info)
+
+    session["_notif_stop"] = _start_notification_poller(sid, session)
+
+
 def _start_agent_build(sid: str, session: dict) -> None:
     """Start building the real AIAgent for a TUI session, once.
 
@@ -1119,34 +1146,12 @@ def _start_agent_build(sid: str, session: dict) -> None:
         finally:
             _clear_session_context(tokens)
 
-    def initialize(agent):
-        try:
-            from tools.approval import register_gateway_notify, load_permanent_allowlist
-
-            register_gateway_notify(key, lambda data: _emit("approval.request", sid, data))
-            session.pop("_build_notifications_released", None)
-            load_permanent_allowlist()
-        except Exception:
-            pass
-
-        _wire_callbacks(sid)
-        session["_notif_stop"] = _start_notification_poller(sid, session)
-        _notify_session_boundary("on_session_reset", key)
-
-        info = _session_info(agent)
-        warn = _probe_credentials(agent)
-        if warn:
-            info["credential_warning"] = warn
-        cfg_warn = _probe_config_health(_load_cfg())
-        if cfg_warn:
-            info["config_warning"] = cfg_warn
-            logger.warning(cfg_warn)
-        _emit("session.info", sid, info)
 
     start_build(
         session,
         build=lambda ready: execute_build(
-            session, ready, construct=lambda: _make_agent(sid, key), initialize=initialize,
+            session, ready, construct=lambda: _make_agent(sid, key),
+            initialize=lambda agent: _initialize_built_agent(sid, session, agent),
             construction_scope=construction_scope,
             report_error=lambda message: _emit("error", sid, {"message": f"agent init failed: {message}"}),
         ),
@@ -2345,28 +2350,53 @@ def _background_agent_kwargs(agent, task_id: str) -> dict:
     })
 
 
-def _reset_session_agent(sid: str, session: dict) -> dict:
-    tokens = _set_session_context(session["session_key"])
-    try:
-        new_agent = _make_agent(
-            sid, session["session_key"], session_id=session["session_key"]
-        )
-    finally:
-        _clear_session_context(tokens)
-    session["agent"] = new_agent
-    session["attached_images"] = []
-    session["edit_snapshots"] = {}
-    session["image_counter"] = 0
-    session["running"] = False
-    session["show_reasoning"] = _load_show_reasoning()
-    session["tool_progress_mode"] = _load_tool_progress_mode()
-    session["tool_started_at"] = {}
+def _reset_session_agent(sid: str, session: dict, *, reserved: bool = False) -> dict:
+    if not reserved:
+        with replacement(session):
+            return _reset_session_agent(sid, session, reserved=True)
+    from superforecasting_agent.hosting.builds import execute_build
+    from tools.approval import unregister_gateway_notify
+
+    stop = session.get("_notif_stop")
+    if stop is not None:
+        stop.set()
+    dispose_session(session, release_notifications=lambda: unregister_gateway_notify(session["session_key"]))
+    session["agent"] = None
+    session["slash_worker"] = None
+    session.pop("_disposed_resources", None)
+    session.pop("_notifications_released", None)
+    session["agent_error"] = None
+    ready = threading.Event()
+    session["agent_ready"] = ready
+    session["agent_build_started"] = True
+
+    @contextlib.contextmanager
+    def scope():
+        tokens = _set_session_context(session["session_key"])
+        try:
+            yield
+        finally:
+            _clear_session_context(tokens)
+
+    execute_build(
+        session, ready,
+        construct=lambda: _make_agent(sid, session["session_key"], session_id=session["session_key"]),
+        construction_scope=scope,
+        initialize=lambda agent: _initialize_built_agent(sid, session, agent),
+        report_error=lambda message: logger.error("session reset failed: %s", message),
+    )
+    if session.get("agent_error"):
+        raise RuntimeError(f"Agent reset failed; history preserved: {session['agent_error']}")
+    updates = {
+        "attached_images": [], "edit_snapshots": {}, "image_counter": 0,
+        "show_reasoning": _load_show_reasoning(),
+        "tool_progress_mode": _load_tool_progress_mode(), "tool_started_at": {},
+    }
+    info = _session_info(session["agent"])
     with session["history_lock"]:
+        session.update(updates)
         session["history"] = []
         session["history_version"] = int(session.get("history_version", 0)) + 1
-    info = _session_info(new_agent)
-    _emit("session.info", sid, info)
-    _restart_slash_worker(session)
     return info
 
 

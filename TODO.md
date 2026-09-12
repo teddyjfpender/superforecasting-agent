@@ -42,8 +42,10 @@ Tool inventory and /tools list now use shared views without building an agent or
 ## 2. Finish resource ownership and recovery
 
 - [ ] Audit lower-level agent cleanup for concrete resource ownership.
-  Prioritize `_reset_session_agent`: successful tool changes still use direct
-  agent replacement and require host admission plus disposal of the prior owner.
+  Tool-triggered resets now reserve host replacement before saving, dispose the
+  previous agent/worker, and retain failed construction state and history. Saved
+  configuration may outlive a failed reset; close/recreate recovery remains to
+  qualify through the real terminal.
   Live market conversation agents now have an explicit owner: per-call disposal,
   batch close for cached agents, and retained failed-close handles. The CLI releases
   the owner after recording, including failures. The existing market forecaster

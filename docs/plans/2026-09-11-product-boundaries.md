@@ -3883,3 +3883,21 @@ to assert no write for an idempotent or invalid request, rather than expecting a
 redundant write. Shared quality gates passed. Successful TUI replacement still
 uses `_reset_session_agent`, whose direct replacement/admission requires a separate
 ownership fix; this batch does not establish safe reset during active execution.
+
+
+### Owned TUI tool-change reset
+
+Tool changes that would alter configuration now reserve the idle session through
+save and reset. Active calls/builds/background work reject admission before any
+save. Reset disposes the old agent and classic worker through the host cleanup
+owner, retaining failed steps. Reconstruction uses host build completion with its
+construction scope, and shared gateway initialization reinstalls callbacks and
+notifications. Notification polling starts after initialization reporting succeeds.
+History and attachment state are replaced only after successful reconstruction.
+
+All 259 focused build, reset, registry-related gateway and tool tests passed,
+including busy-before-save, disposal-before-construction, failed close retaining
+ownership and failed construction preserving history/error/readiness. Shared
+quality gates passed. The error distinguishes saved configuration from a failed
+active-session reset and directs close/recreate recovery. The save and reset are
+not one durable transaction; a rendered terminal recovery exercise remains needed.
