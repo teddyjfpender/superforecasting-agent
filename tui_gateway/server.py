@@ -5785,6 +5785,18 @@ def _(rid, params: dict) -> dict:
         except Exception as exc:
             return _err(rid, 5030, f"Background command failed: {exc}")
 
+    if _cmd_base == "skills":
+        from superforecasting_agent.runtime.skills_hub import skills_slash_output
+
+        try:
+            with _host.command(session) as stop:
+                if stop.is_set():
+                    return _err(rid, 5030, "Skills command cancelled before execution")
+                output = skills_slash_output(_cmd_arg)
+            return _ok(rid, {"output": output})
+        except Exception as exc:
+            return _err(rid, 5030, f"Skills command failed: {exc}")
+
     if _cmd_base == "kanban":
         from superforecasting_agent.runtime.kanban import run_slash
 

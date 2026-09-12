@@ -4100,3 +4100,22 @@ Python quality gates passed. This proves retained ownership for raised failures
 or explicit incomplete results, not that lower-level SDKs always report their
 cleanup failures truthfully. Process-death recovery of these in-memory handles
 and forced termination of hung closes are outside this evidence.
+
+
+### Native shared Skills Hub dispatch
+
+Remaining /skills slash commands call the existing runtime Skills Hub operations
+through a bounded, per-call Rich output buffer. CLI and TUI share dispatch;
+the TUI no longer constructs the classic worker for this path. Host command
+admission retains session ownership until completion. Nested update and snapshot
+import installs propagate non-interactive mode, avoiding stdin prompts in the
+transport process while retaining the existing security checks.
+
+Validation: 158 Python command/Skills Hub tests, 96 TUI command tests and a real
+Ink/dashboard PTY test passed. The real test forbids classic worker construction,
+checks unchanged agent lifetime and durable receipt, and completes a subsequent
+turn in the same session. Shared quality gates and the TUI build passed.
+Concurrent output-buffer isolation and nested confirmation propagation have
+regressions. This does not prove cancellation during synchronous hub I/O or
+network-provider behavior; install success accounting and quoted arguments remain
+explicit follow-ups.

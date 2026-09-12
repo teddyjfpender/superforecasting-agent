@@ -660,3 +660,10 @@ all members were published. Journaled roll-forward recovery retains verified cop
 after interruption; host-wide writer quiescence is still required before admitting
 live TUI restoration.
 
+
+
+Skills Hub slash dispatch belongs to `runtime.skills_hub`. The classic CLI supplies
+its console; native TUI dispatch uses a bounded per-call console buffer under
+host command admission. This reuses skill operations without starting a second
+chat runtime. Fetching and installation still belong to the existing Skills Hub
+tool adapter; in-progress synchronous I/O is not cooperatively cancellable.

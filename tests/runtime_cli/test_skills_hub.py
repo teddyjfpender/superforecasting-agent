@@ -101,7 +101,7 @@ def _capture_update(monkeypatch, results) -> tuple[str, list[tuple[str, str, boo
     monkeypatch.setattr(hub, "HubLockFile", lambda: type("L", (), {
         "get_installed": lambda self, name: {"install_path": "category/" + name}
     })())
-    monkeypatch.setattr(cli_hub, "do_install", lambda identifier, category="", force=False, console=None: installs.append((identifier, category, force)))
+    monkeypatch.setattr(cli_hub, "do_install", lambda identifier, category="", force=False, console=None, skip_confirm=False: installs.append((identifier, category, force)))
 
     do_update(console=console)
     return sink.getvalue(), installs
@@ -571,3 +571,50 @@ def test_existing_categories_returns_empty_when_skills_dir_missing(monkeypatch, 
 
     from superforecasting_agent.runtime.skills_hub import _existing_categories
     assert _existing_categories() == []
+
+
+def test_slash_snapshot_import_never_prompts_inside_install(tmp_path, monkeypatch):
+    from superforecasting_agent.runtime import skills_hub
+    from unittest.mock import Mock
+
+    snapshot = tmp_path / 'skills.json'
+    snapshot.write_text('{"skills": [{"identifier": "github/fixture/skill", "category": "research"}]}', encoding='utf-8')
+    install = Mock()
+    monkeypatch.setattr(skills_hub, 'do_install', install)
+    skills_hub.skills_slash_output(f'snapshot import {snapshot}')
+    assert install.call_args.args == ('github/fixture/skill',)
+    assert install.call_args.kwargs['skip_confirm'] is True
+    assert install.call_args.kwargs['force'] is False
+
+
+def test_slash_update_propagates_noninteractive_mode(monkeypatch):
+    from superforecasting_agent.runtime import skills_hub
+    from tools import skills_hub as hub
+    from unittest.mock import Mock
+
+    monkeypatch.setattr(hub, 'check_for_skill_updates', lambda **kw: [
+        {'name': 'fixture', 'identifier': 'github/fixture/skill', 'status': 'update_available'}
+    ])
+    monkeypatch.setattr(hub, 'HubLockFile', lambda: Mock(get_installed=Mock(return_value=None)))
+    install = Mock()
+    monkeypatch.setattr(skills_hub, 'do_install', install)
+    skills_hub.skills_slash_output('update fixture')
+    assert install.call_args.kwargs['skip_confirm'] is True
+
+
+def test_concurrent_skill_commands_keep_separate_output(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+    from superforecasting_agent.runtime import skills_hub
+
+    barrier = threading.Barrier(2)
+    def audit(name=None, console=None):
+        console.print(name)
+        barrier.wait(timeout=2)
+        console.print(name)
+    monkeypatch.setattr(skills_hub, 'do_audit', audit)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(skills_hub.skills_slash_output, 'audit FIRST')
+        second = pool.submit(skills_hub.skills_slash_output, 'audit SECOND')
+        assert first.result().strip() == 'FIRST\nFIRST'
+        assert second.result().strip() == 'SECOND\nSECOND'

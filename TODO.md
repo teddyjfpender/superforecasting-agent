@@ -37,7 +37,7 @@ branching, native command handoffs before model initialization, shared goal-comm
 across configuration normalization, classic CLI, TUI and gateway environment bridges, shared configuration inspection
 (including live session settings and credential-safe reporting), shared toolset/insights/
 quota/platform inspection, curator operations and runtime selection, and lazy legacy worker admission.
-Tool inventory and /tools list now use shared views without building an agent or classic worker. Tool changes share strict name validation; malformed RPC input is rejected before configuration access or session reset. Native /agents, /tasks and /stop now use shared background operations; hosted inspection and cancellation select the current session in both process and delegation registries. The legacy dispatcher remains for other commands.
+Tool inventory and /tools list now use shared views without building an agent or classic worker. Tool changes share strict name validation; malformed RPC input is rejected before configuration access or session reset. Native /agents, /tasks and /stop now use shared background operations; hosted inspection and cancellation select the current session in both process and delegation registries. The remaining /skills slash commands now call the same Skills Hub operations as the CLI, with isolated output and no classic worker. Nested update/import installs are explicitly non-interactive. The legacy dispatcher remains for other commands.
 
 ## 2. Finish resource ownership and recovery
 
@@ -137,3 +137,5 @@ Import contracts enforce extracted owners; frozen exceptions remain explicit.
 
 Forecast pilots, deferred settlements and operational lesson evaluation are
 tracked in the archive and ledger. They do not block this structural workstream.
+
+Skills Hub follow-ups: report actual successful installs in update/import summaries; support quoted slash arguments; provide cooperative cancellation for in-progress hub I/O. Native dispatch currently retains host ownership until the operation returns.

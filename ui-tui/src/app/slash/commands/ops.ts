@@ -492,7 +492,7 @@ export const opsCommands: SlashCommand[] = [
       const { rpc } = ctx.gateway
       const { panel, sys } = ctx.transcript
 
-      const runViaSlashWorker = () => {
+      const runSharedSkillsCommand = () => {
         ctx.gateway.gw
           .request<SlashExecResponse>('slash.exec', { command: cmd.slice(1), session_id: ctx.sid })
           .then(r => {
@@ -652,7 +652,7 @@ export const opsCommands: SlashCommand[] = [
         return
       }
 
-      runViaSlashWorker()
+      runSharedSkillsCommand()
     }
   },
 

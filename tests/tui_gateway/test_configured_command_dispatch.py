@@ -1184,3 +1184,25 @@ def test_tools_list_reads_saved_configuration_without_build(configure, monkeypat
     assert 'disabled-source  disabled' in result
     server._start_agent_build.assert_not_called()
     server._SlashWorker.assert_not_called()
+
+
+@pytest.mark.parametrize('action', ['check', 'audit', 'help', 'not-an-action'])
+def test_skills_fallback_uses_shared_operation_without_classic_worker(configure, monkeypatch, action):
+    from superforecasting_agent.runtime import skills_hub
+
+    configure({})
+    seen = []
+    def operation(*, name=None, console):
+        assert server._host.sessions['runtime']['_command_stops']
+        seen.append(name)
+        console.print('owned skill output')
+    monkeypatch.setattr(skills_hub, 'do_check', operation)
+    monkeypatch.setattr(skills_hub, 'do_audit', operation)
+    response = slash('skills ' + action)
+    assert 'result' in response
+    assert server._host.sessions['runtime'].get('_command_stops') is None
+    if action in {'check', 'audit'}:
+        assert seen == [None]
+        assert 'owned skill output' in response['result']['output']
+    else:
+        assert 'skills' in response['result']['output'].lower()

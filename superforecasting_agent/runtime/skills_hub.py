@@ -881,7 +881,8 @@ def do_check(name: Optional[str] = None, console: Optional[Console] = None) -> N
     c.print(f"[dim]{update_count} update(s) available across {len(results)} checked skill(s)[/]\n")
 
 
-def do_update(name: Optional[str] = None, console: Optional[Console] = None) -> None:
+def do_update(name: Optional[str] = None, console: Optional[Console] = None,
+              *, skip_confirm: bool = False) -> None:
     """Update hub-installed skills with upstream changes."""
     from tools.skills_hub import HubLockFile, check_for_skill_updates
 
@@ -896,7 +897,8 @@ def do_update(name: Optional[str] = None, console: Optional[Console] = None) -> 
         installed = lock.get_installed(entry["name"])
         category = _derive_category_from_install_path(installed.get("install_path", "")) if installed else ""
         c.print(f"[bold]Updating:[/] {entry['name']}")
-        do_install(entry["identifier"], category=category, force=True, console=c)
+        do_install(entry["identifier"], category=category, force=True, console=c,
+                   skip_confirm=skip_confirm)
 
     c.print(f"[bold green]Updated {len(updates)} skill(s).[/]\n")
 
@@ -1264,7 +1266,7 @@ def do_snapshot_export(output_path: str, console: Optional[Console] = None) -> N
 
 
 def do_snapshot_import(input_path: str, force: bool = False,
-                       console: Optional[Console] = None) -> None:
+                       console: Optional[Console] = None, *, skip_confirm: bool = False) -> None:
     """Re-install skills from a snapshot file."""
     from tools.skills_hub import TapsManager
 
@@ -1305,7 +1307,8 @@ def do_snapshot_import(input_path: str, force: bool = False,
             continue
 
         c.print(f"[bold]--- {entry.get('name', identifier)} ---[/]")
-        do_install(identifier, category=category, force=force, console=c)
+        do_install(identifier, category=category, force=force, console=c,
+                   skip_confirm=skip_confirm)
 
     c.print("[bold green]Snapshot import complete.[/]\n")
 
@@ -1373,6 +1376,16 @@ def skills_command(args) -> None:
 # ---------------------------------------------------------------------------
 # Slash command entry point (/skills in forecast sessions)
 # ---------------------------------------------------------------------------
+
+def skills_slash_output(rest: str) -> str:
+    """Render the shared slash operation without a chat runtime or global IO swaps."""
+    from superforecasting_agent.application.command_output import capture_output
+
+    with capture_output(limit=65536) as (output, _):
+        console = Console(file=output, width=100, force_terminal=False, color_system=None)
+        handle_skills_slash("/skills " + rest, console)
+        return output.getvalue()
+
 
 def handle_skills_slash(cmd: str, console: Optional[Console] = None) -> None:
     """
@@ -1501,7 +1514,7 @@ def handle_skills_slash(cmd: str, console: Optional[Console] = None) -> None:
 
     elif action == "update":
         name = args[0] if args else None
-        do_update(name=name, console=c)
+        do_update(name=name, console=c, skip_confirm=True)
 
     elif action == "audit":
         name = args[0] if args else None
@@ -1553,7 +1566,7 @@ def handle_skills_slash(cmd: str, console: Optional[Console] = None) -> None:
             do_snapshot_export(args[1], console=c)
         elif snap_action == "import" and len(args) > 1:
             force = "--force" in args
-            do_snapshot_import(args[1], force=force, console=c)
+            do_snapshot_import(args[1], force=force, console=c, skip_confirm=True)
         else:
             c.print("[bold red]Usage:[/] /skills snapshot export <file> | /skills snapshot import <file>\n")
 
