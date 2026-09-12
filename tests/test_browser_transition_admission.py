@@ -167,3 +167,17 @@ def test_direct_backend_operation_blocks_endpoint_change(monkeypatch, backend):
     assert not errors
     assert not worker.is_alive() and not transition.is_alive()
     assert cleaned.is_set() and environment["BROWSER_CDP_URL"] == "new"
+
+
+def test_cross_task_nesting_rejects_without_poisoning_admission():
+    with browser_session_lifecycle("first"):
+        with browser_session_lifecycle("first"):
+            with pytest.raises(RuntimeError, match="across tasks"):
+                with browser_session_lifecycle("second"):
+                    pytest.fail("unordered nested acquisition must not be admitted")
+    # Rejection must leave both per-task and global admission available.
+    with browser_session_lifecycle("second"):
+        pass
+    with browser_endpoint_transition():
+        with browser_session_lifecycle("first"), browser_session_lifecycle("second"):
+            pass

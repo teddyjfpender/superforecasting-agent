@@ -3371,3 +3371,14 @@ Validation: 49 focused provider, managed-gateway, creation and disposal tests
 passed; shared Python lint/format/type, protocol and all 51 import contracts passed.
 Fixtures mutate credentials, endpoint and project after allocation and verify
 that disposal still targets the original identity.
+
+
+### Browser task lock ordering
+
+The shared browser lifetime owner now rejects nested acquisition of a different
+task outside an exclusive endpoint transition. Unordered cross-task locking could
+otherwise deadlock against another operation or a waiting endpoint transition.
+Same-task helpers remain reentrant, and exclusive cleanup can acquire multiple
+tasks. A rejection leaves no admission state behind. Fifteen focused admission,
+allocation and disposal tests passed, including explicit rejection and subsequent
+per-task/global reuse.

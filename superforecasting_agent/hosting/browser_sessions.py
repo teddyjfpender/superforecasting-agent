@@ -13,9 +13,17 @@ _waiting_transitions = 0
 
 @contextmanager
 def browser_session_lifecycle(task_id: str) -> Iterator[None]:
-    """Admit a task operation, reentrantly for cleanup and allocation helpers."""
+    """Admit a task operation, reentrantly within the same task.
+
+    Cross-task nesting has no lock order and can deadlock with another task or
+    a draining endpoint transition. Only the exclusive transition owner may
+    acquire multiple task lifetimes for global cleanup.
+    """
     owner = threading.get_ident()
     with _condition:
+        owned_tasks = {key for key, entry in _owners.items() if entry[0] == owner}
+        if owned_tasks and task_id not in owned_tasks and _transition_owner != owner:
+            raise RuntimeError("Cannot nest browser operations across tasks")
 
         def admitted() -> bool:
             current = _owners.get(task_id)
