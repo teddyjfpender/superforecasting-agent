@@ -732,7 +732,7 @@ name = "panel selection owns rules without runtime discovery or presentation"
 type = "forbidden"
 source_modules = ["forecasting.panel_selection"]
 forbidden_modules = ["superforecasting_agent.runtime", "tui_gateway", "cli", "gateway", "agent", "tools", "forecasting.quorum"]
-allow_indirect_imports = "true"
+allow_indirect_imports = false
 
 [[tool.importlinter.contracts]]
 name = "background operations do not depend on presentation or classic runtime"

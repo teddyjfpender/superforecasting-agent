@@ -776,3 +776,13 @@ forecast configuration reader and its process singleton. `forecasting/appconfig.
 re-exports that API and retains diagnostics, including optional runtime checks.
 Source adapters use the storage reader directly, sharing overrides and profile
 selection with existing callers without importing diagnostics.
+
+### Pinned panel route validation
+
+`forecasting/panel_selection.py` owns pinned-route validation as well as connected
+panel selection. Callers supply credential rows and known provider syntax names;
+the module performs no discovery. Explicit named endpoints retain exact identity,
+and aggregator credentials cannot satisfy an explicit different provider route.
+Configured panelists and judge are validated together against one captured
+provider snapshot. The import prohibition on runtime and presentation is
+transitive. Discovery remains in the quorum adapter pending further extraction.

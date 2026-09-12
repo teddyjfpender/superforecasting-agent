@@ -4537,3 +4537,17 @@ Validation: 306 focused tests passed, covering tool ingestion, market refresh,
 configuration, themes, source contracts and injected forbidden dependencies.
 A fresh-process test blocks execution-layer imports while loading dispatch.
 Adapter option coercion and settlement semantics are unchanged by this move.
+
+### One provider snapshot for pinned panels
+
+Extracted pinned-route rules into the pure panel-selection owner; the existing
+quorum adapter captures credential rows and known syntax names. Configured
+panelists and judge now validate together, preventing acceptance against two
+incompatible snapshots when credentials change between checks. Named endpoints,
+aliases, aggregator restrictions and malformed authentication flags retain
+explicit regression coverage. Tightened the panel import gate to reject indirect
+runtime/presentation dependencies and added failure-injection coverage.
+
+Validation: 376 quorum, CLI, provider-syntax and boundary tests passed; the shared
+quality workflow passed. Discovery remains in the quorum adapter, so the final
+runtime import exception is still open.

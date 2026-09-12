@@ -67,3 +67,33 @@ def test_named_endpoint_requires_its_exact_provider_identity():
     with pytest.raises(ValidationError, match='custom:local:fixture'):
         validate_panel_models(['custom:local:fixture'], providers=[{'id': 'custom'}])
     validate_panel_models(['custom:local:fixture'], providers=[{'id': 'custom:local'}])
+
+
+def test_configured_panel_checks_judge_against_same_snapshot(monkeypatch):
+    from forecasting.models import ValidationError
+    from forecasting.quorum import panels
+
+    calls = []
+    def changing_credentials():
+        calls.append(True)
+        return [{'id': 'anthropic' if len(calls) == 1 else 'openai-codex'}]
+    monkeypatch.setattr(panels, 'available_providers_detail', changing_credentials)
+    with pytest.raises(ValidationError, match='openai-codex:judge'):
+        panels.resolve_configured_panel(
+            panel_models='anthropic:panelist', judge_model='openai-codex:judge',
+        )
+    assert len(calls) == 1
+
+
+def test_pure_panel_routes_need_no_catalog_or_credentials():
+    from forecasting.models import ValidationError
+    from forecasting.panel_selection import validate_panel_routes
+
+    names = {'glm', 'zai', 'custom', 'openrouter'}
+    validate_panel_routes(['glm:fixture'], [{'id': 'zai'}], known_providers=names)
+    validate_panel_routes(['vendor/model:preview'], [], known_providers=names)
+    validate_panel_routes(['custom:Desk:fixture'], [{'id': 'custom:Desk'}], known_providers=names)
+    with pytest.raises(ValidationError, match='custom:local:fixture'):
+        validate_panel_routes(['custom:local:fixture'], [{'id': 'custom'}], known_providers=names)
+    with pytest.raises(ValidationError, match='zai:fixture'):
+        validate_panel_routes(['zai:fixture'], [{'id': 'zai', 'authenticated': 'true'}], known_providers=names)

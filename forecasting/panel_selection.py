@@ -6,10 +6,14 @@ The selected panel is a routing proposal, not proof of successful model calls.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from typing import Any
 
-from superforecasting_agent.configuration.providers import normalize_provider
+from forecasting.models import ValidationError
+from superforecasting_agent.configuration.providers import (
+    normalize_provider,
+    split_provider_model,
+)
 
 _AGGREGATOR_PROVIDER_SLUGS = frozenset({"openrouter", "nous", "ai-gateway"})
 _NON_PANEL_PROVIDER_SLUGS = frozenset({"custom"})
@@ -109,3 +113,45 @@ def select_connected_panel(
 
     # Nothing usable to rebuild with (no aggregator, <2 providers, no active model).
     return base
+
+
+def validate_panel_routes(
+    models: Sequence[str],
+    detail: Sequence[Mapping[str, Any]] | None,
+    *,
+    known_providers: Collection[str],
+) -> None:
+    """Validate explicit routes against a supplied credential snapshot.
+
+    Unknown discovery retains the preset; credential presence is not a promise
+    of quota or successful inference. An explicit provider remains binding even
+    when an aggregator is connected. Native model suffixes are not provider IDs.
+    """
+    if detail is None:
+        return
+    setting_name = "QUORUM_PANEL_MODELS"
+    # Injected lists historically contain already-authenticated IDs without a
+    # status field. Honor that contract, but never accept an explicitly negative
+    # or malformed authentication status from a full catalog response.
+    authed = {
+        str(p["id"])
+        for p in detail
+        if p.get("id") and p.get("authenticated", True) is True
+    }
+    bad: list[str] = []
+    for entry in models:
+        prefix, _bare = split_provider_model(entry, known_providers)
+        if prefix is None:
+            continue  # bare id → active provider; reachability not decidable here
+        if prefix not in authed:
+            bad.append(entry)
+    if bad:
+        raise ValidationError(
+            f"{setting_name} names entr"
+            + ("ies" if len(bad) > 1 else "y")
+            + " whose provider is not connected/callable: "
+            + ", ".join(bad)
+            + ". Connected providers: "
+            + (", ".join(sorted(authed)) or "(none)")
+            + f". Fix {setting_name} or connect the provider."
+        )

@@ -221,11 +221,16 @@ def _split_provider_model(model_id: str) -> tuple[str | None, str]:
 
     from superforecasting_agent.configuration.providers import split_provider_model
 
+    return split_provider_model(model_id, _known_provider_names())
+
+
+def _known_provider_names() -> set[str]:
+    """Capture syntax names at the runtime adapter boundary."""
     try:
         from superforecasting_agent.runtime.models import _KNOWN_PROVIDER_NAMES
     except Exception:  # noqa: BLE001 — without the catalog, never split
-        return None, model_id
-    return split_provider_model(model_id, _KNOWN_PROVIDER_NAMES)
+        return set()
+    return set(_KNOWN_PROVIDER_NAMES)
 
 
 def resolve_connected_panel(
@@ -311,10 +316,11 @@ def validate_panel_models(
     *,
     providers: Sequence[Mapping[str, Any]] | None = None,
 ) -> None:
-    """Validate pinned panel entries against the ACTUALLY-callable providers.
+    """Validate pinned panel entries against a captured credential snapshot.
 
     Raises :class:`ValidationError` naming EVERY entry whose ``provider:`` prefix is
-    not a connected/callable provider — never silently drops one. A bare id (no
+    not a connected provider — never silently drops one. Credential presence
+    does not prove model access, quota or successful inference. A bare id (no
     known provider prefix) routes through the active provider, so it is accepted
     (its reachability cannot be judged here). When the provider picture is UNKNOWN
     (detection unavailable) validation fails OPEN — the same fail-open contract the
@@ -330,30 +336,9 @@ def validate_panel_models(
     )
     if detail is None:
         return  # unknown provider picture — cannot prove non-callability, fail open
-    # Injected lists historically contain already-authenticated IDs without a
-    # status field. Honor that contract, but never accept an explicitly negative
-    # or malformed authentication status from a full catalog response.
-    authed = {
-        str(p["id"]) for p in detail
-        if p.get("id") and p.get("authenticated", True) is True
-    }
-    bad: list[str] = []
-    for entry in models:
-        prefix, _bare = _split_provider_model(entry)
-        if prefix is None:
-            continue  # bare id → active provider; reachability not decidable here
-        if prefix not in authed:
-            bad.append(entry)
-    if bad:
-        raise ValidationError(
-            f"{QUORUM_PANEL_MODELS_KEY} names entr"
-            + ("ies" if len(bad) > 1 else "y")
-            + " whose provider is not connected/callable: "
-            + ", ".join(bad)
-            + ". Connected providers: "
-            + (", ".join(sorted(authed)) or "(none)")
-            + f". Fix {QUORUM_PANEL_MODELS_KEY} or connect the provider."
-        )
+    from forecasting.panel_selection import validate_panel_routes
+
+    validate_panel_routes(models, detail, known_providers=_known_provider_names())
 
 
 def resolve_configured_panel(
@@ -365,7 +350,7 @@ def resolve_configured_panel(
     """The operator-pinned panel from ``QUORUM_PANEL_MODELS`` / ``QUORUM_JUDGE_MODEL``.
 
     Returns ``{"models": [...], "judge": str | None}`` when ``QUORUM_PANEL_MODELS``
-    is set (validated — a non-callable entry raises :class:`ValidationError`), or
+    is set (an explicitly disconnected route raises :class:`ValidationError`), or
     ``None`` when it is unset so the caller falls through to the preset / connected
     resolution. ``panel_models`` / ``judge_model`` are injectable for tests; unset
     (the default) reads them from the layered appconfig loader (registry default <
@@ -379,12 +364,11 @@ def resolve_configured_panel(
     models = parse_panel_models_config(panel_models)
     if not models:
         return None
-    validate_panel_models(models, providers=providers)
     if judge_model is _UNSET_CONFIG:
         from forecasting import appconfig
 
         judge_model = appconfig.get_str(QUORUM_JUDGE_MODEL_KEY, None)
     judge = (str(judge_model).strip() if judge_model else "") or None
-    if judge:
-        validate_panel_models([judge], providers=providers)
+    # Validate panelists and judge together against one credential snapshot.
+    validate_panel_models([*models, *([judge] if judge else [])], providers=providers)
     return {"models": models, "judge": judge}
