@@ -107,3 +107,15 @@ def test_classic_cli_uses_shared_operations_with_standalone_scope(background, ca
     output = capsys.readouterr().out
     assert 'Stopped 3' in output and 'Interrupted 3' in output
     assert set(background[2]) == set(background[3]) == {'desk', 'other', ''}
+
+
+def test_legacy_process_stop_requires_and_obeys_session_scope(background):
+    _, _, killed, interrupted = background
+    denied = server.handle_request({'id': 3, 'method': 'process.stop', 'params': {}})
+    assert 'error' in denied
+    assert killed == []
+    response = server.handle_request({'id': 4, 'method': 'process.stop',
+                                     'params': {'session_id': 'runtime'}})
+    assert response['result']['killed'] == 1
+    assert killed == ['desk']
+    assert interrupted == []

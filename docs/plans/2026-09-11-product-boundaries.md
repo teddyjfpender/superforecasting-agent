@@ -3978,8 +3978,8 @@ quorum discovery adapter still uses the runtime catalog and credential inventory
 
 ### Native background commands with session ownership
 
-The TUI previously ran /stop in a classic worker, then mirrored a global process
-kill in the gateway. This missed gateway-owned async delegations and could affect
+The legacy slash.exec path previously ran /stop in a classic worker, then mirrored
+a global process kill in the gateway. This missed gateway-owned async delegations and could affect
 other sessions. Shared tooling background operations now serve classic CLI and
 native slash/dispatch handlers for /agents (/tasks alias) and /stop. No agent or
 classic worker is initialized. Process and delegation registries accept an exact
@@ -3994,3 +3994,25 @@ remains a signal: completion records retain their actual running status until th
 worker finishes. This is not a guarantee of forced termination or distributed
 cancellation. Python quality gates passed; the new owner is in directory-wide
 strict coverage and has a presentation/runtime import prohibition.
+
+
+### Verify and connect the actual Ink stop consumer
+
+Real-terminal verification exposed two client routes the RPC-only tests did not
+cover: /agents and /tasks open Ink's local dashboard, while /stop called the older
+process.stop RPC directly. Ink now sends /stop to the shared native slash operation
+and renders its result, including failed delegation interruptions. The older
+process.stop RPC now requires a session owner and kills only matching processes;
+older requests with no session fail closed. Its optional session_id field is
+recorded in the generated protocol.
+
+The corrected rendered stop test passed through real Ink, stdio gateway, dashboard
+WebSocket/PTY and SQLite, with classic worker construction forbidden. It verifies
+receipt preservation, no agent rebuild and another completed turn in the same
+session. All 68 focused RPC tests and 95 slash-handler tests passed. The prior
+10 local desk tests passed in the initial run; its new test failed because it
+incorrectly expected local /agents dashboards to be RPC pagers. A second observer
+expectation exposed the process.stop bypass before the implementation was fixed.
+These are macOS local-provider results. Registry tests cover active work isolation;
+the rendered test covers the no-running-work path. Dashboard-wide delegation
+inspection and pause/cancel scoping still require a separate audit.

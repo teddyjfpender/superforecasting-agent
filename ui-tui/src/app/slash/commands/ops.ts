@@ -2,7 +2,6 @@ import type {
   BrowserManageResponse,
   CommandsCatalogResponse,
   DelegationPauseResponse,
-  ProcessStopResponse,
   ReloadEnvResponse,
   ReloadMcpResponse,
   RollbackDiffResponse,
@@ -63,16 +62,14 @@ interface SkillsReloadResponse {
 
 export const opsCommands: SlashCommand[] = [
   {
-    help: 'stop background processes',
+    help: 'stop this session’s background processes and delegations',
     name: 'stop',
     run: (_arg, ctx) => {
       ctx.gateway
-        .rpc<ProcessStopResponse>('process.stop', {})
+        .rpc<SlashExecResponse>('slash.exec', { command: 'stop', session_id: ctx.sid })
         .then(
-          ctx.guarded<ProcessStopResponse>(r => {
-            const killed = Number(r.killed ?? 0)
-            const noun = killed === 1 ? 'process' : 'processes'
-            ctx.transcript.sys(`stopped ${killed} background ${noun}`)
+          ctx.guarded<SlashExecResponse>(r => {
+            ctx.transcript.sys(r.output ?? '(no output)')
           })
         )
         .catch(ctx.guardedErr)

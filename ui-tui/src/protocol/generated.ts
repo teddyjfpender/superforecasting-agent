@@ -2599,6 +2599,7 @@ export interface PmStreamStopResponse {
 }
 
 export interface ProcessStopRequest {
+  session_id?: string
 }
 
 export interface ProcessStopResponse {

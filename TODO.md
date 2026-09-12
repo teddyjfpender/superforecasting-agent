@@ -41,6 +41,9 @@ Tool inventory and /tools list now use shared views without building an agent or
 
 ## 2. Finish resource ownership and recovery
 
+- [ ] Scope remaining delegation dashboard inspection and pause/cancel controls
+  to their intended owner. Ink /stop now consumes the shared session-scoped
+  operation, and legacy process.stop rejects missing session ownership.
 - [ ] Audit lower-level agent cleanup for concrete resource ownership.
   Tool-triggered resets now reserve host replacement before saving, dispose the
   previous agent/worker, and retain failed construction state and history. Saved

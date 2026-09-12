@@ -4806,10 +4806,16 @@ def _(rid, params: dict) -> dict:
 
 @rpc_validated("process.stop")
 def _(rid, params: dict) -> dict:
+    session, err = _sess_nowait(params, rid)
+    if err:
+        return err
+    session_key = session.get("session_key")
+    if not session_key:
+        return _err(rid, 4004, "session has no background-work owner")
     try:
         from tools.process_registry import process_registry
 
-        return _ok(rid, {"killed": process_registry.kill_all()})
+        return _ok(rid, {"killed": process_registry.kill_all(session_key=session_key)})
     except Exception as e:
         return _err(rid, 5010, str(e))
 

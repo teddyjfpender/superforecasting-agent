@@ -276,3 +276,28 @@ def test_real_desk_tool_reset_owns_agents_and_preserves_receipt(local_desk, monk
         until(ws, lambda out: receipt(home) and receipt(home)['id'] != before['id'] and receipt(home)['status'] == 'complete', screen=screen)
         assert receipt(home)['partial_text'] == 'durable fixture prefix'
         ws.close(code=1000)
+
+
+def test_real_desk_native_background_stop_preserves_session(local_desk, monkeypatch):
+    from tests.tui_pty.vt import VTScreen
+
+    client, home, _ = local_desk
+    monkeypatch.setenv('FORECAST_TEST_FORBID_CLASSIC_WORKER', '1')
+    screen = VTScreen(rows=45, cols=160)
+    with client.websocket_connect('/api/pty?token=local-engineering&channel=background-commands') as ws:
+        ws.send_text('\x1b[RESIZE:160;45]')
+        until(ws, lambda out: b'local-fixture' in out, screen=screen)
+        ws.send_text('complete before background commands\r')
+        until(ws, lambda out: receipt(home) and receipt(home)['status'] == 'complete', screen=screen)
+        before = receipt(home)
+        lifetime = (home / 'agent-lifetime.jsonl').read_text(encoding='utf-8')
+        for command, expected in [('/stop', b'No running background processes.')]:
+            ws.send_text(command + '\r')
+            until(ws, lambda out: expected in out, screen=screen)
+            assert receipt(home)['id'] == before['id']
+            assert receipt(home)['status'] == 'complete'
+        assert (home / 'agent-lifetime.jsonl').read_text(encoding='utf-8') == lifetime
+        ws.send_text('complete after background commands\r')
+        until(ws, lambda out: receipt(home) and receipt(home)['id'] != before['id'] and receipt(home)['status'] == 'complete', screen=screen)
+        assert receipt(home)['session_id'] == before['session_id']
+        ws.close(code=1000)
