@@ -51,7 +51,11 @@ def coerce_tool_args(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
         # ``None`` itself is preserved — we don't know whether the model
         # meant "omit" or "empty list", and tools with sensible defaults
         # (e.g. read_file's normalize_read_pagination) already handle it.
-        if expected == "array" and value is not None and not isinstance(value, (list, tuple)):
+        if (
+            expected == "array"
+            and value is not None
+            and not isinstance(value, (list, tuple))
+        ):
             if isinstance(value, str):
                 coerced = _coerce_value(value, expected, schema=prop_schema)
                 if coerced is not value:
@@ -67,18 +71,22 @@ def coerce_tool_args(tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
                         "but could not be parsed — model may have emitted a "
                         "JSON-encoded string instead of a native array. "
                         "Falling back to single-element list.",
-                        tool_name, key,
+                        tool_name,
+                        key,
                     )
                 args[key] = [value]
                 logger.info(
                     "coerce_tool_args: wrapped bare string in list for %s.%s",
-                    tool_name, key,
+                    tool_name,
+                    key,
                 )
                 continue
             args[key] = [value]
             logger.info(
                 "coerce_tool_args: wrapped bare %s in list for %s.%s",
-                type(value).__name__, tool_name, key,
+                type(value).__name__,
+                tool_name,
+                key,
             )
             continue
 

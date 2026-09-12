@@ -2995,3 +2995,21 @@ compatibility reader remains tolerant for callers that explicitly need defaults.
 140 command, gateway and state tests passed, including native dispatch against an
 actual damaged state file. Shared Python quality checks and 49 import contracts
 passed. The primary push gate is still running on the earlier integrated batch.
+
+
+### Directory-wide strict tooling quality
+
+The full superforecasting_agent/tooling package now receives strict Ruff correctness
+and import-order checks, formatting checks, and warning-fatal type checks through
+the same local/CI development gate. New files inherit coverage automatically.
+Optional argument/return annotations now reflect existing None behavior; sandbox
+schema construction accepts its existing immutable-set input without an extra copy.
+GitHub App credential presence checks explicitly narrow each required value. Toolset
+demo consumers assert successful lookup before indexing optional results. Remaining
+changes normalize imports and formatting for the enforced package scope.
+
+369 tooling/cache/dispatch/toolset/code-execution/skill-hub/TUI ownership tests passed.
+Shared Python quality checks and all 49 import contracts passed. This broadens strict
+coverage without suppressions; inherited packages outside the scope remain separate.
+The previous primary integrated push is still running and is not evidence for this
+new increment.

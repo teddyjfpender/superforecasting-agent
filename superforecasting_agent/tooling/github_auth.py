@@ -11,6 +11,7 @@ import httpx
 
 logger = logging.getLogger("tools.skills_hub")
 
+
 class GitHubAuth:
     """
     GitHub API authentication. Tries methods in priority order:
@@ -44,7 +45,10 @@ class GitHubAuth:
     def _resolve_token(self) -> Optional[str]:
         # Return cached token if still valid
         if self._cached_token:
-            if self._cached_method != "github-app" or time.time() < self._app_token_expiry:
+            if (
+                self._cached_method != "github-app"
+                or time.time() < self._app_token_expiry
+            ):
                 return self._cached_token
 
         # 1. Environment variable
@@ -77,7 +81,9 @@ class GitHubAuth:
         try:
             result = subprocess.run(
                 ["gh", "auth", "token"],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             if result.returncode == 0 and result.stdout.strip():
                 return result.stdout.strip()
@@ -91,7 +97,7 @@ class GitHubAuth:
         key_path = os.environ.get("GITHUB_APP_PRIVATE_KEY_PATH")
         installation_id = os.environ.get("GITHUB_APP_INSTALLATION_ID")
 
-        if not all([app_id, key_path, installation_id]):
+        if not app_id or not key_path or not installation_id:
             return None
 
         try:

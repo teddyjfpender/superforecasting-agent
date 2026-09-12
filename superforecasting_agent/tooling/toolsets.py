@@ -1,6 +1,6 @@
 """Resolve built-in and plugin toolsets for the forecasting runtime."""
 
-from typing import List, Dict, Any, Set, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from .catalogs import TOOLSETS
 from .catalogs.core import _CORE_TOOLS
@@ -30,10 +30,10 @@ def get_public_toolset_names(*, include_legacy: bool = False) -> List[str]:
 def get_toolset(name: str) -> Optional[Dict[str, Any]]:
     """
     Get a toolset definition by name.
-    
+
     Args:
         name (str): Name of the toolset
-        
+
     Returns:
         Dict: Toolset definition with description, tools, and includes
         None: If toolset not found
@@ -78,17 +78,17 @@ def get_toolset(name: str) -> Optional[Dict[str, Any]]:
     }
 
 
-def resolve_toolset(name: str, visited: Set[str] = None) -> List[str]:
+def resolve_toolset(name: str, visited: Optional[Set[str]] = None) -> List[str]:
     """
     Recursively resolve a toolset to get all tool names.
-    
+
     This function handles toolset composition by recursively resolving
     included toolsets and combining all tools.
-    
+
     Args:
         name (str): Name of the toolset to resolve
         visited (Set[str]): Set of already visited toolsets (for cycle detection)
-        
+
     Returns:
         List[str]: List of all tool names in the toolset
     """
@@ -120,15 +120,18 @@ def resolve_toolset(name: str, visited: Set[str] = None) -> List[str]:
         # Gives them _CORE_TOOLS plus any tools the plugin registered
         # into a toolset matching the platform name.
         if name.startswith("hermes-"):
-            platform_name = name[len("hermes-"):]
+            platform_name = name[len("hermes-") :]
             try:
                 from superforecasting_agent.platform_registry import platform_registry
+
                 if platform_registry.is_registered(platform_name):
                     plugin_tools = set(_CORE_TOOLS)
                     try:
                         from tools.registry import registry
+
                         plugin_tools.update(
-                            e.name for e in registry._tools.values()
+                            e.name
+                            for e in registry._tools.values()
                             if e.toolset == platform_name
                         )
                     except Exception:
@@ -155,10 +158,10 @@ def resolve_toolset(name: str, visited: Set[str] = None) -> List[str]:
 def resolve_multiple_toolsets(toolset_names: List[str]) -> List[str]:
     """
     Resolve multiple toolsets and combine their tools.
-    
+
     Args:
         toolset_names (List[str]): List of toolset names to resolve
-        
+
     Returns:
         List[str]: Combined list of all tool names (deduplicated)
     """
@@ -179,6 +182,7 @@ def _get_plugin_toolset_names() -> Set[str]:
     """
     try:
         from tools.registry import registry
+
         return {
             toolset_name
             for toolset_name in registry.get_registered_toolset_names()
@@ -192,6 +196,7 @@ def _get_registry_toolset_aliases() -> Dict[str, str]:
     """Return explicit toolset aliases registered in the live registry."""
     try:
         from tools.registry import registry
+
         return registry.get_registered_toolset_aliases()
     except Exception:
         return {}
@@ -202,7 +207,7 @@ def get_all_toolsets() -> Dict[str, Dict[str, Any]]:
     Get all available toolsets with their definitions.
 
     Includes both statically-defined toolsets and plugin-registered ones.
-    
+
     Returns:
         Dict: All toolset definitions
     """
@@ -227,7 +232,7 @@ def get_toolset_names() -> List[str]:
     Get names of all available toolsets (excluding aliases).
 
     Includes plugin-registered toolset names.
-    
+
     Returns:
         List[str]: List of toolset names
     """
@@ -246,10 +251,10 @@ def get_toolset_names() -> List[str]:
 def validate_toolset(name: str) -> bool:
     """
     Check if a toolset name is valid.
-    
+
     Args:
         name (str): Toolset name to validate
-        
+
     Returns:
         bool: True if valid, False otherwise
     """
@@ -266,12 +271,12 @@ def validate_toolset(name: str) -> bool:
 def create_custom_toolset(
     name: str,
     description: str,
-    tools: List[str] = None,
-    includes: List[str] = None
+    tools: Optional[List[str]] = None,
+    includes: Optional[List[str]] = None,
 ) -> None:
     """
     Create a custom toolset at runtime.
-    
+
     Args:
         name (str): Name for the new toolset
         description (str): Description of the toolset
@@ -281,17 +286,17 @@ def create_custom_toolset(
     TOOLSETS[name] = {
         "description": description,
         "tools": tools or [],
-        "includes": includes or []
+        "includes": includes or [],
     }
 
 
-def get_toolset_info(name: str) -> Dict[str, Any]:
+def get_toolset_info(name: str) -> Optional[Dict[str, Any]]:
     """
     Get detailed information about a toolset including resolved tools.
-    
+
     Args:
         name (str): Toolset name
-        
+
     Returns:
         Dict: Detailed toolset information
     """
@@ -308,7 +313,7 @@ def get_toolset_info(name: str) -> Dict[str, Any]:
         "includes": toolset["includes"],
         "resolved_tools": resolved_tools,
         "tool_count": len(resolved_tools),
-        "is_composite": bool(toolset["includes"])
+        "is_composite": bool(toolset["includes"]),
     }
 
 
@@ -320,6 +325,7 @@ if __name__ == "__main__":
     print("-" * 40)
     for name, toolset in get_all_toolsets().items():
         info = get_toolset_info(name)
+        assert info is not None
         composite = "[composite]" if info["is_composite"] else "[leaf]"
         print(f"  {composite} {name:20} - {toolset['description']}")
         print(f"     Tools: {len(info['resolved_tools'])} total")
@@ -343,9 +349,10 @@ if __name__ == "__main__":
         name="my_custom",
         description="My custom toolset for specific tasks",
         tools=["web_search"],
-        includes=["terminal", "vision"]
+        includes=["terminal", "vision"],
     )
     custom_info = get_toolset_info("my_custom")
+    assert custom_info is not None
     print("  Created 'my_custom' toolset:")
     print(f"    Description: {custom_info['description']}")
     print(f"    Resolved tools: {', '.join(custom_info['resolved_tools'])}")

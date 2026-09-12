@@ -5,12 +5,11 @@ import atexit
 import threading
 from typing import Optional
 
-
 # =============================================================================
 # Async Bridging  (single source of truth -- used by registry.dispatch too)
 # =============================================================================
 
-_tool_loop = None          # persistent loop for the main (CLI) thread
+_tool_loop = None  # persistent loop for the main (CLI) thread
 _tool_loop_lock = threading.Lock()
 _worker_thread_local = threading.local()  # per-worker-thread persistent loops
 

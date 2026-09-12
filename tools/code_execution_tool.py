@@ -1828,7 +1828,7 @@ _TOOL_DOC_LINES = [
 ]
 
 
-def build_execute_code_schema(enabled_sandbox_tools: set = None,
+def build_execute_code_schema(enabled_sandbox_tools: set[str] | frozenset[str] | None = None,
                               mode: str = None) -> dict:
     """Build the execute_code schema with description listing only enabled tools.
 
