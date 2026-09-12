@@ -263,41 +263,37 @@ def _run_market_agent(
 
         kwargs["tool_start_callback"] = _on_tool_start
 
-    # Interactive variant: the toolset's sandboxed code_execution + browser are
-    # approval-gated and would hang in a headless build, so install a THREAD-LOCAL
-    # auto-approve (this job runs on its own daemon thread; the callback is
-    # thread-local and propagates to tool workers, never leaking to other gateway
-    # agents). The interactive preset excludes host terminal/file-write, so this
-    # only ever greenlights the sandbox + browser.
-    if rt.get("interactive"):
-        try:
-            from tools.terminal_tool import set_approval_callback
+    from contextlib import nullcontext
+    from superforecasting_agent.tooling.prompt_callbacks import temporary_approval_callback
 
-            set_approval_callback(lambda _cmd, _desc, allow_permanent=True: "session")
-        except Exception:
-            pass
-
-    agent = AIAgent(**kwargs)
-    # Background research runs (no user waiting on first byte) can legitimately
-    # take minutes for a deep synthesis call after multi-step research, so a 90s
-    # non-stream time-to-first-byte ceiling kills them prematurely. Give a
-    # generous, depth-scaled stale timeout (instance-scoped; see
-    # AIAgent._resolved_api_call_stale_timeout_base). fallback_model is the real
-    # resilience fix — this just stops a single slow byte from aborting.
-    timeout_override = 600.0 if deep else 360.0
-    agent._api_call_stale_timeout_override = timeout_override
-    result = agent.run_conversation(user, system_message=system)
-    # Stash runtime facts so diagnostics can surface them (no agent handle there).
-    if isinstance(result, dict):
-        result["_market_runtime"] = {
-            "fallback": bool(kwargs.get("fallback_model")),
-            "max_tokens": preset.get("max_tokens"),
-            "reasoning": effort or "off",
-            "timeout_override": timeout_override,
-            "toolset": kwargs["enabled_toolsets"][0],
-            "trajectory_session_id": getattr(agent, "session_id", None) if deep else None,
-        }
-    return result
+    # The interactive sandbox approval exists only during this build, including
+    # construction. Restore the caller's policy before its worker thread is reused.
+    approval_scope = (
+        temporary_approval_callback(lambda _cmd, _desc, allow_permanent=True: "session")
+        if rt.get("interactive") else nullcontext()
+    )
+    with approval_scope:
+        agent = AIAgent(**kwargs)
+        # Background research runs (no user waiting on first byte) can legitimately
+        # take minutes for a deep synthesis call after multi-step research, so a 90s
+        # non-stream time-to-first-byte ceiling kills them prematurely. Give a
+        # generous, depth-scaled stale timeout (instance-scoped; see
+        # AIAgent._resolved_api_call_stale_timeout_base). fallback_model is the real
+        # resilience fix — this just stops a single slow byte from aborting.
+        timeout_override = 600.0 if deep else 360.0
+        agent._api_call_stale_timeout_override = timeout_override
+        result = agent.run_conversation(user, system_message=system)
+        # Stash runtime facts so diagnostics can surface them (no agent handle there).
+        if isinstance(result, dict):
+            result["_market_runtime"] = {
+                "fallback": bool(kwargs.get("fallback_model")),
+                "max_tokens": preset.get("max_tokens"),
+                "reasoning": effort or "off",
+                "timeout_override": timeout_override,
+                "toolset": kwargs["enabled_toolsets"][0],
+                "trajectory_session_id": getattr(agent, "session_id", None) if deep else None,
+            }
+        return result
 
 
 def _aux_llm(messages: list[dict], *, max_tokens: int = 900, temperature: float = 0.5, main_runtime: dict | None = None) -> str:
@@ -377,7 +373,7 @@ def _collect_emit(result: dict) -> tuple[dict | None, dict | None]:
     """Most reliable → least: the tool's thread-local stash, then the run's tool
     calls, then a fenced JSON object in the final response."""
     try:
-        from tools.market_presentation_tool import take_emitted
+        from forecasting.application.market_output import take_emitted
 
         emitted = take_emitted()
         if isinstance(emitted, dict) and isinstance(emitted.get("presentation"), dict):
@@ -390,7 +386,7 @@ def _collect_emit(result: dict) -> tuple[dict | None, dict | None]:
 
 def _reset_emit() -> None:
     try:
-        from tools.market_presentation_tool import reset_emitted
+        from forecasting.application.market_output import reset_emitted
 
         reset_emitted()
     except Exception:

@@ -817,3 +817,16 @@ reads active questions and returns ranked candidates without writing the ledger.
 CLI onboarding imports it directly; tool compatibility exports preserve existing
 callers. A title match is still a heuristic, not proof of equivalent resolution
 criteria. Routing/force-new decisions remain with creation orchestration.
+
+### Market output and prompt callback lifetimes
+
+`forecasting/application/market_output.py` owns the thread-local handoff of the
+latest emitted presentation/spec. The registered tool validates and records;
+market orchestration consumes once without importing tool registration. Repair
+attempts replace the previous artifact rather than accumulating unused history.
+
+`superforecasting_agent/tooling/prompt_callbacks.py` owns approval and sudo prompt
+callback slots. Terminal adapters re-export the existing API. Interactive market
+builds use a temporary approval scope covering construction and conversation,
+restoring the exact prior callback on success, failure and interruption. Both
+owners have transitive consumer-import prohibitions and strict directory gates.

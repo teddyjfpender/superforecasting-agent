@@ -4626,3 +4626,19 @@ regression now requires a new snapshot ID and changed probability.
 Validation: 57 refresh, question-spec and full-chain tests passed, including CLI
 and tool duplicate routing and explicit duplicate creation. Shared quality checks
 passed; the new application file automatically receives directory-wide gates.
+
+### Market-model tool dependencies and approval restoration
+
+Removed the final two direct market-model-to-tool edges. Presentation handoff now
+belongs to the application layer; terminal prompt callback slots belong to shared
+tooling. Compatibility exports keep tool/CLI callback consumers on the same state.
+Interactive builds previously left an auto-approval callback on their worker after
+return or failure. Three negative controls reproduced that leak. A scoped callback
+now restores the exact caller policy around both construction and conversation.
+
+The market handoff retains only the latest emission and consumes it once, retaining
+the established per-thread semantics. Concurrent worker and nested callback tests
+cover isolation and interruption restoration. Validation: 83 market/tool/CLI/
+background/boundary tests plus three ownership tests passed; shared quality checks
+passed. Eight direct forecast-to-tool exceptions remain. This does not claim full
+SDK/child-worker cleanup qualification for every market build failure path.

@@ -393,8 +393,6 @@ ignore_imports = [
     "forecasting.cli.slack_admin -> tools.slack_tool",
     "forecasting.cli.triage_calibration -> tools.forecasting_tool",
     "forecasting.collab.directory -> tools.slack_tool",
-    "forecasting.market_model -> tools.market_presentation_tool",
-    "forecasting.market_model -> tools.terminal_tool",
     "forecasting.notify -> tools.slack_tool",
     "forecasting.supervisor_search -> tools.web_tools",
 ]
@@ -783,4 +781,18 @@ name = "source evidence formatting is independent of acquisition and persistence
 type = "forbidden"
 source_modules = ["forecasting.sources.evidence"]
 forbidden_modules = ["tools", "agent", "cli", "gateway", "tui_gateway", "forecasting.source_adapters", "forecasting.sources.dispatch", "forecasting.sources.watched", "forecasting.ledger"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "prompt callback ownership never imports consumers"
+type = "forbidden"
+source_modules = ["superforecasting_agent.tooling.prompt_callbacks"]
+forbidden_modules = ["tools", "agent", "cli", "gateway", "tui_gateway", "superforecasting_agent.runtime"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "market artifact transfer never imports consumers"
+type = "forbidden"
+source_modules = ["forecasting.application.market_output"]
+forbidden_modules = ["tools", "agent", "cli", "gateway", "tui_gateway", "superforecasting_agent.runtime"]
 allow_indirect_imports = false

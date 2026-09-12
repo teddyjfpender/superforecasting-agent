@@ -237,15 +237,9 @@ def test_run_market_agent_quick_disables_reasoning(monkeypatch):
 
 def test_run_market_agent_interactive_toolset(monkeypatch):
     monkeypatch.setattr("run_agent.AIAgent", _FakeAgent)
-    approved = {}
-    import tools.terminal_tool as TT
-    monkeypatch.setattr(TT, "set_approval_callback", lambda cb: approved.setdefault("cb", cb))
     MM._run_market_agent(system="s", user="u", max_iterations=32, model="m", provider="p",
                          depth="standard", preset=MM.DEPTH_PRESETS["standard"], runtime={"model": "m", "interactive": True})
     assert _FakeAgent.last_kwargs["enabled_toolsets"] == ["market-models-interactive"]
-    # an auto-approve was installed for the sandboxed tools
-    assert approved.get("cb") is not None
-    assert approved["cb"]("x", "y") == "session"
 
 
 def test_repull_series_reports_reasons():
@@ -261,3 +255,36 @@ def test_renarrate_keeps_prior_when_aux_empty(ledger, monkeypatch):
     res = MM.renarrate_market_model(out["model_id"], ledger=ledger)
     assert res.get("renarrated") is False
     assert res["presentation"]["blocks"]  # prior presentation kept intact
+
+
+@pytest.mark.parametrize('failure', [None, 'construction', 'conversation'])
+def test_interactive_build_restores_prior_approval_callback(monkeypatch, failure):
+    from tools.terminal_tool import _get_approval_callback, set_approval_callback
+
+    previous = _get_approval_callback()
+    parent = lambda *args, **kwargs: 'deny'
+    class Agent(_FakeAgent):
+        def __init__(self, **kwargs):
+            assert _get_approval_callback()('command', 'description') == 'session'
+            if failure == 'construction':
+                raise RuntimeError('construction failed')
+            super().__init__(**kwargs)
+        def run_conversation(self, *args, **kwargs):
+            assert _get_approval_callback()('command', 'description') == 'session'
+            if failure == 'conversation':
+                raise RuntimeError('conversation failed')
+            return super().run_conversation(*args, **kwargs)
+    monkeypatch.setattr('run_agent.AIAgent', Agent)
+    set_approval_callback(parent)
+    try:
+        def build():
+            return MM._run_market_agent(system='s', user='u', max_iterations=3,
+                                        model='m', provider='p', runtime={'interactive': True})
+        if failure:
+            with pytest.raises(RuntimeError, match=failure):
+                build()
+        else:
+            build()
+        assert _get_approval_callback() is parent
+    finally:
+        set_approval_callback(previous)

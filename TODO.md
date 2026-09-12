@@ -49,7 +49,8 @@ changes, tests and their limits. The previous checklist is preserved in the
 - [ ] Reduce the remaining frozen domain-to-runtime/tool import exceptions.
   Move a capability and its tests together; directory moves alone are insufficient.
   Question candidate matching now has one read-only application owner shared by
-  CLI and tool creation paths; ten direct forecast-to-tool exceptions remain.
+  CLI and tool creation paths. Market artifact transfer and scoped prompt callbacks
+  now have shared owners; eight direct forecast-to-tool exceptions remain.
   Shared defaults/normalization and read-only profile access are now independent.
   Ledger scoring/snapshot settings, hook policy and estimate-first policy use them;
   scheduler, worker and research readers use the same owner. Quorum command reads and writes now use independent configuration and installation
@@ -75,6 +76,9 @@ Tool inventory and /tools list now use shared views without building an agent or
   pause/registry state and rejects replacement or stale retirement of a live child.
   Pause flags remain process-lifetime state.
 - [ ] Audit lower-level agent cleanup for concrete resource ownership.
+  Interactive market builds now restore the prior approval callback after success,
+  constructor failure or conversation failure; worker reuse cannot inherit that
+  build-scoped setting.
   Tool-triggered resets now reserve host replacement before saving, dispose the
   previous agent/worker, and retain failed construction state and history. Saved
   configuration may outlive a failed reset. The macOS real-terminal harness now

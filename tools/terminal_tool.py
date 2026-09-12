@@ -229,44 +229,13 @@ _sudo_password_cache_lock = threading.Lock()
 # Optional UI callbacks for interactive prompts. When set, these are called
 # instead of the default /dev/tty or input() readers. The CLI registers these
 # so prompts route through prompt_toolkit's event loop.
-# Callback slots used by the approval prompt and sudo password prompt
-# routines. Stored in thread-local state so overlapping ACP sessions —
-# each running in its own ThreadPoolExecutor thread — don't stomp on
-# each other's callbacks. See GHSA-qg5c-hvr5-hjgr.
-#
-# CLI mode is single-threaded, so each thread (the only one) holds its
-# own callback exactly like before. Gateway mode resolves approvals via
-# the per-session queue in tools.approval, not through these callbacks,
-# so it's unaffected.
-import threading
-_callback_tls = threading.local()
-
-
-def _get_sudo_password_callback():
-    return getattr(_callback_tls, "sudo_password", None)
-
-
-def _get_approval_callback():
-    return getattr(_callback_tls, "approval", None)
-
-
-def set_sudo_password_callback(cb):
-    """Register a callback for sudo password prompts (used by CLI).
-
-    Per-thread scope — ACP sessions that run concurrently in a
-    ThreadPoolExecutor each have their own callback slot.
-    """
-    _callback_tls.sudo_password = cb
-
-
-def set_approval_callback(cb):
-    """Register a callback for dangerous command approval prompts.
-
-    Per-thread scope — ACP sessions that run concurrently in a
-    ThreadPoolExecutor each have their own callback slot. See
-    GHSA-qg5c-hvr5-hjgr.
-    """
-    _callback_tls.approval = cb
+# Prompt callbacks have a shared thread-local owner; retain tool import aliases.
+from superforecasting_agent.tooling.prompt_callbacks import (
+    get_sudo_password_callback as _get_sudo_password_callback,
+    get_approval_callback as _get_approval_callback,
+    set_sudo_password_callback,
+    set_approval_callback,
+)
 
 
 def _get_sudo_password_cache_scope() -> str:
