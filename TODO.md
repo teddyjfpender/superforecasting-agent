@@ -137,7 +137,10 @@ Import contracts enforce extracted owners; frozen exceptions remain explicit.
 
 - [ ] Conclusively attribute the historical native SSL crash if original incident
   artifacts or a reproducer become available. Containment and native experiments
-  are verified; the original cause remains unproven.
+  are verified; the original cause remains unproven. A separate construction-time
+  timeout was traced to an unsupported Ollama metadata probe against OpenAI.
+  Recognized non-Ollama endpoints now skip that probe before client allocation;
+  hostname-boundary matching prevents lookalike endpoint misclassification.
 - [ ] Continue source-adapter parser/semantic separation where unsupported units,
   timestamps, revisions or identities could otherwise reach settlement.
 - [ ] Complete credential-dependent integration and formal release verification

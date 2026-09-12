@@ -4396,3 +4396,20 @@ no push gate was bypassed.
 
 The affected protocol/code-generation and background ownership checks also passed
 all 79 tests after the wire-schema changes.
+
+### Provider-aware native metadata discovery
+
+The failed full-suite test timed out while constructing an OpenAI agent, before
+its stale-call assertion. Context discovery sent Ollama `/api/show` to OpenAI
+and entered DNS/connect work. The shared native probe now rejects recognized
+non-Ollama endpoints before HTTP client allocation. Local endpoints, Ollama
+Cloud and unknown custom hosts retain native discovery. Provider identity uses
+the shared hostname matcher instead of substring matching, including explicit
+MiniMax global/legacy domains and the distinct China provider registration.
+
+161 focused metadata/context/stale-timeout tests and the shared quality workflow
+passed. Regression fixtures prohibit client allocation for known non-Ollama
+providers, exercise the full provider-catalog resolution path, reject lookalike
+hosts/userinfo/path matches, and retain custom/local discovery. This fixes the
+observed unsupported request; it does not establish the historical native SSL
+crash cause or bound DNS latency for supported network discovery.
