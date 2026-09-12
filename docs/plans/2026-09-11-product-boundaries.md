@@ -3839,3 +3839,17 @@ did the shared quality gates with 55 import contracts. Formatting accounts for
 most of the diff. These checks do not establish native Windows execution, and
 inherited unannotated storage methods still limit static analysis precision;
 directory-wide enforcement is not a claim that all storage APIs are fully typed.
+
+
+### Native tool inventory display
+
+The bare /tools command no longer initializes an agent or classic CLI subprocess
+in the TUI. It reads the live session selection (including an explicitly empty
+selection), obtains tool definitions, and uses the same pure application formatter
+as the classic CLI. The existing pager/output response stays unchanged. Toolset
+configuration listing and mutation paths are not claimed migrated by this change.
+
+All 125 focused command/view tests passed, including forbidden worker/model build,
+selection preservation, tool grouping/order and description truncation. Shared
+quality checks passed with 55 contracts. No terminal rendering or live provider
+availability claim is made by these mocked inventory tests.

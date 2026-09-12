@@ -1154,3 +1154,21 @@ def test_undo_checks_running_after_acquiring_history_lock(configure):
     assert session['history'] is history
     assert session['history_version'] == 7
     server._start_agent_build.assert_not_called()
+
+
+def test_tools_view_uses_live_selection_without_classic_worker(configure, monkeypatch):
+    from types import SimpleNamespace
+    from superforecasting_agent.tooling import runtime
+
+    server._host.sessions['runtime']['agent'] = SimpleNamespace(enabled_toolsets=[])
+    definitions = Mock(return_value=[{'function': {'name': 'evidence', 'description': 'Inspect evidence. More detail.'}}])
+    monkeypatch.setattr(runtime, 'get_tool_definitions', definitions)
+    monkeypatch.setattr(runtime, 'get_toolset_for_tool', lambda name: 'forecasting')
+    result = slash('tools')['result']['output']
+    assert 'Forecast Desk Tools' in result
+    assert '[forecasting]' in result
+    assert 'Inspect evidence.' in result
+    assert 'More detail' not in result
+    definitions.assert_called_once_with(enabled_toolsets=[], quiet_mode=True)
+    server._start_agent_build.assert_not_called()
+    server._SlashWorker.assert_not_called()

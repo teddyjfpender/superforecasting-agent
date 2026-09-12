@@ -5703,6 +5703,15 @@ def _(rid, params: dict) -> dict:
     if definition is not None:
         _cmd_base = definition.name
 
+    if _cmd_base == "tools" and not _cmd_arg.strip():
+        from superforecasting_agent.application.tools import describe_tools
+        from superforecasting_agent.tooling.inventory import session_toolset_selection
+        from superforecasting_agent.tooling.runtime import get_tool_definitions, get_toolset_for_tool
+
+        selection = session_toolset_selection(session, _load_enabled_toolsets)
+        definitions = get_tool_definitions(enabled_toolsets=selection, quiet_mode=True)
+        return _ok(rid, {"output": describe_tools(definitions, get_toolset_for_tool)})
+
     if _cmd_base == "kanban":
         from superforecasting_agent.runtime.kanban import run_slash
 

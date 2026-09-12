@@ -3837,45 +3837,10 @@ class ForecastCLI:
     
     def show_tools(self):
         """Display available tools with forecast-desk ASCII framing."""
+        from superforecasting_agent.application.tools import describe_tools
+
         tools = get_tool_definitions(enabled_toolsets=self.enabled_toolsets, quiet_mode=True)
-        
-        if not tools:
-            print("No tools available")
-            return
-        
-        # Header
-        print()
-        title = "Forecast Desk Tools"
-        width = 78
-        pad = width - len(title)
-        print("+" + "-" * width + "+")
-        print("|" + " " * (pad // 2) + title + " " * (pad - pad // 2) + "|")
-        print("+" + "-" * width + "+")
-        print()
-        
-        # Group tools by toolset
-        toolsets = {}
-        for tool in sorted(tools, key=lambda t: t["function"]["name"]):
-            name = tool["function"]["name"]
-            toolset = get_toolset_for_tool(name) or "unknown"
-            if toolset not in toolsets:
-                toolsets[toolset] = []
-            desc = tool["function"].get("description", "")
-            # First sentence: split on ". " (period+space) to avoid breaking on "e.g." or "v2.0"
-            desc = desc.split("\n")[0]
-            if ". " in desc:
-                desc = desc[:desc.index(". ") + 1]
-            toolsets[toolset].append((name, desc))
-        
-        # Display by toolset
-        for toolset in sorted(toolsets.keys()):
-            print(f"  [{toolset}]")
-            for name, desc in toolsets[toolset]:
-                print(f"    * {name:<20} - {desc}")
-            print()
-        
-        print(f"  Total: {len(tools)} tools")
-        print()
+        print(describe_tools(tools, get_toolset_for_tool))
 
     def _handle_tools_command(self, cmd: str):
         """Handle /tools [list|disable|enable] slash commands.
