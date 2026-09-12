@@ -1109,12 +1109,13 @@ def _start_agent_build(sid: str, session: dict) -> None:
     host = _host
     key = session["session_key"]
 
-    def construct():
+    @contextlib.contextmanager
+    def construction_scope():
         if host.sessions.get(sid) is not session:
             raise RuntimeError("session closed during agent initialization")
         tokens = _set_session_context(key)
         try:
-            return _make_agent(sid, key)
+            yield
         finally:
             _clear_session_context(tokens)
 
@@ -1145,7 +1146,8 @@ def _start_agent_build(sid: str, session: dict) -> None:
     start_build(
         session,
         build=lambda ready: execute_build(
-            session, ready, construct=construct, initialize=initialize,
+            session, ready, construct=lambda: _make_agent(sid, key), initialize=initialize,
+            construction_scope=construction_scope,
             report_error=lambda message: _emit("error", sid, {"message": f"agent init failed: {message}"}),
         ),
         start=lambda build: host.workers.start(build, name="forecast-agent-build"),

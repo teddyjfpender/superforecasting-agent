@@ -3804,3 +3804,19 @@ queued and initializing retirement rejection, constructor failure, setup failure
 KeyboardInterrupt, broken error transport and retained handles for existing retry
 cleanup. Shared quality gates passed with 55 import contracts; hosting remains
 under directory-wide strict lint, formatting and type checks.
+
+
+### Construction context cleanup cannot lose the returned agent
+
+The gateway previously returned the new agent only after clearing its session
+context in a finally block. A context-reset failure could therefore lose a
+successfully constructed agent before host ownership began. The host build service
+now accepts a construction scope and attaches the returned handle before that
+scope exits. Adapter initialization still runs after scope cleanup; failure leaves
+the agent and error available to the existing cleanup/retry operation.
+
+The 253 build/registry/gateway tests passed, followed by all 12 focused build tests
+including a gateway-level injected context-reset failure. Shared quality gates
+passed with 55 contracts. Constructor-internal allocations that fail before an
+agent is returned still require their own constructor cleanup; this change does
+not claim to handle those allocations or attribute historical native crashes.

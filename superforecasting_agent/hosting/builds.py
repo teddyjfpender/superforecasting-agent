@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import threading
 from collections.abc import Callable, MutableMapping
+from contextlib import AbstractContextManager, nullcontext
 from typing import Any, Literal
 
 
@@ -81,6 +82,7 @@ def execute_build(
     construct: Callable[[], Any],
     initialize: Callable[[Any], None],
     report_error: Callable[[str], None],
+    construction_scope: Callable[[], AbstractContextManager[Any]] = nullcontext,
 ) -> None:
     """Complete an admitted build, retaining partial resources for retry cleanup.
 
@@ -89,8 +91,9 @@ def execute_build(
     exact agent before adapter setup so failed setup never loses its owner.
     """
     try:
-        agent = construct()
-        session["agent"] = agent
+        with construction_scope():
+            agent = construct()
+            session["agent"] = agent
         initialize(agent)
     except BaseException as exc:
         message = str(exc) or type(exc).__name__

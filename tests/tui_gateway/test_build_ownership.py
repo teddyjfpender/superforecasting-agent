@@ -187,3 +187,52 @@ def test_build_keeps_registry_owner_through_adapter_initialization():
     finalized.assert_not_called()
     registry.retire('session', finalized)
     finalized.assert_called_once_with(session)
+
+
+def test_context_exit_failure_retains_constructed_agent_for_cleanup():
+    from contextlib import contextmanager
+    from superforecasting_agent.hosting.builds import execute_build
+
+    session = {}
+    ready = threading.Event()
+    agent = Mock()
+    initialize = Mock()
+
+    @contextmanager
+    def scope():
+        yield
+        assert session['agent'] is agent
+        raise RuntimeError('context reset failed')
+
+    execute_build(session, ready, construct=lambda: agent,
+                  initialize=initialize, report_error=Mock(), construction_scope=scope)
+    assert session['agent'] is agent
+    assert session['agent_error'] == 'context reset failed'
+    assert ready.is_set()
+    initialize.assert_not_called()
+    agent.close.assert_not_called()
+
+
+def test_gateway_context_reset_failure_does_not_lose_built_agent(monkeypatch):
+    from superforecasting_agent.hosting.runtime import RuntimeHost
+    from tui_gateway import server
+
+    host = RuntimeHost()
+    monkeypatch.setattr(server, '_host', host)
+    session = {'session_key': 'durable', 'agent_ready': threading.Event()}
+    host.sessions.register('runtime', session)
+    agent = Mock()
+    monkeypatch.setattr(host.workers, 'start', lambda callback, **kwargs: callback())
+    monkeypatch.setattr(server, '_set_session_context', lambda key: object())
+    monkeypatch.setattr(server, '_clear_session_context', Mock(side_effect=RuntimeError('context reset failed')))
+    monkeypatch.setattr(server, '_make_agent', lambda sid, key: agent)
+    monkeypatch.setattr(server, '_emit', Mock())
+    wire = Mock()
+    monkeypatch.setattr(server, '_wire_callbacks', wire)
+
+    server._start_agent_build('runtime', session)
+    assert session['agent'] is agent
+    assert session['agent_error'] == 'context reset failed'
+    assert session['agent_ready'].is_set()
+    wire.assert_not_called()
+    agent.close.assert_not_called()
