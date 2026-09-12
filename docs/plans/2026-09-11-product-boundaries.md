@@ -4793,3 +4793,16 @@ Validation: 264 model, Codex, inventory, provider, quorum and injected-boundary
 checks passed; the shared quality workflow passed all 71 import contracts plus
 blocking Python/TUI/protocol checks. Model IDs and fallback ordering were preserved;
 this is not a live-provider or model-availability qualification.
+
+
+### Auth-status profile isolation
+
+Credential tracing found that status discovery is not purely observational:
+Nous/Codex status paths can resolve or refresh runtime credentials. That behavior
+remains explicit extraction work. A reproduced cache defect let two profiles with
+identical auth-file timestamps reuse the first profile's Nous status. The cache
+key now includes the resolved auth-store path as well as its timestamp. Six cache
+checks passed, including existing TTL/invalidation behavior and isolation for
+both matching timestamps and missing auth files. Shared quality checks passed.
+This does not change live refresh behavior or claim concurrent process-wide
+profile mutation is safe.

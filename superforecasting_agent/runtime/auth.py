@@ -4980,15 +4980,16 @@ def _snapshot_nous_pool_status() -> Dict[str, Any]:
 # call it many times per render — `superforecasting-agent tools` → "All Platforms"
 # was firing the refresh ~31× during one menu paint, racking up >13s of HTTP and burning
 # single-use refresh tokens. Cache the snapshot for a few seconds, keyed on the auth.json
-# mtime so that `superforecasting-agent auth login/logout/add/remove`
+# path and mtime so that profiles cannot share a status snapshot and
+# `superforecasting-agent auth login/logout/add/remove`
 # invalidate naturally on the next call.
 _NOUS_AUTH_STATUS_CACHE_TTL = 15.0  # seconds
-_nous_auth_status_cache: Optional[Tuple[float, Optional[float], Dict[str, Any]]] = None
+_nous_auth_status_cache: Optional[Tuple[float, Tuple[str, Optional[float]], Dict[str, Any]]] = None
 
 
-def _auth_file_mtime() -> Optional[float]:
+def _auth_file_mtime(auth_file: Optional[Path] = None) -> Optional[float]:
     try:
-        return _auth_file_path().stat().st_mtime
+        return (auth_file if auth_file is not None else _auth_file_path()).stat().st_mtime
     except FileNotFoundError:
         return None
     except Exception:
@@ -5016,7 +5017,7 @@ def get_nous_auth_status() -> Dict[str, Any]:
     as a healthy login. If provider state is absent, fall back to the credential
     pool for the just-logged-in / not-yet-promoted case.
 
-    The returned snapshot is memoised for ~15s keyed on the auth.json mtime,
+    The returned snapshot is memoised for ~15s keyed on the resolved auth.json path and mtime,
     so menu/status surfaces that ask repeatedly don't trigger one refresh POST
     per call. Login/logout flows write to auth.json and therefore invalidate
     the cache automatically; tests can also call
@@ -5024,18 +5025,19 @@ def get_nous_auth_status() -> Dict[str, Any]:
     """
     global _nous_auth_status_cache
     now = time.monotonic()
-    mtime = _auth_file_mtime()
+    auth_file = _auth_file_path().resolve()
+    cache_key = (str(auth_file), _auth_file_mtime(auth_file))
     cached = _nous_auth_status_cache
     if cached is not None:
-        cached_at, cached_mtime, cached_status = cached
+        cached_at, cached_key, cached_status = cached
         if (
-            cached_mtime == mtime
+            cached_key == cache_key
             and (now - cached_at) < _NOUS_AUTH_STATUS_CACHE_TTL
         ):
             return dict(cached_status)
 
     status = _compute_nous_auth_status()
-    _nous_auth_status_cache = (now, mtime, dict(status))
+    _nous_auth_status_cache = (now, cache_key, dict(status))
     return status
 
 

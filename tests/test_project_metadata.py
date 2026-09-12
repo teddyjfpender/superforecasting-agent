@@ -3238,6 +3238,7 @@ def test_tool_runtime_guidance_is_forecast_native():
         root / "tools" / "debug_helpers.py",
         root / "tools" / "openrouter_client.py",
         root / "tools" / "web_tools.py",
+        root / "superforecasting_agent" / "tooling" / "web_search.py",
         root / "agent" / "transports" / "hermes_tools_mcp_server.py",
     ]
     text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
@@ -5019,7 +5020,7 @@ def test_diagnostic_env_aliases_are_forecast_native():
         encoding="utf-8"
     )
     auth = (root / 'superforecasting_agent/runtime' / "auth.py").read_text(encoding="utf-8")
-    interrupt = (root / "tools" / "interrupt.py").read_text(encoding="utf-8")
+    interrupt = (root / "superforecasting_agent" / "tooling" / "interrupts.py").read_text(encoding="utf-8")
     env_base = (root / "tools" / "environments" / "base.py").read_text(
         encoding="utf-8"
     )
