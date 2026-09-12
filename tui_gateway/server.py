@@ -2282,17 +2282,12 @@ def _cfg_max_turns(cfg: dict, default: int) -> int:
 
 
 def _background_agent_kwargs(agent, task_id: str) -> dict:
-    from agent.background_options import background_agent_options
+    from superforecasting_agent.hosting.desk_agent import background_options
 
-    return background_agent_options(agent, task_id, {
-        "model": _resolve_model(),
-        "max_iterations": _cfg_max_turns(_load_cfg(), 25),
-        "enabled_toolsets": _load_enabled_toolsets(),
-        "reasoning_config": _load_reasoning_config(),
-        "service_tier": _load_service_tier(),
-        "platform": "tui",
-        "session_db": _get_db(),
-    })
+    return background_options(
+        agent, task_id, _load_cfg(), overrides=_desk_launch_overrides(), session_db=_get_db(),
+        warn=lambda message: print(f"[tui] {message}", file=sys.stderr, flush=True),
+    )
 
 
 def _reset_session_agent(sid: str, session: dict, *, reserved: bool = False) -> dict:
@@ -4039,64 +4034,30 @@ def _(rid, params: dict) -> dict:
     text, parent = params.get("text", ""), params.get("session_id", "")
     if not text:
         return _err(rid, 4012, "text required")
-    task_id = f"bg_{uuid.uuid4().hex[:6]}"
+    task_id = f"bg_{uuid.uuid4().hex}"
+    from superforecasting_agent.hosting.background import start_background
 
-    with session["history_lock"]:
-        session["_background_jobs"] = session.get("_background_jobs", 0) + 1
+    @contextlib.contextmanager
+    def scope():
+        from tools.approval import set_current_session_key, reset_current_session_key
 
-    def run():
-        session_tokens = _set_session_context(task_id)
-        background_agent = None
+        owner = session["session_key"]
+        tokens = _set_session_context(owner)
         try:
-            from agent.agent_factory import build_agent
-
-            # The parent already supplies resolved provider settings. Do not
-            # resolve a different account while constructing its background work.
-            background_agent = build_agent(
-                runtime={}, **_background_agent_kwargs(session["agent"], task_id)
-            )
-            with session["history_lock"]:
-                session.setdefault("_background_agents", {})[task_id] = background_agent
-            if _host.workers.stopping:
-                return
-            result = background_agent.run_conversation(
-                user_message=text,
-                task_id=task_id,
-            )
-            _emit(
-                "background.complete",
-                parent,
-                {
-                    "task_id": task_id,
-                    "text": (
-                        result.get("final_response", str(result))
-                        if isinstance(result, dict)
-                        else str(result)
-                    ),
-                },
-            )
-        except Exception as e:
-            _emit(
-                "background.complete",
-                parent,
-                {"task_id": task_id, "text": f"error: {e}"},
-            )
-        finally:
+            approval = set_current_session_key(owner)
             try:
-                if background_agent is not None:
-                    background_agent.close()
+                yield
             finally:
-                with session["history_lock"]:
-                    session.get("_background_agents", {}).pop(task_id, None)
-                    session["_background_jobs"] -= 1
-                _clear_session_context(session_tokens)
+                reset_current_session_key(approval)
+        finally:
+            _clear_session_context(tokens)
 
-    try:
-        _host.workers.start(run, name="forecast-background")
-    except BaseException:
-        with session["history_lock"]:
-            session["_background_jobs"] -= 1
-        raise
+    start_background(
+        session, _host.workers, task_id=task_id, text=text,
+        options=lambda: _background_agent_kwargs(session["agent"], task_id),
+        scope=scope,
+        report=lambda output: _emit("background.complete", parent, {"task_id": task_id, "text": output}),
+    )
     return _ok(rid, {"task_id": task_id})
 
 

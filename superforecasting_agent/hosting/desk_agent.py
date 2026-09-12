@@ -134,3 +134,44 @@ def build_desk_agent(
         skip_memory=ignore_rules,
         **callbacks,
     )
+
+
+def background_options(
+    agent: Any,
+    task_id: str,
+    config: dict[str, Any],
+    *,
+    overrides: Mapping[str, str],
+    session_db: Any,
+    warn: Callable[[str], None],
+) -> dict[str, Any]:
+    """Inherit the parent's account/selections using one fallback profile read.
+
+    An absent background budget retains its 25-turn default; merging foreground
+    defaults first would incorrectly turn that into the foreground budget.
+    """
+    from agent.background_options import background_agent_options
+    from superforecasting_agent.tooling.startup_selection import (
+        resolve_startup_toolsets,
+    )
+
+    return background_agent_options(
+        agent,
+        task_id,
+        {
+            "model": selected_model(config, overrides.get("model", "")),
+            "max_iterations": agent_turn_budget(
+                config, override=overrides.get("max_turns"), default=25
+            ),
+            "enabled_toolsets": resolve_startup_toolsets(
+                overrides.get("toolsets", ""),
+                setting_label="SUPERFORECASTING_AGENT_TUI_TOOLSETS",
+                config=config,
+                warn=warn,
+            ),
+            "reasoning_config": reasoning_config(config),
+            "service_tier": service_tier(config),
+            "platform": "tui",
+            "session_db": session_db,
+        },
+    )

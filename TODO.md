@@ -21,13 +21,16 @@ changes, tests and their limits. The previous checklist is preserved in the
   natively with host/session cancellation and visible activity. Real terminal tests
   cover watch, resizing, Ctrl+C, gateway death/reconnect and continued command use.
   Extended remote-host command recovery remains to be qualified.
-- [ ] Finish separating agent construction from RPC orchestration. Deferred-build
+- [x] Finish separating agent construction from RPC orchestration. Deferred-build
   admission/retry, initialization completion and partial-agent retention, and notification polling/admission now belong to the host;
   protocol event delivery remains an adapter responsibility. CLI and TUI now share
   forecasting-agent prompt/skill construction through the agent factory. Hosted
   desk launch selection/construction now lives in hosting/desk_agent.py; RPC
-  supplies captured overrides, callbacks and borrowed storage. Background turn
-  construction/disposal still lives in the RPC handler and needs migration.
+  supplies captured overrides, callbacks and borrowed storage. Background
+  construction/execution/disposal now belongs to the host, with a captured
+  credential context and parent-scoped tools/approvals. Failed closes transfer
+  exact handles to session-scoped retry ownership; /stop also interrupts these
+  active background agents.
 - [ ] Reduce the remaining frozen domain-to-runtime/tool import exceptions.
   Move a capability and its tests together; directory moves alone are insufficient.
   Shared defaults/normalization and read-only profile access are now independent.
@@ -72,7 +75,8 @@ Tool inventory and /tools list now use shared views without building an agent or
   deterministic failure injection and retained cleanup handles. Delegated child
   close failures now retain exact handles and diagnostics; session-scoped /stop
   and session disposal retry them, with session close remaining pending on failure. Child cleanup
-  retries retain exact handles; failed SDK close remains pending because HTTPX
+  retries retain exact handles. Direct background conversation agents now use the
+  same retained cleanup owner and session-scoped /stop/close retries. Failed SDK close remains pending because HTTPX
   can mark itself closed before transport disposal fails. Safe recovery of those
   transports and terminal/browser cleanup failures is still unfinished. Browser
   supervisors now retain failed startup/stop handles and reject overlapping

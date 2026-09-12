@@ -31,10 +31,27 @@ def stop_background(*, session_key: str | None = None) -> str:
         for d in list_async_delegations(session_key=session_key)
         if d.get("status") == "running"
     ]
-    from superforecasting_agent.hosting.delegations import retry_cleanup
+    from superforecasting_agent.hosting.delegations import (
+        interrupt_subagent,
+        list_active_subagents,
+        retry_cleanup,
+    )
 
+    background_agents = [
+        child
+        for child in list_active_subagents(session_key=session_key)
+        if child.get("kind") == "background" and child.get("status") == "running"
+    ]
+    interrupted = sum(
+        interrupt_subagent(child["subagent_id"], session_key=session_key)
+        for child in background_agents
+    )
     completed, pending = retry_cleanup(session_key=session_key)
     lines = []
+    if background_agents:
+        lines.append(
+            f"  Interrupted {interrupted} of {len(background_agents)} background agent(s)."
+        )
     if completed:
         lines.append(f"  Completed cleanup for {completed} child agent(s).")
     if pending:
@@ -85,6 +102,13 @@ def describe_background(*, agent_running: bool, session_key: str | None = None) 
             goal = (delegation.get("goal", "") or "")[:60]
             lines.append(
                 f"    {delegation.get('delegation_id', '?')} · {delegation.get('status')} · {goal}"
+            )
+    from superforecasting_agent.hosting.delegations import list_active_subagents
+
+    for child in list_active_subagents(session_key=session_key):
+        if child.get("kind") == "background" and child.get("status") == "running":
+            lines.append(
+                f"  Background agent: {child['subagent_id']} · {str(child.get('goal', ''))[:60]}"
             )
     lines.extend(_cleanup_lines(session_key))
     lines.append(f"  Agent: {'running' if agent_running else 'idle'}")

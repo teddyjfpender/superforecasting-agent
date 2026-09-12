@@ -436,3 +436,36 @@ def test_real_desk_handoff_cancel_and_dashboard_reconnect(local_desk, monkeypatc
         assert receipt(home)['session_id'] != transferred[0]
         assert len(bridges) == 1
         ws.close(code=1000)
+
+
+
+def test_real_desk_background_stop_and_cleanup_retry(local_desk, monkeypatch):
+    from tests.tui_pty.vt import VTScreen
+
+    client, home, bridges = local_desk
+    monkeypatch.setenv('FORECAST_TEST_BACKGROUND', '1')
+    monkeypatch.setenv('FORECAST_TEST_FORBID_CLASSIC_WORKER', '1')
+    screen = VTScreen(rows=45, cols=160)
+    with client.websocket_connect('/api/pty?token=local-engineering&channel=background-owner') as ws:
+        ws.send_text('\x1b[RESIZE:160;45]')
+        until(ws, lambda out: b'local-fixture' in out, screen=screen)
+        ws.send_text('complete parent turn\r')
+        until(ws, lambda out: receipt(home) and receipt(home)['status'] == 'complete', screen=screen)
+        before = receipt(home)
+        ws.send_text('/background hold this research\r')
+        until(ws, lambda out: b'bg_' in out and b'started' in out, screen=screen)
+        ws.send_text('/agents\r')
+        until(ws, lambda out: b'Spawn tree' in out and b'hold this research' in out, screen=screen)
+        assert 'cleanup_pending' not in (home / 'agent-lifetime.jsonl').read_text(encoding='utf-8')
+        ws.send_text('q')
+        until(ws, lambda out: b'Spawn tree' not in out, screen=screen)
+        ws.send_text('/stop\r')
+        until(ws, lambda out: b'fixture background close failed' in out, screen=screen)
+        assert receipt(home)['id'] == before['id']
+        ws.send_text('/stop\r')
+        until(ws, lambda out: b'Completed cleanup for 1 child agent' in out, screen=screen)
+        ws.send_text('complete after background cleanup\r')
+        until(ws, lambda out: receipt(home) and receipt(home)['id'] != before['id'] and receipt(home)['status'] == 'complete', screen=screen)
+        assert receipt(home)['session_id'] == before['session_id']
+        assert len(bridges) == 1
+        ws.close(code=1000)

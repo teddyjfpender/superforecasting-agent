@@ -735,3 +735,26 @@ to the same owner. No RPC/global transport state is imported by the host module;
 its direct presentation-import contract and directory-wide strict checks apply.
 Configuration interpolation still uses the configuration owner's environment
 expansion. Background construction/disposal remains in the RPC handler.
+
+### Host-owned background conversations
+
+`hosting.background.start_background` owns reservation, worker launch, agent
+construction, execution, initial cleanup and completion reporting. It captures the
+calling context before launching a dedicated worker. RPC supplies its parent
+session context/approval scope and transport reporting callback; `desk_agent`
+builds fallback options from one supplied configuration snapshot, preserving the
+separate 25-turn background default and inherited resolved provider account.
+
+Background agents join the existing child registry with kind=background, so
+shared /agents and /stop can inspect and interrupt them within the parent session.
+ChildCleanup retains exact failed-close handles; /stop and session disposal retry
+them. Reporting failure does not retry the model call. Handles remain in memory;
+this does not add process-death recovery or fix an SDK that cannot retry its own
+partially completed close. Construction failures before a handle is returned are
+still subject to the underlying agent factory's ownership guarantees.
+
+The native /agents overlay consumes background records from delegation.status,
+refreshing while open and retaining a visible stale-state warning if inspection
+fails. Session changes clear the snapshot. Cleanup-pending records remain visible
+until the backend confirms successful disposal; the display points users to /stop.
+The protocol now names record kind and permits fractional Unix start timestamps.

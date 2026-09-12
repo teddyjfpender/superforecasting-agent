@@ -112,6 +112,29 @@ def main():
             raise RuntimeError('fixture rebuild unavailable')
         return LocalProvider(session_id or key)
 
+    if os.environ.get('FORECAST_TEST_BACKGROUND') == '1':
+        from agent import agent_factory
+
+        class BackgroundProvider(LocalProvider):
+            def __init__(self, **kwargs):
+                super().__init__(kwargs['session_id'])
+                self.close_attempts = 0
+
+            def interrupt(self, *args):
+                super().interrupt()
+
+            def run_conversation(self, *, user_message, task_id):
+                return super().run_conversation(user_message, stream_callback=lambda text: None, conversation_history=[])
+
+            def close(self):
+                self.close_attempts += 1
+                if self.close_attempts == 1:
+                    lifetime('cleanup_pending', self.identity)
+                    raise OSError('fixture background close failed')
+                super().close()
+
+        agent_factory._aiagent_cls = lambda: BackgroundProvider
+
     server._make_agent = make_agent
     Path(os.environ['FORECAST_TEST_GATEWAY_PID']).write_text(str(os.getpid()))
     from tui_gateway.entry import main as gateway_main

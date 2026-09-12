@@ -768,3 +768,10 @@ type = "forbidden"
 source_modules = ["superforecasting_agent.hosting.desk_agent"]
 forbidden_modules = ["gateway", "tui_gateway", "cli"]
 allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "background conversation ownership never directly imports presentation"
+type = "forbidden"
+source_modules = ["superforecasting_agent.hosting.background"]
+forbidden_modules = ["gateway", "tui_gateway", "cli"]
+allow_indirect_imports = true

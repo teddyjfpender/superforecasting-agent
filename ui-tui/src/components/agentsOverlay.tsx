@@ -6,6 +6,7 @@ import {
   $delegationState,
   $overlaySectionsOpen,
   applyDelegationStatus,
+  patchDelegationState,
   toggleOverlaySection
 } from '../app/delegationStore.js'
 import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
@@ -701,8 +702,14 @@ function DiffView({
 
 export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: AgentsOverlayProps) {
   const sessionId = useStore($uiSessionId)
-  const liveSubagents = useTurnSelector(state => state.subagents)
+  const turnSubagents = useTurnSelector(state => state.subagents)
   const delegation = useStore($delegationState)
+
+  const liveSubagents = useMemo(
+    () => [...turnSubagents, ...delegation.backgroundAgents],
+    [turnSubagents, delegation.backgroundAgents]
+  )
+
   const history = useStore($spawnHistory)
   const diffPair = useStore($spawnDiff)
   // Go inert while the Ctrl+K palette / `?` cheat-sheet stacks above the view.
@@ -788,16 +795,41 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
   }, [cursor, historyIndex, mode])
 
   useEffect(() => {
-    // Warm caps + paused flag on open.
-    if (!sessionId) {return}
-    let cancelled = false
-    gw.request<DelegationStatusResponse>('delegation.status', { session_id: sessionId })
-      .then(r => {
-        if (!cancelled && getUiState().sid === sessionId) {applyDelegationStatus(asRpcResult<DelegationStatusResponse>(r))}
-      })
-      .catch(() => {})
+    // Refresh backend-owned background work while this view is open.
+    if (!sessionId) {
+      return
+    }
 
-    return () => { cancelled = true }
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+
+    const refresh = () => {
+      gw.request<DelegationStatusResponse>('delegation.status', { session_id: sessionId })
+        .then(r => {
+          if (!cancelled && getUiState().sid === sessionId) {
+            applyDelegationStatus(asRpcResult<DelegationStatusResponse>(r))
+          }
+        })
+        .catch(() => {
+          if (!cancelled && getUiState().sid === sessionId) {
+            patchDelegationState({
+              backgroundStatusError: 'Background status unavailable; showing last observed state.'
+            })
+          }
+        })
+        .finally(() => {
+          if (!cancelled && getUiState().sid === sessionId) {
+            timer = setTimeout(refresh, 1000)
+          }
+        })
+    }
+
+    refresh()
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
   }, [gw, sessionId])
 
   useEffect(() => {
@@ -1061,6 +1093,10 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
           ) : null}
         </Text>
       </Box>
+
+      {!replayMode && delegation.backgroundStatusError ? (
+        <Text color={t.color.muted}>{delegation.backgroundStatusError}</Text>
+      ) : null}
 
       {rows.length === 0 ? (
         <Box flexDirection="column" flexGrow={1}>

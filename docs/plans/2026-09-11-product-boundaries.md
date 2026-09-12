@@ -4361,3 +4361,38 @@ failure, not any historical SSL or native runtime incident.
 
 All 32 emulator and real desk lifecycle tests passed, including the unchanged
 handoff cancellation/reconnect assertion. Shared quality gates also passed.
+
+### Background conversation ownership, interruption and recovery
+
+Moved reservation, background construction/execution and cleanup out of RPC into
+hosting.background. Captured caller context preserves tenant credentials; the
+adapter seeds approvals/tools from the parent session. Fallback options now use a
+single captured profile while retaining the 25-turn background default. Failed
+close (exceptions or False) transfers the exact handle to ChildCleanup; /stop and
+session disposal retry it without rerunning work. Worker-start and report failures
+release admission correctly. Active background records are now visible to shared
+inspection/interruption under the parent owner.
+
+The rendered exercise exposed that native /agents uses a spawn-tree overlay,
+which previously ignored backend active snapshots. It now merges background
+records independently of foreground turn events, polls while open, displays
+cleanup pending and stale-inspection warnings, and drops snapshots on session
+change. The protocol includes the record kind and fractional start timestamps.
+
+827 Python host/RPC regression tests, 164 TypeScript store/command/event tests and
+shared quality gates (61 import contracts) passed. The real Ink/dashboard/local
+provider exercise passed: inspect active background work, interrupt it, observe
+an injected close failure, retry cleanup, then complete another turn in the same
+durable parent session. Its fixture waits for the actual overlay title before
+closing it; matching the echoed command alone was an insufficient ready signal.
+The scoped interface detector reported no findings. This does not prove cleanup
+across process death or repair SDK-internal partially closed transport state.
+
+The integrated push is still blocked by a separate stale-timeout test entering
+an Ollama /api/show probe against the OpenAI endpoint during agent construction
+(31,728 passed, 1 failed). The trace reached DNS/connect work before the test's
+30-second timeout. Investigation of that unsupported metadata probe is next;
+no push gate was bypassed.
+
+The affected protocol/code-generation and background ownership checks also passed
+all 79 tests after the wire-schema changes.

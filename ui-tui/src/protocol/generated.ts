@@ -304,6 +304,7 @@ export interface CronFiredPayload {
 export interface DelegationActiveEntry {
   depth?: number
   goal?: string
+  kind?: string
   model?: null | string
   parent_id?: null | string
   started_at?: number

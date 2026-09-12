@@ -1,10 +1,13 @@
 import { atom } from 'nanostores'
 
 import type { DelegationStatusResponse } from '../gatewayTypes.js'
+import type { SubagentProgress } from '../types.js'
 
 import { $uiSessionId } from './uiStore.js'
 
 export interface DelegationState {
+  backgroundAgents: SubagentProgress[]
+  backgroundStatusError: null | string
   // Last known caps from `delegation.status` RPC.  null until fetched.
   maxConcurrentChildren: null | number
   maxSpawnDepth: null | number
@@ -15,6 +18,8 @@ export interface DelegationState {
 }
 
 const buildState = (): DelegationState => ({
+  backgroundAgents: [],
+  backgroundStatusError: null,
   maxConcurrentChildren: null,
   maxSpawnDepth: null,
   paused: false,
@@ -75,6 +80,35 @@ export const applyDelegationStatus = (r: DelegationStatusResponse | null | undef
 
   if (typeof r.paused === 'boolean') {
     patch.paused = r.paused
+  }
+
+  if (Array.isArray(r.active)) {
+    patch.backgroundStatusError = null
+    patch.backgroundAgents = []
+
+    for (const entry of r.active) {
+      if (entry.kind !== 'background' || !entry.subagent_id) {
+        continue
+      }
+
+      const pending = entry.status === 'cleanup_pending'
+      patch.backgroundAgents.push({
+        id: entry.subagent_id,
+        index: patch.backgroundAgents.length,
+        depth: 0,
+        parentId: null,
+        goal: `${entry.goal ?? 'Background forecast'}${pending ? ' · cleanup pending' : ''}`,
+        model: entry.model ?? undefined,
+        startedAt: (entry.started_at ?? 0) * 1000,
+        status: pending ? 'error' : 'running',
+        summary: pending ? 'Resource cleanup is pending. Close this view and retry /stop.' : undefined,
+        notes: [],
+        thinking: [],
+        tools: [],
+        toolCount: entry.tool_count ?? 0,
+        taskCount: 1
+      })
+    }
   }
 
   patchDelegationState(patch)

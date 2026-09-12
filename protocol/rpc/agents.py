@@ -114,11 +114,12 @@ class DelegationStatusRequest(WireModel):
 class DelegationActiveEntry(WireModel):
     TS_NAME = "DelegationActiveEntry"
 
+    kind: str | None = wire_optional()
     depth: int | None = wire_optional()
     goal: str | None = wire_optional()
     model: str | None = wire_optional(nullable=True)
     parent_id: str | None = wire_optional(nullable=True)
-    started_at: int | None = wire_optional()
+    started_at: float | None = wire_optional()
     status: str | None = wire_optional()
     subagent_id: str | None = wire_optional()
     tool_count: int | None = wire_optional()
