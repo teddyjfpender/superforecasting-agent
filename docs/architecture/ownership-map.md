@@ -864,3 +864,14 @@ ordinary failures return a failed link result with the preserved model ID, while
 interruptions roll back and propagate. Retrying the link does not rebuild the model.
 This does not make model generation and link persistence one transaction, nor does
 it change the separate `model_to_forecast` seed conversion flow.
+
+
+### Information triage
+
+`forecasting/application/triage.py` owns labeling, contested-label routing,
+adjudication, rubrics and trust reports. CLI and tool adapters consume the same
+structured operation results and errors. Contested-label selection plus alert and
+label writes run inside a ledger transaction; expert adjudication and alert
+acknowledgement commit together. Interruptions roll back and propagate. No model
+or network call is held inside those write transactions. The CLI no longer enters
+the forecast tool registry to perform triage.

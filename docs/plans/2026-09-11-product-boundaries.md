@@ -4697,3 +4697,21 @@ partial-write audit; this change does not claim that flow is atomic.
 Validation: 56 model, ledger, tool and output tests passed, including CLI/tool/
 application parameter parity and failure/retry cases. All 66 import contracts and
 the shared lint, format, type, protocol and TUI quality checks passed.
+
+
+### Shared triage operations and coupled review writes
+
+Extracted labeling, contested routing, expert adjudication, rubrics and trust
+reports into the application layer. The CLI and tool adapters share results and
+validation errors. Removed the triage CLI's tool-import exception; supervisor web
+search is the one remaining direct forecast-to-tool edge.
+
+Failure injection reproduced partial label/alert writes and swallowed alert
+acknowledgement failures. Routing and adjudication now each use the existing
+ledger transaction owner, with rollback on exceptions and cancellation. Retry
+checks preserve alert deduplication and complete the coupled writes. No remote
+labeler call runs under the write transaction.
+
+Validation: 65 triage, CLI, label-scoring and trust checks passed, including
+CLI/tool/application error parity and interrupted-write recovery. Shared quality
+checks passed, including all 66 import contracts and blocking Python/TUI checks.

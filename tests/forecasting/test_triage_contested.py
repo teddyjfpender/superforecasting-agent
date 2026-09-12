@@ -224,3 +224,51 @@ def test_reconcile_never_acks_a_contested_label_alert(tmp_path):
     assert contested_alert.id not in reconciled_ids  # the contested label was NOT
     still_open_ids = [a.id for a in lg.list_alerts(unresolved_only=True)]
     assert contested_alert.id in still_open_ids
+
+
+@pytest.mark.parametrize("stage", ["contest", "adjudicate"])
+@pytest.mark.parametrize("failure", [ValueError("injected persistence failure"), KeyboardInterrupt()])
+def test_triage_coupled_writes_roll_back_on_failure(ledger, monkeypatch, stage, failure):
+    def dispatch(payload):
+        if isinstance(failure, KeyboardInterrupt):
+            with pytest.raises(KeyboardInterrupt):
+                _tool()(payload)
+            return {"success": False}
+        return json.loads(_tool()(payload))
+
+    _seed_auto_rows(ledger)
+    if stage == "contest":
+        before = ledger.list_triage_labels(question_id="q1")
+        original = ForecastLedger.update_triage_label
+        def fail(self, *args, **kwargs):
+            original(self, *args, **kwargs)
+            raise failure
+        monkeypatch.setattr(ForecastLedger, "update_triage_label", fail)
+        result = dispatch({"action": "triage_contested", "db": ledger.db_path, "question_id": "q1"})
+        assert result["success"] is False
+        assert ledger.list_triage_labels(question_id="q1") == before
+        assert select_open_warnings(ledger) == []
+        monkeypatch.setattr(ForecastLedger, "update_triage_label", original)
+        for _ in range(2):
+            retry = json.loads(_tool()({"action": "triage_contested", "db": ledger.db_path, "question_id": "q1"}))
+            assert retry["success"] is True
+        assert len(select_open_warnings(ledger)) == 2
+    else:
+        result = json.loads(_tool()({"action": "triage_contested", "db": ledger.db_path, "question_id": "q1"}))
+        target = result["contested"][0]
+        before = ledger.get_triage_label(target["id"])
+        original = ForecastLedger.acknowledge_alert
+        def fail(self, *args, **kwargs):
+            original(self, *args, **kwargs)
+            raise failure
+        monkeypatch.setattr(ForecastLedger, "acknowledge_alert", fail)
+        result = dispatch({"action": "relabel_route", "db": ledger.db_path, "label_id": target["id"], "label": "relevant_interesting"})
+        assert result["success"] is False
+        assert ledger.get_triage_label(target["id"]) == before
+        assert ledger.get_alert(target["alert_id"]).acknowledged_at is None
+
+        monkeypatch.setattr(ForecastLedger, "acknowledge_alert", original)
+        retry = json.loads(_tool()({"action": "relabel_route", "db": ledger.db_path, "label_id": target["id"], "label": "relevant_interesting"}))
+        assert retry["success"] is True
+        assert ledger.get_triage_label(target["id"])["label_source"] == "expert"
+        assert ledger.get_alert(target["alert_id"]).acknowledged_at

@@ -387,7 +387,6 @@ source_modules = ["forecasting"]
 forbidden_modules = ["tools"]
 allow_indirect_imports = "true"
 ignore_imports = [
-    "forecasting.cli.triage_calibration -> tools.forecasting_tool",
     "forecasting.supervisor_search -> tools.web_tools",
 ]
 
