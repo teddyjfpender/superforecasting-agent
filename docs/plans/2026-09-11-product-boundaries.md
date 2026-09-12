@@ -3425,3 +3425,17 @@ and stored goal records are untouched.
 Validation: 124 focused configuration/application/CLI/gateway/TUI tests passed,
 including malformed settings through real native TUI dispatch. Shared Python
 quality gates passed with all 52 import contracts.
+
+
+### Backend worker startup ownership
+
+Detached jobs now launch `superforecasting_agent.worker`, which owns plugin
+startup before domain execution. The old module command forwards for compatibility.
+The new entrypoint has strict lint/format/type coverage, and its migration removes
+one frozen forecasting-to-runtime exception. Discovery failures retain diagnostics
+instead of silently disappearing. The installed-profile verifier now checks that
+the backend worker entrypoint is present without requiring terminal dependencies.
+
+Validation: 44 focused entrypoint, detached-launcher, real warnings-job and
+reforecast tests passed. Shared Python quality gates passed with 52 contracts.
+The new installed-artifact check is added but has not yet run on a rebuilt wheel.

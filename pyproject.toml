@@ -377,7 +377,6 @@ source_modules = ["forecasting"]
 forbidden_modules = ["superforecasting_agent.runtime"]
 allow_indirect_imports = "true"
 ignore_imports = [
-    "forecasting.jobs.__main__ -> superforecasting_agent.runtime.plugins",
     "forecasting.market_nightly_forecaster -> superforecasting_agent.runtime.plugins",
     "forecasting.quorum.panels -> superforecasting_agent.runtime.models",
 ]

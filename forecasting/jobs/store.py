@@ -32,7 +32,7 @@ _ACTIVE_STATUSES = ("queued", "running")
 # fresh. TWO real records read as forever-running otherwise, keeping the Home
 # "✦ N agents running" chip lit indefinitely:
 #   1. a worker that CRASHED/was killed (OOM, SIGKILL, a segfault in the detached
-#      ``python -m forecasting.jobs run`` child) never reaches the runtime's
+#      ``python -m superforecasting_agent.worker run`` child) never reaches the runtime's
 #      try/except, so it never writes a terminal ``done``/``error`` status; the
 #      record is stuck at ``running`` on disk.
 #   2. a pre-migration legacy ``rf_``/``qr_`` file with NO ``status`` key — the

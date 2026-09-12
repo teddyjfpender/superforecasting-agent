@@ -364,6 +364,9 @@ def main() -> None:
                 })
             )
         backend_run("-c", "import forecasting.application.reviews")
+        backend_run(
+            "-c", "from superforecasting_agent.worker import main; assert main([]) == 2"
+        )
         backend_run("-c", NUMERICAL_FALLBACK_CHECK)
         print(
             "Backend: numerical fallback passed without optional libraries or installer access."

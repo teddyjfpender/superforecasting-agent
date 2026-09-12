@@ -3,7 +3,7 @@ and write the terminal ``done``/``cancelled``/``error`` state.
 
 ``run`` is transport-agnostic. In the gateway it runs on a daemon thread with the
 ``on_progress``/``on_complete``/``on_error`` hooks wired to event emit; as a
-detached process (``python -m forecasting.jobs run <id>``) the hooks are absent
+detached process (``python -m superforecasting_agent.worker run <id>``) the hooks are absent
 and the persisted record IS the channel a poller reads.
 """
 

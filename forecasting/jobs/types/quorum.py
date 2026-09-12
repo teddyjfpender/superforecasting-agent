@@ -16,7 +16,7 @@ record, run the quorum + judge synthesis, and persist the aggregate as a sibling
 panel run through the ledger write gate. NOTHING here weakens a gate; the committed
 number is the P0.3-resolved, terminally-calibrated value.
 
-Detach is a CHILD PROCESS (``python -m forecasting.jobs run <job_id>``, fresh
+Detach is a CHILD PROCESS (``python -m superforecasting_agent.worker run <job_id>``, fresh
 contextvars, ``start_new_session=True``) for the same reason the legacy runner was:
 the one-shot CLI/RPC that enqueues exits as soon as it has the id, so a thread would
 be killed. The fresh worker discovers plugins (search/extract providers) before it
@@ -204,7 +204,7 @@ def start_job(spec: dict[str, Any], *, wait: bool = False) -> str:
     ``triggered_by``, ``attach_snapshot``, ``active_model``, ``delphi_rounds``,
     ``supervisor_search``, ``max_iterations``, ``model_timeout``.
 
-    Detach is a CHILD PROCESS (``python -m forecasting.jobs run <job_id>``, fresh
+    Detach is a CHILD PROCESS (``python -m superforecasting_agent.worker run <job_id>``, fresh
     contextvars, ``start_new_session=True``) — the enqueuing CLI/RPC exits as soon as
     it has the id, so a thread would be killed."""
 

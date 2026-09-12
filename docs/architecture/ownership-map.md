@@ -607,3 +607,15 @@ post-turn continuation use it. Positive integers and numeric strings are accepte
 booleans, fractions, nonpositive values and malformed sections use the 20-turn
 default. Existing stored goal history and explicit manager mutation arguments
 are not reinterpreted by this configuration reader.
+
+
+### Detached forecast worker entrypoint
+
+`python -m superforecasting_agent.worker run <job_id>` owns backend process
+startup and plugin discovery, then calls the forecasting job runtime. The detached
+launcher uses this product entrypoint. `python -m forecasting.jobs` remains a
+compatibility forwarding entrypoint with its historical usage message. Plugin
+startup failure emits diagnostics while preserving the existing best-effort
+registered-provider behavior. Job state and exit-status semantics are unchanged.
+This removes the job entrypoint's direct domain-to-runtime import exception; it
+does not claim that the compatibility entrypoint is a pure domain module.
