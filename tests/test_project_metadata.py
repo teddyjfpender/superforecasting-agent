@@ -5109,8 +5109,8 @@ def test_oauth_file_env_aliases_are_forecast_native():
     assert "SUPERFORECASTING_AGENT_OAUTH_FILE" in anthropic_adapter
     assert "FORECAST_OAUTH_FILE" in anthropic_adapter
     assert "HERMES_OAUTH_FILE" in anthropic_adapter
-    assert "def get_hermes_oauth_file" in anthropic_adapter
-    assert "get_hermes_oauth_file()" in web_server
+    assert "def get_agent_oauth_file" in anthropic_adapter
+    assert "get_agent_oauth_file()" in web_server
     assert "SUPERFORECASTING_AGENT_OAUTH_FILE" in env_reference
     assert "FORECAST_OAUTH_FILE" in env_reference
 

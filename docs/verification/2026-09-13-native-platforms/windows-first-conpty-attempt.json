@@ -1,0 +1,16 @@
+{
+  "workflow_run": 34759724958,
+  "head_sha": "0c451ec54111b1d027d43caaec7809cca42c5ed4",
+  "jobs": [
+    103730307033,
+    103730307059
+  ],
+  "platform": "native Windows AMD64",
+  "focused_tests": {
+    "passed": 42,
+    "failed": 1,
+    "failure": "test_terminal_input_resize_cancellation_and_restart: Python cooked input raised EOFError after Ctrl-C",
+    "real_ink_cancel_reconnect": "passed"
+  },
+  "installed_product_verification": "not_run_after_fixture_failure"
+}

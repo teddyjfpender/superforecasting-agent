@@ -44,8 +44,10 @@ import threading
 import time
 import uuid
 
-_IS_WINDOWS = platform.system() == "Windows"
 from typing import Any, Dict, List, Optional
+from tools.registry import registry, tool_error
+
+_IS_WINDOWS = platform.system() == "Windows"
 
 # Availability gate.  On Windows we fall back to loopback TCP for the
 # sandbox RPC transport (AF_UNIX is unreliable on Windows Python) — see
@@ -241,7 +243,10 @@ _TOOL_STUBS = {
 }
 
 
-def generate_hermes_tools_module(enabled_tools: List[str],
+_LEGACY_TOOLS_ADAPTER = "import sys\nimport forecast_tools\nsys.modules[__name__] = forecast_tools\n"
+
+
+def generate_forecast_tools_module(enabled_tools: List[str],
                                  transport: str = "uds") -> str:
     """
     Build the source code for the hermes_tools.py stub module.
@@ -948,10 +953,11 @@ def _execute_remote(
         )
 
         # Generate and ship files
-        tools_src = generate_hermes_tools_module(
+        tools_src = generate_forecast_tools_module(
             list(sandbox_tools), transport="file",
         )
-        _ship_file_to_remote(env, f"{sandbox_dir}/hermes_tools.py", tools_src)
+        _ship_file_to_remote(env, f"{sandbox_dir}/forecast_tools.py", tools_src)
+        _ship_file_to_remote(env, f"{sandbox_dir}/hermes_tools.py", _LEGACY_TOOLS_ADAPTER)
         _ship_file_to_remote(env, f"{sandbox_dir}/script.py", code)
 
         # Start RPC polling thread
@@ -1187,9 +1193,11 @@ def execute_code(
         # Python source files are decoded as UTF-8 by default (PEP 3120).
         # sandbox_tools is already the correct set (intersection with session
         # tools, or SANDBOX_ALLOWED_TOOLS as fallback — see lines above).
-        tools_src = generate_hermes_tools_module(list(sandbox_tools))
-        with open(os.path.join(tmpdir, "hermes_tools.py"), "w", encoding="utf-8") as f:
+        tools_src = generate_forecast_tools_module(list(sandbox_tools))
+        with open(os.path.join(tmpdir, "forecast_tools.py"), "w", encoding="utf-8") as f:
             f.write(tools_src)
+        with open(os.path.join(tmpdir, "hermes_tools.py"), "w", encoding="utf-8") as f:
+            f.write(_LEGACY_TOOLS_ADAPTER)
 
         # Write the user's script
         with open(os.path.join(tmpdir, "script.py"), "w", encoding="utf-8") as f:
@@ -1884,14 +1892,14 @@ def build_execute_code_schema(enabled_sandbox_tools: set[str] | frozenset[str] |
         "Use normal tool calls instead when: single tool call with no processing, "
         "you need to see the full result and apply complex reasoning, "
         "or the task requires interactive user input.\n\n"
-        f"Available via `from hermes_tools import ...`:\n\n"
+        f"Available via `from forecast_tools import ...`:\n\n"
         f"{tool_lines}\n\n"
         "Limits: 5-minute timeout, 50KB stdout cap, max 50 tool calls per script. "
         "terminal() is foreground-only (no background or pty).\n\n"
         f"{cwd_note}\n\n"
         "Print your final result to stdout. Use Python stdlib (json, re, math, csv, "
         "datetime, collections, etc.) for processing between tool calls.\n\n"
-        "Also available (no import needed — built into hermes_tools):\n"
+        "Also available (no import needed — built into forecast_tools):\n"
         "  json_parse(text: str) — json.loads with strict=False; use for terminal() output with control chars\n"
         "  shell_quote(s: str) — shlex.quote(); use when interpolating dynamic strings into shell commands\n"
         "  retry(fn, max_attempts=3, delay=2) — retry with exponential backoff for transient failures"
@@ -1907,7 +1915,7 @@ def build_execute_code_schema(enabled_sandbox_tools: set[str] | frozenset[str] |
                     "type": "string",
                     "description": (
                         "Python code to execute. Import tools with "
-                        f"`from hermes_tools import {import_str}` "
+                        f"`from forecast_tools import {import_str}` "
                         "and print your final result to stdout."
                     ),
                 },
@@ -1923,7 +1931,6 @@ EXECUTE_CODE_SCHEMA = build_execute_code_schema()
 
 
 # --- Registry ---
-from tools.registry import registry, tool_error
 
 registry.register(
     name="execute_code",
@@ -1940,3 +1947,7 @@ registry.register(
     emoji="🐍",
     max_result_size_chars=100_000,
 )
+
+
+# Compatibility API for existing plugins and saved scripts.
+generate_hermes_tools_module = generate_forecast_tools_module

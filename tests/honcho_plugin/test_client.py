@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from superforecasting_agent.runtime.profiles import _get_default_hermes_home
+from superforecasting_agent.runtime.profiles import _get_default_agent_home
 
 import pytest
 
@@ -353,7 +353,7 @@ class TestResolveConfigPath:
 
     def test_falls_back_to_default_profile_when_no_local(self, tmp_path, monkeypatch):
         # Profile mode: HERMES_HOME points at ~/.hermes/profiles/<name>, so
-        # _get_default_hermes_home() must resolve back to ~/.hermes — that's
+        # _get_default_agent_home() must resolve back to ~/.hermes — that's
         # the bug the HOME-anchored helper fixes (vs. blindly using Path.home()).
         fake_home = tmp_path / "fakehome"
         fake_home.mkdir()
@@ -368,7 +368,7 @@ class TestResolveConfigPath:
 
         result = resolve_config_path()
 
-        assert _get_default_hermes_home() == default_home
+        assert _get_default_agent_home() == default_home
         assert result == default_cfg
 
     def test_falls_back_to_global_without_hermes_home_env(self, tmp_path):

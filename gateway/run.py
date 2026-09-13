@@ -1402,21 +1402,14 @@ def _resolve_gateway_model(config: dict | None = None) -> str:
     return model_section(cfg).get('default') or ''
 
 
-def _resolve_hermes_bin() -> Optional[list[str]]:
-    """Resolve the Hermes update command as argv parts.
-
-    Tries in order:
-    1. ``shutil.which("hermes")`` — standard PATH lookup
-    2. ``sys.executable -m superforecasting_agent.runtime.main`` — fallback when Hermes is running
-       from a venv/module invocation and the ``hermes`` shim is not on PATH
-
-    Returns argv parts ready for quoting/joining, or ``None`` if neither works.
-    """
+def _resolve_agent_bin() -> Optional[list[str]]:
+    """Resolve the canonical update command, with a legacy launcher fallback."""
     import shutil
 
-    hermes_bin = shutil.which("hermes")
-    if hermes_bin:
-        return [hermes_bin]
+    for command in ("superforecasting-agent", "hermes"):
+        executable = shutil.which(command)
+        if executable:
+            return [executable]
 
     try:
         import importlib.util
@@ -4216,7 +4209,7 @@ class GatewayRunner:
         import shutil
         import subprocess
 
-        hermes_cmd = _resolve_hermes_bin()
+        hermes_cmd = _resolve_agent_bin()
         if not hermes_cmd:
             logger.error("Could not locate hermes binary for detached /restart")
             return
@@ -14362,7 +14355,7 @@ class GatewayRunner:
         if not git_dir.exists():
             return t("gateway.update.not_git_repo")
 
-        hermes_cmd = _resolve_hermes_bin()
+        hermes_cmd = _resolve_agent_bin()
         if not hermes_cmd:
             return t("gateway.update.hermes_cmd_not_found")
 

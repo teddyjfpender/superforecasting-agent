@@ -966,10 +966,10 @@ _OAUTH_SCOPES = "org:create_api_key user:profile user:inference"
 from superforecasting_agent.credentials.anthropic import _OAUTH_FILE_ENV_NAMES as _OAUTH_FILE_ENV_NAMES
 
 
-from superforecasting_agent.credentials.anthropic import get_hermes_oauth_file as get_hermes_oauth_file
+from superforecasting_agent.credentials.anthropic import get_agent_oauth_file as get_agent_oauth_file
 
 
-_HERMES_OAUTH_FILE = get_hermes_oauth_file()
+_HERMES_OAUTH_FILE = get_agent_oauth_file()
 
 
 def _generate_pkce() -> tuple:
@@ -985,7 +985,7 @@ def _generate_pkce() -> tuple:
     return verifier, challenge
 
 
-def run_hermes_oauth_login_pure() -> Optional[Dict[str, Any]]:
+def run_agent_oauth_login_pure() -> Optional[Dict[str, Any]]:
     """Run Superforecasting Agent-native OAuth PKCE flow and return credential state."""
     import secrets
     import time
@@ -1090,7 +1090,7 @@ def run_hermes_oauth_login_pure() -> Optional[Dict[str, Any]]:
     }
 
 
-from superforecasting_agent.credentials.anthropic import read_hermes_oauth_credentials as read_hermes_oauth_credentials
+from superforecasting_agent.credentials.anthropic import read_agent_oauth_credentials as read_agent_oauth_credentials
 
 
 # ---------------------------------------------------------------------------
@@ -2003,3 +2003,9 @@ def build_anthropic_kwargs(
         kwargs["extra_headers"] = {"anthropic-beta": ",".join(betas)}
 
     return kwargs
+
+
+# Compatibility exports for existing plugins; canonical implementations above.
+get_hermes_oauth_file = get_agent_oauth_file
+read_hermes_oauth_credentials = read_agent_oauth_credentials
+run_hermes_oauth_login_pure = run_agent_oauth_login_pure

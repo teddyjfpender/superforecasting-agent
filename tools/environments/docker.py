@@ -114,7 +114,7 @@ def _normalize_env_dict(env: dict | None) -> dict[str, str]:
     return normalized
 
 
-def _load_hermes_env_vars() -> dict[str, str]:
+def _load_agent_env_vars() -> dict[str, str]:
     """Load ~/.hermes/.env values without failing Docker command execution."""
     try:
         from superforecasting_agent.runtime.config import load_env
@@ -578,7 +578,7 @@ class DockerEnvironment(BaseEnvironment):
         # win over the generic Hermes secret blocklist. Only implicit passthrough
         # keys are filtered.
         forward_keys = explicit_forward_keys | (passthrough_keys - _HERMES_PROVIDER_ENV_BLOCKLIST)
-        hermes_env = _load_hermes_env_vars() if forward_keys else {}
+        hermes_env = _load_agent_env_vars() if forward_keys else {}
         for key in sorted(forward_keys):
             value = os.getenv(key)
             if value is None:

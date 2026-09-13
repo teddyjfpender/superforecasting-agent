@@ -48,3 +48,24 @@ def test_remove_path_from_shell_configs_removes_fork_and_legacy_markers(monkeypa
     assert "superforecasting-agent" not in content
     assert "Hermes Agent" not in content
     assert ".local/bin/hermes" not in content
+
+
+def test_windows_path_cleanup_matches_owned_directory_boundaries(monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    from contextlib import nullcontext
+    from pathlib import Path
+    from superforecasting_agent.runtime.uninstall import remove_path_from_windows_registry
+    owned = r"C:\desk\superforecasting-agent"
+    legacy = r"C:\desk\hermes-agent\Scripts"
+    unrelated = r"C:\desk\superforecasting-agent-other;C:\desk\git-tools"
+    values = []
+    registry = SimpleNamespace(
+        HKEY_CURRENT_USER=1, KEY_READ=2, KEY_WRITE=4,
+        OpenKey=lambda *a: nullcontext("key"),
+        QueryValueEx=lambda *a: (owned + ";" + legacy + ";" + unrelated, 2),
+        SetValueEx=lambda *a: values.append(a[-1]),
+    )
+    monkeypatch.setitem(sys.modules, "winreg", registry)
+    assert remove_path_from_windows_registry(Path(r"C:\desk")) == [owned, legacy]
+    assert values == [unrelated]

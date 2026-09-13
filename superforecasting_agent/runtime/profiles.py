@@ -157,7 +157,7 @@ def _clone_all_copytree_ignore(source_dir: Path):
     clone.
     """
     source_resolved = source_dir.resolve()
-    is_default_source = source_resolved == _get_default_hermes_home().resolve()
+    is_default_source = source_resolved == _get_default_agent_home().resolve()
 
     def _ignore(directory: str, names: List[str]) -> List[str]:
         ignored: list[str] = []
@@ -243,10 +243,10 @@ def _get_profiles_root() -> Path:
     native or legacy default root, profiles live under
     ``HERMES_HOME/profiles/`` so they persist on the mounted volume.
     """
-    return _get_default_hermes_home() / "profiles"
+    return _get_default_agent_home() / "profiles"
 
 
-def _get_default_hermes_home() -> Path:
+def _get_default_agent_home() -> Path:
     """Return the default (pre-profile) HERMES_HOME path.
 
     In standard new deployments this is ``~/.superforecasting-agent``.
@@ -261,7 +261,7 @@ def _get_default_hermes_home() -> Path:
 
 def _get_active_profile_path() -> Path:
     """Return the path to the sticky active_profile file."""
-    return _get_default_hermes_home() / "active_profile"
+    return _get_default_agent_home() / "active_profile"
 
 
 def _get_wrapper_dir() -> Path:
@@ -536,7 +536,7 @@ def list_profiles() -> List[ProfileInfo]:
     wrapper_dir = _get_wrapper_dir()
 
     # Default profile
-    default_home = _get_default_hermes_home()
+    default_home = _get_default_agent_home()
     if default_home.is_dir():
         model, provider = _read_config_model(default_home)
         dist_name, dist_version, dist_source = _read_distribution_meta(default_home)
@@ -637,7 +637,7 @@ def create_profile(
     if canon == "default":
         raise ValueError(
             "Cannot create a profile named 'default' — it is the built-in "
-            f"profile ({_get_default_hermes_home()})."
+            f"profile ({_get_default_agent_home()})."
         )
 
     profile_dir = get_profile_dir(canon)
@@ -807,7 +807,7 @@ def delete_profile(name: str, yes: bool = False) -> Path:
 
     if canon == "default":
         raise ValueError(
-            f"Cannot delete the default profile ({_get_default_hermes_home()}).\n"
+            f"Cannot delete the default profile ({_get_default_agent_home()}).\n"
             "To remove everything, use: superforecasting-agent uninstall"
         )
 
@@ -1249,7 +1249,7 @@ def _migrate_honcho_profile_host(old_name: str, new_name: str, new_dir: Path) ->
 
     candidates = [
         new_dir / "honcho.json",
-        _get_default_hermes_home() / "honcho.json",
+        _get_default_agent_home() / "honcho.json",
         Path.home() / ".honcho" / "config.json",
     ]
 

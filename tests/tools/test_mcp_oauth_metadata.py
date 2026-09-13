@@ -3,7 +3,7 @@
 Covers:
 - :class:`HermesTokenStorage` ``.meta.json`` roundtrip (save / load / remove)
 - The production manager provider
-  (:class:`tools.mcp_oauth_manager.HermesMCPOAuthProvider`) restoring metadata
+  (:class:`tools.mcp_oauth_manager.ForecastMCPOAuthProvider`) restoring metadata
   on cold-load init and persisting metadata at the end of ``async_auth_flow``.
 
 Context
@@ -90,7 +90,7 @@ class TestMetadataStorage:
 
 
 # ---------------------------------------------------------------------------
-# Manager-path provider (HermesMCPOAuthProvider) — production code path
+# Manager-path provider (ForecastMCPOAuthProvider) — production code path
 # ---------------------------------------------------------------------------
 
 

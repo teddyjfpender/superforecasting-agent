@@ -8,17 +8,20 @@ description: "Programmatic Python execution for forecast data gathering and sour
 
 The `execute_code` tool lets Superforecasting Agent write Python scripts that call inherited runtime tools programmatically, collapsing multi-step data gathering and source-processing workflows into a single LLM turn. The script runs in a child process on the agent host, communicating with the parent process over a Unix domain socket RPC.
 
+Saved scripts may continue importing `hermes_tools`. That compatibility module
+forwards to the same `forecast_tools` module, so both names share tool state.
+
 ## How It Works
 
-1. The agent writes a Python script using the inherited helper import `from hermes_tools import ...`
-2. Superforecasting Agent generates a `hermes_tools.py` stub module with RPC functions
+1. The agent writes a Python script using the canonical helper import `from forecast_tools import ...`
+2. Superforecasting Agent generates a `forecast_tools.py` stub module with RPC functions
 3. Superforecasting Agent opens a Unix domain socket and starts an RPC listener thread
 4. The script runs in a child process — tool calls travel over the socket back to the parent process
 5. Only the script's `print()` output is returned to the LLM; intermediate tool results never enter the context window
 
 ```python
 # The agent can write scripts like:
-from hermes_tools import web_search, web_extract
+from forecast_tools import web_search, web_extract
 
 results = web_search("semiconductor export controls license approvals 2026", limit=5)
 for r in results["data"]["web"]:
@@ -44,7 +47,7 @@ The key benefit: intermediate tool results never enter the context window — on
 ### Forecast Data Processing Pipeline
 
 ```python
-from hermes_tools import search_files, read_file
+from forecast_tools import search_files, read_file
 import json
 
 # Find forecast fixture files and extract stale-question markers
@@ -60,7 +63,7 @@ print(json.dumps(configs, indent=2))
 ### Multi-Step Source Research
 
 ```python
-from hermes_tools import web_search, web_extract
+from forecast_tools import web_search, web_extract
 import json
 
 # Search, extract, and summarize source candidates in one turn
@@ -82,7 +85,7 @@ print(json.dumps(summaries, indent=2))
 ### Bulk Forecast-Code Refactoring
 
 ```python
-from hermes_tools import search_files, read_file, patch
+from forecast_tools import search_files, read_file, patch
 
 # Find forecast code using a deprecated helper and fix it
 matches = search_files("old_probability_helper", path="forecasting/", file_glob="*.py")
@@ -103,7 +106,7 @@ print(f"Fixed {fixed} files out of {len(matches.get('matches', []))} matches")
 ### Build and Test Pipeline
 
 ```python
-from hermes_tools import terminal, read_file
+from forecast_tools import terminal, read_file
 import json
 
 # Run tests, parse results, and report

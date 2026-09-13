@@ -44,7 +44,7 @@ def test_startup_repair_preserves_concurrent_credential_write(tmp_path, monkeypa
     path = tmp_path / '.env'
     path.write_text('OPENAI_API_KEY=firstANTHROPIC_API_KEY=second\n', encoding='utf-8')
     monkeypatch.setattr(config, 'get_env_path', lambda: path)
-    monkeypatch.setattr(config, 'ensure_hermes_home', lambda: None)
+    monkeypatch.setattr(config, 'ensure_agent_home', lambda: None)
     monkeypatch.setattr(config, 'is_managed', lambda: False)
     monkeypatch.delenv('EXA_API_KEY', raising=False)
     original = env_lines.sanitize_env_lines

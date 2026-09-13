@@ -89,6 +89,7 @@ class WSTransport:
         fut = None
         try:
             from agent.async_utils import safe_schedule_threadsafe
+
             fut = safe_schedule_threadsafe(self._safe_send(line), self._loop)
             if fut is None:
                 self.close()
@@ -173,22 +174,20 @@ async def handle_ws(ws: Any) -> None:
     try:
         from tui_gateway.host_rpc import descriptor
 
-        ready = await transport.write_async(
-            {
-                "jsonrpc": "2.0",
-                "method": "event",
-                "params": {
-                    "type": "gateway.ready",
-                    "payload": {
-                        "skin": server.resolve_skin(),
-                        **descriptor(server),
-                        # Same non-blocking build identity the stdio entry advertises,
-                        # so a websocket-attached TUI shows the same version banner.
-                        "build": server.build_info(),
-                    },
+        ready = await transport.write_async({
+            "jsonrpc": "2.0",
+            "method": "event",
+            "params": {
+                "type": "gateway.ready",
+                "payload": {
+                    "skin": server.resolve_skin(),
+                    **descriptor(server),
+                    # Same non-blocking build identity the stdio entry advertises,
+                    # so a websocket-attached TUI shows the same version banner.
+                    "build": server.build_info(),
                 },
-            }
-        )
+            },
+        })
 
         if not ready:
             return
@@ -206,13 +205,11 @@ async def handle_ws(ws: Any) -> None:
             try:
                 req = json.loads(line)
             except json.JSONDecodeError:
-                ok = await transport.write_async(
-                    {
-                        "jsonrpc": "2.0",
-                        "error": {"code": -32700, "message": "parse error"},
-                        "id": None,
-                    }
-                )
+                ok = await transport.write_async({
+                    "jsonrpc": "2.0",
+                    "error": {"code": -32700, "message": "parse error"},
+                    "id": None,
+                })
                 if not ok:
                     break
                 continue

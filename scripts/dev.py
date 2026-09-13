@@ -21,6 +21,8 @@ ROOT = Path(__file__).resolve().parents[1]
 STRICT_PYTHON = (
     "agent/browser_provider.py",
     "agent/file_safety.py",
+    "agent/lsp/install.py",
+    "tui_gateway/ws.py",
     "tools/skills_sync.py",
     "agent/portal_tags.py",
     "forecasting/economic_measurements.py",
@@ -83,6 +85,7 @@ STRICT_PYTHON = (
 # Inherited owners can adopt correctness checks before wholesale formatting/types.
 CORRECTNESS_PYTHON = (
     "agent/agent_runtime_helpers.py",
+    "tools/code_execution_tool.py",
     "scripts/investigate_native_tls.py",
     "superforecasting_agent/runtime/kanban.py",
     "superforecasting_agent/runtime/kanban_db.py",

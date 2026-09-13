@@ -1,4 +1,4 @@
-"""Regression test for the ``HermesMCPOAuthProvider.async_auth_flow`` bidirectional
+"""Regression test for the ``ForecastMCPOAuthProvider.async_auth_flow`` bidirectional
 generator bridge.
 
 PR #11383 introduced a subclass method that wrapped the SDK's ``auth_flow`` with::

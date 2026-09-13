@@ -88,7 +88,7 @@ def test_install_npm_works_without_extras(tmp_path, monkeypatch):
     assert "pyright" in cmd
     # Should not blow up when extra_pkgs is omitted/None
     install_targets = [c for c in cmd if not c.startswith("-") and c not in {
-        "install", "--prefix", str(install_mod.hermes_lsp_bin_dir().parent),
+        "install", "--prefix", str(install_mod.agent_lsp_bin_dir().parent),
         "/usr/bin/npm",
     }]
     assert install_targets == ["pyright"]
@@ -277,3 +277,12 @@ def test_check_lint_returns_error_for_real_ts_type_errors(tmp_path):
 
 if __name__ == "__main__":  # pragma: no cover
     pytest.main([__file__, "-v"])
+
+
+def test_lsp_staging_prefers_canonical_profile_and_keeps_legacy_export(tmp_path, monkeypatch):
+    from agent.lsp.install import agent_lsp_bin_dir, hermes_lsp_bin_dir
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", str(tmp_path / "native"))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "legacy"))
+    assert agent_lsp_bin_dir() == tmp_path / "native" / "lsp" / "bin"
+    assert hermes_lsp_bin_dir() == agent_lsp_bin_dir()
+    assert not (tmp_path / "legacy").exists()

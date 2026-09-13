@@ -759,7 +759,7 @@ def _spawn_forecast_action(subcommand: List[str], name: str) -> subprocess.Popen
     return proc
 
 
-def _spawn_hermes_action(subcommand: List[str], name: str) -> subprocess.Popen:
+def _spawn_agent_action(subcommand: List[str], name: str) -> subprocess.Popen:
     """Compatibility wrapper for tests and older dashboard integrations."""
     return _spawn_forecast_action(subcommand, name)
 
@@ -782,7 +782,7 @@ def _tail_lines(path: Path, n: int) -> List[str]:
 async def restart_gateway():
     """Kick off a ``superforecasting-agent gateway restart`` in the background."""
     try:
-        proc = _spawn_hermes_action(
+        proc = _spawn_agent_action(
             ["gateway", "restart"],
             _GATEWAY_RESTART_ACTION,
         )
@@ -820,7 +820,7 @@ async def update_superforecasting_agent():
 @app.post("/api/hermes/update")
 async def update_hermes():
     """Legacy update endpoint kept for older dashboard bundles."""
-    return _start_update_action(_LEGACY_UPDATE_ACTION, _spawn_hermes_action)
+    return _start_update_action(_LEGACY_UPDATE_ACTION, _spawn_agent_action)
 
 
 @app.get("/api/actions/{name}/status")
@@ -1419,20 +1419,20 @@ def _anthropic_oauth_status() -> Dict[str, Any]:
     The dashboard reports the highest-priority source that's actually present.
     """
     try:
-        from superforecasting_agent.credentials.anthropic import read_hermes_oauth_credentials, read_claude_code_credentials, get_hermes_oauth_file
+        from superforecasting_agent.credentials.anthropic import read_agent_oauth_credentials, read_claude_code_credentials, get_agent_oauth_file
     except ImportError:
         read_claude_code_credentials = None  # type: ignore
-        read_hermes_oauth_credentials = None  # type: ignore
-        get_hermes_oauth_file = None  # type: ignore
+        read_agent_oauth_credentials = None  # type: ignore
+        get_agent_oauth_file = None  # type: ignore
 
     hermes_creds = None
-    if read_hermes_oauth_credentials:
+    if read_agent_oauth_credentials:
         try:
-            hermes_creds = read_hermes_oauth_credentials()
+            hermes_creds = read_agent_oauth_credentials()
         except Exception:
             hermes_creds = None
     if hermes_creds and hermes_creds.get("accessToken"):
-        oauth_file = get_hermes_oauth_file() if get_hermes_oauth_file else None
+        oauth_file = get_agent_oauth_file() if get_agent_oauth_file else None
         return {
             "logged_in": True,
             "source": "hermes_pkce",
@@ -1665,8 +1665,8 @@ async def disconnect_oauth_provider(provider_id: str, request: Request):
     # want to undo a disconnect.
     if provider_id in {"anthropic", "claude-code"}:
         try:
-            from superforecasting_agent.credentials.anthropic import get_hermes_oauth_file
-            oauth_file = get_hermes_oauth_file()
+            from superforecasting_agent.credentials.anthropic import get_agent_oauth_file
+            oauth_file = get_agent_oauth_file()
             if oauth_file.exists():
                 oauth_file.unlink()
         except Exception:
@@ -1778,8 +1778,8 @@ def _save_anthropic_oauth_creds(access_token: str, refresh_token: str, expires_a
     Mirrors what auth_commands.add_command does so the dashboard flow leaves
     the system in the same state as ``superforecasting-agent auth add anthropic``.
     """
-    from superforecasting_agent.credentials.anthropic import get_hermes_oauth_file
-    oauth_file = get_hermes_oauth_file()
+    from superforecasting_agent.credentials.anthropic import get_agent_oauth_file
+    oauth_file = get_agent_oauth_file()
     payload = {
         "accessToken": access_token,
         "refreshToken": refresh_token,
@@ -2912,7 +2912,7 @@ def _fallback_profile_dicts(profiles_mod) -> List[Dict[str, Any]]:
             return default
 
     profiles: List[Dict[str, Any]] = []
-    default_home = profiles_mod._get_default_hermes_home()
+    default_home = profiles_mod._get_default_agent_home()
     if default_home.is_dir():
         model, provider = _safe(lambda: profiles_mod._read_config_model(default_home), (None, None))
         profiles.append({

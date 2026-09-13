@@ -23,7 +23,7 @@ These tests pin the contract for Fix A:
 - ``set_tokens`` persists an absolute ``expires_at`` wall-clock timestamp.
 - ``get_tokens`` reconstructs ``expires_in`` from ``expires_at - now`` so
   the SDK's ``update_token_expiry`` computes the correct absolute expiry.
-- ``HermesMCPOAuthProvider._initialize`` seeds ``context.token_expiry_time``
+- ``ForecastMCPOAuthProvider._initialize`` seeds ``context.token_expiry_time``
   after loading, so ``is_token_valid()`` reports True only for tokens that
   are actually still valid, and the SDK's preemptive refresh fires for
   expired tokens with a live refresh_token.
@@ -211,7 +211,7 @@ class TestGetTokensReconstructsExpiresIn:
 
 
 # ---------------------------------------------------------------------------
-# HermesMCPOAuthProvider._initialize — seed token_expiry_time
+# ForecastMCPOAuthProvider._initialize — seed token_expiry_time
 # ---------------------------------------------------------------------------
 
 

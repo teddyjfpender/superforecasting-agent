@@ -19,7 +19,7 @@ def isolated_profiles(tmp_path, monkeypatch):
         (home / "config.yaml").write_text("model: test-model\n", encoding="utf-8")
 
     monkeypatch.setattr(profile_paths, "get_default_agent_root", lambda: default_home)
-    monkeypatch.setattr(profiles, "_get_default_hermes_home", lambda: default_home)
+    monkeypatch.setattr(profiles, "_get_default_agent_home", lambda: default_home)
     monkeypatch.setattr(profiles, "_get_profiles_root", lambda: profiles_root)
     return {"default": default_home, "worker_alpha": worker_home}
 

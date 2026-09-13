@@ -21,13 +21,34 @@ def expect(terminal, marker):
 
 def test_terminal_input_resize_cancellation_and_restart(tmp_path):
     child = tmp_path / "child.py"
-    child.write_text("""import os, signal
+    child.write_text(r"""import os, sys
 from pathlib import Path
-signal.signal(signal.SIGINT, lambda *_: print("CANCELLED", flush=True))
+if os.name == "nt":
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+    kernel = ctypes.windll.kernel32
+    kernel.GetStdHandle.restype = wintypes.HANDLE
+    kernel.SetConsoleMode.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    if not kernel.SetConsoleMode(kernel.GetStdHandle(-10), 0):
+        raise ctypes.WinError()
+    read = msvcrt.getwch
+else:
+    import tty
+    tty.setraw(sys.stdin.fileno())
+    read = lambda: sys.stdin.read(1)
 p = Path("durable.txt")
 print("RESUMED" if p.exists() else "READY", flush=True)
+command = ""
 while True:
-    command = input()
+    char = read()
+    if char == "\x03":
+        print("CANCELLED", flush=True)
+        command = ""
+        continue
+    if char not in "\r\n":
+        command += char
+        continue
     if command == "size":
         print("SIZE=" + str(os.get_terminal_size().columns), flush=True)
     elif command == "save":
@@ -35,6 +56,7 @@ while True:
         print("SAVED", flush=True)
     elif command == "quit":
         break
+    command = ""
 """)
     env = {**os.environ, "PYTHONUNBUFFERED": "1"}
     with TerminalSession(

@@ -467,7 +467,7 @@ def _ensure_default_soul_md(home: Path) -> None:
     _secure_file(soul_path)
 
 
-def ensure_hermes_home():
+def ensure_agent_home():
     """Ensure the active agent-home directory exists with secure permissions.
 
     In managed mode (NixOS), dirs are created by the activation script with
@@ -478,7 +478,7 @@ def ensure_hermes_home():
     if is_managed():
         old_umask = os.umask(0o007)
         try:
-            _ensure_hermes_home_managed(home)
+            _ensure_agent_home_managed(home)
         finally:
             os.umask(old_umask)
     else:
@@ -494,11 +494,11 @@ def ensure_hermes_home():
         _ensure_default_soul_md(home)
 
 
-def _ensure_hermes_home_managed(home: Path):
+def _ensure_agent_home_managed(home: Path):
     """Managed-mode variant: verify dirs exist (activation creates them), seed SOUL.md."""
     if not home.is_dir():
         raise RuntimeError(
-            f"HERMES_HOME {home} does not exist. "
+            f"Agent home {home} does not exist. "
             "Run 'sudo nixos-rebuild switch' first."
         )
     for subdir in ("cron", "sessions", "logs", "memories"):
@@ -1222,7 +1222,7 @@ def migrate_config(interactive: bool = True, quiet: bool = False) -> Dict[str, A
     #      base_url, api_key, timeout, extra_body) — canonical slot for
     #      routing the curator fork to a cheaper aux model.
     #   3. Creates active agent-home `logs/curator/` if missing (belt-and-suspenders
-    #      on top of ensure_hermes_home() — old profiles that predate this
+    #      on top of ensure_agent_home() — old profiles that predate this
     #      migration still benefit).
     if current_ver < 23:
         try:
@@ -1662,7 +1662,7 @@ def load_config_readonly() -> Dict[str, Any]:
 
 def _load_config_impl(*, want_deepcopy: bool) -> Dict[str, Any]:
     with _CONFIG_LOCK:
-        ensure_hermes_home()
+        ensure_agent_home()
         config_path = get_config_path()
         path_key = str(config_path)
         ignore_user_config = _ignore_user_config_requested()
@@ -1800,7 +1800,7 @@ def save_config(config: Dict[str, Any]):
     with _CONFIG_LOCK, yaml_update_lock(get_config_path()):
         from superforecasting_agent.storage.files import atomic_yaml_write
 
-        ensure_hermes_home()
+        ensure_agent_home()
         config_path = get_config_path()
         if isinstance(config, _ConfigSnapshot) and (
             config._path != config_path.resolve() or config._revision != _config_revision(config_path)
@@ -1966,7 +1966,7 @@ def save_env_value(key: str, value: str):
     value = value.replace("\n", "").replace("\r", "")
     # API keys / tokens must be ASCII — strip non-ASCII with a warning.
     value = _check_non_ascii_credential(key, value)
-    ensure_hermes_home()
+    ensure_agent_home()
     env_path = get_env_path()
     from superforecasting_agent.storage.files import yaml_update_lock
     with yaml_update_lock(env_path):
@@ -2670,3 +2670,7 @@ def _inject_platform_plugin_env_vars() -> None:
 
 # Eagerly inject so that platform plugin env vars show up in the setup wizard.
 _inject_platform_plugin_env_vars()
+
+
+# Compatibility exports for existing plugins; canonical implementations above.
+ensure_hermes_home = ensure_agent_home

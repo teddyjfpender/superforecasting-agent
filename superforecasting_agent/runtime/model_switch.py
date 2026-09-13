@@ -1350,8 +1350,8 @@ def list_authenticated_providers(
         # configured.
         if not has_creds and hermes_slug == "anthropic":
             try:
-                from superforecasting_agent.credentials.anthropic import read_claude_code_credentials, read_hermes_oauth_credentials
-                hermes_creds = read_hermes_oauth_credentials()
+                from superforecasting_agent.credentials.anthropic import read_claude_code_credentials, read_agent_oauth_credentials
+                hermes_creds = read_agent_oauth_credentials()
                 cc_creds = read_claude_code_credentials()
                 if (hermes_creds and hermes_creds.get("accessToken")) or \
                    (cc_creds and cc_creds.get("accessToken")):

@@ -77,11 +77,11 @@ class _ProviderEntry:
 
 
 # ---------------------------------------------------------------------------
-# HermesMCPOAuthProvider — OAuthClientProvider subclass with disk-watch
+# ForecastMCPOAuthProvider — OAuthClientProvider subclass with disk-watch
 # ---------------------------------------------------------------------------
 
 
-def _make_hermes_provider_class() -> Optional[type]:
+def _make_agent_provider_class() -> Optional[type]:
     """Lazy-import the SDK base class and return our subclass.
 
     Wrapped in a function so this module imports cleanly even when the
@@ -92,7 +92,7 @@ def _make_hermes_provider_class() -> Optional[type]:
     except ImportError:  # pragma: no cover — SDK required in CI
         return None
 
-    class HermesMCPOAuthProvider(OAuthClientProvider):
+    class ForecastMCPOAuthProvider(OAuthClientProvider):
         """OAuthClientProvider with pre-flow disk-mtime reload.
 
         Before every ``async_auth_flow`` invocation, asks the manager to
@@ -324,11 +324,11 @@ def _make_hermes_provider_class() -> Optional[type]:
                 self._persist_oauth_metadata_if_changed()
                 return
 
-    return HermesMCPOAuthProvider
+    return ForecastMCPOAuthProvider
 
 
 # Cached at import time. Tested and used by :class:`MCPOAuthManager`.
-_HERMES_PROVIDER_CLS: Optional[type] = _make_hermes_provider_class()
+_HERMES_PROVIDER_CLS: Optional[type] = _make_agent_provider_class()
 
 
 # ---------------------------------------------------------------------------
@@ -392,7 +392,7 @@ class MCPOAuthManager:
     ) -> Optional[Any]:
         """Build the underlying OAuth provider.
 
-        Constructs :class:`HermesMCPOAuthProvider` directly using the helpers
+        Constructs :class:`ForecastMCPOAuthProvider` directly using the helpers
         extracted from ``tools.mcp_oauth``. The subclass injects a pre-flow
         disk-watch hook so external token refreshes (cron, other CLI
         instances) are visible to running MCP sessions.

@@ -8,7 +8,7 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 from agent.prompt_caching import apply_anthropic_cache_control
-from superforecasting_agent.credentials.anthropic import _write_claude_code_credentials, get_hermes_oauth_file, read_claude_code_credentials, read_hermes_oauth_credentials
+from superforecasting_agent.credentials.anthropic import _write_claude_code_credentials, get_agent_oauth_file, read_claude_code_credentials, read_agent_oauth_credentials
 from agent.anthropic_adapter import _is_azure_anthropic_endpoint, _is_oauth_token, _refresh_oauth_token, _to_plain_data, build_anthropic_client, build_anthropic_bedrock_client, build_anthropic_kwargs, convert_messages_to_anthropic, convert_tools_to_anthropic, is_claude_code_token_valid, normalize_model_name, resolve_anthropic_token, run_oauth_setup_token
 from agent.transports import get_transport
 
@@ -48,21 +48,21 @@ class TestHermesOAuthFile:
         monkeypatch.setenv("FORECAST_OAUTH_FILE", str(tmp_path / "short.json"))
         monkeypatch.setenv("HERMES_OAUTH_FILE", str(tmp_path / "legacy.json"))
 
-        assert get_hermes_oauth_file() == tmp_path / "forecast.json"
+        assert get_agent_oauth_file() == tmp_path / "forecast.json"
 
     def test_oauth_file_preserves_legacy_env_alias(self, tmp_path, monkeypatch):
         monkeypatch.delenv("SUPERFORECASTING_AGENT_OAUTH_FILE", raising=False)
         monkeypatch.delenv("FORECAST_OAUTH_FILE", raising=False)
         monkeypatch.setenv("HERMES_OAUTH_FILE", str(tmp_path / "legacy.json"))
 
-        assert get_hermes_oauth_file() == tmp_path / "legacy.json"
+        assert get_agent_oauth_file() == tmp_path / "legacy.json"
 
     def test_read_oauth_credentials_uses_forecast_native_env_alias(self, tmp_path, monkeypatch):
         oauth_file = tmp_path / "forecast-oauth.json"
         oauth_file.write_text(json.dumps({"accessToken": "tok", "refreshToken": "ref"}))
         monkeypatch.setenv("SUPERFORECASTING_AGENT_OAUTH_FILE", str(oauth_file))
 
-        assert read_hermes_oauth_credentials() == {
+        assert read_agent_oauth_credentials() == {
             "accessToken": "tok",
             "refreshToken": "ref",
         }

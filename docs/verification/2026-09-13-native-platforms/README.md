@@ -18,6 +18,17 @@ configured absolute profile. The runtime now accepts that service configuration;
 the isolated Windows test environment also provides USERPROFILE and temporary
 paths. Regression tests cover all three supported home variables.
 
+## New native qualification
+
+Run `34759724958`, source commit `0c451ec54111b1d027d43caaec7809cca42c5ed4`:
+Linux x86-64 passed on Node 20 and 22 (artifacts `10318865538` and
+`10318726206`, corresponding JSON receipts here). Windows jobs `103730307033`
+and `103730307059` passed the real Ink cancellation/resume test and 41 other
+focused tests; the low-level cooked-input fixture raised EOFError on Ctrl-C.
+The fixture now uses raw input, matching the TUI. Subsequent qualification also
+runs installed-product checks independently when a focused test fails and
+preserves JUnit/log artifacts. A fresh Windows run is still required.
+
 ## Repeatable checks
 
 `Product quality` builds independent wheels and runs `scripts/verify_profiles.py`
@@ -66,3 +77,9 @@ experiments did not reproduce the crash and do not establish its cause.
 Use `scripts/investigate_native_tls.py` only when new evidence supplies a
 specific discriminating hypothesis; preserve binary and CA hashes and native
 frames. Do not claim containment is root-cause attribution.
+
+The other retained TLS artifact, `10273517042`, was inspected from run
+`34624892829` (commit `fbe8c0643f018298661b903c1485fffece3a5d75`). Its report
+is `earlier-native-tls.json`: seven non-crashing workload cases and a synthetic
+capture self-test, still without an original CA hash. Shutdown completed zero
+TLS contexts, so it is not evidence of sustained concurrent shutdown coverage.

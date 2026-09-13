@@ -283,16 +283,12 @@ def uninstall_gateway_service():
 # or open a new terminal anyway).
 
 
-def _hermes_path_markers(hermes_home: Path) -> list[str]:
+def _agent_path_markers(hermes_home: Path) -> list[str]:
     """Path-entry substrings that identify Hermes-owned User-PATH entries."""
     root = str(hermes_home).rstrip("\\/")
     # Match on prefix so sub-entries (git\cmd, git\bin, git\usr\bin, node, etc.)
     # all get swept.  Also match the bare hermes-agent install dir.
-    markers = [root + "\\hermes-agent", root + "\\git", root + "\\node", root + "\\venv"]
-    # Also match if HERMES_HOME was customised to somewhere else — find-and-nuke
-    # any entry whose path component contains "hermes".  We don't want to catch
-    # unrelated entries like "chermes-foo" or "ephermeral", so we look for
-    # backslash-hermes as a word-ish boundary.
+    markers = [root + "\\superforecasting-agent", root + "\\hermes-agent", root + "\\git", root + "\\node", root + "\\venv"]
     return markers
 
 
@@ -318,11 +314,14 @@ def remove_path_from_windows_registry(hermes_home: Path) -> list[str]:
                 return []
             # Preserve REG_EXPAND_SZ vs REG_SZ so unexpanded %VARS% survive.
             entries = [e for e in path_value.split(";") if e]
-            markers = _hermes_path_markers(hermes_home)
+            markers = _agent_path_markers(hermes_home)
             kept: list[str] = []
             for entry in entries:
-                entry_norm = entry.rstrip("\\/")
-                matched = any(entry_norm.lower().startswith(m.lower()) for m in markers)
+                entry_norm = entry.replace("/", "\\").rstrip("\\")
+                matched = any(
+                    entry_norm.lower() == m.lower() or entry_norm.lower().startswith(m.lower() + "\\")
+                    for m in markers
+                )
                 if matched:
                     removed.append(entry)
                 else:
@@ -335,7 +334,7 @@ def remove_path_from_windows_registry(hermes_home: Path) -> list[str]:
     return removed
 
 
-def remove_hermes_env_vars_windows() -> list[str]:
+def remove_agent_env_vars_windows() -> list[str]:
     """Delete fork-native and compatibility home/Git Bash User env vars."""
     try:
         import winreg
@@ -389,7 +388,7 @@ def _is_windows() -> bool:
     return sys.platform == "win32"
 
 
-def _is_default_hermes_home(hermes_home: Path) -> bool:
+def _is_default_agent_home(hermes_home: Path) -> bool:
     """Return True when ``hermes_home`` points at the default (non-profile) root."""
     try:
         from superforecasting_agent.constants import get_default_agent_root
@@ -477,7 +476,7 @@ def run_uninstall(args):
     # Detect named profiles when uninstalling from the default root —
     # offer to clean them up too instead of leaving zombie HERMES_HOMEs
     # and systemd units behind.
-    is_default_profile = _is_default_hermes_home(hermes_home)
+    is_default_profile = _is_default_agent_home(hermes_home)
     named_profiles = _discover_named_profiles() if is_default_profile else []
 
     print()
@@ -609,7 +608,7 @@ def run_uninstall(args):
             log_info("No Superforecasting Agent or legacy compatibility PATH entries in User environment")
 
         log_info("Removing Superforecasting Agent User env vars...")
-        removed_env = remove_hermes_env_vars_windows()
+        removed_env = remove_agent_env_vars_windows()
         if removed_env:
             for name in removed_env:
                 log_success(f"Removed User env var: {name}")
@@ -709,3 +708,7 @@ def run_uninstall(args):
     print()
     print("Thank you for using Superforecasting Agent.")
     print()
+
+
+# Compatibility exports for existing plugins; canonical implementations above.
+remove_hermes_env_vars_windows = remove_agent_env_vars_windows

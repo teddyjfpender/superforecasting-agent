@@ -154,35 +154,35 @@ class TestHandleUpdateCommand:
 
     @pytest.mark.asyncio
     async def test_resolve_hermes_bin_prefers_which(self, tmp_path):
-        """_resolve_hermes_bin returns argv parts from shutil.which when available."""
-        from gateway.run import _resolve_hermes_bin
+        """_resolve_agent_bin returns argv parts from shutil.which when available."""
+        from gateway.run import _resolve_agent_bin
 
         with patch("shutil.which", return_value="/custom/path/hermes"):
-            result = _resolve_hermes_bin()
+            result = _resolve_agent_bin()
 
         assert result == ["/custom/path/hermes"]
 
     @pytest.mark.asyncio
     async def test_resolve_hermes_bin_fallback(self):
-        """_resolve_hermes_bin falls back to sys.executable argv when which fails."""
+        """_resolve_agent_bin falls back to sys.executable argv when which fails."""
         import sys
-        from gateway.run import _resolve_hermes_bin
+        from gateway.run import _resolve_agent_bin
 
         fake_spec = MagicMock()
         with patch("shutil.which", return_value=None), \
              patch("importlib.util.find_spec", return_value=fake_spec):
-            result = _resolve_hermes_bin()
+            result = _resolve_agent_bin()
 
         assert result == [sys.executable, "-m", "superforecasting_agent.runtime.main"]
 
     @pytest.mark.asyncio
     async def test_resolve_hermes_bin_returns_none_when_both_fail(self):
-        """_resolve_hermes_bin returns None when both strategies fail."""
-        from gateway.run import _resolve_hermes_bin
+        """_resolve_agent_bin returns None when both strategies fail."""
+        from gateway.run import _resolve_agent_bin
 
         with patch("shutil.which", return_value=None), \
              patch("importlib.util.find_spec", return_value=None):
-            result = _resolve_hermes_bin()
+            result = _resolve_agent_bin()
 
         assert result is None
 
@@ -703,3 +703,9 @@ class TestUpdateInHelp:
         import inspect
         source = inspect.getsource(GatewayRunner._handle_message)
         assert '"update"' in source
+
+
+def test_update_prefers_native_executable_when_legacy_is_also_installed():
+    from gateway.run import _resolve_agent_bin
+    with patch("shutil.which", side_effect=lambda name: "/native/agent" if name == "superforecasting-agent" else "/legacy/hermes"):
+        assert _resolve_agent_bin() == ["/native/agent"]

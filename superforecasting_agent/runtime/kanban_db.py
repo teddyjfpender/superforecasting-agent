@@ -5112,7 +5112,7 @@ def _rotate_worker_log(
         pass
 
 
-def _module_hermes_argv() -> list[str]:
+def _module_agent_argv() -> list[str]:
     """Return the interpreter-bound Superforecasting Agent CLI invocation."""
     # ``superforecasting_agent.runtime.main`` is the console-script target declared in
     # pyproject.toml, NOT a top-level ``hermes`` package — there is no
@@ -5120,7 +5120,7 @@ def _module_hermes_argv() -> list[str]:
     return [sys.executable, "-m", "superforecasting_agent.runtime.main"]
 
 
-def _absolute_hermes_path(path: str) -> str:
+def _absolute_agent_path(path: str) -> str:
     """Return an absolute filesystem path for a resolved agent CLI shim."""
     expanded = os.path.expanduser(path)
     return expanded if os.path.isabs(expanded) else os.path.abspath(expanded)
@@ -5174,7 +5174,7 @@ def _safe_which_no_cwd(command: str) -> Optional[str]:
     return None
 
 
-def _hermes_path_argv(path: str) -> list[str]:
+def _agent_path_argv(path: str) -> list[str]:
     """Return argv for a resolved agent executable path.
 
     Windows batch shims (`.cmd` / `.bat`) are not safe as argv[0] for
@@ -5183,11 +5183,11 @@ def _hermes_path_argv(path: str) -> list[str]:
     executable is only a shell shim.
     """
     if _IS_WINDOWS and _is_windows_batch_shim(path):
-        return _module_hermes_argv()
-    return [_absolute_hermes_path(path)]
+        return _module_agent_argv()
+    return [_absolute_agent_path(path)]
 
 
-def _resolve_hermes_argv() -> list[str]:
+def _resolve_agent_argv() -> list[str]:
     """Resolve the runtime CLI invocation as argv parts for ``Popen``.
 
     Tries in order:
@@ -5210,7 +5210,7 @@ def _resolve_hermes_argv() -> list[str]:
        launchd jobs, detached processes, etc.). Goes through the running
        interpreter so the result is independent of ``$PATH``.
 
-    Mirrors ``gateway.run._resolve_hermes_bin`` for the same reason. Kept
+    Mirrors ``gateway.run._resolve_agent_bin`` for the same reason. Kept
     local (not imported from gateway) because ``superforecasting_agent.runtime`` sits below
     ``gateway`` in the dependency order.
     """
@@ -5223,23 +5223,23 @@ def _resolve_hermes_argv() -> list[str]:
     )
     if env_bin:
         if _looks_like_path(env_bin):
-            return _hermes_path_argv(env_bin)
+            return _agent_path_argv(env_bin)
         resolved_env_bin = _safe_which_no_cwd(env_bin)
         if resolved_env_bin:
-            return _hermes_path_argv(resolved_env_bin)
-        return _module_hermes_argv()
+            return _agent_path_argv(resolved_env_bin)
+        return _module_agent_argv()
 
     primary_bin = (
         _safe_which_no_cwd("superforecasting-agent")
         if _IS_WINDOWS else shutil.which("superforecasting-agent")
     )
     if primary_bin:
-        return _hermes_path_argv(primary_bin)
+        return _agent_path_argv(primary_bin)
 
     hermes_bin = _safe_which_no_cwd("hermes") if _IS_WINDOWS else shutil.which("hermes")
     if hermes_bin:
-        return _hermes_path_argv(hermes_bin)
-    return _module_hermes_argv()
+        return _agent_path_argv(hermes_bin)
+    return _module_agent_argv()
 
 
 def _kanban_worker_skill_available(hermes_home: Optional[str]) -> bool:
@@ -5401,7 +5401,7 @@ def _default_spawn(
     env["HERMES_PROFILE"] = profile_arg
 
     cmd = [
-        *_resolve_hermes_argv(),
+        *_resolve_agent_argv(),
         "-p", profile_arg,
         # Worker subprocesses switch to a profile-scoped HERMES_HOME above,
         # so they see that profile's shell-hook allowlist instead of the

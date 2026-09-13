@@ -63,7 +63,7 @@ def get_env_value(name: str, default=None):
     return os.environ.get(name, default)
 
 
-def hermes_xai_user_agent() -> str:
+def agent_xai_user_agent() -> str:
     """Return a stable Superforecasting Agent User-Agent for xAI HTTP calls."""
     try:
         from superforecasting_agent.runtime import __version__
@@ -126,3 +126,7 @@ def resolve_xai_http_credentials(*, force_refresh: bool = False) -> Dict[str, st
         "api_key": api_key,
         "base_url": base_url,
     }
+
+
+# Compatibility exports for existing plugins; canonical implementations above.
+hermes_xai_user_agent = agent_xai_user_agent

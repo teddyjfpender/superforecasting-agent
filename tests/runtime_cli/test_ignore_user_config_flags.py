@@ -143,7 +143,7 @@ class TestIgnoreUserConfigEnvGate:
 
         import superforecasting_agent.runtime.config as hc
 
-        monkeypatch.setattr(hc, "ensure_hermes_home", lambda: None)
+        monkeypatch.setattr(hc, "ensure_agent_home", lambda: None)
         monkeypatch.setattr(hc, "get_config_path", lambda: tmp_path / "config.yaml")
         monkeypatch.setenv("FORECAST_IGNORE_USER_CONFIG", "1")
         hc._LOAD_CONFIG_CACHE.clear()

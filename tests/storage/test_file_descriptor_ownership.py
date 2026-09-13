@@ -26,7 +26,7 @@ def test_wrapper_failure_closes_descriptor_and_preserves_target(
         )
         monkeypatch.setattr(config, "get_env_path", lambda: target)
         monkeypatch.setattr(config, "is_managed", lambda: False)
-        monkeypatch.setattr(config, "ensure_hermes_home", lambda: None)
+        monkeypatch.setattr(config, "ensure_agent_home", lambda: None)
         monkeypatch.setenv("ANTHROPIC_API_KEY", "process-original")
     target.write_text(original, encoding="utf-8")
     monkeypatch.setattr(auth, "_auth_file_path", lambda: target)

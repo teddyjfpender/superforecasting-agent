@@ -196,7 +196,7 @@ def _build_provider_env_blocklist() -> frozenset:
 _HERMES_PROVIDER_ENV_BLOCKLIST = _build_provider_env_blocklist()
 
 
-def _inject_context_hermes_home(env: dict) -> None:
+def _inject_context_agent_home(env: dict) -> None:
     """Bridge the context-local agent-home override into subprocess env."""
     try:
         from superforecasting_agent.constants import get_agent_home_override
@@ -230,7 +230,7 @@ def _sanitize_subprocess_env(base_env: dict | None, extra_env: dict | None = Non
         elif key not in _HERMES_PROVIDER_ENV_BLOCKLIST or _is_passthrough(key):
             sanitized[key] = value
 
-    _inject_context_hermes_home(sanitized)
+    _inject_context_agent_home(sanitized)
 
     # Per-profile HOME isolation for background processes (same as _make_run_env).
     from superforecasting_agent.constants import get_subprocess_home
@@ -339,7 +339,7 @@ def _make_run_env(env: dict) -> dict:
     if not _IS_WINDOWS and "/usr/bin" not in existing_path.split(":"):
         run_env["PATH"] = f"{existing_path}:{_SANE_PATH}" if existing_path else _SANE_PATH
 
-    _inject_context_hermes_home(run_env)
+    _inject_context_agent_home(run_env)
 
     # Per-profile HOME isolation: redirect system tool configs (git, ssh, gh,
     # npm ...) into the active agent-home "home" directory when it exists.

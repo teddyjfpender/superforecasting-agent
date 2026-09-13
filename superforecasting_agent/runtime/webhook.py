@@ -25,13 +25,13 @@ from superforecasting_agent.runtime.config import cfg_get
 _SUBSCRIPTIONS_FILENAME = "webhook_subscriptions.json"
 
 
-def _hermes_home() -> Path:
+def _agent_home() -> Path:
     from superforecasting_agent.constants import get_agent_home
     return get_agent_home()
 
 
 def _subscriptions_path() -> Path:
-    return _hermes_home() / _SUBSCRIPTIONS_FILENAME
+    return _agent_home() / _SUBSCRIPTIONS_FILENAME
 
 
 def _load_subscriptions() -> Dict[str, dict]:
