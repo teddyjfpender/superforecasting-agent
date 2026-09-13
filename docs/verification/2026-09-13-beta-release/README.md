@@ -2,7 +2,7 @@
 
 ## Scope and owners
 
-Backend 0.22.1 and terminal 0.1.1 are published together through
+Backend candidate 0.22.3 and terminal 0.1.1 are published together through
 `production-release.yml`. Tag-triggered runs default to beta; stable publication
 requires an explicit `channel=stable` dispatch. Beta releases never advance
 GitHub or container `latest` aliases. Publication waits for six native jobs to
@@ -45,3 +45,19 @@ live messaging integration.
 
 Publication receipts and final artifact checksums will be linked here after the
 formal workflow completes. Existing candidate artifacts are not release evidence.
+
+## Linux qualification follow-up
+
+The first formal run exposed 30-second calibration timeouts, a 240-second
+portfolio-export timeout and a gateway surviving client death. Read transactions
+and question-scoped score queries remove repeated connection setup and whole-ledger
+scans; synthetic calibration fixtures now use one batch transaction. Shutdown
+deadlines cover broken-output/dispatch exits and precede potentially blocking cleanup.
+
+The [evaluation identity review](evaluation-review.json) records the exact
+changed functions. Scoring formulas, outcome validation, frozen adjustments and
+trial evaluation remain AST-identical. The explicit compatibility registry admits
+only reviewed identities; existing trial records are not rewritten.
+
+The `v0.22.1` tag remains unpublished after qualification failures. The `v0.22.2`
+run was cancelled in favor of the Linux fixes; neither tag is moved or reused.
