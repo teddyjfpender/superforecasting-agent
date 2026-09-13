@@ -10,6 +10,7 @@ import os
 import platform
 import re
 import subprocess
+import sys
 import tempfile
 import time
 import zipfile
@@ -51,6 +52,41 @@ def verify_installed_terminal(
     gateway_url: str | None = None,
 ) -> None:
     """Exercise packaged Ink against a separate local or remote backend."""
+    if platform.system() == "Windows":
+        # winpty-rs 0.4 replaces process-global standard handles and may allocate
+        # a console. Keep those changes out of the qualification/host parent.
+        worker = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()), "--terminal-worker"],
+            input=json.dumps({
+                "terminal_python": str(terminal_python),
+                "backend_python": str(backend_python),
+                "root": str(root),
+                "env": env,
+                "question": question,
+                "gateway_url": gateway_url,
+            }),
+            text=True,
+            capture_output=True,
+            timeout=180,
+        )
+        print(worker.stdout, end="")
+        print(worker.stderr, end="", file=sys.stderr)
+        worker.check_returncode()
+        return
+    _verify_installed_terminal(
+        terminal_python, backend_python, root, env, question, gateway_url=gateway_url
+    )
+
+
+def _verify_installed_terminal(
+    terminal_python: Path,
+    backend_python: Path,
+    root: Path,
+    env: dict[str, str],
+    question: str,
+    *,
+    gateway_url: str | None = None,
+) -> None:
     from terminal_session import TerminalSession
 
     argv = [
@@ -559,7 +595,7 @@ def verify(args: argparse.Namespace, report: dict[str, Any]) -> None:
             env=terminal_env,
             check=True,
         )
-        subprocess.run(
+        headless = subprocess.run(
             [
                 str(backend_python),
                 str(Path(__file__).with_name("verify_headless_host.py").resolve()),
@@ -572,13 +608,23 @@ def verify(args: argparse.Namespace, report: dict[str, Any]) -> None:
             ],
             cwd=root,
             env=terminal_env,
-            check=True,
+            capture_output=True,
+            text=True,
             timeout=180,
         )
+        print(headless.stdout, end="")
+        print(headless.stderr, end="", file=sys.stderr)
+        headless.check_returncode()
         report["checks"]["authenticated_headless_host"] = "passed"
         report["checks"]["remote_terminal_interaction"] = "passed"
         print("Optional web profile: installed authenticated hosting passed.")
 
 
 if __name__ == "__main__":
-    main()
+    if sys.argv[1:] == ["--terminal-worker"]:
+        request = json.load(sys.stdin)
+        for key in ("terminal_python", "backend_python", "root"):
+            request[key] = Path(request[key])
+        _verify_installed_terminal(**request)
+    else:
+        main()

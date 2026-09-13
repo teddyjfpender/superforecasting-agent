@@ -27,7 +27,17 @@ and `103730307059` passed the real Ink cancellation/resume test and 41 other
 focused tests; the low-level cooked-input fixture raised EOFError on Ctrl-C.
 The fixture now uses raw input, matching the TUI. Subsequent qualification also
 runs installed-product checks independently when a focused test fails and
-preserves JUnit/log artifacts. A fresh Windows run is still required.
+preserves JUnit/log artifacts.
+
+Run `34760876242`, source commit `61dfafa025555d6ff576ffc8ae1c2bb1f4232913`,
+passed all 43 focused Windows tests on both Node versions. Installed local Ink
+also passed; installed headless qualification failed without child diagnostics.
+Linux and macOS passed both versions. Inspection of the pinned ConPTY dependency
+found that [winpty-rs 0.4 replaces the caller's standard handles](https://github.com/andfoy/winpty-rs/blob/v0.4.0/src/pty/conpty/pty_impl.rs)
+and can allocate/free its console. Qualification now contains native ConPTY
+allocation in a worker process and captures headless output explicitly. This
+explains the missing inherited output; a new native run must establish whether
+it also resolves headless qualification. This is unrelated to SSL attribution.
 
 ## Repeatable checks
 
