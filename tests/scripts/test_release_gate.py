@@ -398,6 +398,8 @@ def test_release_script_rejects_publish_mode():
 def test_release_channel_preserves_stable_aliases(tmp_path, channel, expected):
     import yaml
     workflow = yaml.safe_load((REPO_ROOT / ".github/workflows/production-release.yml").read_text())
+    mirror_workflow = yaml.safe_load((REPO_ROOT / ".github/workflows/docker-publish.yml").read_text())
+    assert "github.event.release.prerelease == false" in mirror_workflow["jobs"]["move-latest"]["if"]
     assert "qualify-artifacts" in workflow["jobs"]["publish"]["needs"]
     qualification = workflow["jobs"]["qualify-artifacts"]
     assert qualification["needs"] == ["gate", "release"]
