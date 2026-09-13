@@ -12,9 +12,9 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                       | Responsibility                                                                                                                         |
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| [**init**.py](__init__.py) | One detached-job runtime (Arc B).                                                                                                      |
+| [\_\_init\_\_.py](__init__.py) | One detached-job runtime (Arc B).                                                                                                      |
 | [runtime.py](runtime.py)   | The runtime: resolve a job's registered TYPE, execute it with a JobContext, and write the terminal `done`/`cancelled`/`error` state.   |
-| [**main**.py](__main__.py) | Compatibility entrypoint for the backend forecast worker.                                                                              |
+| [\_\_main\_\_.py](__main__.py) | Compatibility entrypoint for the backend forecast worker.                                                                              |
 | [context.py](context.py)   | JobContext — the execution-time handle a job type gets: progress (with BUILT-IN coalescing), cooperative cancellation, and annotation. |
 | [detached.py](detached.py) | Detached forecast-job process launcher.                                                                                                |
 | [model.py](model.py)       | The one durable job record for the detached-job runtime (Arc B).                                                                       |

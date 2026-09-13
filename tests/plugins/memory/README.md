@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                                         | Responsibility                                                                    |
 | ------------------------------------------------------------ | --------------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)                                   | init .                                                                            |
+| [\_\_init\_\_.py](__init__.py)                                   | init .                                                                            |
 | [test_hindsight_provider.py](test_hindsight_provider.py)     | Tests for the Hindsight memory provider plugin.                                   |
 | [test_holographic_provider.py](test_holographic_provider.py) | Checks: holographic provider.                                                     |
 | [test_mem0_v2.py](test_mem0_v2.py)                           | Tests for Mem0 API v2 compatibility — filters param and dict response unwrapping. |

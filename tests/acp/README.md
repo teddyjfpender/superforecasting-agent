@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                                     | Responsibility                                                              |
 | -------------------------------------------------------- | --------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)                               | init .                                                                      |
+| [\_\_init\_\_.py](__init__.py)                               | init .                                                                      |
 | [test_approval_isolation.py](test_approval_isolation.py) | Tests for GHSA-96vc-wcxf-jjff and GHSA-qg5c-hvr5-hjgr.                      |
 | [test_auth.py](test_auth.py)                             | Tests for acp_adapter.auth — provider detection.                            |
 | [test_edit_approval.py](test_edit_approval.py)           | Tests for ACP pre-edit approval gating.                                     |

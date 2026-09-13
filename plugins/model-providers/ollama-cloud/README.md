@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                       | Responsibility                 |
 | -------------------------- | ------------------------------ |
-| [**init**.py](__init__.py) | Ollama Cloud provider profile. |
+| [\_\_init\_\_.py](__init__.py) | Ollama Cloud provider profile. |
 | [plugin.yaml](plugin.yaml) | plugin.                        |
 
 ## Working in this directory

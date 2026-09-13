@@ -12,8 +12,8 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                         | Responsibility                                                             |
 | -------------------------------------------- | -------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)                   | Living reference-doc generator for the Superforecasting Agent.             |
-| [**main**.py](__main__.py)                   | `python -m scripts.docgen` — generate (or `--check`) the reference docs.   |
+| [\_\_init\_\_.py](__init__.py)                   | Living reference-doc generator for the Superforecasting Agent.             |
+| [\_\_main\_\_.py](__main__.py)                   | `python -m scripts.docgen` — generate (or `--check`) the reference docs.   |
 | [cli_reference_doc.py](cli_reference_doc.py) | Render `docs/reference/cli-reference.md` by walking the CLI argparse tree. |
 | [common.py](common.py)                       | Shared rendering helpers for the reference-doc generators.                 |
 | [config_env_doc.py](config_env_doc.py)       | Render `docs/reference/config-and-env.md` from the source itself.          |

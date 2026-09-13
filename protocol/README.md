@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                       | Responsibility                                                                                                                                   |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [**init**.py](__init__.py) | Protocol-first gateway contract: one source of truth for every RPC and event crossing the gateway wire, with TypeScript types generated from it. |
+| [\_\_init\_\_.py](__init__.py) | Protocol-first gateway contract: one source of truth for every RPC and event crossing the gateway wire, with TypeScript types generated from it. |
 | [codegen.py](codegen.py)   | Emit `ui-tui/src/protocol/generated.ts` from the protocol registry.                                                                              |
 | [collab.py](collab.py)     | `sfp/1` — the SuperForecast Protocol carried over Slack message metadata.                                                                        |
 | [types.py](types.py)       | Shared primitives and the base model for every wire-crossing schema.                                                                             |

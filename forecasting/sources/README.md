@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                             | Responsibility                                                            |
 | -------------------------------- | ------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)       | Domain records and parsing components for forecasting evidence sources.   |
+| [\_\_init\_\_.py](__init__.py)       | Domain records and parsing components for forecasting evidence sources.   |
 | [arxiv.py](arxiv.py)             | Load scholarly papers from the arXiv Atom API.                            |
 | [bls.py](bls.py)                 | Load U.S. Bureau of Labor Statistics evidence observations.               |
 | [bls_parsing.py](bls_parsing.py) | Pure BLS response parsing; observation periods are not publication dates. |

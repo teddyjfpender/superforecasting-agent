@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                                     | Responsibility                                                                                                                                                    |
 | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)                               | init .                                                                                                                                                            |
+| [\_\_init\_\_.py](__init__.py)                               | init .                                                                                                                                                            |
 | [\_platform_mocks.py](_platform_mocks.py)                | Single source of truth for the platform-library test doubles.                                                                                                     |
 | [conftest.py](conftest.py)                               | conftest.                                                                                                                                                         |
 | [run_interrupt_test.py](run_interrupt_test.py)           | Run a real interrupt test with actual AIAgent + delegate child.                                                                                                   |

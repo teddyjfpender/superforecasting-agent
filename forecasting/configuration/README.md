@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                       | Responsibility                                                            |
 | -------------------------- | ------------------------------------------------------------------------- |
-| [**init**.py](__init__.py) | Forecast configuration contracts and registry ownership.                  |
+| [\_\_init\_\_.py](__init__.py) | Forecast configuration contracts and registry ownership.                  |
 | [quorum.py](quorum.py)     | Quorum default-policy validation independent of command presentation.     |
 | [registry.py](registry.py) | Data-only forecast setting contracts, defaults and compatibility aliases. |
 

@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                       | Responsibility                                                                 |
 | -------------------------- | ------------------------------------------------------------------------------ |
-| [**init**.py](__init__.py) | Local OpenAI-compatible proxy that forwards to OAuth-authenticated upstreams.  |
+| [\_\_init\_\_.py](__init__.py) | Local OpenAI-compatible proxy that forwards to OAuth-authenticated upstreams.  |
 | [server.py](server.py)     | HTTP server that forwards OpenAI-compatible requests to a configured upstream. |
 | [cli.py](cli.py)           | CLI handlers for the `superforecasting-agent proxy` subcommand.                |
 

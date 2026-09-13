@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                       | Responsibility                     |
 | -------------------------- | ---------------------------------- |
-| [**init**.py](__init__.py) | Kimi / Moonshot provider profiles. |
+| [\_\_init\_\_.py](__init__.py) | Kimi / Moonshot provider profiles. |
 | [plugin.yaml](plugin.yaml) | plugin.                            |
 
 ## Working in this directory

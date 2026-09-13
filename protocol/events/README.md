@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                       | Responsibility                                                                  |
 | -------------------------- | ------------------------------------------------------------------------------- |
-| [**init**.py](__init__.py) | Event model families (one module per event family).                             |
+| [\_\_init\_\_.py](__init__.py) | Event model families (one module per event family).                             |
 | [commands.py](commands.py) | Live native command events, distinct from durable forecast-turn records.        |
 | [desk.py](desk.py)         | Wire models for the sessionless forecast-desk events (`tui_gateway/server.py`). |
 | [gateway.py](gateway.py)   | Wire models for the gateway lifecycle / session events.                         |

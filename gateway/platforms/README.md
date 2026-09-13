@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                              | Responsibility                                               |
 | ------------------------------------------------- | ------------------------------------------------------------ |
-| [**init**.py](__init__.py)                        | Platform adapters for messaging integrations.                |
+| [\_\_init\_\_.py](__init__.py)                        | Platform adapters for messaging integrations.                |
 | [\_http_client_limits.py](_http_client_limits.py) | Shared HTTP client factory for long-lived platform adapters. |
 | [api_server.py](api_server.py)                    | OpenAI-compatible API server platform adapter.               |
 | [base.py](base.py)                                | Base platform adapter interface.                             |

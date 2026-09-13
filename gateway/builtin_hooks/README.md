@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                       | Responsibility                                     |
 | -------------------------- | -------------------------------------------------- |
-| [**init**.py](__init__.py) | Built-in gateway hooks that are always registered. |
+| [\_\_init\_\_.py](__init__.py) | Built-in gateway hooks that are always registered. |
 
 ## Working in this directory
 

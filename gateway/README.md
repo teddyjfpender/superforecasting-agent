@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                         | Responsibility                                                               |
 | -------------------------------------------- | ---------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)                   | Superforecasting Agent Gateway - Multi-platform messaging integration.       |
+| [\_\_init\_\_.py](__init__.py)                   | Superforecasting Agent Gateway - Multi-platform messaging integration.       |
 | [channel_directory.py](channel_directory.py) | Channel directory -- cached map of reachable channels/contacts per platform. |
 | [command_dispatch.py](command_dispatch.py)   | Gateway command-hook protocol and authorization after command rewrites.      |
 | [config.py](config.py)                       | Gateway configuration management.                                            |

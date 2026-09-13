@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                       | Responsibility                                                                                          |
 | -------------------------- | ------------------------------------------------------------------------------------------------------- |
-| [**init**.py](__init__.py) | Outbound message transports for the forecast-native notification surfaces.                              |
+| [\_\_init\_\_.py](__init__.py) | Outbound message transports for the forecast-native notification surfaces.                              |
 | [slack.py](slack.py)       | Slack transport shared by forecast collaboration, notifications and tools.                              |
 | [telegram.py](telegram.py) | Stdlib Telegram Bot API client — the outbound/probe transport for the forecast-native Telegram surface. |
 

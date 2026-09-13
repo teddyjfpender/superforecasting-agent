@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                            | Responsibility                                                            |
 | ----------------------------------------------- | ------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)                      | Superforecasting Agent CLI - unified command-line interface.              |
+| [\_\_init\_\_.py](__init__.py)                      | Superforecasting Agent CLI - unified command-line interface.              |
 | [models.py](models.py)                          | Canonical model catalogs and lightweight validation helpers.              |
 | [\_parser.py](_parser.py)                       | Top-level argparse construction for the Superforecasting Agent CLI.       |
 | [\_subprocess_compat.py](_subprocess_compat.py) | Windows subprocess compatibility helpers.                                 |

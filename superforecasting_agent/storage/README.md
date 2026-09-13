@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                                   | Responsibility                                                                    |
 | ------------------------------------------------------ | --------------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)                             | Session persistence infrastructure for the forecasting desk.                      |
+| [\_\_init\_\_.py](__init__.py)                             | Session persistence infrastructure for the forecasting desk.                      |
 | [configuration.py](configuration.py)                   | Shared profile configuration snapshots and revision-checked persistence.          |
 | [auth.py](auth.py)                                     | Auth-store schema and durable file IO, with explicit profile paths.               |
 | [credential_policy.py](credential_policy.py)           | Credential-pool disk-boundary sanitization helpers.                               |

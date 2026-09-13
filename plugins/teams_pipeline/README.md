@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                       | Responsibility                                                |
 | -------------------------- | ------------------------------------------------------------- |
-| [**init**.py](__init__.py) | Teams meeting pipeline plugin.                                |
+| [\_\_init\_\_.py](__init__.py) | Teams meeting pipeline plugin.                                |
 | [models.py](models.py)     | Normalized models for the Teams meeting pipeline plugin.      |
 | [runtime.py](runtime.py)   | Gateway runtime wiring for the Teams meeting pipeline plugin. |
 | [cli.py](cli.py)           | CLI commands for the Teams meeting pipeline plugin.           |

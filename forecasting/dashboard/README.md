@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                           | Responsibility                                                                |
 | ------------------------------ | ----------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)     | Dashboard package façade over carved section modules.                         |
+| [\_\_init\_\_.py](__init__.py)     | Dashboard package façade over carved section modules.                         |
 | [core.py](core.py)             | Forecast dashboard summaries shared by CLI, TUI, and web surfaces.            |
 | [headline.py](headline.py)     | Forecast headline formatting and compatibility exports for summary consumers. |
 | [panel.py](panel.py)           | Workspace panel-detail section (carved from `dashboard.py`).                  |

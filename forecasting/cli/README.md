@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                             | Responsibility                                                                                                                                    |
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)                       | Forecast CLI package (façade over the carved subcommand core).                                                                                    |
+| [\_\_init\_\_.py](__init__.py)                       | Forecast CLI package (façade over the carved subcommand core).                                                                                    |
 | [core.py](core.py)                               | Command-line interface for forecast ledger workflows.                                                                                             |
 | [benchmarks.py](benchmarks.py)                   | `forecast bench` / `backtest` — ForecastBench scoreboard + historical replay.                                                                     |
 | [collaboration_admin.py](collaboration_admin.py) | Local administration for portable forecast workspaces and changesets.                                                                             |

@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                                                 | Responsibility                                                                            |
 | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)                                           | init .                                                                                    |
+| [\_\_init\_\_.py](__init__.py)                                           | init .                                                                                    |
 | [conftest.py](conftest.py)                                           | Explicit service credentials for live integration runs; unit tests stay hermetic.         |
 | [test_batch_runner.py](test_batch_runner.py)                         | Test script for batch runner                                                              |
 | [test_checkpoint_resumption.py](test_checkpoint_resumption.py)       | Test script to verify checkpoint behavior in superforecasting_agent/trajectories/batch.py |

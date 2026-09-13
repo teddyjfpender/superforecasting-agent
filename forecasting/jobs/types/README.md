@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                           | Responsibility                                                                                                                                                                    |
 | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)     | init .                                                                                                                                                                            |
+| [\_\_init\_\_.py](__init__.py)     | init .                                                                                                                                                                            |
 | [backup.py](backup.py)         | The BACKUP job type: a durable, online SQLite backup + integrity check of the forecast ledger on the one detached-job runtime (Arc B).                                            |
 | [quorum.py](quorum.py)         | The QUORUM job type: the multi-model Delphi forecast on the one detached-job runtime (Arc B3).                                                                                    |
 | [reforecast.py](reforecast.py) | The REFORECAST job type: the operator's Desk "mass LLM re-run" on the one detached-job runtime (Arc B2).                                                                          |

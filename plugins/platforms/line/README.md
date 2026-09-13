@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                       | Responsibility                                                  |
 | -------------------------- | --------------------------------------------------------------- |
-| [**init**.py](__init__.py) | init .                                                          |
+| [\_\_init\_\_.py](__init__.py) | init .                                                          |
 | [adapter.py](adapter.py)   | LINE Messaging API platform adapter for Superforecasting Agent. |
 | [plugin.yaml](plugin.yaml) | plugin.                                                         |
 

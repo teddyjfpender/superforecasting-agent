@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                           | Responsibility                                                       |
 | ------------------------------ | -------------------------------------------------------------------- |
-| [**init**.py](__init__.py)     | Shared command metadata and resolution, independent of presentation. |
+| [\_\_init\_\_.py](__init__.py)     | Shared command metadata and resolution, independent of presentation. |
 | [operations.py](operations.py) | Configuration, integration and operator-support commands.            |
 | [types.py](types.py)           | Shared immutable command definition.                                 |
 | [workflow.py](workflow.py)     | Forecast-desk and session workflow commands.                         |

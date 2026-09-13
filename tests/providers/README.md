@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                                   | Responsibility                                                                            |
 | ------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)                             | init .                                                                                    |
+| [\_\_init\_\_.py](__init__.py)                             | init .                                                                                    |
 | [test_e2e_wiring.py](test_e2e_wiring.py)               | E2E tests: verify \_build_kwargs_from_profile produces correct output.                    |
 | [test_plugin_discovery.py](test_plugin_discovery.py)   | Tests for the model-providers plugin discovery system.                                    |
 | [test_profile_wiring.py](test_profile_wiring.py)       | Profile-path parity tests: verify profile path produces identical output to legacy flags. |

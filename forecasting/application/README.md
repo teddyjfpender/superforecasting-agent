@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                             | Responsibility                                                                     |
 | ------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)                       | Interface-independent forecast operations consumed by product adapters.            |
+| [\_\_init\_\_.py](__init__.py)                       | Interface-independent forecast operations consumed by product adapters.            |
 | [aggregate_summaries.py](aggregate_summaries.py) | Shared thesis and factor summaries for tools and product adapters.                 |
 | [benchmarks.py](benchmarks.py)                   | Presentation-independent benchmark execution and probability generation.           |
 | [market_output.py](market_output.py)             | Thread-owned transfer of the latest market artifact from tools to orchestration.   |

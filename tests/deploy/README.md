@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                                 | Responsibility                        |
 | ---------------------------------------------------- | ------------------------------------- |
-| [**init**.py](__init__.py)                           | init .                                |
+| [\_\_init\_\_.py](__init__.py)                           | init .                                |
 | [test_deploy_hardening.py](test_deploy_hardening.py) | Deploy-artifact hardening gates (P3). |
 
 ## Working in this directory

@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                                                   | Responsibility                                                       |
 | ---------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| [**init**.py](__init__.py)                                             | init .                                                               |
+| [\_\_init\_\_.py](__init__.py)                                             | init .                                                               |
 | [test_bedrock_transport.py](test_bedrock_transport.py)                 | Tests for the BedrockTransport.                                      |
 | [test_chat_completions.py](test_chat_completions.py)                   | Tests for the ChatCompletionsTransport.                              |
 | [test_codex_app_server_runtime.py](test_codex_app_server_runtime.py)   | Tests for the optional codex app-server runtime gate.                |

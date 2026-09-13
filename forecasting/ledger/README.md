@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                   | Responsibility                                                                |
 | -------------------------------------- | ----------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)             | Forecast ledger package (façade over carved domain modules).                  |
+| [\_\_init\_\_.py](__init__.py)             | Forecast ledger package (façade over carved domain modules).                  |
 | [core.py](core.py)                     | SQLite forecast ledger for the forecasting fork.                              |
 | [alerts.py](alerts.py)                 | Alerts domain (D7 carve — the desk's health engine + alert_events lifecycle). |
 | [anchors.py](anchors.py)               | Outside-view anchor re-linking — the mechanical orphaned-anchor remediation.  |

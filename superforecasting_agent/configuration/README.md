@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                             | Responsibility                                                                 |
 | ------------------------------------------------ | ------------------------------------------------------------------------------ |
-| [**init**.py](__init__.py)                       | Configuration values shared by hosts, services and product adapters.           |
+| [\_\_init\_\_.py](__init__.py)                       | Configuration values shared by hosts, services and product adapters.           |
 | [agent_limits.py](agent_limits.py)               | Pure selection of positive, whole-number agent execution budgets.              |
 | [authentication.py](authentication.py)           | Provider authentication metadata and pure credential selection policy.         |
 | [browser.py](browser.py)                         | Browser endpoint validation shared by command and transport adapters.          |

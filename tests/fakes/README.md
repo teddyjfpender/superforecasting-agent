@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                   | Responsibility                                      |
 | -------------------------------------- | --------------------------------------------------- |
-| [**init**.py](__init__.py)             | init .                                              |
+| [\_\_init\_\_.py](__init__.py)             | init .                                              |
 | [fake_ha_server.py](fake_ha_server.py) | Fake Home Assistant server for integration testing. |
 
 ## Working in this directory

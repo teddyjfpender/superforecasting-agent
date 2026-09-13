@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                                                               | Responsibility                                                       |
 | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| [**init**.py](__init__.py)                                                         | init .                                                               |
+| [\_\_init\_\_.py](__init__.py)                                                         | init .                                                               |
 | [test_branch_command.py](test_branch_command.py)                                   | Tests for the /branch (/fork) command — session branching.           |
 | [test_busy_input_mode_command.py](test_busy_input_mode_command.py)                 | Tests for the /busy CLI command and busy-input-mode config handling. |
 | [test_cli_approval_ui.py](test_cli_approval_ui.py)                                 | Checks: cli approval ui.                                             |

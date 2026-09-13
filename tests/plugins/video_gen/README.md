@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                                             | Responsibility                                                       |
 | ---------------------------------------------------------------- | -------------------------------------------------------------------- |
-| [**init**.py](__init__.py)                                       | Make tests/plugins/video_gen a package.                              |
+| [\_\_init\_\_.py](__init__.py)                                       | Make tests/plugins/video_gen a package.                              |
 | [test_fal_plugin.py](test_fal_plugin.py)                         | Tests for the FAL video gen plugin — family routing, payload shape.  |
 | [test_xai_plugin.py](test_xai_plugin.py)                         | Smoke tests for the xAI video gen plugin — load & register surface.  |
 | [test_xai_plugin_integration.py](test_xai_plugin_integration.py) | Integration tests for the xAI video gen plugin's simplified surface. |

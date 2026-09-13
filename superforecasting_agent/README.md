@@ -12,8 +12,8 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                               | Responsibility                                                             |
 | ---------------------------------- | -------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)         | Public Superforecasting Agent API, loaded only when requested.             |
-| [**main**.py](__main__.py)         | Run the forecast CLI with `python -m superforecasting_agent`.              |
+| [\_\_init\_\_.py](__init__.py)         | Public Superforecasting Agent API, loaded only when requested.             |
+| [\_\_main\_\_.py](__main__.py)         | Run the forecast CLI with `python -m superforecasting_agent`.              |
 | [bootstrap.py](bootstrap.py)       | Windows UTF-8 bootstrap for Superforecasting Agent entry points.           |
 | [cli.py](cli.py)                   | Fork-native CLI entrypoint for Superforecasting Agent.                     |
 | [clock.py](clock.py)               | Timezone-aware clock for Superforecasting Agent.                           |

@@ -7,7 +7,7 @@ _DIR="$(cd "$(dirname "$0")" && pwd)"
 
 if hook_honor_global_skip "pre-push"; then exit 0; fi
 _py="$(hook_python)" || exit 1
-plan="$("$_py" "$HOOKS_REPO_ROOT/scripts/push_plan.py" "${1:-origin}")" || exit 1
+plan="$("$_py" "$HOOKS_REPO_ROOT/scripts/push_plan.py" "${2:-${1:-origin}}")" || exit 1
 [ -z "$plan" ] && exit 0
 
 quality_args=(--python-only)

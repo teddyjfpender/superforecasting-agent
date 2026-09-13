@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                               | Responsibility                                         |
 | ---------------------------------- | ------------------------------------------------------ |
-| [**init**.py](__init__.py)         | Ordered built-in toolset catalog used by the resolver. |
+| [\_\_init\_\_.py](__init__.py)         | Ordered built-in toolset catalog used by the resolver. |
 | [core.py](core.py)                 | Shared tool membership for inherited platform presets. |
 | [aliases.py](aliases.py)           | Aliases toolset catalog.                               |
 | [capabilities.py](capabilities.py) | Capabilities toolset catalog.                          |

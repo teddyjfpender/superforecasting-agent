@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                                 | Responsibility                                                               |
 | ---------------------------------------------------- | ---------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)                           | Agent internals -- extracted modules from run_agent.py.                      |
+| [\_\_init\_\_.py](__init__.py)                           | Agent internals -- extracted modules from run_agent.py.                      |
 | [runtime.py](runtime.py)                             | AI Agent Runner with Tool Calling                                            |
 | [account_usage.py](account_usage.py)                 | account usage.                                                               |
 | [agent_factory.py](agent_factory.py)                 | The single resolve->construct path for an AIAgent.                           |

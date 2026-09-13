@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                           | Responsibility                                                                 |
 | ---------------------------------------------- | ------------------------------------------------------------------------------ |
-| [**init**.py](__init__.py)                     | Interface-independent session and host application operations.                 |
+| [\_\_init\_\_.py](__init__.py)                     | Interface-independent session and host application operations.                 |
 | [command_output.py](command_output.py)         | Request-local command output without replacing process streams.                |
 | [configuration_view.py](configuration_view.py) | Read-only configuration reporting shared by terminal and RPC consumers.        |
 | [footer.py](footer.py)                         | Shared runtime-footer inspection and atomic configuration transitions.         |

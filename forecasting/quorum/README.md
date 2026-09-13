@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                           | Responsibility                                                                              |
 | ------------------------------ | ------------------------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)     | Quorum package façade over carved concern modules.                                          |
+| [\_\_init\_\_.py](__init__.py)     | Quorum package façade over carved concern modules.                                          |
 | [core.py](core.py)             | Quorum — a model-diverse forecast panel with a judge synthesis step.                        |
 | [estimation.py](estimation.py) | Quorum call-count / preset-cap / trial-count machinery (carved from `quorum.py`).           |
 | [panels.py](panels.py)         | Quorum model / provider / panel resolution (carved from `quorum.py`).                       |

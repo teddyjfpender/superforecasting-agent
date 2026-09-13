@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                                     | Responsibility                                                           |
 | -------------------------------------------------------- | ------------------------------------------------------------------------ |
-| [**init**.py](__init__.py)                               | init .                                                                   |
+| [\_\_init\_\_.py](__init__.py)                               | init .                                                                   |
 | [test_async_memory.py](test_async_memory.py)             | Tests for the async-memory Honcho improvements.                          |
 | [test_cli.py](test_cli.py)                               | Tests for plugins/memory/honcho/cli.py.                                  |
 | [test_client.py](test_client.py)                         | Tests for plugins/memory/honcho/client.py — Honcho client configuration. |

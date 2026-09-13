@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                     | Responsibility                                                          |
 | ---------------------------------------- | ----------------------------------------------------------------------- |
-| [**init**.py](__init__.py)               | Tool-action registry for the forecast ledger tool.                      |
+| [\_\_init\_\_.py](__init__.py)               | Tool-action registry for the forecast ledger tool.                      |
 | [models.py](models.py)                   | Model-run, living-model and bayes-toolkit actions.                      |
 | [autopilot.py](autopilot.py)             | Autopilot and forecast-update-proposal actions.                         |
 | [calibration.py](calibration.py)         | Calibration, operator, backtest, correction and lesson actions.         |

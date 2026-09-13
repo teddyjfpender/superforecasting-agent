@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                             | Responsibility                                                                  |
 | -------------------------------- | ------------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)       | Credential discovery, refresh and persistence independent of command rendering. |
+| [\_\_init\_\_.py](__init__.py)       | Credential discovery, refresh and persistence independent of command rendering. |
 | [anthropic.py](anthropic.py)     | Anthropic credential files and token refresh without inference construction.    |
 | [auth.py](auth.py)               | Multi-provider authentication system for Superforecasting Agent.                |
 | [azure.py](azure.py)             | Entra configuration and SDK presence without client construction.               |

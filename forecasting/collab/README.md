@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                         | Responsibility                                                                |
 | ---------------------------- | ----------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)   | Cross-instance collaboration — the `sfp/1` cards (M2) + import pipeline (M3). |
+| [\_\_init\_\_.py](__init__.py)   | Cross-instance collaboration — the `sfp/1` cards (M2) + import pipeline (M3). |
 | [cards.py](cards.py)         | Card renderers — turn a ledger object into an `sfp/1` payload + Block Kit.    |
 | [directory.py](directory.py) | The collab DIRECTORY — who is in the org, and who is authorised.              |
 | [imports.py](imports.py)     | The IMPORT PIPELINE — a peer's sfp/1 payload lands in this ledger as a GUEST. |

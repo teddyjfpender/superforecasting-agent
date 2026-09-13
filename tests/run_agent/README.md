@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                                                           | Responsibility                                                         |
 | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------- |
-| [**init**.py](__init__.py)                                                     | init .                                                                 |
+| [\_\_init\_\_.py](__init__.py)                                                     | init .                                                                 |
 | [conftest.py](conftest.py)                                                     | Fast-path fixtures shared across tests/run_agent/.                     |
 | [test_1630_context_overflow_loop.py](test_1630_context_overflow_loop.py)       | Tests for #1630 — gateway infinite 400 failure loop prevention.        |
 | [test_18028_content_policy_blocked.py](test_18028_content_policy_blocked.py)   | Checks: 18028 content policy blocked.                                  |

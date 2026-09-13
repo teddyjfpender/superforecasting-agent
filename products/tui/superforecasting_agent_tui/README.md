@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                       | Responsibility                                                   |
 | -------------------------- | ---------------------------------------------------------------- |
-| [**init**.py](__init__.py) | Standalone terminal product: no backend imports or dependencies. |
+| [\_\_init\_\_.py](__init__.py) | Standalone terminal product: no backend imports or dependencies. |
 
 ## Working in this directory
 

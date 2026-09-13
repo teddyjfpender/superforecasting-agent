@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                                               | Responsibility                                                                          |
 | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)                                         | init .                                                                                  |
+| [\_\_init\_\_.py](__init__.py)                                         | init .                                                                                  |
 | [test_achievements_plugin.py](test_achievements_plugin.py)         | Checks: achievements plugin.                                                            |
 | [test_disk_cleanup_plugin.py](test_disk_cleanup_plugin.py)         | Tests for the disk-cleanup plugin.                                                      |
 | [test_google_meet_audio.py](test_google_meet_audio.py)             | Tests for plugins.google_meet.audio_bridge (v2).                                        |

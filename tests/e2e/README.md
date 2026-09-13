@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                                   | Responsibility                                                        |
 | ------------------------------------------------------ | --------------------------------------------------------------------- |
-| [**init**.py](__init__.py)                             | init .                                                                |
+| [\_\_init\_\_.py](__init__.py)                             | init .                                                                |
 | [conftest.py](conftest.py)                             | Shared fixtures for gateway e2e tests (Telegram, Discord).            |
 | [test_discord_adapter.py](test_discord_adapter.py)     | Minimal e2e tests for Discord mention stripping + /command detection. |
 | [test_platform_commands.py](test_platform_commands.py) | E2E tests for gateway slash commands (Telegram, Discord).             |

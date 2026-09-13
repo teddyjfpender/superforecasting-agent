@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                             | Responsibility                                                      |
 | -------------------------------- | ------------------------------------------------------------------- |
-| [**init**.py](__init__.py)       | Computer use toolset — universal (any-model) macOS desktop control. |
+| [\_\_init\_\_.py](__init__.py)       | Computer use toolset — universal (any-model) macOS desktop control. |
 | [backend.py](backend.py)         | Abstract backend interface for computer use.                        |
 | [cua_backend.py](cua_backend.py) | Cua-driver backend (macOS only).                                    |
 | [schema.py](schema.py)           | Schema for the generic `computer_use` tool.                         |

@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                         | Responsibility                                                                                                                                                                                                                            |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)   | Shared meeting primitives used by both meeting surfaces (Teams pipeline + Google Meet followup): a common MeetingSummary model and a transcript -> summary/action-item summarizer, so action items are extracted the same way everywhere. |
+| [\_\_init\_\_.py](__init__.py)   | Shared meeting primitives used by both meeting surfaces (Teams pipeline + Google Meet followup): a common MeetingSummary model and a transcript -> summary/action-item summarizer, so action items are extracted the same way everywhere. |
 | [summarize.py](summarize.py) | Shared meeting summarizer: transcript -> {summary, key_decisions, action_items, risks}.                                                                                                                                                   |
 
 ## Working in this directory

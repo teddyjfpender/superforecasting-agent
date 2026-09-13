@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                             | Responsibility                                                                        |
 | -------------------------------- | ------------------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)       | Market-data providers, ported one-to-one from `ui-tui/src/lib/marketFetch.ts`.        |
+| [\_\_init\_\_.py](__init__.py)       | Market-data providers, ported one-to-one from `ui-tui/src/lib/marketFetch.ts`.        |
 | [bea.py](bea.py)                 | BEA (NIPA) provider — ported one-to-one from `marketFetch.ts`.                        |
 | [bls.py](bls.py)                 | BLS (Bureau of Labor Statistics) provider — ported one-to-one from `marketFetch.ts`.  |
 | [coingecko.py](coingecko.py)     | CoinGecko (crypto spot) provider — ported one-to-one from `marketFetch.ts`.           |

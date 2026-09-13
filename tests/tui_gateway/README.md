@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                                                         | Responsibility                                                                  |
 | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)                                                   | init .                                                                          |
+| [\_\_init\_\_.py](__init__.py)                                                   | init .                                                                          |
 | [conftest.py](conftest.py)                                                   | Fixtures for tests which start and stop complete runtime host lifetimes.        |
 | [test_agents_active_summary.py](test_agents_active_summary.py)               | Tests for the `agents.active.summary` gateway RPC.                              |
 | [test_background_command_ownership.py](test_background_command_ownership.py) | Native background commands touch only their host session's registry entries.    |

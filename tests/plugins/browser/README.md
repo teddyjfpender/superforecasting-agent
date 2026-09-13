@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                                                       | Responsibility                                                                |
 | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)                                                 | init .                                                                        |
+| [\_\_init\_\_.py](__init__.py)                                                 | init .                                                                        |
 | [check_parity_vs_main.py](check_parity_vs_main.py)                         | Behavior-parity check for the browser-provider plugin migration (#25214).     |
 | [test_browser_disposal_provenance.py](test_browser_disposal_provenance.py) | Provider cleanup uses allocation configuration and never exports credentials. |
 | [test_browser_provider_plugins.py](test_browser_provider_plugins.py)       | Plugin-side tests for the browser provider migration (PR #25214).             |

@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                                   | Responsibility                                                                 |
 | ------------------------------------------------------ | ------------------------------------------------------------------------------ |
-| [**init**.py](__init__.py)                             | Pytest helpers for LSP-related tests.                                          |
+| [\_\_init\_\_.py](__init__.py)                             | Pytest helpers for LSP-related tests.                                          |
 | [\_mock_lsp_server.py](_mock_lsp_server.py)            | A minimal in-process LSP server used by tests.                                 |
 | [test_backend_gate.py](test_backend_gate.py)           | Integration test: LSP layer is skipped on non-local backends.                  |
 | [test_broken_set.py](test_broken_set.py)               | Tests for the broken-set short-circuit added to handle outer-timeout failures. |

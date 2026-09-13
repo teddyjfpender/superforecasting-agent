@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                         | Responsibility                                         |
 | ---------------------------- | ------------------------------------------------------ |
-| [**init**.py](__init__.py)   | Cron job scheduling system for Superforecasting Agent. |
+| [\_\_init\_\_.py](__init__.py)   | Cron job scheduling system for Superforecasting Agent. |
 | [jobs.py](jobs.py)           | Cron job storage and management.                       |
 | [scheduler.py](scheduler.py) | Cron job scheduler - executes due jobs.                |
 

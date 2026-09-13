@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                 | Responsibility                                                         |
 | ------------------------------------ | ---------------------------------------------------------------------- |
-| [**init**.py](__init__.py)           | Superforecasting Agent execution environment backends.                 |
+| [\_\_init\_\_.py](__init__.py)           | Superforecasting Agent execution environment backends.                 |
 | [configuration.py](configuration.py) | Pure configuration mapping shared by terminal and file-tool sandboxes. |
 | [base.py](base.py)                   | base.                                                                  |
 | [daytona.py](daytona.py)             | Daytona cloud execution environment.                                   |

@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                     | Responsibility                                                            |
 | ---------------------------------------- | ------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)               | init .                                                                    |
+| [\_\_init\_\_.py](__init__.py)               | init .                                                                    |
 | [server.py](server.py)                   | server.                                                                   |
 | [agents_rpc.py](agents_rpc.py)           | Gateway RPCs for the `agents.*` family — carved from server.py.           |
 | [browser_rpc.py](browser_rpc.py)         | Gateway RPC for the browser-connect plane — carved from server.py.        |

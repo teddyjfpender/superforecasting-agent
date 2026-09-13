@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                                           | Responsibility                                                                               |
 | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)                                     | init .                                                                                       |
+| [\_\_init\_\_.py](__init__.py)                                     | init .                                                                                       |
 | [test_accretion_caps.py](test_accretion_caps.py)               | Accretion caps for \_read_tracker (file_tools) and \_completion_consumed (process_registry). |
 | [test_ansi_strip.py](test_ansi_strip.py)                       | Comprehensive tests for ANSI escape sequence stripping (ECMA-48).                            |
 | [test_approval.py](test_approval.py)                           | Tests for the dangerous command approval module.                                             |

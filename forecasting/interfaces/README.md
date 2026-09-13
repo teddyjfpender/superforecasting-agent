@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                       | Responsibility                                                            |
 | -------------------------- | ------------------------------------------------------------------------- |
-| [**init**.py](__init__.py) | Product adapters for forecasting services; never imported by the domain.  |
+| [\_\_init\_\_.py](__init__.py) | Product adapters for forecasting services; never imported by the domain.  |
 | [commands.py](commands.py) | Shared command syntax and text presentation for CLI and Ink RPC adapters. |
 
 ## Working in this directory

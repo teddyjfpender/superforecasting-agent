@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                 | Responsibility                                                           |
 | ------------------------------------ | ------------------------------------------------------------------------ |
-| [**init**.py](__init__.py)           | GitHub App control-plane integration.                                    |
+| [\_\_init\_\_.py](__init__.py)           | GitHub App control-plane integration.                                    |
 | [app.py](app.py)                     | GitHub App installation authentication kept inside the control plane.    |
 | [auth.py](auth.py)                   | GitHub App user OAuth with PKCE and encrypted token persistence.         |
 | [capabilities.py](capabilities.py)   | Single-use GitHub request capabilities executed by the control plane.    |

@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                           | Responsibility                                                          |
 | ------------------------------ | ----------------------------------------------------------------------- |
-| [**init**.py](__init__.py)     | Portable Git workspace projection and validation.                       |
+| [\_\_init\_\_.py](__init__.py)     | Portable Git workspace projection and validation.                       |
 | [bootstrap.py](bootstrap.py)   | Validated staging reconstruction from a portable forecast workspace.    |
 | [git.py](git.py)               | Conservative argv-only Git operations for managed forecast workspaces.  |
 | [manifest.py](manifest.py)     | Canonical forecast workspace manifest.                                  |

@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                               | Responsibility                                                          |
 | ---------------------------------- | ----------------------------------------------------------------------- |
-| [**init**.py](__init__.py)         | Tool definition, argument, and dispatch support.                        |
+| [\_\_init\_\_.py](__init__.py)         | Tool definition, argument, and dispatch support.                        |
 | [runtime.py](runtime.py)           | Public orchestration API for tool discovery and dispatch.               |
 | [arguments.py](arguments.py)       | Coerce model-produced arguments against registered tool schemas.        |
 | [async_bridge.py](async_bridge.py) | Persistent event-loop ownership for synchronous tool dispatch.          |

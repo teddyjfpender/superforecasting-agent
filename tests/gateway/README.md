@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                                                                   | Responsibility                                                                                         |
 | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| [**init**.py](__init__.py)                                                             | init .                                                                                                 |
+| [\_\_init\_\_.py](__init__.py)                                                             | init .                                                                                                 |
 | [\_plugin_adapter_loader.py](_plugin_adapter_loader.py)                                | Shared helper for loading platform-plugin `adapter.py` modules in tests.                               |
 | [conftest.py](conftest.py)                                                             | Shared fixtures for gateway tests.                                                                     |
 | [feishu_helpers.py](feishu_helpers.py)                                                 | Shared fixtures for Feishu adapter tests (admission, group policy, dispatch).                          |

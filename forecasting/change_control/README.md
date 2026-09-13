@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                 | Responsibility                                                         |
 | ------------------------------------ | ---------------------------------------------------------------------- |
-| [**init**.py](__init__.py)           | Authoritative ledger changesets, policy, and review state.             |
+| [\_\_init\_\_.py](__init__.py)           | Authoritative ledger changesets, policy, and review state.             |
 | [models.py](models.py)               | Versioned, deterministic ledger changeset models.                      |
 | [apply.py](apply.py)                 | Transactional application of reviewed ledger changesets.               |
 | [collaboration.py](collaboration.py) | Slack-thread changeset ownership and cross-platform identity bindings. |

@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                             | Responsibility                                        |
 | -------------------------------- | ----------------------------------------------------- |
-| [**init**.py](__init__.py)       | Upstream adapter registry for the local proxy server. |
+| [\_\_init\_\_.py](__init__.py)       | Upstream adapter registry for the local proxy server. |
 | [base.py](base.py)               | Abstract base for proxy upstream adapters.            |
 | [nous_portal.py](nous_portal.py) | Nous Portal upstream adapter.                         |
 | [xai.py](xai.py)                 | xAI Grok OAuth upstream adapter.                      |

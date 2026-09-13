@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                           | Responsibility                                                                                                                                           |
 | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)     | Prediction-markets package: one Python implementation of Polymarket + Kalshi read-only market data, consumed by both the agent tool and the TUI gateway. |
+| [\_\_init\_\_.py](__init__.py)     | Prediction-markets package: one Python implementation of Polymarket + Kalshi read-only market data, consumed by both the agent tool and the TUI gateway. |
 | [\_http.py](_http.py)          | Bounded stdlib HTTP GET → parsed JSON. No third-party deps, no trading.                                                                                  |
 | [aggregate.py](aggregate.py)   | Collapse a venue event into a discretised distribution (headline + sub-rows).                                                                            |
 | [health.py](health.py)         | Prediction-market health snapshot for the `forecast doctor` fold-in.                                                                                     |

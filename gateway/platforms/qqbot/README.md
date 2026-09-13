@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                   | Responsibility                                                                   |
 | -------------------------------------- | -------------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)             | QQBot platform package.                                                          |
+| [\_\_init\_\_.py](__init__.py)             | QQBot platform package.                                                          |
 | [adapter.py](adapter.py)               | QQ Bot platform adapter using the Official QQ Bot API (v2).                      |
 | [chunked_upload.py](chunked_upload.py) | QQ Bot chunked upload flow.                                                      |
 | [constants.py](constants.py)           | QQBot package-level constants shared across adapter, onboard, and other modules. |

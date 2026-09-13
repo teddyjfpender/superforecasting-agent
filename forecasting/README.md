@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                             | Responsibility                                                                    |
 | ------------------------------------------------ | --------------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)                       | Forecast-native domain package for the Superforecasting Agent fork.               |
+| [\_\_init\_\_.py](__init__.py)                       | Forecast-native domain package for the Superforecasting Agent fork.               |
 | [models.py](models.py)                           | Core forecast ledger domain models.                                               |
 | [ablation_study.py](ablation_study.py)           | Panel-vs-solo ablation — does the panel machinery earn its cost?                  |
 | [agent_protocol.py](agent_protocol.py)           | Agent-protocol probability source for historical forecast replay.                 |

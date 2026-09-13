@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                             | Responsibility                                                                                                                       |
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| [**init**.py](__init__.py)                       | Forecast Hooks — a git-hook-style saturation + style enforcement framework.                                                          |
+| [\_\_init\_\_.py](__init__.py)                       | Forecast Hooks — a git-hook-style saturation + style enforcement framework.                                                          |
 | [blf_signals.py](blf_signals.py)                 | BLF gate signals — the retroactivity backbone + panel-run readers.                                                                   |
 | [builtins.py](builtins.py)                       | Built-in forecast hook rules — one per legacy `create_snapshot` gate, plus `style_clean` and `lessons_applied`.                      |
 | [candidate_intervals.py](candidate_intervals.py) | Compute per-candidate vote-share intervals (the honest sources, in precedence).                                                      |

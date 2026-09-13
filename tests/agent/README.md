@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                                               | Responsibility                                                                              |
 | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)                                         | init .                                                                                      |
+| [\_\_init\_\_.py](__init__.py)                                         | init .                                                                                      |
 | [test_anthropic_adapter.py](test_anthropic_adapter.py)             | Tests for agent/anthropic_adapter.py — Anthropic Messages API adapter.                      |
 | [test_anthropic_keychain.py](test_anthropic_keychain.py)           | Tests for Bug #12905 fixes in agent/anthropic_adapter.py — macOS Keychain support.          |
 | [test_anthropic_oauth_pkce.py](test_anthropic_oauth_pkce.py)       | Regression tests for the Anthropic OAuth PKCE flow.                                         |

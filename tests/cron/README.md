@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                                                         | Responsibility                                                          |
 | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| [**init**.py](__init__.py)                                                   | init .                                                                  |
+| [\_\_init\_\_.py](__init__.py)                                                   | init .                                                                  |
 | [test_codex_execution_paths.py](test_codex_execution_paths.py)               | Checks: codex execution paths.                                          |
 | [test_compute_next_run_last_run_at.py](test_compute_next_run_last_run_at.py) | Test that compute_next_run uses last_run_at for cron jobs.              |
 | [test_cron_context_from.py](test_cron_context_from.py)                       | Tests for cron job context_from feature (issue #5439 Option C).         |

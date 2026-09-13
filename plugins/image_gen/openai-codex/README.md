@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                       | Responsibility                                                 |
 | -------------------------- | -------------------------------------------------------------- |
-| [**init**.py](__init__.py) | OpenAI image generation backend — ChatGPT/Codex OAuth variant. |
+| [\_\_init\_\_.py](__init__.py) | OpenAI image generation backend — ChatGPT/Codex OAuth variant. |
 | [plugin.yaml](plugin.yaml) | plugin.                                                        |
 
 ## Working in this directory

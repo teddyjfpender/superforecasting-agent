@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                                                       | Responsibility                                                       |
 | -------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| [**init**.py](__init__.py)                                                 | init .                                                               |
+| [\_\_init\_\_.py](__init__.py)                                                 | init .                                                               |
 | [test_web_search_provider_plugins.py](test_web_search_provider_plugins.py) | Plugin-side tests for the web search provider migration (PR #25182). |
 
 ## Working in this directory

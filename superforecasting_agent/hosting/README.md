@@ -12,10 +12,10 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                           | Responsibility                                                                  |
 | ---------------------------------------------- | ------------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)                     | Presentation-independent entrypoints for forecast runtime hosting.              |
+| [\_\_init\_\_.py](__init__.py)                     | Presentation-independent entrypoints for forecast runtime hosting.              |
 | [runtime.py](runtime.py)                       | Presentation-independent serving lifetime and resource ownership.               |
 | [configuration.py](configuration.py)           | Compatibility import for the host-owned shared configuration reader.            |
-| [**main**.py](__main__.py)                     | Launch the headless host with credentials read from a file.                     |
+| [\_\_main\_\_.py](__main__.py)                     | Launch the headless host with credentials read from a file.                     |
 | [aws_credentials.py](aws_credentials.py)       | AWS credential-source and region discovery, independent of client construction. |
 | [background.py](background.py)                 | Session-owned background conversations and retryable resource disposal.         |
 | [browser_connection.py](browser_connection.py) | Serialize browser endpoint changes and surface incomplete cleanup.              |

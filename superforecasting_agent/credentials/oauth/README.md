@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                   | Responsibility                                                           |
 | -------------------------------------- | ------------------------------------------------------------------------ |
-| [**init**.py](__init__.py)             | Provider-specific OAuth operations behind the credential service facade. |
+| [\_\_init\_\_.py](__init__.py)             | Provider-specific OAuth operations behind the credential service facade. |
 | [api_keys.py](api_keys.py)             | Api keys operations; shared state belongs to credentials.auth.           |
 | [callbacks.py](callbacks.py)           | Callbacks operations; shared state belongs to credentials.auth.          |
 | [codex.py](codex.py)                   | Codex operations; shared state belongs to credentials.auth.              |

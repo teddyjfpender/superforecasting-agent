@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                                 | Responsibility                                                               |
 | ---------------------------------------------------- | ---------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)                           | Real-terminal (pty) tests for the Ink TUI.                                   |
+| [\_\_init\_\_.py](__init__.py)                           | Real-terminal (pty) tests for the Ink TUI.                                   |
 | [conftest.py](conftest.py)                           | Skip policy + hermetic environment for the real-terminal TUI tests.          |
 | [ledger_probe.py](ledger_probe.py)                   | Count the SQLite work a ledger operation does.                               |
 | [pty_session.py](pty_session.py)                     | Drive a child process behind a real pseudo-terminal.                         |

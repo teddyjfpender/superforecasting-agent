@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                             | Responsibility                                                         |
 | -------------------------------- | ---------------------------------------------------------------------- |
-| [**init**.py](__init__.py)       | Language Server Protocol (LSP) integration for Superforecasting Agent. |
+| [\_\_init\_\_.py](__init__.py)       | Language Server Protocol (LSP) integration for Superforecasting Agent. |
 | [cli.py](cli.py)                 | cli.                                                                   |
 | [client.py](client.py)           | Async LSP client over stdin/stdout.                                    |
 | [eventlog.py](eventlog.py)       | Structured logging with steady-state silence for the LSP layer.        |

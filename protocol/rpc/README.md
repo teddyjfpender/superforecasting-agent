@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                       | Responsibility                                                                                                                                                          |
 | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [**init**.py](__init__.py) | RPC request/response model families (one module per RPC family).                                                                                                        |
+| [\_\_init\_\_.py](__init__.py) | RPC request/response model families (one module per RPC family).                                                                                                        |
 | [agents.py](agents.py)     | Wire models for the `agents.*` / `delegation.*` / `subagent.*` / `spawn_tree.*` RPCs and the shared `SubagentEventPayload` (Arc A4 — the plan's named "agents" family). |
 | [commands.py](commands.py) | Wire models for the command-catalog / completion / slash RPCs (Arc A4).                                                                                                 |
 | [config.py](config.py)     | Wire models for the `config.*` + `setup.status` RPCs (Arc A4).                                                                                                          |

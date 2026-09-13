@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                 | Responsibility                                              |
 | ------------------------------------ | ----------------------------------------------------------- |
-| [**init**.py](__init__.py)           | Realtime speech subpackage for the google_meet plugin (v2). |
+| [\_\_init\_\_.py](__init__.py)           | Realtime speech subpackage for the google_meet plugin (v2). |
 | [openai_client.py](openai_client.py) | OpenAI Realtime API WebSocket client + file-queue speaker.  |
 
 ## Working in this directory

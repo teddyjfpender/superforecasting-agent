@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                       | Responsibility                                |
 | -------------------------- | --------------------------------------------- |
-| [**init**.py](__init__.py) | SearXNG search plugin — bundled, auto-loaded. |
+| [\_\_init\_\_.py](__init__.py) | SearXNG search plugin — bundled, auto-loaded. |
 | [plugin.yaml](plugin.yaml) | plugin.                                       |
 | [provider.py](provider.py) | SearXNG search — plugin form.                 |
 

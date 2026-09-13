@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                                       | Responsibility                                    |
 | ---------------------------------------------------------- | ------------------------------------------------- |
-| [**init**.py](__init__.py)                                 | init .                                            |
+| [\_\_init\_\_.py](__init__.py)                                 | init .                                            |
 | [test_generate_skill_docs.py](test_generate_skill_docs.py) | Tests for website/scripts/generate-skill-docs.py. |
 
 ## Working in this directory

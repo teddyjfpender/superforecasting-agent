@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                       | Responsibility                                           |
 | -------------------------- | -------------------------------------------------------- |
-| [**init**.py](__init__.py) | Remote 'node host' primitive for the google_meet plugin. |
+| [\_\_init\_\_.py](__init__.py) | Remote 'node host' primitive for the google_meet plugin. |
 | [server.py](server.py)     | Remote node server.                                      |
 | [cli.py](cli.py)           | `superforecasting-agent meet node ...` subcommand tree.  |
 | [client.py](client.py)     | Gateway-side RPC client for a remote meet node.          |

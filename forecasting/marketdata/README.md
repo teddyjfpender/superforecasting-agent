@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                       | Responsibility                                                            |
 | -------------------------- | ------------------------------------------------------------------------- |
-| [**init**.py](__init__.py) | Server-side market-data plane (Arc C).                                    |
+| [\_\_init\_\_.py](__init__.py) | Server-side market-data plane (Arc C).                                    |
 | [keys.py](keys.py)         | Server-side API-key resolution for market-data providers.                 |
 | [model.py](model.py)       | Domain model for the server-side market-data plane.                       |
 | [provider.py](provider.py) | The `Provider` protocol + a shared HTTP getter for market-data providers. |

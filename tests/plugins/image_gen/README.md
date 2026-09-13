@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                                           | Responsibility                                                            |
 | -------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)                                     | init .                                                                    |
+| [\_\_init\_\_.py](__init__.py)                                     | init .                                                                    |
 | [test_openai_codex_provider.py](test_openai_codex_provider.py) | Tests for the bundled `openai-codex` image_gen plugin.                    |
 | [test_openai_provider.py](test_openai_provider.py)             | Tests for the bundled OpenAI image_gen plugin (gpt-image-2, three tiers). |
 | [test_xai_provider.py](test_xai_provider.py)                   | Tests for xAI image generation provider.                                  |

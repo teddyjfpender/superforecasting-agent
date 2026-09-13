@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                                                                   | Responsibility                                                            |
 | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)                                                             | init .                                                                    |
+| [\_\_init\_\_.py](__init__.py)                                                             | init .                                                                    |
 | [conftest.py](conftest.py)                                                             | Fixtures shared across superforecasting_agent.runtime kanban tests.       |
 | [test_ai_gateway_models.py](test_ai_gateway_models.py)                                 | AI Gateway model list and pricing translation.                            |
 | [test_anthropic_model_flow_stale_oauth.py](test_anthropic_model_flow_stale_oauth.py)   | Checks: anthropic model flow stale oauth.                                 |

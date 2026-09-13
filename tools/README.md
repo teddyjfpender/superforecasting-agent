@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                                 | Responsibility                                                             |
 | ---------------------------------------------------- | -------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)                           | Tools package namespace.                                                   |
+| [\_\_init\_\_.py](__init__.py)                           | Tools package namespace.                                                   |
 | [ansi_strip.py](ansi_strip.py)                       | Strip ANSI escape sequences from subprocess output.                        |
 | [approval.py](approval.py)                           | Dangerous command approval -- detection, prompting, and per-session state. |
 | [async_delegation.py](async_delegation.py)           | Async (background) delegation registry.                                    |

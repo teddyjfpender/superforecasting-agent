@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                       | Responsibility                                                             |
 | ------------------------------------------ | -------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)                 | Batch trajectory generation and processing support.                        |
+| [\_\_init\_\_.py](__init__.py)                 | Batch trajectory generation and processing support.                        |
 | [algorithm.py](algorithm.py)               | Protected-turn selection and compression for completed trajectories.       |
 | [batch.py](batch.py)                       | Batch Agent Runner                                                         |
 | [batch_cli.py](batch_cli.py)               | Command-line options for dataset batch runs.                               |

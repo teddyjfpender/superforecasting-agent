@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                       | Responsibility                                                             |
 | -------------------------- | -------------------------------------------------------------------------- |
-| [**init**.py](__init__.py) | obsidian plugin — native vault integration for notes, learnings, opinions. |
+| [\_\_init\_\_.py](__init__.py) | obsidian plugin — native vault integration for notes, learnings, opinions. |
 | [cli.py](cli.py)           | CLI commands for the obsidian plugin.                                      |
 | [ingest.py](ingest.py)     | Vault → agent: operator note deltas ingested AS EVIDENCE, triage-gated.    |
 | [manifest.py](manifest.py) | The vault delta manifest — the watch-signature pattern applied to pages.   |

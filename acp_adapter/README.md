@@ -12,9 +12,9 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                 | Responsibility                                                              |
 | ------------------------------------ | --------------------------------------------------------------------------- |
-| [**init**.py](__init__.py)           | ACP (Agent Client Protocol) adapter for Superforecasting Agent.             |
+| [\_\_init\_\_.py](__init__.py)           | ACP (Agent Client Protocol) adapter for Superforecasting Agent.             |
 | [server.py](server.py)               | ACP agent server exposing Superforecasting Agent via Agent Client Protocol. |
-| [**main**.py](__main__.py)           | Allow running the ACP adapter as `python -m acp_adapter`.                   |
+| [\_\_main\_\_.py](__main__.py)           | Allow running the ACP adapter as `python -m acp_adapter`.                   |
 | [auth.py](auth.py)                   | ACP auth helpers: detect and advertise runtime authentication methods.      |
 | [content.py](content.py)             | Convert ACP text, images, and attached resources into model content.        |
 | [edit_approval.py](edit_approval.py) | Pre-execution ACP edit approval helpers.                                    |

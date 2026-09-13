@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                                       | Responsibility                                                          |
 | ---------------------------------------------------------- | ----------------------------------------------------------------------- |
-| [**init**.py](__init__.py)                                 | Transport layer types and registry for provider response normalization. |
+| [\_\_init\_\_.py](__init__.py)                                 | Transport layer types and registry for provider response normalization. |
 | [anthropic.py](anthropic.py)                               | Anthropic Messages API transport.                                       |
 | [base.py](base.py)                                         | Abstract base for provider transports.                                  |
 | [bedrock.py](bedrock.py)                                   | AWS Bedrock Converse API transport.                                     |
