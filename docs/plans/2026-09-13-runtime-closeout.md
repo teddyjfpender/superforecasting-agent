@@ -53,3 +53,9 @@ certified by successful retries. Legacy live daemon records without creation
 identity are retained for operator review, never killed speculatively. The historical
 native SSL crash still has no proven attribution; removal of raw socket mutation
 is a concrete independent correction, not a retrospective root-cause claim.
+
+The first full push gate ran 31,999 passing tests with 148 skips and one failure:
+the proxy regression assumed HTTPX's old mount layout. The test now checks the
+transport actually selected for the request URL, and a real local proxy verifies
+that the request takes the proxy route. All ten proxy regressions pass. This
+follow-up changes tests only; final publication still requires the full gate.

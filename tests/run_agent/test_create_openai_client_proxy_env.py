@@ -14,7 +14,7 @@ challenge`` 403s against ``chatgpt.com/backend-api/codex`` once they upgraded
 past #11277. The fix forwards the proxy URL explicitly to ``httpx.Client``
 while keeping the keepalive-enabled transport in place.
 
-This test pins that the constructed ``httpx.Client`` mounts an ``HTTPProxy``
+This test pins that the constructed ``httpx.Client`` selects an ``HTTPProxy``
 pool when a proxy env var is set, AND that the socket-level keepalive
 transport is still installed on the no-proxy default path.
 """
@@ -101,17 +101,10 @@ def test_create_openai_client_routes_via_proxy_when_env_set(mock_openai, monkeyp
         "Expected _create_openai_client to inject a keepalive-enabled "
         "httpx.Client; got %r" % (http_client,)
     )
-    # Verify a proxy mount exists. httpx Client(proxy=...) rewrites _mounts so
-    # the proxied pool (HTTPProxy) sits alongside the base transport.
-    proxied_pools = [
-        type(mount._pool).__name__
-        for mount in http_client._mounts.values()
-        if mount is not None and hasattr(mount, "_pool")
-    ]
-    assert "HTTPProxy" in proxied_pools, (
-        "Expected httpx.Client to route through HTTPProxy when HTTPS_PROXY is "
-        "set; found pools: %r" % (proxied_pools,)
-    )
+    # Inspect the transport actually selected for this URL. The owned default
+    # transport now carries its proxy directly so cleanup retains that pool too.
+    transport = http_client._transport_for_url(httpx.URL(kwargs["base_url"]))
+    assert type(transport._pool).__name__ == "HTTPProxy"
     http_client.close()
 
 
@@ -218,3 +211,45 @@ def test_create_openai_client_bypasses_proxy_for_no_proxy_host(mock_openai, monk
         "NO_PROXY host must not route through HTTPProxy; pools were %r" % (pool_types,)
     )
     http_client.close()
+
+
+def test_owned_transport_sends_requests_through_actual_local_proxy(monkeypatch):
+    import socket
+    import threading
+    from agent.openai_clients import _build_keepalive_http_client
+
+    listener = socket.socket()
+    listener.bind(('127.0.0.1', 0))
+    listener.listen(1)
+    listener.settimeout(3)
+    requests = []
+    errors = []
+    def serve():
+        try:
+            connection, _ = listener.accept()
+            with connection:
+                connection.settimeout(3)
+                data = b''
+                while b'\r\n\r\n' not in data:
+                    block = connection.recv(4096)
+                    assert block, 'proxy request ended before headers'
+                    data += block
+                requests.append(data)
+                connection.sendall(b'HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK')
+        except Exception as exc:
+            errors.append(exc)
+    for name in ('NO_PROXY', 'no_proxy'):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv('HTTPS_PROXY', f'http://127.0.0.1:{listener.getsockname()[1]}')
+    server = threading.Thread(target=serve)
+    server.start()
+    http = _build_keepalive_http_client('http://provider.invalid/probe')
+    try:
+        assert http.get('http://provider.invalid/probe', timeout=3).text == 'OK'
+    finally:
+        http.close()
+        listener.close()
+        server.join(4)
+    assert not server.is_alive()
+    assert not errors
+    assert requests[0].startswith(b'GET http://provider.invalid/probe HTTP/1.1\r\n')
