@@ -431,6 +431,9 @@ def test_release_channel_preserves_stable_aliases(tmp_path, channel, expected):
     assert "qualify-artifacts" in workflow["jobs"]["publish"]["needs"]
     qualification = workflow["jobs"]["qualify-artifacts"]
     assert qualification["needs"] == ["gate", "release"]
+    assert workflow["permissions"] == {"contents": "read"}
+    assert qualification["permissions"] == {"contents": "write"}
+    assert qualification["steps"][3]["env"]["GH_REPO"] == "${{ github.repository }}"
     assert len(qualification["strategy"]["matrix"]["os"]) == 3
     assert "gh release download" in qualification["steps"][3]["run"]
     release = workflow["jobs"]["publish"]

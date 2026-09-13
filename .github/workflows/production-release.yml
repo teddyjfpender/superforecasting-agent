@@ -515,6 +515,10 @@ jobs:
 
   qualify-artifacts:
     needs: [gate, release]
+    permissions:
+      # GitHub hides draft releases from tokens without push access, even for
+      # downloads. Keep this scope local; publication remains a separate job.
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -536,6 +540,7 @@ jobs:
       - name: Download the exact draft artifacts and verify checksums
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           gh release download "$TAG" --dir candidate
