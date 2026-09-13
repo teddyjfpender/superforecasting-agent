@@ -134,7 +134,10 @@ def main():
 
     server._make_agent = make_agent
     Path(os.environ['FORECAST_TEST_GATEWAY_PID']).write_text(str(os.getpid()))
-    from tui_gateway.entry import main as gateway_main
+    if os.environ.get("FORECAST_TEST_HEADLESS") == "1":
+        from superforecasting_agent.hosting.__main__ import main as gateway_main
+    else:
+        from tui_gateway.entry import main as gateway_main
     gateway_main()
 
 

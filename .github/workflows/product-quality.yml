@@ -1,5 +1,6 @@
 name: Product quality
 on:
+  workflow_dispatch:
   pull_request:
   push:
     branches: [main, superforecasting-agent-snapshot]
@@ -37,10 +38,17 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: ${{ matrix.node }}
+      - name: Install terminal harness dependencies
+        run: python -m pip install "psutil==7.2.2" "pywinpty==2.0.15; sys_platform == 'win32'"
       - name: Build independent products
         run: |
           npm ci --prefix ui-tui
           python scripts/build_profiles.py
+      - name: Verify terminal input, cancellation and ownership on the native platform
+        shell: bash
+        run: |
+          uv sync --frozen --extra dev --extra web --extra pty
+          scripts/run_tests.sh tests/test_terminal_session.py tests/test_constants.py tests/test_native_terminal_recovery.py
       - name: Verify installed backend, terminal and authenticated host
         run: python scripts/verify_profiles.py dist/profiles --python 3.11.15 --report qualification/report.json
       - name: Preserve platform evidence, including failures and skips

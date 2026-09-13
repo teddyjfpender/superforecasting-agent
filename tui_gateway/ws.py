@@ -230,9 +230,14 @@ async def handle_ws(ws: Any) -> None:
 
         # Detach the transport from any sessions it owned so later emits
         # fall back to stdio instead of crashing into a closed socket.
-        for _, sess in list(server._host.sessions.items()):
-            if sess.get("transport") is transport:
-                sess["transport"] = server._stdio_transport
+        def detach():
+            with server._host.sessions.lock:
+                for _, sess in list(server._host.sessions.items()):
+                    if sess.get("transport") is transport:
+                        sess["transport"] = server._stdio_transport
+                        sess["transport_detached"] = True
+
+        await asyncio.to_thread(detach)
 
         try:
             await ws.close()

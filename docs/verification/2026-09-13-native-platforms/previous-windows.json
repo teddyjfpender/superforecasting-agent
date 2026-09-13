@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "platform": {
+    "system": "Windows",
+    "machine": "AMD64",
+    "release": "2025Server",
+    "driver_python": "3.12.10"
+  },
+  "status": "failed",
+  "checks": {
+    "fresh_install_dependencies": "passed",
+    "backend_lifecycle_worker_numerical_fallback": "passed",
+    "local_terminal_interaction": "skipped_conpty_unavailable",
+    "authenticated_headless_host": "pending",
+    "remote_terminal_interaction": "pending",
+    "backend_upgrade": "not_requested",
+    "terminal_upgrade": "not_requested"
+  },
+  "artifacts": {
+    "backend": {
+      "name": "superforecasting-agent",
+      "version": "0.22.1",
+      "sha256": "60331dc7551c698a086e18ee606228a2ca1eb54162435301032ed81861b0331d"
+    },
+    "terminal": {
+      "name": "superforecasting-agent-tui",
+      "version": "0.1.1",
+      "sha256": "54dd62353bf4cf882d9ad4d05d38cbe1989b17181f883d0a536b87403b1bf88c"
+    }
+  },
+  "installed_runtime": {
+    "python": "3.11.15",
+    "machine": "",
+    "openssl": "OpenSSL 3.5.5 27 Jan 2026"
+  },
+  "failure_type": "CalledProcessError"
+}

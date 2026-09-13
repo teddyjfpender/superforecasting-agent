@@ -275,7 +275,7 @@ def test_forecast_cli_public_alias_is_exposed():
     ).read_text(encoding="utf-8")
     skill_doc = (
         root / "skills" / "software-development"
-        / "debugging-hermes-tui-commands" / "SKILL.md"
+        / "debugging-superforecasting-tui-commands" / "SKILL.md"
     ).read_text(encoding="utf-8")
 
     assert ForecastCLI is HermesCLI
@@ -2791,7 +2791,7 @@ def test_high_attention_docs_navigation_is_forecast_native():
         / "bundled"
         / "autonomous-ai-agents"
         / "autonomous-ai-agents-hermes-agent.md",
-        root / "skills" / "autonomous-ai-agents" / "hermes-agent" / "SKILL.md",
+        root / "skills" / "autonomous-ai-agents" / "superforecasting-agent" / "SKILL.md",
     ]
     docs_text = "\n".join(path.read_text(encoding="utf-8") for path in docs_paths)
 
@@ -3349,7 +3349,7 @@ def test_google_workspace_skill_docs_are_forecast_native():
 
 def test_superforecasting_agent_skill_metadata_points_to_fork():
     root = Path(__file__).resolve().parents[1]
-    skill = root / "skills" / "autonomous-ai-agents" / "hermes-agent" / "SKILL.md"
+    skill = root / "skills" / "autonomous-ai-agents" / "superforecasting-agent" / "SKILL.md"
     text = skill.read_text(encoding="utf-8")
 
     assert "name: superforecasting-agent" in text
@@ -3497,7 +3497,7 @@ def test_skill_author_metadata_is_forecast_native():
 def test_superforecasting_agent_skill_paths_are_fork_native():
     root = Path(__file__).resolve().parents[1]
     paths = [
-        root / "skills" / "autonomous-ai-agents" / "hermes-agent" / "SKILL.md",
+        root / "skills" / "autonomous-ai-agents" / "superforecasting-agent" / "SKILL.md",
         (
             root
             / "website"
@@ -5256,7 +5256,7 @@ def test_user_runtime_guides_use_forecast_support_turn_language():
 def test_software_development_tui_debug_skill_docs_prefer_tui_shorthand():
     root = Path(__file__).resolve().parents[1]
     paths = [
-        root / "skills" / "software-development" / "debugging-hermes-tui-commands" / "SKILL.md",
+        root / "skills" / "software-development" / "debugging-superforecasting-tui-commands" / "SKILL.md",
         root / "skills" / "software-development" / "python-debugpy" / "SKILL.md",
         root / "skills" / "software-development" / "node-inspect-debugger" / "SKILL.md",
         (

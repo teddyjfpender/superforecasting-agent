@@ -31,7 +31,8 @@ instructions. Contracts in `pyproject.toml` and `scripts/dev.py` enforce these b
 
 Paths beginning `storage/` or `hosting/` in the table are relative to
 `superforecasting_agent/`. Compatibility aliases remain supported, but new visible
-copy uses Superforecasting Agent and the active forecast home.
+copy uses Superforecasting Agent and the active forecast home. The
+[compatibility reference](compatibility.md) identifies retained aliases and owners.
 
 ## Adding or changing a capability
 

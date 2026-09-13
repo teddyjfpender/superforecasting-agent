@@ -846,3 +846,21 @@ def test_scan_skill_commands_legacy_alias_disable_suppresses_skill(tmp_path):
 
     assert "/superforecasting-agent" not in result
     assert "/hermes-agent" not in result
+
+
+@pytest.mark.parametrize("category,canonical,legacy", [
+    ("autonomous-ai-agents", "superforecasting-agent", "hermes-agent"),
+    ("software-development", "superforecasting-agent-skill-authoring", "hermes-agent-skill-authoring"),
+    ("software-development", "debugging-superforecasting-tui-commands", "debugging-hermes-tui-commands"),
+])
+def test_moved_bundled_skill_keeps_legacy_command(tmp_path, category, canonical, legacy):
+    import shutil
+    from pathlib import Path
+    source = Path(__file__).resolve().parents[2] / "skills" / category / canonical
+    shutil.copytree(source, tmp_path / canonical)
+    with patch("tools.skills_tool.SKILLS_DIR", tmp_path), patch(
+        "tools.skills_tool._get_disabled_skill_names", return_value=set()
+    ):
+        commands = scan_skill_commands()
+    assert commands[f"/{canonical}"]["name"] == canonical
+    assert commands[f"/{legacy}"]["alias_for"] == canonical

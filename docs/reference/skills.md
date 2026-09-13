@@ -68,7 +68,7 @@ The agent loads **skills** — self-contained capability bundles — on demand. 
 | `codex`<br>`skills/autonomous-ai-agents/codex` | — | Delegate coding to OpenAI Codex CLI (features, PRs). |
 | `kanban-codex-lane`<br>`skills/autonomous-ai-agents/kanban-codex-lane` | Use when a Superforecasting Agent Kanban worker wants to run Codex CLI as an isolated implementation lane while Superforecasting Agent keeps ownership of task lifecycle, reconciliation, testing, and handoff. | Use when a Superforecasting Agent Kanban worker wants to run Codex CLI as an isolated implementation lane while Superforecasting Agent keeps ownership of task lifecycle, reconciliation, testing, and handoff. |
 | `opencode`<br>`skills/autonomous-ai-agents/opencode` | — | Delegate coding to OpenCode CLI (features, PR review). |
-| `superforecasting-agent`<br>`skills/autonomous-ai-agents/hermes-agent` | — | Configure, extend, or contribute to Superforecasting Agent. |
+| `superforecasting-agent`<br>`skills/autonomous-ai-agents/superforecasting-agent` | — | Configure, extend, or contribute to Superforecasting Agent. |
 
 ## creative
 
@@ -215,14 +215,14 @@ The agent loads **skills** — self-contained capability bundles — on demand. 
 
 | skill | when to use | what it does |
 | --- | --- | --- |
-| `debugging-superforecasting-tui-commands`<br>`skills/software-development/debugging-hermes-tui-commands` | — | Debug forecast TUI slash commands. |
+| `debugging-superforecasting-tui-commands`<br>`skills/software-development/debugging-superforecasting-tui-commands` | — | Debug forecast TUI slash commands. |
 | `node-inspect-debugger`<br>`skills/software-development/node-inspect-debugger` | — | Debug Node.js via --inspect + Chrome DevTools Protocol CLI. |
 | `plan`<br>`skills/software-development/plan` | — | Plan mode: write markdown plan to .superforecasting-agent/plans/, no exec. |
 | `python-debugpy`<br>`skills/software-development/python-debugpy` | — | Debug Python: pdb REPL + debugpy remote (DAP). |
 | `requesting-code-review`<br>`skills/software-development/requesting-code-review` | — | Pre-commit review: security scan, quality gates, auto-fix. |
 | `spike`<br>`skills/software-development/spike` | — | Throwaway experiments to validate an idea before build. |
 | `subagent-driven-development`<br>`skills/software-development/subagent-driven-development` | — | Execute plans via delegate_task subagents (2-stage review). |
-| `superforecasting-agent-skill-authoring`<br>`skills/software-development/hermes-agent-skill-authoring` | — | Author in-repo SKILL.md: frontmatter, validator, structure. |
+| `superforecasting-agent-skill-authoring`<br>`skills/software-development/superforecasting-agent-skill-authoring` | — | Author in-repo SKILL.md: frontmatter, validator, structure. |
 | `systematic-debugging`<br>`skills/software-development/systematic-debugging` | — | 4-phase root cause debugging: understand bugs before fixing. |
 | `test-driven-development`<br>`skills/software-development/test-driven-development` | — | TDD: enforce RED-GREEN-REFACTOR, tests before code. |
 | `writing-plans`<br>`skills/software-development/writing-plans` | — | Write implementation plans: bite-sized tasks, paths, code. |

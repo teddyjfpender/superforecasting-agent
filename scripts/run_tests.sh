@@ -75,7 +75,7 @@ for candidate in \
   "$REPO_ROOT/venv" \
   "$HOME/.superforecasting-agent/superforecasting-agent/venv" \
   "$HOME/.hermes/hermes-agent/venv"; do
-  if [ -f "$candidate/bin/activate" ]; then
+  if [ -f "$candidate/bin/activate" ] || [ -f "$candidate/Scripts/activate" ]; then
     VENV="$candidate"
     break
   fi
@@ -87,6 +87,9 @@ if [ -z "$VENV" ]; then
 fi
 
 PYTHON="$VENV/bin/python"
+if [ -f "$VENV/Scripts/python.exe" ]; then
+  PYTHON="$VENV/Scripts/python.exe"
+fi
 
 # ── Ensure pytest-split is installed (required for shard-equivalent runs) ──
 if ! "$PYTHON" -c "import pytest_split" 2>/dev/null; then

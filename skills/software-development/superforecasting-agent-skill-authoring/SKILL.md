@@ -1,33 +1,16 @@
 ---
-title: "Superforecasting Agent Skill Authoring Skill — Author in-repo SKILL"
-sidebar_label: "Superforecasting Agent Skill Authoring Skill"
-description: "Author in-repo SKILL"
+name: superforecasting-agent-skill-authoring
+description: "Author in-repo SKILL.md: frontmatter, validator, structure."
+version: 1.1.0
+author: Superforecasting Agent
+license: MIT
+platforms: [linux, macos, windows]
+metadata:
+  hermes:
+    tags: [skills, authoring, superforecasting-agent, conventions, skill-md]
+    aliases: [hermes-agent-skill-authoring]
+    related_skills: [writing-plans, requesting-code-review]
 ---
-
-{/* This page is auto-generated from the skill's SKILL.md by website/scripts/generate-skill-docs.py. Edit the source SKILL.md, not this page. */}
-
-# Superforecasting Agent Skill Authoring Skill
-
-Author in-repo SKILL.md: frontmatter, validator, structure.
-
-## Skill metadata
-
-| | |
-|---|---|
-| Source | Bundled (installed by default) |
-| Path | `skills/software-development/superforecasting-agent-skill-authoring` |
-| Version | `1.1.0` |
-| Author | Superforecasting Agent |
-| License | MIT |
-| Platforms | linux, macos, windows |
-| Tags | `skills`, `authoring`, `superforecasting-agent`, `conventions`, `skill-md` |
-| Related skills | [`writing-plans`](/user-guide/skills/bundled/software-development/software-development-writing-plans), [`requesting-code-review`](/user-guide/skills/bundled/software-development/software-development-requesting-code-review) |
-
-## Reference: full SKILL.md
-
-:::info
-The following is the complete skill definition that Superforecasting Agent loads when this skill is triggered. This is what the agent sees as instructions when the skill is active.
-:::
 
 # Superforecasting Agent Skill Authoring Skill
 

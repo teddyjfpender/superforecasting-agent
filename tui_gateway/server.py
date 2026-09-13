@@ -2627,7 +2627,26 @@ def _(rid, params: dict) -> dict:
             None,
         )
         if active_sid is not None:
-            return _err(rid, 4010, "session is already active")
+            active = _host.sessions[active_sid]
+            transport = current_transport()
+            if not active.get("transport_detached") or transport is None or transport is _stdio_transport:
+                return _err(rid, 4010, "session is already active")
+            # Reattach the exact idle allocation after a disconnected client.
+            # Reservation prevents prompts or cleanup racing the transfer.
+            with replacement(active):
+                messages = _history_to_messages(db.get_messages_as_conversation(target, include_ancestors=True))
+                recovery = _turn_recovery(db, target)
+                info = _session_info(active.get("agent"))
+                if replace_sid and replace_sid != active_sid:
+                    _close_runtime_session(replace_sid)
+                active["cols"] = int(params.get("cols", 80))
+                active["transport"] = transport
+                active["transport_detached"] = False
+                return _ok(rid, {
+                    "session_id": active_sid, "resumed": target,
+                    "message_count": len(messages), "messages": messages,
+                    "info": info, "recovery": recovery,
+                })
         recovery = _turn_recovery(db, target, recover=True)
         if recovery and recovery.get("owner_active"):
             return _err(rid, 4010, "session turn is still owned by a running gateway")

@@ -751,7 +751,7 @@ violate them.
 
 The in-repo skill-authoring reference lives in the
 `superforecasting-agent-skill-authoring` skill at
-`skills/software-development/hermes-agent-skill-authoring/SKILL.md` — load it
+`skills/software-development/superforecasting-agent-skill-authoring/SKILL.md` — load it
 before polishing contributor skill PRs.
 
 ---

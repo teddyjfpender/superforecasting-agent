@@ -10,7 +10,6 @@ import sysconfig
 from contextvars import ContextVar, Token
 from pathlib import Path
 
-
 _profile_fallback_warned: bool = False
 _UNSET = object()
 _AGENT_HOME_OVERRIDE: ContextVar[str | object] = ContextVar(
@@ -155,6 +154,7 @@ def get_agent_home() -> Path:
             # configured, and (b) root-logger propagation would double-emit
             # on consoles where a StreamHandler is already attached.
             import sys
+
             msg = (
                 f"[HERMES_HOME fallback] no explicit agent home env var is "
                 f"set but active profile is {active!r}. Falling back to "
@@ -190,12 +190,17 @@ def get_default_agent_root() -> Path:
 
     Import-safe — no dependencies beyond stdlib.
     """
-    roots = (_native_home(), _legacy_home())
-    fallback_root = _default_home_candidate()
     _env_name, env_home = _configured_home_env()
     if not env_home:
-        return fallback_root
+        return _default_home_candidate()
     env_path = Path(env_home)
+    try:
+        roots = (_native_home(), _legacy_home())
+    except RuntimeError:
+        # Service accounts can have an explicit profile without an OS home.
+        if not env_path.is_absolute():
+            raise
+        roots = ()
     for root in roots:
         try:
             env_path.resolve().relative_to(root.resolve())
@@ -211,14 +216,14 @@ def get_default_agent_root() -> Path:
     if env_path.parent.name == "profiles":
         return env_path.parent.parent
 
-    # Not a profile path — HERMES_HOME itself is the root
+    # Not a profile path: the explicitly configured home is the root
     return env_path
 
 
 def _get_packaged_data_dir(name: str) -> Path | None:
     """Return an installed data-files directory if one exists.
 
-    Used to discover bundled skills/optional-skills when Hermes is installed
+    Used to discover bundled skills/optional-skills when Superforecasting Agent is installed
     from a wheel that emitted them via setuptools data_files.
     """
     candidates = []
@@ -272,7 +277,7 @@ def get_bundled_skills_dir(default: Path | None = None) -> Path:
 
 
 def get_agent_dir(new_subpath: str, old_name: str) -> Path:
-    """Resolve a Hermes subdirectory with backward compatibility.
+    """Resolve an agent subdirectory with backward compatibility.
 
     New installs get the consolidated layout (e.g. ``cache/images``).
     Existing installs that already have the old path (e.g. ``image_cache``)
@@ -318,7 +323,7 @@ def get_subprocess_home() -> str | None:
 
     When ``{HERMES_HOME}/home/`` exists on disk, subprocesses should use it
     as ``HOME`` so system tools (git, ssh, gh, npm …) write their configs
-    inside the Hermes data directory instead of the OS-level ``/root`` or
+    inside the active agent data directory instead of the OS-level ``/root`` or
     ``~/``.  This provides:
 
     * **Docker persistence** — tool configs land inside the persistent volume.
@@ -350,6 +355,7 @@ def parse_service_tier(raw) -> str | None:
     if value in {"fast", "priority", "on"}:
         return "priority"
     import logging
+
     logging.getLogger(__name__).warning("Unknown service_tier '%s', ignoring", raw)
     return None
 
@@ -484,7 +490,6 @@ def ensure_workspace_dir() -> Path:
     except Exception:
         pass
     return ws
-
 
 
 def get_env_path() -> Path:

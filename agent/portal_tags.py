@@ -42,6 +42,7 @@ def _client_version() -> str:
     """
     try:
         from superforecasting_agent.runtime import __version__
+
         return __version__
     except Exception:
         return "unknown"
