@@ -9,7 +9,7 @@
 
 > **Source of truth:** `os.getenv / os.environ reads across forecasting/, tui_gateway/, tools/, superforecasting_agent/`
 
-Every environment variable the server, tools, and CLI actually **read** — harvested by walking the AST of every module under `forecasting/`, `tui_gateway/`, `tools/`, and `superforecasting_agent/` for `os.getenv` / `os.environ.get` / `os.environ[...]`. There are **217 variables** (50 flagged as secrets, 167 configuration/runtime). The **default** column shows the fallback passed at the call site — `None` means a bare `os.getenv` (unset → `None`), `(required)` means a subscript that raises `KeyError` when unset, `(computed)` means a non-literal default. A variable read in several modules lists each; differing defaults are all shown.
+Every environment variable the server, tools, and CLI actually **read** — harvested by walking the AST of every module under `forecasting/`, `tui_gateway/`, `tools/`, and `superforecasting_agent/` for `os.getenv` / `os.environ.get` / `os.environ[...]`. There are **212 variables** (50 flagged as secrets, 162 configuration/runtime). The **default** column shows the fallback passed at the call site — `None` means a bare `os.getenv` (unset → `None`), `(required)` means a subscript that raises `KeyError` when unset, `(computed)` means a non-literal default. A variable read in several modules lists each; differing defaults are all shown.
 
 
 > **Secrets** are classified by name (any variable whose name contains `KEY`, `TOKEN`, `SECRET`, `PASSWORD`, `PASSWD`, `CREDENTIAL`). This is a conservative naming heuristic, not a data-flow analysis — treat the list as "never log or commit these", and audit the source before assuming a variable *not* listed here is safe to print.
@@ -28,7 +28,7 @@ Every environment variable the server, tools, and CLI actually **read** — harv
 | `AWS_BEARER_TOKEN_BEDROCK` | `''` | `superforecasting_agent.runtime.model_switch` |
 | `AWS_SECRET_ACCESS_KEY` | `''` | `superforecasting_agent.runtime.model_switch` |
 | `AZURE_ANTHROPIC_KEY` | `''` | `superforecasting_agent.runtime.runtime_provider` |
-| `AZURE_FOUNDRY_API_KEY` | `''` | `superforecasting_agent.runtime.auth`, `superforecasting_agent.runtime.runtime_provider` |
+| `AZURE_FOUNDRY_API_KEY` | `''` | `superforecasting_agent.runtime.runtime_provider` |
 | `CAMOFOX_SESSION_KEY` | `''` | `tools.browser_camofox` |
 | `CLAUDE_CODE_OAUTH_TOKEN` | `None` | `superforecasting_agent.runtime.web_server` |
 | `CUSTOM_API_KEY` | `''` | `superforecasting_agent.runtime.models` |
@@ -57,10 +57,10 @@ Every environment variable the server, tools, and CLI actually **read** — harv
 | `MODAL_TOKEN_SECRET` | `None` | `tools.tool_backend_helpers` |
 | `NOVITA_API_KEY` | `''` | `superforecasting_agent.runtime.models` |
 | `OLLAMA_API_KEY` | `''`, `None` | `superforecasting_agent.runtime.models`, `superforecasting_agent.runtime.runtime_provider` |
-| `OPENAI_API_KEY` | `''`, `None` | `superforecasting_agent.runtime.auth`, `superforecasting_agent.runtime.models`, `superforecasting_agent.runtime.runtime_provider`, `tools.tool_backend_helpers` |
-| `OPENROUTER_API_KEY` | `''`, `None` | `superforecasting_agent.runtime.auth`, `superforecasting_agent.runtime.doctor`, `superforecasting_agent.runtime.models`, `superforecasting_agent.runtime.runtime_provider`, `superforecasting_agent.runtime.status`, `tools.mixture_of_agents_tool`, `tools.openrouter_client` |
+| `OPENAI_API_KEY` | `''`, `None` | `superforecasting_agent.runtime.models`, `superforecasting_agent.runtime.runtime_provider`, `tools.tool_backend_helpers` |
+| `OPENROUTER_API_KEY` | `''`, `None` | `superforecasting_agent.credentials.catalog`, `superforecasting_agent.runtime.auth`, `superforecasting_agent.runtime.doctor`, `superforecasting_agent.runtime.models`, `superforecasting_agent.runtime.runtime_provider`, `superforecasting_agent.runtime.status`, `tools.mixture_of_agents_tool`, `tools.openrouter_client` |
 | `QQ_CLIENT_SECRET` | `''` | `tools.send_message_tool` |
-| `SLACK_BOT_TOKEN` | `None` | `tools.slack_tool` |
+| `SLACK_BOT_TOKEN` | `None` | `forecasting.transports.slack` |
 | `SUDO_PASSWORD` | `''` | `superforecasting_agent.runtime.status`, `tools.terminal_tool` |
 | `SUPERFORECASTING_AGENT_REDACT_SECRETS` | `None` | `superforecasting_agent.runtime.codex_runtime_plugin_migration` |
 | `TELEGRAM_BOT_TOKEN` | `None` | `forecasting.transports.telegram` |
@@ -75,7 +75,7 @@ Every environment variable the server, tools, and CLI actually **read** — harv
 ## Configuration & runtime
 
 
-**167 variables** tune runtime behaviour, endpoints, paths, and feature flags, or are inherited from the surrounding shell/OS. Everything here is read directly from the environment at the call site shown.
+**162 variables** tune runtime behaviour, endpoints, paths, and feature flags, or are inherited from the surrounding shell/OS. Everything here is read directly from the environment at the call site shown.
 
 | variable | default | read in |
 | --- | --- | --- |
@@ -93,8 +93,8 @@ Every environment variable the server, tools, and CLI actually **read** — harv
 | `BROWSER_INACTIVITY_TIMEOUT` | `'300'` | `tools.browser_tool` |
 | `CAMOFOX_URL` | `''` | `tools.browser_camofox` |
 | `CAMOFOX_USER_ID` | `''` | `tools.browser_camofox` |
-| `CODEX_HOME` | `''` | `superforecasting_agent.runtime.auth`, `superforecasting_agent.runtime.codex_models` |
-| `COPILOT_GH_HOST` | `''` | `superforecasting_agent.runtime.copilot_auth` |
+| `CODEX_HOME` | `''` | `superforecasting_agent.runtime.codex_models` |
+| `COPILOT_GH_HOST` | `''` | `superforecasting_agent.credentials.copilot` |
 | `CUSTOM_BASE_URL` | `''` | `superforecasting_agent.runtime.runtime_provider` |
 | `DELEGATION_CHILD_TIMEOUT_SECONDS` | `None` | `tools.delegate_tool` |
 | `DELEGATION_MAX_ASYNC_CHILDREN` | `None` | `tools.delegate_tool` |
@@ -114,9 +114,9 @@ Every environment variable the server, tools, and CLI actually **read** — harv
 | `FORECAST_HOME` | `''` | `superforecasting_agent.cli`, `superforecasting_agent.runtime.main` |
 | `FORECAST_RESOLUTION_MODEL` | `None` | `tools.forecast_actions.resolution` |
 | `FORECAST_TIMEZONE` | `''` | `superforecasting_agent.runtime.config` |
-| `FORECAST_TRIAGE_MODEL` | `None` | `tools.forecast_actions.triage` |
-| `FORECAST_TRIAGE_TRUST_MIN_SAMPLE` | `'20'` | `tools.forecast_actions.triage` |
-| `FORECAST_TRIAGE_TRUST_THRESHOLD` | `'0.8'` | `tools.forecast_actions.triage` |
+| `FORECAST_TRIAGE_MODEL` | `None` | `forecasting.application.triage` |
+| `FORECAST_TRIAGE_TRUST_MIN_SAMPLE` | `'20'` | `forecasting.application.triage` |
+| `FORECAST_TRIAGE_TRUST_THRESHOLD` | `'0.8'` | `forecasting.application.triage` |
 | `GATEWAY_HEALTH_TIMEOUT` | `'3'`, `None` | `superforecasting_agent.runtime.web_server` |
 | `GATEWAY_HEALTH_URL` | `None` | `superforecasting_agent.runtime.web_server` |
 | `GITHUB_APP_ID` | `None` | `superforecasting_agent.tooling.github_auth` |
@@ -129,7 +129,6 @@ Every environment variable the server, tools, and CLI actually **read** — harv
 | `HERMES_BIN` | `''` | `superforecasting_agent.runtime.kanban_db` |
 | `HERMES_CA_BUNDLE` | `None` | `superforecasting_agent.runtime.auth` |
 | `HERMES_CODEX_BASE_URL` | `''` | `superforecasting_agent.runtime.auth`, `superforecasting_agent.runtime.codex_device_flow` |
-| `HERMES_CODEX_REFRESH_TIMEOUT_SECONDS` | `'20'` | `superforecasting_agent.runtime.auth` |
 | `HERMES_COMPUTER_USE_BACKEND` | `'cua'` | `tools.computer_use.tool` |
 | `HERMES_CONTAINER` | `None` | `superforecasting_agent.runtime.config` |
 | `HERMES_CUA_DRIVER_CMD` | `'cua-driver'` | `tools.computer_use.cua_backend` |
@@ -151,17 +150,15 @@ Every environment variable the server, tools, and CLI actually **read** — harv
 | `HERMES_PROFILE` | `None` | `superforecasting_agent.runtime.kanban_decompose`, `superforecasting_agent.runtime.kanban_specify`, `tools.kanban_tools` |
 | `HERMES_SESSION_ID` | `None` | `tools.kanban_tools` |
 | `HERMES_SESSION_PLATFORM` | `''` | `tools.approval` |
-| `HERMES_SHARED_AUTH_DIR` | `''` | `superforecasting_agent.runtime.auth` |
 | `HERMES_SKIP_CHMOD` | `None` | `superforecasting_agent.runtime.config` |
 | `HERMES_TENANT` | `None` | `tools.kanban_tools` |
 | `HERMES_TIMEZONE` | `''` | `superforecasting_agent.runtime.config` |
 | `HERMES_VOICE_DEBUG` | `''` | `superforecasting_agent.runtime.voice` |
 | `HERMES_XAI_BASE_URL` | `''` | `superforecasting_agent.runtime.auth` |
-| `HERMES_XAI_REFRESH_TIMEOUT_SECONDS` | `'20'` | `superforecasting_agent.runtime.auth` |
-| `HOME` | `''`, `None` | `superforecasting_agent.runtime.auth`, `superforecasting_agent.runtime.gateway_windows`, `superforecasting_agent.runtime.main` |
+| `HOME` | `''`, `None` | `superforecasting_agent.runtime.gateway_windows`, `superforecasting_agent.runtime.main` |
 | `LM_BASE_URL` | `None` | `superforecasting_agent.runtime.commands`, `superforecasting_agent.runtime.model_switch` |
 | `LOCALAPPDATA` | `''`, `None` | `superforecasting_agent.runtime.browser_connect`, `superforecasting_agent.runtime.plugins_cmd`, `superforecasting_agent.runtime.stdio`, `tools.browser_tool`, `tools.environments.local` |
-| `LOGNAME` | `None` | `superforecasting_agent.runtime.auth`, `superforecasting_agent.runtime.gateway`, `superforecasting_agent.runtime.gateway_windows` |
+| `LOGNAME` | `None` | `superforecasting_agent.runtime.gateway`, `superforecasting_agent.runtime.gateway_windows` |
 | `MATRIX_HOMESERVER` | `''` | `tools.send_message_tool` |
 | `MATTERMOST_URL` | `''` | `tools.send_message_tool` |
 | `MESSAGING_CWD` | `None` | `superforecasting_agent.runtime.config` |
@@ -178,18 +175,16 @@ Every environment variable the server, tools, and CLI actually **read** — harv
 | `PLAYWRIGHT_BROWSERS_PATH` | `''` | `tools.browser_tool` |
 | `PREFIX` | `''` | `superforecasting_agent.constants`, `superforecasting_agent.runtime.doctor`, `superforecasting_agent.runtime.uninstall` |
 | `PULSE_SERVER` | `None` | `tools.voice_mode` |
-| `PYTEST_CURRENT_TEST` | `None` | `superforecasting_agent.runtime.auth` |
 | `PYTHON` | `''` | `superforecasting_agent.runtime.tui_environment` |
 | `PYTHONPATH` | `''`, `None` | `superforecasting_agent.runtime.codex_runtime_plugin_migration`, `superforecasting_agent.runtime.gateway_windows` |
 | `ProgramFiles` | `'C:\\Program Files'`, `None` | `superforecasting_agent.runtime.browser_connect`, `superforecasting_agent.runtime.plugins_cmd`, `tools.environments.local` |
 | `ProgramFiles(x86)` | `'C:\\Program Files (x86)'`, `None` | `superforecasting_agent.runtime.browser_connect`, `superforecasting_agent.runtime.plugins_cmd`, `tools.environments.local` |
 | `QQ_APP_ID` | `''` | `tools.send_message_tool` |
 | `QQ_HOME_CHANNEL` | `''` | `superforecasting_agent.runtime.status` |
-| `REQUESTS_CA_BUNDLE` | `None` | `superforecasting_agent.runtime.auth` |
 | `SEARXNG_URL` | `''` | `tools.web_tools` |
 | `SHELL` | `None` | `tools.environments.local` |
-| `SSH_CLIENT` | `None` | `superforecasting_agent.runtime.auth`, `tools.mcp_oauth` |
-| `SSH_TTY` | `None` | `superforecasting_agent.runtime.auth`, `tools.mcp_oauth` |
+| `SSH_CLIENT` | `None` | `tools.mcp_oauth` |
+| `SSH_TTY` | `None` | `tools.mcp_oauth` |
 | `SSL_CERT_FILE` | `None` | `superforecasting_agent.runtime.auth` |
 | `STT_GROQ_MODEL` | `'whisper-large-v3-turbo'` | `tools.transcription_tools` |
 | `STT_MISTRAL_MODEL` | `'voxtral-mini-latest'` | `tools.transcription_tools` |
@@ -229,7 +224,7 @@ Every environment variable the server, tools, and CLI actually **read** — harv
 | `TOOL_GATEWAY_SCHEME` | `''` | `tools.managed_tool_gateway` |
 | `TWILIO_ACCOUNT_SID` | `''` | `tools.send_message_tool` |
 | `TWILIO_PHONE_NUMBER` | `''` | `tools.send_message_tool` |
-| `USER` | `''`, `'your-user'`, `(computed)`, `None` | `superforecasting_agent.runtime.auth`, `superforecasting_agent.runtime.gateway`, `superforecasting_agent.runtime.gateway_windows`, `superforecasting_agent.runtime.kanban_decompose`, `superforecasting_agent.runtime.kanban_specify`, `superforecasting_agent.runtime.main`, `superforecasting_agent.runtime.setup`, `tools.environments.singularity` |
+| `USER` | `''`, `'your-user'`, `(computed)`, `None` | `superforecasting_agent.runtime.gateway`, `superforecasting_agent.runtime.gateway_windows`, `superforecasting_agent.runtime.kanban_decompose`, `superforecasting_agent.runtime.kanban_specify`, `superforecasting_agent.runtime.main`, `superforecasting_agent.runtime.setup`, `tools.environments.singularity` |
 | `USERDOMAIN` | `None` | `superforecasting_agent.runtime.gateway_windows` |
 | `USERNAME` | `None` | `superforecasting_agent.runtime.gateway_windows` |
 | `USERPROFILE` | `''` | `superforecasting_agent.runtime.gateway_windows` |

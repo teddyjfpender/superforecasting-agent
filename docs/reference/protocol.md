@@ -471,6 +471,24 @@ _(no fields)_
 | --- | --- |
 | `mtime` | `number?` |
 
+### ConfigProviderEntry
+
+| field | type |
+| --- | --- |
+| `aliases` | `string[]` |
+| `authenticated` | `null` |
+| `id` | `string` |
+| `label` | `string` |
+
+### ConfigProviderResponse
+
+| field | type |
+| --- | --- |
+| `authentication_status` | `'not_checked'` |
+| `model` | `string` |
+| `provider` | `string` |
+| `providers` | `ConfigProviderEntry[]` |
+
 ### ConfigSetRequest
 
 | field | type |
@@ -507,6 +525,7 @@ _(no fields)_
 | --- | --- |
 | `depth` | `number?` |
 | `goal` | `string?` |
+| `kind` | `string?` |
 | `model` | `string? | null` |
 | `parent_id` | `string? | null` |
 | `started_at` | `number?` |
@@ -519,6 +538,7 @@ _(no fields)_
 | field | type |
 | --- | --- |
 | `paused` | `boolean | null` |
+| `session_id` | `string?` |
 
 ### DelegationPauseResponse
 
@@ -528,7 +548,9 @@ _(no fields)_
 
 ### DelegationStatusRequest
 
-_(no fields)_
+| field | type |
+| --- | --- |
+| `session_id` | `string?` |
 
 ### DelegationStatusResponse
 
@@ -3321,7 +3343,9 @@ _(no fields)_
 
 ### ProcessStopRequest
 
-_(no fields)_
+| field | type |
+| --- | --- |
+| `session_id` | `string?` |
 
 ### ProcessStopResponse
 
@@ -4033,6 +4057,7 @@ _(no fields)_
 
 | field | type |
 | --- | --- |
+| `session_id` | `string?` |
 | `subagent_id` | `string | null` |
 
 ### SubagentInterruptResponse
