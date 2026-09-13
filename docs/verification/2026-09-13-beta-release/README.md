@@ -68,3 +68,17 @@ only reviewed identities; existing trial records are not rewritten.
 
 The `v0.22.1` tag remains unpublished after qualification failures. The `v0.22.2`
 run was cancelled in favor of the Linux fixes; neither tag is moved or reused.
+
+## Additional qualification findings
+
+The first v0.22.3 formal attempt received HTTP 403 while the Windows check fetched
+public GitHub release metadata, before downloading or validating a wheel. The
+controlled installer fixtures passed. CI now supplies its read-only token to the
+metadata cmdlet; artifact downloads use a separate cmdlet without that header.
+The HTTP response alone does not establish whether the original rejection was a
+shared-runner rate limit.
+
+The same run exceeded the generic 30-second test deadline during pure-Python
+five-fold calibration validation. These three full-grid statistical experiments
+now have explicit 120-second budgets. Their datasets, folds, fitted models and
+numerical assertions are unchanged; no production scoring code changed.
