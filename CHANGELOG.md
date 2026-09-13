@@ -28,6 +28,18 @@ artifact set described in `docs/plans/2026-07-09-hetzner-productionization.md`
 - Exercise 60 Unicode turns across five TUI lifetimes in the Linux/macOS lifecycle matrix.
 - Respect configured pytest deadlines and isolate watch dispatch tests from DNS.
 
+## [0.22.4] - 2026-09-14
+
+### Beta release
+- Ship independently installable backend and terminal wheels, pinned installers, checksums and signed artifacts through the formal prerelease workflow.
+- Require native downloaded-artifact installation, upgrade and recovery checks before publication; preserve stable GitHub and container aliases.
+- Include the CI, dependency and beta-onboarding fixes prepared in 0.22.1–0.22.3; those candidates were not published.
+
+### Fixed
+- Keep the browser supervisor's socket owned until connection cleanup completes, including sockets that connect after shutdown starts.
+- Authenticate CI release-metadata requests without forwarding credentials to artifact downloads.
+- Give full-grid statistical validation explicit test budgets and isolate the dirty-tree gate test from full repository copies.
+
 ## [0.22.3] - 2026-09-13
 
 ### Beta reliability

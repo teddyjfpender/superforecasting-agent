@@ -360,7 +360,9 @@ class CDPSupervisor:
             # pending tasks get cancelled in order, THEN the thread exits.
             async def _close_ws():
                 ws = self._ws
-                self._ws = None
+                # _run owns retirement. Keep its reference until its finally
+                # block also awaits close; reader exit can precede completion
+                # of this coroutine, and loop teardown cancels pending tasks.
                 if ws is not None:
                     try:
                         await ws.close()
@@ -618,6 +620,10 @@ class CDPSupervisor:
 
             reader_task = asyncio.create_task(self._read_loop(), name="cdp-reader")
             try:
+                if self._stop_requested:
+                    # stop() may have run while connect had no socket to close.
+                    # The connection's finally block must retire this late result.
+                    return
                 # Reset per-connection session state so stale ids don't hang
                 # around after a reconnect.
                 self._page_session_id = None

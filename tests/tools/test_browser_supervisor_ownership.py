@@ -122,3 +122,97 @@ def test_stop_timeout_does_not_report_inactive():
         supervisor.stop(timeout=0)
     assert supervisor._active is True
     assert supervisor._stop_requested is True
+
+
+def test_stop_retains_socket_until_connection_cleanup_finishes(monkeypatch):
+    """Reader exit must not let the owning loop retire an in-flight close."""
+    import asyncio
+
+    async def scenario():
+        close_started = asyncio.Event()
+        reader_returned = asyncio.Event()
+        allow_close = asyncio.Event()
+        ready = asyncio.Event()
+        closed = False
+
+        class Socket:
+            async def close(self):
+                nonlocal closed
+                close_started.set()
+                await allow_close.wait()
+                closed = True
+
+        socket = Socket()
+        supervisor = bs.CDPSupervisor("close-race", "ws://fixture.invalid")
+        supervisor._loop = asyncio.get_running_loop()
+
+        async def connect(*args, **kwargs):
+            return socket
+
+        async def attach():
+            ready.set()
+
+        async def read():
+            await close_started.wait()
+            reader_returned.set()
+
+        monkeypatch.setattr(bs.websockets, "connect", connect)
+        monkeypatch.setattr(supervisor, "_attach_initial_page", attach)
+        monkeypatch.setattr(supervisor, "_read_loop", read)
+        running = asyncio.create_task(supervisor._run())
+        await ready.wait()
+        stopping = asyncio.create_task(asyncio.to_thread(supervisor.stop))
+        try:
+            await reader_returned.wait()
+            # Let the reader's awaiting owner enter its finally block.
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+            assert not running.done(), "owning loop returned before its socket closed"
+            assert not closed
+        finally:
+            allow_close.set()
+            await stopping
+            await running
+        assert closed
+        assert supervisor._ws is None
+
+    asyncio.run(scenario())
+
+
+def test_stop_during_connect_retires_late_socket_without_attaching(monkeypatch):
+    import asyncio
+
+    async def scenario():
+        connecting, connected = asyncio.Event(), asyncio.Event()
+        closed = False
+
+        class Socket:
+            async def close(self):
+                nonlocal closed
+                closed = True
+
+        async def connect(*args, **kwargs):
+            connecting.set()
+            await connected.wait()
+            return Socket()
+
+        async def unexpected_attach():
+            pytest.fail("a stopped supervisor must not attach a new page")
+
+        async def read():
+            await asyncio.Event().wait()
+
+        supervisor = bs.CDPSupervisor("connect-race", "ws://fixture.invalid")
+        monkeypatch.setattr(bs.websockets, "connect", connect)
+        monkeypatch.setattr(supervisor, "_attach_initial_page", unexpected_attach)
+        monkeypatch.setattr(supervisor, "_read_loop", read)
+        running = asyncio.create_task(supervisor._run())
+        await connecting.wait()
+        supervisor._stop_requested = True
+        connected.set()
+        await running
+        assert closed
+        assert supervisor._ws is None
+        assert not supervisor._active
+
+    asyncio.run(scenario())

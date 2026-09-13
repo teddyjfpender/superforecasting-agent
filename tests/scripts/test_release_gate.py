@@ -11,7 +11,6 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -223,13 +222,33 @@ def _clone_repo(dest: Path) -> Path:
 
 
 def test_strict_gate_rejects_a_dirty_release_candidate(tmp_path):
-    clone = _clone_repo(tmp_path / "clone")
-    ver = _pyproject_version()
+    # Git dirtiness needs a real index, not a copy of every source and skill.
+    # Protocol/doc generation has separate integration coverage; keep these
+    # prerequisites successful so the untracked file is the only failing gate.
+    clone = tmp_path / "clone"
+    clone.mkdir()
+    for name in (
+        "scripts/check-release-ready.sh", "pyproject.toml",
+        "superforecasting_agent/runtime/__init__.py", "CHANGELOG.md",
+    ):
+        target = clone / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(REPO_ROOT / name, target)
+    protocol = clone / "scripts/check-protocol.sh"
+    protocol.write_text("#!/bin/sh\nexit 0\n")
+    protocol.chmod(0o755)
+    fake_python = tmp_path / "fixture-python"
+    fake_python.write_text("#!/bin/sh\nexit 0\n")
+    fake_python.chmod(0o755)
+    subprocess.run(["git", "init", "--quiet", str(clone)], check=True)
+    subprocess.run(["git", "-C", str(clone), "add", "."], check=True)
     subprocess.run(
-        ["git", "-C", str(clone), "tag", "-d", f"v{ver}"],
-        check=False,
-        capture_output=True,
+        ["git", "-C", str(clone), "-c", "user.name=fixture", "-c",
+         "user.email=fixture@example.invalid", "commit", "--quiet", "-m", "fixture"],
+        check=True,
     )
+    assert not subprocess.check_output(["git", "-C", str(clone), "status", "--porcelain"])
+    ver = _pyproject_version()
     (clone / "uncommitted-release-file.txt").write_text("not in the candidate\n")
     gate = clone / "scripts" / "check-release-ready.sh"
 
@@ -237,10 +256,13 @@ def test_strict_gate_rejects_a_dirty_release_candidate(tmp_path):
         clone,
         ["bash", str(gate), "--strict", "--version", ver],
         GITHUB_REF=None,
-        PYTHON=sys.executable,
+        PYTHON=str(fake_python),
     )
 
     assert r.returncode == 1
+    assert "protocol codegen up to date" in r.stdout
+    assert "generated docs up to date" in r.stdout
+    assert "?? uncommitted-release-file.txt" in r.stderr
     assert "worktree dirty" in r.stdout
     assert "NOT READY" in r.stdout
 

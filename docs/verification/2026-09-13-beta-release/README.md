@@ -2,7 +2,7 @@
 
 ## Scope and owners
 
-Backend candidate 0.22.3 and terminal 0.1.1 are published together through
+Backend candidate 0.22.4 and terminal 0.1.1 are published together through
 `production-release.yml`. Tag-triggered runs default to beta; stable publication
 requires an explicit `channel=stable` dispatch. Beta releases never advance
 GitHub or container `latest` aliases. Publication waits for six native jobs to
@@ -82,3 +82,25 @@ The same run exceeded the generic 30-second test deadline during pure-Python
 five-fold calibration validation. These three full-grid statistical experiments
 now have explicit 120-second budgets. Their datasets, folds, fitted models and
 numerical assertions are unchanged; no production scoring code changed.
+
+## Browser shutdown follow-up
+
+The bounded v0.22.3 retry again exceeded the calibration deadline and exposed
+an unclosed browser WebSocket transport plus a slow full-clone gate fixture.
+The tag remains unpublished and unchanged; 0.22.4 includes the follow-up fixes.
+
+A deterministic regression reproduced the owner returning while its socket close
+was still pending. `stop()` had removed the reference needed by the connection's
+finally block, allowing loop teardown to cancel unfinished closure. The reference
+now remains available until the owner also awaits closure. A second regression
+verifies that a socket returned after a stop request is closed without attaching
+a page. These tests establish the ownership defect; the original CI warning did
+not include a complete allocation traceback.
+
+The dirty-tree regression now uses a small committed Git fixture with successful
+codegen stubs, asserting that its one untracked file alone causes rejection. The
+separate protocol/docgen integration and missing-toolchain tests remain intact.
+
+Local follow-up verification passed 21 real-Chrome supervisor tests; one existing
+OOPIF case remains explicitly skipped. All eight deterministic supervisor ownership
+tests passed, as did the focused release, calibration and trial-compatibility checks.
