@@ -11,18 +11,26 @@ provider, open the terminal desk, and complete the synthetic walkthrough below.
 Use `superforecasting-agent` throughout; you do not need to learn its compatibility
 aliases or install development dependencies.
 
-## 1. Get the assigned build
+## 1. Install beta v0.22.4
 
-The beta coordinator supplies a release tag, its exact source commit, the backend
-and terminal wheels, and their SHA-256 checksums. Use the same bundle throughout a
-bug reproduction. Do not follow a moving snapshot branch or an unpinned `latest`
-installer. Release publication is a separate operator step: **0.22.1 is currently
-a candidate, not a promised downloadable release**. Wait for the assigned bundle.
+The assigned beta is **[v0.22.4](https://github.com/teddyjfpender/superforecasting-agent/releases/tag/v0.22.4)**, built from
+[source commit `ad20896a728e`](https://github.com/teddyjfpender/superforecasting-agent/commit/ad20896a728eb76f1a56d627dfb3b057e978c634). It contains backend
+**0.22.4** and terminal **0.1.1**. This is a prerelease and does not advance stable `latest`; that channel was
+v0.19.0 at publication. Use this exact release tag and bundle for bug reproductions.
 
-This guide targets backend **0.22.1** and terminal **0.1.1**. If the coordinator
-assigns different versions, use the filenames and checksums in that brief.
+Download both wheels and verify their SHA-256 hashes before installation:
 
-Install Python 3.11–3.13 and Node 20 or 22 first. From the directory containing the
+| Product | Wheel | SHA-256 |
+| --- | --- | --- |
+| Backend and CLI | [Download](https://github.com/teddyjfpender/superforecasting-agent/releases/download/v0.22.4/superforecasting_agent-0.22.4-py3-none-any.whl) | `d1dc20e8279fa2649399527f98ba40c8a7b3e80373d9009ac96ad9fd413545d1` |
+| Terminal desk | [Download](https://github.com/teddyjfpender/superforecasting-agent/releases/download/v0.22.4/superforecasting_agent_tui-0.1.1-py3-none-any.whl) | `a26c34663a33fe6e71510fabe4e907c23ad3711fce39cc7c458135c3a80adc1b` |
+
+The [release notes](https://github.com/teddyjfpender/superforecasting-agent/releases/tag/v0.22.4) describe the changes. The same release provides
+[SHA256SUMS](https://github.com/teddyjfpender/superforecasting-agent/releases/download/v0.22.4/SHA256SUMS), a [machine-readable manifest](https://github.com/teddyjfpender/superforecasting-agent/releases/download/v0.22.4/release-manifest.json),
+installers and signature bundles. [Native qualification](https://github.com/teddyjfpender/superforecasting-agent/actions/runs/34787794628) covers fresh
+installation, upgrades and recovery using these downloaded artifacts.
+
+Install Python 3.11–3.13 and Node 20.19.2 or 22.x first. From the directory containing the
 verified wheels, create a dedicated environment:
 
 ```sh
@@ -44,13 +52,13 @@ Or in Windows PowerShell:
 With the environment active, install both products:
 
 ```sh
-python -m pip install ./superforecasting_agent-0.22.1-py3-none-any.whl ./superforecasting_agent_tui-0.1.1-py3-none-any.whl
+python -m pip install ./superforecasting_agent-0.22.4-py3-none-any.whl ./superforecasting_agent_tui-0.1.1-py3-none-any.whl
 python -m pip check
 superforecasting-agent-tui --check
 ```
 
 Use `python3` instead of `python` where that is the installed interpreter name.
-Compare each downloaded file with the coordinator's checksum using `shasum -a 256`
+Compare each downloaded file with its checksum above using `shasum -a 256`
 on macOS, `sha256sum` on Linux, or `Get-FileHash -Algorithm SHA256` in PowerShell.
 Stop if a checksum differs. The wheels contain the compiled terminal; no npm build
 or editable source installation is required.
@@ -142,7 +150,7 @@ Never use `--no-redact` for a beta support report.
 immediately to a public paste service. Use them only when you intentionally want
 that upload. Local output does not upload the report.
 
-Use the repository's Bug Report template. Include the assigned release tag, installed
+[Open a Bug Report](https://github.com/teddyjfpender/superforecasting-agent/issues/new?template=bug_report.yml). Include the assigned release tag, installed
 versions, OS, local/VPS mode, exact commands or interactions, expected/actual behavior,
 and whether the synthetic walkthrough succeeds. Share a minimal synthetic export
 rather than a private production ledger. Keep the failing version available until

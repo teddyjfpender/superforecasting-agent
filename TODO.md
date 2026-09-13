@@ -38,8 +38,9 @@ focused checks do not substitute for that publication gate.
   See [native platform evidence](docs/verification/2026-09-13-native-platforms/README.md).
 - [ ] Qualify a real Android/Termux device; none is available in this environment.
 - [ ] Run Daytona/Modal checks with service credentials; neither is configured here.
-- [ ] Merge the release candidate onto the default branch, then publish 0.22.1 through
-  the formal workflow and verify downloaded assets and installation.
+- [x] Merge the release fixes and publish **v0.22.4 beta** through the formal
+  workflow. Verify downloaded checksums, native fresh installations, upgrades and
+  recovery; preserve stable aliases. See [release receipts](docs/verification/2026-09-13-beta-release/README.md).
 - [ ] Attribute the historical native SSL crash if original runtime/certificate
   artifacts or a credible reproducer become available. Recovered native evidence
   did not reproduce it; original binary and CA hashes are absent.

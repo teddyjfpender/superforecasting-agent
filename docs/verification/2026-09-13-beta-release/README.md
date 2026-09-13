@@ -2,7 +2,7 @@
 
 ## Scope and owners
 
-Backend candidate 0.22.4 and terminal 0.1.1 are published together through
+Backend 0.22.4 and terminal 0.1.1 are published together through
 `production-release.yml`. Tag-triggered runs default to beta; stable publication
 requires an explicit `channel=stable` dispatch. Beta releases never advance
 GitHub or container `latest` aliases. Publication waits for six native jobs to
@@ -46,8 +46,50 @@ live messaging integration.
 
 ## Release evidence
 
-Publication receipts and final artifact checksums will be linked here after the
-formal workflow completes. Existing candidate artifacts are not release evidence.
+Published **[v0.22.4 beta](https://github.com/teddyjfpender/superforecasting-agent/releases/tag/v0.22.4)** from commit
+[`ad20896a728eb76f1a56d627dfb3b057e978c634`](https://github.com/teddyjfpender/superforecasting-agent/commit/ad20896a728eb76f1a56d627dfb3b057e978c634) through
+[formal workflow 34787794628](https://github.com/teddyjfpender/superforecasting-agent/actions/runs/34787794628). All six native OS/Node jobs verified the
+same draft downloads before public promotion, including fresh installation,
+upgrades from backend 0.19.0 / terminal 0.1.0, profile/skill/plugin migrations,
+and local/remote terminal recovery.
+
+[Publication receipt](publication.json) records the exact artifact hashes and
+manifest. [Dependency receipts](dependency-audits.json) bind the four zero-alert
+npm audits to their lockfile hashes. GitHub's open Dependabot count was also zero
+at closeout. Beta publication retained stable GitHub v0.19.0 and the original
+container `latest` digest.
+
+[Native receipts](qualification.json) contain all twelve fresh/upgrade reports,
+bound to the published wheel hashes. [Signature verification](signatures.json)
+records successful Sigstore verification of both wheels, the source archive and
+dashboard bundle against the exact workflow identity, commit and trigger.
+[The published-installer walkthrough](installed-walkthrough.json) verifies an
+isolated POSIX installation, dependency consistency, packaged TUI availability,
+durable resolution, repeated scoring, postmortem/export and diagnostic versions.
+The synthetic binary forecast retained one score with Brier loss 0.09.
+
+The final formal suite passed 32,103 tests (145 explicit skips), followed by
+56 end-to-end tests (seven skips). The supported native matrix used Python
+3.11.15 and Node 20.19.2/22. Windows installer coverage also includes PowerShell
+5/7 manifest/failure fixtures and public stable-release metadata; the beta's
+qualified native installation route is the downloaded wheel pair.
+
+The [tester guide](../../../website/docs/getting-started/tester-pilot.md) is the
+single onboarding and reporting brief. Earlier candidate builds are historical
+rehearsals, not the published artifact evidence.
+
+### Draft-access recovery
+
+The first v0.22.4 run [34784838722](https://github.com/teddyjfpender/superforecasting-agent/actions/runs/34784838722)
+built and verified the draft, but its read-only qualification tokens could not
+see it. GitHub only lists drafts to callers with push access. PR #46 grants
+`contents: write` only to that job and explicitly selects this repository;
+the global token remains read-only and publication still requires all six jobs.
+
+The formal recovery dispatch used workflow commit
+`2abad017bd7acb3d5f6a60416165eb07c15ed37b` while checking out the unchanged tagged
+product commit `ad20896a728eb76f1a56d627dfb3b057e978c634`. The tag was not moved.
+The publication and signature receipts distinguish these two identities.
 
 ## Linux qualification follow-up
 
@@ -108,3 +150,5 @@ tests passed, as did the focused release, calibration and trial-compatibility ch
 Tag-position fixtures retain the full Git history through sparse local clones,
 checking out only their gate/version inputs. This removes unrelated source/skill
 checkout work without changing the tag ancestry and mismatch assertions.
+
+The final candidate Nix run [34779036400](https://github.com/teddyjfpender/superforecasting-agent/actions/runs/34779036400) confirms stale npm fixed-output hashes after the dependency updates. Nix remains explicitly outside beta support; refreshing and qualifying those hashes is future packaging work.

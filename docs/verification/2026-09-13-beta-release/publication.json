@@ -1,0 +1,119 @@
+{
+  "release": "https://github.com/teddyjfpender/superforecasting-agent/releases/tag/v0.22.4",
+  "published_at": "2026-09-13T23:36:12Z",
+  "prerelease": true,
+  "anonymous_image_manifest": "verified",
+  "stable_release": "v0.19.0",
+  "stable_image_digest": "sha256:d7489e3ac5210803ec97c86de547658ecd2b378e445da56c5db12367f7c803d5",
+  "versions": {
+    "superforecasting-agent": "0.22.4",
+    "superforecasting-agent-tui": "0.1.1"
+  },
+  "checksums": {
+    "superforecasting_agent-0.22.4-py3-none-any.whl": "d1dc20e8279fa2649399527f98ba40c8a7b3e80373d9009ac96ad9fd413545d1",
+    "superforecasting_agent_tui-0.1.1-py3-none-any.whl": "a26c34663a33fe6e71510fabe4e907c23ad3711fce39cc7c458135c3a80adc1b",
+    "superforecasting_agent-0.22.4.tar.gz": "427a23f90a639b6a203fdcbc5a44ae16d63ad369493c3b377b2c1dbef91edd1e",
+    "dashboard-assets.tar.gz": "075411fe30df40f07e678cd51189e6b1e0164eda03da055d27785a7d7d080501",
+    "install.sh": "587eade22023ca62beae91c003c124b6e7cd84ec01c7c7a4661971ef02f4a11b",
+    "install.ps1": "556c16db0faf40660ad6d37f22d060878bbc58f07eeef8276d13e7687a066c42"
+  },
+  "manifest": {
+    "artifacts": {
+      "checksums": {
+        "name": "SHA256SUMS",
+        "sha256": "1424bf4d30f0c414c316c38cafdf92485fac5f5e7fce6d97a9e6b7d159f3abbe",
+        "size_bytes": 577
+      },
+      "dashboard_assets": {
+        "name": "dashboard-assets.tar.gz",
+        "sha256": "075411fe30df40f07e678cd51189e6b1e0164eda03da055d27785a7d7d080501",
+        "size_bytes": 3564080
+      },
+      "installer": {
+        "name": "install.sh",
+        "sha256": "587eade22023ca62beae91c003c124b6e7cd84ec01c7c7a4661971ef02f4a11b",
+        "size_bytes": 15593
+      },
+      "sdist": {
+        "name": "superforecasting_agent-0.22.4.tar.gz",
+        "sha256": "427a23f90a639b6a203fdcbc5a44ae16d63ad369493c3b377b2c1dbef91edd1e",
+        "size_bytes": 10184454
+      },
+      "terminal_wheel": {
+        "name": "superforecasting_agent_tui-0.1.1-py3-none-any.whl",
+        "sha256": "a26c34663a33fe6e71510fabe4e907c23ad3711fce39cc7c458135c3a80adc1b",
+        "size_bytes": 948483
+      },
+      "wheel": {
+        "name": "superforecasting_agent-0.22.4-py3-none-any.whl",
+        "sha256": "d1dc20e8279fa2649399527f98ba40c8a7b3e80373d9009ac96ad9fd413545d1",
+        "size_bytes": 11117214
+      },
+      "windows_installer": {
+        "name": "install.ps1",
+        "sha256": "556c16db0faf40660ad6d37f22d060878bbc58f07eeef8276d13e7687a066c42",
+        "size_bytes": 9933
+      }
+    },
+    "git": {
+      "branch": "HEAD",
+      "commit": "ad20896a728eb76f1a56d627dfb3b057e978c634"
+    },
+    "image": {
+      "digest": "sha256:c29b8f3bb3584632cc775358721a8f52feeaddd22531cf66a7d030aef4d67c77",
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ],
+      "registry": "ghcr.io",
+      "repository": "teddyjfpender/superforecasting-agent",
+      "tags": [
+        "v0.22.4"
+      ]
+    },
+    "min_migration_version": "0.17.0",
+    "product": "superforecasting-agent",
+    "released": "2026-09-13T23:28:20Z",
+    "schema_version": "1",
+    "tag": "v0.22.4",
+    "version": "0.22.4"
+  },
+  "source_commit": "ad20896a728eb76f1a56d627dfb3b057e978c634",
+  "workflow_run": "34787794628",
+  "workflow_attempt": 1,
+  "workflow_commit": "2abad017bd7acb3d5f6a60416165eb07c15ed37b",
+  "workflow_event": "workflow_dispatch",
+  "workflow_branch": "superforecasting-agent-snapshot",
+  "native_qualification": [
+    {
+      "name": "qualify-artifacts (macos-latest, 22)",
+      "conclusion": "success",
+      "job_id": 103811850438
+    },
+    {
+      "name": "qualify-artifacts (ubuntu-24.04, 22)",
+      "conclusion": "success",
+      "job_id": 103811850439
+    },
+    {
+      "name": "qualify-artifacts (macos-latest, 20.19.2)",
+      "conclusion": "success",
+      "job_id": 103811850446
+    },
+    {
+      "name": "qualify-artifacts (ubuntu-24.04, 20.19.2)",
+      "conclusion": "success",
+      "job_id": 103811850484
+    },
+    {
+      "name": "qualify-artifacts (windows-latest, 20.19.2)",
+      "conclusion": "success",
+      "job_id": 103811850512
+    },
+    {
+      "name": "qualify-artifacts (windows-latest, 22)",
+      "conclusion": "success",
+      "job_id": 103811850540
+    }
+  ]
+}

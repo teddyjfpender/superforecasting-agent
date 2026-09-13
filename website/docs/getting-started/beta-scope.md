@@ -7,8 +7,8 @@ description: "Qualified beta platforms, experimental surfaces, and support limit
 # Beta support scope
 
 The supported beta experience is the terminal forecasting desk with its shared
-Python backend. Use the [beta tester guide](./tester-pilot.md) and the coordinator's
-pinned artifact bundle. A passing qualification run does not publish a release.
+Python backend. Use the [beta tester guide](./tester-pilot.md) and its pinned
+[v0.22.4 artifact bundle](https://github.com/teddyjfpender/superforecasting-agent/releases/tag/v0.22.4).
 
 | Surface | Beta status | Evidence and boundary |
 | --- | --- | --- |
@@ -17,15 +17,16 @@ pinned artifact bundle. A passing qualification run does not publish a release.
 | Windows AMD64 | Supported | Native ConPTY input, resize, cancellation, shutdown and installed upgrades on Node 20/22. |
 | Linux VPS | Supported for the qualified headless host | Authenticated remote terminal reconnect and durable session recovery. VPS deployment requires operator-managed network access and credentials. |
 | Linux ARM64 | Limited support | Earlier container/VM and upgrade evidence; not a member of the latest six-job native matrix. |
-| Nix packaging | Experimental, outside supported beta | The package build passed, but its version-content check failed. Use the qualified wheels for beta installation. |
+| Nix packaging | Experimental, outside supported beta | Security lockfile updates require refreshed Nix fixed-output hashes; the earlier version-content check was also unqualified. Use the qualified wheels for beta installation. |
 | macOS Intel | Experimental | No current native qualification receipt. |
 | Android/Termux | Experimental, outside supported beta | No real-device qualification. Existing installation notes are exploratory. |
 | Daytona and Modal execution backends | Unavailable as supported beta integrations | Credential-dependent verification has not run. Their presence in the code or setup UI is not a support claim. |
 | Other optional messaging, browser, voice and plugin services | Experimental unless explicitly named in the tester brief | Credential-free tests do not qualify a live third-party service. |
 
 The latest native run is
-[34768085661](https://github.com/teddyjfpender/superforecasting-agent/actions/runs/34768085661).
-All six platform/Node combinations passed fresh and upgrade checks, including
+[34787794628](https://github.com/teddyjfpender/superforecasting-agent/actions/runs/34787794628).
+All six platform/Node combinations verified the downloaded release artifacts and
+passed fresh and upgrade checks, including
 legacy profiles, customized/deleted skills and plugin execution. Python support is
 3.11–3.13; the matrix used Python 3.11.15. This does not establish every OS/Python
 combination independently.
