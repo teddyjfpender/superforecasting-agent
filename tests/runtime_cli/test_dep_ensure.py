@@ -112,20 +112,20 @@ def test_has_hermes_agent_browser_windows_path(tmp_path):
     node_dir = tmp_path / "node"
     node_dir.mkdir(parents=True)
     (node_dir / "agent-browser.cmd").write_text("@echo off")
-    from superforecasting_agent.runtime.dep_ensure import _has_hermes_agent_browser
+    from superforecasting_agent.runtime.dep_ensure import _has_agent_browser
     with patch("superforecasting_agent.runtime.dep_ensure._IS_WINDOWS", True), \
          patch("superforecasting_agent.constants.get_agent_home", return_value=tmp_path):
-        assert _has_hermes_agent_browser() is True
+        assert _has_agent_browser() is True
 
 
 def test_has_hermes_agent_browser_posix_path(tmp_path):
     bin_dir = tmp_path / "node" / "bin"
     bin_dir.mkdir(parents=True)
     (bin_dir / "agent-browser").write_text("#!/bin/sh")
-    from superforecasting_agent.runtime.dep_ensure import _has_hermes_agent_browser
+    from superforecasting_agent.runtime.dep_ensure import _has_agent_browser
     with patch("superforecasting_agent.runtime.dep_ensure._IS_WINDOWS", False), \
          patch("superforecasting_agent.constants.get_agent_home", return_value=tmp_path):
-        assert _has_hermes_agent_browser() is True
+        assert _has_agent_browser() is True
 
 
 def test_has_hermes_agent_browser_legacy_node_modules_path(tmp_path):
@@ -133,10 +133,10 @@ def test_has_hermes_agent_browser_legacy_node_modules_path(tmp_path):
     bin_dir = tmp_path / "node_modules" / ".bin"
     bin_dir.mkdir(parents=True)
     (bin_dir / "agent-browser").write_text("#!/bin/sh")
-    from superforecasting_agent.runtime.dep_ensure import _has_hermes_agent_browser
+    from superforecasting_agent.runtime.dep_ensure import _has_agent_browser
     with patch("superforecasting_agent.runtime.dep_ensure._IS_WINDOWS", False), \
          patch("superforecasting_agent.constants.get_agent_home", return_value=tmp_path):
-        assert _has_hermes_agent_browser() is True
+        assert _has_agent_browser() is True
 
 
 def test_ensure_dependency_uses_powershell_on_windows(tmp_path):

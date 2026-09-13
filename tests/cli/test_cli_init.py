@@ -530,7 +530,7 @@ class TestRootLevelProviderOverride:
         }))
 
         import cli
-        monkeypatch.setattr(cli, "_hermes_home", hermes_home)
+        monkeypatch.setattr(cli, "_agent_home", hermes_home)
         cfg = cli.load_cli_config()
 
         assert cfg["model"]["provider"] == "openrouter"
@@ -554,7 +554,7 @@ class TestRootLevelProviderOverride:
         }))
 
         import cli
-        monkeypatch.setattr(cli, "_hermes_home", hermes_home)
+        monkeypatch.setattr(cli, "_agent_home", hermes_home)
         cfg = cli.load_cli_config()
 
         # Normalize user aliases before merging built-in defaults.
@@ -578,7 +578,7 @@ class TestRootLevelProviderOverride:
         }))
 
         import cli
-        monkeypatch.setattr(cli, "_hermes_home", hermes_home)
+        monkeypatch.setattr(cli, "_agent_home", hermes_home)
         cfg = cli.load_cli_config()
 
         assert cfg["terminal"]["vercel_runtime"] == "python3.13"
@@ -593,7 +593,7 @@ class TestRootLevelProviderOverride:
 
         import cli
 
-        monkeypatch.setattr(cli, "_hermes_home", hermes_home)
+        monkeypatch.setattr(cli, "_agent_home", hermes_home)
         config = cli.load_cli_config()
 
         assert config["collaboration"] == DEFAULT_CONFIG["collaboration"]
@@ -611,7 +611,7 @@ class TestRootLevelProviderOverride:
 
         import cli
 
-        monkeypatch.setattr(cli, "_hermes_home", hermes_home)
+        monkeypatch.setattr(cli, "_agent_home", hermes_home)
         config = cli.load_cli_config()
 
         assert config["collaboration"]["github"]["enabled"] is True

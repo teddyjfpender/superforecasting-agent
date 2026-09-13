@@ -2649,7 +2649,7 @@ def test_holographic_memory_runtime_paths_are_forecast_native():
     assert "$SUPERFORECASTING_AGENT_HOME" in text
     assert "$FORECAST_HOME" in text
     assert "$HERMES_HOME remains for migration compatibility" in text
-    assert "_expand_agent_home_vars(db_path, _hermes_home)" in text
+    assert "_expand_agent_home_vars(db_path, _agent_home)" in text
     assert "Config in $HERMES_HOME/config.yaml" not in text
     assert "db_path = db_path.replace(\"$HERMES_HOME\"" not in text
 

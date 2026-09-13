@@ -416,12 +416,12 @@ def build_nvidia_nim_headers(base_url: str | None) -> dict:
 
 # Vercel AI Gateway app attribution headers. HTTP-Referer maps to
 # referrerUrl and X-Title maps to appName in the gateway's analytics.
-from superforecasting_agent.runtime import __version__ as _HERMES_VERSION
+from superforecasting_agent.runtime import __version__ as _AGENT_VERSION
 
 _AI_GATEWAY_HEADERS = {
     "HTTP-Referer": "https://teddyjfpender.github.io/superforecasting-agent",
     "X-Title": "Superforecasting Agent",
-    "User-Agent": f"SuperforecastingAgent/{_HERMES_VERSION}",
+    "User-Agent": f"SuperforecastingAgent/{_AGENT_VERSION}",
 }
 
 # Nous Portal extra_body for product attribution.

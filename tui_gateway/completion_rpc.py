@@ -10,8 +10,8 @@ pm_rpc/jobs_rpc sibling contract), replaying them through the REAL
 ``server.rpc_validated`` / ``server.method`` so registration lands in the same
 ``tui_gateway.server._methods`` dispatch dict — wire byte-identical.
 
-``_hermes_home`` is monkeypatched by the test suite, so it is reached via the
-``_core._hermes_home`` call-time hop. The completion helpers
+``_agent_home`` is monkeypatched by the test suite, so it is reached via the
+``_core._agent_home`` call-time hop. The completion helpers
 (``_list_repo_files`` / ``_fuzzy_basename_rank`` / ``_details_completions`` /
 ``_normalize_completion_path``) and ``_ok`` / ``_err`` are not patched — imported
 bare from core.
@@ -73,7 +73,7 @@ def _(rid, params: dict) -> dict:
 
     _paste_counter += 1
     line_count = text.count("\n") + 1
-    paste_dir = _core._hermes_home / "pastes"
+    paste_dir = _core._agent_home / "pastes"
     paste_dir.mkdir(parents=True, exist_ok=True)
 
     from datetime import datetime

@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "platform": {
+    "system": "Darwin",
+    "machine": "arm64",
+    "release": "25.6.0",
+    "driver_python": "3.14.7"
+  },
+  "status": "passed",
+  "checks": {
+    "fresh_install_dependencies": "passed",
+    "backend_lifecycle_worker_numerical_fallback": "passed",
+    "local_terminal_interaction": "passed",
+    "authenticated_headless_host": "passed",
+    "remote_terminal_interaction": "passed",
+    "backend_upgrade": "not_requested",
+    "terminal_upgrade": "not_requested"
+  },
+  "artifacts": {
+    "backend": {
+      "name": "superforecasting-agent",
+      "version": "0.22.1",
+      "sha256": "7435e34a507dc21cec113744eb8f01278cbf4b48c21b968d96981a91b145c4a3"
+    },
+    "terminal": {
+      "name": "superforecasting-agent-tui",
+      "version": "0.1.1",
+      "sha256": "9db65e8d9f5259c898914ed9f2470b5c433eabc77ee7765c9e0ad2912d747560"
+    }
+  },
+  "installed_runtime": {
+    "python": "3.11.15",
+    "machine": "arm64",
+    "openssl": "OpenSSL 3.5.5 27 Jan 2026"
+  }
+}

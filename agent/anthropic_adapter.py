@@ -969,9 +969,6 @@ from superforecasting_agent.credentials.anthropic import _OAUTH_FILE_ENV_NAMES a
 from superforecasting_agent.credentials.anthropic import get_agent_oauth_file as get_agent_oauth_file
 
 
-_HERMES_OAUTH_FILE = get_agent_oauth_file()
-
-
 def _generate_pkce() -> tuple:
     """Generate PKCE code_verifier and code_challenge (S256)."""
     import base64

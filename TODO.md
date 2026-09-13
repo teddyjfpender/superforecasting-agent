@@ -33,8 +33,10 @@ focused checks do not substitute for that publication gate.
   0.22.0 tag remains unchanged.
 - [x] Recover native Linux x86-64 qualification receipts and trace the native Windows
   service-home failure; add ConPTY and real terminal/host recovery exercises.
-- [ ] Execute the new ConPTY matrix and qualify a real Android/Termux device.
+- [x] Qualify native Linux x86-64, Windows AMD64 and macOS ARM64 on Node 20/22,
+  including ConPTY input, resize, cancellation, durable reconnect and shutdown.
   See [native platform evidence](docs/verification/2026-09-13-native-platforms/README.md).
+- [ ] Qualify a real Android/Termux device; none is available in this environment.
 - [ ] Run Daytona/Modal checks with service credentials; neither is configured here.
 - [ ] Merge the release candidate onto the default branch, then publish 0.22.1 through
   the formal workflow and verify downloaded assets and installation.

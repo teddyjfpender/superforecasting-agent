@@ -76,7 +76,7 @@ _DEFAULT_LIMIT = 500
 _MAX_LIMIT = 5000
 
 
-def _hermes_sessions_root() -> Optional[Path]:
+def _agent_sessions_root() -> Optional[Path]:
     """``{home}/sessions`` resolved fresh (get_agent_home reads env each call),
     or ``None`` when the home can't be resolved (fail-open)."""
     try:
@@ -226,7 +226,7 @@ class EventLog:
             logger.debug("event_log rotate failed", exc_info=True)
 
     def _current_root(self) -> Optional[Path]:
-        return _hermes_sessions_root() if self._resolve_lazily else self._root
+        return _agent_sessions_root() if self._resolve_lazily else self._root
 
     # ── SSE resume ──────────────────────────────────────────────────────────
 
@@ -252,7 +252,7 @@ class EventLog:
 
 
 def session_events_path(session_id: str, root=None) -> Optional[Path]:
-    base = Path(root) if root is not None else _hermes_sessions_root()
+    base = Path(root) if root is not None else _agent_sessions_root()
     if base is None or not session_id:
         return None
     return base / session_id / "events.jsonl"

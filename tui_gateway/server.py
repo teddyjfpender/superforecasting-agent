@@ -33,9 +33,9 @@ logger = logging.getLogger(__name__)
 # Path() because get_agent_home() returns a str when HERMES_HOME is set (e.g. the
 # per-test tempdir) — the workspace-dir mkdir below does Path / subdir, which would
 # TypeError on a str. Fix at the callsite, per tests/conftest.py.
-_hermes_home = Path(get_agent_home())
+_agent_home = Path(get_agent_home())
 load_forecast_dotenv(
-    hermes_home=_hermes_home, project_env=Path(__file__).parent.parent / ".env"
+    hermes_home=_agent_home, project_env=Path(__file__).parent.parent / ".env"
 )
 
 # Anchor the agent's workspace to its home directory. Ensure the docs vault +
@@ -47,10 +47,10 @@ load_forecast_dotenv(
 # explicit override.
 for _workspace_subdir in ("docs/vault", "docs/latex"):
     try:
-        (_hermes_home / _workspace_subdir).mkdir(parents=True, exist_ok=True)
+        (_agent_home / _workspace_subdir).mkdir(parents=True, exist_ok=True)
     except OSError:
         logger.debug("could not create workspace dir %s", _workspace_subdir)
-os.environ.setdefault("TERMINAL_CWD", str(_hermes_home))
+os.environ.setdefault("TERMINAL_CWD", str(_agent_home))
 
 
 def _tui_env(name: str, default: str = "") -> str:
@@ -153,7 +153,7 @@ def _session_toggle_value(name: str) -> str | None:
 # AND re-emits a one-line summary to stderr so the TUI can surface it in
 # Activity — exactly what was missing when the voice-mode turns started
 # exiting the gateway mid-TTS.
-_CRASH_LOG = os.path.join(_hermes_home, "logs", "tui_gateway_crash.log")
+_CRASH_LOG = os.path.join(_agent_home, "logs", "tui_gateway_crash.log")
 
 
 def _panic_hook(exc_type, exc_value, exc_tb):
@@ -285,7 +285,7 @@ from superforecasting_agent.hosting.workers import HostStopping
 from superforecasting_agent.hosting.runtime import RuntimeHost
 from superforecasting_agent.hosting.sessions import SessionBusy, dispose_session, finalize_session, in_use, replacement, use_session
 
-_host = RuntimeHost(max_workers=_rpc_pool_workers, home=_hermes_home)
+_host = RuntimeHost(max_workers=_rpc_pool_workers, home=_agent_home)
 
 
 # Embedded hosts retain their process streams. The stdio entrypoint explicitly
@@ -1094,11 +1094,11 @@ def _normalize_indicator_style(value: object) -> str:
 
 
 def _load_cfg() -> dict:
-    return _host.configuration.load(_hermes_home / "config.yaml")
+    return _host.configuration.load(_agent_home / "config.yaml")
 
 
 def _save_cfg(cfg: dict):
-    _host.configuration.save(_hermes_home / "config.yaml", cfg)
+    _host.configuration.save(_agent_home / "config.yaml", cfg)
 
 
 def _set_session_context(session_key: str):
@@ -1225,7 +1225,7 @@ def _resolve_startup_runtime(cfg: dict | None = None) -> tuple[str, str | None]:
 
 def _write_config_key(key_path: str, value):
     """Merge a single setting into the latest profile, preserving user comments."""
-    _host.configuration.update(_hermes_home / "config.yaml", key_path, value)
+    _host.configuration.update(_agent_home / "config.yaml", key_path, value)
 
 
 _STATUSBAR_MODES = frozenset({"off", "top", "bottom"})
@@ -2065,7 +2065,7 @@ def _available_personalities(cfg: dict | None = None) -> dict:
             "HERMES_IGNORE_USER_CONFIG",
         ) if name in os.environ), "") == "1"
         settings = read_cli_config(
-            _hermes_home, Path(__file__).resolve().parents[1] / "cli-config.yaml", ignore_config,
+            _agent_home, Path(__file__).resolve().parents[1] / "cli-config.yaml", ignore_config,
         )
         return (settings.get("agent") or {}).get("personalities", {}) or {}
     except Exception:
@@ -3030,7 +3030,7 @@ def _(rid, params: dict) -> dict:
             history = copy.deepcopy(session.get("history", []))
             model = getattr(session.get("agent"), "model", "")
         filename = save_transcript(
-            _hermes_home, messages=history, model=model,
+            _agent_home, messages=history, model=model,
             session_id=params.get("session_id", ""),
             session_key=session.get("session_key", ""),
         )
@@ -3782,7 +3782,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5027, f"clipboard unavailable: {e}")
 
     session["image_counter"] = session.get("image_counter", 0) + 1
-    img_dir = _hermes_home / "images"
+    img_dir = _agent_home / "images"
     img_dir.mkdir(parents=True, exist_ok=True)
     img_path = (
         img_dir
@@ -4506,7 +4506,7 @@ def _(rid, params: dict) -> dict:
     if key == "profile":
         from superforecasting_agent.constants import display_agent_home
 
-        return _ok(rid, {"home": str(_hermes_home), "display": display_agent_home()})
+        return _ok(rid, {"home": str(_agent_home), "display": display_agent_home()})
     if key == "full":
         return _ok(rid, {"config": _load_cfg()})
     if key == "prompt":
@@ -4605,7 +4605,7 @@ def _(rid, params: dict) -> dict:
         on = _display_mouse_tracking(display)
         return _ok(rid, {"value": "on" if on else "off"})
     if key == "mtime":
-        cfg_path = _hermes_home / "config.yaml"
+        cfg_path = _agent_home / "config.yaml"
         try:
             return _ok(
                 rid, {"mtime": cfg_path.stat().st_mtime if cfg_path.exists() else 0}
@@ -5914,7 +5914,7 @@ def _(rid, params: dict) -> dict:
             max_turns=getattr(agent, "max_iterations", _cfg_max_turns(cfg, 90)),
             toolsets=session_toolset_selection(session, lambda: _load_enabled_toolsets(cfg)),
             verbose=getattr(agent, "verbose_logging", cfg.get("verbose", False)),
-            cwd=os.getcwd(), config_path=str(_hermes_home / "config.yaml"),
+            cwd=os.getcwd(), config_path=str(_agent_home / "config.yaml"),
         )
         return _ok(rid, {"sections": sections})
     except Exception as e:

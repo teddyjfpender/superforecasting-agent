@@ -173,13 +173,13 @@ class HolographicMemoryProvider(MemoryProvider):
 
     def initialize(self, session_id: str, **kwargs) -> None:
         from superforecasting_agent.constants import get_agent_home
-        _hermes_home = str(get_agent_home())
-        _default_db = _hermes_home + "/memory_store.db"
+        _agent_home = str(get_agent_home())
+        _default_db = _agent_home + "/memory_store.db"
         db_path = self._config.get("db_path", _default_db)
         # Resolve fork-native and legacy home aliases against the active
         # profile directory so copied configs stay portable across profiles.
         if isinstance(db_path, str):
-            db_path = _expand_agent_home_vars(db_path, _hermes_home)
+            db_path = _expand_agent_home_vars(db_path, _agent_home)
         default_trust = float(self._config.get("default_trust", 0.5))
         hrr_dim = int(self._config.get("hrr_dim", 1024))
         hrr_weight = float(self._config.get("hrr_weight", 0.3))

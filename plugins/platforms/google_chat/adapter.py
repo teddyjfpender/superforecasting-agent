@@ -522,11 +522,11 @@ class GoogleChatAdapter(BasePlatformAdapter):
         # version of this heuristic flaky for multi-restart sessions).
         try:
             from superforecasting_agent.constants import get_agent_home as _get_agent_home
-            _hermes_home = _get_agent_home()
+            _agent_home = _get_agent_home()
         except (ModuleNotFoundError, ImportError):
-            _hermes_home = _Path.home() / ".superforecasting-agent"
+            _agent_home = _Path.home() / ".superforecasting-agent"
         self._thread_count_store = _ThreadCountStore(
-            _hermes_home / "google_chat_thread_counts.json"
+            _agent_home / "google_chat_thread_counts.json"
         )
         # In-flight typing-card creates per chat_id. send_typing() reserves
         # an Event here BEFORE starting the API call so concurrent calls

@@ -22,7 +22,7 @@ def test_shared_service_tier(raw, expected):
 
 def test_tui_setting_merges_latest_config_and_preserves_comments(tmp_path, monkeypatch):
     from tui_gateway import server
-    monkeypatch.setattr(server, '_hermes_home', tmp_path)
+    monkeypatch.setattr(server, '_agent_home', tmp_path)
     monkeypatch.setattr(server._host.configuration, '_snapshot', None)
     path = tmp_path / 'config.yaml'
     path.write_text('# personal settings\nagent:\n  service_tier: normal\n')
@@ -36,7 +36,7 @@ def test_tui_setting_merges_latest_config_and_preserves_comments(tmp_path, monke
 
 def test_tui_invalid_yaml_is_not_replaced(tmp_path, monkeypatch):
     from tui_gateway import server
-    monkeypatch.setattr(server, '_hermes_home', tmp_path)
+    monkeypatch.setattr(server, '_agent_home', tmp_path)
     path = tmp_path / 'config.yaml'
     path.write_text('- invalid root\n')
     with pytest.raises(ValueError, match='root must be a mapping'):

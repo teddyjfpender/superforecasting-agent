@@ -15,7 +15,7 @@ import uuid
 from typing import Optional
 
 from tools.environments.base import BaseEnvironment, _popen_bash
-from tools.environments.local import _HERMES_PROVIDER_ENV_BLOCKLIST
+from tools.environments.local import _PROVIDER_ENV_BLOCKLIST
 
 logger = logging.getLogger(__name__)
 
@@ -577,7 +577,7 @@ class DockerEnvironment(BaseEnvironment):
         # Explicit docker_forward_env entries are an intentional opt-in and must
         # win over the generic Hermes secret blocklist. Only implicit passthrough
         # keys are filtered.
-        forward_keys = explicit_forward_keys | (passthrough_keys - _HERMES_PROVIDER_ENV_BLOCKLIST)
+        forward_keys = explicit_forward_keys | (passthrough_keys - _PROVIDER_ENV_BLOCKLIST)
         hermes_env = _load_agent_env_vars() if forward_keys else {}
         for key in sorted(forward_keys):
             value = os.getenv(key)

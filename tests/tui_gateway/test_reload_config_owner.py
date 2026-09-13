@@ -8,7 +8,7 @@ def test_reload_always_preserves_profile_settings_without_cli(tmp_path, monkeypa
     from tools import mcp_tool
     from tui_gateway import server
 
-    monkeypatch.setattr(server, '_hermes_home', tmp_path)
+    monkeypatch.setattr(server, '_agent_home', tmp_path)
     monkeypatch.setattr(mcp_tool, 'shutdown_mcp_servers', lambda: None)
     monkeypatch.setattr(mcp_tool, 'discover_mcp_tools', lambda: None)
     path = tmp_path / 'config.yaml'

@@ -72,7 +72,7 @@ def test_override_propagates_to_mcp_loop(tmp_path, monkeypatch, mcp_loop):
 
 
 def test_oauth_token_paths_follow_override(tmp_path, monkeypatch, mcp_loop):
-    """The actual symptom path: HermesTokenStorage resolving inside the
+    """The actual symptom path: AgentTokenStorage resolving inside the
     probe's MCP-loop coroutine must land in the selected profile's
     mcp-tokens dir, not the process home's."""
     from superforecasting_agent.constants import (
@@ -87,9 +87,9 @@ def test_oauth_token_paths_follow_override(tmp_path, monkeypatch, mcp_loop):
     _pin_process_home(monkeypatch, process_home)
 
     async def token_path():
-        from tools.mcp_oauth import HermesTokenStorage
+        from tools.mcp_oauth import AgentTokenStorage
 
-        return str(HermesTokenStorage("probe-srv")._tokens_path())
+        return str(AgentTokenStorage("probe-srv")._tokens_path())
 
     token = set_agent_home_override(str(profile_home))
     try:

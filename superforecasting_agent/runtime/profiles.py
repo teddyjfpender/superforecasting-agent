@@ -220,7 +220,7 @@ _DEFAULT_EXPORT_EXCLUDE_ROOT = frozenset({
 
 
 # CLI subcommands that cannot be used as profile names/aliases
-_HERMES_SUBCOMMANDS = frozenset({
+_AGENT_SUBCOMMANDS = frozenset({
     "chat", "model", "gateway", "setup", "whatsapp", "login", "logout",
     "status", "cron", "doctor", "dump", "config", "pairing", "skills", "tools",
     "mcp", "sessions", "insights", "version", "update", "uninstall",
@@ -293,7 +293,7 @@ def check_alias_collision(name: str) -> Optional[str]:
     canon = normalize_profile_name(name)
     if canon in _RESERVED_NAMES:
         return f"'{canon}' is a reserved name"
-    if canon in _HERMES_SUBCOMMANDS:
+    if canon in _AGENT_SUBCOMMANDS:
         return f"'{canon}' conflicts with a superforecasting-agent subcommand"
 
     # Check existing commands in PATH

@@ -90,7 +90,7 @@ async def test_draining_rejects_new_session_messages():
 
 
 def test_load_busy_input_mode_prefers_env_then_config_then_default(tmp_path, monkeypatch):
-    monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
+    monkeypatch.setattr(gateway_run, "_agent_home", tmp_path)
     for name in gateway_run._GATEWAY_BUSY_INPUT_MODE_ENV_NAMES:
         monkeypatch.delenv(name, raising=False)
 
@@ -142,7 +142,7 @@ def test_gateway_busy_ack_enabled_env_aliases(monkeypatch):
 def test_load_restart_drain_timeout_prefers_env_then_config_then_default(
     tmp_path, monkeypatch, caplog
 ):
-    monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
+    monkeypatch.setattr(gateway_run, "_agent_home", tmp_path)
     for name in gateway_run._RESTART_DRAIN_TIMEOUT_ENV_NAMES:
         monkeypatch.delenv(name, raising=False)
 

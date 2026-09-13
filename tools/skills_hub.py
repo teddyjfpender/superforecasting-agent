@@ -2910,7 +2910,7 @@ HERMES_INDEX_CACHE_FILE = INDEX_CACHE_DIR / "hermes-index.json"
 HERMES_INDEX_TTL = 6 * 3600  # 6 hours
 
 
-def _load_hermes_index() -> Optional[dict]:
+def _load_agent_index() -> Optional[dict]:
     """Fetch the centralized skills index, with local cache.
 
     The index is a JSON file hosted on the docs site, rebuilt daily by CI.
@@ -2983,7 +2983,7 @@ class ForecastIndexSource(SkillSource):
 
     def _ensure_loaded(self) -> dict:
         if not self._loaded:
-            self._index = _load_hermes_index()
+            self._index = _load_agent_index()
             self._loaded = True
         return self._index or {}
 

@@ -30,7 +30,7 @@ def test_reload_runtime_env_preserves_config_max_turns(tmp_path: Path, monkeypat
         encoding="utf-8",
     )
 
-    monkeypatch.setattr(gateway_run, "_hermes_home", hermes_home)
+    monkeypatch.setattr(gateway_run, "_agent_home", hermes_home)
     monkeypatch.setenv("SUPERFORECASTING_AGENT_MAX_ITERATIONS", "9000")
     monkeypatch.setenv("FORECAST_MAX_ITERATIONS", "9000")
     monkeypatch.setenv("HERMES_MAX_ITERATIONS", "9000")
@@ -52,7 +52,7 @@ def test_reload_runtime_env_keeps_env_max_iterations_when_config_omits_key(
     (hermes_home / "config.yaml").write_text(yaml.safe_dump({"agent": {}}), encoding="utf-8")
     (hermes_home / ".env").write_text("FORECAST_MAX_ITERATIONS=123\n", encoding="utf-8")
 
-    monkeypatch.setattr(gateway_run, "_hermes_home", hermes_home)
+    monkeypatch.setattr(gateway_run, "_agent_home", hermes_home)
     monkeypatch.delenv("FORECAST_MAX_ITERATIONS", raising=False)
 
     gateway_run._reload_runtime_env_preserving_config_authority()

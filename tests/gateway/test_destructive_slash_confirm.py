@@ -232,7 +232,7 @@ async def test_resolve_always_persists_opt_out_and_runs_execute(monkeypatch, tmp
     import gateway.run as gateway_mod
     import yaml
 
-    monkeypatch.setattr(gateway_mod, "_hermes_home", tmp_path)
+    monkeypatch.setattr(gateway_mod, "_agent_home", tmp_path)
     path = tmp_path / "config.yaml"
     path.write_text("model: retained\napprovals:\n  other: true\n", encoding="utf-8")
 
@@ -273,7 +273,7 @@ async def test_confirmation_persistence_matches_reply(command, save_fails, tmp_p
     session_key = build_session_key(_make_source())
     runner._session_key_for_source = lambda src: session_key
     slash_confirm.clear(session_key)
-    monkeypatch.setattr(gateway_mod, '_hermes_home', tmp_path)
+    monkeypatch.setattr(gateway_mod, '_agent_home', tmp_path)
     path = tmp_path / 'config.yaml'
     path.write_text('model: retained\n', encoding='utf-8')
     if save_fails:

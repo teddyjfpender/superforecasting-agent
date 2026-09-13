@@ -98,12 +98,12 @@ logger = logging.getLogger(__name__)
 # Version / platform constants (used in AUTH_BIND and sign-token headers)
 # ---------------------------------------------------------------------------
 try:
-    from superforecasting_agent.runtime import __version__ as _HERMES_VERSION
+    from superforecasting_agent.runtime import __version__ as _AGENT_VERSION
 except ImportError:
-    _HERMES_VERSION = "0.0.0"
+    _AGENT_VERSION = "0.0.0"
 
-_APP_VERSION = _HERMES_VERSION
-_BOT_VERSION = _HERMES_VERSION
+_APP_VERSION = _AGENT_VERSION
+_BOT_VERSION = _AGENT_VERSION
 _YUANBAO_INSTANCE_ID = str(HERMES_INSTANCE_ID)  # single source: yuanbao_proto.HERMES_INSTANCE_ID
 _OPERATION_SYSTEM = sys.platform
 

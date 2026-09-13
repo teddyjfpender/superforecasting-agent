@@ -522,12 +522,12 @@ def test_session_list_omits_active_durable_sessions(server, monkeypatch):
 
 
 def test_config_load_missing(server, tmp_path):
-    server._hermes_home = tmp_path
+    server._agent_home = tmp_path
     assert server._load_cfg() == {}
 
 
 def test_config_roundtrip(server, tmp_path):
-    server._hermes_home = tmp_path
+    server._agent_home = tmp_path
     cfg = server._load_cfg()
     cfg["model"] = "test/model"
     server._save_cfg(cfg)

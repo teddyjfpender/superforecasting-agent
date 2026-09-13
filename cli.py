@@ -222,9 +222,9 @@ from superforecasting_agent.environment import (
 )
 from superforecasting_agent.urls import base_url_host_matches
 
-_hermes_home = get_agent_home()
+_agent_home = get_agent_home()
 _project_env = Path(__file__).parent / '.env'
-load_forecast_dotenv(hermes_home=_hermes_home, project_env=_project_env)
+load_forecast_dotenv(hermes_home=_agent_home, project_env=_project_env)
 
 
 # =============================================================================
@@ -244,7 +244,7 @@ def _load_prefill_messages(file_path: str) -> List[Dict[str, Any]]:
         return []
     path = Path(file_path).expanduser()
     if not path.is_absolute():
-        path = _hermes_home / path
+        path = _agent_home / path
     if not path.exists():
         logger.warning("Prefill messages file not found: %s", path)
         return []
@@ -296,7 +296,7 @@ def load_cli_config() -> Dict[str, Any]:
     from superforecasting_agent.runtime.interactive_config import load_cli_config as load
 
     return load(
-        _hermes_home,
+        _agent_home,
         Path(__file__).parent / 'cli-config.yaml',
         _env_flag_exact_one(_IGNORE_USER_CONFIG_ENV_NAMES),
         _set_redact_env_aliases,
@@ -1361,7 +1361,7 @@ def save_config_value(key_path: str, value: any) -> bool:
     Returns:
         True if successful, False otherwise
     """
-    config_path = _hermes_home / 'config.yaml'
+    config_path = _agent_home / 'config.yaml'
     
     try:
         # Ensure parent directory exists (for config.yaml on first use)
@@ -1700,7 +1700,7 @@ class ForecastCLI:
             self.session_id = f"{timestamp_str}_{short_uuid}"
         
         # History file for persistent input recall across sessions.
-        self._history_file = _resolve_cli_history_file(_hermes_home)
+        self._history_file = _resolve_cli_history_file(_agent_home)
         self._last_invalidate: float = 0.0  # throttle UI repaints
         self._app = None
 
@@ -3907,7 +3907,7 @@ class ForecastCLI:
             max_turns=self.max_turns, toolsets=self.enabled_toolsets,
             verbose=self.verbose,
             cwd=os.getenv("TERMINAL_CWD", os.getcwd()),
-            config_path=str(_hermes_home / "config.yaml"),
+            config_path=str(_agent_home / "config.yaml"),
         )
         terminal_env = os.getenv("TERMINAL_ENV", "local")
         terminal_rows = [["Environment", terminal_env],
@@ -4873,7 +4873,7 @@ class ForecastCLI:
             _cprint(f"    ⚠ {result.warning_message}")
         if persist_global:
             from superforecasting_agent.runtime.model_configuration import persist_model_selection
-            user_config_path = _hermes_home / 'config.yaml'
+            user_config_path = _agent_home / 'config.yaml'
             config_path = user_config_path if user_config_path.exists() else Path(__file__).parent / 'cli-config.yaml'
             try:
                 if persist_model_selection(config_path, model=result.new_model, provider=result.target_provider,
@@ -5978,7 +5978,7 @@ class ForecastCLI:
 
         parts = cmd_original.strip().split(None, 1)
         try:
-            _cprint(footer_command(parts[1] if len(parts) > 1 else "", _hermes_home / "config.yaml"))
+            _cprint(footer_command(parts[1] if len(parts) > 1 else "", _agent_home / "config.yaml"))
         except Exception as exc:
             _cprint(f"  {exc}")
 
@@ -6862,7 +6862,7 @@ class ForecastCLI:
                         if not is_seen(CLI_CONFIG, TOOL_PROGRESS_FLAG):
                             self._long_tool_hint_fired = True
                             _cprint(f"  {_DIM}{tool_progress_hint_cli()}{_RST}")
-                            mark_seen(_hermes_home / "config.yaml", TOOL_PROGRESS_FLAG)
+                            mark_seen(_agent_home / "config.yaml", TOOL_PROGRESS_FLAG)
                             CLI_CONFIG.setdefault("onboarding", {}).setdefault("seen", {})[TOOL_PROGRESS_FLAG] = True
                 except Exception:
                     pass
@@ -8107,7 +8107,7 @@ class ForecastCLI:
                             self.agent.interrupt(interrupt_msg)
                             # Debug: log to file (stdout may be devnull from redirect_stdout)
                             try:
-                                _dbg = _hermes_home / "interrupt_debug.log"
+                                _dbg = _agent_home / "interrupt_debug.log"
                                 with open(_dbg, "a", encoding="utf-8") as _f:
                                     _f.write(f"{time.strftime('%H:%M:%S')} interrupt fired: msg={str(interrupt_msg)[:60]!r}, "
                                              f"children={len(self.agent._active_children)}, "
@@ -9029,7 +9029,7 @@ class ForecastCLI:
                         self._interrupt_queue.put(payload)
                         # Debug: log to file when message enters interrupt queue
                         try:
-                            _dbg = _hermes_home / "interrupt_debug.log"
+                            _dbg = _agent_home / "interrupt_debug.log"
                             with open(_dbg, "a", encoding="utf-8") as _f:
                                 _f.write(f"{time.strftime('%H:%M:%S')} ENTER: queued interrupt msg={str(payload)[:60]!r}, "
                                          f"agent_running={self._agent_running}\n")
@@ -9049,7 +9049,7 @@ class ForecastCLI:
                         )
                         if not is_seen(CLI_CONFIG, BUSY_INPUT_FLAG):
                             _cprint(f"  {_DIM}{busy_input_hint_cli(self.busy_input_mode)}{_RST}")
-                            mark_seen(_hermes_home / "config.yaml", BUSY_INPUT_FLAG)
+                            mark_seen(_agent_home / "config.yaml", BUSY_INPUT_FLAG)
                             CLI_CONFIG.setdefault("onboarding", {}).setdefault("seen", {})[BUSY_INPUT_FLAG] = True
                     except Exception:
                         pass
@@ -9670,7 +9670,7 @@ class ForecastCLI:
                 buf = event.current_buffer
                 if line_count >= 5 and not buf.text.strip().startswith('/'):
                     _paste_counter[0] += 1
-                    paste_dir = _hermes_home / "pastes"
+                    paste_dir = _agent_home / "pastes"
                     paste_dir.mkdir(parents=True, exist_ok=True)
                     paste_file = paste_dir / f"paste_{_paste_counter[0]}_{datetime.now().strftime('%H%M%S')}.txt"
                     paste_file.write_text(pasted_text, encoding="utf-8")
@@ -9839,7 +9839,7 @@ class ForecastCLI:
             is_paste = chars_added > 1 or newlines_added >= 4
             if line_count >= 5 and is_paste and not text.startswith('/'):
                 _paste_counter[0] += 1
-                paste_dir = _hermes_home / "pastes"
+                paste_dir = _agent_home / "pastes"
                 paste_dir.mkdir(parents=True, exist_ok=True)
                 paste_file = paste_dir / f"paste_{_paste_counter[0]}_{datetime.now().strftime('%H%M%S')}.txt"
                 paste_file.write_text(text, encoding="utf-8")

@@ -10,7 +10,7 @@ it must not become a second implementation or a second writable configuration.
 | `hermes`, `setup-hermes.sh`, `scripts/hermes-gateway` | Thin launch adapters to canonical entry points; existing automation remains callable |
 | `nix/hermes-agent.nix` | Imports the canonical package expression |
 | `agent/transports/hermes_tools_mcp_server.py` | Imports the canonical forecast tools MCP entry point |
-| `HermesCLI`, `hermes_client_tag`, legacy OAuth/LSP/configuration exports | Explicit aliases to canonical implementations for downstream imports |
+| `HermesCLI`, `hermes_client_tag`, legacy OAuth/LSP/configuration exports and `HermesTokenStorage` | Explicit aliases to canonical implementations for downstream imports |
 | `HERMES_HOME`, `FORECAST_HOME`, `.hermes` | `superforecasting_agent/constants.py` resolves profile roots, with the canonical variable taking precedence; existing homes are not silently moved |
 | Other `HERMES_*` variables | Existing feature-specific alias resolvers accept these at environment boundaries; internal callers should use the canonical resolver |
 | `metadata.hermes`, installed plugin identifiers | Published extension schema; changing identifiers would break user plugin configuration and skill metadata |
@@ -51,3 +51,10 @@ including the canonical installation, rather than unrelated prefix matches.
 Do not perform global string replacement over persisted identifiers. Rename private
 helpers and stale product copy directly; retain externally observable aliases at
 an explicit boundary until an independently tested migration replaces them.
+
+The MCP OAuth owner is `tools.mcp_oauth.AgentTokenStorage`; its legacy class
+export is the same class, preserving stored tokens and client registration.
+Private home, provider, environment-filter, user-agent and session-log helpers use
+canonical names. Retained public storage constants and keyword parameters named
+`hermes_home` remain compatibility inputs; their values resolve through the
+canonical profile owner. They do not select a separate legacy storage tree.

@@ -1,5 +1,22 @@
 # Native platform qualification
 
+## Qualified native products
+
+Run [`34763390464`](https://github.com/teddyjfpender/superforecasting-agent/actions/runs/34763390464)
+at source commit `908266ab54d6e5171cdda94492013b209092fef6` passed all six
+Linux x86-64, Windows AMD64 and macOS ARM64 / Node 20 and 22 jobs. The six
+`*-final.json` receipts record artifact hashes and installed Python/OpenSSL.
+Fresh backend installation/lifecycle, local terminal interaction, authenticated
+headless hosting and remote terminal interaction passed; upgrades were not
+requested in this matrix. The subsequent private-name cleanup is a separate
+source revision, covered by its own full-suite gate.
+
+Windows passed all 43 focused native tests on both versions. Its installed host
+completed five authenticated reconnects, remote terminal resize/score/exit,
+credential-redacted logging and application shutdown. Both the host and separate
+native SIGBREAK probe exited with 3. Linux/macOS also passed their native tests.
+Android remains unverified for lack of a real device.
+
 ## Recovered receipts
 
 These receipts concern commit `59d8044f047ba0056ee69d21c8fa376b5b987701`, not

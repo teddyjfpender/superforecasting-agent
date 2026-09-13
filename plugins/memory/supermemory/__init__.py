@@ -438,7 +438,7 @@ class SupermemoryMemoryProvider(MemoryProvider):
         self._search_mode = _DEFAULT_SEARCH_MODE
         self._entity_context = _DEFAULT_ENTITY_CONTEXT
         self._api_timeout = _DEFAULT_API_TIMEOUT
-        self._hermes_home = ""
+        self._agent_home = ""
         self._write_enabled = True
         self._active = False
         # Multi-container support
@@ -479,10 +479,10 @@ class SupermemoryMemoryProvider(MemoryProvider):
 
     def initialize(self, session_id: str, **kwargs) -> None:
         from superforecasting_agent.constants import get_agent_home
-        self._hermes_home = kwargs.get("hermes_home") or str(get_agent_home())
+        self._agent_home = kwargs.get("hermes_home") or str(get_agent_home())
         self._session_id = session_id
         self._turn_count = 0
-        self._config = _load_supermemory_config(self._hermes_home)
+        self._config = _load_supermemory_config(self._agent_home)
         self._api_key = os.environ.get("SUPERMEMORY_API_KEY", "")
 
         # Resolve container tag: env var > config > default.
