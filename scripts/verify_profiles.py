@@ -272,7 +272,12 @@ def verify(args: argparse.Namespace, report: dict[str, Any]) -> None:
             "HERMES_HOME": str(profile),
             "LANG": "C.UTF-8",
             "PYTHONUTF8": "1",
+            "TMPDIR": str(root),
         }
+        # Preserve mobile platform detection without importing user credentials.
+        for name in ("TERMUX_VERSION", "PREFIX", "ANDROID_ROOT", "ANDROID_DATA"):
+            if name in os.environ:
+                env[name] = os.environ[name]
         if os.name == "nt":
             env["SYSTEMROOT"] = os.environ["SYSTEMROOT"]
             env["USERPROFILE"] = str(profile)

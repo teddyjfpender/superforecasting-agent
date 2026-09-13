@@ -261,11 +261,12 @@ SELECTION=(--ignore=tests/integration -m "not integration")
 if [ "${#LIVE_PATHS[@]}" -gt 0 ]; then
   SELECTION=(-m integration "${LIVE_PATHS[@]}")
 fi
+TIMEOUT_METHOD="$("$PYTHON" -c 'import signal; print("signal" if hasattr(signal, "SIGALRM") else "thread")')"
 "$PYTHON" -m pytest \
   -o "addopts=" \
   -n "$WORKERS" \
   --timeout=30 \
-  --timeout-method=signal \
+  --timeout-method="$TIMEOUT_METHOD" \
   --junitxml="$JUNIT_XML" \
   --ignore=tests/e2e \
   "${SELECTION[@]}" \
