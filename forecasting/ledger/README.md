@@ -10,16 +10,16 @@ This is the admission boundary for persistent forecasting state. Enforce semanti
 
 These are entry points and representative modules, not an exhaustive inventory.
 
-| File                                   | Responsibility                                                                |
-| -------------------------------------- | ----------------------------------------------------------------------------- |
-| [\_\_init\_\_.py](__init__.py)             | Forecast ledger package (façade over carved domain modules).                  |
-| [core.py](core.py)                     | SQLite forecast ledger for the forecasting fork.                              |
-| [alerts.py](alerts.py)                 | Alerts domain (D7 carve — the desk's health engine + alert_events lifecycle). |
-| [anchors.py](anchors.py)               | Outside-view anchor re-linking — the mechanical orphaned-anchor remediation.  |
-| [autopilot.py](autopilot.py)           | Autopilot + forecast-update-proposal domain (carved from core).               |
-| [backtest.py](backtest.py)             | Baseline / benchmark / backtest scoring domain (carved from core).            |
-| [deviation_bets.py](deviation_bets.py) | Deviation-bet domain (UPGRADE 2 — the deviation ledger).                      |
-| [evidence.py](evidence.py)             | Evidence + information-triage domain (D3 carve).                              |
+| File                             | Responsibility                                                        |
+| -------------------------------- | --------------------------------------------------------------------- |
+| [\_\_init\_\_.py](__init__.py)   | Public ledger facade composed from the focused operations below.      |
+| [core.py](core.py)               | Connection and ledger initialization shared by persistent operations. |
+| [questions.py](questions.py)     | Question creation and retrieval at the durable admission boundary.    |
+| [evidence.py](evidence.py)       | Timestamped evidence records and their provenance.                    |
+| [resolutions.py](resolutions.py) | Resolution persistence and semantic admission.                        |
+| [scoring.py](scoring.py)         | Score persistence and computation for resolved questions.             |
+| [workflow.py](workflow.py)       | Lifecycle progression and recoverable handoffs.                       |
+| [lessons.py](lessons.py)         | Calibration lesson storage and applicability history.                 |
 
 ## Working in this directory
 

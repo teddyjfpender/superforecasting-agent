@@ -10,16 +10,15 @@ A resource remains owned until disposal succeeds. Retried cleanup must target th
 
 These are entry points and representative modules, not an exhaustive inventory.
 
-| File                                           | Responsibility                                                                  |
-| ---------------------------------------------- | ------------------------------------------------------------------------------- |
-| [\_\_init\_\_.py](__init__.py)                     | Presentation-independent entrypoints for forecast runtime hosting.              |
-| [runtime.py](runtime.py)                       | Presentation-independent serving lifetime and resource ownership.               |
-| [configuration.py](configuration.py)           | Compatibility import for the host-owned shared configuration reader.            |
-| [\_\_main\_\_.py](__main__.py)                     | Launch the headless host with credentials read from a file.                     |
-| [aws_credentials.py](aws_credentials.py)       | AWS credential-source and region discovery, independent of client construction. |
-| [background.py](background.py)                 | Session-owned background conversations and retryable resource disposal.         |
-| [browser_connection.py](browser_connection.py) | Serialize browser endpoint changes and surface incomplete cleanup.              |
-| [browser_processes.py](browser_processes.py)   | Record daemon identity at acquisition and require confirmed exit at disposal.   |
+| File                                           | Responsibility                                                   |
+| ---------------------------------------------- | ---------------------------------------------------------------- |
+| [runtime.py](runtime.py)                       | Shared host admission, sessions and active command ownership.    |
+| [sessions.py](sessions.py)                     | Hosted session lifecycle operations.                             |
+| [background.py](background.py)                 | Background execution state and work ownership.                   |
+| [delegations.py](delegations.py)               | Delegated execution and parent/child relationships.              |
+| [browser_sessions.py](browser_sessions.py)     | Browser allocation lifetime and disposal.                        |
+| [browser_processes.py](browser_processes.py)   | Daemon identity, PID reuse safeguards and confirmed termination. |
+| [browser_connection.py](browser_connection.py) | Browser endpoint connection ownership.                           |
 
 ## Working in this directory
 

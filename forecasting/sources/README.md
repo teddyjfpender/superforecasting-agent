@@ -10,16 +10,16 @@ Keep fetching, parsing, binding and ledger writes separate. Reject ambiguous ide
 
 These are entry points and representative modules, not an exhaustive inventory.
 
-| File                             | Responsibility                                                            |
-| -------------------------------- | ------------------------------------------------------------------------- |
-| [\_\_init\_\_.py](__init__.py)       | Domain records and parsing components for forecasting evidence sources.   |
-| [arxiv.py](arxiv.py)             | Load scholarly papers from the arXiv Atom API.                            |
-| [bls.py](bls.py)                 | Load U.S. Bureau of Labor Statistics evidence observations.               |
-| [bls_parsing.py](bls_parsing.py) | Pure BLS response parsing; observation periods are not publication dates. |
-| [bluesky.py](bluesky.py)         | Load bluesky public-attention evidence.                                   |
-| [census.py](census.py)           | Load U.S. Census demographic and regional evidence records.               |
-| [cisa_kev.py](cisa_kev.py)       | Load cisa_kev vulnerability records as forecasting evidence.              |
-| [ckan.py](ckan.py)               | Load CKAN open-data evidence records.                                     |
+| File                             | Responsibility                                                   |
+| -------------------------------- | ---------------------------------------------------------------- |
+| [values.py](values.py)           | Shared source value handling.                                    |
+| [nws.py](nws.py)                 | Weather source acquisition and observation handling.             |
+| [usgs.py](usgs.py)               | USGS event acquisition and identity handling.                    |
+| [bls.py](bls.py)                 | BLS acquisition and evidence observations.                       |
+| [bls_parsing.py](bls_parsing.py) | Pure BLS parsing; observation periods are not publication dates. |
+| [fred.py](fred.py)               | FRED series acquisition with source metadata.                    |
+| [eia_parser.py](eia_parser.py)   | Pure EIA payload parsing.                                        |
+| [sec_parsing.py](sec_parsing.py) | Pure SEC response parsing.                                       |
 
 ## Working in this directory
 

@@ -10,16 +10,16 @@ Use shared locks and revision-aware updates. Preserve unrelated settings, verify
 
 These are entry points and representative modules, not an exhaustive inventory.
 
-| File                                                   | Responsibility                                                                    |
-| ------------------------------------------------------ | --------------------------------------------------------------------------------- |
-| [\_\_init\_\_.py](__init__.py)                             | Session persistence infrastructure for the forecasting desk.                      |
-| [configuration.py](configuration.py)                   | Shared profile configuration snapshots and revision-checked persistence.          |
-| [auth.py](auth.py)                                     | Auth-store schema and durable file IO, with explicit profile paths.               |
-| [credential_policy.py](credential_policy.py)           | Credential-pool disk-boundary sanitization helpers.                               |
-| [curator_state.py](curator_state.py)                   | Curator scheduling state with serialized, atomic field updates.                   |
-| [environment.py](environment.py)                       | Read profile credential files without CLI initialization or environment mutation. |
-| [files.py](files.py)                                   | Atomic JSON/YAML writes that preserve symlinks and file permissions.              |
-| [forecast_configuration.py](forecast_configuration.py) | Read-only layered forecast settings, independent of diagnostics and execution.    |
+| File                                         | Responsibility                                               |
+| -------------------------------------------- | ------------------------------------------------------------ |
+| [configuration.py](configuration.py)         | Revision-checked configuration snapshots and atomic updates. |
+| [auth.py](auth.py)                           | Credential-store schema and durable persistence.             |
+| [files.py](files.py)                         | Atomic file replacement preserving permissions and symlinks. |
+| [session.py](session.py)                     | Public SessionDB facade.                                     |
+| [sqlite.py](sqlite.py)                       | Shared SQLite storage support.                               |
+| [snapshots.py](snapshots.py)                 | Backup and snapshot restore operations.                      |
+| [profile_lease.py](profile_lease.py)         | Exclusive profile admission for offline operations.          |
+| [credential_policy.py](credential_policy.py) | Secret ownership policy at the persistence boundary.         |
 
 ## Working in this directory
 

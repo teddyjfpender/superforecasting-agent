@@ -10,16 +10,15 @@ Route writes through the ledger and application operations. Acquisition labels a
 
 These are entry points and representative modules, not an exhaustive inventory.
 
-| File                                             | Responsibility                                                                    |
-| ------------------------------------------------ | --------------------------------------------------------------------------------- |
-| [\_\_init\_\_.py](__init__.py)                       | Forecast-native domain package for the Superforecasting Agent fork.               |
-| [models.py](models.py)                           | Core forecast ledger domain models.                                               |
-| [ablation_study.py](ablation_study.py)           | Panel-vs-solo ablation — does the panel machinery earn its cost?                  |
-| [agent_protocol.py](agent_protocol.py)           | Agent-protocol probability source for historical forecast replay.                 |
-| [api_keys.py](api_keys.py)                       | API-key registry + .env read/write/activate for the forecast desk.                |
-| [appconfig.py](appconfig.py)                     | Typed, layered configuration for the forecast desk (architecture review item #8). |
-| [applicability_facts.py](applicability_facts.py) | Source-bound, timestamped applicability facts extracted from archived JSON.       |
-| [argv.py](argv.py)                               | Argument splitting helpers for forecast CLI command strings.                      |
+| File                                             | Responsibility                                                   |
+| ------------------------------------------------ | ---------------------------------------------------------------- |
+| [models.py](models.py)                           | Typed forecast, evidence and outcome records.                    |
+| [source_bindings.py](source_bindings.py)         | Source identity and semantic binding contracts.                  |
+| [economic_bindings.py](economic_bindings.py)     | Economic observation and revision semantics.                     |
+| [settlement_binding.py](settlement_binding.py)   | Admission of source-bound settlement claims.                     |
+| [source_transfer.py](source_transfer.py)         | Portable evidence and binding transfer with verification status. |
+| [learning_evaluation.py](learning_evaluation.py) | Learning evaluation records and comparison logic.                |
+| [backtesting.py](backtesting.py)                 | Historical forecast evaluation workflows.                        |
 
 ## Subdirectories
 
