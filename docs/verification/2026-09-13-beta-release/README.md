@@ -54,6 +54,10 @@ and question-scoped score queries remove repeated connection setup and whole-led
 scans; synthetic calibration fixtures now use one batch transaction. Shutdown
 deadlines cover broken-output/dispatch exits and precede potentially blocking cleanup.
 
+The native cancellation test also now waits for command completion rather than
+the earlier streamed `(stopped)` preview. A store regression verifies that output
+text cannot clear cancellation before the backend's terminal acknowledgement.
+
 The [evaluation identity review](evaluation-review.json) records the exact
 changed functions. Scoring formulas, outcome validation, frozen adjustments and
 trial evaluation remain AST-identical. The explicit compatibility registry admits
