@@ -3430,6 +3430,7 @@ The full `forecast` command tree — **94 top-level commands** (also reachable a
 
 ## `forecast trial`
 
+- **`forecast trial candidates`** — Audit cohort evidence and applicable lesson coverage before spending model budget
 - **`forecast trial create`** — Freeze a cohort, evidence, lessons, model and evaluation policy
 - **`forecast trial export`** — 
 - **`forecast trial list`** — 
@@ -3437,6 +3438,8 @@ The full `forecast` command tree — **94 top-level commands** (also reachable a
 - **`forecast trial recover`** — 
 - **`forecast trial report`** — 
 - **`forecast trial run`** — 
+
+### `forecast trial candidates`
 
 ### `forecast trial create`
 

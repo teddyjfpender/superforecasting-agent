@@ -178,19 +178,7 @@ def _log_signal(signum: int, frame) -> None:
         pass
     print(f"[gateway-signal] {name}", file=sys.stderr, flush=True)
 
-    import threading as _threading
-
-    def _hard_exit() -> None:
-        # If a worker thread is still mid-flush on a half-closed pipe,
-        # ``sys.exit(0)`` would wait forever for it to drop the GIL on
-        # interpreter shutdown.  ``os._exit`` skips atexit handlers but
-        # breaks the deadlock.  The crash log + stderr line above are
-        # the forensic trail.
-        os._exit(0)
-
-    timer = _threading.Timer(_shutdown_grace_seconds(), _hard_exit)
-    timer.daemon = True
-    timer.start()
+    _arm_shutdown_deadline()
 
     try:
         sys.exit(0)
@@ -202,6 +190,15 @@ def _log_signal(signum: int, frame) -> None:
         # waiting indefinitely; the daemon timer above is the safety
         # net for that exact case.
         raise
+
+
+def _arm_shutdown_deadline() -> None:
+    """Bound shutdown even when executor workers block before atexit runs."""
+    import threading
+
+    timer = threading.Timer(_shutdown_grace_seconds(), lambda: os._exit(0))
+    timer.daemon = True
+    timer.start()
 
 
 # SIGPIPE: ignore, don't exit. The old SIG_DFL killed the process
@@ -449,6 +446,8 @@ def main():
                 sys.exit(0)
 
     _log_exit("stdin EOF (TUI closed the command pipe)")
+    _arm_shutdown_deadline()
+    _stop_audio_playback()
 
 
 if __name__ == "__main__":

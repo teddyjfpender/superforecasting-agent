@@ -27,6 +27,7 @@ def register(sub):
         if action == 'export':
             parser.add_argument('--output', required=True)
         parser.set_defaults(_forecast_handler=handle_trial)
+    commands.add_parser('candidates', help='Audit cohort evidence and applicable lesson coverage before spending model budget').set_defaults(_forecast_handler=handle_trial)
     commands.add_parser('list').set_defaults(_forecast_handler=handle_trial)
     probe = commands.add_parser('preflight', help='Check provider and response budget before enrolling live arms')
     probe.add_argument('--spec-file', required=True)
@@ -75,6 +76,10 @@ def _handle_trial(args):
     from forecasting.learning_trials import create_trial, run_trial, trial_report, recover_trial, trial_records
     ledger = _core._ledger(args)
     action = args.trial_action
+    if action == 'candidates':
+        from forecasting.trial_readiness import candidate_report
+        print(json.dumps(candidate_report(ledger), indent=2))
+        return
     if action == 'preflight':
         from forecasting.trial_provider import preflight
         report = preflight(ledger, json.loads(Path(args.spec_file).read_text(encoding='utf-8')))

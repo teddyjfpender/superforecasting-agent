@@ -23,3 +23,16 @@ def test_persist_switch_preserves_comments_and_references_but_not_old_route(tmp_
     persist_model_selection(p, model='other', provider='other-provider')
     assert 'api_key' not in yaml.safe_load(p.read_text())['model']
     assert model_section(yaml.safe_load(p.read_text()))['base_url'] == ''
+
+
+def test_profile_and_diagnostics_share_legacy_provider_precedence(tmp_path):
+    from superforecasting_agent.runtime.profiles import _read_config_model
+    from superforecasting_agent.runtime.dump import _get_model_and_provider
+    config = {'model': ' example ', 'provider': 'custom'}
+    (tmp_path / 'config.yaml').write_text(yaml.safe_dump(config))
+    assert _read_config_model(tmp_path) == ('example', 'custom')
+    assert _get_model_and_provider(config) == ('example', 'custom')
+    config['model'] = {'default': 'example', 'provider': 'auto'}
+    (tmp_path / 'config.yaml').write_text(yaml.safe_dump(config))
+    assert _read_config_model(tmp_path) == ('example', 'auto')
+    assert _get_model_and_provider(config) == ('example', 'auto')

@@ -169,6 +169,27 @@ def test_gateway_is_respawned_after_being_killed(
 ORPHAN_GRACE_S = 20.0
 
 
+def live_orphans(psutil, processes):
+    """A zombie has exited; only its new parent can reap the process entry."""
+    live = []
+    for process in processes:
+        try:
+            if process.is_running() and process.status() != psutil.STATUS_ZOMBIE:
+                live.append(process)
+        except psutil.NoSuchProcess:
+            pass
+    return live
+
+
+def test_orphan_check_distinguishes_exited_zombies_from_running_workers():
+    from types import SimpleNamespace
+
+    psutil = pytest.importorskip("psutil")
+    zombie = SimpleNamespace(is_running=lambda: True, status=lambda: psutil.STATUS_ZOMBIE)
+    worker = SimpleNamespace(is_running=lambda: True, status=lambda: psutil.STATUS_SLEEPING)
+    assert live_orphans(psutil, [zombie, worker]) == [worker]
+
+
 @pytest.mark.live_system_guard_bypass
 @pytest.mark.timeout(300)
 def test_hard_killing_the_tui_does_not_orphan_the_gateway(
@@ -216,6 +237,9 @@ def test_hard_killing_the_tui_does_not_orphan_the_gateway(
         os.kill(session.pgid, signal.SIGKILL)
 
         _, alive = psutil.wait_procs(gateways, timeout=ORPHAN_GRACE_S)
+        # wait_procs cannot reap a grandchild reparented after node's death.
+        # Some container PID 1 implementations leave its exited entry around.
+        alive = live_orphans(psutil, alive)
         cleanup_delay = time.monotonic() - killed_at
         record_property("orphan_cleanup_seconds", round(cleanup_delay, 3))
         print(
@@ -225,7 +249,7 @@ def test_hard_killing_the_tui_does_not_orphan_the_gateway(
 
         assert not alive, (
             "the gateway outlived a hard-killed client and is now an orphan: "
-            + ", ".join(f"pid {p.pid}" for p in alive)
+            + ", ".join(f"pid {p.pid} ({p.status()})" for p in alive)
             + ". The gateway must exit when its stdin reaches EOF -- that is "
             "the only defence left when node cannot run any teardown."
         )

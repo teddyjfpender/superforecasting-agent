@@ -174,3 +174,14 @@ def test_wrapping_past_the_last_row_also_scrolls():
 
     screen.feed("c")              # the wrap fires and pushes row 0 off
     assert screen.rows_text() == ["bbbb", "c"]
+
+
+def test_fragmented_utf8_preserves_unicode_and_cursor_columns():
+    text = "café 東京 — forecast"
+    whole = VTScreen(rows=3, cols=40)
+    whole.feed(text.encode("utf-8"))
+    fragmented = VTScreen(rows=3, cols=40)
+    for byte in text.encode("utf-8"):
+        fragmented.feed(bytes([byte]))
+    assert fragmented.text() == whole.text()
+    assert "�" not in fragmented.text()

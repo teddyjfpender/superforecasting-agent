@@ -488,12 +488,9 @@ def _read_config_model(profile_dir: Path) -> tuple:
         import yaml
         with open(config_path, "r", encoding="utf-8") as f:
             cfg = yaml.safe_load(f) or {}
-        model_cfg = cfg.get("model", {})
-        if isinstance(model_cfg, str):
-            return model_cfg, None
-        if isinstance(model_cfg, dict):
-            return model_cfg.get("default") or model_cfg.get("model"), model_cfg.get("provider")
-        return None, None
+        from superforecasting_agent.runtime.model_configuration import model_section
+        model_cfg = model_section(cfg)
+        return model_cfg.get("default"), model_cfg.get("provider")
     except Exception:
         return None, None
 

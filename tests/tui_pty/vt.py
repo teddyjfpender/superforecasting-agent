@@ -24,6 +24,7 @@ garbage in the assertion.
 
 from __future__ import annotations
 
+import codecs
 import re
 import unicodedata
 
@@ -61,6 +62,7 @@ class VTScreen:
         # would bleed into every assertion.
         self._saved: tuple[list[list[str]], int, int] | None = None
         self._pending = ""
+        self._decoder = codecs.getincrementaldecoder("utf-8")("replace")
         # Deferred wrap (DECAWM "pending wrap" flag).  Writing into the LAST
         # column does NOT move the cursor to the next line -- it parks it on
         # the last column and arms this flag, and only the *next* printable
@@ -103,7 +105,7 @@ class VTScreen:
     def feed(self, data: bytes | str) -> None:
         """Consume a chunk of pty output.  Safe to call with partial sequences."""
         if isinstance(data, bytes):
-            data = data.decode("utf-8", "replace")
+            data = self._decoder.decode(data)
         buf = self._pending + data
         self._pending = ""
         i, n = 0, len(buf)

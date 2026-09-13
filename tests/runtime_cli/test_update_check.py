@@ -185,3 +185,32 @@ def test_invalidate_update_cache_no_profiles_dir(tmp_path):
         _invalidate_update_cache()
 
     assert not (default_home / ".update_check").exists()
+
+
+def test_prefetch_shares_in_flight_check_and_completes_on_failure(monkeypatch):
+    import superforecasting_agent.runtime.banner as banner
+
+    entered, release = threading.Event(), threading.Event()
+    calls = []
+
+    def blocked_check():
+        calls.append(1)
+        entered.set()
+        release.wait(5)
+        raise RuntimeError("offline")
+
+    monkeypatch.setattr(banner, "check_for_updates", blocked_check)
+    try:
+        banner.prefetch_update_check()
+        assert entered.wait(2)
+        worker = banner._update_check_thread
+        for _ in range(100):
+            banner.prefetch_update_check()
+        assert banner._update_check_thread is worker
+        assert calls == [1]
+    finally:
+        release.set()
+        if banner._update_check_thread is not None:
+            banner._update_check_thread.join(5)
+    assert banner._update_check_done.is_set()
+    assert banner.get_update_result(0) is None

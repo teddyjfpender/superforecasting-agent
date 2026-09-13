@@ -116,64 +116,66 @@ def create_question(
     normalized_decision_owner = (decision_owner or "").strip() or None
     normalized_action_threshold = (action_threshold or "").strip() or None
     normalized_triggers = normalize_update_triggers(update_triggers)
-    with ledger._connect() as conn:
-        conn.execute(
-            """
-            INSERT INTO forecast_questions (
-                id, title, description, resolution_criteria, resolution_source,
-                created_at, close_time, resolution_time, outcome_space, status,
-                tags, domain, topics, owner, impact, review_cadence,
-                next_review_at, metadata,
-                decision_owner, decision_deadline, action_threshold, update_triggers
+    # A question and its initial review schedule are one durable operation.
+    with ledger.transaction(immediate=True):
+        with ledger._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO forecast_questions (
+                    id, title, description, resolution_criteria, resolution_source,
+                    created_at, close_time, resolution_time, outcome_space, status,
+                    tags, domain, topics, owner, impact, review_cadence,
+                    next_review_at, metadata,
+                    decision_owner, decision_deadline, action_threshold, update_triggers
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    question_id,
+                    title,
+                    description,
+                    resolution_criteria,
+                    resolution_source,
+                    created_at,
+                    parse_timestamp(close_time, field_name="close_time"),
+                    parse_timestamp(resolution_time, field_name="resolution_time"),
+                    outcome.to_json(),
+                    json_dumps(tags or []),
+                    domain,
+                    json_dumps(topics or []),
+                    owner,
+                    impact,
+                    review_cadence,
+                    parsed_next_review_at,
+                    json_dumps(metadata or {}),
+                    normalized_decision_owner,
+                    parsed_decision_deadline,
+                    normalized_action_threshold,
+                    json_dumps(normalized_triggers),
+                ),
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                question_id,
-                title,
-                description,
-                resolution_criteria,
-                resolution_source,
-                created_at,
-                parse_timestamp(close_time, field_name="close_time"),
-                parse_timestamp(resolution_time, field_name="resolution_time"),
-                outcome.to_json(),
-                json_dumps(tags or []),
-                domain,
-                json_dumps(topics or []),
-                owner,
-                impact,
-                review_cadence,
-                parsed_next_review_at,
-                json_dumps(metadata or {}),
-                normalized_decision_owner,
-                parsed_decision_deadline,
-                normalized_action_threshold,
-                json_dumps(normalized_triggers),
-            ),
-        )
-    # Default a weekly scheduled review for eligible LIVE questions. Without
-    # this, a live question created without a cadence never gets a scheduled
-    # review, so it is never auto-re-forecast and shows a blank desk "NEXT"
-    # column. An explicitly-passed review_cadence/next_review_at is respected
-    # unchanged; only ABSENT values are filled in. Benchmark/foreknowledge-proof
-    # questions (market_nightly, forecastbench) stay cadence-less so they are not
-    # re-forecast — see _is_auto_review_eligible.
-    if not review_cadence and ledger._is_auto_review_eligible(domain, tags):
-        review_cadence = "weekly"
-        if not parsed_next_review_at:
-            parsed_next_review_at = (
-                timestamp_to_datetime(created_at) + timedelta(days=7)
-            ).strftime("%Y-%m-%dT%H:%M:%SZ")
-    if review_cadence and parsed_next_review_at:
-        ledger.schedule_review(
-            scope_type="question",
-            scope_ref=question_id,
-            cadence=review_cadence,
-            next_run_at=parsed_next_review_at,
-            trigger_reason="question_review_cadence",
-        )
-    return ledger.get_question(question_id)
+        # Default a weekly scheduled review for eligible LIVE questions. Without
+        # this, a live question created without a cadence never gets a scheduled
+        # review, so it is never auto-re-forecast and shows a blank desk "NEXT"
+        # column. An explicitly-passed review_cadence/next_review_at is respected
+        # unchanged; only ABSENT values are filled in. Benchmark/foreknowledge-proof
+        # questions (market_nightly, forecastbench) stay cadence-less so they are not
+        # re-forecast — see _is_auto_review_eligible.
+        if not review_cadence and ledger._is_auto_review_eligible(domain, tags):
+            review_cadence = "weekly"
+            if not parsed_next_review_at:
+                parsed_next_review_at = (
+                    timestamp_to_datetime(created_at) + timedelta(days=7)
+                ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        if review_cadence and parsed_next_review_at:
+            ledger.schedule_review(
+                scope_type="question",
+                scope_ref=question_id,
+                cadence=review_cadence,
+                next_run_at=parsed_next_review_at,
+                trigger_reason="question_review_cadence",
+            )
+        return ledger.get_question(question_id)
 
 
 def list_questions(
