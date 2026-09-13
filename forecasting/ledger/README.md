@@ -40,3 +40,8 @@ Update this guide when entry points or ownership change. See the
 and [engineering backlog](../../TODO.md) for cross-package context.
 
 [↑ Parent directory](../README.md)
+
+Portfolio/question exports and calibration row collection use a shared read
+transaction so concurrent writers cannot mix revisions within a result.
+`list_scores(question_id=...)` filters at the storage query; exports retain
+invalidated score history without scanning unrelated questions.

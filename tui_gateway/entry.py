@@ -149,6 +149,7 @@ def _log_signal(signum: int, frame) -> None:
     # gateway. Done synchronously here (not only via atexit) because the grace timer below
     # may os._exit(0) and skip atexit entirely — by then the orphaned player would already
     # be speaking on. Cheap + swallows errors, so it never blocks the shutdown path.
+    _arm_shutdown_deadline()
     _stop_audio_playback()
 
     # SIGPIPE and SIGHUP don't exist on Windows — build the lookup
@@ -177,8 +178,6 @@ def _log_signal(signum: int, frame) -> None:
     except Exception:
         pass
     print(f"[gateway-signal] {name}", file=sys.stderr, flush=True)
-
-    _arm_shutdown_deadline()
 
     try:
         sys.exit(0)
@@ -371,6 +370,9 @@ def main():
         else:
             _run_stdio()
     finally:
+        # Broken output and dispatch failures need the same bound as stdin EOF.
+        # Arm before cleanup, which may wait on blocked workers or import locks.
+        _arm_shutdown_deadline()
         try:
             server.shutdown_runtime(_shutdown_grace_seconds())
         finally:

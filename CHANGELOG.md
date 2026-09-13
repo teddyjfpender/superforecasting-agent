@@ -28,6 +28,15 @@ artifact set described in `docs/plans/2026-07-09-hetzner-productionization.md`
 - Exercise 60 Unicode turns across five TUI lifetimes in the Linux/macOS lifecycle matrix.
 - Respect configured pytest deadlines and isolate watch dispatch tests from DNS.
 
+## [0.22.3] - 2026-09-13
+
+### Beta reliability
+- Bound stdio gateway shutdown on broken-output and dispatch-failure paths, including blocked cleanup workers.
+- Export each question and portfolio from one database revision; reuse read transactions for calibration observations.
+- Filter exported scores by question in SQL instead of repeatedly scanning the complete ledger.
+- Batch synthetic calibration fixture writes without relaxing timeout or statistical correctness checks.
+- Includes the secure beta release pipeline and PowerShell verification fixes below.
+
 ## [0.22.2] - 2026-09-13
 
 ### Beta

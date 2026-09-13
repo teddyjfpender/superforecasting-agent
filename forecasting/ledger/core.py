@@ -2645,6 +2645,7 @@ class ForecastLedger:
     def list_scores(
         self,
         *,
+        question_id: str | None = None,
         domain: str | None = None,
         forecast_origin: str | None = None,
         calibration_eligible: bool | None = None,
@@ -2652,7 +2653,7 @@ class ForecastLedger:
         bucket: str | None = None,
         include_invalidated: bool = False,
     ) -> list[ScoreRecord]:
-        return _scoring.list_scores(self, domain=domain, forecast_origin=forecast_origin, calibration_eligible=calibration_eligible, horizon=horizon, bucket=bucket, include_invalidated=include_invalidated)
+        return _scoring.list_scores(self, question_id=question_id, domain=domain, forecast_origin=forecast_origin, calibration_eligible=calibration_eligible, horizon=horizon, bucket=bucket, include_invalidated=include_invalidated)
 
     def calibration_summary(
         self,
@@ -3511,7 +3512,9 @@ class ForecastLedger:
         forecast_origin: str | None = "live",
         now: str | None = None,
     ) -> list[Any]:
-        return _scoring._bias_observations(self, domain=domain, since=since, recency_halflife_days=recency_halflife_days, forecast_origin=forecast_origin, now=now)
+        # One read snapshot avoids mixed revisions and repeated connection setup.
+        with self.transaction():
+            return _scoring._bias_observations(self, domain=domain, since=since, recency_halflife_days=recency_halflife_days, forecast_origin=forecast_origin, now=now)
 
     def derive_extremize_alpha(
         self,
@@ -3568,13 +3571,15 @@ class ForecastLedger:
         split_by_venue: bool = False,
         now: str | None = None,
     ) -> list[Any]:
-        return _scoring.hierarchical_calibration_rows(
-            self,
-            since=since,
-            recency_halflife_days=recency_halflife_days,
-            split_by_venue=split_by_venue,
-            now=now,
-        )
+        # One read snapshot avoids mixed revisions and repeated connection setup.
+        with self.transaction():
+            return _scoring.hierarchical_calibration_rows(
+                self,
+                since=since,
+                recency_halflife_days=recency_halflife_days,
+                split_by_venue=split_by_venue,
+                now=now,
+            )
 
     def fit_hierarchical_calibration(
         self,
@@ -5520,10 +5525,14 @@ class ForecastLedger:
         }
 
     def export_question(self, question_id: str, *, fmt: str = "markdown") -> str:
-        return _exports.export_question(self, question_id=question_id, fmt=fmt)
+        # One read snapshot avoids mixed revisions and repeated connection setup.
+        with self.transaction():
+            return _exports.export_question(self, question_id=question_id, fmt=fmt)
 
     def export_all(self, *, fmt: str = "markdown") -> str:
-        return _exports.export_all(self, fmt=fmt)
+        # One read snapshot avoids mixed revisions and repeated connection setup.
+        with self.transaction():
+            return _exports.export_all(self, fmt=fmt)
 
     def import_packet(self, packet: dict[str, Any], *, conflict: str = "error") -> dict[str, Any]:
         return _exports.import_packet(self, packet=packet, conflict=conflict)

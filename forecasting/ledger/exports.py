@@ -55,7 +55,7 @@ def export_question(ledger, question_id: str, *, fmt: str = "markdown") -> str:
     postmortems = ledger.list_postmortems(question_id, include_invalidated=True)
     baselines = ledger.list_baseline_comparisons(question_id)
     resolution = ledger.get_latest_resolution(question_id)
-    scores = [s for s in ledger.list_scores(include_invalidated=True) if s.question_id == question_id]
+    scores = ledger.list_scores(question_id=question_id, include_invalidated=True)
     calibration_lessons = ledger._calibration_lessons_for_question(scores, postmortems)
     domain_error_profiles = ledger._domain_error_profiles_for_question(question)
     corrections = ledger._corrections_for_question(
