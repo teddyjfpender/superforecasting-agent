@@ -19,6 +19,11 @@ ROOT = Path(__file__).resolve().parents[1]
 # The stricter scope grows with ownership extractions. Legacy code still runs
 # the repository-wide encoding gate; no silent baseline hides new-layer errors.
 STRICT_PYTHON = (
+    "scripts/check_naming.py",
+    "scripts/push_plan.py",
+    "tools/mcp_oauth.py",
+    "tools/mcp_oauth_manager.py",
+    "tools/skills_hub.py",
     "agent/browser_provider.py",
     "agent/file_safety.py",
     "agent/lsp/install.py",
@@ -115,6 +120,7 @@ def venv_tool(name: str) -> str:
 
 
 def check(*, python_only: bool = False) -> None:
+    run(venv_tool("python"), "scripts/check_naming.py")
     run(venv_tool("ruff"), "check", ".")
     run(venv_tool("ruff"), "check", "--select", "E4,E7,E9,F", *CORRECTNESS_PYTHON)
     run(venv_tool("ruff"), "check", "--select", "E4,E7,E9,F,I", *STRICT_PYTHON)

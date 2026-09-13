@@ -636,3 +636,21 @@ def test_build_oauth_auth_preserves_server_url_path():
 
     assert captured["server_url"] == "https://mcp.notion.com/mcp"
 
+
+
+def test_oauth_callback_escapes_provider_error_html():
+    from urllib.parse import urlencode
+
+    Handler, result = _make_callback_handler()
+    handler = Handler.__new__(Handler)
+    payload = '<script>alert("provider")</script>'
+    handler.path = "/callback?" + urlencode({"error": payload})
+    handler.wfile = BytesIO()
+    handler.send_response = MagicMock()
+    handler.send_header = MagicMock()
+    handler.end_headers = MagicMock()
+    handler.do_GET()
+    assert result["error"] == payload
+    html = handler.wfile.getvalue().decode()
+    assert "<script>" not in html
+    assert "&lt;script&gt;" in html
