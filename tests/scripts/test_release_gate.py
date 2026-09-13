@@ -11,7 +11,6 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -195,7 +194,7 @@ def test_gate_red_when_tag_already_exists(monkeypatch):
 
 
 def _clone_repo(dest: Path) -> Path:
-    """Local clone of the repo (full history + tags) for tag-position tests.
+    """Local clone with full history/tags and only the gate's source inputs.
 
     Isolated in tmp — we move a tag here to exercise the gate's tag-run modes
     without ever touching (or pushing) a tag in the real repo.
@@ -203,11 +202,17 @@ def _clone_repo(dest: Path) -> Path:
     if shutil.which("git") is None:
         pytest.skip("git is required for tag-run gate tests")
     r = subprocess.run(
-        ["git", "clone", "--local", "--quiet", str(REPO_ROOT), str(dest)],
+        ["git", "clone", "--local", "--quiet", "--no-checkout", str(REPO_ROOT), str(dest)],
         capture_output=True, text=True, timeout=120,
     )
     if r.returncode != 0:
         pytest.skip(f"git clone --local unavailable: {r.stderr.strip()}")
+    subprocess.run(
+        ["git", "-C", str(dest), "sparse-checkout", "set", "--no-cone",
+         "/scripts/check-release-ready.sh", "/scripts/check-protocol.sh",
+         "/pyproject.toml", "/superforecasting_agent/runtime/__init__.py", "/CHANGELOG.md"],
+        check=True, capture_output=True, text=True, timeout=30,
+    )
     # Local clones contain committed objects only. Overlay the gate and its
     # version inputs so the fixture exercises the current candidate layout.
     for source in (
@@ -223,13 +228,33 @@ def _clone_repo(dest: Path) -> Path:
 
 
 def test_strict_gate_rejects_a_dirty_release_candidate(tmp_path):
-    clone = _clone_repo(tmp_path / "clone")
-    ver = _pyproject_version()
+    # Git dirtiness needs a real index, not a copy of every source and skill.
+    # Protocol/doc generation has separate integration coverage; keep these
+    # prerequisites successful so the untracked file is the only failing gate.
+    clone = tmp_path / "clone"
+    clone.mkdir()
+    for name in (
+        "scripts/check-release-ready.sh", "pyproject.toml",
+        "superforecasting_agent/runtime/__init__.py", "CHANGELOG.md",
+    ):
+        target = clone / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(REPO_ROOT / name, target)
+    protocol = clone / "scripts/check-protocol.sh"
+    protocol.write_text("#!/bin/sh\nexit 0\n")
+    protocol.chmod(0o755)
+    fake_python = tmp_path / "fixture-python"
+    fake_python.write_text("#!/bin/sh\nexit 0\n")
+    fake_python.chmod(0o755)
+    subprocess.run(["git", "init", "--quiet", str(clone)], check=True)
+    subprocess.run(["git", "-C", str(clone), "add", "."], check=True)
     subprocess.run(
-        ["git", "-C", str(clone), "tag", "-d", f"v{ver}"],
-        check=False,
-        capture_output=True,
+        ["git", "-C", str(clone), "-c", "user.name=fixture", "-c",
+         "user.email=fixture@example.invalid", "commit", "--quiet", "-m", "fixture"],
+        check=True,
     )
+    assert not subprocess.check_output(["git", "-C", str(clone), "status", "--porcelain"])
+    ver = _pyproject_version()
     (clone / "uncommitted-release-file.txt").write_text("not in the candidate\n")
     gate = clone / "scripts" / "check-release-ready.sh"
 
@@ -237,10 +262,13 @@ def test_strict_gate_rejects_a_dirty_release_candidate(tmp_path):
         clone,
         ["bash", str(gate), "--strict", "--version", ver],
         GITHUB_REF=None,
-        PYTHON=sys.executable,
+        PYTHON=str(fake_python),
     )
 
     assert r.returncode == 1
+    assert "protocol codegen up to date" in r.stdout
+    assert "generated docs up to date" in r.stdout
+    assert "?? uncommitted-release-file.txt" in r.stderr
     assert "worktree dirty" in r.stdout
     assert "NOT READY" in r.stdout
 
