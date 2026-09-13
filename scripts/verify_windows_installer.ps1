@@ -16,10 +16,21 @@ if (-not $Case) {
         "duplicate-checksum" = "Missing or duplicate checksum"
     }
     foreach ($name in $cases.Keys) {
-        $output = & $engine -NoProfile -File $PSCommandPath -Case $name 2>&1
+        # Windows PowerShell 5 wraps native stderr as ErrorRecords. Expected
+        # negative cases must reach our exit-code assertion rather than terminate
+        # the parent harness under ErrorActionPreference=Stop.
+        try {
+            $ErrorActionPreference = "Continue"
+            $output = & $engine -NoProfile -File $PSCommandPath -Case $name 2>&1
+            $caseExit = $LASTEXITCODE
+        } finally {
+            $ErrorActionPreference = "Stop"
+        }
+        $text = ($output -join "`n") -replace '\s+', ' '
+
         $expectedExit = if ($cases[$name] -in @("Release assets verified", "Installation sequence verified")) { 0 } else { 1 }
-        if ($LASTEXITCODE -ne $expectedExit -or ($output -join "`n") -notmatch [regex]::Escape($cases[$name])) {
-            throw "Case $name exited $LASTEXITCODE, expected $expectedExit and '$($cases[$name])': $output"
+        if ($caseExit -ne $expectedExit -or $text -notmatch [regex]::Escape($cases[$name])) {
+            throw "Case $name exited $caseExit, expected $expectedExit and '$($cases[$name])': $output"
         }
         Write-Host "PASS $name"
     }
