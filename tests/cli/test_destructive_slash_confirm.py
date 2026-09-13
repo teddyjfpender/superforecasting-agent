@@ -217,7 +217,7 @@ def test_clear_confirmation_uses_forecast_session_copy():
     cli_obj = HermesCLI.__new__(HermesCLI)
 
     with patch.object(cli_obj, "_confirm_destructive_slash", return_value=None) as confirm:
-        cli_obj.process_command("/clear")
+        assert cli_obj.process_command("/clear") is True
 
     confirm.assert_called_once()
     _command, detail = confirm.call_args.args
@@ -232,7 +232,7 @@ def test_new_confirmation_uses_forecast_session_copy():
     cli_obj = HermesCLI.__new__(HermesCLI)
 
     with patch.object(cli_obj, "_confirm_destructive_slash", return_value=None) as confirm:
-        cli_obj.process_command("/new")
+        assert cli_obj.process_command("/new") is True
 
     confirm.assert_called_once()
     _command, detail = confirm.call_args.args

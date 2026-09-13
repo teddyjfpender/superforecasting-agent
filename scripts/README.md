@@ -21,6 +21,11 @@ These are entry points and representative modules, not an exhaustive inventory.
 | [build_model_catalog.py](build_model_catalog.py)       | Build the Superforecasting Agent Model Catalog.                         |
 | [build_profiles.py](build_profiles.py)                 | Build independently installable backend and terminal wheels.            |
 
+For upgrade qualification, [prepare_upgrade_baselines.py](prepare_upgrade_baselines.py)
+verifies published baseline bytes and builds historical terminal source.
+[verify_profile_migrations.py](verify_profile_migrations.py) runs under each
+installed backend, checking real skill synchronization and plugin execution.
+
 ## Subdirectories
 
 - [carve/](carve/README.md) — carve.

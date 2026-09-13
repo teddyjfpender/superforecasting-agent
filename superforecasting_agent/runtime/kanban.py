@@ -17,7 +17,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import shlex
 import sys
 import time
 import threading
@@ -2608,7 +2607,9 @@ def _run_slash(rest, buf_out, buf_err, stop_event=None) -> str:
     both the interactive CLI (``self._handle_kanban_command``) and the
     gateway (``_handle_kanban_command``) so formatting is identical.
     """
-    tokens = shlex.split(rest) if rest and rest.strip() else []
+    from superforecasting_agent.application.command_input import board_invocation
+
+    tokens = list(board_invocation(rest).tokens)
 
     # Bare ``/kanban`` or ``/kanban help`` / ``--help`` / ``-h`` / ``?``:
     # show the curated short-help block instead of dumping argparse's full

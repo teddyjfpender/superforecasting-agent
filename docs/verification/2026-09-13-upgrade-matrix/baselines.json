@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "backend": {
+    "url": "https://github.com/teddyjfpender/superforecasting-agent/releases/download/v0.19.0/superforecasting_agent-0.19.0-py3-none-any.whl",
+    "sha256": "1fdd753c680994131d55e90e23d0362d62c187b3cf0843cfe5b98f174fb56919"
+  },
+  "terminal": {
+    "source_commit": "3a42c3054f2a7f9671b69259ec2388b037728d55",
+    "provenance": "historical source build; not a published release",
+    "sha256": "f399122c1e66b989fe12934b261d92834100570524664404a3662607d5675ba1"
+  }
+}

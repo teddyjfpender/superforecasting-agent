@@ -13,9 +13,29 @@ import re
 import shutil
 import subprocess
 import time
-from collections.abc import Callable, Mapping
-from typing import Any
+from collections.abc import Callable, Mapping, Sequence
+from typing import Any, TypeVarTuple, Unpack
 
+from superforecasting_agent.application.command_catalog import (
+    _COMMAND_LOOKUP as _COMMAND_LOOKUP,
+)
+from superforecasting_agent.application.command_catalog import (
+    COMMAND_CATEGORY_ORDER,
+    COMMAND_REGISTRY,
+    SUBCOMMANDS,
+    CommandDef,
+    _build_description,
+    resolve_command,
+)
+from superforecasting_agent.application.command_catalog import (
+    FORECAST_DESK_SUBCOMMANDS as FORECAST_DESK_SUBCOMMANDS,
+)
+from superforecasting_agent.application.command_catalog import (
+    _build_command_lookup as _build_command_lookup,
+)
+from superforecasting_agent.application.command_catalog import (
+    expand_quick_alias as expand_quick_alias,
+)
 from superforecasting_agent.environment import is_truthy_value
 
 logger = logging.getLogger(__name__)
@@ -29,27 +49,14 @@ try:
     from prompt_toolkit.completion import Completer, Completion
 except ImportError:  # pragma: no cover
     AutoSuggest = object  # type: ignore[assignment,misc]
-    Completer = object    # type: ignore[assignment,misc]
-    Suggestion = None     # type: ignore[assignment]
-    Completion = None     # type: ignore[assignment]
+    Completer = object  # type: ignore[assignment,misc]
+    Suggestion = None  # type: ignore[assignment]
+    Completion = None  # type: ignore[assignment]
 
 
 # ---------------------------------------------------------------------------
 # Shared catalog compatibility exports
 # ---------------------------------------------------------------------------
-
-from superforecasting_agent.application.command_catalog import (
-    COMMAND_CATEGORY_ORDER,
-    COMMAND_REGISTRY,
-    FORECAST_DESK_SUBCOMMANDS,
-    SUBCOMMANDS,
-    CommandDef,
-    _build_command_lookup,
-    _build_description,
-    _COMMAND_LOOKUP,
-    expand_quick_alias,
-    resolve_command,
-)
 
 
 # Backwards-compatible flat dict: "/command" -> description
@@ -72,7 +79,9 @@ for _cmd in COMMAND_REGISTRY:
         for _alias in _cmd.aliases:
             _cat[f"/{_alias}"] = COMMANDS[f"/{_alias}"]
 COMMANDS_BY_CATEGORY = {
-    category: commands for category, commands in COMMANDS_BY_CATEGORY.items() if commands
+    category: commands
+    for category, commands in COMMANDS_BY_CATEGORY.items()
+    if commands
 }
 
 
@@ -116,24 +125,22 @@ def is_gateway_known_command(name: str | None) -> bool:
 # Listed here for introspection / tests; semantically a subset of
 # "all resolvable commands" — which is the real bypass set (see
 # should_bypass_active_session below).
-ACTIVE_SESSION_BYPASS_COMMANDS: frozenset[str] = frozenset(
-    {
-        "agents",
-        "approve",
-        "background",
-        "commands",
-        "deny",
-        "help",
-        "new",
-        "profile",
-        "queue",
-        "restart",
-        "status",
-        "steer",
-        "stop",
-        "update",
-    }
-)
+ACTIVE_SESSION_BYPASS_COMMANDS: frozenset[str] = frozenset({
+    "agents",
+    "approve",
+    "background",
+    "commands",
+    "deny",
+    "help",
+    "new",
+    "profile",
+    "queue",
+    "restart",
+    "status",
+    "steer",
+    "stop",
+    "update",
+})
 
 
 def should_bypass_active_session(command_name: str | None) -> bool:
@@ -171,13 +178,17 @@ def _resolve_config_gates() -> set[str]:
         return set()
     try:
         from superforecasting_agent.runtime.config import read_raw_config
+
         cfg = read_raw_config()
     except Exception:
         return set()
     result: set[str] = set()
     for cmd in gated:
         val: Any = cfg
-        for key in cmd.gateway_config_gate.split("."):
+        gate = cmd.gateway_config_gate
+        if gate is None:
+            continue
+        for key in gate.split("."):
             if isinstance(val, dict):
                 val = val.get(key)
             else:
@@ -188,7 +199,9 @@ def _resolve_config_gates() -> set[str]:
     return result
 
 
-def _is_gateway_available(cmd: CommandDef, config_overrides: set[str] | None = None) -> bool:
+def _is_gateway_available(
+    cmd: CommandDef, config_overrides: set[str] | None = None
+) -> bool:
     """Check if *cmd* should appear in gateway surfaces (help, menus, mappings).
 
     Unconditionally available when ``cli_only`` is False.  When ``cli_only``
@@ -199,7 +212,11 @@ def _is_gateway_available(cmd: CommandDef, config_overrides: set[str] | None = N
     if not cmd.cli_only:
         return True
     if cmd.gateway_config_gate:
-        overrides = config_overrides if config_overrides is not None else _resolve_config_gates()
+        overrides = (
+            config_overrides
+            if config_overrides is not None
+            else _resolve_config_gates()
+        )
         return cmd.name in overrides
     return False
 
@@ -320,10 +337,13 @@ def _sanitize_telegram_name(raw: str) -> str:
     return name.strip("_")
 
 
+_Payload = TypeVarTuple("_Payload")
+
+
 def _clamp_command_names(
-    entries: list[tuple[str, ...]],
+    entries: Sequence[tuple[str, str, Unpack[_Payload]]],
     reserved: set[str],
-) -> list[tuple[str, ...]]:
+) -> list[tuple[str, str, Unpack[_Payload]]]:
     """Enforce 32-char command name limit with collision avoidance.
 
     Both Telegram and Discord cap slash command names at 32 characters.
@@ -337,13 +357,13 @@ def _clamp_command_names(
     metadata that survives the rename.
     """
     used: set[str] = set(reserved)
-    result: list[tuple] = []
+    result: list[tuple[str, str, Unpack[_Payload]]] = []
     for entry in entries:
-        name, desc, *extra = entry
+        name = entry[0]
         if len(name) > _CMD_NAME_LIMIT:
             candidate = name[:_CMD_NAME_LIMIT]
             if candidate in used:
-                prefix = name[:_CMD_NAME_LIMIT - 1]
+                prefix = name[: _CMD_NAME_LIMIT - 1]
                 for digit in range(10):
                     candidate = f"{prefix}{digit}"
                     if candidate not in used:
@@ -355,7 +375,7 @@ def _clamp_command_names(
         if name in used:
             continue
         used.add(name)
-        result.append((name, desc, *extra))
+        result.append((name, entry[1], *entry[2:]))
     return result
 
 
@@ -366,6 +386,7 @@ _clamp_telegram_names = _clamp_command_names
 # ---------------------------------------------------------------------------
 # Shared skill/plugin collection for gateway platforms
 # ---------------------------------------------------------------------------
+
 
 def _collect_gateway_skill_entries(
     platform: str,
@@ -408,6 +429,7 @@ def _collect_gateway_skill_entries(
     plugin_pairs: list[tuple[str, str]] = []
     try:
         from superforecasting_agent.runtime.plugins import get_plugin_commands
+
         plugin_cmds = get_plugin_commands()
         for cmd_name in sorted(plugin_cmds):
             name = sanitize_name(cmd_name) if sanitize_name else cmd_name
@@ -415,7 +437,7 @@ def _collect_gateway_skill_entries(
                 continue
             desc = plugin_cmds[cmd_name].get("description", "Plugin command")
             if len(desc) > desc_limit:
-                desc = desc[:desc_limit - 3] + "..."
+                desc = desc[: desc_limit - 3] + "..."
             plugin_pairs.append((name, desc))
     except Exception:
         pass
@@ -430,6 +452,7 @@ def _collect_gateway_skill_entries(
     _platform_disabled: set[str] = set()
     try:
         from agent.skill_utils import get_disabled_skill_names
+
         _platform_disabled = get_disabled_skill_names(platform=platform)
     except Exception:
         pass
@@ -437,8 +460,9 @@ def _collect_gateway_skill_entries(
     skill_triples: list[tuple[str, str, str]] = []
     try:
         from agent.skill_commands import get_skill_commands
-        from tools.skills_tool import SKILLS_DIR
         from agent.skill_utils import get_external_skills_dirs
+        from tools.skills_tool import SKILLS_DIR
+
         _skills_dir = str(SKILLS_DIR.resolve())
         _hub_dir = str((SKILLS_DIR / ".hub").resolve()).rstrip("/") + "/"
         # Build set of allowed directory prefixes: local skills dir + any
@@ -471,7 +495,7 @@ def _collect_gateway_skill_entries(
                 continue
             desc = info.get("description", "")
             if len(desc) > desc_limit:
-                desc = desc[:desc_limit - 3] + "..."
+                desc = desc[: desc_limit - 3] + "..."
             skill_triples.append((name, desc, cmd_key))
     except Exception:
         pass
@@ -493,7 +517,10 @@ def _collect_gateway_skill_entries(
 # Platform-specific wrappers
 # ---------------------------------------------------------------------------
 
-def telegram_menu_commands(max_commands: int = 100) -> tuple[list[tuple[str, str]], int]:
+
+def telegram_menu_commands(
+    max_commands: int = 100,
+) -> tuple[list[tuple[str, str]], int]:
     """Return Telegram menu commands capped to the Bot API limit.
 
     Priority order (higher priority = never bumped by overflow):
@@ -601,6 +628,7 @@ def discord_skill_commands_by_category(
     _platform_disabled: set[str] = set()
     try:
         from agent.skill_utils import get_disabled_skill_names
+
         _platform_disabled = get_disabled_skill_names(platform="discord")
     except Exception:
         pass
@@ -687,7 +715,9 @@ def discord_skill_commands_by_category(
                         "skill will not appear in the /skill autocomplete. "
                         "Rename the skill's frontmatter ``name:`` to differ "
                         "in its first 32 chars.",
-                        discord_name, cmd_key, discord_name,
+                        discord_name,
+                        cmd_key,
+                        discord_name,
                     )
                 else:
                     logger.warning(
@@ -696,7 +726,10 @@ def discord_skill_commands_by_category(
                         "will appear in the /skill autocomplete. Rename "
                         "one skill's frontmatter ``name:`` to differ in "
                         "its first 32 chars.",
-                        prior, cmd_key, discord_name, prior,
+                        prior,
+                        cmd_key,
+                        discord_name,
+                        prior,
                     )
                 hidden += 1
                 continue
@@ -734,9 +767,25 @@ _SLACK_INVALID_CHARS = re.compile(r"[^a-z0-9_\-]")
 _SLACK_RESERVED_COMMANDS = frozenset({
     # Built-in Slack slash commands that cannot be registered by apps.
     # https://slack.com/help/articles/201259356-Use-built-in-slash-commands
-    "me", "status", "away", "dnd", "shrug", "remind", "msg", "feed",
-    "who", "collapse", "expand", "leave", "join", "open", "search",
-    "topic", "mute", "pro", "shortcuts",
+    "me",
+    "status",
+    "away",
+    "dnd",
+    "shrug",
+    "remind",
+    "msg",
+    "feed",
+    "who",
+    "collapse",
+    "expand",
+    "leave",
+    "join",
+    "open",
+    "search",
+    "topic",
+    "mute",
+    "pro",
+    "shortcuts",
 })
 
 
@@ -778,7 +827,11 @@ def slack_native_slashes() -> list[tuple[str, str, str]]:
     seen: set[str] = set()
 
     # Reserve /hermes as the catch-all top-level command.
-    entries.append(("hermes", "Run Superforecasting Agent forecast commands", "[subcommand] [args]"))
+    entries.append((
+        "hermes",
+        "Run Superforecasting Agent forecast commands",
+        "[subcommand] [args]",
+    ))
     seen.add("hermes")
 
     def _add(name: str, desc: str, hint: str) -> None:
@@ -806,7 +859,9 @@ def slack_native_slashes() -> list[tuple[str, str, str]]:
         for alias in cmd.aliases:
             # Skip aliases that only differ from canonical by case/punctuation
             # normalization (already covered by _add dedup).
-            _add(alias, f"Alias for /{cmd.name} — {cmd.description}", cmd.args_hint or "")
+            _add(
+                alias, f"Alias for /{cmd.name} — {cmd.description}", cmd.args_hint or ""
+            )
 
     # Third pass: plugin commands.
     for name, description, args_hint in _iter_plugin_command_entries():
@@ -815,7 +870,9 @@ def slack_native_slashes() -> list[tuple[str, str, str]]:
     return entries
 
 
-def slack_app_manifest(request_url: str = "https://superforecasting-agent.local/slack/commands") -> dict[str, Any]:
+def slack_app_manifest(
+    request_url: str = "https://superforecasting-agent.local/slack/commands",
+) -> dict[str, Any]:
     """Generate a Slack app manifest with all gateway commands as slashes.
 
     ``request_url`` is required by Slack's manifest schema for every slash
@@ -883,9 +940,11 @@ def _lmstudio_completion_models() -> list[str]:
     if not (os.environ.get("LM_API_KEY") or os.environ.get("LM_BASE_URL")):
         try:
             from superforecasting_agent.credentials.auth import _load_auth_store
+
             store = _load_auth_store() or {}
-            if "lmstudio" not in (store.get("providers") or {}) \
-               and "lmstudio" not in (store.get("credential_pool") or {}):
+            if "lmstudio" not in (store.get("providers") or {}) and "lmstudio" not in (
+                store.get("credential_pool") or {}
+            ):
                 return []
         except Exception:
             return []
@@ -894,6 +953,7 @@ def _lmstudio_completion_models() -> list[str]:
         return _LMSTUDIO_COMPLETION_CACHE[1]
     try:
         from superforecasting_agent.runtime.models import fetch_lmstudio_models
+
         models = fetch_lmstudio_models(
             api_key=os.environ.get("LM_API_KEY", ""),
             base_url=os.environ.get("LM_BASE_URL") or "http://127.0.0.1:1234/v1",
@@ -910,9 +970,11 @@ class SlashCommandCompleter(Completer):
 
     def __init__(
         self,
-        skill_commands_provider: Callable[[], Mapping[str, dict[str, Any]]] | None = None,
+        skill_commands_provider: Callable[[], Mapping[str, dict[str, Any]]]
+        | None = None,
         command_filter: Callable[[str], bool] | None = None,
-        skill_bundles_provider: Callable[[], Mapping[str, dict[str, Any]]] | None = None,
+        skill_bundles_provider: Callable[[], Mapping[str, dict[str, Any]]]
+        | None = None,
     ) -> None:
         self._skill_commands_provider = skill_commands_provider
         self._command_filter = command_filter
@@ -988,7 +1050,7 @@ class SlashCommandCompleter(Completer):
         i = len(text) - 1
         while i >= 0 and text[i] != " ":
             i -= 1
-        word = text[i + 1:]
+        word = text[i + 1 :]
         if not word:
             return None
         # Only trigger path completion for path-like tokens
@@ -1026,7 +1088,9 @@ class SlashCommandCompleter(Completer):
 
             # Build the completion text (what replaces the typed word)
             if word.startswith("~"):
-                display_path = "~/" + os.path.relpath(full_path, os.path.expanduser("~"))
+                display_path = "~/" + os.path.relpath(
+                    full_path, os.path.expanduser("~")
+                )
             elif os.path.isabs(word):
                 display_path = full_path
             else:
@@ -1056,7 +1120,7 @@ class SlashCommandCompleter(Completer):
         i = len(text) - 1
         while i >= 0 and text[i] != " ":
             i -= 1
-        word = text[i + 1:]
+        word = text[i + 1 :]
         if not word.startswith("@"):
             return None
         return word
@@ -1098,7 +1162,7 @@ class SlashCommandCompleter(Completer):
 
             if word == bare or word.startswith(prefix):
                 want_dir = prefix == "@folder:"
-                path_part = '' if word == bare else word[len(prefix):]
+                path_part = "" if word == bare else word[len(prefix) :]
                 expanded = os.path.expanduser(path_part)
 
                 if not expanded or expanded == ".":
@@ -1170,8 +1234,13 @@ class SlashCommandCompleter(Completer):
                 continue
             try:
                 proc = subprocess.run(
-                    cmd, capture_output=True, text=True, timeout=2,
-                    cwd=cwd, encoding="utf-8", errors="replace",
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=2,
+                    cwd=cwd,
+                    encoding="utf-8",
+                    errors="replace",
                 )
                 if proc.returncode == 0 and proc.stdout and proc.stdout.strip():
                     raw = proc.stdout.strip().split("\n")
@@ -1243,8 +1312,8 @@ class SlashCommandCompleter(Completer):
                 is_dir = fp.endswith("/")
                 filename = os.path.basename(fp)
                 kind = "folder" if is_dir else "file"
-                meta = "dir" if is_dir else _file_size_label(
-                    os.path.join(os.getcwd(), fp)
+                meta = (
+                    "dir" if is_dir else _file_size_label(os.path.join(os.getcwd(), fp))
                 )
                 yield Completion(
                     f"@{kind}:{fp}",
@@ -1266,9 +1335,7 @@ class SlashCommandCompleter(Completer):
             is_dir = fp.endswith("/")
             filename = os.path.basename(fp)
             kind = "folder" if is_dir else "file"
-            meta = "dir" if is_dir else _file_size_label(
-                os.path.join(os.getcwd(), fp)
-            )
+            meta = "dir" if is_dir else _file_size_label(os.path.join(os.getcwd(), fp))
             yield Completion(
                 f"@{kind}:{fp}",
                 start_position=-len(word),
@@ -1281,6 +1348,7 @@ class SlashCommandCompleter(Completer):
         """Yield completions for /skin from available skins."""
         try:
             from superforecasting_agent.runtime.skin_engine import list_skins
+
             for s in list_skins():
                 name = s["name"]
                 if name.startswith(sub_lower) and name != sub_lower:
@@ -1298,6 +1366,7 @@ class SlashCommandCompleter(Completer):
         """Yield completions for /style from configured style overlays."""
         try:
             from superforecasting_agent.runtime.config import load_config
+
             personalities = load_config().get("agent", {}).get("personalities", {})
             if "none".startswith(sub_lower) and "none" != sub_lower:
                 yield Completion(
@@ -1309,7 +1378,10 @@ class SlashCommandCompleter(Completer):
             for name, prompt in personalities.items():
                 if name.startswith(sub_lower) and name != sub_lower:
                     if isinstance(prompt, dict):
-                        meta = prompt.get("description") or prompt.get("system_prompt", "")[:50]
+                        meta = (
+                            prompt.get("description")
+                            or prompt.get("system_prompt", "")[:50]
+                        )
                     else:
                         meta = str(prompt)[:50]
                     yield Completion(
@@ -1327,8 +1399,11 @@ class SlashCommandCompleter(Completer):
         # Config-based direct aliases (preferred — include provider info)
         try:
             from superforecasting_agent.runtime.model_switch import (
-                _ensure_direct_aliases, DIRECT_ALIASES, MODEL_ALIASES,
+                DIRECT_ALIASES,
+                MODEL_ALIASES,
+                _ensure_direct_aliases,
             )
+
             _ensure_direct_aliases()
             for name, da in DIRECT_ALIASES.items():
                 if name.startswith(sub_lower) and name != sub_lower:
@@ -1401,7 +1476,11 @@ class SlashCommandCompleter(Completer):
                     return
 
             # Static subcommand completions
-            if " " not in sub_text and base_cmd in SUBCOMMANDS and self._command_allowed(base_cmd):
+            if (
+                " " not in sub_text
+                and base_cmd in SUBCOMMANDS
+                and self._command_allowed(base_cmd)
+            ):
                 for sub in SUBCOMMANDS[base_cmd]:
                     if sub.startswith(sub_lower) and sub != sub_lower:
                         yield Completion(
@@ -1453,6 +1532,7 @@ class SlashCommandCompleter(Completer):
         # Plugin-registered slash commands
         try:
             from superforecasting_agent.runtime.plugins import get_plugin_commands
+
             for cmd_name, cmd_info in get_plugin_commands().items():
                 if cmd_name.startswith(word):
                     desc = str(cmd_info.get("description", "Plugin command"))
@@ -1470,6 +1550,7 @@ class SlashCommandCompleter(Completer):
 # ---------------------------------------------------------------------------
 # Inline auto-suggest (ghost text) for slash commands
 # ---------------------------------------------------------------------------
+
 
 class SlashCommandAutoSuggest(AutoSuggest):
     """Inline ghost-text suggestions for slash commands and their subcommands.
@@ -1503,11 +1584,13 @@ class SlashCommandAutoSuggest(AutoSuggest):
             # Still typing the command name: /upd → suggest "ate"
             word = text[1:].lower()
             for cmd in COMMANDS:
-                if self._completer is not None and not self._completer._command_allowed(cmd):
+                if self._completer is not None and not self._completer._command_allowed(
+                    cmd
+                ):
                     continue
                 cmd_name = cmd[1:]  # strip leading /
                 if cmd_name.startswith(word) and cmd_name != word:
-                    return Suggestion(cmd_name[len(word):])
+                    return Suggestion(cmd_name[len(word) :])
             return None
 
         # Command is complete — suggest subcommands or model names
@@ -1515,13 +1598,15 @@ class SlashCommandAutoSuggest(AutoSuggest):
         sub_lower = sub_text.lower()
 
         # Static subcommands
-        if self._completer is not None and not self._completer._command_allowed(base_cmd):
+        if self._completer is not None and not self._completer._command_allowed(
+            base_cmd
+        ):
             return None
         if base_cmd in SUBCOMMANDS and SUBCOMMANDS[base_cmd]:
             if " " not in sub_text:
                 for sub in SUBCOMMANDS[base_cmd]:
                     if sub.startswith(sub_lower) and sub != sub_lower:
-                        return Suggestion(sub[len(sub_text):])
+                        return Suggestion(sub[len(sub_text) :])
 
         # Fall back to history
         if self._history:

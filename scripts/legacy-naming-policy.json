@@ -42,6 +42,22 @@
       ],
       "token": "Hermes|hermes-agent",
       "reason": "Upstream attribution remains accurate; product copy must use the canonical name."
+    },
+    {
+      "category": "compatibility",
+      "paths": [
+        "scripts/verify_profile_migrations.py"
+      ],
+      "token": "hermes_cli.plugins",
+      "reason": "Load the published 0.19.0 plugin runtime before upgrading the installed wheel."
+    },
+    {
+      "category": "compatibility",
+      "paths": [
+        "scripts/verify_profiles.py"
+      ],
+      "token": "\\.hermes",
+      "reason": "Exercise an isolated legacy profile directory in the installed upgrade matrix."
     }
   ]
 }

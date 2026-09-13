@@ -25,6 +25,10 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 - [command_catalog/](command_catalog/README.md) — Command catalog.
 
+Command input validation also lives in [command_input.py](command_input.py). It
+preserves argument identity and rejects malformed wire values or board quoting
+before command execution and gateway notification routing.
+
 ## Working in this directory
 
 Run checks from the repository root:

@@ -1264,3 +1264,11 @@ def test_all_terminal_owned_commands_refuse_classic_execution(configure, monkeyp
 def test_terminal_alias_returns_its_canonical_client_handler(configure):
     configure({})
     assert dispatch('reset')['result'] == {'type': 'alias', 'target': 'new'}
+
+
+@pytest.mark.parametrize('name,arg', [(None, ''), ([], ''), ('retry', {}), ('two words', '')])
+def test_dispatch_rejects_malformed_wire_fields(configure, name, arg):
+    configure({})
+    result = dispatch(name, arg)
+    assert result['error']['code'] == 4004
+    server._start_agent_build.assert_not_called()

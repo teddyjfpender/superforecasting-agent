@@ -105,7 +105,7 @@ def test_undo_confirmation_uses_forecaster_copy():
     ]
 
     with patch.object(cli_obj, "_confirm_destructive_slash", return_value=None) as confirm:
-        cli_obj.process_command("/undo")
+        assert cli_obj.process_command("/undo") is True
 
     confirm.assert_called_once()
     _name, message = confirm.call_args.args

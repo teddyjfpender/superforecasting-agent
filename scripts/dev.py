@@ -21,6 +21,13 @@ ROOT = Path(__file__).resolve().parents[1]
 STRICT_PYTHON = (
     "scripts/check_naming.py",
     "scripts/push_plan.py",
+    "superforecasting_agent/runtime/commands.py",
+    "gateway/slash_access.py",
+    "gateway/display_config.py",
+    "tui_gateway/command_routes.py",
+    "tui_gateway/commands_rpc.py",
+    "scripts/prepare_upgrade_baselines.py",
+    "scripts/verify_profile_migrations.py",
     "tools/mcp_oauth.py",
     "tools/mcp_oauth_manager.py",
     "tools/skills_hub.py",

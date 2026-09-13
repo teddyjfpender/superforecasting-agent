@@ -68,3 +68,10 @@ def test_failed_qualification_writes_receipt(tmp_path, monkeypatch):
     assert saved["status"] == "failed"
     assert saved["checks"]["fixture"] == "passed"
     assert saved["platform"]["machine"]
+
+
+def test_upgrade_baseline_rejects_untrusted_download():
+    from scripts.prepare_upgrade_baselines import verify_backend
+
+    with pytest.raises(ValueError, match="checksum"):
+        verify_backend(b"plausible but incorrect wheel bytes")

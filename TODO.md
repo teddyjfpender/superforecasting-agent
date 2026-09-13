@@ -59,6 +59,25 @@ See [qualification evidence and commands](docs/verification/2026-09-13-products/
 - [x] Record retained identities and their owners in the
   [compatibility reference](docs/architecture/compatibility.md).
 
+## Current quality and upgrade batch
+
+- [x] Extend blocking lint, formatting and type checks to MCP OAuth, Skills Hub,
+  classic command completion/menu adapters, gateway access/display policy and
+  TUI command dispatch. Inherited CLI and messaging orchestration shells remain
+  outside full strict typing; extracted command owners are checked.
+- [x] Resolve the push destination's actual default branch and check every pushed
+  ref; reject differing trees rather than testing the wrong checkout. Run the
+  full suite once for an admitted push tree.
+- [x] Enforce naming-debt checks with an explicit reviewed compatibility baseline
+  and narrow, reasoned exceptions.
+- [x] Share board command parsing across interfaces; reject malformed wire fields
+  and quoting before execution. Keep declined destructive commands in the CLI.
+- [x] Add package and subpackage guides and reconcile stale distribution claims.
+- [x] Add pinned historical upgrade inputs, real old-wheel profile/skill/plugin
+  fixtures, and separate fresh/upgrade native matrix runs. Local macOS ARM64
+  qualification passed; see [upgrade evidence](docs/verification/2026-09-13-upgrade-matrix/README.md).
+- [ ] Record successful upgrade/migration receipts from all six native matrix jobs.
+
 ## Maintenance policy
 
 Expand strict lint/format/type coverage when touching inherited owners; prefer
