@@ -41,10 +41,10 @@ def test_formal_workflow_is_the_only_release_publisher():
     local = RELEASE.read_text()
     legacy = (REPO_ROOT / "scripts" / "release.py").read_text()
 
-    assert "python -m pytest tests/e2e/" in production
+    assert "scripts/run_tests.sh tests/e2e/" in production
     assert "uses: ./.github/actions/hermes-smoke-test" in production
     assert '--verify-tag --draft' in production
-    assert 'gh release edit "$TAG" --draft=false --latest' in production
+    assert 'gh release edit "$TAG" --draft=false --prerelease=false --latest' in production
     assert "Move latest after the formal release verifies" in production
     assert "Mirror verified image digest to Docker Hub" in production
     assert '"$IMAGE@$IMAGE_DIGEST"' in production
@@ -392,3 +392,25 @@ def test_release_script_rejects_publish_mode():
     result = _run(["bash", str(RELEASE), "--publish"])
     assert result.returncode == 2
     assert "unknown arg: --publish" in result.stderr
+
+
+@pytest.mark.parametrize("channel,expected", [("beta", "--prerelease --latest=false"), ("stable", "--prerelease=false --latest")])
+def test_release_channel_preserves_stable_aliases(tmp_path, channel, expected):
+    import yaml
+    workflow = yaml.safe_load((REPO_ROOT / ".github/workflows/production-release.yml").read_text())
+    assert "qualify-artifacts" in workflow["jobs"]["publish"]["needs"]
+    qualification = workflow["jobs"]["qualify-artifacts"]
+    assert qualification["needs"] == ["gate", "release"]
+    assert len(qualification["strategy"]["matrix"]["os"]) == 3
+    assert "gh release download" in qualification["steps"][3]["run"]
+    release = workflow["jobs"]["publish"]
+    steps = {step.get("name"): step for step in release["steps"]}
+    assert release["env"]["RELEASE_CHANNEL"] == "${{ inputs.channel || 'beta' }}"
+    assert steps["Move latest after the formal release verifies"]["if"] == "env.RELEASE_CHANNEL == 'stable'"
+    command = steps["Publish verified GitHub Release"]["run"]
+    result = subprocess.run(["bash", "-c", 'gh() { printf "%s " "$@"; }; ' + command],
+                            env={**os.environ, "RELEASE_CHANNEL": channel, "TAG": "v0.22.1"},
+                            capture_output=True, text=True, check=True)
+    assert expected in result.stdout
+    mirror = steps["Mirror verified image digest to Docker Hub"]["run"]
+    assert mirror.index('if [ "$RELEASE_CHANNEL" = stable ]') < mirror.index('--tag "$DOCKERHUB_IMAGE:latest"')

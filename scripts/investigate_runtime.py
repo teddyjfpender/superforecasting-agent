@@ -60,15 +60,16 @@ def main():
                 report['runs'].append(dict(mode=mode, index=index, exit=result.returncode, stderr=result.stderr[-8000:]))
             except subprocess.TimeoutExpired:
                 report['runs'].append(dict(mode=mode, index=index, timeout=True))
-    if hasattr(signal, 'SIGALRM'):
+    alarm_signal = getattr(signal, 'SIGALRM', None)
+    if alarm_signal is not None:
         class Deadline(BaseException):
             pass
         def interrupt(*_):
             raise Deadline('real SIGALRM inside authorizer')
-        old = signal.signal(signal.SIGALRM, interrupt)
+        old = signal.signal(alarm_signal, interrupt)
         with sqlite3.connect(':memory:') as conn:
             def authorizer(*_):
-                signal.raise_signal(signal.SIGALRM)
+                signal.raise_signal(alarm_signal)
                 return sqlite3.SQLITE_OK
             conn.set_authorizer(authorizer)
             try:
@@ -96,7 +97,7 @@ def main():
                 conn.set_authorizer(None)
             report['sqlite_fixed_reusable'] = conn.execute('SELECT 1').fetchone()[0] == 1
             conn.close()
-        signal.signal(signal.SIGALRM, old)
+        signal.signal(alarm_signal, old)
     print(json.dumps(report, indent=2))
 
 

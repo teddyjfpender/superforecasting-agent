@@ -146,7 +146,7 @@ def main():
             try:
                 stdout, stderr = child.communicate(timeout=90)
             except subprocess.TimeoutExpired:
-                os.killpg(child.pid, signal.SIGKILL)
+                os.killpg(child.pid, signal.SIGKILL)  # windows-footgun: ok — main rejects non-Linux hosts before allocation
                 child.communicate()
                 raise
             log = stdout + stderr

@@ -30,6 +30,14 @@ artifact set described in `docs/plans/2026-07-09-hetzner-productionization.md`
 
 ## [0.22.1] - 2026-09-13
 
+### Beta rollout
+- Publish as a GitHub prerelease without advancing stable release or container aliases.
+- Qualify downloaded draft wheels on native Linux, macOS and Windows before publication, including upgrades and terminal recovery.
+- Align CI with the canonical test runner, install mocked Bedrock dependencies, and isolate the Copilot credential-removal regression.
+- Update vulnerable JavaScript dependencies across terminal tooling, dashboard, documentation and the optional WhatsApp bridge.
+- Provide pinned beta onboarding, isolated synthetic forecasts and versioned, redacted support diagnostics.
+
+
 ### Fixed
 - Enable remote terminal connections on Node 20.10+ and validate WebSocket prerequisites before launch.
 - Retain SDK/browser cleanup ownership through failures, enforce cooperative conversation deadlines, and cancel Skills Hub I/O.

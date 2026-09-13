@@ -146,7 +146,8 @@ def test_full_ci_installs_locked_lazy_sdk_extras_without_expanding_all():
 
     with (root / "pyproject.toml").open("rb") as handle:
         dependency_groups = tomllib.load(handle)["dependency-groups"]
-    assert dependency_groups["full-test"] == ["numpy==2.4.3"]
+    assert "numpy==2.4.3" in dependency_groups["full-test"]
+    assert "boto3==1.42.89" in dependency_groups["full-test"]
 
 
 def test_pytest_starlette_warning_filter_supports_locked_version():

@@ -34,6 +34,12 @@ on:
         description: 'Existing SemVer tag to release (e.g. v0.18.0)'
         required: true
         type: string
+      channel:
+        description: 'Beta preserves stable release and container aliases'
+        required: true
+        default: beta
+        type: choice
+        options: [beta, stable]
 
 permissions:
   contents: read
@@ -178,23 +184,20 @@ jobs:
           uv sync --locked --group full-test --extra all \
             --extra anthropic --extra hindsight --extra parallel-web \
             --extra fal --extra modal --extra daytona --extra vercel
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Install terminal dependencies for canonical tests
+        run: npm ci --prefix ui-tui
+
       - name: Run tests
         run: |
           source .venv/bin/activate
           # Hermetic-CI discipline (see CONTRIBUTING.md → "Hermetic tests").
           # Tests that genuinely need live network or real provider credentials
           # carry @pytest.mark.requires_network / requires_credentials. They are
-          # excluded from the release run — but the exclusion is made VISIBLE,
-          # never silent: count the marked tests first and print the total, so a
-          # reviewer can see exactly how many env-coupled tests were skipped.
-          EXCLUDED=$(python -m pytest tests/ --collect-only -q -o addopts="" \
-            --ignore=tests/integration --ignore=tests/e2e \
-            -m "requires_network or requires_credentials" 2>/dev/null \
-            | grep -cE '::' || true)
-          echo "excluded ${EXCLUDED} env-coupled tests (requires_network / requires_credentials)"
-          python -m pytest tests/ -q --ignore=tests/integration --ignore=tests/e2e \
-            -m "not integration and not requires_network and not requires_credentials" \
-            --tb=short -n auto --timeout=60 --timeout-method=signal
+          # excluded by the canonical runner, which retains JUnit receipts.
+          scripts/run_tests.sh
         env:
           OPENROUTER_API_KEY: ""
           OPENAI_API_KEY: ""
@@ -210,7 +213,7 @@ jobs:
       - name: Run E2E tests
         run: |
           source .venv/bin/activate
-          python -m pytest tests/e2e/ -v --tb=short
+          scripts/run_tests.sh tests/e2e/ -v --tb=short
         env:
           OPENROUTER_API_KEY: ""
           OPENAI_API_KEY: ""
@@ -268,7 +271,7 @@ jobs:
           uv python install ${{ matrix.python-version }}
           uv venv .venv --python ${{ matrix.python-version }}
           uv pip install --python .venv -e ".[dev]"
-          .venv/bin/python -m pytest -q \
+          scripts/run_tests.sh -q \
             tests/test_packaging_metadata.py \
             tests/runtime_cli/test_build_version_signal.py \
             tests/forecasting/test_refresh.py
@@ -307,6 +310,8 @@ jobs:
   # then create the GitHub Release with everything attached.
   # -------------------------------------------------------------------------
   release:
+    outputs:
+      image_digest: ${{ steps.image.outputs.digest }}
     needs: [gate, test, python-compat, windows-release-installer, tui]
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -319,6 +324,7 @@ jobs:
       TAG: ${{ inputs.tag || github.ref_name }}
       IMAGE: ghcr.io/${{ github.repository }}
       REVISION: ${{ needs.gate.outputs.revision }}
+      RELEASE_CHANNEL: ${{ inputs.channel || 'beta' }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
@@ -429,7 +435,7 @@ jobs:
             --artifact "checksums=dist/SHA256SUMS" \
             --image-registry ghcr.io \
             --image-repo "${{ github.repository }}" \
-            --image-tag "$TAG" --image-tag latest \
+            --image-tag "$TAG" \
             --image-platform linux/amd64 --image-platform linux/arm64 \
             --image-digest "${{ steps.image.outputs.digest }}" \
             --out dist/release-manifest.json
@@ -494,9 +500,89 @@ jobs:
           done < /tmp/expected-release-assets
           docker buildx imagetools inspect "$IMAGE:$TAG" | grep -F "$IMAGE_DIGEST"
 
-      - name: Move latest after the formal release verifies
+
+  qualify-artifacts:
+    needs: [gate, release]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-latest, windows-latest]
+        node: ['20.19.2', '22']
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.gate.outputs.revision }}
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          version: '0.10.9'
+          python-version: '3.11.15'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Download the exact draft artifacts and verify checksums
         env:
-          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          gh release download "$TAG" --dir candidate
+          python - <<'PYVERIFY'
+          import hashlib
+          from pathlib import Path
+          root = Path('candidate')
+          rows = (root / 'SHA256SUMS').read_text().splitlines()
+          assert rows, 'Empty checksum file'
+          for row in rows:
+              digest, name = row.split()
+              name = name.lstrip('*')
+              assert Path(name).name == name, 'Unexpected artifact path'
+              assert hashlib.sha256((root / name).read_bytes()).hexdigest() == digest, name
+          PYVERIFY
+        shell: bash
+      - name: Install native harness dependencies
+        run: python -m pip install "psutil==7.2.2" "pywinpty==2.0.15; sys_platform == 'win32'"
+      - name: Verify fresh installation and terminal recovery
+        run: python scripts/verify_profiles.py candidate --python 3.11.15 --report qualification/fresh.json
+      - name: Prepare pinned upgrade inputs
+        run: python scripts/prepare_upgrade_baselines.py
+      - name: Verify upgrades and profile, skill and plugin migration
+        run: >-
+          python scripts/verify_profiles.py candidate --python 3.11.15
+          --upgrade-from dist/upgrade-baselines/superforecasting_agent-0.19.0-py3-none-any.whl
+          --terminal-upgrade-from dist/upgrade-baselines/superforecasting_agent_tui-0.1.0-py3-none-any.whl
+          --report qualification/upgrade.json
+      - name: Retain qualification receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-qualification-${{ matrix.os }}-node-${{ matrix.node }}
+          path: qualification/
+
+  publish:
+    needs: [gate, release, qualify-artifacts]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+      IMAGE: ghcr.io/${{ github.repository }}
+      RELEASE_CHANNEL: ${{ inputs.channel || 'beta' }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ needs.gate.outputs.revision }}
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Move latest after the formal release verifies
+        if: env.RELEASE_CHANNEL == 'stable'
+        env:
+          IMAGE_DIGEST: ${{ needs.release.outputs.image_digest }}
         run: |
           set -euo pipefail
           docker buildx imagetools create --tag "$IMAGE:latest" "$IMAGE@$IMAGE_DIGEST"
@@ -525,18 +611,25 @@ jobs:
       - name: Mirror verified image digest to Docker Hub
         if: steps.dockerhub.outputs.enabled == 'true'
         env:
-          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          IMAGE_DIGEST: ${{ needs.release.outputs.image_digest }}
           DOCKERHUB_IMAGE: teddyjfpender/superforecasting-agent
         run: |
           set -euo pipefail
           docker buildx imagetools create \
             --tag "$DOCKERHUB_IMAGE:$TAG" \
-            --tag "$DOCKERHUB_IMAGE:latest" \
             "$IMAGE@$IMAGE_DIGEST"
           docker buildx imagetools inspect "$DOCKERHUB_IMAGE:$TAG" | grep -F "$IMAGE_DIGEST"
-          docker buildx imagetools inspect "$DOCKERHUB_IMAGE:latest" | grep -F "$IMAGE_DIGEST"
+          if [ "$RELEASE_CHANNEL" = stable ]; then
+            docker buildx imagetools create --tag "$DOCKERHUB_IMAGE:latest" "$IMAGE@$IMAGE_DIGEST"
+            docker buildx imagetools inspect "$DOCKERHUB_IMAGE:latest" | grep -F "$IMAGE_DIGEST"
+          fi
 
       - name: Publish verified GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release edit "$TAG" --draft=false --latest
+        run: |
+          if [ "$RELEASE_CHANNEL" = beta ]; then
+            gh release edit "$TAG" --draft=false --prerelease --latest=false
+          else
+            gh release edit "$TAG" --draft=false --prerelease=false --latest
+          fi

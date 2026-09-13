@@ -16,3 +16,6 @@ see the [project README](../../README.md) and [development guide](../development
 - [v0.4.0](RELEASE_v0.4.0.md)
 - [v0.3.0](RELEASE_v0.3.0.md)
 - [v0.2.0](RELEASE_v0.2.0.md)
+
+Beta publication defaults to a prerelease and preserves stable aliases. See the
+[current beta verification plan](../verification/2026-09-13-beta-release/README.md).
