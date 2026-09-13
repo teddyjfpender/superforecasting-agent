@@ -70,7 +70,9 @@ json.dump(sorted(leaf_paths(DEFAULT_CONFIG)), sys.stdout, indent=2)
           echo "PASS: All binaries present"
 
           echo "=== Checking version ==="
-          ${superforecastingAgent}/bin/superforecasting-agent version 2>&1 | grep -Eiq "superforecasting|hermes" || (echo "FAIL: version check"; exit 1)
+          version_output="$(${superforecastingAgent}/bin/superforecasting-agent version 2>&1)" || { echo "$version_output"; exit 1; }
+          echo "$version_output"
+          grep -Ei "Superforecasting Agent v[0-9]+\.[0-9]+\.[0-9]+" <<< "$version_output" || (echo "FAIL: version check"; exit 1)
           echo "PASS: Version check"
 
           echo "=== All checks passed ==="

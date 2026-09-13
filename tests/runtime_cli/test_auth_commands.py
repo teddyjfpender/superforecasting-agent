@@ -1745,7 +1745,7 @@ def test_auth_remove_copilot_suppresses_all_variants(tmp_path, monkeypatch):
     # written entry would be pruned and ``auth remove 1`` would raise
     # "No credential #1". Stub the resolver so the entry is retained
     # deterministically, regardless of the host's gh state.
-    import superforecasting_agent.runtime.copilot_auth as _copilot_auth
+    import superforecasting_agent.credentials.copilot as _copilot_auth
     monkeypatch.setattr(
         _copilot_auth, "resolve_copilot_token",
         lambda: ("ghp_fake", "gh auth token"),

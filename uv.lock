@@ -3580,6 +3580,7 @@ youtube = [
 
 [package.dev-dependencies]
 full-test = [
+    { name = "boto3" },
     { name = "numpy" },
 ]
 
@@ -3691,7 +3692,10 @@ requires-dist = [
 provides-extras = ["anthropic", "exa", "firecrawl", "parallel-web", "fal", "edge-tts", "modal", "daytona", "vercel", "hindsight", "dev", "messaging", "cron", "slack", "matrix", "cli", "tts-premium", "voice", "pty", "honcho", "mcp", "homeassistant", "sms", "computer-use", "acp", "bedrock", "azure-identity", "termux", "termux-all", "dingtalk", "feishu", "google", "youtube", "web", "all"]
 
 [package.metadata.requires-dev]
-full-test = [{ name = "numpy", specifier = "==2.4.3" }]
+full-test = [
+    { name = "boto3", specifier = "==1.42.89" },
+    { name = "numpy", specifier = "==2.4.3" },
+]
 
 [[package]]
 name = "sympy"

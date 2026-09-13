@@ -494,6 +494,7 @@ jobs:
     if: |
       github.repository == 'teddyjfpender/superforecasting-agent'
       && github.event_name == 'release'
+      && github.event.release.prerelease == false
       && needs.merge.outputs.pushed_release_tag == 'true'
     needs: merge
     runs-on: ubuntu-latest

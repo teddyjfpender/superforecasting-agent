@@ -49,9 +49,9 @@ jobs:
           FORECAST_TUI_SOAK_CYCLES: '5'
           FORECAST_TUI_SOAK_TURNS: '12'
         run: |
-          uv venv .recovery-venv --python 3.11
-          uv pip install --python .recovery-venv/bin/python -e ".[all,dev]"
-          .recovery-venv/bin/python -m pytest -n 0 tests/tui_pty/test_configured_chat.py tests/tui_pty/test_gateway_respawn.py tests/runtime_cli/test_pty_bridge.py --junitxml=installed-lifecycle/recovery.xml
+          uv venv .venv --python 3.11
+          uv pip install --python .venv/bin/python -e ".[all,dev]"
+          scripts/run_tests.sh -n 0 tests/tui_pty/test_configured_chat.py tests/tui_pty/test_gateway_respawn.py tests/runtime_cli/test_pty_bridge.py --junitxml=installed-lifecycle/recovery.xml
       - name: Retain command receipts and artifact hashes
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

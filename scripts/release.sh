@@ -167,7 +167,6 @@ plat_b="${IMAGE_PLATFORMS#*,}"
   --image-registry "$IMAGE_REGISTRY" \
   --image-repo "$IMAGE_REPO" \
   --image-tag "$TAG" \
-  --image-tag latest \
   --image-platform "$plat_a" \
   --image-platform "$plat_b" \
   --image-digest "$IMAGE_DIGEST" \
