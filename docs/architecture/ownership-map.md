@@ -58,3 +58,19 @@ The direct forecasting-to-tool/runtime exception lists are empty. Transitive
 application and credential contracts prohibit presentation imports. Strict coverage
 is intentionally scoped for inherited code; these gates are not a claim that every
 legacy module is fully typed or every platform is qualified.
+
+## Directory guides
+
+The package guides describe local entry points, extension rules and checks:
+
+- [Forecasting](../../forecasting/README.md): domain, ledger, sources and application operations.
+- [Backend](../../superforecasting_agent/README.md): shared runtime owners and public entrypoints.
+- [Agent execution](../../agent/README.md), [tools](../../tools/README.md) and [plugins](../../plugins/README.md): model execution and optional capabilities.
+- [Protocol](../../protocol/README.md) and [TUI gateway](../../tui_gateway/README.md): the client/backend boundary.
+- [Terminal client](../../ui-tui/src/README.md), [dashboard](../../web/src/README.md) and [messaging gateway](../../gateway/README.md): product consumers.
+- [Editor adapter](../../acp_adapter/README.md) and [scheduler](../../cron/README.md): additional execution surfaces.
+- [Products](../../products/README.md), [scripts](../../scripts/README.md) and [tests](../../tests/README.md): packaging and engineering verification.
+
+Follow the child-directory links for focused implementation guidance. Update the
+nearest guide when moving ownership or changing an entrypoint; keep historical
+qualification claims in linked verification records with their source revision.

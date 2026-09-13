@@ -165,3 +165,10 @@ documentation mystery.
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## Source directory guides
+
+For development, start with the [current ownership map](docs/architecture/ownership-map.md#directory-guides).
+Maintained source packages include local READMEs covering their purpose, boundaries,
+representative files, child packages and verification commands. The
+[engineering backlog](TODO.md) separates actionable work from historical evidence.
