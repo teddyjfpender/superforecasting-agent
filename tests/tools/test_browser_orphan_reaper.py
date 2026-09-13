@@ -71,29 +71,20 @@ class TestReapOrphanedBrowserSessions:
         _reap_orphaned_browser_sessions()
         assert not d.exists()
 
-    def test_orphaned_alive_daemon_is_killed(self, fake_tmpdir):
-        """Alive daemon not tracked by _active_sessions gets SIGTERM (legacy path).
-
-        No owner_pid file => falls back to tracked_names check.
-        """
+    def test_verified_orphan_waits_for_exit(self, fake_tmpdir):
+        import json
         from tools.browser_tool import _reap_orphaned_browser_sessions
-
-        d = _make_socket_dir(fake_tmpdir, "h_orphan12345", pid=12345)
-
-        kill_calls = []
-
-        def mock_kill(pid, sig):
-            kill_calls.append((pid, sig))
-            # Don't actually kill anything
-
-        # Post-#21561 the liveness probe goes through
-        # ``superforecasting_agent.processes.pid_exists`` (which wraps ``psutil.pid_exists``
-        # so it's safe on Windows — ``os.kill(pid, 0)`` is bpo-14484).
-        with patch("superforecasting_agent.processes.pid_exists", return_value=True), \
-             patch("os.kill", side_effect=mock_kill):
+        d = _make_socket_dir(fake_tmpdir, "h_verified", pid=12345)
+        (d / 'h_verified.daemon_identity.json').write_text(json.dumps(
+            {'version': 1, 'pid': 12345, 'created': 1.0}), encoding='utf-8')
+        process = MagicMock()
+        process.create_time.return_value = 1.0
+        process.wait.side_effect = lambda **kwargs: None if d.exists() else pytest.fail('removed before exit')
+        with patch('psutil.Process', return_value=process):
             _reap_orphaned_browser_sessions()
-
-        assert (12345, signal.SIGTERM) in kill_calls
+        process.terminate.assert_called_once_with()
+        process.wait.assert_called_once_with(timeout=3)
+        assert not d.exists()
 
     def test_tracked_session_is_not_reaped(self, fake_tmpdir):
         """Sessions tracked in _active_sessions are left alone (legacy path)."""
@@ -119,31 +110,14 @@ class TestReapOrphanedBrowserSessions:
         # Dir should still exist
         assert d.exists()
 
-    def test_alive_legacy_daemon_is_reaped(self, fake_tmpdir):
-        """Alive, untracked, legacy (no owner_pid) daemon is reaped.
-
-        Post-#21561 the liveness probe goes through
-        ``superforecasting_agent.processes.pid_exists`` (which wraps ``psutil.pid_exists``
-        because ``os.kill(pid, 0)`` is a footgun on Windows — bpo-14484).
-        With no owner_pid file and no tracked-name entry, the reaper
-        SIGTERMs the daemon and removes its socket dir regardless of
-        whether SIGTERM succeeded (best-effort semantics).
-        """
+    def test_alive_legacy_daemon_is_retained_without_identity(self, fake_tmpdir):
         from tools.browser_tool import _reap_orphaned_browser_sessions
-
-        d = _make_socket_dir(fake_tmpdir, "h_perm1234567", pid=12345)
-
-        sigterm_calls = []
-
-        def mock_kill(pid, sig):
-            sigterm_calls.append((pid, sig))
-
-        with patch("superforecasting_agent.processes.pid_exists", return_value=True), \
-             patch("os.kill", side_effect=mock_kill):
+        d = _make_socket_dir(fake_tmpdir, "h_legacy", pid=12345)
+        process = MagicMock()
+        with patch('psutil.Process', return_value=process):
             _reap_orphaned_browser_sessions()
-
-        assert (12345, signal.SIGTERM) in sigterm_calls
-        assert not d.exists()
+        process.terminate.assert_not_called()
+        assert d.exists()
 
     def test_cdp_sessions_are_also_reaped(self, fake_tmpdir):
         """CDP sessions (cdp_ prefix) are also scanned."""
@@ -169,15 +143,12 @@ class TestReapOrphanedBrowserSessions:
         # Should NOT be touched
         assert d.exists()
 
-    def test_corrupt_pid_file_is_cleaned(self, fake_tmpdir):
-        """PID file with non-integer content is cleaned up."""
+    def test_corrupt_pid_file_is_retained(self, fake_tmpdir):
         from tools.browser_tool import _reap_orphaned_browser_sessions
-
         d = _make_socket_dir(fake_tmpdir, "h_corrupt1234")
-        (d / "h_corrupt1234.pid").write_text("not-a-number")
-
+        (d / 'h_corrupt1234.pid').write_text('not-a-number', encoding='utf-8')
         _reap_orphaned_browser_sessions()
-        assert not d.exists()
+        assert d.exists()
 
 
 class TestOwnerPidCrossProcess:
@@ -214,29 +185,15 @@ class TestOwnerPidCrossProcess:
         assert (12345, signal.SIGTERM) not in kill_calls
         assert d.exists()
 
-    def test_dead_owner_triggers_reap(self, fake_tmpdir):
-        """Daemon whose owner_pid is dead gets reaped."""
+    def test_dead_owner_does_not_authorize_unverified_daemon(self, fake_tmpdir):
         from tools.browser_tool import _reap_orphaned_browser_sessions
-
-        # PID 999999999 almost certainly doesn't exist
-        d = _make_socket_dir(
-            fake_tmpdir, "h_dead_owner1", pid=12345, owner_pid=999999999
-        )
-
-        kill_calls = []
-
-        def mock_kill(pid, sig):
-            kill_calls.append((pid, sig))
-
-        # Owner 999999999 dead, daemon 12345 alive.
-        pid_alive = {999999999: False, 12345: True}
-        with patch("superforecasting_agent.processes.pid_exists",
-                   side_effect=lambda pid: pid_alive.get(int(pid), False)), \
-             patch("os.kill", side_effect=mock_kill):
+        d = _make_socket_dir(fake_tmpdir, 'h_dead_owner1', pid=12345, owner_pid=999999999)
+        process = MagicMock()
+        with patch('superforecasting_agent.processes.pid_exists', return_value=False), \
+             patch('psutil.Process', return_value=process):
             _reap_orphaned_browser_sessions()
-
-        assert (12345, signal.SIGTERM) in kill_calls
-        assert not d.exists()
+        process.terminate.assert_not_called()
+        assert d.exists()
 
     def test_corrupt_owner_pid_does_not_authorize_reaping(self, fake_tmpdir):
         """An unreadable owner is unknown even for an untracked daemon."""

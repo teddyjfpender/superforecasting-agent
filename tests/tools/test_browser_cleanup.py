@@ -205,11 +205,18 @@ def test_local_daemon_cleanup_failure_retains_session(monkeypatch, tmp_path, pid
     monkeypatch.setattr(bt, '_stop_cdp_supervisor', lambda _: None)
     monkeypatch.setattr(bt, '_is_camofox_mode', lambda: False)
     monkeypatch.setattr(bt, '_run_browser_command', lambda *a, **k: {'success': True})
-    kill = Mock(side_effect=signal_error or AssertionError('must never signal a process group'))
-    monkeypatch.setattr(bt.os, 'kill', kill)
+    import psutil
+    process = Mock()
+    process.create_time.return_value = 1.0
+    process.terminate.side_effect = signal_error or AssertionError('must never signal a process group')
+    monkeypatch.setattr(psutil, 'Process', lambda pid: process)
+    if signal_error:
+        import json
+        (folder / 'h_fixture.daemon_identity.json').write_text(json.dumps(
+            {'version': 1, 'pid': 123, 'created': 1.0}), encoding='utf-8')
     with pytest.raises(RuntimeError, match='positive process ID|denied'):
         bt.cleanup_browser('task')
-    assert kill.call_count == (1 if signal_error else 0)
+    assert process.terminate.call_count == (1 if signal_error else 0)
     assert bt._active_sessions['task'] is handle
     assert handle['_cleanup_pending'] is True
     assert folder.exists()

@@ -18,6 +18,13 @@ extras needed by host tests, builds Ink, installs Git hooks, and runs the same
 quality checks as CI. These contributor dependencies do not change the minimal
 backend distribution. Use `check --python-only` for the Python and contract gates.
 Run behavior tests through `scripts/run_tests.sh`.
+Explicit live checks use `scripts/run_tests.sh --live-service=daytona` or
+`--live-service=modal` with that service's credentials exported. These may create
+billed sandboxes; missing credentials fail before collection. Ordinary runs strip
+service credentials and exclude live tests.
+
+Installed-product checks and their platform limits are documented in the
+[qualification reference](verification/2026-09-13-products/README.md).
 
 ## The map
 

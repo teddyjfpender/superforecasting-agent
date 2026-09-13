@@ -59,11 +59,7 @@ def _is_openai_client_closed(client: Any) -> bool:
     is_closed_attr = getattr(client, "is_closed", None)
     if is_closed_attr is not None:
         # Handle method (openai SDK) vs property (httpx)
-        if callable(is_closed_attr):
-            if is_closed_attr():
-                return True
-        elif bool(is_closed_attr):
-            return True
+        return bool(is_closed_attr() if callable(is_closed_attr) else is_closed_attr)
 
     http_client = getattr(client, "_client", None)
     if http_client is not None:
@@ -71,11 +67,28 @@ def _is_openai_client_closed(client: Any) -> bool:
     return False
 
 
+def recover_closed_client(agent: Any) -> bool:
+    """Recover a closed SDK owner without probing or mutating private sockets.
+
+    HTTPX/httpcore owns stale keepalive detection. Peeking into an SSL socket or
+    changing its blocking mode races active requests and bypasses that owner.
+    Serialize identity inspection and replacement so recovery cannot replace a
+    different client installed after the observation.
+    """
+    with _openai_client_lock(agent):
+        client = getattr(agent, "client", None)
+        if client is None or not _is_openai_client_closed(client):
+            return False
+        return bool(
+            agent._replace_primary_openai_client(reason="closed_client_cleanup")
+        )
+
+
 def _build_keepalive_http_client(base_url: str = "") -> Any:
     try:
         import socket as _socket
 
-        import httpx as _httpx
+        from agent.http_cleanup import OwnedHTTPClient, RetainedHTTPTransport
 
         _sock_opts = [(_socket.SOL_SOCKET, _socket.SO_KEEPALIVE, 1)]
         if hasattr(_socket, "TCP_KEEPIDLE"):
@@ -89,27 +102,42 @@ def _build_keepalive_http_client(base_url: str = "") -> Any:
         # Explicitly read proxy settings while still honoring NO_PROXY for
         # loopback / local endpoints such as a locally hosted sub2api.
         _proxy = _get_proxy_for_base_url(base_url)
-        return _httpx.Client(
-            transport=_httpx.HTTPTransport(socket_options=_sock_opts),
-            proxy=_proxy,
-        )
+        transport = RetainedHTTPTransport(socket_options=_sock_opts, proxy=_proxy)
+        try:
+            return OwnedHTTPClient(transport=transport)
+        except BaseException:
+            transport.close()
+            raise
     except Exception:
         return None
 
 
 def _close_openai_client(self, client: Any, *, reason: str, shared: bool) -> None:
+    with _openai_client_lock(self):
+        _close_client_locked(self, client, reason=reason, shared=shared)
+
+
+def _close_client_locked(self, client: Any, *, reason: str, shared: bool) -> None:
     if client is None:
         return
     with _openai_client_lock(self):
         failures = getattr(self, "_failed_client_closes", [])
         if any(failed is client for failed in failures):
-            # HTTPX may mark itself closed before transport close raises. A
-            # second successful no-op is not evidence that sockets were freed.
-            return
+            owned = getattr(self, "_owned_client_cleanup", {}).get(id(client))
+            if owned is None or owned[0] is not client:
+                # Unknown SDKs remain fail-closed: a no-op is not disposal proof.
+                return
     # The SDK/transport owns its pools, proxy mounts and socket lifetime.
     # Closing private sockets here bypasses that ownership and synchronization.
     try:
         client.close()
+        with _openai_client_lock(self):
+            self._failed_client_closes = [
+                item
+                for item in getattr(self, "_failed_client_closes", [])
+                if item is not client
+            ]
+            getattr(self, "_owned_client_cleanup", {}).pop(id(client), None)
         logger.info(
             "OpenAI client closed (%s, shared=%s) %s",
             reason,
@@ -132,9 +160,40 @@ def _close_openai_client(self, client: Any, *, reason: str, shared: bool) -> Non
         )
 
 
+def construct_owned_client(self: Any, factory: Any, kwargs: dict[str, Any]) -> Any:
+    """Dispose a newly allocated HTTP client if SDK construction fails."""
+    from agent.http_cleanup import OwnedHTTPClient
+
+    http_client = kwargs.get("http_client")
+    try:
+        client = factory(**kwargs)
+    except BaseException:
+        if isinstance(http_client, OwnedHTTPClient):
+            register_owned_client(self, http_client, http_client)
+            _close_openai_client(
+                self, http_client, reason="construction_failed", shared=False
+            )
+        raise
+    register_owned_client(self, client, http_client)
+    return client
+
+
+def register_owned_client(self: Any, client: Any, http_client: Any) -> None:
+    """Register only transports constructed with explicit retry ownership."""
+    from agent.http_cleanup import OwnedHTTPClient
+
+    if isinstance(http_client, OwnedHTTPClient):
+        with _openai_client_lock(self):
+            if not hasattr(self, "_owned_client_cleanup"):
+                self._owned_client_cleanup = {}
+            self._owned_client_cleanup[id(client)] = (client, http_client)
+
+
 def require_client_cleanup_complete(self) -> None:
     """Do not let a host retire an owner whose SDK cleanup was unconfirmed."""
     with _openai_client_lock(self):
+        for client in list(getattr(self, "_failed_client_closes", [])):
+            _close_openai_client(self, client, reason="cleanup_retry", shared=False)
         if getattr(self, "_failed_client_closes", []):
             raise RuntimeError(
                 "SDK client cleanup failed; retained handles require investigation"

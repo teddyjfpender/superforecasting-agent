@@ -28,6 +28,18 @@ artifact set described in `docs/plans/2026-07-09-hetzner-productionization.md`
 - Exercise 60 Unicode turns across five TUI lifetimes in the Linux/macOS lifecycle matrix.
 - Respect configured pytest deadlines and isolate watch dispatch tests from DNS.
 
+## [0.22.1] - 2026-09-13
+
+### Fixed
+- Enable remote terminal connections on Node 20.10+ and validate WebSocket prerequisites before launch.
+- Retain SDK/browser cleanup ownership through failures, enforce cooperative conversation deadlines, and cancel Skills Hub I/O.
+- Reject ambiguous economic numeric observations and duplicate measurements before settlement.
+
+### Engineering
+- Publish independently installable backend and terminal products (terminal 0.1.1).
+- Record installed-product platform, artifact hashes, explicit skips and durable upgrade evidence.
+- Verify authenticated reconnects and expand blocking runtime correctness checks.
+
 ## [0.22.0] - 2026-09-11
 
 ### Added

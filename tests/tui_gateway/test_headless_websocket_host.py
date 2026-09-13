@@ -61,3 +61,44 @@ def test_authenticated_runtime_negotiates_and_reports_protocol_errors(headers, o
 def test_invalid_auth_configuration_fails_before_serving(token, origins):
     with pytest.raises(ValueError):
         create_app(token=token, allowed_origins=origins)
+
+
+def test_repeated_remote_reconnects_report_durable_cancellation_and_nested_owners(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from tui_gateway import server
+    from superforecasting_agent.hosting import delegations
+    from superforecasting_agent.storage import turns
+    from tools.delegate_tool import _delegation_session_key
+
+    monkeypatch.setattr(server, 'start_build_check', lambda: None)
+    monkeypatch.setattr(delegations, '_active_subagents', {})
+    with TestClient(create_app(token='fixture')) as client:
+        db = server._get_db()
+        db.create_session('durable-remote', source='tui')
+        server._host.sessions.register('desk', {'session_key': 'durable-remote', 'history': []})
+        parent = SimpleNamespace(session_id='durable-remote')
+        child = SimpleNamespace(session_id='child', _delegation_owner_key=_delegation_session_key(parent))
+        grandchild = SimpleNamespace(session_id='grandchild', _delegation_owner_key=_delegation_session_key(child))
+        handles = {}
+        for name, owner in [('child', child), ('grandchild', grandchild)]:
+            handles[name] = Mock()
+            delegations.register_subagent({'subagent_id': name, 'session_key': _delegation_session_key(owner),
+                'agent': handles[name], 'task': name})
+        turn = turns.start(db, 'durable-remote', 'controlled remote request')
+        for index, status in enumerate(['running', 'cancelling', 'running', 'interrupted', 'running']):
+            saved = turns.transition(db, turn, status, text='retained provider prefix')
+            with client.websocket_connect('/api/ws?token=fixture') as ws:
+                ws.receive_json()  # gateway.ready
+                ws.send_json({'id': index, 'method': 'session.status', 'params': {'session_id': 'desk'}})
+                reply = ws.receive_json()['result']
+                assert reply['recovery']['status'] == saved['status']
+                assert reply['recovery']['partial_text'] == saved['partial_text']
+                assert f"Durable turn: {saved['status']}" in reply['output']
+                ws.send_json({'id': 100 + index, 'method': 'delegation.status', 'params': {'session_id': 'desk'}})
+                active = ws.receive_json()['result']['active']
+                assert {row['subagent_id'] for row in active} == {'child', 'grandchild'}
+            assert turns.latest(db, 'durable-remote')['status'] == saved['status']
+        assert turns.latest(db, 'durable-remote')['status'] == 'interrupted'
+        for name, handle in handles.items():
+            delegations.unregister_subagent(name, agent=handle)

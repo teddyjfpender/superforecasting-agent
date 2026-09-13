@@ -42,7 +42,6 @@ import abc
 from collections.abc import Callable
 from typing import Any, Dict
 
-
 # ---------------------------------------------------------------------------
 # ABC
 # ---------------------------------------------------------------------------
@@ -63,6 +62,33 @@ class BrowserSession(dict[str, object]):
 
     def close(self) -> bool:
         return self._close()
+
+    def require_endpoint(self) -> BrowserSession:
+        from urllib.parse import urlsplit
+
+        endpoint = self.get("cdp_url")
+        try:
+            parts = urlsplit(endpoint) if isinstance(endpoint, str) else None
+            valid = (
+                parts is not None
+                and parts.scheme in {"http", "https", "ws", "wss"}
+                and parts.hostname
+            )
+        except ValueError:
+            valid = False
+        if not valid:
+            raise BrowserAllocationError(
+                "Allocated browser has no usable CDP endpoint", self
+            )
+        return self
+
+
+class BrowserAllocationError(RuntimeError):
+    """Carry the allocated handle when validation fails after remote creation."""
+
+    def __init__(self, message: str, session: BrowserSession):
+        super().__init__(message)
+        self.session = session
 
 
 class BrowserProvider(abc.ABC):

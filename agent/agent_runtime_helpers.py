@@ -25,25 +25,17 @@ from __future__ import annotations
 import copy
 import json
 import logging
-import os
 import re
-import threading
 import time
-import uuid
 from datetime import datetime
 from pathlib import Path
 from time import sleep as _sleep
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from superforecasting_agent.runtime.timeouts import get_provider_request_timeout
-from agent.message_sanitization import (
-    _repair_tool_call_arguments,
-    _sanitize_surrogates,
-)
 from agent.tool_dispatch_helpers import _trajectory_normalize_msg, make_tool_result_message
 from agent.trajectory import convert_scratchpad_to_think
-from agent.error_classifier import classify_api_error, FailoverReason
-from superforecasting_agent.storage.files import atomic_json_write
+from agent.error_classifier import FailoverReason
 from superforecasting_agent.urls import base_url_host_matches, base_url_hostname
 from superforecasting_agent.environment import env_var_alias_enabled
 
@@ -127,7 +119,8 @@ def convert_to_trajectory_format(agent, messages: List[Dict[str, Any]], user_que
                 
                 # Add tool calls wrapped in XML tags
                 for tool_call in msg["tool_calls"]:
-                    if not tool_call or not isinstance(tool_call, dict): continue
+                    if not tool_call or not isinstance(tool_call, dict):
+                        continue
                     # Parse arguments - should always succeed since we validate during conversation
                     # but keep try-except as safety net
                     try:
@@ -1269,7 +1262,8 @@ def create_openai_client(agent, client_kwargs: dict, *, reason: str, shared: boo
                 keepalive_http = agent._build_keepalive_http_client(base_url)
                 if keepalive_http is not None:
                     safe_kwargs["http_client"] = keepalive_http
-            client = GeminiNativeClient(**safe_kwargs)
+            from agent.openai_clients import construct_owned_client
+            client = construct_owned_client(agent, GeminiNativeClient, safe_kwargs)
             _ra().logger.info(
                 "Gemini native client created (%s, shared=%s) %s",
                 reason,
@@ -1300,7 +1294,8 @@ def create_openai_client(agent, client_kwargs: dict, *, reason: str, shared: boo
             client_kwargs["http_client"] = keepalive_http
     # Uses the module-level `OpenAI` name, resolved lazily on first
     # access via __getattr__ below. Tests patch via `run_agent.OpenAI`.
-    client = _ra().OpenAI(**client_kwargs)
+    from agent.openai_clients import construct_owned_client
+    client = construct_owned_client(agent, _ra().OpenAI, client_kwargs)
     _ra().logger.info(
         "OpenAI client created (%s, shared=%s) %s",
         reason,
@@ -1899,74 +1894,10 @@ def copy_reasoning_content_for_api(agent, source_msg: dict, api_msg: dict) -> No
 
 
 def cleanup_dead_connections(agent) -> bool:
-    """Detect and clean up dead TCP connections on the primary client.
+    """Compatibility delegate; transport health checks own their sockets."""
+    from agent.openai_clients import recover_closed_client
 
-    Inspects the httpx connection pool for sockets in unhealthy states
-    (CLOSE-WAIT, errors).  If any are found, force-closes all sockets
-    and rebuilds the primary client from scratch.
-
-    Returns True if dead connections were found and cleaned up.
-    """
-    client = getattr(agent, "client", None)
-    if client is None:
-        return False
-    try:
-        http_client = getattr(client, "_client", None)
-        if http_client is None:
-            return False
-        transport = getattr(http_client, "_transport", None)
-        if transport is None:
-            return False
-        pool = getattr(transport, "_pool", None)
-        if pool is None:
-            return False
-        connections = (
-            getattr(pool, "_connections", None)
-            or getattr(pool, "_pool", None)
-            or []
-        )
-        dead_count = 0
-        for conn in list(connections):
-            # Check for connections that are idle but have closed sockets
-            stream = (
-                getattr(conn, "_network_stream", None)
-                or getattr(conn, "_stream", None)
-            )
-            if stream is None:
-                continue
-            sock = getattr(stream, "_sock", None)
-            if sock is None:
-                sock = getattr(stream, "stream", None)
-                if sock is not None:
-                    sock = getattr(sock, "_sock", None)
-            if sock is None:
-                continue
-            # Probe socket health with a non-blocking recv peek
-            import socket as _socket
-            try:
-                sock.setblocking(False)
-                data = sock.recv(1, _socket.MSG_PEEK | _socket.MSG_DONTWAIT)
-                if data == b"":
-                    dead_count += 1
-            except BlockingIOError:
-                pass  # No data available — socket is healthy
-            except OSError:
-                dead_count += 1
-            finally:
-                try:
-                    sock.setblocking(True)
-                except OSError:
-                    pass
-        if dead_count > 0:
-            _ra().logger.warning(
-                "Found %d dead connection(s) in client pool — rebuilding client",
-                dead_count,
-            )
-            agent._replace_primary_openai_client(reason="dead_connection_cleanup")
-            return True
-    except Exception as exc:
-        _ra().logger.debug("Dead connection check error: %s", exc)
-    return False
+    return recover_closed_client(agent)
 
 
 

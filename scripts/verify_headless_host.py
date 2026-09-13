@@ -37,6 +37,20 @@ def main() -> None:
             "HERMES_HOME": str(args.profile or root / "profile"),
             "SUPERFORECASTING_AGENT_TUI_CRON_TICKER": "0",
         }
+        # Seed through the installed storage owner, outside the source checkout.
+        subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "from superforecasting_agent.storage.session import SessionDB; "
+                "db=SessionDB(); db.create_session('installed-reconnect-fixture', source='tui'); "
+                "db.append_message('installed-reconnect-fixture', 'user', 'Retain this reconnect note'); db.close()",
+            ],
+            cwd=root,
+            env=env,
+            check=True,
+            timeout=20,
+        )
         child = subprocess.Popen(
             [
                 sys.executable,
@@ -94,25 +108,39 @@ def main() -> None:
                         raise AssertionError("unauthorized connection accepted")
                 except InvalidStatus as exc:
                     assert exc.response.status_code == 403
-            with connect(
-                f"ws://127.0.0.1:{port}/api/ws?token=isolated-host-verification",
-                open_timeout=10,
-            ) as ws:
-                ready = json.loads(ws.recv(timeout=10))["params"]["payload"]
-                ws.send(
-                    json.dumps({
-                        "id": 1,
-                        "method": "host.negotiate",
-                        "params": {
-                            "protocol_version": ready["protocol_version"],
-                            "required_capabilities": ["forecast.operation"],
-                        },
-                    })
-                )
-                reply = json.loads(ws.recv(timeout=10))
-                assert "forecast.operation" in reply["result"]["capabilities"], reply
+            for cycle in range(5):
+                with connect(
+                    f"ws://127.0.0.1:{port}/api/ws?token=isolated-host-verification",
+                    open_timeout=10,
+                ) as ws:
+                    ready = json.loads(ws.recv(timeout=10))["params"]["payload"]
+                    ws.send(
+                        json.dumps({
+                            "id": 1,
+                            "method": "host.negotiate",
+                            "params": {
+                                "protocol_version": ready["protocol_version"],
+                                "required_capabilities": ["forecast.operation"],
+                            },
+                        })
+                    )
+                    reply = json.loads(ws.recv(timeout=10))
+                    assert "forecast.operation" in reply["result"]["capabilities"], (
+                        reply
+                    )
+                    ws.send(
+                        json.dumps({"id": 2, "method": "session.list", "params": {}})
+                    )
+                    sessions = json.loads(ws.recv(timeout=10))["result"]["sessions"]
+                    fixture = next(
+                        row
+                        for row in sessions
+                        if row["id"] == "installed-reconnect-fixture"
+                    )
+                    assert fixture["message_count"] == 1, fixture
+                    assert "Retain this reconnect note" in fixture["preview"], fixture
             print(
-                "Installed headless host: actual localhost WebSocket negotiation passed",
+                "Installed headless host: five authenticated reconnects preserved durable session inventory",
                 flush=True,
             )
             if args.terminal_python:

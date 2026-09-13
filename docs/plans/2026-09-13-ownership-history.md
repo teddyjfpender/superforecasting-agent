@@ -1,0 +1,1076 @@
+# Ownership map + extension-point checklists
+
+The formality layer of the modularization program
+(`docs/plans/2026-07-10-modularization-program.md` §W0.4). Two things live here:
+
+1. **The module ownership table** — for each fork-owned package: its layer, its
+   public façade, and what it must **not** import (enforced by the import-linter
+   contracts in `pyproject.toml [tool.importlinter]`, CI `lint.yml →
+   lint-architecture`).
+2. **Per-extension-point checklists** — for each common feature shape, the ONE
+   module you touch, the registry that auto-wires it, and the test that pins it.
+   The goal of the whole program: a new feature touches one small module, never a
+   megafile.
+
+---
+
+## 1. Module ownership
+
+| Package | Layer | Public façade | Must NOT import (contract) |
+|---|---|---|---|
+| `superforecasting_agent/` | product entry and runtime foundations | Lazy public domain exports; `bootstrap`, `constants`, `clock`, `logging` | Bootstrap and profile-path imports must remain usable before application setup |
+| `superforecasting_agent/application/command_catalog/` | shared command metadata and resolution | `workflow.py` owns forecast/session definitions; `operations.py` owns operator-support definitions; the package assembles ordered metadata, validates configured commands and resolves aliases | No presentation, runtime, agent or tool imports; classic completion/menu code re-exports this catalog |
+| `superforecasting_agent/application/plugins.py` | plugin activation policy | `plugin_activation` decides disable/default/opt-in and delegated loading; manager owns execution | No runtime, storage or presentation imports; application contract enforced |
+| `superforecasting_agent/application/configuration_view.py` | configuration inspection | Shared safe sections and text rendering for classic CLI and native TUI; adapters capture live settings | No runtime, storage or presentation imports; application boundary enforced |
+| `superforecasting_agent/application/insights.py` | shared command arguments | Typed days/source query and slash argument parsing for CLI, messaging and native TUI | No storage, runtime or presentation imports; InsightsEngine retains reporting ownership |
+| `superforecasting_agent/application/sessions.py` | application services | Resumable-session selection, canonical title-setting and atomic branch-copy admission | No presentation or transport imports |
+| `agent/review_lifecycle.py` | background review lifetime | Worker admission/drain, child interruption and retained cleanup handles; agent session cleanup waits for completion | No agent construction, tool or presentation imports; enforced transitively |
+| `superforecasting_agent/hosting/runtime.py` | serving lifetime | `RuntimeHost` owns workers, registered command cancellation, session registry, store, configuration, device sign-in, shutdown ordering and restart admission | No presentation or runtime configuration imports; host finalizes durable receipts; adapters supply prompt interruption and session disposal callbacks |
+| `superforecasting_agent/hosting/{workers,sessions,registry}.py` | host resource ownership | Worker admission/drain; live runtime registration; session use, finalization, retryable disposal and replacement admission | No transport, CLI, agent or tool imports; enforced transitively |
+| `superforecasting_agent/hosting/delegations.py` | process-local delegation control | Root-session pause policy, child registry, snapshots and cooperative interruption; tool runtime retains execution/disposal | No tools, agent, runtime or presentation imports; strict directory-wide checks and transitive contract |
+| `superforecasting_agent/hosting/builds.py` | deferred initialization ownership | Admission, completion/error state, partial-agent retention and retry after cleanup | No presentation, runtime, agent or tool imports; adapter supplies construction and cleanup |
+| `superforecasting_agent/hosting/storage.py` | database serving lifetime | `SessionStore` serializes acquisition, close and explicit restart | No presentation or runtime configuration imports; failed close retains the owned handle |
+| `superforecasting_agent/startup_environment.py` | startup environment loading | Profile/project dotenv precedence and credential sanitization using shared parser and metadata; runtime/env_loader is a compatibility alias | No runtime, agent, tool or presentation imports; enforced transitively |
+| `superforecasting_agent/installation.py` | installation policy | Managed-install detection, alias precedence and writable-configuration admission; runtime helpers delegate for compatibility | No runtime, agent, tool or presentation imports; enforced transitively |
+| `superforecasting_agent/configuration/browser.py` | browser endpoint policy | Shared CDP defaults, validation and normalization for CLI and TUI | No runtime, network or presentation imports; configuration contracts apply |
+| `superforecasting_agent/configuration/plugin_manifest.py` | plugin declarations | `PluginManifest` and decoded manifest validation; runtime discovery retains loading and compatibility routing | No filesystem, runtime or plugin execution dependencies; configuration contracts apply |
+| `superforecasting_agent/configuration/` | configuration values | Defaults, built-in environment-key metadata, provider identity aliases, model-section interpretation, legacy-key normalization, nested lookup and environment expansion | No storage, runtime, forecasting or presentation imports; runtime compatibility names re-export these owners |
+| `superforecasting_agent/storage/configuration.py` | shared configuration storage | `ProfileConfiguration` reads content-bound snapshots and checks save revisions; `read_configuration` returns independent normalized values without creating profile files; hosting owns its raw snapshot instance | No presentation or runtime imports; explicit profile paths and shared atomic writes; AppConfig is also a consumer |
+| `superforecasting_agent/hosting/device_auth.py` | device sign-in lifetime | `DeviceSignIn` owns attempt identity, cancellation, deadlines, save admission and once-only terminal consumption | No presentation, runtime or credential storage imports; adapter supplies provider exchange/persistence callbacks |
+| `superforecasting_agent/hosting/credentials.py` | live credential application | `refresh_credentials` preserves model selection and updates the matching agent's client and pool | No presentation, runtime, agent or tool imports; caller supplies provider resolver and reserves the session |
+| `superforecasting_agent/hosting/websocket.py` | headless transport entrypoint | Authenticated host application and explicit serving lifetime | Uses shared RPC operations; no dashboard construction |
+| `superforecasting_agent/storage/plugin_manifests.py` | plugin metadata storage | Read validated YAML and legacy provider routing hints without executing implementation code | No runtime, agent, tool or presentation imports; enforced transitively |
+| `superforecasting_agent/storage/plugin_environment.py` | platform metadata loading | Read bundled manifest declarations; pure parsing belongs to configuration/plugin_environment.py | No runtime, agent, tool or presentation imports; plugin implementations are never imported |
+| `superforecasting_agent/storage/curator_state.py` | curator state persistence | Serialized field mutation and atomic publication; scheduler and command adapters retain compatibility functions | No agent, runtime or consumer imports; enforced transitively |
+| `superforecasting_agent/storage/retention.py::mutate_meta` | atomic metadata persistence | SessionDB exposes transactional read/update with rollback; GoalManager owns expected-state validation and stale-verdict rejection | No command or presentation imports |
+| `superforecasting_agent/application/command_output.py` | command output routing | Request-local capture, explicit emit and an argparse output adapter; Kanban CLI and messaging share it | Standard library only; no application state, runtime or product dependencies |
+| `superforecasting_agent/application/snapshots.py` | snapshot command policy | `execute_snapshot` shares parsing, validation and operation output; offline restoration requires exclusive profile admission | No presentation imports; CLI and native TUI use the same operation |
+| `superforecasting_agent/storage/snapshots.py` | profile snapshot persistence | Snapshot capture, listing, validated restore paths, retention and SQLite copying; runtime backup re-exports compatibility names | No CLI management, agent, gateway or TUI imports; transitive contract enforced |
+| `superforecasting_agent/storage/turns.py` | durable turn receipts | Atomic receipt creation, transitions, recovery and continuation reanchoring; host finalizes drained turns before session disposal | No hosting, runtime, agent, domain or presentation imports; transitive contract enforced |
+| `superforecasting_agent/storage/transcripts.py` | transcript export persistence | Shared unique, atomic JSON snapshots for CLI and TUI; callers capture concurrent histories under their own lock | No agent, runtime or presentation imports; no model initialization |
+| `superforecasting_agent/storage/` | session persistence | `superforecasting_agent.storage.session.SessionDB` binds operations from focused storage modules | Storage leaves do not import the SessionDB facade |
+| `protocol/` | kernel (wire contracts) | pydantic models under `protocol/rpc`, `protocol/events`; `generated.ts` is generated from it | **anything app-side** — `forecasting`, `tools`, `agent`, `gateway`, `tui_gateway`, `superforecasting_agent.runtime`, `run_agent`, `cli` (Tier-1 contract, enforced) |
+| `forecasting/` | domain (ledger, scoring, quorum, CLI) | `forecasting.ledger`, `forecasting.cli` (façade packages), `forecasting.models` | `tui_gateway` (Tier-1); `superforecasting_agent.runtime` + `tools` are **ratcheted** (frozen lists in pyproject — may only shrink) |
+| `superforecasting_agent/tooling/background.py` | background command operations | Shared inspection and interruption; standalone CLI has process scope, TUI supplies its durable session key | No presentation or classic runtime imports; registries own exact session filtering |
+| `forecasting/panel_selection.py` | connected-panel policy | Deterministic selection from an ordered provider/default-model snapshot; explicit defaults (including unknown) are preserved, and fallback requires a matching single-provider snapshot; quorum adapter owns discovery | No runtime, agent, tools, quorum orchestration or presentation imports; strict lint/format/types |
+| `forecasting/sources/` | source adapters, records and parsing | Domain `*_records.py`, `values.py`, `dates.py`, `package_registry.py`, `feeds.py`, and GitHub/package/research/weather/energy adapter leaves; existing `forecasting.source_adapters` names remain available | Record modules use dataclasses and domain models; no fetching, CLI, runtime, or source-adapter dependency |
+| `forecasting/hooks/store.py` | hook policy mutation | Shared CLI/RPC validation and atomic field/rule mutations | Uses shared storage locking; rule read/validate/write holds one lock; failed writes never fall back to an unowned temporary file |
+| `forecasting/hooks/loader.py` | validation policy loading | Compile current inline and profile rule specifications | No runtime configuration import; uses shared profile identity, never caches by object identity or file timestamps |
+| `forecasting/ledger/` | domain leaf | `forecasting/ledger/__init__` (monkeypatch-forwarding façade over `core.py` + leaves) | `forecasting.cli` (Tier-1) |
+| `forecasting/cli/` | surface (argparse assembler) | `forecasting/cli/__init__` (`_CliPackage` forwarding façade) | — |
+| `superforecasting_agent/tooling/inventory.py` | shared tool inspection | Typed toolset inventory, selection flags and legacy filtering for CLI and native TUI | No CLI, gateway or TUI imports, enforced transitively |
+| `superforecasting_agent/tooling/skill_types.py` | skill source contracts | `SkillMeta`, `SkillBundle`, `SkillSource`; re-exported by `tools.skills_hub` | Standard library only; importing contracts does not load source adapters |
+| `superforecasting_agent/tooling/github_auth.py` | skill source authentication | `GitHubAuth`, re-exported by `tools.skills_hub` | Credentials resolve lazily; importing the module does not load source adapters |
+| `superforecasting_agent/tooling/skill_paths.py` | skill bundle path validation | Shared name, category, and relative-file validators, re-exported by `tools.skills_hub` | Standard-library-only validation before filesystem access |
+| `tools/` | tools | `tools.registry`; `tools.forecast_actions.ACTIONS` | `run_agent` (forbidden) |
+| `forecasting/configuration/` | setting contracts and registry | ConfigKey, defaults and alias maps; AppConfig re-exports existing names and owns loading/diagnostics | No AppConfig, runtime/storage, tools, agent or presentation imports; enforced transitively |
+| `forecasting/domains.py` | semantic classification | Explicit source categories and audited active-question corrections | No title-based inference or probability-history rewriting |
+| `forecasting/source_bindings.py` | measurement contracts | NWS temperature and USGS magnitude extraction | No network calls or inferred settlement decisions |
+| `forecasting/sources/bls_parsing.py` | BLS parsing | Finite measurements, exact series identity, periods and duplicate/revision checks | No network, CLI or ledger writes; periods are not publication times |
+| `superforecasting_agent/storage/files.py`, `storage/locking.py` | configuration mutation and locking | Dotted mapping/list updates, atomic YAML replacement and reentrant process locks | No runtime imports; snapshot admission belongs to `runtime.config` and the raw host configuration owner |
+| `forecasting/censoring.py` | coarsened observations | Typed right-censoring contracts and threshold-event probabilities | No fabricated exact outcomes or full-distribution score claims |
+| `superforecasting_agent/hosting/browser_sessions.py` | browser lifecycle admission | Per-task primary/sidecar creation and cleanup serialization, plus exclusive endpoint transitions; unrelated task groups remain independent | No provider, tools, runtime or presentation imports; hosting contracts apply |
+| `superforecasting_agent/hosting/browser_connection.py` | browser connection transition | Drain admitted task lifecycles during endpoint publication and cleanup; CLI and TUI supply the same runtime adapter | No runtime, tools or presentation imports; hosting contracts apply |
+| `superforecasting_agent/hosting/commands.py` | configured process lifetime | Shared result, timeout, admission and child cleanup policy | No presentation, runtime, agent or tool imports; caller supplies environment and redactor |
+| `superforecasting_agent/runtime/subgoal_commands.py` | shared command operation | `execute_subgoal` validates and applies criteria changes through a session-bound GoalManager for CLI, messaging and native TUI | No CLI or transport imports; GoalManager retains persistence and continuation ownership |
+| `superforecasting_agent/runtime/curator.py` | curator command operations | Shared parser and skill curation operations with injected output/confirmation; CLI and TUI use the same handlers | No CLI or TUI imports; agent curator and skill usage retain storage/review ownership |
+| `superforecasting_agent/runtime/plugin_commands.py` | shared plugin inspection | `describe_plugins` queries the existing manager for CLI and native TUI output without constructing a chat runtime | No CLI or transport imports; plugin manager remains the discovery authority |
+| `superforecasting_agent/runtime/quick_commands.py` | command policy composition | Sync/async adapters supply profile environment and redaction to the host operation | CLI, Ink and messaging render the same result; inherited filter/redactor retain their existing ownership |
+| `superforecasting_agent/runtime/model_configuration.py` | model configuration ownership | `model_section`, `persist_model_selection` | No UI imports; preserve raw environment references |
+| `gateway/command_dispatch.py` | gateway command hooks | `dispatch_command_hooks` | No gateway runner import; reauthorize rewritten commands |
+| `superforecasting_agent/runtime/provider_catalog.py` | provider metadata catalog | `ProviderDef`, `ProviderOverlay`, aliases and transport tables; resolved through `runtime.providers` | Data only; no model calls, configuration reads, or provider discovery |
+| `superforecasting_agent/runtime/cron_commands.py` | classic CLI command surface | `ForecastCLI._handle_cron_command` binds the handler; scheduled operations use the cron tool API | No import of the root CLI; scheduling stays in `cron/` and its tool interface |
+| `superforecasting_agent/runtime/handoff_commands.py` | classic CLI handoff surface | `ForecastCLI._handle_handoff_command` delegates to this handler | Gateway configuration and session storage remain the handoff authorities |
+| `superforecasting_agent/runtime/audit_discovery.py`, `audit_types.py` | dependency audit discovery and records | Re-exported through `runtime.security_audit`; OSV and command orchestration remain there | Discovery does not import the audit facade or make advisory requests |
+| `acp_adapter/` | editor protocol surface | `server.ForecastACPAgent`, `content` converters, and `history` replay; `HermesACPAgent` remains an import alias | Protocol transport wraps the forecast runtime without replacing the ledger |
+| `tui_gateway/` | surface (RPC) | `@rpc_validated` handlers; carved `*_rpc.py` families | `run_agent` (forbidden); imports `forecasting` one-way (clean) |
+| `agent/`, `gateway/`, `superforecasting_agent/runtime/` | upstream-shared runtime | — | `run_agent` (forbidden; use `agent.runtime`) |
+
+**`agent/runtime.py` owns `AIAgent` and runtime state.** `run_agent.py` is a
+compatibility executable/module alias; no application package may import it.
+The entrypoint import contract has no exceptions and includes cron and ACP.
+`cli.py` remains a presentation entrypoint; the TUI host cannot import it.
+TUI command execution no longer constructs or calls the classic slash worker.
+`command_routes.py` assigns native backend operations and terminal-owned commands;
+terminal commands redispatch to Ink or return an explicit pre-execution handoff.
+Cross-language parity requires a handler for every catalog command and fails if
+its Python catalog cannot load. The worker class, subprocess entrypoint, side-effect mirror and retirement
+helpers are deleted. The entire tui_gateway package is forbidden from importing
+classic CLI presentation.
+
+`runtime.interactive_config.read_cli_config` reads shared settings without
+modifying the process. `load_cli_config` explicitly applies environment bridges
+for classic CLI startup. TUI personality lookup uses the read-only operation.
+
+### Source and recovery ownership
+
+- `forecasting/economic_bindings.py`: pure BLS/FRED entity, unit, period and
+  revision semantics. `source_bindings.py` dispatches adapter contracts.
+- `forecasting/applicability_facts.py`: archive/cutoff verification;
+  `settlement_binding.py`: resolution admission against the declared measurement.
+- `forecasting/source_transfer.py`: versioned archive transfer, immutable origin
+  history and explicit local re-verification. Hashes alone never grant authority.
+- `forecasting/ledger/sqlite_runtime.py`: preserve callback failures while keeping
+  the authorizer fail closed. It owns no scoring policy.
+- `superforecasting_agent/storage/files.py`: locked atomic YAML mutations and
+  the stable revision-bearing snapshot type; `runtime/config.py`: configuration
+  defaults, loaders and snapshot admission.
+  Its `resolve_config` operation normalizes an already captured raw mapping
+  without rereading a profile. TUI startup passes that result through the agent
+  factory, provider resolver, custom-pool seeding and pool strategy selection.
+  Runtime values contain expanded environment references and must not replace
+  raw revision-bearing settings during persistence.
+- `superforecasting_agent/storage/turns.py`: durable partial-turn receipts;
+  `tui_gateway/turn_journal.py` is a compatibility facade. The host owns workers
+  and persists terminal state before disposal; transport delivers that state
+  for Ink to render.
+
+### Existing forecasting façades
+
+`__init__.py` installs a `ModuleType` subclass whose `__getattr__` read-forwards
+to `core` and whose `__setattr__`/`__delattr__` write-forward when `core` owns the
+name — so `from pkg import _private`, `pkg._private`, and
+`monkeypatch.setattr(pkg, "_private", …)` all keep working after a body moves to
+`core` or a leaf. See `forecasting/cli/__init__.py` and
+`forecasting/ledger/__init__.py`. This forwarding machinery is specific to those
+existing packages. Session storage uses ordinary method delegates, and the public
+product package uses lazy read-only exports so bootstrap stays lightweight.
+
+---
+
+## 2. Extension-point checklists
+
+Each row of the program's seam audit, written from the "after" column. **One
+module, one registry, one test.**
+
+### New gate rule (saturation / style hook)
+
+- **Touch:** `forecasting/hooks/builtins.py` — add the rule + its remediation text
+  to `BUILTIN_RULES`. (User-authored rules load from the DSL via
+  `forecasting/hooks/loader.py` — no code change.)
+- **Auto-wires:** `BUILTIN_RULES` is read by `forecasting/hooks/engine.py`.
+- **Test:** `tests/forecasting/test_hooks_*.py` — assert the rule fires + the
+  remediation string.
+
+### New tool action (`forecast_ledger` verb)
+
+- **Touch:** `tools/forecast_actions/<domain>.py` — add `action -> handler(args,
+  ledger)` to that module's `HANDLERS` (or add a new domain module — it is
+  auto-discovered).
+- **Auto-wires:** `tools/forecast_actions/__init__.py` aggregates every module's
+  `HANDLERS` into `ACTIONS`; `forecast_ledger_tool` dispatches on it. No central
+  edit.
+- **Test:** `tests/tools/test_forecast_actions*.py` (or the domain's test) — call
+  the action through `ACTIONS`.
+
+### New job type (durable background job)
+
+- **Touch:** `forecasting/jobs/types/<name>.py` — define a `JobType` and call
+  `register(<NAME>)` at module bottom (the pattern in `backup.py`,
+  `reforecast.py`).
+- **Auto-wires:** `forecasting/jobs/types.register` + `registered_types`; the job
+  store/runtime dispatch on the registered type. Add the module to the package's
+  import surface if it is not import-triggered.
+- **Test:** `tests/forecasting/test_*_jobs.py` — enqueue + run the type; assert the
+  record transitions.
+
+### New CLI domain (`forecast <verb>`)
+
+- **Touch:** `forecasting/cli/<domain>.py` — a module exposing
+  `register(forecast_sub)` (add subparsers + `set_defaults(_forecast_handler=…)`)
+  and its handlers. Reach `_ledger` via a call-time `_core._ledger` hop; import
+  shared helpers bare from `forecasting.cli.core`.
+- **Wire once:** one `from forecasting.cli import <domain> as _X` at the bottom of
+  `core.py` + one `_X.register(forecast_sub)` call at the intended position inside
+  `register_cli` (position = help-tree order; use one hook per contiguous block).
+- **Auto-wires:** nothing else — the assembler calls `register()` hooks in order.
+- **Test:** `tests/forecasting/test_cli.py`; the `dump_help_tree.py` +
+  `dump_order.py` gates confirm byte-identical help.
+- Precedents: `jobs_admin.py`, `curate.py`, `thesis.py`, and the Wave-1 eight
+  (`doctor_admin`, `reviews`, `quorum_panel`, `markets_pm`, `triage_calibration`,
+  `benchmarks`, `questions_admin`, `refresh_cycle`).
+
+### New notify surface (delivery channel)
+
+- **Touch:** `forecasting/notify.py` — add the surface name to `SURFACES` and a
+  delivery branch in `NotifyRouter._deliver_one`.
+- **Auto-wires:** routes bind by surface name (`routes.json`); `deliver_event` /
+  `deliver_digest` fan out to every accepting route.
+- **Test:** `tests/forecasting/test_notify*.py` — bind a route on the new surface,
+  assert `deliveries.json` records an attempt.
+
+---
+
+## 3. The gates that keep this true
+
+| Concern | Gate | Where |
+|---|---|---|
+| Import directions | `lint-imports` (import-linter) | `pyproject.toml [tool.importlinter]`, CI `lint.yml → lint-architecture` |
+| Moves-only carves | difflib categorizer, help-tree + order dumps | `scripts/carve/` (see its README) |
+| Blame through carves | `.git-blame-ignore-revs` | `scripts/install-hooks.sh` sets `blame.ignoreRevsFile` |
+| Wire compatibility | protocol codegen staleness | `scripts/check-protocol.sh` |
+| Oversize refactor | `MOVES-ONLY` marker gate | `.githooks/lib/checks.sh` |
+
+GitHub repository and activity adapters receive their JSON reader explicitly
+from `forecasting.source_adapters`. Their record construction and filtering live
+in `sources/github_repository.py` and `sources/github_activity.py`; shared
+identifiers and timestamps live in `sources/github_metadata.py`. The public
+facade preserves existing signatures and supplies its HTTP reader, so leaves
+do not import the facade or mutate a global reader.
+
+Package release loaders use the same explicit-reader boundary in
+`sources/package_releases.py`, with identifier and version metadata parsing in
+`sources/package_registry.py`.
+
+OpenAlex and Crossref loaders and their metadata parsers live in
+`sources/openalex.py` and `sources/crossref.py`. Both use the same explicit JSON
+reader boundary. Shared ISO date conversion lives in `sources/dates.py`; its
+existing helper names remain available through the source facade.
+
+Treasury Fiscal Data records live in `sources/treasury.py`, with endpoint, value,
+and date parsing beside the loader. Shared optional-number parsing in
+`sources/values.py` rejects non-finite values and numeric overflow; individual
+adapters keep their existing raw-value fallback policy.
+
+Census demographic and regional records live in `sources/census.py`, including
+dataset paths, geography fields, and public citation URLs. The facade supplies
+the JSON reader and preserves existing loader and helper imports.
+
+EIA energy observations live in `sources/eia.py`, with the JSON reader supplied
+by the facade. Both current and legacy response formats share the same record
+construction, which omits API keys from evidence URLs while preserving request
+authentication.
+
+Open-Meteo daily forecasts, air quality, and historical observations share
+`sources/openmeteo.py`, including coordinate, date, and response-field parsing.
+The source facade supplies the JSON reader and retains the existing API names.
+
+The BLS time-series loader and period parsing live in
+`forecasting/sources/bls.py`; `source_adapters` preserves the public loader and
+HTTP reader seam. Invalid observation years are skipped without losing valid rows.
+
+World Bank and IMF country indicators share the date and metadata parsers in
+`forecasting/sources/macroeconomic.py`; public source-adapter exports remain stable.
+
+Socrata records and CKAN catalog metadata live in `sources/socrata.py` and
+`sources/ckan.py`. Their epoch/ISO metadata timestamp conversion shares
+`dates._optional_epoch_or_iso_timestamp`; unrepresentable numeric metadata is
+unavailable while otherwise valid records remain importable.
+
+arXiv Atom papers and PubMed XML articles live in `sources/arxiv.py` and
+`sources/pubmed.py`, reusing feed/XML helpers without importing the facade. PubMed
+keeps articles with unrepresentable optional publication dates as undated records.
+
+Stooq CSV prices, Yahoo chart prices, and CoinGecko market snapshots live in
+`sources/stooq.py`, `sources/yahoo.py`, and `sources/coingecko.py`. Yahoo and SEC
+share bounds-checked parallel-array access through `sources/values._list_get`.
+
+Public-attention evidence loaders live in `sources/hackernews.py`,
+`sources/reddit.py`, `sources/bluesky.py`, and `sources/mastodon.py`. Each owns
+its endpoint and response parsing, with the shared facade supplying the HTTP
+reader and retaining public imports.
+Reddit keeps posts with unrepresentable optional timestamps as undated evidence.
+ISO-only optional metadata timestamps share `dates._optional_iso_timestamp`;
+source wrappers retain their field labels and public signatures.
+
+NVD and CISA vulnerability evidence live in `sources/nvd.py` and
+`sources/cisa_kev.py`; NVD accepts current reference arrays and legacy wrappers.
+USGS earthquakes, NASA EONET events, and NWS alerts live in `sources/usgs.py`,
+`sources/eonet.py`, and `sources/nws.py`. Unrepresentable optional USGS timestamps
+leave events undated without discarding the rest of the feed.
+
+ReliefWeb reports, Federal Register documents, and CourtListener search records
+are owned by `sources/reliefweb.py`, `sources/federal_register.py`, and
+`sources/courtlistener.py`; the facade supplies the common HTTP reader.
+
+ClinicalTrials.gov studies and openFDA application records live in
+`sources/clinicaltrials.py` and `sources/openfda.py`. OWID CSV and WHO GHO
+indicators live in `sources/owid.py` and `sources/who_gho.py`. Entity filters
+skip unnamed rows; empty WHO arrays are valid results, and unrepresentable
+optional years leave observations undated.
+
+OpenFEMA declarations live in `sources/fema.py`; empty declaration arrays
+remain valid import results, including supported legacy wrapper keys.
+
+GDELT article lists and FiveThirtyEight polling CSV parsing live in
+`sources/gdelt.py` and `sources/fivethirtyeight.py`, with reader injection from
+the facade and unchanged date normalization, filtering, and sorting.
+
+Wikipedia pages/revisions and Wikimedia pageviews live in `sources/wikipedia.py`
+and `sources/wikimedia.py`. Facade callbacks preserve the shared reader, revision
+lookup, and test clock. Historical revisions with empty content never reuse the
+live page extract.
+
+FRED API, CSV, and HTML decoding live in `sources/fred.py`; facade delegates
+preserve shared HTTP readers, while fallback orchestration and timeout settings
+remain in the source facade.
+
+Pure SEC identifier and filing/company-fact parsing lives in
+`sources/sec_parsing.py`; lookup, caching, identity headers, and fetching remain
+in the facade. Invalid optional fiscal years do not discard company facts.
+Source/FRED timeout configuration shares finite-number parsing and retains alias
+precedence and default values.
+
+Metaculus endpoint, outcome, prediction, and metadata parsers live in
+`sources/metaculus_parsing.py`, alongside import-record and benchmark-case
+construction. The facade retains fetching and benchmark orchestration.
+Array predictions preserve choice positions: an unavailable value cannot shift
+a later probability onto a different label.
+
+Metaculus and Kalshi share the label-aware timestamp parser in `sources/dates.py`.
+Prediction imports retain valid time semantics and treat unrepresentable optional
+timestamps as unavailable. Manifold millisecond conversion also handles calendar
+range errors and remains the numeric timestamp path used by Polymarket.
+
+Manifold and Kalshi endpoint and metadata parsing live in
+`sources/manifold_parsing.py` and `sources/kalshi_parsing.py`. The facade keeps
+HTTP and benchmark orchestration; import records and benchmark-case conversion
+live beside the venue parsers. Existing helper names remain available for callers.
+
+Resolved Metaculus and Kalshi benchmark responses select the first recognized
+array, including an empty one. Empty pages are valid and do not fall through to
+older response aliases.
+
+Classic CLI filesystem checkpoint and runtime snapshot commands live in
+`superforecasting_agent/runtime/checkpoint_commands.py`. `ForecastCLI` binds the
+three methods directly; checkpoint storage and backup services retain ownership
+of persistence and restoration. The leaf does not import the root CLI.
+
+Classic CLI profile, curator, debug, and update entry points live in
+`superforecasting_agent/runtime/maintenance_commands.py`. Their service imports
+remain lazy. Invalid curator quoting uses the existing command error handler,
+without invoking curator work.
+
+The Azure Foundry setup wizard lives in `runtime/azure_setup.py`. Runtime main
+reexports its existing callable; endpoint detection and credential configuration
+remain in their existing services and load only when the wizard runs.
+
+Custom-provider naming, API-mode selection, reference preservation, and config
+persistence live in `runtime/custom_provider_setup.py`. Main keeps the wizard
+call sites and reexports the helpers, preserving existing caller patch points.
+
+Subscription OAuth model-selection flows for Nous, OpenAI Codex, and xAI live
+in `runtime/oauth_setup.py`. Authentication and credential storage remain in
+`runtime/auth.py`; main reexports the existing setup callables.
+
+Bedrock setup (AWS credentials or API key) lives in `runtime/bedrock_setup.py`;
+Anthropic credential selection and OAuth setup live in `runtime/anthropic_setup.py`.
+Main keeps their existing callable names, while adapters and auth services retain
+credential resolution and storage.
+
+Shared API-key entry and generic provider setup live in `runtime/api_key_setup.py`.
+The main facade supplies its current model catalog and key-prompt callback on
+each invocation, preserving existing patch points and the public call signature.
+
+The classic CLI session browser and relative-time labels live in
+`runtime/session_browser.py`. Main reexports the existing picker and label helpers;
+SQLite session queries and the Ink TUI session picker retain their own ownership.
+
+### Paired learning trial boundaries
+
+- `forecasting/learning_trials.py`: enrollment, immutable packet/request ownership,
+  arm claims and failure recovery.
+- `forecasting/trial_provider.py`: provider readiness, receipts and quota reservations.
+- `forecasting/trial_contracts.py`: versioned response validation and reviewed
+  evaluation compatibility; `trial_evaluation.py`: read-only paired scoring.
+- `forecasting/trial_readiness.py`: pre-enrollment evidence/lesson coverage audit.
+
+Execution identity and evaluation identity are separate. Compatibility mappings
+require source review; never update historical trial rows to make a hash match.
+
+
+### Host compatibility contract
+
+`protocol/rpc/host.py` owns compatibility request/response types.
+`tui_gateway/host_rpc.py` advertises the supported wire-version range and actual
+registered RPC method names. Stdio, WebSocket and HTTP use that same descriptor.
+Authenticated clients can call `host.negotiate` with `protocol_version` and
+`required_capabilities`; incompatibility returns RPC error 4004, invalid input
+returns -32602, and negotiation starts no session or model call.
+
+Ink checks the hello descriptor before publishing gateway readiness. It requires
+forecast operations and session/prompt operations, rejects incompatible hosts,
+and closes its transport without entering automatic restart loops. An explicit
+restart can retry after changing the backend. Capabilities indicate implemented
+operations; they do not claim external providers have credentials or are healthy.
+Legacy clients may still use existing RPCs; negotiation is not an authentication
+mechanism or a replacement for per-operation input validation.
+
+
+### Session application selection
+
+`superforecasting_agent/application/sessions.py` owns resumable-session selection:
+input validation, internal-source exclusion, explicit administrative source
+selection, active-session exclusion after compression projection, and pagination.
+Ink list/auto-resume, classic CLI recent history, and CLI list/browse consume it.
+Storage owns SQL and compression lineage; products own rendering and the set of
+currently active session IDs. Import checks forbid presentation and transport
+imports from this application package.
+
+The session database serving lifetime belongs to
+`superforecasting_agent/hosting/storage.py`. The host drains admitted workers
+before closing it; transports acquire it through the host adapter. Initialization
+failures preserve diagnostics, failed close retains ownership for retry, and a
+stopped owner cannot reopen until explicit host startup. Presentation imports are
+forbidden by the storage-owner import contract.
+
+Raw host profile snapshots and their content cache belong to
+`superforecasting_agent/hosting/configuration.py`. Paths are explicit; snapshots
+carry resolved profile identity and revision. Atomic writes, update locking and
+revision metadata belong to `superforecasting_agent/storage/files.py`. Runtime
+CLI loaders retain their expansion/default policy and delegate revision identity
+to storage. The host configuration owner cannot import presentation modules.
+
+Live runtime membership and retirement belong to
+`superforecasting_agent/hosting/registry.py`. Registration cannot silently replace
+an existing runtime ID. Enumeration snapshots membership, and retirement preserves
+an entry until finalization and resource disposal succeed. Session content remains protected by each
+session's history/admission lock. The registry imports no transport or product.
+
+
+### Command handoff transport semantics
+
+Ink requests `command.dispatch` first. An unsupported native command returns
+error code 4018 with `data: {dispatch: "slash.exec", execution_started: false}`.
+Only that pre-execution handoff (or an absent method, -32601) can invoke the legacy
+worker. The existing `slash.exec` handoff to `command.dispatch` stays available
+for older clients. Error code/data and established older-host handoff messages
+are preserved. Timeouts, disconnects, execution/validation failures and stale
+sessions cannot trigger another execution. Plugin/skill handlers report owned
+failures directly instead of allowing fallthrough.
+
+
+### Runtime selection commands
+
+`runtime/codex_runtime_switch.py` owns runtime argument interpretation, binary
+readiness checks and change/migration results for CLI, messaging and native TUI.
+Consumers supply persistence. TUI supplies the host snapshot owner and preserves
+the current agent until a new session. Failed persistence leaves the caller
+snapshot unchanged; successful persistence retains its updated revision.
+
+
+### Notification routing
+
+`hosting/notifications.py` owns conversation-key matching for background events.
+Session-bound events may only be consumed by their named conversation; retry
+counts cannot redirect ownership. The process registry retains that key when
+producing completions. TUI polling supplies queue access and rendering/turn
+callbacks; its historical routing helper delegates to the shared policy.
+
+`hosting.notifications.poll_notifications` also owns queue admission, stop/requeue
+decisions and session exclusion. Transport adapters supply formatting and delivery
+callbacks. A transitive import contract prohibits presentation, runtime, agent and
+tool implementation dependencies from this owner.
+
+
+### Numerical backend installation boundary
+
+`forecasting.bayes_toolkit` and `forecasting.market_compute` load installed
+scientific libraries but never run package installers. Their compatibility
+`ensure_industry_backends` functions now probe/load only. Core algorithms retain
+the existing standard-library fallbacks; advanced models report degraded results
+when their backend is unavailable. Installation belongs to environment setup.
+For an existing virtual environment, optional backends can be installed explicitly:
+
+```sh
+python -m pip install 'scipy==1.16.2' 'statsmodels==0.14.5'
+```
+
+Use that environment's Python, then restart the backend so availability probes
+reflect the new installation. The existing optional installer group names remain
+for compatibility; forecast refresh and numerical calls no longer invoke them.
+
+
+### Provider quota inspection
+
+`runtime/quota_commands.py` owns `/gquota` validation and report construction for
+CLI and native TUI. Existing Google OAuth and Code Assist adapters own credentials
+and HTTP requests. This operation does not construct an agent or classic worker.
+
+
+### Messaging configuration inspection
+
+`runtime/platform_commands.py` owns `/platforms` report assembly and validation
+for CLI and native TUI. Gateway configuration owns loading and reset policy; the
+platform registry supplies labels. This report is configuration-only and never
+claims that enabled adapters are connected.
+
+`forecasting/distribution_parameters.py` owns pure Gaussian moment extraction
+shared by censoring and ledger scoring. Neither censoring arithmetic nor the
+numerical engines need ledger construction. Transitive numerical import
+contracts prohibit runtime, agent, tools and presentation dependencies.
+
+
+### Background agent inheritance
+
+`agent/background_options.py` owns inheritance from a parent agent plus explicit
+host defaults. Empty selections are meaningful; mutable configuration is copied.
+Adapters supply session identity/storage and defaults. `agent.agent_factory` owns
+construction using the inherited resolved runtime, without resolving a new account.
+
+
+### Startup prompt assembly
+
+`agent/startup_prompt.py` owns validation and combination of a system prompt
+with requested startup skills for CLI and TUI. The existing skill loader owns
+lookup and usage tracking; product adapters supply parsed skill names and session
+identity. Missing skills fail before model construction.
+
+Classic CLI foreground and background construction also uses
+`agent.agent_factory.build_agent`. Resolved provider fields, ACP command arguments
+and credential pools share the TUI mapping and provider/model validation. The CLI
+still owns its presentation callbacks and session initialization; full foreground
+configuration assembly remains an area for further consolidation; the legacy
+slash worker and its lifecycle plumbing have been removed.
+
+`runtime/cron_commands.py::cron_command_output` owns scheduled-task slash-command
+parsing, invocation and textual results for classic CLI and native TUI dispatch.
+It uses the existing cron tool/storage operations and returns text without global
+stdout redirection. Neither an agent nor a classic CLI worker is needed. Tool
+failures remain visible; the transport must not replay a command after execution.
+
+`agent/session_lifecycle.py` retains child-agent handles whose release/full close
+fails. Cleanup reports incomplete disposal to the host after attempting independent
+resources. Retries operate on those exact handles; task-ID cleanup remains once per
+parent owner. Reentrant child disposal is guarded independently from the parent's
+resource lock, so callbacks cannot replay an in-flight batch.
+
+`agent/openai_clients.py` retains failed SDK close handles. Lifecycle teardown
+refuses to report complete while these remain unconfirmed: HTTPX can set its
+closed flag before transport disposal raises, making subsequent public close calls
+no-ops. Retention is diagnostic containment, not a promise of automatic transport
+recovery; private SDK/socket internals remain outside agent ownership.
+
+Terminal sandbox publication is tied to its per-task creation-lock identity.
+Cleanup invalidates that identity atomically with detaching the active environment.
+Retired creators and waiters cannot publish into or execute against a replacement
+session; unpublished sandbox disposal uses its direct object handle.
+
+File adapters bind to an exact environment object and creation generation. Both
+lazy environment and adapter publication reject retired generations. Terminal
+cleanup uses conditional cache invalidation against its detached environment, and
+live-path bookkeeping obtains cwd from the currently active environment.
+
+`tools/environments/configuration.py` owns the pure mapping from loaded terminal
+configuration plus per-task overrides to sandbox constructor arguments. Terminal
+and file tools consume the same mapping, including backend images, cwd, timeout,
+SSH/local persistence and container options. Mutable container options are copied
+for each construction. The module has strict lint/format/type coverage and a
+transitive import contract forbidding dependencies on its runtime consumers.
+
+Goal managers no longer use a process-global database cache. A supplied database
+provider yields borrowed host storage; otherwise the standalone manager owns its
+connection and supports `close()` and context-manager use. Failed explicit close
+retains ownership for retry, and initialization failure closes only owned storage.
+A weak finalizer supports legacy callers that discard standalone managers without
+closing explicitly. Compatibility load/save helpers close their own short-lived
+connections. CLI/gateway callers can migrate to their existing host DB providers
+without changing goal validation or compare-and-swap behavior.
+
+Classic CLI and messaging-gateway goal managers now borrow their existing
+`_session_db`, as TUI managers borrow host storage. Missing host storage never
+falls back to standalone database creation. CLI goal-manager reuse checks both
+session and database identity; rebinding closes only the old manager, not its
+borrowed connection. Gateway command lookup, queued-continuation checks and
+post-turn judging all use the same host store.
+
+Tool selection distinguishes absent configuration from a saved empty list.
+`tooling/selection.py` owns this policy: saved `[]` enables no tools, including
+implicit plugin/MCP/credential additions. TUI startup forwards the resolved list
+unchanged; it must not translate `[]` into the agent's `None` (all-tools) sentinel.
+
+`tooling/startup_selection.py` owns startup toolset override validation, plugin
+lookup, enabled/disabled MCP classification and configured-selection fallback.
+The TUI passes its override string and setting label and renders returned notices
+through a callback. The shared owner has strict lint/format/type checks and a
+transitive import contract prohibiting classic CLI and TUI dependencies. Empty
+configured selections remain empty; explicit all-tool overrides remain `None`.
+
+Every import-bound RPC family rebinds its server references, callbacks and constants
+when registered. Registration transfers the family to the receiving process-level
+server owner; it does not support simultaneously serving multiple server module
+instances through the same module globals. Closure-based families already capture
+the receiving server. The registration-owner regression discovers import-bound
+families and checks every imported dependency against its registered owner.
+
+
+### Goal command transitions
+
+`application/goals.py` owns goal command parsing, aliases and one-shot manager
+mutation for classic CLI, messaging gateway and native TUI. It returns immutable
+value snapshots; the application owner imports no runtime, storage or product.
+Adapters retain session-manager acquisition, localized rendering, pending-message
+cleanup and kickoff delivery. Storage and concurrent-state checks remain with
+GoalManager. The application package import contract and strict directory-wide
+lint, formatting and types cover this owner automatically.
+
+`application.goals.execute_subgoal` owns criterion command validation and dispatch
+through a manager port. All three consumers call it directly; the prior runtime
+module is a compatibility re-export. A dedicated transitive import contract now
+forbids runtime, storage, agent, tool and forecasting implementations from the
+goal application owner, supplementing the existing presentation restrictions.
+
+`configuration/goals.py` owns interpretation of configured goal turn budgets.
+CLI manager acquisition, gateway manager acquisition, TUI goal commands and TUI
+post-turn continuation use it. Positive integers and numeric strings are accepted;
+booleans, fractions, nonpositive values and malformed sections use the 20-turn
+default. Existing stored goal history and explicit manager mutation arguments
+are not reinterpreted by this configuration reader.
+
+
+### Detached forecast worker entrypoint
+
+`python -m superforecasting_agent.worker run <job_id>` owns backend process
+startup and plugin discovery, then calls the forecasting job runtime. The detached
+launcher uses this product entrypoint. `python -m forecasting.jobs` remains a
+compatibility forwarding entrypoint with its historical usage message. Plugin
+startup failure emits diagnostics while preserving the existing best-effort
+registered-provider behavior. Job state and exit-status semantics are unchanged.
+This removes the job entrypoint's direct domain-to-runtime import exception; it
+does not claim that the compatibility entrypoint is a pure domain module.
+
+
+### Explicit provider/model syntax
+
+`configuration.providers.split_provider_model` owns parsing of known provider
+prefixes, canonical aliases and `custom:<endpoint>:<model>` selections. Interactive
+model commands and quorum agent construction consume the same pure policy.
+Callers supply their known-provider catalog and own implicit routing. Catalog
+discovery and credential availability remain runtime responsibilities; the quorum
+catalog dependency is not yet removed. Unknown prefixes remain part of the model.
+
+Quorum pinned-model preflight respects the same explicit provider identity used
+by agent construction. A connected aggregator does not authenticate a different
+explicit provider. Named custom endpoints require their exact identity in supplied
+provider details. Bare IDs keep implicit routing. Injected legacy ID-only provider
+rows remain supported; explicitly false or malformed authentication flags cannot
+approve a pinned entry.
+
+
+### Scoped panel agent construction
+
+`agent.agent_factory.managed_agent` owns construction through final close for
+one complete conversation unit. Quorum single-turn and blind/reconcile execution
+use it, closing after both turns or an error. Cleanup runs in the worker that
+uses the agent; timeout reporting does not close a still-active call. The agent
+factory now has mandatory lint, format and type checks. Failed close propagates
+with original error context; forced interruption and retained failed-close retry
+ownership remain separate runtime work.
+
+Snapshot restore stages every validated member before replacing live files. A
+copy failure therefore leaves existing destinations untouched. Publication errors
+raise with confirmed progress and explicitly allow that the failing target may
+already have changed (for example, a post-rename fsync failure). Success means
+all members were published. Journaled roll-forward recovery retains verified copies
+after interruption; host-wide writer quiescence is still required before admitting
+live TUI restoration.
+
+
+
+Skills Hub slash dispatch belongs to `runtime.skills_hub`. The classic CLI supplies
+its console; native TUI dispatch uses a bounded per-call console buffer under
+host command admission. This reuses skill operations without starting a second
+chat runtime. Fetching and installation still belong to the existing Skills Hub
+tool adapter; in-progress synchronous I/O is not cooperatively cancellable.
+
+
+Diagnostic report collection and sharing belong to `runtime.debug`; system dump
+collection belongs to `runtime.dump`. Both route textual output through the
+request-local application output sink. TUI /debug directly consumes the shared
+operation under host admission, preserving protocol stdout during nested dump
+collection; the classic CLI uses the same report operation with default streams.
+
+
+`application.footer` owns global runtime-footer command validation and atomic
+transitions through the shared storage writer. CLI and native TUI consume its
+textual operation; messaging consumes its mutation and retains platform-specific
+status rendering. A platform override cannot become the input to a global toggle.
+
+
+`application.handoff` owns attempt-scoped durable observation and interruptible
+waiting. Storage owns compare-and-set transitions; callers own session admission,
+platform validation, and presentation. The classic command borrows host storage
+and interprets the shared immutable outcome, without creating another database
+owner. Gateway-specific configuration does not enter the application service.
+
+
+Native TUI handoff consumes the shared application waiter under host command
+ownership. Destination configuration and command events remain transport/runtime
+adapters. SQLite admission excludes pending/running handoffs from new durable TUI
+turns and excludes active durable turns from handoff requests. The adapter retains
+the source attempt to recognize completion after a local waiting deadline.
+
+
+Local-turn handoff admission belongs to `application.handoff`: both foreground
+and background TUI prompts consume it before model construction. It reads durable
+state for reconnected handles and retains stricter completion ownership for a
+live source attempt. Storage read failure propagates to admission as an error.
+
+### Market forecaster initialization ownership
+
+The market forecaster delegates runtime initialization to its injected agent factory.
+The default factory loads the tool runtime, which already owns plugin discovery.
+The redundant eager discovery call and internal `discover` switch are removed.
+This removes the forecasting-to-runtime plugin import exception; quorum provider
+discovery/model selection remains the sole runtime exception, alongside the
+separately frozen tool imports. A fresh-process regression verifies discovery
+through the actual default agent class import; injected factories remain lazy.
+
+### Shared forecasting agent construction
+
+`agent.agent_factory.build_forecast_agent` owns forecasting desk prompt assembly
+and optional startup-skill loading, delegating provider resolution/allocation to
+`build_agent`. Classic CLI and native TUI desk constructors use this entry point.
+They supply session identity, borrowed storage and transport callbacks unchanged.
+Invalid prompts, missing skills and conflicting raw prompt overrides fail before
+this factory resolves a provider or allocates an agent. Generic/background agent
+construction still uses `build_agent`; launch-setting selection remains in the
+adapters and is not yet a completed host boundary. A direct-import contract
+prevents the factory/startup-prompt owner from importing CLI or gateway adapters;
+indirect runtime compatibility dependencies remain allowed.
+
+### Host-owned desk launch policy
+
+`superforecasting_agent.hosting.desk_agent` resolves the supplied profile and
+launch overrides, selects static provider/model routing, turn budget, toolsets,
+reasoning, service tier, startup skills and execution flags, then calls the shared
+forecasting factory. TUI RPC captures its environment/session aliases and supplies
+callbacks, warning output and borrowed session storage. Inspection helpers delegate
+to the same owner. No RPC/global transport state is imported by the host module;
+its direct presentation-import contract and directory-wide strict checks apply.
+Configuration interpolation still uses the configuration owner's environment
+expansion. Background construction/disposal remains in the RPC handler.
+
+### Host-owned background conversations
+
+`hosting.background.start_background` owns reservation, worker launch, agent
+construction, execution, initial cleanup and completion reporting. It captures the
+calling context before launching a dedicated worker. RPC supplies its parent
+session context/approval scope and transport reporting callback; `desk_agent`
+builds fallback options from one supplied configuration snapshot, preserving the
+separate 25-turn background default and inherited resolved provider account.
+
+Background agents join the existing child registry with kind=background, so
+shared /agents and /stop can inspect and interrupt them within the parent session.
+ChildCleanup retains exact failed-close handles; /stop and session disposal retry
+them. Reporting failure does not retry the model call. Handles remain in memory;
+this does not add process-death recovery or fix an SDK that cannot retry its own
+partially completed close. Construction failures before a handle is returned are
+still subject to the underlying agent factory's ownership guarantees.
+
+The native /agents overlay consumes background records from delegation.status,
+refreshing while open and retaining a visible stale-state warning if inspection
+fails. Session changes clear the snapshot. Cleanup-pending records remain visible
+until the backend confirms successful disposal; the display points users to /stop.
+The protocol now names record kind and permits fractional Unix start timestamps.
+
+### Structured acquisition and configuration reads
+
+`forecasting/sources/dispatch.py` owns adapter selection and option forwarding
+for both market-model refresh and the forecasting tool. Fetchers and parsers
+retain their source-specific contracts; callers own evidence persistence.
+A transitive import gate prevents dispatch from loading tools, agents, CLI,
+gateways or forecasting application orchestration.
+
+`superforecasting_agent/storage/forecast_configuration.py` owns the layered
+forecast configuration reader and its process singleton. `forecasting/appconfig.py`
+re-exports that API and retains diagnostics, including optional runtime checks.
+Source adapters use the storage reader directly, sharing overrides and profile
+selection with existing callers without importing diagnostics.
+
+### Pinned panel route validation
+
+`forecasting/panel_selection.py` owns pinned-route validation as well as connected
+panel selection. Callers supply credential rows and known provider syntax names;
+the module performs no discovery. Explicit named endpoints retain exact identity,
+and aggregator credentials cannot satisfy an explicit different provider route.
+Configured panelists and judge are validated together against one captured
+provider snapshot. The import prohibition on runtime and presentation is
+transitive. Discovery remains in the quorum adapter pending further extraction.
+
+### Subprocess output descriptor ownership
+
+`superforecasting_agent/processes.py::private_process_output` owns parent-side
+stdout/stderr descriptors across allocation and spawning. Both normal browser
+commands and temporary Chrome fallback use it. Each descriptor is registered
+for cleanup immediately; a second-open failure cannot leak the first. Children
+retain their inherited descriptors independently after the parent closes its
+copies. This addresses a reproduced allocation leak, not the historical native
+SSL or late bad-file-descriptor incident.
+
+### Watched source acquisition and evidence payloads
+
+`forecasting/sources/watched.py` owns concurrent acquisition and ordered per-source
+results. Scheduled, batch and CLI refresh inject it into ledger operations; the
+agent tool re-exports it for compatibility. A malformed options object produces
+one source error without discarding successful peers. It never writes the ledger.
+
+`forecasting/sources/evidence.py` owns parsed-record-to-evidence formatting with no
+fetching, execution or persistence imports. `sources/filters.py` owns shared filter
+normalization. Transitive import gates enforce both boundaries; each extracted
+module has strict lint, formatting and type coverage.
+
+### Question reuse candidates
+
+`forecasting/application/question_reuse.py` owns candidate ranking and the shared
+warning threshold for question creation/onboarding. It reuses forecast search,
+reads active questions and returns ranked candidates without writing the ledger.
+CLI onboarding imports it directly; tool compatibility exports preserve existing
+callers. A title match is still a heuristic, not proof of equivalent resolution
+criteria. Routing/force-new decisions remain with creation orchestration.
+
+### Market output and prompt callback lifetimes
+
+`forecasting/application/market_output.py` owns the thread-local handoff of the
+latest emitted presentation/spec. The registered tool validates and records;
+market orchestration consumes once without importing tool registration. Repair
+attempts replace the previous artifact rather than accumulating unused history.
+
+`superforecasting_agent/tooling/prompt_callbacks.py` owns approval and sudo prompt
+callback slots. Terminal adapters re-export the existing API. Interactive market
+builds use a temporary approval scope covering construction and conversation,
+restoring the exact prior callback on success, failure and interruption. Both
+owners have transitive consumer-import prohibitions and strict directory gates.
+
+### Slack transport ownership
+
+`forecasting/transports/slack.py` owns token resolution, HTTP action dispatch and
+structured success/error results. Notifications, collaboration and connection
+checks use it directly. `tools/slack_tool.py` owns the agent schema/registration
+and JSON serialization, retaining compatibility exports for low-level callers.
+
+Wire responses require an object with a boolean `ok`; the transport computes the
+canonical `success` field. Explicit OAuth-store workspace lookups cannot fall
+through to a different entry, and non-string tokens are ignored. The existing
+SLACK_BOT_TOKEN environment override still takes precedence. A transitive import
+gate prevents the transport from importing agent execution or presentation.
+
+### Governed forecast sharing
+
+`forecasting/application/sharing.py` owns share policy resolution, current-card
+construction and ordered upload/post execution. CLI and agent action adapters use
+the same structured result. The tool only serializes the outcome. Policy refusal
+and approval-required states post nothing. An overflow body must upload
+successfully before its metadata card can be posted; malformed or contradictory
+transport status cannot report success. Network execution belongs to the Slack
+transport and remains injectable for deterministic tests.
+
+
+### Forecast model building
+
+`forecasting/application/model_build.py` owns parameter preparation and model-build
+execution for the CLI and forecast tool. The CLI no longer calls the tool registry.
+`link_built_model` uses the ledger transaction owner for both reciprocal link writes;
+ordinary failures return a failed link result with the preserved model ID, while
+interruptions roll back and propagate. Retrying the link does not rebuild the model.
+This does not make model generation and link persistence one transaction, nor does
+it change the separate `model_to_forecast` seed conversion flow.
+
+
+### Information triage
+
+`forecasting/application/triage.py` owns labeling, contested-label routing,
+adjudication, rubrics and trust reports. CLI and tool adapters consume the same
+structured operation results and errors. Contested-label selection plus alert and
+label writes run inside a ledger transaction; expert adjudication and alert
+acknowledgement commit together. Interruptions roll back and propagate. No model
+or network call is held inside those write transactions. The CLI no longer enters
+the forecast tool registry to perform triage.
+
+
+Expert triage writes use strict label normalization at the application and ledger
+boundaries. Unknown labels are rejected; recognized aliases are stored as canonical
+classes. Model-generated suggestions retain the tolerant skim fallback. An invalid
+adjudication batch rolls back all its writes. Historical records already coerced
+into a valid class cannot be distinguished from intentional labels by this check;
+this change does not retroactively certify those records.
+
+
+### Tool cancellation signaling
+
+`superforecasting_agent/tooling/interrupts.py` owns the shared thread-scoped
+interrupt state and compatibility event proxy. `tools/interrupt.py` only re-exports
+the same objects. Host/application integrations can now check cancellation without
+importing a tool implementation. The transitive import gate prohibits consumer
+imports. This preserves the existing thread-ID signaling model; it does not add
+forced cancellation of blocking provider calls or solve thread-ID reuse.
+
+
+### Shared web search
+
+`superforecasting_agent/tooling/web_search.py` owns bounded search execution,
+provider-result status/shape checks and cancellation checks. Tools serialize its
+result; supervisor research consumes it directly. Provider selection has one
+owner in `agent/web_search_registry.py`, reading shared profile storage instead
+of runtime CLI configuration. Explicit available-or-unavailable search providers
+retain precedence over the shared backend, including legacy case-insensitive
+names. Provider failures remain visible rather than silently switching routes.
+
+The search service has a transitive prohibition on tool/product/runtime adapter
+imports. The forecast-to-tool contract now has zero direct exceptions. Existing
+extract/crawl compatibility helpers and dynamically loaded provider internals are
+separate migration surfaces; this does not claim every plugin is independent of
+legacy tool modules. Provider calls remain cooperatively cancellable. Late
+results are discarded after cancellation, and tool diagnostic failures do not
+invalidate a successful search.
+
+
+### Provider identity
+
+`superforecasting_agent/configuration/provider_catalog.py` owns ordered provider
+identities, labels and recognized provider-prefix names, including plugin-derived
+entries. The runtime model picker re-exports the same objects; quorum prefix
+parsing reads the shared owner. The catalog has a transitive runtime/presentation
+import prohibition. Model defaults and credential status still have their own
+remaining extraction work; moving identities does not qualify provider callability.
+
+
+### Offline model defaults
+
+`agent/model_catalog.py` owns fallback provider model lists and offline curation;
+`configuration/codex_catalog.py` owns Codex fallback IDs and forward-compatible
+catalog rules. Runtime pickers re-export the same lists/functions, while quorum
+reads defaults directly from the shared catalog. Runtime modules retain live
+catalog fetches and their caches. These snapshots are not claims of current
+provider availability. Credential-status discovery remains in the runtime auth
+implementation and is the remaining quorum adapter dependency.
+
+
+### Text descriptor ownership
+
+`storage/files.py::owned_text_descriptor` retains sole ownership of a raw file
+descriptor. Its text wrapper borrows it (`closefd=False`), so failed wrapper
+construction and early wrapper closure cannot leak or double-close the descriptor.
+Atomic configuration writers and the three native auth token writers use it.
+Failure and repeated-teardown tests preserve the previous target and unrelated
+open descriptors. This fixes a reproduced construction leak; it does not identify
+the historical native SSL or late bad-file-descriptor crash causes.
+
+
+### Auth-store persistence
+
+`superforecasting_agent/storage/auth.py` owns the auth-store version, legacy
+format parsing, corrupt-file preservation and durable private writes. Paths are
+explicit. Runtime auth delegates to it after profile selection and retains the
+cross-process read/modify/write lock, refresh and login behavior. A transitive
+import gate excludes execution and presentation from this storage owner.
+
+The runtime test guard now rejects both primary and legacy default auth homes;
+explicit isolated test profiles remain usable. Legacy credential-pool and systems
+formats round-trip through the shared owner, and malformed source files remain
+available for recovery. The module does not make concurrent unlocked callers safe
+or turn credential-status discovery into a passive operation.
+
+
+### File-lock resource identity and fallback reads
+
+`storage/locking.py` tracks reentrancy by thread-local holder, process and resolved
+path. Reusing a holder for another store does not skip that store's OS lock.
+Nested interruption releases only the inner resource. The no-OS-backend fallback
+tracks nesting only; it does not promise cross-process exclusion.
+
+Global credential fallback calls `storage.auth.load_auth_store` with
+`preserve_corrupt=False`, so inspection cannot create recovery files outside the
+active profile. Owned-store reads retain corruption backups and only report
+preservation after the copy succeeds. Both default credential homes are excluded
+from pytest fallback reads; isolated fixtures remain supported.
+
+
+### Authentication metadata and pure policy
+
+`superforecasting_agent/configuration/authentication.py` owns `ProviderConfig`,
+the plugin-extended authentication registry, provider endpoint/scope defaults,
+placeholder rejection and Kimi key-prefix routing. TUI, CLI setup, gateway token
+validation and pool consumers import this owner directly. Runtime auth retains
+compatibility exports of the same objects. The shared strict scope and a new
+transitive contract prohibit runtime/execution/presentation dependencies.
+
+Metadata selection does not read credential files, select a pool entry or refresh
+a token. Provider plugins retain their existing discovery/import behavior; this
+boundary does not certify arbitrary external plugin code. Runtime status calls
+still own credential inspection and refresh, so the quorum discovery exception
+remains open. Anthropic settings/status inspection now applies the same usable-
+secret rule as inference selection, skipping placeholders before token fallback.
+
+All three `.env` writers borrow their UTF-8 wrapper from the shared raw descriptor
+owner. Construction failure closes the temporary descriptor without changing the
+prior file or process environment. Existing locking, permission restoration and
+atomic publication semantics remain in their respective owners.
+
+
+### Credential-file reading and parsing
+
+`storage/environment.py` reads an explicit profile file and returns independent
+string mappings. `configuration/env_lines.py` owns concatenation repair and the
+legacy KEY=VALUE parsing grammar. The content-keyed, single-entry parsing cache
+also includes recognized keys, so same-size timestamp-preserving rotations and
+catalog changes cannot reuse an obsolete parse. Concurrent profile reads share
+only immutable cache inputs; returned mappings are copies. Reads never rewrite
+the file or mutate the process environment, and access failures propagate.
+
+`runtime.config.load_env` and its invalidation function delegate to this owner,
+retaining active-profile selection and compatibility call sites. The storage
+reader has no execution/presentation dependency under a transitive contract.
+Token selection, OAuth refresh, environment application and credential writes
+remain distinct operations; this does not remove quorum's discovery exception.
+
+
+### Credential record selection and final persistence policy
+
+`storage/auth.py` owns provider-record updates and stored credential-pool overlay
+rules. Nonempty local lists shadow global candidates per provider; returned pool
+records are independent copies. Empty provider mappings remain present, and
+activation is an explicit mutation option. These are candidate records, not proof
+of usable credentials or permission to run inference. Profile selection and
+refresh remain runtime responsibilities.
+
+`storage/credential_policy.py` owns borrowed-source persistence rules; the former
+agent module is a compatibility export. Pool serialization and the final auth
+file writer both use this same policy. Direct store writes can no longer bypass
+it. Known secret-bearing fields are removed recursively from borrowed records;
+reference/status metadata remains. Manual and recognized provider-owned sources
+retain their existing persistence rules. Caller-held credential values are not
+rewritten by preparing the disk snapshot.
+
+Z.AI detection captures the profile path before probing and publishes only its
+cache metadata after re-reading under that profile's auth lock. It neither
+changes the active provider nor overwrites intervening metadata. Cache-write
+failure reports a diagnostic without discarding a successfully detected endpoint.
+
+
+Provider configuration inspection uses `configuration.providers.configured_provider`.
+The TUI `config.get provider` RPC reports configured selection, not the live
+credential-resolved route, and never invokes authentication discovery. Its
+versioned protocol model distinguishes unknown authentication (`null`,
+`authentication_status: not_checked`) from verified access. Credential-aware
+model discovery remains runtime-owned; a configured key is not proof of access.
+
+
+AWS source and region discovery is owned by `hosting/aws_credentials.py`.
+Status, routing, setup, doctor and auxiliary-client consumers share that owner;
+the Bedrock execution adapter retains compatibility exports. Its enforced import
+boundary excludes runtime, agent, tool and presentation modules. Importing it
+loads no SDK or installer. Explicit discovery can consult the installed SDK
+credential chain; it is not a passive or verified-access guarantee. Optional SDK
+installation belongs to actual Converse or Anthropic Bedrock client construction.
+
+
+### Credential services
+
+`superforecasting_agent/credentials/` owns credential discovery, token refresh,
+auth-store locking, provider availability inventory and external credential-file
+adapters. `auth.py` holds shared OAuth state and compatibility exports; `oauth/` separates
+provider refresh, store, status, callback, policy and routing operations; `catalog.py`
+provides the inventory used by quorum and model selection. `anthropic.py`,
+`copilot.py` and `azure.py` separate credential operations from inference SDK
+construction. `environment.py` reads shared profile storage without CLI startup.
+`configuration/provider_validation.py` owns supplied-value provider normalization
+and diagnostics; runtime adapters retain configuration-loading policy.
+
+Interactive login/prompt/configuration commands remain in `runtime/auth.py` and
+`runtime/copilot_auth.py`, with compatibility exports for inherited callers.
+Their internal service calls address the actual owner, preserving one mutable
+cache/lock owner. Forecasting imports neither runtime auth nor runtime model
+inventory. A transitive import rule prohibits credentials from importing runtime,
+classic CLI, TUI gateway, messaging gateway or forecast CLI. The full credential
+package is covered by strict Python lint, formatting and type checks.

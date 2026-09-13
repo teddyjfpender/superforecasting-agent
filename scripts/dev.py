@@ -19,6 +19,9 @@ ROOT = Path(__file__).resolve().parents[1]
 # The stricter scope grows with ownership extractions. Legacy code still runs
 # the repository-wide encoding gate; no silent baseline hides new-layer errors.
 STRICT_PYTHON = (
+    "agent/browser_provider.py",
+    "forecasting/economic_measurements.py",
+    "agent/http_cleanup.py",
     "superforecasting_agent/credentials",
     "superforecasting_agent/storage",
     "agent/conversation_lifecycle.py",
@@ -73,6 +76,8 @@ STRICT_PYTHON = (
 
 # Inherited owners can adopt correctness checks before wholesale formatting/types.
 CORRECTNESS_PYTHON = (
+    "agent/agent_runtime_helpers.py",
+    "scripts/investigate_native_tls.py",
     "superforecasting_agent/runtime/kanban.py",
     "superforecasting_agent/runtime/kanban_db.py",
 )

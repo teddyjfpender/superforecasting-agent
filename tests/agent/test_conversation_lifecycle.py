@@ -77,3 +77,59 @@ def test_failed_cleanup_retains_exact_handle_for_retry():
     assert agent.close.call_count == 3
     owner.close()
     assert agent.close.call_count == 3
+
+
+@pytest.mark.parametrize('fresh', [False, True])
+def test_deadline_interrupts_exact_agent_rejects_late_result_and_retires_it(fresh):
+    expired = threading.Event()
+    first = Mock()
+    first.interrupt.side_effect = expired.set
+    def run(*args, **kwargs):
+        assert expired.wait(3)
+        return 'late probability'
+    first.run_conversation.side_effect = run
+    replacement = Mock()
+    factory = Mock(side_effect=[first, replacement])
+    owner = AgentConversations(factory, fresh=fresh)
+    with pytest.raises(TimeoutError):
+        owner.run('request', system_message='policy', timeout=0.02)
+    first.interrupt.assert_called_once_with()
+    first.close.assert_called_once_with()
+    owner.run('next', system_message='policy', timeout=3)
+    replacement.interrupt.assert_not_called()
+    owner.close()
+
+
+def test_expired_uncooperative_call_keeps_ownership_until_it_returns():
+    expired, release = threading.Event(), threading.Event()
+    agent = Mock()
+    agent.interrupt.side_effect = expired.set
+    def run(*args, **kwargs):
+        assert release.wait(3)
+        return 'late result'
+    agent.run_conversation.side_effect = run
+    owner = AgentConversations(lambda: agent, fresh=True)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(owner.run, 'request', system_message='policy', timeout=0.02)
+        try:
+            assert expired.wait(3)
+            assert not future.done()
+            with pytest.raises(RuntimeError, match='still running'):
+                owner.close()
+            agent.close.assert_not_called()
+        finally:
+            release.set()
+        with pytest.raises(TimeoutError):
+            future.result(timeout=3)
+    owner.close()
+    agent.close.assert_called_once_with()
+
+
+@pytest.mark.parametrize('timeout', [0, -1, float('nan'), float('inf'), True])
+def test_invalid_deadline_never_constructs_an_agent(timeout):
+    factory = Mock()
+    owner = AgentConversations(factory, fresh=True)
+    with pytest.raises(ValueError, match='finite positive'):
+        owner.run('request', system_message='policy', timeout=timeout)
+    factory.assert_not_called()
+    owner.close()

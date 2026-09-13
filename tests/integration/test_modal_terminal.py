@@ -7,7 +7,7 @@ and can execute commands in Modal sandboxes.
 
 Usage:
     # Run with Modal backend
-    pytest -o addopts="" --live-service=modal tests/integration/test_modal_terminal.py -v
+    scripts/run_tests.sh --live-service=modal tests/integration/test_modal_terminal.py -v
 
     # Or run directly (will use whatever TERMINAL_ENV is set in .env)
     python tests/integration/test_modal_terminal.py

@@ -20,7 +20,32 @@ jobs:
           node-version: '22'
       - name: Bootstrap and enforce the contributor quality gates
         run: python3 scripts/dev.py bootstrap
-      - name: Build independent product profiles
-        run: python3 scripts/build_profiles.py
-      - name: Verify fresh backend and terminal installations
-        run: python3 scripts/verify_profiles.py dist/profiles --python .venv/bin/python
+  installed-products:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-latest, windows-latest]
+        node: ['20.19.2', '22']
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          version: '0.10.9'
+          python-version: '3.11.15'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Build independent products
+        run: |
+          npm ci --prefix ui-tui
+          python scripts/build_profiles.py
+      - name: Verify installed backend, terminal and authenticated host
+        run: python scripts/verify_profiles.py dist/profiles --python 3.11.15 --report qualification/report.json
+      - name: Preserve platform evidence, including failures and skips
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: installed-products-${{ matrix.os }}-node-${{ matrix.node }}
+          path: qualification/

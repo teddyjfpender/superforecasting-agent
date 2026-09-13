@@ -1425,27 +1425,17 @@ def _reap_orphaned_browser_sessions():
             from superforecasting_agent.processes import read_pid_file
             daemon_pid = read_pid_file(Path(pid_file))
         except (ValueError, OSError):
-            shutil.rmtree(socket_dir, ignore_errors=True)
+            # An invalid daemon record is not proof that its resources are gone.
             continue
 
-        # Check if the daemon is still alive. ``os.kill(pid, 0)`` on Windows
-        # is NOT a no-op — use the handle-based existence check.
-        from superforecasting_agent.processes import pid_exists as _pid_exists
-        if not _pid_exists(daemon_pid):
-            shutil.rmtree(socket_dir, ignore_errors=True)
-            continue
-
-        # Daemon is alive and its owner is dead (or legacy + untracked).  Reap.
+        from superforecasting_agent.hosting.browser_processes import stop_daemon
         try:
-            os.kill(daemon_pid, signal.SIGTERM)
-            logger.info("Reaped orphaned browser daemon PID %d (session %s)",
-                        daemon_pid, session_name)
-            reaped += 1
-        except (ProcessLookupError, PermissionError, OSError):
-            pass
-
-        # Clean up the socket directory
+            stop_daemon(Path(socket_dir), session_name)
+        except Exception as exc:
+            logger.warning("Retaining unconfirmed orphan %s: %s", session_name, exc)
+            continue
         shutil.rmtree(socket_dir, ignore_errors=True)
+        reaped += 1
 
     if reaped:
         logger.info("Reaped %d orphaned browser session(s) from previous run(s)", reaped)
@@ -1757,8 +1747,10 @@ def _get_or_create_session_info(task_id: str) -> Dict[str, Any]:
         if provider is None:
             session_info = _create_local_session(task_id)
         else:
+            allocation = None
             try:
                 session_info = provider.create_session(task_id)
+                allocation = session_info
                 # Validate cloud provider returned a usable session
                 if not session_info or not isinstance(session_info, dict):
                     raise ValueError(f"Cloud provider returned invalid session: {session_info!r}")
@@ -1773,6 +1765,24 @@ def _get_or_create_session_info(task_id: str) -> Dict[str, Any]:
                     session_info = dict(session_info)
                     session_info["cdp_url"] = _resolve_cdp_override(str(session_info["cdp_url"]))
             except Exception as e:
+                allocation = getattr(e, "session", allocation)
+                if isinstance(allocation, dict):
+                    partial = dict(allocation)
+                    partial["_cloud_provider"] = provider
+                    disposer = getattr(allocation, "close", None)
+                    if callable(disposer):
+                        partial["_close_cloud_session"] = disposer
+                    remote_id = partial.get("bb_session_id")
+                    if remote_id or callable(disposer):
+                        try:
+                            closed = disposer() if callable(disposer) else provider.close_session(remote_id)
+                            if closed is not True:
+                                raise RuntimeError("Partial cloud allocation cleanup was not confirmed")
+                        except Exception as cleanup_error:
+                            partial["_cleanup_pending"] = True
+                            with _cleanup_lock:
+                                _active_sessions[task_id] = partial
+                            raise RuntimeError("Partial cloud allocation retained for cleanup retry") from cleanup_error
                 provider_name = type(provider).__name__
                 logger.warning(
                     "Cloud provider %s failed (%s); attempting fallback to local "
@@ -2147,7 +2157,11 @@ def _run_browser_command(
                 )
 
             try:
-                _wait_browser_process(proc, timeout)
+                try:
+                    _wait_browser_process(proc, timeout)
+                finally:
+                    from superforecasting_agent.hosting.browser_processes import record_daemon
+                    record_daemon(Path(task_socket_dir), session_info['session_name'])
             except subprocess.TimeoutExpired:
                 logger.warning("browser '%s' timed out after %ds (task=%s, socket_dir=%s)",
                                command, timeout, task_id, task_socket_dir)
@@ -3567,16 +3581,8 @@ def _cleanup_single_browser_session(task_id: str) -> None:
         if session_name:
             socket_dir = os.path.join(_socket_safe_tmpdir(), f"agent-browser-{session_name}")
             if os.path.exists(socket_dir):
-                # agent-browser writes {session}.pid in the socket dir
-                pid_file = os.path.join(socket_dir, f"{session_name}.pid")
-                if os.path.isfile(pid_file):
-                    from superforecasting_agent.processes import read_pid_file
-                    daemon_pid = read_pid_file(Path(pid_file))
-                    try:
-                        os.kill(daemon_pid, signal.SIGTERM)
-                        logger.debug("Sent termination to daemon pid %s for %s", daemon_pid, session_name)
-                    except ProcessLookupError:
-                        pass  # Already gone; other signal failures retain ownership.
+                from superforecasting_agent.hosting.browser_processes import stop_daemon
+                stop_daemon(Path(socket_dir), session_name)
                 shutil.rmtree(socket_dir, ignore_errors=True)
 
         with _cleanup_lock:

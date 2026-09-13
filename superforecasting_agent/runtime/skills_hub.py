@@ -10,6 +10,8 @@ All logic lives in shared do_* functions. The CLI entry point and slash command
 handler are thin wrappers that parse args and delegate.
 """
 
+from superforecasting_agent.tooling import http_io as hub_http
+
 import json
 import re
 import shlex
@@ -1141,7 +1143,7 @@ def _github_publish(skill_path: Path, skill_name: str, target_repo: str,
 
     # 1. Fork the repo
     try:
-        resp = httpx.post(
+        resp = hub_http.post(
             f"https://api.github.com/repos/{target_repo}/forks",
             headers=headers, timeout=30,
         )
@@ -1157,7 +1159,7 @@ def _github_publish(skill_path: Path, skill_name: str, target_repo: str,
 
     # 2. Get default branch
     try:
-        resp = httpx.get(
+        resp = hub_http.get(
             f"https://api.github.com/repos/{target_repo}",
             headers=headers, timeout=15,
         )
@@ -1167,7 +1169,7 @@ def _github_publish(skill_path: Path, skill_name: str, target_repo: str,
 
     # 3. Get the base tree SHA
     try:
-        resp = httpx.get(
+        resp = hub_http.get(
             f"https://api.github.com/repos/{fork_repo}/git/refs/heads/{default_branch}",
             headers=headers, timeout=15,
         )
@@ -1178,7 +1180,7 @@ def _github_publish(skill_path: Path, skill_name: str, target_repo: str,
     # 4. Create a new branch
     branch_name = f"add-skill-{skill_name}"
     try:
-        httpx.post(
+        hub_http.post(
             f"https://api.github.com/repos/{fork_repo}/git/refs",
             headers=headers, timeout=15,
             json={"ref": f"refs/heads/{branch_name}", "sha": base_sha},
@@ -1195,7 +1197,7 @@ def _github_publish(skill_path: Path, skill_name: str, target_repo: str,
         try:
             import base64
             content_b64 = base64.b64encode(f.read_bytes()).decode()
-            httpx.put(
+            hub_http.put(
                 f"https://api.github.com/repos/{fork_repo}/contents/{upload_path}",
                 headers=headers, timeout=15,
                 json={
@@ -1209,7 +1211,7 @@ def _github_publish(skill_path: Path, skill_name: str, target_repo: str,
 
     # 6. Create PR
     try:
-        resp = httpx.post(
+        resp = hub_http.post(
             f"https://api.github.com/repos/{target_repo}/pulls",
             headers=headers, timeout=15,
             json={
