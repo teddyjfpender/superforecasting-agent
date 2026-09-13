@@ -93,3 +93,17 @@ The other retained TLS artifact, `10273517042`, was inspected from run
 is `earlier-native-tls.json`: seven non-crashing workload cases and a synthetic
 capture self-test, still without an original CA hash. Shutdown completed zero
 TLS contexts, so it is not evidence of sustained concurrent shutdown coverage.
+
+## Colored host-log regression
+
+Run `34761935182` at `9ab8fbc1ea538571c69c63a3d66f40467368e76f`
+confirmed that subprocess isolation restores Windows diagnostic output. Native
+Windows again passed the focused terminal tests and installed local TUI. The
+remaining failure was port discovery: Uvicorn's colored formatter restored its
+original `color_message` template after the privacy filter cleared `args`,
+printing `%s://%s:%d`. The filter now removes that alternate template after
+redaction. Regression tests use Uvicorn's actual formatter with colors on/off,
+port placeholders and credentials in both argument-based and literal alternate
+messages. Qualification cleanup no longer masks startup errors with an assertion
+that handshakes were exercised. The HTTP import probe explicitly shuts down its
+owned runtime before interpreter exit.

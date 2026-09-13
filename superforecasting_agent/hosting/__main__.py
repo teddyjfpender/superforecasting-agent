@@ -21,6 +21,9 @@ class _PrivateQueryFilter(logging.Filter):
             r'(\/[^\s?"\']*)\?[^\s"\']*', r"\1?[redacted]", record.getMessage()
         )
         record.args = ()
+        # Uvicorn's colored formatter otherwise substitutes an unredacted,
+        # unexpanded template after this filter has consumed its arguments.
+        record.__dict__.pop("color_message", None)
         return True
 
 

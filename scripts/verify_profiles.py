@@ -589,7 +589,7 @@ def verify(args: argparse.Namespace, report: dict[str, Any]) -> None:
             [
                 str(backend_python),
                 "-c",
-                "import fastapi; import uvicorn; from tui_gateway.http_server import make_server; host = make_server(host='127.0.0.1', port=0); host.restore_transport(); host.server_close()",
+                "import fastapi; import uvicorn; from tui_gateway import server; from tui_gateway.http_server import make_server; host = make_server(host='127.0.0.1', port=0); host.server_close(); assert server.shutdown_runtime()",
             ],
             cwd=root,
             env=terminal_env,

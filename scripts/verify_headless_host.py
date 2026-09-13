@@ -171,11 +171,9 @@ def main() -> None:
                 while not lines.empty():
                     log.append(lines.get_nowait())
                 stderr.close()
-            for credential in ("isolated-host-verification", "rejected-host-token"):
-                assert credential not in "".join(log), (
-                    "host logged authentication token"
-                )
-            assert "[redacted]" in "".join(log), "handshake logs were not exercised"
+        for credential in ("isolated-host-verification", "rejected-host-token"):
+            assert credential not in "".join(log), "host logged authentication token"
+        assert "[redacted]" in "".join(log), "handshake logs were not exercised"
         # Uvicorn re-raises the captured signal after orderly ASGI shutdown.
         # A signal exit alone is insufficient: require the completion marker too.
         assert "Application shutdown complete." in "".join(log), "".join(log)
