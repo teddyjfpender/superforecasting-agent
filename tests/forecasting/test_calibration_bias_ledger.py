@@ -29,22 +29,24 @@ def _plant(ledger, *, domain, p_yes, yes_fraction, n, title_prefix):
     # assertions. (The auto-trigger itself is covered in test_s7_calibration_autoclose.)
     ledger._live_score_count = lambda domain: 0  # type: ignore[method-assign]
     yes = round(yes_fraction * n)
-    for i in range(n):
-        q = ledger.create_question(
-            title=f"{title_prefix} #{i}?",
-            resolution_criteria=CRITERIA,
-            domain=domain,
-        )
-        ledger.create_snapshot(
-            question_id=q.id,
-            probability_or_distribution=p_yes,
-            rationale="planted",
-        )
-        ledger.resolve_question(
-            question_id=q.id,
-            outcome="yes" if i < yes else "no",
-            auto_score=True,
-        )
+    # Fixture population is one batch; tests exercise the completed cohort.
+    with ledger.transaction():
+        for i in range(n):
+            q = ledger.create_question(
+                title=f"{title_prefix} #{i}?",
+                resolution_criteria=CRITERIA,
+                domain=domain,
+            )
+            ledger.create_snapshot(
+                question_id=q.id,
+                probability_or_distribution=p_yes,
+                rationale="planted",
+            )
+            ledger.resolve_question(
+                question_id=q.id,
+                outcome="yes" if i < yes else "no",
+                auto_score=True,
+            )
 
 
 def test_calibration_bias_insufficient_on_empty(tmp_path):

@@ -245,7 +245,12 @@ def test_native_command_watch_cancel_then_continue(tui_bundle, tui_env, tui_home
         session.wait_for(lambda s: "Ctrl+C to cancel" in s.text(), timeout=5, what="command cancellation hint after resize")
         if recovery == "cancel":
             session.send(b"\x03")
-            session.wait_for(lambda s: "(stopped)" in s.text(), timeout=10, what="native watch cancellation result")
+            # The streamed output preview precedes command.finished. Observe the
+            # completed display, not the intermediate preview containing stopped.
+            session.wait_for(lambda s: "(stopped)" in s.text()
+                             and "Running /kanban" not in s.text()
+                             and "Cancelling /kanban" not in s.text(), timeout=10,
+                             what="confirmed native watch cancellation result")
         else:
             import signal
             from .test_gateway_respawn import gateway_processes, shows_reconnect_notice

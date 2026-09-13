@@ -859,6 +859,7 @@ def get_score(ledger, score_id: str) -> ScoreRecord:
 def list_scores(
     ledger,
     *,
+    question_id: str | None = None,
     domain: str | None = None,
     forecast_origin: str | None = None,
     calibration_eligible: bool | None = None,
@@ -868,6 +869,9 @@ def list_scores(
 ) -> list[ScoreRecord]:
     clauses: list[str] = []
     params: list[Any] = []
+    if question_id is not None:
+        clauses.append("question_id = ?")
+        params.append(question_id)
     if domain:
         clauses.append("domain = ?")
         params.append(domain)

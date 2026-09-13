@@ -2,7 +2,7 @@
 
 ## Scope and owners
 
-Backend 0.22.1 and terminal 0.1.1 are published together through
+Backend candidate 0.22.3 and terminal 0.1.1 are published together through
 `production-release.yml`. Tag-triggered runs default to beta; stable publication
 requires an explicit `channel=stable` dispatch. Beta releases never advance
 GitHub or container `latest` aliases. Publication waits for six native jobs to
@@ -34,6 +34,9 @@ live messaging integration.
   moved to the canonical credential owner. Its resolver is now patched where used.
 - CI bypassed the canonical test runner and omitted terminal dependencies. Shared
   isolation, bounded workers and current TUI builds now apply in CI as locally.
+- The artifact-build job installs its pinned process-ownership harness dependency
+  explicitly; dependencies in other jobs or installed product environments do not
+  populate the verification driver's interpreter.
 - Windows checks flagged intentionally Linux-only TLS cleanup and guarded alarm
   access. The Linux restriction is explicit; optional signal lookup is portable.
 - Nix built the package but failed its version-content check. Capture complete
@@ -45,3 +48,23 @@ live messaging integration.
 
 Publication receipts and final artifact checksums will be linked here after the
 formal workflow completes. Existing candidate artifacts are not release evidence.
+
+## Linux qualification follow-up
+
+The first formal run exposed 30-second calibration timeouts, a 240-second
+portfolio-export timeout and a gateway surviving client death. Read transactions
+and question-scoped score queries remove repeated connection setup and whole-ledger
+scans; synthetic calibration fixtures now use one batch transaction. Shutdown
+deadlines cover broken-output/dispatch exits and precede potentially blocking cleanup.
+
+The native cancellation test also now waits for command completion rather than
+the earlier streamed `(stopped)` preview. A store regression verifies that output
+text cannot clear cancellation before the backend's terminal acknowledgement.
+
+The [evaluation identity review](evaluation-review.json) records the exact
+changed functions. Scoring formulas, outcome validation, frozen adjustments and
+trial evaluation remain AST-identical. The explicit compatibility registry admits
+only reviewed identities; existing trial records are not rewritten.
+
+The `v0.22.1` tag remains unpublished after qualification failures. The `v0.22.2`
+run was cancelled in favor of the Linux fixes; neither tag is moved or reused.

@@ -220,26 +220,28 @@ def test_activation_flag_defaults_off_in_registry():
 
 def _seed(ledger: ForecastLedger, origin: str, delta: float, n: int, *, seed: int) -> None:
     rng = random.Random(seed)
-    for i in range(n):
-        p = rng.uniform(0.06, 0.94)
-        q = inv_logit(logit(p) + delta)
-        outcome = "yes" if rng.random() < q else "no"
-        question = ledger.create_question(
-            title=f"{origin} {i}",
-            resolution_criteria=(
-                "Resolves YES if the stated event occurs by the deadline per the "
-                "official source, else NO."
-            ),
-            outcome_space=OutcomeSpace(type="binary", choices=["yes", "no"]),
-        )
-        ledger.create_snapshot(
-            question_id=question.id,
-            probability_or_distribution=p,
-            rationale="Binary forecast.",
-            forecast_origin=origin,
-            calibration_eligible=True,
-        )
-        ledger.resolve_question(question_id=question.id, outcome=outcome)
+    # Fixture population is one batch; tests exercise the completed cohort.
+    with ledger.transaction():
+        for i in range(n):
+            p = rng.uniform(0.06, 0.94)
+            q = inv_logit(logit(p) + delta)
+            outcome = "yes" if rng.random() < q else "no"
+            question = ledger.create_question(
+                title=f"{origin} {i}",
+                resolution_criteria=(
+                    "Resolves YES if the stated event occurs by the deadline per the "
+                    "official source, else NO."
+                ),
+                outcome_space=OutcomeSpace(type="binary", choices=["yes", "no"]),
+            )
+            ledger.create_snapshot(
+                question_id=question.id,
+                probability_or_distribution=p,
+                rationale="Binary forecast.",
+                forecast_origin=origin,
+                calibration_eligible=True,
+            )
+            ledger.resolve_question(question_id=question.id, outcome=outcome)
 
 
 def test_ledger_rows_are_tagged_by_scoreboard_cohort(tmp_path):

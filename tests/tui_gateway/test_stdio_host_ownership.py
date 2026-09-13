@@ -19,6 +19,8 @@ def test_importing_embedded_rpc_server_preserves_stdout():
 @pytest.mark.parametrize('fail', [False, True])
 def test_entry_owns_and_restores_stdio_streams(monkeypatch, http, fail):
     from tui_gateway import entry, server
+    deadlines = []
+    monkeypatch.setattr(entry, '_arm_shutdown_deadline', lambda: deadlines.append(True))
     output, errors, protocol = io.StringIO(), io.StringIO(), io.StringIO()
     monkeypatch.setattr(sys, 'stdout', output)
     monkeypatch.setattr(sys, 'stderr', errors)
@@ -43,5 +45,6 @@ def test_entry_owns_and_restores_stdio_streams(monkeypatch, http, fail):
         entry.main()
     assert sys.stdout is output
     assert server._real_stdout is protocol
+    assert bool(deadlines) is not http
     assert ('ordinary-output' in output.getvalue()) is http
     assert ('ordinary-output' in errors.getvalue()) is not http

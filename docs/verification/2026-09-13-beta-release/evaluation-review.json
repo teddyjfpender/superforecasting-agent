@@ -1,0 +1,17 @@
+{
+  "source_revision": "38bcf540464a47a4d563857b937b29c3d7bdde74",
+  "old_identity": "c1181fbe8590bba8d27baaf7e4988b180e7295f815208d80ae9a6bb964417f68",
+  "new_identity": "64b923127b0ebde0396abe83c218b151ceaa54eff2ea311c5f21084afd20a35f",
+  "changed_functions": {
+    "ledger/scoring.py": [
+      "list_scores"
+    ],
+    "ledger/core.py": [
+      "ForecastLedger._bias_observations",
+      "ForecastLedger.hierarchical_calibration_rows",
+      "ForecastLedger.list_scores",
+      "ForecastLedger.export_question",
+      "ForecastLedger.export_all"
+    ]
+  }
+}
