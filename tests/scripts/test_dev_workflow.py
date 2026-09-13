@@ -32,6 +32,9 @@ def test_linter_process_failure_stops_the_quality_pipeline(tmp_path):
     tool.parent.mkdir(parents=True)
     tool.write_text("#!/bin/sh\necho 'fixture lint rejection' >&2\nexit 17\n", encoding="utf-8")
     tool.chmod(0o755)
+    # This fixture isolates the linter failure after successful naming admission.
+    tool.with_name("python").symlink_to(sys.executable)
+    (script.parent / "check_naming.py").write_text("", encoding="utf-8")
     result = subprocess.run([sys.executable, str(script), "check", "--python-only"],
                             capture_output=True, text=True)
     assert result.returncode != 0
@@ -45,6 +48,12 @@ def snapshot_repo(tmp_path):
     script = tmp_path / "scripts" / "dev.py"
     script.parent.mkdir()
     shutil.copyfile(SOURCE, script)
+    for name in ("push_plan.py", "check_naming.py"):
+        shutil.copyfile(SOURCE.parent / name, script.parent / name)
+    # The fixture owns a new history, not the production compatibility baseline.
+    (script.parent / "legacy-naming-policy.json").write_text(
+        '{"exceptions": []}\n', encoding="utf-8"
+    )
 
     def git(*args):
         return subprocess.check_output(["git", *args], cwd=tmp_path, text=True).strip()
