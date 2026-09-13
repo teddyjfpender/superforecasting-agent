@@ -76,6 +76,8 @@ STRICT_PYTHON = (
 
 # Inherited owners can adopt correctness checks before wholesale formatting/types.
 CORRECTNESS_PYTHON = (
+    "agent/agent_runtime_helpers.py",
+    "scripts/investigate_native_tls.py",
     "superforecasting_agent/runtime/kanban.py",
     "superforecasting_agent/runtime/kanban_db.py",
 )

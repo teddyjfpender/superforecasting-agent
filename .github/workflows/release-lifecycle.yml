@@ -41,7 +41,7 @@ jobs:
         run: gh release download v0.19.0 --pattern '*.whl' --dir previous-release
       - name: Verify fresh installation and durable upgrade
         shell: bash
-        run: python scripts/verify_forecast_release.py --wheel dist/*.whl --previous-wheel previous-release/*.whl --output installed-lifecycle
+        run: python scripts/verify_forecast_release.py --wheel dist/superforecasting_agent-*.whl --previous-wheel previous-release/*.whl --output installed-lifecycle
       - name: Exercise sustained POSIX desk recovery
         if: runner.os != 'Windows'
         shell: bash

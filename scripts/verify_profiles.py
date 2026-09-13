@@ -7,12 +7,15 @@ import argparse
 import hashlib
 import json
 import os
+import platform
 import re
 import select
 import signal
 import subprocess
 import tempfile
 import time
+import zipfile
+from email.parser import BytesParser
 from pathlib import Path
 from typing import Any
 
@@ -168,6 +171,39 @@ def assert_preserved(before: Any, after: Any, path: str = "state") -> None:
         raise AssertionError(f"{path}: value changed during upgrade")
 
 
+def wheel_identity(path: Path, expected_name: str) -> dict[str, str]:
+    """Read artifact identity from metadata, never trust a renamed filename."""
+    with zipfile.ZipFile(path) as archive:
+        metadata = [
+            name for name in archive.namelist() if name.endswith(".dist-info/METADATA")
+        ]
+        if len(metadata) != 1:
+            raise ValueError(f"{path.name}: expected exactly one wheel metadata record")
+        message = BytesParser().parsebytes(archive.read(metadata[0]))
+    name, version = str(message.get("Name", "")), str(message.get("Version", ""))
+    if name.replace("_", "-").lower() != expected_name:
+        raise ValueError(f"{path.name}: expected {expected_name}, found {name}")
+    if (
+        re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", version)
+        is None
+    ):
+        raise ValueError(f"{path.name}: qualification requires a stable X.Y.Z version")
+    return {
+        "name": name,
+        "version": version,
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+    }
+
+
+def require_upgrade(previous: dict[str, str], candidate: dict[str, str]) -> None:
+    if tuple(map(int, previous["version"].split("."))) >= tuple(
+        map(int, candidate["version"].split("."))
+    ):
+        raise ValueError(
+            "Upgrade evidence requires a strictly newer candidate version; reinstalls and downgrades do not qualify"
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("wheels", type=Path)
@@ -181,16 +217,88 @@ def main() -> None:
         default="3.11",
         help="Supported Python version or interpreter for isolated installs",
     )
+    parser.add_argument(
+        "--terminal-upgrade-from",
+        type=Path,
+        help="Exercise this older terminal before replacing it with the candidate",
+    )
+    parser.add_argument(
+        "--report",
+        type=Path,
+        help="Write artifact/platform/check receipts, including failures and skips",
+    )
     args = parser.parse_args()
+    report: dict[str, Any] = {
+        "schema_version": 1,
+        "platform": {
+            "system": platform.system(),
+            "machine": platform.machine(),
+            "release": platform.release(),
+            "driver_python": platform.python_version(),
+        },
+        "status": "failed",
+        "checks": {
+            name: "pending"
+            for name in (
+                "fresh_install_dependencies",
+                "backend_lifecycle_worker_numerical_fallback",
+                "local_terminal_interaction",
+                "authenticated_headless_host",
+                "remote_terminal_interaction",
+            )
+        },
+        "artifacts": {},
+    }
+    try:
+        verify(args, report)
+        report["status"] = (
+            "passed_with_skips"
+            if any(
+                str(value).startswith("skipped_") for value in report["checks"].values()
+            )
+            else "passed"
+        )
+    except Exception as exc:
+        report["failure_type"] = type(exc).__name__
+        raise
+    finally:
+        if args.report:
+            args.report.parent.mkdir(parents=True, exist_ok=True)
+            args.report.write_text(
+                json.dumps(report, indent=2) + "\n", encoding="utf-8"
+            )
+
+
+def verify(args: argparse.Namespace, report: dict[str, Any]) -> None:
     (backend,) = args.wheels.resolve().glob("superforecasting_agent-*.whl")
     (terminal,) = args.wheels.resolve().glob("superforecasting_agent_tui-*.whl")
+    artifacts = report["artifacts"]
+    artifacts["backend"] = wheel_identity(backend, "superforecasting-agent")
+    artifacts["terminal"] = wheel_identity(terminal, "superforecasting-agent-tui")
+    for key, previous in (
+        ("backend", args.upgrade_from),
+        ("terminal", args.terminal_upgrade_from),
+    ):
+        report["checks"][key + "_upgrade"] = "not_requested"
+        if previous:
+            artifacts[key + "_previous"] = wheel_identity(
+                previous,
+                "superforecasting-agent" + ("-tui" if key == "terminal" else ""),
+            )
+            require_upgrade(artifacts[key + "_previous"], artifacts[key])
+            report["checks"][key + "_upgrade"] = "pending"
     with tempfile.TemporaryDirectory(prefix="forecast-distribution-test-") as temporary:
         root = Path(temporary)
         bins = "Scripts" if os.name == "nt" else "bin"
         python_name = "python.exe" if os.name == "nt" else "python"
         for name, wheel in (
             ("backend", args.upgrade_from.resolve() if args.upgrade_from else backend),
-            ("terminal", terminal),
+            (
+                "terminal",
+                args.terminal_upgrade_from.resolve()
+                if args.terminal_upgrade_from
+                else terminal,
+            ),
         ):
             env_root = root / name
             subprocess.run(
@@ -202,6 +310,7 @@ def main() -> None:
                 check=True,
             )
             subprocess.run(["uv", "pip", "check", "--python", str(python)], check=True)
+        report["checks"]["fresh_install_dependencies"] = "passed"
         backend_python = root / "backend" / bins / python_name
         terminal_python = root / "terminal" / bins / python_name
         profile = root / "profile"
@@ -230,6 +339,12 @@ def main() -> None:
             except subprocess.CalledProcessError as exc:
                 raise RuntimeError(exc.output) from exc
 
+        report["installed_runtime"] = json.loads(
+            backend_run(
+                "-c",
+                "import json,platform,ssl; print(json.dumps({'python':platform.python_version(), 'machine':platform.machine(), 'openssl':ssl.OPENSSL_VERSION}))",
+            )
+        )
         backend_run(
             "-c",
             "import shutil; assert shutil.which('node') is None; import forecasting",
@@ -363,6 +478,8 @@ def main() -> None:
                     ],
                 })
             )
+        if args.upgrade_from:
+            report["checks"]["backend_upgrade"] = "passed"
         backend_run("-c", "import forecasting.application.reviews")
         backend_run(
             "-c", "from superforecasting_agent.worker import main; assert main([]) == 2"
@@ -393,7 +510,32 @@ def main() -> None:
         if "auto_score:" not in resolved:
             raise RuntimeError(f"Resolution did not return a score: {resolved}")
         print("Backend: create, update, resolve and score passed without Node on PATH.")
+        report["checks"]["backend_lifecycle_worker_numerical_fallback"] = "passed"
         terminal_env = {**env, "PATH": os.environ["PATH"]}
+        if args.terminal_upgrade_from:
+            if os.name == "nt":
+                raise RuntimeError(
+                    "Terminal upgrade interaction requires a PTY; native Windows ConPTY is not implemented"
+                )
+            verify_installed_terminal(
+                terminal_python, backend_python, root, terminal_env, question
+            )
+            subprocess.run(
+                [
+                    "uv",
+                    "pip",
+                    "install",
+                    "--python",
+                    str(terminal_python),
+                    "--reinstall-package",
+                    "superforecasting-agent-tui",
+                    str(terminal),
+                ],
+                check=True,
+            )
+            subprocess.run(
+                ["uv", "pip", "check", "--python", str(terminal_python)], check=True
+            )
         subprocess.run(
             [
                 str(terminal_python),
@@ -420,6 +562,11 @@ def main() -> None:
         verify_installed_terminal(
             terminal_python, backend_python, root, terminal_env, question
         )
+        report["checks"]["local_terminal_interaction"] = (
+            "skipped_conpty_unavailable" if os.name == "nt" else "passed"
+        )
+        if args.terminal_upgrade_from:
+            report["checks"]["terminal_upgrade"] = "passed"
         subprocess.run(
             ["uv", "pip", "install", "--python", str(backend_python), str(terminal)],
             check=True,
@@ -476,6 +623,10 @@ def main() -> None:
             env=terminal_env,
             check=True,
             timeout=180,
+        )
+        report["checks"]["authenticated_headless_host"] = "passed"
+        report["checks"]["remote_terminal_interaction"] = (
+            "skipped_conpty_unavailable" if os.name == "nt" else "passed"
         )
         print("Optional web profile: installed authenticated hosting passed.")
 

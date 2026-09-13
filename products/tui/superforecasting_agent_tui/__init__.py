@@ -34,7 +34,7 @@ def main() -> int:
     args = parser.parse_args()
     node = shutil.which("node")
     if not node:
-        parser.error("Node.js 20 or newer is required for the TUI.")
+        parser.error("Node.js 20.10 or newer is required for the TUI.")
     if not bundle_path().is_file():
         parser.error(
             "The installed TUI bundle is missing; reinstall superforecasting-agent-tui."
@@ -49,8 +49,21 @@ def main() -> int:
     python = args.python or env.get("SUPERFORECASTING_AGENT_PYTHON") or sys.executable
     env["SUPERFORECASTING_AGENT_PYTHON"] = python
     version = subprocess.check_output([node, "--version"], text=True).strip()
-    if int(version.lstrip("v").split(".")[0]) < 20:
-        parser.error("Node.js 20 or newer is required for the TUI.")
+    if tuple(map(int, version.lstrip("v").split(".")[:2])) < (20, 10):
+        parser.error("Node.js 20.10 or newer is required for the TUI.")
+    # Node 20 ships WebSocket behind this flag; it is also accepted on Node 22+.
+    # Use identical runtime options for prerequisite checks and the actual desk.
+    node_argv = [node, "--experimental-websocket"]
+    if remote:
+        probe = subprocess.run(
+            [*node_argv, "-e", "process.exit(typeof WebSocket === 'function' ? 0 : 1)"],
+            capture_output=True,
+            text=True,
+        )
+        if probe.returncode:
+            parser.error(
+                "This Node.js runtime cannot provide WebSocket support; install Node.js 22 or newer."
+            )
     if args.check:
         if not remote:
             probe = subprocess.run(
@@ -67,4 +80,4 @@ def main() -> int:
             + ("; remote compatibility is checked on connection." if remote else ".")
         )
         return 0
-    return subprocess.call([node, str(bundle_path())], env=env)
+    return subprocess.call([*node_argv, str(bundle_path())], env=env)

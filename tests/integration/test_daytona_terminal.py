@@ -1,7 +1,7 @@
 """Integration tests for the Daytona terminal backend.
 
 Requires DAYTONA_API_KEY to be set. Run with:
-    pytest -o addopts="" --live-service=daytona tests/integration/test_daytona_terminal.py -v
+    scripts/run_tests.sh --live-service=daytona tests/integration/test_daytona_terminal.py -v
 """
 
 import json

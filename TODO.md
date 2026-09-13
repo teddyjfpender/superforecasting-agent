@@ -20,14 +20,27 @@ Implementation and focused evidence are recorded in
 [the runtime closeout](docs/plans/2026-09-13-runtime-closeout.md). The pre-push hook requires the full suite;
 focused checks do not substitute for that publication gate.
 
-## Further qualification
+## Qualification follow-up
 
-- [ ] Verify installed products on native Linux, Windows and Android/Termux.
-- [ ] Verify a successor independent terminal package upgrade when one exists.
-- [ ] Complete live credential-dependent integrations and release publication.
+- [x] Verify installed backend and terminal on macOS ARM64 and Linux ARM64
+  (Debian container on a native ARM64 Linux VM), including backend 0.19.0 →
+  0.22.1 and terminal 0.1.0 → 0.1.1 upgrades and authenticated reconnects.
+- [x] Fix Node 20 remote WebSocket launch and prerequisite checks; add a native
+  Linux/macOS/Windows installation matrix for Node 20 and 22 with explicit skips.
+- [x] Make explicitly selected live-service tests reachable through the canonical
+  runner while preserving ordinary-suite credential isolation.
+- [x] Prepare 0.22.1 release artifacts, validated manifest and checksums. Existing
+  0.22.0 tag remains unchanged.
+- [ ] Execute native Linux x86-64 and Windows installation checks; Windows terminal
+  interaction still needs a ConPTY harness. Qualify a real Android/Termux device.
+- [ ] Run Daytona/Modal checks with service credentials; neither is configured here.
+- [ ] Merge the release candidate onto the default branch, then publish 0.22.1 through
+  the formal workflow and verify downloaded assets and installation.
 - [ ] Attribute the historical native SSL crash if original runtime/certificate
-  artifacts or a credible reproducer become available. Containment is implemented;
-  the original cause remains unproven.
+  artifacts or a credible reproducer become available. Recovered native evidence
+  did not reproduce it; original binary and CA hashes are absent.
+
+See [qualification evidence and commands](docs/verification/2026-09-13-products/README.md).
 
 ## Maintenance policy
 

@@ -23,6 +23,49 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# Only explicit service selections may retain their own credentials. The normal
+# suite always remains hermetic; selection also changes pytest collection below.
+LIVE_DAYTONA=0
+LIVE_MODAL=0
+LIVE_PATHS=()
+expect_service=0
+for argument in "$@"; do
+  service=""
+  if [ "$expect_service" = 1 ]; then
+    service="$argument"
+    expect_service=0
+  else
+    case "$argument" in
+      --live-service) expect_service=1; continue ;;
+      --live-service=*) service="${argument#*=}" ;;
+      *) continue ;;
+    esac
+  fi
+  case "$service" in
+    daytona)
+      if [ "$LIVE_DAYTONA" = 0 ]; then LIVE_PATHS+=(tests/integration/test_daytona_terminal.py); fi
+      LIVE_DAYTONA=1
+      ;;
+    modal)
+      if [ "$LIVE_MODAL" = 0 ]; then LIVE_PATHS+=(tests/integration/test_modal_terminal.py); fi
+      LIVE_MODAL=1
+      ;;
+    *) echo "error: unsupported live service '$service'" >&2; exit 2 ;;
+  esac
+done
+if [ "$expect_service" = 1 ]; then
+  echo "error: --live-service requires daytona or modal" >&2
+  exit 2
+fi
+if [ "$LIVE_DAYTONA" = 1 ] && [ -z "${DAYTONA_API_KEY:-}" ]; then
+  echo "error: live Daytona verification requires DAYTONA_API_KEY" >&2
+  exit 2
+fi
+if [ "$LIVE_MODAL" = 1 ] && { [ -z "${MODAL_TOKEN_ID:-}" ] || [ -z "${MODAL_TOKEN_SECRET:-}" ]; }; then
+  echo "error: live Modal verification requires MODAL_TOKEN_ID and MODAL_TOKEN_SECRET" >&2
+  exit 2
+fi
+
 # ── Activate venv ───────────────────────────────────────────────────────────
 # Prefer a .venv in the current tree, fall back to the main checkout's venv
 # (useful for worktrees where we don't always duplicate the venv).
@@ -64,7 +107,11 @@ fi
 # Unset every credential-shaped var currently in the environment.
 while IFS='=' read -r name _; do
   case "$name" in
-    *_API_KEY|*_TOKEN|*_SECRET|*_PASSWORD|*_CREDENTIALS|*_ACCESS_KEY| \
+    DAYTONA_API_KEY) [ "$LIVE_DAYTONA" = 1 ] && continue ;;
+    MODAL_TOKEN_ID|MODAL_TOKEN_SECRET) [ "$LIVE_MODAL" = 1 ] && continue ;;
+  esac
+  case "$name" in
+    *_API_KEY|*_TOKEN|*_TOKEN_ID|*_SECRET|*_PASSWORD|*_CREDENTIALS|*_ACCESS_KEY| \
     *_SECRET_ACCESS_KEY|*_PRIVATE_KEY|*_OAUTH_TOKEN|*_WEBHOOK_SECRET| \
     *_ENCRYPT_KEY|*_APP_SECRET|*_CLIENT_SECRET|*_CORP_SECRET|*_AES_KEY| \
     AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|FAL_KEY| \
@@ -199,7 +246,7 @@ PYTEST_LOG="${JUNIT_XML%.xml}.log"
 ARGS=("$@")
 
 echo "▶ running pytest with $WORKERS workers, hermetic env, in $REPO_ROOT"
-echo "  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; all credential env vars unset)"
+echo "  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; only explicitly selected service credentials retained)"
 echo "  JUnit artifact: $JUNIT_XML"
 echo "  Streaming log: $PYTEST_LOG"
 
@@ -207,13 +254,16 @@ echo "  Streaming log: $PYTEST_LOG"
 # We re-add --timeout/--timeout-method here because pyproject.toml's
 # addopts is wiped above. The 60s cap is essential: see pyproject.toml
 # for why (suite deadlocks at session teardown without it).
+SELECTION=(--ignore=tests/integration -m "not integration")
+if [ "${#LIVE_PATHS[@]}" -gt 0 ]; then
+  SELECTION=(-m integration "${LIVE_PATHS[@]}")
+fi
 "$PYTHON" -m pytest \
   -o "addopts=" \
   -n "$WORKERS" \
   --timeout=30 \
   --timeout-method=signal \
   --junitxml="$JUNIT_XML" \
-  --ignore=tests/integration \
   --ignore=tests/e2e \
-  -m "not integration" \
+  "${SELECTION[@]}" \
   "${ARGS[@]}" 2>&1 | tee "$PYTEST_LOG"

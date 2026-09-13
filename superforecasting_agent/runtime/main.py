@@ -1072,7 +1072,7 @@ def _make_tui_argv(tui_dir: Path, tui_dev: bool) -> tuple[list[str], Path]:
     quiet = _runtime_env_value("QUIET") is not None
     if not tui_dev and not ext_dir and _rebuild_stale_tui_bundle(tui_dir, quiet=quiet):
         node = _node_bin("node")
-        return [node, str(tui_dir / "dist" / "entry.js")], tui_dir
+        return [node, "--experimental-websocket", str(tui_dir / "dist" / "entry.js")], tui_dir
 
     # 1. Prebuilt bundle (nix / packaged release): just run it.
     if not tui_dev:
@@ -1080,13 +1080,13 @@ def _make_tui_argv(tui_dir: Path, tui_dev: bool) -> tuple[list[str], Path]:
             p = Path(ext_dir)
             if (p / "dist" / "entry.js").is_file():
                 node = _node_bin("node")
-                return [node, str(p / "dist" / "entry.js")], p
+                return [node, "--experimental-websocket", str(p / "dist" / "entry.js")], p
 
         # 1b. Bundled in wheel (pip install)
         bundled = _find_bundled_tui()
         if bundled is not None:
             node = _node_bin("node")
-            return [node, str(bundled)], bundled.parent
+            return [node, "--experimental-websocket", str(bundled)], bundled.parent
 
     # Independently installed terminal product; source checkouts retain their
     # normal build path, and explicit TUI_DIR still takes precedence above.
@@ -1100,7 +1100,7 @@ def _make_tui_argv(tui_dir: Path, tui_dev: bool) -> tuple[list[str], Path]:
         if not bundle.is_file():
             print("Installed TUI bundle is missing; reinstall superforecasting-agent-tui.", file=sys.stderr)
             sys.exit(1)
-        return [_node_bin("node"), str(bundle)], bundle.parent
+        return [_node_bin("node"), "--experimental-websocket", str(bundle)], bundle.parent
 
     # 2. Normal flow: npm install if needed, always esbuild, then node dist/entry.js.
     #    --dev flow: npm install if needed, then tsx src/entry.tsx.
@@ -1161,7 +1161,7 @@ def _make_tui_argv(tui_dir: Path, tui_dev: bool) -> tuple[list[str], Path]:
     node = _node_bin("node")
     entry = tui_dir / "dist" / "entry.js"
     if entry.is_file() and not _tui_bundle_is_stale(tui_dir):
-        return [node, str(entry)], tui_dir
+        return [node, "--experimental-websocket", str(entry)], tui_dir
 
     # Bundle missing (fresh checkout never built) or stale-but-unrebuildable at
     # step 0 — build it now. esbuild is fast and this avoids staleness edge cases.
@@ -1180,7 +1180,7 @@ def _make_tui_argv(tui_dir: Path, tui_dev: bool) -> tuple[list[str], Path]:
             print(preview)
         sys.exit(1)
 
-    return [node, str(entry)], tui_dir
+    return [node, "--experimental-websocket", str(entry)], tui_dir
 
 
 def _normalize_tui_toolsets(toolsets: object) -> list[str]:

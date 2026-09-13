@@ -25,25 +25,17 @@ from __future__ import annotations
 import copy
 import json
 import logging
-import os
 import re
-import threading
 import time
-import uuid
 from datetime import datetime
 from pathlib import Path
 from time import sleep as _sleep
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from superforecasting_agent.runtime.timeouts import get_provider_request_timeout
-from agent.message_sanitization import (
-    _repair_tool_call_arguments,
-    _sanitize_surrogates,
-)
 from agent.tool_dispatch_helpers import _trajectory_normalize_msg, make_tool_result_message
 from agent.trajectory import convert_scratchpad_to_think
-from agent.error_classifier import classify_api_error, FailoverReason
-from superforecasting_agent.storage.files import atomic_json_write
+from agent.error_classifier import FailoverReason
 from superforecasting_agent.urls import base_url_host_matches, base_url_hostname
 from superforecasting_agent.environment import env_var_alias_enabled
 
@@ -127,7 +119,8 @@ def convert_to_trajectory_format(agent, messages: List[Dict[str, Any]], user_que
                 
                 # Add tool calls wrapped in XML tags
                 for tool_call in msg["tool_calls"]:
-                    if not tool_call or not isinstance(tool_call, dict): continue
+                    if not tool_call or not isinstance(tool_call, dict):
+                        continue
                     # Parse arguments - should always succeed since we validate during conversation
                     # but keep try-except as safety net
                     try:

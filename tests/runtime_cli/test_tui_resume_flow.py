@@ -720,7 +720,7 @@ def test_make_tui_argv_uses_forecast_tui_dir_alias(monkeypatch, main_mod, tmp_pa
 
     argv, cwd = main_mod._make_tui_argv(tui_dir, tui_dev=False)
 
-    assert argv == ["/usr/bin/node", str(entry)]
+    assert argv == ["/usr/bin/node", "--experimental-websocket", str(entry)]
     assert cwd == prebuilt
 
 
@@ -745,7 +745,7 @@ def test_make_tui_argv_uses_forecast_node_alias(monkeypatch, main_mod, tmp_path)
 
     argv, cwd = main_mod._make_tui_argv(tui_dir, tui_dev=False)
 
-    assert argv == [str(node), str(entry)]
+    assert argv == [str(node), "--experimental-websocket", str(entry)]
     assert cwd == prebuilt
 
 
@@ -790,7 +790,7 @@ def test_make_tui_argv_forecast_quiet_alias_suppresses_install_message(
 
     argv, cwd = main_mod._make_tui_argv(tui_dir, tui_dev=False)
 
-    assert argv == ["/usr/bin/node", str(tui_dir / "dist" / "entry.js")]
+    assert argv == ["/usr/bin/node", "--experimental-websocket", str(tui_dir / "dist" / "entry.js")]
     assert cwd == tui_dir
     assert calls == [
         (
@@ -895,5 +895,5 @@ def test_packaged_backend_discovers_independent_terminal(monkeypatch, main_mod, 
     for key in ('SUPERFORECASTING_AGENT_TUI_DIR', 'FORECAST_TUI_DIR', 'HERMES_TUI_DIR'):
         monkeypatch.delenv(key, raising=False)
     argv, cwd = main_mod._make_tui_argv(tmp_path / 'absent-checkout', False)
-    assert argv == ['/usr/bin/node', str(bundle)]
+    assert argv == ['/usr/bin/node', '--experimental-websocket', str(bundle)]
     assert cwd == bundle.parent
