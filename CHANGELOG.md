@@ -28,6 +28,13 @@ artifact set described in `docs/plans/2026-07-09-hetzner-productionization.md`
 - Exercise 60 Unicode turns across five TUI lifetimes in the Linux/macOS lifecycle matrix.
 - Respect configured pytest deadlines and isolate watch dispatch tests from DNS.
 
+## [0.22.2] - 2026-09-13
+
+### Beta
+- Includes the 0.22.1 beta preparation below; 0.22.1 remained unpublished after its Windows installer qualification failed.
+- Correct the PowerShell 5 verification harness to capture expected native stderr and enforce negative-case exit codes instead of aborting early.
+- Preserve stable channels and require six native downloaded-artifact qualification jobs before publication.
+
 ## [0.22.1] - 2026-09-13
 
 ### Beta rollout
