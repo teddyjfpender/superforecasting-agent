@@ -1255,7 +1255,10 @@ def test_high_traffic_tui_launch_docs_prefer_fork_native_command():
         root / "website" / "docs" / "reference" / "environment-variables.md"
     ).read_text(encoding="utf-8")
 
-    launch_docs = "\n".join([installation, quickstart])
+    tester_guide = (root / "website/docs/getting-started/tester-pilot.md").read_text()
+    assert "./tester-pilot.md" in installation
+    assert "./tester-pilot.md" in quickstart
+    launch_docs = "\n".join([installation, quickstart, tester_guide])
     assert "superforecasting-agent tui" in launch_docs
     assert "superforecasting-agent --tui" not in launch_docs
     assert "Equivalent to running `superforecasting-agent tui`" in env_reference
@@ -5521,7 +5524,7 @@ def test_nix_package_aliases_are_forecast_native():
     assert "my-registry/hermes-base:latest" not in nix_docs
     assert 'toolsets = [ "forecast-desk" ];' in nix_docs
     assert 'toolsets = [ "all" ];' not in nix_docs
-    assert "`services.superforecasting-agent` module" in install_docs
+    assert "./tester-pilot.md" in install_docs
     assert "until the Nix packaging is fully renamed" not in install_docs
     assert "services.superforecasting-agent.extraPlugins" in plugin_docs
     assert "services.superforecasting-agent = {" in plugin_docs
@@ -5561,28 +5564,26 @@ def test_nix_package_aliases_are_forecast_native():
     )
 
 
-def test_tester_pilot_docs_cover_scheduled_learning_loop():
+def test_tester_pilot_docs_cover_reproducible_isolated_beta():
     root = Path(__file__).resolve().parents[1]
-    tester_pilot = (root / "website" / "docs" / "getting-started" / "tester-pilot.md").read_text(
-        encoding="utf-8"
-    )
-    # 8ce9630d9 split the forecasting/cli.py megafile into a package; the
-    # modularization Wave-1 reviews carve then moved the schedule-run surface
-    # into forecasting/cli/reviews.py (the `review`/`schedule` domain module).
-    forecast_cli = (root / "forecasting" / "cli" / "reviews.py").read_text(encoding="utf-8")
-
+    guide = (root / "website/docs/getting-started/tester-pilot.md").read_text()
+    scope = (root / "website/docs/getting-started/beta-scope.md").read_text()
+    for command in ("new", "update", "list", "resolve", "score", "postmortem"):
+        assert f"superforecasting-agent forecast {command}" in guide
+    for requirement in (
+        "SHA-256", "python -m venv", "python -m pip check",
+        "SUPERFORECASTING_AGENT_HOME", "superforecasting-agent setup",
+        "superforecasting-agent doctor", "superforecasting-agent tui",
+        "debug share --local", "installed backend and terminal versions",
+        "pre-upgrade backup", "synthetic", "release tag",
+    ):
+        assert requirement in guide
+    assert "./beta-scope.md" in guide
+    assert "Android/Termux | Experimental" in scope
+    assert "Daytona and Modal execution backends | Unavailable" in scope
+    # Advanced scheduling remains an independent capability, not an onboarding step.
+    forecast_cli = (root / "forecasting/cli/reviews.py").read_text()
     assert 'schedule_run.add_argument("--due"' in forecast_cli
-    assert "forecast --db \"$FORECAST_DB\" schedule run --due --auto-score --auto-postmortem" in tester_pilot
-    assert "`scores_created`, `postmortems_created`, and" in tester_pilot
-    assert "domain/topic error profiles" in tester_pilot
-    assert "--use-active-lessons" in tester_pilot
-    assert "forecast readiness --json" in tester_pilot
-    assert "live evidence" in tester_pilot
-    assert "forecast export all --format json --output .pilot/${USER}-export.json" in tester_pilot
-    assert "forecast pilot-bundle --include-export --output .pilot/${USER}-bundle.json" in tester_pilot
-    assert "forecast export all --format json --output .pilot/alice-export.json" in tester_pilot
-    assert "forecast import packet .pilot/alice-export.json --conflict skip --json" in tester_pilot
-    assert "forecast pilot-aggregate .pilot/*-export.json --json" in tester_pilot
 
 
 def test_superforecasting_fork_audit_maps_prd_requirements():
