@@ -20,8 +20,11 @@ Run checks from the repository root:
 
 ```sh
 python3 scripts/dev.py check
-scripts/run_tests.sh tests/fixtures/runtime/
+scripts/run_tests.sh
 ```
+
+This directory contains support fixtures, not a standalone test suite. Run the
+consuming tests or the repository suite above.
 
 Use the canonical runner for Python tests so isolation and environment settings
 match repository policy. Extend a regression around the changed contract; use

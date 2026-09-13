@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                                                 | Responsibility                                                                            |
 | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| [\_\_init\_\_.py](__init__.py)                                           | init .                                                                                    |
+| [\_\_init\_\_.py](__init__.py)                                       | init .                                                                                    |
 | [conftest.py](conftest.py)                                           | Explicit service credentials for live integration runs; unit tests stay hermetic.         |
 | [test_batch_runner.py](test_batch_runner.py)                         | Test script for batch runner                                                              |
 | [test_checkpoint_resumption.py](test_checkpoint_resumption.py)       | Test script to verify checkpoint behavior in superforecasting_agent/trajectories/batch.py |
@@ -27,8 +27,20 @@ Run checks from the repository root:
 
 ```sh
 python3 scripts/dev.py check
-scripts/run_tests.sh tests/integration/
+scripts/run_tests.sh
 ```
+
+The ordinary runner excludes external integration and end-to-end suites. The
+command above checks the isolated repository suite; it does not claim live-service
+coverage. For configured services, select the supported explicit paths:
+
+```sh
+scripts/run_tests.sh --live-service daytona
+scripts/run_tests.sh --live-service modal
+```
+
+Those selections require their own credentials and fail when they are absent.
+Other external scenarios need a dedicated harness and prerequisite setup.
 
 Use the canonical runner for Python tests so isolation and environment settings
 match repository policy. Extend a regression around the changed contract; use

@@ -12,7 +12,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 | File                                   | Responsibility                                      |
 | -------------------------------------- | --------------------------------------------------- |
-| [\_\_init\_\_.py](__init__.py)             | init .                                              |
+| [\_\_init\_\_.py](__init__.py)         | init .                                              |
 | [fake_ha_server.py](fake_ha_server.py) | Fake Home Assistant server for integration testing. |
 
 ## Working in this directory
@@ -21,8 +21,11 @@ Run checks from the repository root:
 
 ```sh
 python3 scripts/dev.py check
-scripts/run_tests.sh tests/fakes/
+scripts/run_tests.sh
 ```
+
+This directory contains support fixtures, not a standalone test suite. Run the
+consuming tests or the repository suite above.
 
 Use the canonical runner for Python tests so isolation and environment settings
 match repository policy. Extend a regression around the changed contract; use
