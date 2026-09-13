@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 STRICT_PYTHON = (
     "agent/browser_provider.py",
     "agent/file_safety.py",
+    "tools/skills_sync.py",
     "agent/portal_tags.py",
     "forecasting/economic_measurements.py",
     "agent/http_cleanup.py",

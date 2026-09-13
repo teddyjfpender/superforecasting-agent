@@ -30,7 +30,11 @@ suppress the corresponding canonical skill. User-owned skills are not rewritten.
 Regression coverage: `tests/test_constants.py` covers native/legacy/custom profile
 roots, including service environments without an OS user home;
 `tests/agent/test_skill_commands.py` checks actual moved bundled skills and legacy
-alias disable behavior. Existing profile, configuration and plugin tests remain
+alias disable behavior. `tools/skills_sync.py::_migrate_bundled_path` moves only
+unchanged manifest-owned copies, carries old manifest keys and deletion intent,
+and retains customized or conflicting copies for explicit reset. Sync and reset
+share a cross-process manifest lock. `tests/tools/test_skills_sync.py` exercises
+these migrations, retries and a competing process. Existing profile, configuration and plugin tests remain
 part of the mandatory full suite.
 
 Do not perform global string replacement over persisted identifiers. Rename private

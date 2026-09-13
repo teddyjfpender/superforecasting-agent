@@ -47,8 +47,9 @@ See [qualification evidence and commands](docs/verification/2026-09-13-products/
 ## Canonical naming and quality coverage
 
 - [x] Move the three remaining bundled product skills to canonical directories,
-  retaining command aliases and published URLs; test alias resolution.
-- [x] Put profile constants, Windows bootstrap, file-safety and request-tag helpers
+  retaining command aliases and published URLs; test alias resolution, managed
+  profile migration, deletion intent, custom copies and concurrent synchronization.
+- [x] Put skill synchronization, profile constants, Windows bootstrap, file-safety and request-tag helpers
   under blocking lint, formatting and type checks.
 - [x] Record retained identities and their owners in the
   [compatibility reference](docs/architecture/compatibility.md).

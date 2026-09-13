@@ -26,10 +26,19 @@ import hashlib
 import logging
 import os
 import shutil
+import threading
 from pathlib import Path
-from superforecasting_agent.constants import get_bundled_skills_dir, get_agent_home, display_agent_home
 from typing import Dict, List, Tuple
+
+from superforecasting_agent.constants import (
+    display_agent_home,
+    get_agent_home,
+    get_bundled_skills_dir,
+)
 from superforecasting_agent.storage.files import atomic_replace
+from superforecasting_agent.storage.locking import file_lock
+
+_sync_lock_holder = threading.local()
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +94,10 @@ def _write_manifest(entries: Dict[str, str]):
     import tempfile
 
     MANIFEST_FILE.parent.mkdir(parents=True, exist_ok=True)
-    data = "\n".join(f"{name}:{hash_val}" for name, hash_val in sorted(entries.items())) + "\n"
+    data = (
+        "\n".join(f"{name}:{hash_val}" for name, hash_val in sorted(entries.items()))
+        + "\n"
+    )
 
     try:
         fd, tmp_path = tempfile.mkstemp(
@@ -106,7 +118,9 @@ def _write_manifest(entries: Dict[str, str]):
                 pass
             raise
     except Exception as e:
-        logger.debug("Failed to write skills manifest %s: %s", MANIFEST_FILE, e, exc_info=True)
+        logger.debug(
+            "Failed to write skills manifest %s: %s", MANIFEST_FILE, e, exc_info=True
+        )
 
 
 def _read_skill_name(skill_md: Path, fallback: str) -> str:
@@ -173,7 +187,54 @@ def _dir_hash(directory: Path) -> str:
     return hasher.hexdigest()
 
 
+# Explicit source-path compatibility; manifest identities are independent of paths.
+_BUNDLED_PATH_ALIASES = {
+    "autonomous-ai-agents/superforecasting-agent": "autonomous-ai-agents/hermes-agent",
+    "software-development/superforecasting-agent-skill-authoring": "software-development/hermes-agent-skill-authoring",
+    "software-development/debugging-superforecasting-tui-commands": "software-development/debugging-hermes-tui-commands",
+}
+
+
+def _migrate_bundled_path(
+    skill_name: str, relative: Path, manifest: Dict[str, str]
+) -> bool:
+    """Move only an unchanged managed legacy copy; false preserves user ownership."""
+    legacy_relative = _BUNDLED_PATH_ALIASES.get(relative.as_posix())
+    if legacy_relative is None:
+        return True
+    legacy = SKILLS_DIR / legacy_relative
+    dest = SKILLS_DIR / relative
+    legacy_name = legacy.name
+    # Older manifests may predate the canonical frontmatter name. Carry the
+    # recorded origin, including deletion intent, rather than reseeding a skill.
+    if skill_name not in manifest and legacy_name in manifest:
+        manifest[skill_name] = manifest.pop(legacy_name)
+    if not legacy.exists() and not legacy.is_symlink():
+        return True
+    if dest.exists() or dest.is_symlink() or legacy.is_symlink():
+        return False
+    if not legacy.resolve().is_relative_to(SKILLS_DIR.resolve()):
+        return False
+    origin = manifest.get(skill_name)
+    if not origin or _dir_hash(legacy) != origin:
+        return False
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    legacy.rename(dest)
+    return True
+
+
 def sync_skills(quiet: bool = False) -> dict:
+    """Serialize manifest and directory updates across cooperating processes."""
+    with file_lock(
+        MANIFEST_FILE.with_name(".bundled_manifest.lock"),
+        _sync_lock_holder,
+        30,
+        "Bundled skill synchronization is busy; retry",
+    ):
+        return _sync_skills(quiet)
+
+
+def _sync_skills(quiet: bool = False) -> dict:
     """
     Sync bundled skills into the active agent-home skills/ directory using the manifest.
 
@@ -184,8 +245,12 @@ def sync_skills(quiet: bool = False) -> dict:
     bundled_dir = _get_bundled_dir()
     if not bundled_dir.exists():
         return {
-            "copied": [], "updated": [], "skipped": 0,
-            "user_modified": [], "cleaned": [], "total_bundled": 0,
+            "copied": [],
+            "updated": [],
+            "skipped": 0,
+            "user_modified": [],
+            "cleaned": [],
+            "total_bundled": 0,
         }
 
     SKILLS_DIR.mkdir(parents=True, exist_ok=True)
@@ -201,6 +266,20 @@ def sync_skills(quiet: bool = False) -> dict:
     for skill_name, skill_src in bundled_skills:
         dest = _compute_relative_dest(skill_src, bundled_dir)
         bundled_hash = _dir_hash(skill_src)
+        try:
+            migrated = _migrate_bundled_path(
+                skill_name, skill_src.relative_to(bundled_dir), manifest
+            )
+        except OSError:
+            logger.exception("Bundled skill path migration pending for %s", skill_name)
+            migrated = False
+        if not migrated:
+            user_modified.append(skill_name)
+            if not quiet:
+                print(
+                    f"  ! {skill_name}: legacy copy retained; inspect it before migrating"
+                )
+            continue
 
         if skill_name not in manifest:
             # ── New skill — never offered before ──
@@ -318,6 +397,17 @@ def sync_skills(quiet: bool = False) -> dict:
 
 
 def reset_bundled_skill(name: str, restore: bool = False) -> dict:
+    """Reset tracking under the same ownership lock as automatic synchronization."""
+    with file_lock(
+        MANIFEST_FILE.with_name(".bundled_manifest.lock"),
+        _sync_lock_holder,
+        30,
+        "Bundled skill synchronization is busy; retry",
+    ):
+        return _reset_bundled_skill(name, restore)
+
+
+def _reset_bundled_skill(name: str, restore: bool = False) -> dict:
     """
     Reset a bundled skill's manifest tracking so future syncs work normally.
 
@@ -345,6 +435,42 @@ def reset_bundled_skill(name: str, restore: bool = False) -> dict:
     bundled_dir = _get_bundled_dir()
     bundled_skills = _discover_bundled_skills(bundled_dir)
     bundled_by_name = dict(bundled_skills)
+
+    for relative, legacy_relative in _BUNDLED_PATH_ALIASES.items():
+        canonical = Path(relative).name
+        legacy_name = Path(legacy_relative).name
+        if name not in {canonical, legacy_name} or canonical not in bundled_by_name:
+            continue
+        name = canonical
+        legacy, dest = SKILLS_DIR / legacy_relative, SKILLS_DIR / relative
+        if legacy.exists() or legacy.is_symlink():
+            if (
+                dest.exists()
+                or dest.is_symlink()
+                or legacy.is_symlink()
+                or not legacy.resolve().is_relative_to(SKILLS_DIR.resolve())
+            ):
+                return {
+                    "ok": False,
+                    "action": "migration_conflict",
+                    "message": "Inspect conflicting or linked skill paths before resetting; no copies were changed.",
+                    "synced": None,
+                }
+            try:
+                # Explicit reset may move a customized copy, preserving its
+                # bytes before applying the requested restore/tracking operation.
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                legacy.rename(dest)
+            except OSError as exc:
+                return {
+                    "ok": False,
+                    "action": "migration_pending",
+                    "message": f"Skill path migration failed; retry: {exc}",
+                    "synced": None,
+                }
+        if canonical not in manifest and legacy_name in manifest:
+            manifest[canonical] = manifest.pop(legacy_name)
+        break
 
     in_manifest = name in manifest
     is_bundled = name in bundled_by_name

@@ -39,6 +39,11 @@ Focused macOS checks: 70 passed across native recovery, protocol admission and
 WebSocket send ownership; 218 passed and one skipped across naming, command
 aliases and generated documentation. These are not native Windows receipts.
 
+The new POSIX side of the shared driver passed fresh installed-product
+qualification on macOS ARM64 at commit `1f93b4b23` (see
+`macos-conpty-driver-posix.json`). All five installation/interaction checks passed;
+upgrades were not requested in this run. The receipt does not qualify ConPTY.
+
 ## Android/Termux
 
 No Android device, adb connection or Android SDK is available on the development
