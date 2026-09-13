@@ -76,7 +76,19 @@ See [qualification evidence and commands](docs/verification/2026-09-13-products/
 - [x] Add pinned historical upgrade inputs, real old-wheel profile/skill/plugin
   fixtures, and separate fresh/upgrade native matrix runs. Local macOS ARM64
   qualification passed; see [upgrade evidence](docs/verification/2026-09-13-upgrade-matrix/README.md).
-- [ ] Record successful upgrade/migration receipts from all six native matrix jobs.
+- [x] Verify all six native upgrade/migration jobs in [run 34768085661](https://github.com/teddyjfpender/superforecasting-agent/actions/runs/34768085661).
+
+## Beta onboarding and support
+
+- [x] Consolidate pinned installation, provider setup, synthetic lifecycle, recovery
+  and support instructions in the [beta guide](website/docs/getting-started/tester-pilot.md).
+- [x] Declare the [supported scope](website/docs/getting-started/beta-scope.md);
+  Android/Termux is experimental and Daytona/Modal are outside supported beta operation.
+- [x] Share installed-version reporting and final payload redaction across CLI,
+  TUI and messaging diagnostics, with regression tests for secrets in system dumps.
+  Local diagnostics do not contact the paste service.
+- [x] Require reproducible assigned releases in tester reports instead of asking
+  testers to update to a moving snapshot.
 
 ## Maintenance policy
 

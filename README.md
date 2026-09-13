@@ -172,3 +172,12 @@ For development, start with the [current ownership map](docs/architecture/owners
 Maintained source packages include local READMEs covering their purpose, boundaries,
 representative files, child packages and verification commands. The
 [engineering backlog](TODO.md) separates actionable work from historical evidence.
+
+## Beta testers
+
+Use the [beta tester guide](website/docs/getting-started/tester-pilot.md) for the
+coordinator-assigned artifact bundle, isolated profile, provider setup, synthetic
+walkthrough and recovery. The [support scope](website/docs/getting-started/beta-scope.md)
+distinguishes qualified desktop/VPS paths from experimental integrations. Keep the
+assigned release for reproductions; source-development installation instructions
+elsewhere in this README are not the beta onboarding route.

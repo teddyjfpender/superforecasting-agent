@@ -4,15 +4,18 @@ title: "Android / Termux"
 description: "Run Superforecasting Agent directly on an Android phone with Termux"
 ---
 
+> **Beta scope:** Android/Termux is experimental and outside the supported beta: no real-device qualification is available. These instructions are exploratory. See the [beta guide](./tester-pilot.md).
+
+
 # Superforecasting Agent on Android with Termux
 
-This is the tested path for running Superforecasting Agent directly on an Android phone through [Termux](https://termux.dev/).
+This is an experimental recipe for running Superforecasting Agent directly on an Android phone through [Termux](https://termux.dev/).
 
-It gives you a working local forecast desk on the phone, plus the core extras that are currently known to install cleanly on Android.
+The recipe targets a local forecast desk and selected Android-compatible extras. This beta has no current real-device qualification receipt; installation and recovery may fail.
 
-## What is supported in the tested path?
+## What is supported in the experimental path?
 
-The tested Termux bundle installs:
+The experimental Termux bundle installs:
 - the forecast desk CLI
 - cron support
 - PTY/background terminal support
@@ -27,13 +30,13 @@ Concretely, it maps to:
 python -m pip install -e '.[termux]' -c packaging/termux/constraints.txt
 ```
 
-## What is not part of the tested path yet?
+## What is not part of the experimental path yet?
 
 A few features still need desktop/server-style dependencies that are not published for Android, or have not been validated on phones yet:
 
 - `.[all]` is not supported on Android today
 - the `voice` extra is blocked by `faster-whisper -> ctranslate2`, and `ctranslate2` does not publish Android wheels
-- automatic browser / Playwright bootstrap is skipped in the tested Termux install path
+- automatic browser / Playwright bootstrap is skipped in the experimental Termux install path
 - Docker-based terminal isolation is not available inside Termux
 - Android may still suspend Termux background jobs, so gateway persistence is best-effort rather than a normal managed service
 
@@ -85,7 +88,7 @@ Why these packages?
 - `python` — runtime + venv support
 - `git` — clone/update the repo
 - `clang`, `rust`, `make`, `pkg-config`, `libffi`, `openssl` — needed to build a few Python dependencies on Android
-- `nodejs` — optional Node runtime for experiments beyond the tested core path
+- `nodejs` — optional Node runtime for experiments beyond the experimental core path
 - `ripgrep` — fast file search
 - `ffmpeg` — media / TTS conversions
 
@@ -115,13 +118,13 @@ python -m pip install --upgrade pip setuptools wheel
 
 `ANDROID_API_LEVEL` is important for Rust / maturin-based packages such as `jiter`.
 
-### 4. Install the tested Termux bundle
+### 4. Install the experimental Termux bundle
 
 ```bash
 python -m pip install -e '.[termux]' -c packaging/termux/constraints.txt
 ```
 
-If you only want the minimal core agent, this also works:
+If you only want the minimal core agent, you can try:
 
 ```bash
 python -m pip install -e '.' -c packaging/termux/constraints.txt
@@ -170,7 +173,7 @@ superforecasting-agent setup
 
 ### Install optional Node dependencies manually
 
-The tested Termux path skips Node/browser bootstrap on purpose. If you want to experiment with browser tooling later:
+The experimental Termux path skips Node/browser bootstrap on purpose. If you want to experiment with browser tooling later:
 
 ```bash
 pkg install nodejs-lts
@@ -187,7 +190,7 @@ Treat browser / WhatsApp tooling on Android as experimental until documented oth
 
 ### `No solution found` when installing `.[all]`
 
-Use the tested Termux bundle instead:
+Use the experimental Termux bundle instead:
 
 ```bash
 python -m pip install -e '.[termux]' -c packaging/termux/constraints.txt
@@ -246,9 +249,9 @@ python -m pip install -e '.[termux]' -c packaging/termux/constraints.txt
 ## Known limitations on phones
 
 - Docker backend is unavailable
-- local voice transcription via `faster-whisper` is unavailable in the tested path
-- browser automation setup is intentionally skipped in the tested Termux install path
-- some optional extras may work, but only `.[termux]` and `.[termux-all]` are currently documented as the tested Android bundles
+- local voice transcription via `faster-whisper` is unavailable in the experimental path
+- browser automation setup is intentionally skipped in the experimental Termux install path
+- some optional extras may work, but only `.[termux]` and `.[termux-all]` are currently documented as the experimental Android bundles
 
 If you hit a new Android-specific issue, please open a GitHub issue with:
 - your Android version

@@ -1,19 +1,19 @@
 name: "Forecast Pilot Feedback"
-description: Report alpha tester workflow results or pilot blockers.
+description: Report beta tester workflow results or pilot blockers.
 title: "[Pilot]: "
 labels: ["pilot-feedback"]
 body:
   - type: markdown
     attributes:
       value: |
-        Use this for friendly alpha feedback from the tester pilot runbook. Do not use this template to claim forecasting superiority. The goal is to collect install, workflow, evidence, self-check, scoring, and learning-loop artifacts.
+        Use this for beta feedback from the tester pilot runbook. Do not use this template to claim forecasting superiority. The goal is to collect install, workflow, evidence, self-check, scoring, and learning-loop artifacts.
 
   - type: input
     id: snapshot
     attributes:
-      label: Snapshot or Commit
-      description: Branch and commit tested. `git log -1 --oneline` is enough.
-      placeholder: "superforecasting-agent-snapshot / 9a6d498b1"
+      label: Assigned Release and Installed Versions
+      description: Assigned release tag, backend and terminal versions from local diagnostics; source commit if applicable.
+      placeholder: "v0.22.1 / backend 0.22.1 / terminal 0.1.1"
     validations:
       required: true
 

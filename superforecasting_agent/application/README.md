@@ -15,6 +15,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 | [\_\_init\_\_.py](__init__.py)                     | Interface-independent session and host application operations.                 |
 | [command_output.py](command_output.py)         | Request-local command output without replacing process streams.                |
 | [configuration_view.py](configuration_view.py) | Read-only configuration reporting shared by terminal and RPC consumers.        |
+| [diagnostics.py](diagnostics.py) | Installed product identity and final support-payload sanitization. |
 | [footer.py](footer.py)                         | Shared runtime-footer inspection and atomic configuration transitions.         |
 | [goals.py](goals.py)                           | Shared goal command transitions; products own display and kickoff delivery.    |
 | [handoff.py](handoff.py)                       | Attempt-scoped handoff observation independent of presentation and gateway IO. |
