@@ -212,7 +212,7 @@ _COMMAND_SPINNER_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧
 # User-managed env files should override stale shell exports on restart.
 from superforecasting_agent.constants import get_agent_home, display_agent_home
 
-from superforecasting_agent.runtime.env_loader import load_forecast_dotenv
+from superforecasting_agent.startup_environment import load_forecast_dotenv
 from superforecasting_agent.environment import (
     EPHEMERAL_SYSTEM_PROMPT_ENV_NAMES,
     INTERACTIVE_ENV_NAMES,
@@ -5210,13 +5210,12 @@ class ForecastCLI:
         """
         from superforecasting_agent.runtime.kanban import run_slash
 
-        rest = cmd.strip()
-        if rest.startswith("/"):
-            rest = rest.lstrip("/")
-        if rest.startswith("kanban"):
-            rest = rest[len("kanban"):].lstrip()
+        from superforecasting_agent.application.command_input import command_text
+
         try:
-            output = run_slash(rest)
+            output = run_slash(command_text(cmd).arguments)
+        except ValueError as exc:
+            output = str(exc)
         except Exception as exc:  # pragma: no cover - defensive
             output = f"kanban error: {exc}"
         if output:
@@ -5331,7 +5330,7 @@ class ForecastCLI:
                 "This clears the screen and starts a new forecast session.\n"
                 "The current forecast-session history will be discarded.",
             ) is None:
-                return
+                return True
             self.new_session(silent=True)
             _clear_output_history()
             # Clear terminal screen.  Inside the TUI, Rich's console.clear()
@@ -5444,7 +5443,7 @@ class ForecastCLI:
                 "This starts a fresh forecast session.\n"
                 "The current forecast-session history will be discarded.",
             ) is None:
-                return
+                return True
             self.new_session(title=title)
         elif canonical == "resume":
             self._handle_resume_command(cmd_original)
@@ -5484,7 +5483,7 @@ class ForecastCLI:
                 "undo",
                 "This removes the last user/forecaster exchange from history.",
             ) is None:
-                return
+                return True
             self.undo_last()
         elif canonical == "branch":
             self._handle_branch_command(cmd_original)

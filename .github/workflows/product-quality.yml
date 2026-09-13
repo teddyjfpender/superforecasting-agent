@@ -12,6 +12,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           version: '0.10.9'
@@ -28,9 +30,11 @@ jobs:
         os: [ubuntu-24.04, macos-latest, windows-latest]
         node: ['20.19.2', '22']
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 2
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           version: '0.10.9'
@@ -53,6 +57,17 @@ jobs:
       - name: Verify installed backend, terminal and authenticated host
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: python scripts/verify_profiles.py dist/profiles --python 3.11.15 --report qualification/report.json
+      - name: Prepare pinned historical upgrade inputs
+        id: baselines
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: python scripts/prepare_upgrade_baselines.py
+      - name: Verify installed upgrades, legacy profiles, customized skills and plugins
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.baselines.outcome == 'success' }}
+        run: >-
+          python scripts/verify_profiles.py dist/profiles --python 3.11.15
+          --upgrade-from dist/upgrade-baselines/superforecasting_agent-0.19.0-py3-none-any.whl
+          --terminal-upgrade-from dist/upgrade-baselines/superforecasting_agent_tui-0.1.0-py3-none-any.whl
+          --report qualification/upgrade-report.json
       - name: Preserve platform evidence, including failures and skips
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -61,4 +76,5 @@ jobs:
           include-hidden-files: true
           path: |
             qualification/
+            dist/upgrade-baselines/provenance.json
             .test-results/

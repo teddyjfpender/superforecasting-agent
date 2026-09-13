@@ -155,6 +155,7 @@ def _make_agent_provider_class() -> Optional[type]:
             # providers) and require a full browser re-authorization.
             storage = self.context.storage
             from tools.mcp_oauth import AgentTokenStorage
+
             if (
                 isinstance(storage, AgentTokenStorage)
                 and self.context.oauth_metadata is None
@@ -174,10 +175,7 @@ def _make_agent_provider_class() -> Optional[type]:
             # Only runs when we have tokens on cold-load but no cached
             # metadata — i.e. the exact scenario where the SDK's built-in
             # 401-branch discovery hasn't had a chance to run yet.
-            if (
-                tokens is not None
-                and self.context.oauth_metadata is None
-            ):
+            if tokens is not None and self.context.oauth_metadata is None:
                 try:
                     await self._prefetch_oauth_metadata()
                 except Exception as exc:  # pragma: no cover — defensive
@@ -186,7 +184,8 @@ def _make_agent_provider_class() -> Optional[type]:
                     logger.debug(
                         "MCP OAuth '%s': pre-flight metadata discovery "
                         "failed (non-fatal): %s",
-                        self._hermes_server_name, exc,
+                        self._hermes_server_name,
+                        exc,
                     )
 
         async def _prefetch_oauth_metadata(self) -> None:
@@ -219,7 +218,9 @@ def _make_agent_provider_class() -> Optional[type]:
                     except httpx.HTTPError as exc:
                         logger.debug(
                             "MCP OAuth '%s': PRM discovery to %s failed: %s",
-                            self._hermes_server_name, url, exc,
+                            self._hermes_server_name,
+                            url,
+                            exc,
                         )
                         continue
                     prm = await handle_protected_resource_response(resp)
@@ -242,7 +243,9 @@ def _make_agent_provider_class() -> Optional[type]:
                     except httpx.HTTPError as exc:
                         logger.debug(
                             "MCP OAuth '%s': ASM discovery to %s failed: %s",
-                            self._hermes_server_name, url, exc,
+                            self._hermes_server_name,
+                            url,
+                            exc,
                         )
                         continue
                     ok, asm = await handle_auth_metadata_response(resp)
@@ -254,12 +257,14 @@ def _make_agent_provider_class() -> Optional[type]:
                         # skip discovery entirely.
                         storage = self.context.storage
                         from tools.mcp_oauth import AgentTokenStorage
+
                         if isinstance(storage, AgentTokenStorage):
                             storage.save_oauth_metadata(asm)
                         logger.debug(
                             "MCP OAuth '%s': pre-flight ASM discovered "
                             "token_endpoint=%s",
-                            self._hermes_server_name, asm.token_endpoint,
+                            self._hermes_server_name,
+                            asm.token_endpoint,
                         )
                         break
 
@@ -275,27 +280,26 @@ def _make_agent_provider_class() -> Optional[type]:
                 return
             storage = self.context.storage
             from tools.mcp_oauth import AgentTokenStorage
+
             if not isinstance(storage, AgentTokenStorage):
                 return
             existing = storage.load_oauth_metadata()
-            if (
-                existing is None
-                or str(existing.token_endpoint) != str(meta.token_endpoint)
+            if existing is None or str(existing.token_endpoint) != str(
+                meta.token_endpoint
             ):
                 storage.save_oauth_metadata(meta)
 
-        async def async_auth_flow(self, request):  # type: ignore[override]
+        async def async_auth_flow(self, request):
             # Pre-flow hook: ask the manager to refresh from disk if needed.
             # Any failure here is non-fatal — we just log and proceed with
             # whatever state the SDK already has.
             try:
-                await get_manager().invalidate_if_disk_changed(
-                    self._hermes_server_name
-                )
+                await get_manager().invalidate_if_disk_changed(self._hermes_server_name)
             except Exception as exc:  # pragma: no cover — defensive
                 logger.debug(
                     "MCP OAuth '%s': pre-flow disk-watch failed (non-fatal): %s",
-                    self._hermes_server_name, exc,
+                    self._hermes_server_name,
+                    exc,
                 )
 
             # Manually bridge the bidirectional generator protocol. httpx's
@@ -369,7 +373,9 @@ class MCPOAuthManager:
             if entry is not None and entry.server_url != server_url:
                 logger.info(
                     "MCP OAuth '%s': URL changed from %s to %s, discarding cache",
-                    server_name, entry.server_url, server_url,
+                    server_name,
+                    entry.server_url,
+                    server_url,
                 )
                 entry = None
 
@@ -401,14 +407,15 @@ class MCPOAuthManager:
         """
         if _AGENT_PROVIDER_CLS is None:
             logger.warning(
-                "MCP OAuth '%s': SDK auth module unavailable", server_name,
+                "MCP OAuth '%s': SDK auth module unavailable",
+                server_name,
             )
             return None
 
         # Local imports avoid circular deps at module import time.
         from tools.mcp_oauth import (
-            AgentTokenStorage,
             _OAUTH_AVAILABLE,
+            AgentTokenStorage,
             _build_client_metadata,
             _configure_callback_port,
             _is_interactive,
@@ -456,6 +463,7 @@ class MCPOAuthManager:
             self._entries.pop(server_name, None)
 
         from tools.mcp_oauth import remove_oauth_tokens
+
         remove_oauth_tokens(server_name)
         logger.info(
             "MCP OAuth '%s': evicted from cache and removed from disk",
@@ -497,7 +505,9 @@ class MCPOAuthManager:
                 logger.info(
                     "MCP OAuth '%s': tokens file changed (mtime %d -> %d), "
                     "forcing reload",
-                    server_name, old, mtime_ns,
+                    server_name,
+                    old,
+                    mtime_ns,
                 )
                 return True
             return False
@@ -564,7 +574,8 @@ class MCPOAuthManager:
                     except Exception as exc:  # pragma: no cover — defensive
                         logger.warning(
                             "MCP OAuth '%s': 401 handler failed: %s",
-                            server_name, exc,
+                            server_name,
+                            exc,
                         )
                         if not pending.done():
                             pending.set_result(False)
@@ -578,7 +589,8 @@ class MCPOAuthManager:
         except Exception as exc:  # pragma: no cover — defensive
             logger.warning(
                 "MCP OAuth '%s': awaiting 401 handler failed: %s",
-                server_name, exc,
+                server_name,
+                exc,
             )
             return False
 

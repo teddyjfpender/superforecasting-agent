@@ -10169,41 +10169,18 @@ class GatewayRunner:
         """
         import asyncio
         import re
-        import shlex
         from superforecasting_agent.runtime.kanban import run_slash
-
-        text = (event.text or "").strip()
-        # Strip the leading "/kanban" (with or without slash), leaving args.
-        if text.startswith("/"):
-            text = text.lstrip("/")
-        if text.startswith("kanban"):
-            text = text[len("kanban"):].lstrip()
-
-        tokens = shlex.split(text) if text else []
-        requested_board = None
-        action = None
-        i = 0
-        while i < len(tokens):
-            tok = tokens[i]
-            if tok == "--board":
-                if i + 1 >= len(tokens):
-                    break
-                requested_board = tokens[i + 1]
-                i += 2
-                continue
-            if tok.startswith("--board="):
-                requested_board = tok.split("=", 1)[1]
-                i += 1
-                continue
-            action = tok
-            break
-
-        is_create = action == "create"
+        from superforecasting_agent.application.command_input import board_invocation, command_text
 
         try:
-            output = await asyncio.to_thread(run_slash, text)
+            invocation = board_invocation(command_text(event.text or "/kanban").arguments)
+            output = await asyncio.to_thread(run_slash, invocation.arguments)
+        except ValueError as exc:
+            return str(exc)
         except Exception as exc:  # pragma: no cover - defensive
             return t("gateway.kanban.error_prefix", error=exc)
+        requested_board = invocation.board
+        is_create = invocation.action == "create"
 
         # Auto-subscribe on create. Parse the task id from the CLI's standard
         # success line ("Created t_abcd  (ready, assignee=...)"). If the user

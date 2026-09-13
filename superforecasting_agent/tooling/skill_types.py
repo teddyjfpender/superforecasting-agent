@@ -1,6 +1,7 @@
 """Shared metadata, bundles, and interface for skill source adapters."""
 
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Union
 
@@ -25,7 +26,7 @@ class SkillBundle:
     """A downloaded skill ready for quarantine/scanning/installation."""
 
     name: str
-    files: Dict[str, Union[str, bytes]]  # relative_path -> file content
+    files: Mapping[str, Union[str, bytes]]  # relative_path -> file content
     source: str
     identifier: str
     trust_level: str

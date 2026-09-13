@@ -33,6 +33,7 @@ Configuration in config.yaml::
 """
 
 import asyncio
+import html
 import json
 import logging
 import os
@@ -55,7 +56,7 @@ logger = logging.getLogger(__name__)
 # Lazy imports -- MCP SDK with OAuth support is optional
 # ---------------------------------------------------------------------------
 
-_OAUTH_AVAILABLE=False
+_OAUTH_AVAILABLE = False
 try:
     from mcp.client.auth import OAuthClientProvider
     from mcp.shared.auth import (
@@ -65,7 +66,7 @@ try:
         OAuthToken,
     )
 
-    _OAUTH_AVAILABLE=True
+    _OAUTH_AVAILABLE = True
 except ImportError:
     logger.debug("MCP OAuth types not available -- OAuth MCP auth disabled")
 
@@ -106,6 +107,7 @@ def _get_token_dir() -> Path:
     """
     try:
         from superforecasting_agent.constants import get_agent_home
+
         base = Path(get_agent_home())
     except ImportError:
         base = Path(os.environ.get("HERMES_HOME", str(Path.home() / ".hermes")))
@@ -266,7 +268,9 @@ class AgentTokenStorage:
         try:
             return OAuthToken.model_validate(data)
         except (ValueError, TypeError, KeyError) as exc:
-            logger.warning("Corrupt tokens at %s -- ignoring: %s", self._tokens_path(), exc)
+            logger.warning(
+                "Corrupt tokens at %s -- ignoring: %s", self._tokens_path(), exc
+            )
             return None
 
     async def set_tokens(self, tokens: "OAuthToken") -> None:
@@ -298,11 +302,18 @@ class AgentTokenStorage:
         try:
             return OAuthClientInformationFull.model_validate(data)
         except (ValueError, TypeError, KeyError) as exc:
-            logger.warning("Corrupt client info at %s -- ignoring: %s", self._client_info_path(), exc)
+            logger.warning(
+                "Corrupt client info at %s -- ignoring: %s",
+                self._client_info_path(),
+                exc,
+            )
             return None
 
     async def set_client_info(self, client_info: "OAuthClientInformationFull") -> None:
-        _write_json(self._client_info_path(), client_info.model_dump(mode="json", exclude_none=True))
+        _write_json(
+            self._client_info_path(),
+            client_info.model_dump(mode="json", exclude_none=True),
+        )
         logger.debug("OAuth client info saved for %s", self._server_name)
 
     # -- oauth server metadata --------------------------------------------
@@ -314,7 +325,9 @@ class AgentTokenStorage:
     # forces a full browser re-authorization.
 
     def save_oauth_metadata(self, metadata: "OAuthMetadata") -> None:
-        _write_json(self._meta_path(), metadata.model_dump(exclude_none=True, mode="json"))
+        _write_json(
+            self._meta_path(), metadata.model_dump(exclude_none=True, mode="json")
+        )
         logger.debug("OAuth metadata saved for %s", self._server_name)
 
     def load_oauth_metadata(self) -> "OAuthMetadata | None":
@@ -324,7 +337,9 @@ class AgentTokenStorage:
         try:
             return OAuthMetadata.model_validate(data)
         except (ValueError, TypeError, KeyError) as exc:
-            logger.warning("Corrupt OAuth metadata at %s -- ignoring: %s", self._meta_path(), exc)
+            logger.warning(
+                "Corrupt OAuth metadata at %s -- ignoring: %s", self._meta_path(), exc
+            )
             return None
 
     # -- cleanup -----------------------------------------------------------
@@ -366,19 +381,23 @@ def _make_callback_handler() -> tuple[type, dict]:
             result["error"] = error
 
             body = (
-                "<html><body><h2>Authorization Successful</h2>"
-                "<p>You can close this tab and return to Superforecasting Agent.</p></body></html>"
-            ) if code else (
-                "<html><body><h2>Authorization Failed</h2>"
-                f"<p>Error: {error or 'unknown'}</p></body></html>"
+                (
+                    "<html><body><h2>Authorization Successful</h2>"
+                    "<p>You can close this tab and return to Superforecasting Agent.</p></body></html>"
+                )
+                if code
+                else (
+                    "<html><body><h2>Authorization Failed</h2>"
+                    f"<p>Error: {html.escape(error or 'unknown')}</p></body></html>"
+                )
             )
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
             self.wfile.write(body.encode())
 
-        def log_message(self, fmt: str, *args: Any) -> None:
-            logger.debug("OAuth callback: %s", fmt % args)
+        def log_message(self, format: str, *args: Any) -> None:
+            logger.debug("OAuth callback: %s", format % args)
 
     return _Handler, result
 
@@ -424,11 +443,20 @@ async def _redirect_handler(authorization_url: str) -> None:
             if opened:
                 print("  (Browser opened automatically.)\n", file=sys.stderr)
             else:
-                print("  (Could not open browser — please open the URL manually.)\n", file=sys.stderr)
+                print(
+                    "  (Could not open browser — please open the URL manually.)\n",
+                    file=sys.stderr,
+                )
         except Exception:
-            print("  (Could not open browser — please open the URL manually.)\n", file=sys.stderr)
+            print(
+                "  (Could not open browser — please open the URL manually.)\n",
+                file=sys.stderr,
+            )
     else:
-        print("  (Headless environment detected — open the URL manually.)\n", file=sys.stderr)
+        print(
+            "  (Headless environment detected — open the URL manually.)\n",
+            file=sys.stderr,
+        )
 
 
 async def _wait_for_callback() -> tuple[str, str | None]:
@@ -591,8 +619,13 @@ def _maybe_preregister_client(
         info_dict["scope"] = cfg["scope"]
 
     client_info = OAuthClientInformationFull.model_validate(info_dict)
-    _write_json(storage._client_info_path(), client_info.model_dump(mode="json", exclude_none=True))
-    logger.debug("Pre-registered client_id=%s for '%s'", client_id, storage._server_name)
+    _write_json(
+        storage._client_info_path(),
+        client_info.model_dump(mode="json", exclude_none=True),
+    )
+    logger.debug(
+        "Pre-registered client_id=%s for '%s'", client_id, storage._server_name
+    )
 
 
 def build_oauth_auth(

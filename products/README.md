@@ -3,11 +3,11 @@
 The monorepo builds separate Python wheels. Product versions are independent;
 compatibility is determined by the host's wire version and operation capabilities.
 
-| Product | Installation | Runtime requirements |
-| --- | --- | --- |
-| Backend and CLI | `pip install superforecasting_agent-*.whl` | Python 3.11–3.13; no Node or bundled TUI/web assets |
-| Terminal | `pip install superforecasting_agent_tui-*.whl` | Python 3.11–3.13 and Node 20+; local backend or remote WebSocket host |
-| Optional web integration | `pip install 'superforecasting_agent-<version>-py3-none-any.whl[web]'` | Backend plus FastAPI/Uvicorn; presentation assets are separate |
+| Product                  | Installation                                                           | Runtime requirements                                                  |
+| ------------------------ | ---------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Backend and CLI          | `pip install superforecasting_agent-*.whl`                             | Python 3.11–3.13; no Node or bundled TUI/web assets                   |
+| Terminal                 | `pip install superforecasting_agent_tui-*.whl`                         | Python 3.11–3.13 and Node 20+; local backend or remote WebSocket host |
+| Optional web integration | `pip install 'superforecasting_agent-<version>-py3-none-any.whl[web]'` | Backend plus FastAPI/Uvicorn; presentation assets are separate        |
 
 Build both products after the contributor bootstrap:
 
@@ -26,11 +26,12 @@ The verifier creates fresh environments outside the checkout, checks dependency
 consistency, runs create/update/resolve/score with Node absent from PATH, checks a
 terminal-only installation without backend imports, launches the installed Ink
 client against both a separate local backend and an authenticated WebSocket
-host to score a durable forecast and exit cleanly on POSIX, verifies companion
-discovery, and checks the optional web integration and credential-free host logs. Remote `--check` validates local
-prerequisites only; host compatibility is checked when connecting. The installed
-PTY exercise explicitly skips native Windows; it does not establish ConPTY
-coverage or remote-network recovery.
+host to score a durable forecast and exit cleanly, verifies companion discovery,
+and checks optional web integration and credential-free host logs. Native Windows
+uses an isolated ConPTY worker; POSIX uses a PTY. Remote `--check` validates local
+prerequisites only; host compatibility is checked when connecting. See the
+[native qualification receipts](../docs/verification/2026-09-13-native-platforms/README.md)
+for the actual source revisions and platforms exercised.
 
 Install both wheels into one environment to use `superforecasting-agent tui`.
 Alternatively, run the terminal distribution directly:
@@ -53,7 +54,10 @@ it also produces `dashboard-assets.tar.gz`; extract that archive and set
 `SUPERFORECASTING_AGENT_WEB_DIST` to its directory for the optional dashboard.
 
 Installer selection and upgrade automation support the manifest-selected backend
-and terminal wheels. Actual cross-version upgrade qualification remains open.
+and terminal wheels. Backend 0.19.0 → 0.22.1 and terminal 0.1.0 → 0.1.1
+upgrades were exercised on macOS ARM64 and Linux ARM64; the native six-job
+matrix recorded fresh installations without requesting upgrades. See
+[product qualification](../docs/verification/2026-09-13-products/README.md).
 Build/verification commands do not publish packages.
 
 ## Headless protocol host
@@ -80,10 +84,10 @@ Browser clients must additionally match an exact `--allow-origin` value. Native
 clients without an Origin header are supported. HTTP access logging is disabled. WebSocket handshake logs redact query strings
 for both accepted and rejected connections.
 
-This exposes the existing runtime operations and protocol negotiation. Full
-host/session lifetime ownership and installed remote-terminal recovery qualification
-remain tracked in the product-boundaries plan; this entrypoint alone does not
-establish those guarantees.
+Host/session lifetime belongs to the [hosting package](../superforecasting_agent/hosting/README.md).
+Installed recovery qualification covers authenticated reconnects, durable session
+state and shutdown in the recorded native matrix. It does not establish behavior
+on Android or unconfigured credential-dependent services.
 
 The POSIX release installer installs both manifest-selected wheels by default.
 Use `INSTALL_TUI=0 bash install.sh` for a backend-only environment. All selected
@@ -92,5 +96,12 @@ The VPS upgrader now reuses POSIX verification and supports `INSTALL_TUI=0`
 and `FORECAST_TUI_WHEEL` for local companion upgrades. Keep `install-release.sh`
 beside `upgrade.sh` and its migration guard. Hetzner first installation uses the same verified staging owner and accepts
 a local `FORECAST_TUI_WHEEL` companion. Fresh Ubuntu ARM64 container provisioning, SSH/TUI launch and tmux reconnect
-have passed with the separate wheels. Native Windows execution of the new
-fixture checks remains pending.
+have passed with the separate wheels. Native Windows installation and recovery
+receipts are linked above; broader upgrade and profile migration matrix coverage
+remains a separate qualification task.
+
+## Directory guide
+
+- [Terminal distribution](tui/README.md): wheel packaging and installed launcher.
+- [Backend package](../superforecasting_agent/README.md): canonical runtime owners.
+- [Terminal source](../ui-tui/src/README.md): the primary forecast desk experience.

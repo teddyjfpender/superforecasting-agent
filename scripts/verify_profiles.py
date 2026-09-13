@@ -299,7 +299,7 @@ def verify(args: argparse.Namespace, report: dict[str, Any]) -> None:
         report["checks"]["fresh_install_dependencies"] = "passed"
         backend_python = root / "backend" / bins / python_name
         terminal_python = root / "terminal" / bins / python_name
-        profile = root / "profile"
+        profile = root / (".hermes" if args.upgrade_from else "profile")
         profile.mkdir()
         env = {
             "PATH": str(backend_python.parent),
@@ -310,6 +310,8 @@ def verify(args: argparse.Namespace, report: dict[str, Any]) -> None:
             "PYTHONUTF8": "1",
             "TMPDIR": str(root),
         }
+        if args.upgrade_from:
+            env.pop("SUPERFORECASTING_AGENT_HOME")
         # Preserve mobile platform detection without importing user credentials.
         for name in ("TERMUX_VERSION", "PREFIX", "ANDROID_ROOT", "ANDROID_DATA"):
             if name in os.environ:
@@ -371,6 +373,9 @@ def verify(args: argparse.Namespace, report: dict[str, Any]) -> None:
             "A failed completion record",
         )
         if args.upgrade_from:
+            backend_run(
+                str(Path(__file__).with_name("verify_profile_migrations.py")), "seed"
+            )
             forecast(
                 "evidence",
                 "add",
@@ -393,7 +398,10 @@ def verify(args: argparse.Namespace, report: dict[str, Any]) -> None:
                     "Older backend did not persist forecast/evidence fixtures"
                 )
             config = profile / "config.yaml"
-            config.write_text("display:\n  skin: mono\n", encoding="utf-8")
+            config.write_text(
+                "display:\n  skin: mono\nplugins:\n  enabled: [upgrade-fixture]\n",
+                encoding="utf-8",
+            )
             config_before = config.read_bytes()
             session_import = (
                 "from importlib.util import find_spec; from importlib import import_module; "
@@ -451,6 +459,10 @@ def verify(args: argparse.Namespace, report: dict[str, Any]) -> None:
                 json.loads(backend_run("-c", read_session)),
                 "session",
             )
+            migration_output = backend_run(
+                str(Path(__file__).with_name("verify_profile_migrations.py")), "verify"
+            )
+            report["profile_migration"] = json.loads(migration_output.splitlines()[-1])
             if config.read_bytes() != config_before:
                 raise AssertionError("Upgrade changed user configuration")
             print(

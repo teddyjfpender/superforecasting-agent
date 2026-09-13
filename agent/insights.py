@@ -108,7 +108,7 @@ class InsightsEngine:
         self.db = db
         self._conn = db._conn
 
-    def generate(self, days: int = 30, source: str = None) -> Dict[str, Any]:
+    def generate(self, days: int = 30, source: str | None = None) -> Dict[str, Any]:
         """
         Generate a complete insights report.
 

@@ -234,3 +234,17 @@ def test_notifier_redelivers_same_kind_on_dispatch_cycle(tmp_path, monkeypatch):
         f"deliveries (texts: {[d['text'] for d in adapter.sent]})"
     )
     assert "crashed" in adapter.sent[1]["text"].lower()
+
+
+@pytest.mark.asyncio
+async def test_malformed_board_quotes_return_error_without_execution(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from superforecasting_agent.runtime import kanban
+
+    execute = Mock(side_effect=AssertionError('Malformed input must not execute'))
+    monkeypatch.setattr(kanban, 'run_slash', execute)
+    runner = GatewayRunner.__new__(GatewayRunner)
+    result = await runner._handle_kanban_command(SimpleNamespace(text='/KANBAN create "unterminated'))
+    assert result == 'Invalid command arguments: No closing quotation'
+    execute.assert_not_called()

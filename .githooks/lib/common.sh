@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Shared plumbing for the Hermes git hooks (.githooks/*) AND the CI mirror
+# Shared plumbing for the repository git hooks (.githooks/*) AND the CI mirror
 # (.github/workflows/contributing-gates.yml). This file is SOURCED, never run.
 #
 # The whole point: the hooks and CI call the SAME functions (here + in
@@ -44,7 +44,9 @@ hook_fail() {
 hook_python() {
   for c in \
     "$HOOKS_REPO_ROOT/.venv/bin/python" \
+    "$HOOKS_REPO_ROOT/.venv/Scripts/python.exe" \
     "$HOOKS_REPO_ROOT/venv/bin/python" \
+    "$HOOKS_REPO_ROOT/venv/Scripts/python.exe" \
     "$(command -v python3 2>/dev/null)" \
     "$(command -v python 2>/dev/null)"; do
     if [ -n "$c" ] && [ -x "$c" ]; then printf '%s' "$c"; return 0; fi
@@ -55,6 +57,7 @@ hook_python() {
 hook_ruff() {
   for c in \
     "$HOOKS_REPO_ROOT/.venv/bin/ruff" \
+    "$HOOKS_REPO_ROOT/.venv/Scripts/ruff.exe" \
     "$(command -v ruff 2>/dev/null)"; do
     if [ -n "$c" ] && [ -x "$c" ]; then printf '%s' "$c"; return 0; fi
   done
