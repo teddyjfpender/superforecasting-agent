@@ -188,3 +188,20 @@ def test_cli_api_key_unknown_provider_exits_2(monkeypatch, tmp_path, capsys):
     with pytest.raises(SystemExit) as exc:
         _run(["forecast", "api-key", "set", "not a real provider name", "value"])
     assert exc.value.code == 2
+
+
+def test_default_path_tracks_profile_without_runtime_loader(monkeypatch, tmp_path):
+    import builtins
+
+    original_import = builtins.__import__
+
+    def import_without_runtime(name, *args, **kwargs):
+        if name.startswith("superforecasting_agent.runtime"):
+            raise AssertionError("API-key paths must not load the CLI runtime")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", import_without_runtime)
+    for name in ("first", "second"):
+        home = tmp_path / name
+        monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", str(home))
+        assert api_keys.default_env_path() == home / ".env"

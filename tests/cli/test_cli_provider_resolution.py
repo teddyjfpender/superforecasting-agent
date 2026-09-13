@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from superforecasting_agent.runtime.auth import AuthError
+from superforecasting_agent.credentials.auth import AuthError
 from superforecasting_agent.runtime import main as hermes_main
 
 
@@ -162,7 +162,7 @@ def test_runtime_resolution_failure_is_not_sticky(monkeypatch):
 
     monkeypatch.setattr("superforecasting_agent.runtime.runtime_provider.resolve_runtime_provider", _runtime_resolve)
     monkeypatch.setattr("superforecasting_agent.runtime.runtime_provider.format_runtime_provider_error", lambda exc: str(exc))
-    monkeypatch.setattr(cli, "AIAgent", _DummyAgent)
+    monkeypatch.setattr("agent.agent_factory._aiagent_cls", lambda: _DummyAgent)
 
     shell = cli.HermesCLI(model="gpt-5", compact=True, max_turns=1)
 
@@ -295,18 +295,18 @@ def test_model_flow_nous_prints_subscription_guidance_without_mutating_explicit_
     }
 
     monkeypatch.setattr(
-        "superforecasting_agent.runtime.auth.get_provider_auth_state",
+        "superforecasting_agent.credentials.auth.get_provider_auth_state",
         lambda provider: {"access_token": "nous-token"},
     )
     monkeypatch.setattr(
-        "superforecasting_agent.runtime.auth.resolve_nous_runtime_credentials",
+        "superforecasting_agent.credentials.auth.resolve_nous_runtime_credentials",
         lambda *args, **kwargs: {
             "base_url": "https://inference.example.com/v1",
             "api_key": "nous-key",
         },
     )
     monkeypatch.setattr(
-        "superforecasting_agent.runtime.auth.fetch_nous_models",
+        "superforecasting_agent.credentials.auth.fetch_nous_models",
         lambda *args, **kwargs: ["claude-opus-4-6"],
     )
     monkeypatch.setattr("superforecasting_agent.runtime.auth._prompt_model_selection", lambda model_ids, current_model="", pricing=None, **kw: "claude-opus-4-6")
@@ -329,18 +329,18 @@ def test_model_flow_nous_offers_tool_gateway_prompt_when_unconfigured(monkeypatc
     }
 
     monkeypatch.setattr(
-        "superforecasting_agent.runtime.auth.get_provider_auth_state",
+        "superforecasting_agent.credentials.auth.get_provider_auth_state",
         lambda provider: {"access_token": "***"},
     )
     monkeypatch.setattr(
-        "superforecasting_agent.runtime.auth.resolve_nous_runtime_credentials",
+        "superforecasting_agent.credentials.auth.resolve_nous_runtime_credentials",
         lambda *args, **kwargs: {
             "base_url": "https://inference.example.com/v1",
             "api_key": "***",
         },
     )
     monkeypatch.setattr(
-        "superforecasting_agent.runtime.auth.fetch_nous_models",
+        "superforecasting_agent.credentials.auth.fetch_nous_models",
         lambda *args, **kwargs: ["claude-opus-4-6"],
     )
     monkeypatch.setattr("superforecasting_agent.runtime.auth._prompt_model_selection", lambda model_ids, current_model="", pricing=None, **kw: "claude-opus-4-6")
@@ -507,7 +507,7 @@ def test_cmd_model_falls_back_to_auto_on_invalid_provider(monkeypatch, capsys):
             raise AuthError("Unknown provider 'invalid-provider'.", code="invalid_provider")
         return "openrouter"
 
-    monkeypatch.setattr("superforecasting_agent.runtime.auth.resolve_provider", _resolve_provider)
+    monkeypatch.setattr("superforecasting_agent.credentials.auth.resolve_provider", _resolve_provider)
     monkeypatch.setattr(hermes_main, "_prompt_provider_choice", lambda choices, **kwargs: len(choices) - 1)
     monkeypatch.setattr("sys.stdin", type("FakeTTY", (), {"isatty": lambda self: True})())
 
@@ -527,7 +527,7 @@ def test_model_flow_custom_saves_verified_v1_base_url(monkeypatch, capsys):
     saved_env = {}
     monkeypatch.setattr("superforecasting_agent.runtime.config.save_env_value", lambda key, value: saved_env.__setitem__(key, value))
     monkeypatch.setattr("superforecasting_agent.runtime.auth._save_model_choice", lambda model: saved_env.__setitem__("MODEL", model))
-    monkeypatch.setattr("superforecasting_agent.runtime.auth.deactivate_provider", lambda: None)
+    monkeypatch.setattr("superforecasting_agent.credentials.auth.deactivate_provider", lambda: None)
     monkeypatch.setattr("superforecasting_agent.runtime.main._save_custom_provider", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         "superforecasting_agent.runtime.models.probe_api_models",
@@ -571,7 +571,7 @@ def test_model_flow_custom_persists_selected_api_mode(monkeypatch):
         lambda key: "" if key in {"OPENAI_BASE_URL", "OPENAI_API_KEY"} else "",
     )
     monkeypatch.setattr("superforecasting_agent.runtime.auth._save_model_choice", lambda model: None)
-    monkeypatch.setattr("superforecasting_agent.runtime.auth.deactivate_provider", lambda: None)
+    monkeypatch.setattr("superforecasting_agent.credentials.auth.deactivate_provider", lambda: None)
     monkeypatch.setattr(
         "superforecasting_agent.runtime.models.probe_api_models",
         lambda api_key, base_url: {
@@ -628,8 +628,8 @@ def test_cmd_model_forwards_nous_login_tls_options(monkeypatch):
     monkeypatch.setattr("superforecasting_agent.runtime.config.save_config", lambda cfg: None)
     monkeypatch.setattr("superforecasting_agent.runtime.config.get_env_value", lambda key: "")
     monkeypatch.setattr("superforecasting_agent.runtime.config.save_env_value", lambda key, value: None)
-    monkeypatch.setattr("superforecasting_agent.runtime.auth.resolve_provider", lambda requested, **kwargs: "nous")
-    monkeypatch.setattr("superforecasting_agent.runtime.auth.get_provider_auth_state", lambda provider_id: None)
+    monkeypatch.setattr("superforecasting_agent.credentials.auth.resolve_provider", lambda requested, **kwargs: "nous")
+    monkeypatch.setattr("superforecasting_agent.credentials.auth.get_provider_auth_state", lambda provider_id: None)
     monkeypatch.setattr(hermes_main, "_prompt_provider_choice", lambda choices, **kwargs: 0)
 
     captured = {}
@@ -712,3 +712,54 @@ def test_save_custom_provider_uses_provided_name(monkeypatch, tmp_path):
     entries = saved.get("custom_providers", [])
     assert len(entries) == 1
     assert entries[0]["name"] == "Ollama"
+
+
+def test_cli_factory_rejects_incompatible_codex_model_before_construction(monkeypatch):
+    cli = _import_cli()
+    constructed = []
+    class FakeAgent:
+        def __init__(self, **kwargs):
+            constructed.append(kwargs)
+
+    monkeypatch.setattr('agent.agent_factory._aiagent_cls', lambda: FakeAgent)
+    shell = cli.HermesCLI(model='gpt-5', compact=True, max_turns=1)
+    monkeypatch.setattr(shell, '_ensure_runtime_credentials', lambda: True)
+    assert shell._init_agent(
+        model_override='anthropic/claude-example',
+        runtime_override={'provider': 'openai-codex', 'api_key': 'fixture'},
+    ) is False
+    assert constructed == []
+    assert shell.agent is None
+
+
+def test_cli_factory_preserves_resolved_credentials_and_explicit_selections(monkeypatch):
+    cli = _import_cli()
+    captured = {}
+
+    class FakeAgent:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr('agent.agent_factory._aiagent_cls', lambda: FakeAgent)
+    shell = cli.HermesCLI(model='fixture-model', compact=True, max_turns=1)
+    monkeypatch.setattr(shell, '_ensure_runtime_credentials', lambda: True)
+    shell.system_prompt = 'question-specific instructions'
+    shell.enabled_toolsets = []
+    shell.reasoning_config = {}
+    pool = object()
+    token_provider = lambda: 'fixture-token'
+    assert shell._init_agent(runtime_override={
+        'provider': 'fixture', 'api_key': token_provider,
+        'credential_pool': pool, 'command': 'fixture-acp', 'args': ['--stdio'],
+    }) is True
+    assert captured['api_key'] is token_provider
+    assert captured['credential_pool'] is pool
+    assert captured['acp_command'] == 'fixture-acp'
+    assert captured['acp_args'] == ['--stdio']
+    assert captured['enabled_toolsets'] == []
+    assert captured['reasoning_config'] == {}
+    assert captured['session_db'] is shell._session_db
+    from forecasting.protocol import build_forecast_chat_system_prompt
+    assert captured['ephemeral_system_prompt'] == build_forecast_chat_system_prompt(
+        shell.system_prompt
+    )

@@ -170,38 +170,14 @@ $(printf '    %s\n' $_gen)
 }
 
 # ── map changed .py files -> the test dirs that cover them (pre-push) ─────────
-# py_test_targets <base> [head]  -> prints unique, existing test paths
-py_test_targets() {
-  _base="$1"; _head="${2:-HEAD}"
-  _changed="$(git diff --name-only "$_base" "$_head" -- '*.py')"
-  [ -z "$_changed" ] && return 0
-  _raw=""
-  while IFS= read -r _f; do
-    [ -z "$_f" ] && continue
-    case "$_f" in
-      tests/*)                                  _raw="$_raw
-$_f" ;;
-      forecasting/*|tools/forecast_actions/*)   _raw="$_raw
-tests/forecasting" ;;
-      protocol/*)                               _raw="$_raw
-tests/test_protocol_codegen.py" ;;
-      gateway/*|tui_gateway/*)                  _raw="$_raw
-tests/gateway" ;;
-      agent/*)                                  _raw="$_raw
-tests/agent" ;;
-      superforecasting_agent/runtime/*)                             _raw="$_raw
-tests/runtime_cli" ;;
-      providers/*)                              _raw="$_raw
-tests/providers" ;;
-      cron/*)                                   _raw="$_raw
-tests/cron" ;;
-      acp_adapter/*|acp_registry/*)             _raw="$_raw
-tests/acp" ;;
-    esac
-  done <<EOF
-$_changed
-EOF
-  printf '%s\n' "$_raw" | sed -e '/^[[:space:]]*$/d' | sort -u | while IFS= read -r _t; do
-    [ -e "$HOOKS_REPO_ROOT/$_t" ] && printf '%s\n' "$_t"
-  done
+# Shared blocking implementation used by hooks and product-quality CI.
+check_quality() {
+  _py="$(hook_python)" || return 1
+  ( cd "$HOOKS_REPO_ROOT" && "$_py" scripts/dev.py check "$@" )
+}
+
+# In-place tools must inspect the same tree being committed or pushed.
+check_snapshot() {
+  _py="$(hook_python)" || return 1
+  ( cd "$HOOKS_REPO_ROOT" && "$_py" scripts/dev.py snapshot "$@" )
 }

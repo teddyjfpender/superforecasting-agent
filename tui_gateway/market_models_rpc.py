@@ -38,6 +38,11 @@ def method(name: str):
 
 def register(server) -> None:
     """(Re-)register every carved markets/news handler into ``server._methods``."""
+    global _core, _err, _ok, _session_runtime
+    _core = server
+    _err = server._err
+    _ok = server._ok
+    _session_runtime = server._session_runtime
     for kind, name, fn in _REGISTRARS:
         getattr(server, kind)(name)(fn)
 

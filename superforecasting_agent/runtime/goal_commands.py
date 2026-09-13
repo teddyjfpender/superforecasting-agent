@@ -2,6 +2,8 @@
 
 import logging
 
+from superforecasting_agent.configuration.goals import configured_goal_turn_budget
+
 from .commands import _looks_like_slash_command
 from .console_output import _cprint, _DIM, _RST
 
@@ -23,18 +25,26 @@ def _get_goal_manager(self):
     if not sid:
         return None
 
+    database = getattr(self, "_session_db", None)
+    if database is None:
+        return None
     existing = getattr(self, "_goal_manager", None)
-    if existing is not None and getattr(existing, "session_id", None) == sid:
+    if (existing is not None and getattr(existing, "session_id", None) == sid
+            and getattr(existing, "_database", None) is database
+            and not getattr(existing, "_closed", False)):
         return existing
 
     try:
         cfg = load_config() or {}
         goals_cfg = cfg.get("goals") or {}
-        max_turns = int(goals_cfg.get("max_turns", 20) or 20)
+        max_turns = configured_goal_turn_budget(goals_cfg)
     except Exception:
-        max_turns = 20
+        max_turns = configured_goal_turn_budget(None)
 
-    mgr = GoalManager(session_id=sid, default_max_turns=max_turns)
+    mgr = GoalManager(session_id=sid, default_max_turns=max_turns,
+                      database_provider=lambda: database)
+    if existing is not None:
+        existing.close()
     self._goal_manager = mgr
     return mgr
 
@@ -49,23 +59,28 @@ def _handle_goal_command(self, cmd: str) -> None:
         _cprint(f"  {_DIM}Goals unavailable (no active forecast session).{_RST}")
         return
 
-    lower = arg.lower()
+    from superforecasting_agent.application.goals import execute_goal
+
+    try:
+        result = execute_goal(mgr, arg)
+    except ValueError as exc:
+        _cprint(f"  Invalid goal: {exc}")
+        return
+    state = result.state
 
     # Bare /goal or /goal status → show current state
-    if not arg or lower == "status":
-        _cprint(f"  {mgr.status_line()}")
+    if result.action == "status":
+        _cprint(f"  {result.status}")
         return
 
-    if lower == "pause":
-        state = mgr.pause(reason="user-paused")
+    if result.action == "pause":
         if state is None:
             _cprint(f"  {_DIM}No goal set.{_RST}")
         else:
             _cprint(f"  ⏸ Goal paused: {state.goal}")
         return
 
-    if lower == "resume":
-        state = mgr.resume()
+    if result.action == "resume":
         if state is None:
             _cprint(f"  {_DIM}No goal to resume.{_RST}")
         else:
@@ -76,21 +91,14 @@ def _handle_goal_command(self, cmd: str) -> None:
             )
         return
 
-    if lower in {"clear", "stop", "done"}:
-        had = mgr.has_goal()
-        mgr.clear()
-        if had:
+    if result.action == "clear":
+        if result.had_goal:
             _cprint("  ✓ Goal cleared.")
         else:
             _cprint(f"  {_DIM}No active goal.{_RST}")
         return
 
-    # Otherwise treat the arg as the goal text.
-    try:
-        state = mgr.set(arg)
-    except ValueError as exc:
-        _cprint(f"  Invalid goal: {exc}")
-        return
+    assert state is not None
 
     _cprint(f"  ⊙ Goal set ({state.max_turns}-turn budget): {state.goal}")
     _cprint(
@@ -121,65 +129,18 @@ def _handle_subgoal_command(self, cmd: str) -> None:
         boundary. No special kick — the running turn finishes, the next
         judge call includes them.
         """
-    parts = (cmd or "").strip().split(None, 2)
-    arg = " ".join(parts[1:]).strip() if len(parts) > 1 else ""
+    parts = (cmd or "").strip().split(None, 1)
+    arg = parts[1].strip() if len(parts) > 1 else ""
 
     mgr = self._get_goal_manager()
     if mgr is None:
         _cprint(f"  {_DIM}Goals unavailable (no active forecast session).{_RST}")
         return
 
-    if not mgr.has_goal():
-        _cprint(f"  {_DIM}No active goal. Set one with /goal <text>.{_RST}")
-        return
+    from superforecasting_agent.application.goals import execute_subgoal
 
-    # No args → list current subgoals.
-    if not arg:
-        _cprint(f"  {mgr.status_line()}")
-        _cprint(f"  {mgr.render_subgoals()}")
-        return
-
-    tokens = arg.split(None, 1)
-    verb = tokens[0].lower()
-    rest = tokens[1].strip() if len(tokens) > 1 else ""
-
-    if verb == "remove":
-        if not rest:
-            _cprint("  Usage: /subgoal remove <n>")
-            return
-        try:
-            idx = int(rest.split()[0])
-        except ValueError:
-            _cprint("  /subgoal remove: <n> must be an integer (1-based index).")
-            return
-        try:
-            removed = mgr.remove_subgoal(idx)
-        except (IndexError, RuntimeError) as exc:
-            _cprint(f"  /subgoal remove: {exc}")
-            return
-        _cprint(f"  ✓ Removed subgoal {idx}: {removed}")
-        return
-
-    if verb == "clear":
-        try:
-            prev = mgr.clear_subgoals()
-        except RuntimeError as exc:
-            _cprint(f"  /subgoal clear: {exc}")
-            return
-        if prev:
-            _cprint(f"  ✓ Cleared {prev} subgoal{'s' if prev != 1 else ''}.")
-        else:
-            _cprint(f"  {_DIM}No subgoals to clear.{_RST}")
-        return
-
-    # Otherwise — append the whole arg as a new subgoal.
-    try:
-        text = mgr.add_subgoal(arg)
-    except (ValueError, RuntimeError) as exc:
-        _cprint(f"  /subgoal: {exc}")
-        return
-    idx = len(mgr.state.subgoals) if mgr.state else 0
-    _cprint(f"  ✓ Added subgoal {idx}: {text}")
+    for line in execute_subgoal(mgr, arg).splitlines():
+        _cprint(f"  {line}")
 
 
 def _maybe_continue_goal_after_turn(self) -> None:

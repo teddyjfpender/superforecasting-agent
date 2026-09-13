@@ -23,12 +23,7 @@ def hermes_home(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setenv("HERMES_HOME", str(home))
 
-    # Bust the goal-module's DB cache for each test so it re-resolves HERMES_HOME.
-    from superforecasting_agent.runtime import goals
-
-    goals._DB_CACHE.clear()
     yield home
-    goals._DB_CACHE.clear()
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -738,3 +733,162 @@ class TestStatusLineSubgoalCount:
         mgr.add_subgoal("b")
         line = mgr.status_line()
         assert "2 subgoals" in line
+
+
+@pytest.mark.parametrize("same_manager", [False, True])
+def test_inflight_judge_cannot_erase_new_criteria(hermes_home, monkeypatch, same_manager):
+    from superforecasting_agent.runtime import goals
+
+    actor = goals.GoalManager("judge-conflict")
+    actor.set("Review forecast")
+    def judge(*args, **kwargs):
+        editor = actor if same_manager else goals.GoalManager("judge-conflict")
+        editor.add_subgoal("Require a second source")
+        return "done", "old criteria met", False
+    monkeypatch.setattr(goals, "judge_goal", judge)
+    with pytest.raises(RuntimeError, match="Goal changed"):
+        actor.evaluate_after_turn("fixture response")
+    durable = goals.GoalManager("judge-conflict").state
+    assert durable.status == "active"
+    assert durable.subgoals == ["Require a second source"]
+    assert actor.state.to_json() == durable.to_json()
+
+
+def test_long_lived_goal_editor_refreshes_before_mutation(hermes_home):
+    from superforecasting_agent.runtime.goals import GoalManager
+
+    first = GoalManager("edit-conflict")
+    first.set("Review forecast")
+    stale = GoalManager("edit-conflict")
+    first.add_subgoal("First criterion")
+    stale.add_subgoal("Second criterion")
+    assert GoalManager("edit-conflict").state.subgoals == ["First criterion", "Second criterion"]
+
+
+def test_goal_storage_failure_is_visible_and_restores_memory(hermes_home, monkeypatch):
+    from superforecasting_agent.runtime import goals
+
+    manager = goals.GoalManager("failed-write")
+    manager.set("Review forecast")
+    db = manager._database
+    def fail(*args):
+        raise OSError("fixture disk failure")
+    monkeypatch.setattr(db, "mutate_meta", fail)
+    with pytest.raises(OSError, match="fixture disk failure"):
+        manager.add_subgoal("Not persisted")
+    assert manager.state.subgoals == []
+    assert goals.GoalManager("failed-write").state.subgoals == []
+
+
+
+def test_long_lived_goal_manager_reads_external_changes(hermes_home, monkeypatch):
+    from superforecasting_agent.runtime import goals
+
+    observer = goals.GoalManager("refresh-state")
+    editor = goals.GoalManager("refresh-state")
+    editor.set("Review forecast")
+    observer.add_subgoal("Fresh criterion")
+    assert "Fresh criterion" in editor.render_subgoals()
+    assert editor.state.subgoals == ["Fresh criterion"]
+    captured = []
+    def judge(*args, **kwargs):
+        captured.append(kwargs["subgoals"])
+        return "continue", "more evidence", False
+    monkeypatch.setattr(goals, "judge_goal", judge)
+    editor.evaluate_after_turn("fixture")
+    assert captured == [["Fresh criterion"]]
+    observer.clear()
+    assert editor.state is None
+    assert not editor.is_active()
+    assert not editor.has_goal()
+    assert editor.next_continuation_prompt() is None
+
+
+def test_goal_manager_keeps_host_database_and_never_reopens_after_close(tmp_path, monkeypatch):
+    import sqlite3
+    from unittest.mock import Mock
+    from superforecasting_agent.runtime import goals
+    from superforecasting_agent.storage.session import SessionDB
+
+    database = SessionDB(tmp_path / "host.db")
+    provider = Mock(return_value=database)
+    fallback = Mock(side_effect=AssertionError("unowned goal database"))
+    monkeypatch.setattr(goals, "_get_session_db", fallback)
+    try:
+        manager = goals.GoalManager("bound", database_provider=provider)
+        manager.set("Review forecast")
+        assert manager.state.goal == "Review forecast"
+        database.close()
+        with pytest.raises(sqlite3.ProgrammingError):
+            manager.status_line()
+        provider.assert_called_once_with()
+        fallback.assert_not_called()
+    finally:
+        database.close()
+
+
+def test_missing_owned_goal_store_does_not_use_compatibility_cache(monkeypatch):
+    from unittest.mock import Mock
+    from superforecasting_agent.runtime import goals
+
+    fallback = Mock(side_effect=AssertionError("unowned goal database"))
+    monkeypatch.setattr(goals, "_get_session_db", fallback)
+    with pytest.raises(RuntimeError, match="storage is unavailable"):
+        goals.GoalManager("bound", database_provider=lambda: None)
+    fallback.assert_not_called()
+
+
+def test_standalone_goal_manager_owns_close_and_preserves_failed_close_for_retry(monkeypatch):
+    from superforecasting_agent.runtime import goals
+    db = MagicMock()
+    db.get_meta.return_value = None
+    db.close.side_effect = [OSError('close failed'), None]
+    monkeypatch.setattr(goals, '_get_session_db', lambda: db)
+    manager = goals.GoalManager('owned')
+    with pytest.raises(OSError, match='close failed'):
+        manager.close()
+    assert manager._database_finalizer.alive
+    manager.close()
+    assert not manager._database_finalizer.alive
+    manager.close()
+    assert db.close.call_count == 2
+    with pytest.raises(RuntimeError, match='closed'):
+        manager.state
+
+
+def test_borrowed_goal_manager_never_closes_host_database():
+    from superforecasting_agent.runtime import goals
+    db = MagicMock()
+    db.get_meta.return_value = None
+    with goals.GoalManager('borrowed', database_provider=lambda: db) as manager:
+        assert manager.state is None
+    db.close.assert_not_called()
+    with pytest.raises(RuntimeError, match='closed'):
+        manager.state
+
+
+def test_goal_manager_initialization_failure_closes_only_owned_database(monkeypatch):
+    from superforecasting_agent.runtime import goals
+    db = MagicMock()
+    db.get_meta.side_effect = OSError('read failed')
+    monkeypatch.setattr(goals, '_get_session_db', lambda: db)
+    with pytest.raises(OSError, match='read failed'):
+        goals.GoalManager('owned')
+    db.close.assert_called_once()
+    db.close.reset_mock()
+    with pytest.raises(OSError, match='read failed'):
+        goals.GoalManager('borrowed', database_provider=lambda: db)
+    db.close.assert_not_called()
+
+
+def test_goal_compatibility_helpers_close_connections_on_read_and_write_failure(monkeypatch):
+    from superforecasting_agent.runtime import goals
+    db = MagicMock()
+    monkeypatch.setattr(goals, '_get_session_db', lambda: db)
+    db.get_meta.side_effect = OSError('read failed')
+    assert goals.load_goal('fixture') is None
+    db.close.assert_called_once()
+    db.close.reset_mock()
+    db.set_meta.side_effect = OSError('write failed')
+    goals.save_goal('fixture', goals.GoalState(goal='fixture'))
+    db.close.assert_called_once()

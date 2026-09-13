@@ -97,7 +97,7 @@ GATED_LEDGER_TABLES = frozenset(
 )
 
 
-def _ledger_write_authorizer(action, arg1, arg2, db_name, trigger_or_view):
+def _authorize_ledger_write(action, arg1, arg2, db_name, trigger_or_view):
     """SQLite authorizer: deny forecast-producing row CREATION outside a commit context.
 
     Installed by ``ForecastLedger._connect`` so the gate fires at the CONNECTION
@@ -133,6 +133,17 @@ def _ledger_write_authorizer(action, arg1, arg2, db_name, trigger_or_view):
     if ledger_write_gate_mode() != "on":
         return sqlite3.SQLITE_OK
     return sqlite3.SQLITE_DENY
+
+
+def _ledger_write_authorizer(action, arg1, arg2, db_name, trigger_or_view):
+    try:
+        return _authorize_ledger_write(action, arg1, arg2, db_name, trigger_or_view)
+    except BaseException:
+        # sqlite3 replaces callback exceptions with "not authorized", including
+        # deadline exceptions during SELECT. Retain the actual traceback without
+        # logging SQL parameters or relaxing the authorization decision.
+        logger.exception("SQLite authorizer callback failed (action=%s, table=%s)", action, arg1)
+        raise
 
 
 def ledger_write_gate_mode() -> str:

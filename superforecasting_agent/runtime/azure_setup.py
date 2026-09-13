@@ -33,7 +33,8 @@ def _model_flow_azure_foundry(config, current_model=""):
     :func:`agent.model_metadata.get_model_context_length` chain
     (models.dev, provider metadata, hardcoded family fallbacks).
     """
-    from superforecasting_agent.runtime.auth import _save_model_choice, deactivate_provider  # noqa: F401
+    from superforecasting_agent.credentials.auth import deactivate_provider
+    from superforecasting_agent.runtime.auth import _save_model_choice
     from superforecasting_agent.runtime.config import (
         get_env_value,
         save_env_value,
@@ -132,13 +133,8 @@ def _model_flow_azure_foundry(config, current_model=""):
 
     if use_entra:
         try:
-            from agent.azure_identity_adapter import (
-                EntraIdentityConfig,
-                SCOPE_AI_AZURE_DEFAULT,
-                build_token_provider,
-                describe_active_credential,
-                has_azure_identity_installed,
-            )
+            from superforecasting_agent.credentials.azure import EntraIdentityConfig, has_azure_identity_installed
+            from agent.azure_identity_adapter import SCOPE_AI_AZURE_DEFAULT, build_token_provider, describe_active_credential
         except ImportError as exc:
             print()
             print(f"⚠ Could not import azure-identity adapter: {exc}")

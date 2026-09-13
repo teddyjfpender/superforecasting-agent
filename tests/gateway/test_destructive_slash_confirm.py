@@ -219,7 +219,7 @@ async def test_resolve_cancel_does_not_run_execute():
 
 
 @pytest.mark.asyncio
-async def test_resolve_always_persists_opt_out_and_runs_execute(monkeypatch):
+async def test_resolve_always_persists_opt_out_and_runs_execute(monkeypatch, tmp_path):
     """Resolving with 'always' must (a) flip the config gate to False,
     (b) run execute, and (c) include a one-time opt-out note in the reply."""
     from tools import slash_confirm as _slash_confirm_mod
@@ -229,14 +229,12 @@ async def test_resolve_always_persists_opt_out_and_runs_execute(monkeypatch):
     runner._session_key_for_source = lambda src: session_key
     _slash_confirm_mod.clear(session_key)
 
-    saved: dict = {}
+    import gateway.run as gateway_mod
+    import yaml
 
-    def _fake_save(path, value):
-        saved[path] = value
-        return True
-
-    import cli as cli_mod
-    monkeypatch.setattr(cli_mod, "save_config_value", _fake_save)
+    monkeypatch.setattr(gateway_mod, "_hermes_home", tmp_path)
+    path = tmp_path / "config.yaml"
+    path.write_text("model: retained\napprovals:\n  other: true\n", encoding="utf-8")
 
     execute = AsyncMock(return_value="✨ fresh")
 
@@ -255,7 +253,55 @@ async def test_resolve_always_persists_opt_out_and_runs_execute(monkeypatch):
     )
 
     execute.assert_awaited_once()
-    assert saved.get("approvals.destructive_slash_confirm") is False
+    saved = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert saved == {"model": "retained", "approvals": {"other": True, "destructive_slash_confirm": False}}
     assert resolved is not None
     assert "✨ fresh" in resolved
     assert "config.yaml" in resolved
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('command', ['new', 'reload-mcp'])
+@pytest.mark.parametrize('save_fails', [False, True])
+async def test_confirmation_persistence_matches_reply(command, save_fails, tmp_path, monkeypatch):
+    import gateway.run as gateway_mod
+    import yaml
+    from tools import slash_confirm
+
+    runner = _make_runner()
+    runner._read_user_config = lambda: {}
+    session_key = build_session_key(_make_source())
+    runner._session_key_for_source = lambda src: session_key
+    slash_confirm.clear(session_key)
+    monkeypatch.setattr(gateway_mod, '_hermes_home', tmp_path)
+    path = tmp_path / 'config.yaml'
+    path.write_text('model: retained\n', encoding='utf-8')
+    if save_fails:
+        def fail_write(*args):
+            raise OSError('injected disk failure')
+        monkeypatch.setattr(gateway_mod, 'atomic_roundtrip_yaml_update', fail_write)
+    execute = AsyncMock(return_value='action completed')
+    if command == 'reload-mcp':
+        runner._execute_mcp_reload = execute
+        await runner._handle_reload_mcp_command(_make_event('/reload-mcp'))
+        setting = 'mcp_reload_confirm'
+    else:
+        await runner._maybe_confirm_destructive_slash(
+            event=_make_event('/new'), command='new', title='/new',
+            detail='Discards history.', execute=execute,
+        )
+        setting = 'destructive_slash_confirm'
+    pending = slash_confirm.get_pending(session_key)
+    assert pending is not None
+    reply = await slash_confirm.resolve(session_key, pending['confirm_id'], 'always')
+    execute.assert_awaited_once()
+    assert 'action completed' in reply
+    saved = yaml.safe_load(path.read_text(encoding='utf-8'))
+    assert saved['model'] == 'retained'
+    if save_fails:
+        assert 'confirmation remains enabled' in reply
+        assert 'without confirmation' not in reply
+        assert 'approvals' not in saved
+    else:
+        assert saved['approvals'][setting] is False
+        assert 'confirmation remains enabled' not in reply

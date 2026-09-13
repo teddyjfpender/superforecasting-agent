@@ -25,12 +25,16 @@ class MessageStart(WireModel):
     """``message.start`` — the assistant began a message (no payload body)."""
 
     TS_NAME = "MessageStartPayload"
+    turn_id: str | None = wire_optional()
+    durable_status: str | None = wire_optional()
 
 
 class MessageDelta(WireModel):
     """``message.delta`` — a streamed chunk of the assistant message."""
 
     TS_NAME = "MessageDeltaPayload"
+    turn_id: str | None = wire_optional()
+    durable_status: str | None = wire_optional()
 
     text: str | None = wire_optional()
     rendered: str | None = wire_optional()
@@ -45,6 +49,8 @@ class MessageComplete(WireModel):
     """
 
     TS_NAME = "MessageCompletePayload"
+    turn_id: str | None = wire_optional()
+    durable_status: str | None = wire_optional()
 
     text: str
     status: str
@@ -84,6 +90,8 @@ class ErrorEvent(WireModel):
     """``error`` — a turn-level error (auth expiry, init failure, refusal)."""
 
     TS_NAME = "ErrorPayload"
+    turn_id: str | None = wire_optional()
+    durable_status: str | None = wire_optional()
 
     message: str
 

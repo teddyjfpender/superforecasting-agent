@@ -34,20 +34,16 @@ import re
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
 
+from superforecasting_agent.hosting import aws_credentials as _aws_credentials
+from superforecasting_agent.hosting.aws_credentials import (
+    _AWS_CREDENTIAL_ENV_VARS as _AWS_CREDENTIAL_ENV_VARS,
+    has_aws_credentials as has_aws_credentials,
+    resolve_aws_auth_env_var as resolve_aws_auth_env_var,
+    resolve_bedrock_region as resolve_bedrock_region,
+)
+
+
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Ensure boto3/botocore are installed before any code in this module runs.
-# Upstream removed boto3 from [all] extras (PRs #24220, #24515); lazy_deps
-# handles on-demand installation so the Bedrock provider still works in the
-# EKS deployment without baking boto3 into the base image.
-# ---------------------------------------------------------------------------
-try:
-    from tools.lazy_deps import ensure
-    ensure("provider.bedrock", prompt=False)
-except Exception:
-    pass  # lazy_deps unavailable or install failed — let downstream imports surface the real error
-
 
 # ---------------------------------------------------------------------------
 # Lazy boto3 import — only loaded when the Bedrock provider is actually used.
@@ -59,17 +55,26 @@ _bedrock_control_client_cache: Dict[str, Any] = {}
 
 
 def _require_boto3():
-    """Import boto3, raising a clear error if not installed."""
+    """Load the SDK for client construction; install only on explicit use."""
     try:
         import boto3
         return boto3
     except ImportError:
+        pass
+    try:
+        from tools.lazy_deps import ensure
+        ensure("provider.bedrock", prompt=False)
+    except Exception:
+        pass  # Preserve the actionable import error if installation fails.
+    try:
+        import boto3
+        return boto3
+    except ImportError as exc:
         raise ImportError(
             "The 'boto3' package is required for the AWS Bedrock provider. "
-            "Install it with: pip install boto3\n"
-            "Or install Superforecasting Agent with Bedrock support: "
-            "pip install -e '.[bedrock]'"
-        )
+            "You can install Superforecasting Agent with Bedrock support: "
+            "pip install 'superforecasting-agent[bedrock]'"
+        ) from exc
 
 
 def _get_bedrock_runtime_client(region: str):
@@ -209,130 +214,6 @@ def is_stale_connection_error(exc: BaseException) -> bool:
     return False
 
 
-# ---------------------------------------------------------------------------
-# AWS credential detection
-# ---------------------------------------------------------------------------
-
-# Priority order matches OpenClaw's resolveAwsSdkEnvVarName():
-#   1. AWS_BEARER_TOKEN_BEDROCK (Bedrock-specific bearer token)
-#   2. AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY (explicit IAM credentials)
-#   3. AWS_PROFILE (named profile → SSO, assume-role, etc.)
-#   4. Implicit: instance role, ECS task role, Lambda execution role
-_AWS_CREDENTIAL_ENV_VARS = [
-    "AWS_BEARER_TOKEN_BEDROCK",
-    "AWS_ACCESS_KEY_ID",
-    "AWS_PROFILE",
-    # These are checked by boto3's default chain but we list them for
-    # has_aws_credentials() detection:
-    "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
-    "AWS_WEB_IDENTITY_TOKEN_FILE",
-]
-
-
-def resolve_aws_auth_env_var(env: Optional[Dict[str, str]] = None) -> Optional[str]:
-    """Return the name of the AWS auth source that is active, or None.
-
-    Checks environment variables first, then falls back to boto3's credential
-    chain for implicit sources (EC2 IMDS, ECS task role, etc.).
-
-    This mirrors OpenClaw's ``resolveAwsSdkEnvVarName()`` — used to detect
-    whether the user has any AWS credentials configured without actually
-    attempting to authenticate.
-    """
-    env = env if env is not None else os.environ
-    # Bearer token takes highest priority
-    if env.get("AWS_BEARER_TOKEN_BEDROCK", "").strip():
-        return "AWS_BEARER_TOKEN_BEDROCK"
-    # Explicit access key pair
-    if (env.get("AWS_ACCESS_KEY_ID", "").strip()
-            and env.get("AWS_SECRET_ACCESS_KEY", "").strip()):
-        return "AWS_ACCESS_KEY_ID"
-    # Named profile (SSO, assume-role, etc.)
-    if env.get("AWS_PROFILE", "").strip():
-        return "AWS_PROFILE"
-    # Container credentials (ECS, CodeBuild)
-    if env.get("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI", "").strip():
-        return "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI"
-    # Web identity (EKS IRSA)
-    if env.get("AWS_WEB_IDENTITY_TOKEN_FILE", "").strip():
-        return "AWS_WEB_IDENTITY_TOKEN_FILE"
-    # No env vars — check if boto3 can resolve credentials via IMDS or other
-    # implicit sources (EC2 instance role, ECS task role, Lambda, etc.)
-    try:
-        import botocore.session
-        session = botocore.session.get_session()
-        credentials = session.get_credentials()
-        if credentials is not None:
-            resolved = credentials.get_frozen_credentials()
-            if resolved and resolved.access_key:
-                return "iam-role"
-    except Exception:
-        pass
-    return None
-
-
-def has_aws_credentials(env: Optional[Dict[str, str]] = None) -> bool:
-    """Return True if any AWS credential source is detected.
-
-    Checks environment variables first (fast, no I/O), then falls back to
-    boto3's credential chain which covers EC2 instance roles, ECS task roles,
-    Lambda execution roles, and other IMDS-based sources that don't set
-    environment variables.
-
-    This two-tier approach mirrors the pattern from OpenClaw PR #62673:
-    cloud environments (EC2, ECS, Lambda) provide credentials via instance
-    metadata, not environment variables. The env-var check is a fast path
-    for local development; the boto3 fallback covers all cloud deployments.
-    """
-    if resolve_aws_auth_env_var(env) is not None:
-        return True
-    # Fall back to boto3's credential resolver — this covers EC2 instance
-    # metadata (IMDS), ECS container credentials, and other implicit sources
-    # that don't set environment variables.
-    try:
-        import botocore.session
-        session = botocore.session.get_session()
-        credentials = session.get_credentials()
-        if credentials is not None:
-            resolved = credentials.get_frozen_credentials()
-            if resolved and resolved.access_key:
-                return True
-    except Exception:
-        pass
-    return False
-
-
-def resolve_bedrock_region(env: Optional[Dict[str, str]] = None) -> str:
-    """Resolve the AWS region for Bedrock API calls.
-
-    Priority:
-      1. AWS_REGION env var
-      2. AWS_DEFAULT_REGION env var
-      3. boto3/botocore configured region (from ~/.aws/config or SSO profile)
-      4. us-east-1 (hard fallback)
-
-    The boto3 fallback is critical for EU/AP users who configure their region
-    in ~/.aws/config via a named profile rather than env vars — without it,
-    live model discovery would always return us.* profile IDs regardless of
-    the user's actual region.
-    """
-    env = env if env is not None else os.environ
-    explicit = (
-        env.get("AWS_REGION", "").strip()
-        or env.get("AWS_DEFAULT_REGION", "").strip()
-    )
-    if explicit:
-        return explicit
-    try:
-        import botocore.session
-        region = botocore.session.get_session().get_config_variable("region")
-        if region:
-            return region
-    except Exception:
-        pass
-    return "us-east-1"
-
-
 def bedrock_model_ids_or_none() -> Optional[List[str]]:
     """Live-discover Bedrock model IDs for the active region.
 
@@ -345,7 +226,7 @@ def bedrock_model_ids_or_none() -> Optional[List[str]]:
     ``list_authenticated_providers`` section 2, and section 3.
     """
     try:
-        discovered = discover_bedrock_models(resolve_bedrock_region())
+        discovered = discover_bedrock_models(_aws_credentials.resolve_bedrock_region())
         if discovered:
             return [m["id"] for m in discovered]
     except Exception:

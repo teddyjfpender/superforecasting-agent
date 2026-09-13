@@ -5,6 +5,7 @@ without risk of circular imports.
 """
 
 import os
+import re
 import sysconfig
 from contextvars import ContextVar, Token
 from pathlib import Path
@@ -341,6 +342,32 @@ def get_subprocess_home() -> str | None:
 VALID_REASONING_EFFORTS = ("minimal", "low", "medium", "high", "xhigh")
 
 
+def parse_service_tier(raw) -> str | None:
+    """Canonical persisted fast-mode aliases for CLI, gateway and TUI."""
+    value = str(raw or "").strip().lower()
+    if not value or value in {"normal", "default", "standard", "off", "none"}:
+        return None
+    if value in {"fast", "priority", "on"}:
+        return "priority"
+    import logging
+    logging.getLogger(__name__).warning("Unknown service_tier '%s', ignoring", raw)
+    return None
+
+
+def parse_fast_mode_command(raw: str, *, current_fast: bool) -> str:
+    """Return status/fast/normal; an empty command never changes settings."""
+    value = raw.strip().lower()
+    if value in {"", "status"}:
+        return "status"
+    if value == "toggle":
+        return "normal" if current_fast else "fast"
+    if value in {"fast", "on"}:
+        return "fast"
+    if value in {"normal", "off"}:
+        return "normal"
+    raise ValueError(f"unknown fast mode: {raw}")
+
+
 def parse_reasoning_effort(effort: str) -> dict | None:
     """Parse a reasoning effort level into a config dict.
 
@@ -514,3 +541,36 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 OPENROUTER_MODELS_URL = f"{OPENROUTER_BASE_URL}/models"
 
 AI_GATEWAY_BASE_URL = "https://ai-gateway.vercel.sh/v1"
+
+
+def get_active_profile_name() -> str:
+    """Infer the current profile name from HERMES_HOME.
+
+    Returns ``"default"`` if HERMES_HOME is not set or points to the default
+    runtime root. Returns the profile name if HERMES_HOME points into
+    ``<default-root>/profiles/<name>``.
+    Returns ``"custom"`` if HERMES_HOME is set to an unrecognized path.
+    """
+    hermes_home = get_agent_home()
+    resolved = hermes_home.resolve()
+
+    default_resolved = get_default_agent_root().resolve()
+    if resolved == default_resolved:
+        return "default"
+
+    profiles_root = (default_resolved / "profiles").resolve()
+    try:
+        rel = resolved.relative_to(profiles_root)
+        parts = rel.parts
+        if len(parts) == 1 and re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", parts[0]):
+            return parts[0]
+    except ValueError:
+        pass
+
+    return "custom"
+
+
+REMOTE_SECRET_ENTRY_HINT = (
+    "Secure secret entry is not supported over messaging. "
+    "Load this skill in the local CLI to be prompted, or add the key to the active agent-home .env manually."
+)

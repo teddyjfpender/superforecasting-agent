@@ -48,6 +48,11 @@ def rpc_validated(name: str):
 
 def register(server) -> None:
     """(Re-)register every carved forecast.* handler into ``server._methods``."""
+    global _core, _err, _ok, logger
+    _core = server
+    _err = server._err
+    _ok = server._ok
+    logger = server.logger
     for kind, name, fn in _REGISTRARS:
         getattr(server, kind)(name)(fn)
 
@@ -286,7 +291,7 @@ def _(rid, params: dict) -> dict:
     # Standalone thesis master list (health / score / delta / coverage / members) for a
     # dedicated thesis dashboard — without shipping the whole forecast workspace.
     try:
-        from forecasting.dashboard import build_factor_summary, build_thesis_summary
+        from forecasting.application.aggregate_summaries import build_factor_summary, build_thesis_summary
         from forecasting.ledger import ForecastLedger
 
         ledger = ForecastLedger()  # one ledger for both scans (avoid a double schema-init)
@@ -833,15 +838,15 @@ def _(rid, params: dict) -> dict:
 
         target = (params.get("target") or "").strip()
         if target == "profile":
-            return _ok(rid, store.set_profile(str(params.get("value"))))
+            return _ok(rid, store.set_profile(params.get("value")))
         if target == "enabled":
-            return _ok(rid, store.set_enabled(bool(params.get("value"))))
+            return _ok(rid, store.set_enabled(params.get("value")))
         if target == "severity":
-            return _ok(rid, store.set_severity(str(params.get("rule_id")), str(params.get("value"))))
+            return _ok(rid, store.set_severity(params.get("rule_id"), params.get("value")))
         if target == "enable":
-            return _ok(rid, store.enable(str(params.get("rule_id"))))
+            return _ok(rid, store.enable(params.get("rule_id")))
         if target == "disable":
-            return _ok(rid, store.disable(str(params.get("rule_id"))))
+            return _ok(rid, store.disable(params.get("rule_id")))
         return _err(rid, 4004, f"unknown target {target!r}")
     except Exception as e:
         return _err(rid, 4004, str(e))

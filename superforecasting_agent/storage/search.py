@@ -7,34 +7,34 @@ from typing import Any, Dict, List
 def search_messages(
     self,
     query: str,
-    source_filter: List[str] = None,
-    exclude_sources: List[str] = None,
-    role_filter: List[str] = None,
+    source_filter: List[str] | None = None,
+    exclude_sources: List[str] | None = None,
+    role_filter: List[str] | None = None,
     limit: int = 20,
     offset: int = 0,
-    sort: str = None,
+    sort: str | None = None,
 ) -> List[Dict[str, Any]]:
     """
-        Full-text search across session messages using FTS5.
+    Full-text search across session messages using FTS5.
 
-        Supports FTS5 query syntax:
-          - Simple keywords: "docker deployment"
-          - Phrases: '"exact phrase"'
-          - Boolean: "docker OR kubernetes", "python NOT java"
-          - Prefix: "deploy*"
+    Supports FTS5 query syntax:
+      - Simple keywords: "docker deployment"
+      - Phrases: '"exact phrase"'
+      - Boolean: "docker OR kubernetes", "python NOT java"
+      - Prefix: "deploy*"
 
-        Returns matching messages with session metadata, content snippet,
-        and surrounding context (1 message before and after the match).
+    Returns matching messages with session metadata, content snippet,
+    and surrounding context (1 message before and after the match).
 
-        ``sort`` controls temporal ordering:
-          - ``None`` (default): FTS5 BM25 relevance only. Time-neutral.
-          - ``"newest"``: order by message timestamp DESC, then by rank.
-          - ``"oldest"``: order by message timestamp ASC, then by rank.
+    ``sort`` controls temporal ordering:
+      - ``None`` (default): FTS5 BM25 relevance only. Time-neutral.
+      - ``"newest"``: order by message timestamp DESC, then by rank.
+      - ``"oldest"``: order by message timestamp ASC, then by rank.
 
-        The short-CJK LIKE fallback already orders by timestamp DESC and
-        ignores ``sort``. The trigram CJK path honours ``sort`` like the main
-        FTS5 path.
-        """
+    The short-CJK LIKE fallback already orders by timestamp DESC and
+    ignores ``sort``. The trigram CJK path honours ``sort`` like the main
+    FTS5 path.
+    """
     if not query or not query.strip():
         return []
     query = self._sanitize_fts5_query(query)
@@ -111,12 +111,11 @@ def search_messages(
         # (>=3) but each individual token is only 2 chars — trigram returns 0.
         # Route to LIKE when any non-operator CJK token is <3 CJK chars.
         _tokens_for_check = [
-            t for t in raw_query.split()
+            t
+            for t in raw_query.split()
             if t.upper() not in {"AND", "OR", "NOT"} and self._contains_cjk(t)
         ]
-        _any_short_cjk = any(
-            self._count_cjk(t) < 3 for t in _tokens_for_check
-        )
+        _any_short_cjk = any(self._count_cjk(t) < 3 for t in _tokens_for_check)
         if cjk_count >= 3 and not _any_short_cjk:
             # Trigram FTS5 path — quote each non-operator token to handle
             # FTS5 special chars (%, *, etc.) while preserving boolean
@@ -132,10 +131,14 @@ def search_messages(
             tri_where = ["messages_fts_trigram MATCH ?"]
             tri_params: list = [trigram_query]
             if source_filter is not None:
-                tri_where.append(f"s.source IN ({','.join('?' for _ in source_filter)})")
+                tri_where.append(
+                    f"s.source IN ({','.join('?' for _ in source_filter)})"
+                )
                 tri_params.extend(source_filter)
             if exclude_sources is not None:
-                tri_where.append(f"s.source NOT IN ({','.join('?' for _ in exclude_sources)})")
+                tri_where.append(
+                    f"s.source NOT IN ({','.join('?' for _ in exclude_sources)})"
+                )
                 tri_params.extend(exclude_sources)
             if role_filter:
                 tri_where.append(f"m.role IN ({','.join('?' for _ in role_filter)})")
@@ -155,7 +158,7 @@ def search_messages(
                     FROM messages_fts_trigram
                     JOIN messages m ON m.id = messages_fts_trigram.rowid
                     JOIN sessions s ON s.id = m.session_id
-                    WHERE {' AND '.join(tri_where)}
+                    WHERE {" AND ".join(tri_where)}
                     {order_by_sql}
                     LIMIT ? OFFSET ?
                 """
@@ -174,8 +177,7 @@ def search_messages(
             # build one LIKE condition per non-operator token so each term
             # is matched independently (#20494).
             non_op_tokens = [
-                t for t in raw_query.split()
-                if t.upper() not in {"AND", "OR", "NOT"}
+                t for t in raw_query.split() if t.upper() not in {"AND", "OR", "NOT"}
             ] or [raw_query]
             token_clauses = []
             like_params: list = []
@@ -187,10 +189,14 @@ def search_messages(
                 like_params += [f"%{esc}%", f"%{esc}%", f"%{esc}%"]
             like_where = [f"({' OR '.join(token_clauses)})"]
             if source_filter is not None:
-                like_where.append(f"s.source IN ({','.join('?' for _ in source_filter)})")
+                like_where.append(
+                    f"s.source IN ({','.join('?' for _ in source_filter)})"
+                )
                 like_params.extend(source_filter)
             if exclude_sources is not None:
-                like_where.append(f"s.source NOT IN ({','.join('?' for _ in exclude_sources)})")
+                like_where.append(
+                    f"s.source NOT IN ({','.join('?' for _ in exclude_sources)})"
+                )
                 like_params.extend(exclude_sources)
             if role_filter:
                 like_where.append(f"m.role IN ({','.join('?' for _ in role_filter)})")
@@ -204,7 +210,7 @@ def search_messages(
                            s.source, s.model, s.started_at AS session_started
                     FROM messages m
                     JOIN sessions s ON s.id = m.session_id
-                    WHERE {' AND '.join(like_where)}
+                    WHERE {" AND ".join(like_where)}
                     ORDER BY m.timestamp DESC
                     LIMIT ? OFFSET ?
                 """
@@ -269,7 +275,8 @@ def search_messages(
                     # summary for search previews.
                     if isinstance(decoded, list):
                         text_parts = [
-                            p.get("text", "") for p in decoded
+                            p.get("text", "")
+                            for p in decoded
                             if isinstance(p, dict) and p.get("type") == "text"
                         ]
                         text = " ".join(t for t in text_parts if t).strip()
@@ -278,9 +285,7 @@ def search_messages(
                         preview = decoded
                     else:
                         preview = ""
-                    context_msgs.append(
-                        {"role": r["role"], "content": preview[:200]}
-                    )
+                    context_msgs.append({"role": r["role"], "content": preview[:200]})
             match["context"] = context_msgs
         except Exception:
             match["context"] = []
@@ -292,16 +297,16 @@ def search_messages(
 
 def search_sessions(
     self,
-    source: str = None,
+    source: str | None = None,
     limit: int = 20,
     offset: int = 0,
 ) -> List[Dict[str, Any]]:
     """List sessions, optionally filtered by source.
 
-        Returns rows enriched with a computed ``last_active`` column (latest
-        message timestamp for the session, falling back to ``started_at``),
-        ordered by most-recently-used first.
-        """
+    Returns rows enriched with a computed ``last_active`` column (latest
+    message timestamp for the session, falling back to ``started_at``),
+    ordered by most-recently-used first.
+    """
     select_with_last_active = (
         "SELECT s.*, COALESCE(m.last_active, s.started_at) AS last_active "
         "FROM sessions s "

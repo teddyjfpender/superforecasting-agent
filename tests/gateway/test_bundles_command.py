@@ -64,7 +64,7 @@ def bundles_env(tmp_path, monkeypatch):
     monkeypatch.setattr(skills_tool_module, "SKILLS_DIR", skills_dir)
     import agent.skill_bundles as mod
     mod._bundles_cache = {}
-    mod._bundles_cache_mtime = None
+    mod._bundles_cache_root = None
     return bundles_dir, skills_dir
 
 

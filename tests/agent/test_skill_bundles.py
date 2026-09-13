@@ -66,7 +66,7 @@ def bundles_env(tmp_path, monkeypatch):
     # Reset module-level cache between tests.
     import agent.skill_bundles as mod
     mod._bundles_cache = {}
-    mod._bundles_cache_mtime = None
+    mod._bundles_cache_root = None
     return bundles_dir, skills_dir
 
 
@@ -140,13 +140,13 @@ class TestScanBundles:
 
 
 class TestGetSkillBundles:
-    def test_returns_cache(self, bundles_env):
+    def test_repeated_reads_agree(self, bundles_env):
         bundles_dir, _ = bundles_env
         _make_bundle_yaml(bundles_dir, "a", ["s1"])
         first = get_skill_bundles()
-        # Second call should hit cache (no rescan unless mtime changed).
+        # Repeated discovery returns equivalent current records.
         second = get_skill_bundles()
-        assert first is second or first == second
+        assert first == second
 
     def test_rescans_on_change(self, bundles_env):
         bundles_dir, _ = bundles_env
@@ -335,3 +335,29 @@ class TestListBundles:
         info_list = list_bundles()
         slugs = [b["slug"] for b in info_list]
         assert slugs == sorted(slugs)
+
+
+def test_bundle_edit_with_preserved_timestamps_is_visible(bundles_env):
+    directory, _ = bundles_env
+    path = _make_bundle_yaml(directory, "review", ["old"])
+    assert get_skill_bundles()["/review"]["skills"] == ["old"]
+    stamp = path.stat()
+    path.write_text(path.read_text(encoding="utf-8").replace("old", "new"), encoding="utf-8")
+    os.utime(path, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+    assert get_skill_bundles()["/review"]["skills"] == ["new"]
+
+
+def test_matching_timestamps_do_not_share_bundles_between_profiles(bundles_env, tmp_path, monkeypatch):
+    first, _ = bundles_env
+    second = tmp_path / "second-profile" / "skill-bundles"
+    a = _make_bundle_yaml(first, "first", ["one"])
+    b = _make_bundle_yaml(second, "second", ["two"])
+    for path in (a, b, first, second):
+        os.utime(path, (1_700_000_000, 1_700_000_000))
+    assert set(get_skill_bundles()) == {"/first"}
+    monkeypatch.setenv("HERMES_BUNDLES_DIR", str(second))
+    assert set(get_skill_bundles()) == {"/second"}
+    monkeypatch.setenv("HERMES_BUNDLES_DIR", str(first))
+    result = reload_bundles()
+    assert result["removed"] == []
+    assert [item["name"] for item in result["added"]] == ["first"]

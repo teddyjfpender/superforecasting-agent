@@ -120,7 +120,7 @@ def test_resolve_codex_runtime_credentials_refreshes_expiring_token(tmp_path, mo
         called["count"] += 1
         return {"access_token": "access-new", "refresh_token": "refresh-new"}
 
-    monkeypatch.setattr("superforecasting_agent.runtime.auth._refresh_codex_auth_tokens", _fake_refresh)
+    monkeypatch.setattr("superforecasting_agent.credentials.auth._refresh_codex_auth_tokens", _fake_refresh)
 
     resolved = resolve_codex_runtime_credentials()
 
@@ -139,7 +139,7 @@ def test_resolve_codex_runtime_credentials_force_refresh(tmp_path, monkeypatch):
         called["count"] += 1
         return {"access_token": "access-forced", "refresh_token": "refresh-new"}
 
-    monkeypatch.setattr("superforecasting_agent.runtime.auth._refresh_codex_auth_tokens", _fake_refresh)
+    monkeypatch.setattr("superforecasting_agent.credentials.auth._refresh_codex_auth_tokens", _fake_refresh)
 
     resolved = resolve_codex_runtime_credentials(force_refresh=True, refresh_if_expiring=False)
 
@@ -745,7 +745,7 @@ def _patch_httpx(monkeypatch, response):
     def _factory(*args, **kwargs):
         return _StubHTTPClient(response)
 
-    monkeypatch.setattr("superforecasting_agent.runtime.auth.httpx.Client", _factory)
+    monkeypatch.setattr("superforecasting_agent.credentials.auth.httpx.Client", _factory)
 
 
 def test_refresh_parses_openai_nested_error_shape_refresh_token_reused(monkeypatch):
@@ -842,7 +842,7 @@ def test_refresh_429_classified_as_quota_not_auth_failure(monkeypatch):
     dedicated rate-limit code so callers surface a "retry later" notice rather
     than a misleading re-auth prompt.
     """
-    from superforecasting_agent.runtime.auth import (
+    from superforecasting_agent.credentials.auth import (
         CODEX_RATE_LIMITED_CODE,
         format_auth_error,
         is_rate_limited_auth_error,
@@ -871,7 +871,7 @@ def test_refresh_429_classified_as_quota_not_auth_failure(monkeypatch):
 
 def test_refresh_429_without_retry_after_header(monkeypatch):
     """429 without a Retry-After header still classifies as quota, no relogin."""
-    from superforecasting_agent.runtime.auth import CODEX_RATE_LIMITED_CODE
+    from superforecasting_agent.credentials.auth import CODEX_RATE_LIMITED_CODE
 
     response = _StubHTTPResponse(429, {"error": "rate_limited"})
     _patch_httpx(monkeypatch, response)
@@ -887,7 +887,7 @@ def test_refresh_429_without_retry_after_header(monkeypatch):
 
 def test_is_rate_limited_auth_error_distinguishes_credential_errors():
     """Missing/expired credentials must NOT be treated as rate-limit errors."""
-    from superforecasting_agent.runtime.auth import CODEX_RATE_LIMITED_CODE, is_rate_limited_auth_error
+    from superforecasting_agent.credentials.auth import CODEX_RATE_LIMITED_CODE, is_rate_limited_auth_error
 
     rate_limited = AuthError(
         "quota", provider="openai-codex", code=CODEX_RATE_LIMITED_CODE, relogin_required=False
@@ -907,11 +907,11 @@ def test_login_openai_codex_force_new_login_skips_existing_reuse_prompt(monkeypa
     called = {"device_login": 0}
 
     monkeypatch.setattr(
-        "superforecasting_agent.runtime.auth.resolve_codex_runtime_credentials",
+        "superforecasting_agent.credentials.auth.resolve_codex_runtime_credentials",
         lambda: {"base_url": DEFAULT_CODEX_BASE_URL},
     )
     monkeypatch.setattr(
-        "superforecasting_agent.runtime.auth._import_codex_cli_tokens",
+        "superforecasting_agent.credentials.auth._import_codex_cli_tokens",
         lambda: {"access_token": "cli-at", "refresh_token": "cli-rt"},
     )
     monkeypatch.setattr(
@@ -928,7 +928,7 @@ def test_login_openai_codex_force_new_login_skips_existing_reuse_prompt(monkeypa
         called["tokens"] = dict(tokens)
         called["last_refresh"] = last_refresh
 
-    monkeypatch.setattr("superforecasting_agent.runtime.auth._save_codex_tokens", _fake_save)
+    monkeypatch.setattr("superforecasting_agent.credentials.auth._save_codex_tokens", _fake_save)
     monkeypatch.setattr("superforecasting_agent.runtime.auth._update_config_for_provider", lambda *args, **kwargs: "/tmp/config.yaml")
     monkeypatch.setattr(
         "builtins.input",

@@ -105,7 +105,7 @@ def resolve_xai_http_credentials(*, force_refresh: bool = False) -> Dict[str, st
             pass
 
     try:
-        from superforecasting_agent.runtime.auth import resolve_xai_oauth_runtime_credentials
+        from superforecasting_agent.credentials.auth import resolve_xai_oauth_runtime_credentials
 
         creds = resolve_xai_oauth_runtime_credentials(force_refresh=force_refresh)
         access_token = str(creds.get("api_key") or "").strip()

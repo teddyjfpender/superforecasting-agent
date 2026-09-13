@@ -1,6 +1,6 @@
 """Distribution / uncertainty-bounds assessment + auto-fix for forecast hooks.
 
-Wraps ``forecasting.dashboard._distribution_view`` (the canonical parser that the
+Wraps ``forecasting.distribution_summary.summarize_distribution`` (the canonical parser that the
 Desk charts use) to answer: is this distribution well-formed + renderable, and if
 not, what is wrong + can we mechanically fix it? Malformed bounds (inverted,
 non-nested, out-of-range, degenerate) are what make the Desk charts look absurd.
@@ -14,6 +14,8 @@ import math
 import re
 from dataclasses import dataclass, field
 from typing import Any
+
+from forecasting.distribution_summary import summarize_distribution
 
 
 def _finite(x: Any) -> bool:
@@ -265,11 +267,7 @@ def assess_distribution(
     # unknown type (None) is assessed best-effort.
     if outcome_type is not None and outcome_type not in _DIST_TYPES:
         return None
-    try:
-        from forecasting.dashboard import _distribution_view
-    except Exception:
-        return None
-    view = _distribution_view(payload)
+    view = summarize_distribution(payload)
     if view is None:
         # Not parseable as a continuous distribution. Only flag it when the
         # QUESTION is distribution/numeric (a binary scalar is correctly None).
@@ -468,10 +466,6 @@ def autofix_distribution(payload: Any, *, bounds: list[float] | None = None) -> 
     corrected intervals back under canonical ``interval_50_*`` / ``interval_90_*``
     keys (which the parser prefers). Returns (fixed_payload, applied_fixes). A
     non-distribution payload is returned unchanged."""
-    try:
-        from forecasting.dashboard import _distribution_view
-    except Exception:
-        return payload, []
     if not isinstance(payload, dict):
         return payload, []
 
@@ -485,7 +479,7 @@ def autofix_distribution(payload: Any, *, bounds: list[float] | None = None) -> 
             work["mean"] = med
             fixes.append("derived mean from median")
 
-    view = _distribution_view(work)
+    view = summarize_distribution(work)
     if view is None:
         return (work if fixes else payload), fixes
 

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any
 
 from forecasting.hooks.dsl import RuleSpec, compile_rule, validate_rule
 from forecasting.hooks.spec import SimpleRule
@@ -16,7 +15,6 @@ from forecasting.hooks.spec import SimpleRule
 logger = logging.getLogger(__name__)
 
 _warned: set[str] = set()
-_cache: dict[Any, list[SimpleRule]] = {}
 
 
 def _warn_once(key: str, message: str) -> None:
@@ -27,29 +25,33 @@ def _warn_once(key: str, message: str) -> None:
 
 def _rules_file_path(rel: str) -> str | None:
     try:
-        from superforecasting_agent.runtime.config import get_config_path
+        from superforecasting_agent.constants import get_agent_home
 
-        return os.path.join(str(get_config_path().parent), rel)
+        return os.path.join(str(get_agent_home()), rel)
     except Exception:
         return None
 
 
-def _read_rules_file(rel: str) -> tuple[list[dict], Any]:
-    """Return (specs, cache_key_part). cache_key_part is (mtime, size) or None."""
+def _read_rules_file(rel: str) -> list[dict]:
+    """Read current specifications without relying on file metadata."""
     path = _rules_file_path(rel)
     if not path or not os.path.exists(path):
-        return [], None
+        return []
     try:
-        st = os.stat(path)
         import yaml
 
         with open(path, encoding="utf-8") as fh:
             data = yaml.safe_load(fh) or []
-        specs = [d for d in data if isinstance(d, dict)] if isinstance(data, list) else []
-        return specs, (path, st.st_mtime_ns, st.st_size)
+        specs = (
+            [d for d in data if isinstance(d, dict)] if isinstance(data, list) else []
+        )
+        return specs
     except Exception as e:  # noqa: BLE001
-        _warn_once(f"rulesfile:{rel}", f"could not parse rules_file {rel}: {e}; user rules skipped")
-        return [], (path, "error")
+        _warn_once(
+            f"rulesfile:{rel}",
+            f"could not parse rules_file {rel}: {e}; user rules skipped",
+        )
+        return []
 
 
 def load_user_rule_specs(hooks_config: dict) -> list[dict]:
@@ -57,20 +59,17 @@ def load_user_rule_specs(hooks_config: dict) -> list[dict]:
     for `forecast hooks lint` to validate + report each."""
     inline = [d for d in (hooks_config.get("rules") or []) if isinstance(d, dict)]
     rel = hooks_config.get("rules_file")
-    file_specs = _read_rules_file(rel)[0] if rel else []
+    file_specs = _read_rules_file(rel) if rel else []
     return [*inline, *file_specs]
 
 
 def load_user_rules(hooks_config: dict) -> list[SimpleRule]:
     """Compile the configured user rules (inline + rules_file). Invalid rules are
-    dropped with a warn-once. Cached on the inline-rules identity + file stat."""
+    dropped with a warn-once. Compile current values on each load: list identity
+    and file metadata cannot establish whether a validation policy changed."""
     inline = [d for d in (hooks_config.get("rules") or []) if isinstance(d, dict)]
     rel = hooks_config.get("rules_file")
-    file_specs, file_key = _read_rules_file(rel) if rel else ([], None)
-
-    cache_key = (id(hooks_config.get("rules")), len(inline), file_key)
-    if cache_key in _cache:
-        return _cache[cache_key]
+    file_specs = _read_rules_file(rel) if rel else []
 
     compiled: list[SimpleRule] = []
     known: set[str] = set()
@@ -79,14 +78,16 @@ def load_user_rules(hooks_config: dict) -> list[SimpleRule]:
         issues = validate_rule(spec, known_ids=known)
         errors = [i for i in issues if i.severity == "error"]
         if errors:
-            _warn_once(f"rule:{spec.id or raw}", f"rule {spec.id or '(no id)'} invalid, skipped: {errors[0].message}")
+            _warn_once(
+                f"rule:{spec.id or raw}",
+                f"rule {spec.id or '(no id)'} invalid, skipped: {errors[0].message}",
+            )
             continue
         known.add(spec.id)
         compiled.append(compile_rule(spec))
-    _cache[cache_key] = compiled
     return compiled
 
 
 def clear_cache() -> None:
-    _cache.clear()
+    """Compatibility reset for warning suppression; rules are never cached."""
     _warned.clear()

@@ -20,7 +20,7 @@ Input contract — see :func:`aggregate_thesis`. Each member dict carries a
 ``kind`` (``"binary"`` or ``"distribution"``), a ``direction``
 (``"support"`` or ``"inverted"``), a raw ``weight``, an ``as_of`` timestamp,
 and a belief payload. Distribution members are reduced upstream (e.g. by
-``dashboard._distribution_view``) to ``{mean, sd, ci90, pmf, median}`` before
+``distribution_summary.summarize_distribution``) to ``{mean, sd, ci90, pmf, median}`` before
 they reach this module — this module never reduces a raw distribution itself.
 """
 

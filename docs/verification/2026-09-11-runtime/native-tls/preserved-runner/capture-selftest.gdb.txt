@@ -1,0 +1,50 @@
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+
+Program received signal SIGABRT, Aborted.
+0x00007ffff7c9ec0c in pthread_kill () from /lib/x86_64-linux-gnu/libc.so.6
+
+Thread 1 (Thread 0x7ffff7eaf740 (LWP 2920) "python3.11"):
+#0  0x00007ffff7c9ec0c in pthread_kill () from /lib/x86_64-linux-gnu/libc.so.6
+No symbol table info available.
+#1  0x00007ffff7c4527e in raise () from /lib/x86_64-linux-gnu/libc.so.6
+No symbol table info available.
+#2  0x00007ffff7c288ff in abort () from /lib/x86_64-linux-gnu/libc.so.6
+No symbol table info available.
+#3  0x0000555555828df6 in os_abort ()
+No symbol table info available.
+#4  0x000055555588e240 in cfunction_vectorcall_NOARGS ()
+No symbol table info available.
+#5  0x00005555558fcaa7 in _PyEval_EvalFrameDefault ()
+No symbol table info available.
+#6  0x00005555559eff94 in _PyEval_Vector ()
+No symbol table info available.
+#7  0x00005555559ef528 in PyEval_EvalCode ()
+No symbol table info available.
+#8  0x0000555555a23f31 in run_mod ()
+No symbol table info available.
+#9  0x00005555557a5072 in pyrun_file ()
+No symbol table info available.
+#10 0x00005555557a4ba9 in _PyRun_SimpleFileObject ()
+No symbol table info available.
+#11 0x00005555557a45c5 in _PyRun_AnyFileObject ()
+No symbol table info available.
+#12 0x00005555557aecb9 in pymain_run_file_obj ()
+No symbol table info available.
+#13 0x00005555557ae800 in pymain_run_file ()
+No symbol table info available.
+#14 0x0000555555a3110b in Py_RunMain ()
+No symbol table info available.
+#15 0x0000555555735028 in main ()
+No symbol table info available.
+From                To                  Syms Read   Shared Object Library
+0x00007ffff7fc6000  0x00007ffff7ff0195  Yes (*)     /lib64/ld-linux-x86-64.so.2
+0x00007ffff7fad040  0x00007ffff7fad105  Yes (*)     /lib/x86_64-linux-gnu/libpthread.so.0
+0x00007ffff7fa8040  0x00007ffff7fa8105  Yes (*)     /lib/x86_64-linux-gnu/libdl.so.2
+0x00007ffff7fa3040  0x00007ffff7fa3105  Yes (*)     /lib/x86_64-linux-gnu/libutil.so.1
+0x00007ffff7f9e080  0x00007ffff7f9e2b1  Yes (*)     /lib/x86_64-linux-gnu/librt.so.1
+0x00007ffff7ec4420  0x00007ffff7f423a6  Yes (*)     /lib/x86_64-linux-gnu/libm.so.6
+0x00007ffff7c28800  0x00007ffff7dafeb9  Yes (*)     /lib/x86_64-linux-gnu/libc.so.6
+(*): Shared library is missing debugging information.
+Saved corefile /home/runner/work/superforecasting-agent/superforecasting-agent/native-tls-results/capture-selftest.core
+warning: Memory read failed for corefile section, 4096 bytes at 0xffffffffff600000.

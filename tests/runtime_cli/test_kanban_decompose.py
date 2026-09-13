@@ -72,7 +72,7 @@ def _patch_list_profiles(names: list[str]):
     return [
         patch("superforecasting_agent.runtime.profiles.list_profiles", return_value=fake_profiles),
         patch("superforecasting_agent.runtime.profiles.profile_exists", side_effect=lambda x: x in names),
-        patch("superforecasting_agent.runtime.profiles.get_active_profile_name", return_value=names[0] if names else "default"),
+        patch("superforecasting_agent.constants.get_active_profile_name", return_value=names[0] if names else "default"),
     ]
 
 

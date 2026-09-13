@@ -314,11 +314,42 @@ def main(argv: list[str] | None = None) -> None:
     if not forecast_candidate_argv and _tui_env_enabled():
         _run_inherited_runtime([*raw_argv, "desk"])
         return
+    if forecast_candidate_argv[:1] == ["import"]:
+        _apply_profile(profile_name)
+        from superforecasting_agent.runtime.backup import configure_import_parser, run_import
+
+        parser = argparse.ArgumentParser(prog="superforecasting-agent import")
+        configure_import_parser(parser)
+        args = parser.parse_args(forecast_candidate_argv[1:])
+        try:
+            run_import(args)
+        except OSError as exc:
+            print(f"Import failed: {exc}", file=sys.stderr)
+            raise SystemExit(1) from None
+        return
+
+    if forecast_candidate_argv[:1] == ["snapshot"]:
+        _apply_profile(profile_name)
+        import shlex
+
+        from superforecasting_agent.application.snapshots import execute_snapshot
+
+        try:
+            print(execute_snapshot(shlex.join(forecast_candidate_argv[1:])))
+        except (OSError, ValueError) as exc:
+            print(f"Snapshot failed: {exc}", file=sys.stderr)
+            raise SystemExit(1) from None
+        return
+
     normalized_forecast_argv = _forecast_argv(forecast_candidate_argv)
     if normalized_forecast_argv is not None:
         _apply_profile(profile_name)
         normalized_forecast_argv = _hoist_forecast_global_args(normalized_forecast_argv)
-        _resolve_forecast_main()(normalized_forecast_argv, prog="superforecasting-agent")
+        from superforecasting_agent.constants import get_agent_home
+        from superforecasting_agent.storage.profile_lease import ProfileLease
+
+        with ProfileLease(get_agent_home()):
+            _resolve_forecast_main()(normalized_forecast_argv, prog="superforecasting-agent")
         return
     _run_inherited_runtime(raw_argv)
 

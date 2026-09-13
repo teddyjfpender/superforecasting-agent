@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=83,<85"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "superforecasting-agent-tui"
+version = "0.1.0"
+description = "Ink terminal client for a local or remote Superforecasting Agent backend"
+requires-python = ">=3.11,<3.14"
+license = "MIT"
+
+[project.scripts]
+superforecasting-agent-tui = "superforecasting_agent_tui:main"
+
+[tool.setuptools.package-data]
+superforecasting_agent_tui = ["dist/entry.js", "dist/package.json"]

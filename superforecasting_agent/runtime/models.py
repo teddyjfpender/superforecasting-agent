@@ -15,7 +15,13 @@ import urllib.error
 import time
 from difflib import get_close_matches
 from pathlib import Path
-from typing import Any, NamedTuple, Optional
+from typing import Any, Optional
+
+from superforecasting_agent.configuration.providers import (
+    PROVIDER_ALIASES as _PROVIDER_ALIASES,
+    normalize_provider,
+    split_provider_model,
+)
 
 from superforecasting_agent.runtime import __version__ as _HERMES_VERSION
 
@@ -30,461 +36,20 @@ COPILOT_REASONING_EFFORTS_GPT5 = ["minimal", "low", "medium", "high"]
 COPILOT_REASONING_EFFORTS_O_SERIES = ["low", "medium", "high"]
 
 
-# Fallback OpenRouter snapshot used when the live catalog is unavailable.
-# (model_id, display description shown in menus)
-OPENROUTER_MODELS: list[tuple[str, str]] = [
-    ("anthropic/claude-opus-4.7",              ""),
-    ("anthropic/claude-opus-4.6",              ""),
-    ("anthropic/claude-sonnet-4.6",            ""),
-    ("moonshotai/kimi-k2.6",                   "recommended"),
-    ("openrouter/pareto-code",                 "auto-routes to cheapest coder meeting openrouter.min_coding_score"),
-    ("qwen/qwen3.6-plus",                      ""),
-    ("anthropic/claude-haiku-4.5",             ""),
-    ("openai/gpt-5.5",                         ""),
-    ("openai/gpt-5.5-pro",                     ""),
-    ("openai/gpt-5.4-mini",                    ""),
-    ("openai/gpt-5.4-nano",                    ""),
-    ("openai/gpt-5.3-codex",                   ""),
-    ("xiaomi/mimo-v2.5-pro",                   ""),
-    ("tencent/hy3-preview",                    ""),
-    ("google/gemini-3-pro-image-preview",      ""),
-    ("google/gemini-3-flash-preview",          ""),
-    ("google/gemini-3.1-pro-preview",          ""),
-    ("google/gemini-3.1-flash-lite-preview",   ""),
-    ("qwen/qwen3.6-35b-a3b",                   ""),
-    ("stepfun/step-3.5-flash",                 ""),
-    ("minimax/minimax-m2.7",                   ""),
-    ("z-ai/glm-5.1",                           ""),
-    ("x-ai/grok-4.20",                         ""),
-    ("x-ai/grok-4.3",                          ""),
-    ("nvidia/nemotron-3-super-120b-a12b",      ""),
-    ("deepseek/deepseek-v4-pro",               ""),
-    # Free tier
-    ("openrouter/elephant-alpha",              "free"),
-    ("openrouter/owl-alpha",                   "free"),
-    ("tencent/hy3-preview:free",               "free"),
-    ("nvidia/nemotron-3-super-120b-a12b:free", "free"),
-    ("inclusionai/ring-2.6-1t:free",           "free"),
-]
+from agent.model_catalog import (
+    OPENROUTER_MODELS as OPENROUTER_MODELS,
+    VERCEL_AI_GATEWAY_MODELS as VERCEL_AI_GATEWAY_MODELS,
+    _PROVIDER_MODELS as _PROVIDER_MODELS,
+    _XAI_STATIC_FALLBACK as _XAI_STATIC_FALLBACK,
+    _XAI_TOP_MODEL as _XAI_TOP_MODEL,
+    _codex_curated_models as _codex_curated_models,
+    _xai_curated_models as _xai_curated_models,
+    _xai_promote_top as _xai_promote_top,
+    get_default_model_for_provider as get_default_model_for_provider,
+)
 
 _openrouter_catalog_cache: list[tuple[str, str]] | None = None
-
-
-# Fallback Vercel AI Gateway snapshot used when the live catalog is unavailable.
-# OSS / open-weight models prioritized first, then closed-source by family.
-# Slugs match Vercel's actual /v1/models catalog (e.g. alibaba/ for Qwen,
-# zai/ and xai/ without hyphens).
-VERCEL_AI_GATEWAY_MODELS: list[tuple[str, str]] = [
-    ("moonshotai/kimi-k2.6",                 "recommended"),
-    ("alibaba/qwen3.6-plus",                 ""),
-    ("zai/glm-5.1",                          ""),
-    ("minimax/minimax-m2.7",                 ""),
-    ("anthropic/claude-sonnet-4.6",          ""),
-    ("anthropic/claude-opus-4.7",            ""),
-    ("anthropic/claude-opus-4.6",            ""),
-    ("anthropic/claude-haiku-4.5",           ""),
-    ("openai/gpt-5.4",                       ""),
-    ("openai/gpt-5.4-mini",                  ""),
-    ("openai/gpt-5.3-codex",                 ""),
-    ("google/gemini-3.1-pro-preview",        ""),
-    ("google/gemini-3-flash",                ""),
-    ("google/gemini-3.1-flash-lite-preview", ""),
-    ("xai/grok-4.20-reasoning",              ""),
-]
-
 _ai_gateway_catalog_cache: list[tuple[str, str]] | None = None
-
-
-def _codex_curated_models() -> list[str]:
-    """Derive the openai-codex curated list from codex_models.py.
-
-    Single source of truth: DEFAULT_CODEX_MODELS + forward-compat synthesis.
-    This keeps the gateway /model picker in sync with the CLI
-    `superforecasting-agent model` flow without maintaining a separate static
-    list.
-    """
-    from superforecasting_agent.runtime.codex_models import DEFAULT_CODEX_MODELS, _add_forward_compat_models
-    return _add_forward_compat_models(list(DEFAULT_CODEX_MODELS))
-
-
-# Static fallback for xAI when the models.dev disk cache is empty (fresh
-# install, offline first run, etc.). Mirrors the xAI-direct model IDs from
-# $HERMES_HOME/models_dev_cache.json as of 2026-04-28. Whenever xAI renames
-# or retires a model, the disk cache picks it up on the next refresh and the
-# fallback here only matters until that refresh lands.
-#
-# Models retired by xAI on May 15, 2026 are excluded — see
-# https://docs.x.ai/developers/migration/may-15-retirement
-# (grok-4, grok-4-0709, grok-4-fast{,-reasoning,-non-reasoning},
-#  grok-4-1-fast{,-reasoning,-non-reasoning}, grok-code-fast-1 → grok-4.3).
-_XAI_STATIC_FALLBACK: list[str] = [
-    "grok-4.3",
-    "grok-4.20-0309-reasoning",
-    "grok-4.20-0309-non-reasoning",
-    "grok-4.20-multi-agent-0309",
-]
-
-
-_XAI_TOP_MODEL = "grok-4.3"
-
-
-def _xai_promote_top(ids: list[str]) -> list[str]:
-    """Pin the headline xAI model to the top of the curated list."""
-    if _XAI_TOP_MODEL in ids:
-        return [_XAI_TOP_MODEL] + [m for m in ids if m != _XAI_TOP_MODEL]
-    return ids
-
-
-def _xai_curated_models() -> list[str]:
-    """Derive the xAI-direct curated list from models.dev disk cache.
-
-    Reads $HERMES_HOME/models_dev_cache.json directly (no network) so this
-    runs at import time without blocking. Falls back to ``_XAI_STATIC_FALLBACK``
-    when the cache is empty or unreadable. The CLI refreshes the cache from
-    https://models.dev/api.json on normal use, so this list self-heals as
-    xAI renames models.
-
-    Mirrors ``_codex_curated_models()``'s role for openai-codex.
-    """
-    try:
-        from agent.models_dev import _load_disk_cache
-        data = _load_disk_cache()
-        xai = data.get("xai") if isinstance(data, dict) else None
-        models = xai.get("models") if isinstance(xai, dict) else None
-        if isinstance(models, dict) and models:
-            ids = [mid for mid in models.keys() if isinstance(mid, str)]
-            if ids:
-                return _xai_promote_top(sorted(ids))
-    except Exception:
-        # Any failure (missing file, malformed JSON, import error)
-        # falls through to the static list.
-        pass
-    return list(_XAI_STATIC_FALLBACK)
-
-
-_PROVIDER_MODELS: dict[str, list[str]] = {
-    "nous": [
-        "anthropic/claude-opus-4.7",
-        "anthropic/claude-opus-4.6",
-        "anthropic/claude-sonnet-4.6",
-        "moonshotai/kimi-k2.6",
-        "qwen/qwen3.6-plus",
-        "anthropic/claude-haiku-4.5",
-        "openai/gpt-5.5",
-        "openai/gpt-5.5-pro",
-        "openai/gpt-5.4-mini",
-        "openai/gpt-5.4-nano",
-        "openai/gpt-5.3-codex",
-        "xiaomi/mimo-v2.5-pro",
-        "tencent/hy3-preview",
-        "google/gemini-3-pro-preview",
-        "google/gemini-3-flash-preview",
-        "google/gemini-3.1-pro-preview",
-        "google/gemini-3.1-flash-lite-preview",
-        "qwen/qwen3.6-35b-a3b",
-        "stepfun/step-3.5-flash",
-        "minimax/minimax-m2.7",
-        "z-ai/glm-5.1",
-        "x-ai/grok-4.3",
-        "nvidia/nemotron-3-super-120b-a12b",
-        "deepseek/deepseek-v4-pro",
-    ],
-    # Native OpenAI Chat Completions (api.openai.com). Used by /model counts and
-    # provider_model_ids fallback when /v1/models is unavailable.
-    "openai": [
-        "gpt-5.4",
-        "gpt-5.4-mini",
-        "gpt-5-mini",
-        "gpt-5.3-codex",
-        "gpt-5.2-codex",
-        "gpt-4.1",
-        "gpt-4o",
-        "gpt-4o-mini",
-    ],
-    "openai-api": [
-        # Fallback only — provider_model_ids() prefers a live /v1/models fetch
-        # when OPENAI_API_KEY is set. Mirrors the curated "openai" table.
-        "gpt-5.4",
-        "gpt-5.4-mini",
-        "gpt-5-mini",
-        "gpt-5.3-codex",
-        "gpt-5.2-codex",
-        "gpt-4.1",
-        "gpt-4o",
-        "gpt-4o-mini",
-    ],
-    "openai-codex": _codex_curated_models(),
-    "xai-oauth": _xai_curated_models(),
-    "copilot-acp": [
-        "copilot-acp",
-    ],
-    "copilot": [
-        "gpt-5.4",
-        "gpt-5.4-mini",
-        "gpt-5-mini",
-        "gpt-5.3-codex",
-        "gpt-5.2-codex",
-        "gpt-4.1",
-        "gpt-4o",
-        "gpt-4o-mini",
-        "claude-sonnet-4.6",
-        "claude-sonnet-4",
-        "claude-sonnet-4.5",
-        "claude-haiku-4.5",
-        "gemini-3.1-pro-preview",
-        "gemini-3-pro-preview",
-        "gemini-3-flash-preview",
-        "gemini-2.5-pro",
-    ],
-    "gemini": [
-        "gemini-3.1-pro-preview",
-        "gemini-3-pro-preview",
-        "gemini-3-flash-preview",
-        "gemini-3.1-flash-lite-preview",
-    ],
-    "google-gemini-cli": [
-        "gemini-3.1-pro-preview",
-        "gemini-3-pro-preview",
-        "gemini-3-flash-preview",
-    ],
-    "zai": [
-        "glm-5.1",
-        "glm-5",
-        "glm-5v-turbo",
-        "glm-5-turbo",
-        "glm-4.7",
-        "glm-4.5",
-        "glm-4.5-flash",
-    ],
-    "xai": _xai_curated_models(),
-    "nvidia": [
-        # NVIDIA flagship reasoning models
-        "nvidia/nemotron-3-super-120b-a12b",
-        "nvidia/nemotron-3-nano-30b-a3b",
-        "nvidia/llama-3.3-nemotron-super-49b-v1.5",
-        # Third-party agentic models hosted on build.nvidia.com
-        # (map to OpenRouter defaults — users get familiar picks on NIM)
-        "qwen/qwen3.5-397b-a17b",
-        "deepseek-ai/deepseek-v3.2",
-        "moonshotai/kimi-k2.6",
-        "minimaxai/minimax-m2.5",
-        "z-ai/glm5",
-        "openai/gpt-oss-120b",
-    ],
-    "kimi-coding": [
-        "kimi-k2.6",
-        "kimi-k2.5",
-        "kimi-for-coding",
-        "kimi-k2-thinking",
-        "kimi-k2-thinking-turbo",
-        "kimi-k2-turbo-preview",
-        "kimi-k2-0905-preview",
-    ],
-    "kimi-coding-cn": [
-        "kimi-k2.6",
-        "kimi-k2.5",
-        "kimi-k2-thinking",
-        "kimi-k2-turbo-preview",
-        "kimi-k2-0905-preview",
-    ],
-    "stepfun": [
-        "step-3.5-flash",
-        "step-3.5-flash-2603",
-    ],
-    "moonshot": [
-        "kimi-k2.6",
-        "kimi-k2.5",
-        "kimi-k2-thinking",
-        "kimi-k2-turbo-preview",
-        "kimi-k2-0905-preview",
-    ],
-    "minimax": [
-        "MiniMax-M2.7",
-        "MiniMax-M2.5",
-        "MiniMax-M2.1",
-        "MiniMax-M2",
-    ],
-    "minimax-oauth": [
-        "MiniMax-M2.7",
-        "MiniMax-M2.7-highspeed",
-    ],
-    "minimax-cn": [
-        "MiniMax-M2.7",
-        "MiniMax-M2.5",
-        "MiniMax-M2.1",
-        "MiniMax-M2",
-    ],
-    "anthropic": [
-        "claude-opus-4-7",
-        "claude-opus-4-6",
-        "claude-sonnet-4-6",
-        "claude-opus-4-5-20251101",
-        "claude-sonnet-4-5-20250929",
-        "claude-opus-4-20250514",
-        "claude-sonnet-4-20250514",
-        "claude-haiku-4-5-20251001",
-    ],
-    "deepseek": [
-        "deepseek-v4-pro",
-        "deepseek-v4-flash",
-        "deepseek-chat",
-        "deepseek-reasoner",
-    ],
-    "xiaomi": [
-        "mimo-v2.5-pro",
-        "mimo-v2.5",
-        "mimo-v2-pro",
-        "mimo-v2-omni",
-        "mimo-v2-flash",
-    ],
-    "tencent-tokenhub": [
-        "hy3-preview",
-    ],
-    "arcee": [
-        "trinity-large-thinking",
-        "trinity-large-preview",
-        "trinity-mini",
-    ],
-    "gmi": [
-        "zai-org/GLM-5.1-FP8",
-        "deepseek-ai/DeepSeek-V3.2",
-        "moonshotai/Kimi-K2.5",
-        "google/gemini-3.1-flash-lite-preview",
-        "anthropic/claude-sonnet-4.6",
-        "openai/gpt-5.4",
-    ],
-    "opencode-zen": [
-        "kimi-k2.5",
-        "gpt-5.4-pro",
-        "gpt-5.4",
-        "gpt-5.3-codex",
-        "gpt-5.2",
-        "gpt-5.2-codex",
-        "gpt-5.1",
-        "gpt-5.1-codex",
-        "gpt-5.1-codex-max",
-        "gpt-5.1-codex-mini",
-        "gpt-5",
-        "gpt-5-codex",
-        "gpt-5-nano",
-        "claude-opus-4-6",
-        "claude-opus-4-5",
-        "claude-opus-4-1",
-        "claude-sonnet-4-6",
-        "claude-sonnet-4-5",
-        "claude-sonnet-4",
-        "claude-haiku-4-5",
-        "claude-3-5-haiku",
-        "gemini-3.1-pro",
-        "gemini-3-pro",
-        "gemini-3-flash",
-        "minimax-m2.7",
-        "minimax-m2.5",
-        "minimax-m2.5-free",
-        "minimax-m2.1",
-        "glm-5",
-        "glm-4.7",
-        "glm-4.6",
-        "kimi-k2-thinking",
-        "kimi-k2",
-        "qwen3-coder",
-        "big-pickle",
-    ],
-    "opencode-go": [
-        "kimi-k2.6",
-        "kimi-k2.5",
-        "glm-5.1",
-        "glm-5",
-        "mimo-v2.5-pro",
-        "mimo-v2.5",
-        "mimo-v2-pro",
-        "mimo-v2-omni",
-        "minimax-m2.7",
-        "minimax-m2.5",
-        "qwen3.6-plus",
-        "qwen3.5-plus",
-    ],
-    "kilocode": [
-        "anthropic/claude-opus-4.6",
-        "anthropic/claude-sonnet-4.6",
-        "openai/gpt-5.4",
-        "google/gemini-3-pro-preview",
-        "google/gemini-3-flash-preview",
-    ],
-    # Alibaba DashScope Coding platform (coding-intl) — default endpoint.
-    # Supports Qwen models + third-party providers (GLM, Kimi, MiniMax).
-    # Users with classic DashScope keys should override DASHSCOPE_BASE_URL
-    # to https://dashscope-intl.aliyuncs.com/compatible-mode/v1 (OpenAI-compat)
-    # or https://dashscope-intl.aliyuncs.com/apps/anthropic (Anthropic-compat).
-    "alibaba": [
-        "qwen3.6-plus",
-        "kimi-k2.5",
-        "qwen3.5-plus",
-        "qwen3-coder-plus",
-        "qwen3-coder-next",
-        # Third-party models available on coding-intl
-        "glm-5",
-        "glm-4.7",
-        "MiniMax-M2.5",
-    ],
-    # Alibaba Coding Plan — same platform as alibaba (DashScope coding-intl),
-    # separate provider ID with its own base_url_env_var.
-    "alibaba-coding-plan": [
-        "qwen3.6-plus",
-        "qwen3.5-plus",
-        "qwen3-coder-plus",
-        "qwen3-coder-next",
-        "kimi-k2.5",
-        "glm-5",
-        "glm-4.7",
-        "MiniMax-M2.5",
-    ],
-    # Curated HF model list — only agentic models that map to OpenRouter defaults.
-    "huggingface": [
-        "moonshotai/Kimi-K2.5",
-        "Qwen/Qwen3.5-397B-A17B",
-        "Qwen/Qwen3.5-35B-A3B",
-        "deepseek-ai/DeepSeek-V3.2",
-        "MiniMaxAI/MiniMax-M2.5",
-        "zai-org/GLM-5",
-        "XiaomiMiMo/MiMo-V2-Flash",
-        "moonshotai/Kimi-K2-Thinking",
-        "moonshotai/Kimi-K2.6",
-    ],
-    # AWS Bedrock — static fallback list used when dynamic discovery is
-    # unavailable (no boto3, no credentials, or API error).  The agent
-    # prefers live discovery via ListFoundationModels + ListInferenceProfiles.
-    # Use inference profile IDs (us.*) since most models require them.
-    "bedrock": [
-        "us.anthropic.claude-sonnet-4-6",
-        "us.anthropic.claude-opus-4-6-v1",
-        "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-        "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
-        "us.amazon.nova-pro-v1:0",
-        "us.amazon.nova-lite-v1:0",
-        "us.amazon.nova-micro-v1:0",
-        "deepseek.v3.2",
-        "us.meta.llama4-maverick-17b-instruct-v1:0",
-        "us.meta.llama4-scout-17b-instruct-v1:0",
-    ],
-    # Azure Foundry: user-provided endpoint and model.
-    # Empty list because models depend on the endpoint configuration.
-    "azure-foundry": [],
-    "novita": [
-        "moonshotai/kimi-k2.5",
-        "minimax/minimax-m2.7",
-        "zai-org/glm-5",
-        "deepseek/deepseek-v3-0324",
-        "deepseek/deepseek-r1-0528",
-        "qwen/qwen3-235b-a22b-fp8",
-    ],
-}
-
-# Vercel AI Gateway: derive the bare-model-id catalog from the curated
-# ``VERCEL_AI_GATEWAY_MODELS`` snapshot so both the picker (tuples with descriptions)
-# and the static fallback catalog (bare ids) stay in sync from a single
-# source of truth.
-_PROVIDER_MODELS["ai-gateway"] = [mid for mid, _ in VERCEL_AI_GATEWAY_MODELS]
 
 # ---------------------------------------------------------------------------
 # Nous Portal free-model helper
@@ -744,7 +309,7 @@ def check_nous_free_tier() -> bool:
             return cached_result
 
     try:
-        from superforecasting_agent.runtime.auth import get_provider_auth_state, resolve_nous_runtime_credentials
+        from superforecasting_agent.credentials.auth import get_provider_auth_state, resolve_nous_runtime_credentials
 
         # Ensure we have a fresh token (triggers refresh if needed)
         resolve_nous_runtime_credentials(min_key_ttl_seconds=60)
@@ -839,7 +404,7 @@ def fetch_nous_recommended_models(
 def _resolve_nous_portal_url() -> str:
     """Best-effort lookup of the Portal base URL the user is authed against."""
     try:
-        from superforecasting_agent.runtime.auth import (
+        from superforecasting_agent.credentials.auth import (
             DEFAULT_NOUS_PORTAL_URL,
             get_provider_auth_state,
         )
@@ -930,170 +495,14 @@ def get_nous_recommended_aux_model(
 #   tui_desc    — longer description for the interactive model picker
 # ---------------------------------------------------------------------------
 
-class ProviderEntry(NamedTuple):
-    slug: str
-    label: str
-    tui_desc: str   # detailed description for the model-picker TUI
-
-CANONICAL_PROVIDERS: list[ProviderEntry] = [
-    ProviderEntry("nous",           "Nous Portal",              "Nous Portal (Nous Research subscription)"),
-    ProviderEntry("openrouter",     "OpenRouter",               "OpenRouter (100+ models, pay-per-use)"),
-    ProviderEntry("novita",         "NovitaAI",                 "NovitaAI (AI-native cloud: Model API, Agent Sandbox, GPU Cloud)"),
-    ProviderEntry("lmstudio",       "LM Studio",                "LM Studio (local desktop app with built-in model server)"),
-    ProviderEntry("anthropic",      "Anthropic",                "Anthropic (Claude models — API key or Claude Code)"),
-    ProviderEntry("openai-codex",   "OpenAI OAuth (ChatGPT)",   "OpenAI OAuth (ChatGPT subscription)"),
-    ProviderEntry("openai-api",     "OpenAI API",               "OpenAI API (api.openai.com, API key)"),
-    ProviderEntry("alibaba",        "Qwen Cloud",               "Qwen Cloud / DashScope Coding (Qwen + multi-provider)"),
-    ProviderEntry("xai-oauth",      "xAI Grok OAuth (SuperGrok Subscription)", "xAI Grok OAuth (SuperGrok Subscription)"),
-    ProviderEntry("xiaomi",         "Xiaomi MiMo",              "Xiaomi MiMo (MiMo-V2.5 and V2 models — pro, omni, flash)"),
-    ProviderEntry("tencent-tokenhub", "Tencent TokenHub",       "Tencent TokenHub (Hy3 Preview — direct API via tokenhub.tencentmaas.com)"),
-    ProviderEntry("nvidia",         "NVIDIA NIM",               "NVIDIA NIM (Nemotron models — build.nvidia.com or local NIM)"),
-    ProviderEntry("copilot",        "GitHub Copilot",           "GitHub Copilot (uses GITHUB_TOKEN or gh auth token)"),
-    ProviderEntry("copilot-acp",    "GitHub Copilot ACP",       "GitHub Copilot ACP (spawns `copilot --acp --stdio`)"),
-    ProviderEntry("huggingface",    "Hugging Face",             "Hugging Face Inference Providers (20+ open models)"),
-    ProviderEntry("gemini",         "Google AI Studio",         "Google AI Studio (Gemini models — native Gemini API)"),
-    ProviderEntry("google-gemini-cli", "Google Gemini (OAuth)",   "Google Gemini via OAuth + Code Assist (free tier supported; no API key needed)"),
-    ProviderEntry("deepseek",       "DeepSeek",                 "DeepSeek (DeepSeek-V3, R1, coder — direct API)"),
-    ProviderEntry("xai",            "xAI",                      "xAI (Grok models — direct API)"),
-    ProviderEntry("zai",            "Z.AI / GLM",               "Z.AI / GLM (Zhipu AI direct API)"),
-    ProviderEntry("kimi-coding",    "Kimi / Kimi Coding Plan",  "Kimi Coding Plan (api.kimi.com) & Moonshot API"),
-    ProviderEntry("kimi-coding-cn", "Kimi / Moonshot (China)",  "Kimi / Moonshot China (Moonshot CN direct API)"),
-    ProviderEntry("stepfun",        "StepFun Step Plan",       "StepFun Step Plan (agent/coding models via Step Plan API)"),
-    ProviderEntry("minimax",        "MiniMax",                  "MiniMax (global direct API)"),
-    ProviderEntry("minimax-oauth",  "MiniMax (OAuth)",          "MiniMax via OAuth browser login (Coding Plan, minimax.io)"),
-    ProviderEntry("minimax-cn",     "MiniMax (China)",          "MiniMax China (domestic direct API)"),
-    ProviderEntry("ollama-cloud",   "Ollama Cloud",             "Ollama Cloud (cloud-hosted open models — ollama.com)"),
-    ProviderEntry("arcee",          "Arcee AI",                 "Arcee AI (Trinity models — direct API)"),
-    ProviderEntry("gmi",            "GMI Cloud",                "GMI Cloud (multi-model direct API)"),
-    ProviderEntry("kilocode",       "Kilo Code",                "Kilo Code (Kilo Gateway API)"),
-    ProviderEntry("opencode-zen",   "OpenCode Zen",             "OpenCode Zen (35+ curated models, pay-as-you-go)"),
-    ProviderEntry("opencode-go",    "OpenCode Go",              "OpenCode Go (open models, $10/month subscription)"),
-    ProviderEntry("bedrock",        "AWS Bedrock",              "AWS Bedrock (Claude, Nova, Llama, DeepSeek — IAM or API key)"),
-    ProviderEntry("azure-foundry",  "Azure Foundry",            "Azure Foundry (OpenAI-style or Anthropic-style endpoint — your Azure AI deployment)"),
-    ProviderEntry("ai-gateway",     "Vercel AI Gateway",        "Vercel AI Gateway"),
-    ProviderEntry("qwen-oauth",     "Qwen OAuth (Portal)",      "Qwen OAuth (reuses local Qwen CLI login)"),
-]
-
-# Auto-extend CANONICAL_PROVIDERS with any provider registered in providers/
-# that is not already in the list above.  Adding plugins/model-providers/<name>/
-# is sufficient to expose a new provider in the model picker, /model, and all
-# downstream consumers — no edits to this file needed.
-_canonical_slugs = {p.slug for p in CANONICAL_PROVIDERS}
-try:
-    from providers import list_providers as _list_providers_for_canonical
-    for _pp in _list_providers_for_canonical():
-        if _pp.name in _canonical_slugs:
-            continue
-        if _pp.auth_type in {"oauth_device_code", "oauth_external", "external_process", "aws_sdk", "copilot"}:
-            continue  # non-api-key flows need bespoke picker UX; skip auto-inject
-        _label = _pp.display_name or _pp.name
-        _desc = _pp.description or f"{_label} (direct API)"
-        CANONICAL_PROVIDERS.append(ProviderEntry(_pp.name, _label, _desc))
-        _canonical_slugs.add(_pp.name)
-except Exception:
-    pass
-
-# Derived dicts — used throughout the codebase
-_PROVIDER_LABELS = {p.slug: p.label for p in CANONICAL_PROVIDERS}
-_PROVIDER_LABELS["custom"] = "Custom endpoint"  # special case: not a named provider
+from superforecasting_agent.configuration.provider_catalog import (
+    CANONICAL_PROVIDERS as CANONICAL_PROVIDERS,
+    KNOWN_PROVIDER_NAMES as _KNOWN_PROVIDER_NAMES,
+    PROVIDER_LABELS as _PROVIDER_LABELS,
+    ProviderEntry as ProviderEntry,
+)
 
 
-_PROVIDER_ALIASES = {
-    "glm": "zai",
-    "z-ai": "zai",
-    "z.ai": "zai",
-    "zhipu": "zai",
-    "github": "copilot",
-    "github-copilot": "copilot",
-    "github-models": "copilot",
-    "github-model": "copilot",
-    "github-copilot-acp": "copilot-acp",
-    "copilot-acp-agent": "copilot-acp",
-    "google": "gemini",
-    "google-gemini": "gemini",
-    "google-ai-studio": "gemini",
-    "kimi": "kimi-coding",
-    "moonshot": "kimi-coding",
-    "kimi-cn": "kimi-coding-cn",
-    "moonshot-cn": "kimi-coding-cn",
-    "step": "stepfun",
-    "stepfun-coding-plan": "stepfun",
-    "arcee-ai": "arcee",
-    "arceeai": "arcee",
-    "gmi-cloud": "gmi",
-    "gmicloud": "gmi",
-    "minimax-china": "minimax-cn",
-    "minimax_cn": "minimax-cn",
-    "minimax-portal": "minimax-oauth",
-    "minimax-global": "minimax-oauth",
-    "minimax_oauth": "minimax-oauth",
-    "claude": "anthropic",
-    "claude-code": "anthropic",
-    "deep-seek": "deepseek",
-    "opencode": "opencode-zen",
-    "zen": "opencode-zen",
-    "go": "opencode-go",
-    "opencode-go-sub": "opencode-go",
-    "aigateway": "ai-gateway",
-    "vercel": "ai-gateway",
-    "vercel-ai-gateway": "ai-gateway",
-    "kilo": "kilocode",
-    "kilo-code": "kilocode",
-    "kilo-gateway": "kilocode",
-    "dashscope": "alibaba",
-    "aliyun": "alibaba",
-    "qwen": "alibaba",
-    "alibaba-cloud": "alibaba",
-    "qwen-portal": "qwen-oauth",
-    "gemini-cli": "google-gemini-cli",
-    "gemini-oauth": "google-gemini-cli",
-    "hf": "huggingface",
-    "hugging-face": "huggingface",
-    "huggingface-hub": "huggingface",
-    "novita-ai": "novita",
-    "novitaai": "novita",
-    "mimo": "xiaomi",
-    "xiaomi-mimo": "xiaomi",
-    "tencent": "tencent-tokenhub",
-    "tokenhub": "tencent-tokenhub",
-    "tencent-cloud": "tencent-tokenhub",
-    "tencentmaas": "tencent-tokenhub",
-    "aws": "bedrock",
-    "aws-bedrock": "bedrock",
-    "amazon-bedrock": "bedrock",
-    "amazon": "bedrock",
-    "grok": "xai",
-    "grok-oauth": "xai-oauth",
-    "xai-oauth": "xai-oauth",
-    "x-ai-oauth": "xai-oauth",
-    "xai-grok-oauth": "xai-oauth",
-    "x-ai": "xai",
-    "x.ai": "xai",
-    "nim": "nvidia",
-    "nvidia-nim": "nvidia",
-    "build-nvidia": "nvidia",
-    "nemotron": "nvidia",
-    "lmstudio": "lmstudio",
-    "lm-studio": "lmstudio",
-    "lm_studio": "lmstudio",
-    "ollama": "custom",  # bare "ollama" = local; use "ollama-cloud" for cloud
-    "ollama_cloud": "ollama-cloud",
-}
-
-
-def get_default_model_for_provider(provider: str) -> str:
-    """Return the default model for a provider, or empty string if unknown.
-
-    Uses the first entry in _PROVIDER_MODELS as the default.  This is the
-    model a user would be offered first in the ``superforecasting-agent model``
-    picker.
-
-    Used as a fallback when the user has configured a provider but never
-    selected a model (e.g. ``superforecasting-agent auth add openai-codex``
-    without ``superforecasting-agent model``).
-    """
-    models = _PROVIDER_MODELS.get(provider, [])
-    return models[0] if models else ""
 
 
 def _openrouter_model_is_free(pricing: Any) -> bool:
@@ -1527,7 +936,7 @@ def _resolve_nous_pricing_credentials() -> tuple[str, str]:
     look broken ("No free models currently available").
     """
     try:
-        from superforecasting_agent.runtime.auth import resolve_nous_runtime_credentials
+        from superforecasting_agent.credentials.auth import resolve_nous_runtime_credentials
         creds = resolve_nous_runtime_credentials()
         if creds:
             return (creds.get("api_key", ""), creds.get("base_url", ""))
@@ -1624,57 +1033,9 @@ def _fetch_novita_pricing(
     return result
 
 
-# All provider IDs and aliases that are valid for the provider:model syntax.
-_KNOWN_PROVIDER_NAMES: set[str] = (
-    set(_PROVIDER_LABELS.keys())
-    | set(_PROVIDER_ALIASES.keys())
-    | {"openrouter", "custom"}
-)
 
 
-def list_available_providers() -> list[dict[str, str]]:
-    """Return info about all providers the user could use with ``provider:model``.
-
-    Each dict has ``id``, ``label``, and ``aliases``.
-    Checks which providers have valid credentials configured.
-
-    Derives the provider list from :data:`CANONICAL_PROVIDERS` (single
-    source of truth shared with ``superforecasting-agent model``, ``/model``,
-    etc.).
-    """
-    # Derive display order from canonical list + custom
-    provider_order = [p.slug for p in CANONICAL_PROVIDERS] + ["custom"]
-
-    # Build reverse alias map
-    aliases_for: dict[str, list[str]] = {}
-    for alias, canonical in _PROVIDER_ALIASES.items():
-        aliases_for.setdefault(canonical, []).append(alias)
-
-    result = []
-    for pid in provider_order:
-        label = _PROVIDER_LABELS.get(pid, pid)
-        alias_list = aliases_for.get(pid, [])
-        # Check if this provider has credentials available
-        has_creds = False
-        try:
-            from superforecasting_agent.runtime.auth import get_auth_status, has_usable_secret
-            if pid == "custom":
-                custom_base_url = _get_custom_base_url() or ""
-                has_creds = bool(custom_base_url.strip())
-            elif pid == "openrouter":
-                has_creds = has_usable_secret(os.getenv("OPENROUTER_API_KEY", ""))
-            else:
-                status = get_auth_status(pid)
-                has_creds = bool(status.get("logged_in") or status.get("configured"))
-        except Exception:
-            pass
-        result.append({
-            "id": pid,
-            "label": label,
-            "aliases": alias_list,
-            "authenticated": has_creds,
-        })
-    return result
+from superforecasting_agent.credentials.catalog import list_available_providers as list_available_providers
 
 
 def parse_model_input(raw: str, current_provider: str) -> tuple[str, str]:
@@ -1694,36 +1055,11 @@ def parse_model_input(raw: str, current_provider: str) -> tuple[str, str]:
     Returns ``(provider, model)`` where *provider* is either the explicit
     provider from the input or *current_provider* if none was specified.
     """
-    stripped = raw.strip()
-    colon = stripped.find(":")
-    if colon > 0:
-        provider_part = stripped[:colon].strip().lower()
-        model_part = stripped[colon + 1:].strip()
-        if provider_part and model_part and provider_part in _KNOWN_PROVIDER_NAMES:
-            # Support custom:name:model triple syntax for named custom
-            # providers.  ``custom:local:qwen`` → ("custom:local", "qwen").
-            # Single colon ``custom:qwen`` → ("custom", "qwen") as before.
-            if provider_part == "custom" and ":" in model_part:
-                second_colon = model_part.find(":")
-                custom_name = model_part[:second_colon].strip()
-                actual_model = model_part[second_colon + 1:].strip()
-                if custom_name and actual_model:
-                    return (f"custom:{custom_name}", actual_model)
-            return (normalize_provider(provider_part), model_part)
-    return (current_provider, stripped)
+    provider, model = split_provider_model(raw, _KNOWN_PROVIDER_NAMES)
+    return provider or current_provider, model
 
 
-def _get_custom_base_url() -> str:
-    """Get the custom endpoint base_url from config.yaml."""
-    try:
-        from superforecasting_agent.runtime.config import load_config
-        config = load_config()
-        model_cfg = config.get("model", {})
-        if isinstance(model_cfg, dict):
-            return str(model_cfg.get("base_url", "")).strip()
-    except Exception:
-        pass
-    return ""
+from superforecasting_agent.credentials.catalog import _get_custom_base_url as _get_custom_base_url
 
 
 def curated_models_for_provider(
@@ -1935,15 +1271,6 @@ def _find_openrouter_slug(model_name: str) -> Optional[str]:
     return None
 
 
-def normalize_provider(provider: Optional[str]) -> str:
-    """Normalize provider aliases to runtime-canonical provider ids.
-
-    Note: ``"auto"`` passes through unchanged — use
-    ``superforecasting_agent.runtime.auth.resolve_provider()`` to resolve it to a concrete
-    provider based on credentials and environment.
-    """
-    normalized = (provider or "openrouter").strip().lower()
-    return _PROVIDER_ALIASES.get(normalized, normalized)
 
 
 def provider_label(provider: Optional[str]) -> str:
@@ -2066,7 +1393,7 @@ def _resolve_copilot_catalog_api_key() -> str:
     later valid entry is reachable when an earlier one is unsupported.
     """
     try:
-        from superforecasting_agent.runtime.auth import resolve_api_key_provider_credentials
+        from superforecasting_agent.credentials.auth import resolve_api_key_provider_credentials
 
         creds = resolve_api_key_provider_credentials("copilot")
         api_key = str(creds.get("api_key") or "").strip()
@@ -2076,8 +1403,8 @@ def _resolve_copilot_catalog_api_key() -> str:
         pass
 
     try:
-        from superforecasting_agent.runtime.auth import read_credential_pool
-        from superforecasting_agent.runtime.copilot_auth import (
+        from superforecasting_agent.credentials.auth import read_credential_pool
+        from superforecasting_agent.credentials.copilot import (
             exchange_copilot_token,
             validate_copilot_token,
         )
@@ -2194,7 +1521,7 @@ def provider_model_ids(provider: Optional[str], *, force_refresh: bool = False) 
         # or the endpoint is unreachable.
         access_token = None
         try:
-            from superforecasting_agent.runtime.auth import resolve_codex_runtime_credentials
+            from superforecasting_agent.credentials.auth import resolve_codex_runtime_credentials
 
             creds = resolve_codex_runtime_credentials(refresh_if_expiring=True)
             access_token = creds.get("api_key")
@@ -2215,7 +1542,7 @@ def provider_model_ids(provider: Optional[str], *, force_refresh: bool = False) 
     if normalized == "nous":
         # Try live Nous Portal /models endpoint
         try:
-            from superforecasting_agent.runtime.auth import fetch_nous_models, resolve_nous_runtime_credentials
+            from superforecasting_agent.credentials.auth import fetch_nous_models, resolve_nous_runtime_credentials
             creds = resolve_nous_runtime_credentials()
             if creds:
                 live = fetch_nous_models(api_key=creds.get("api_key", ""), inference_base_url=creds.get("base_url", ""))
@@ -2231,7 +1558,7 @@ def provider_model_ids(provider: Optional[str], *, force_refresh: bool = False) 
             return manifest_ids
     if normalized == "stepfun":
         try:
-            from superforecasting_agent.runtime.auth import resolve_api_key_provider_credentials
+            from superforecasting_agent.credentials.auth import resolve_api_key_provider_credentials
 
             creds = resolve_api_key_provider_credentials("stepfun")
             api_key = str(creds.get("api_key") or "").strip()
@@ -2267,7 +1594,7 @@ def provider_model_ids(provider: Optional[str], *, force_refresh: bool = False) 
                 pass
     if normalized == "gmi":
         try:
-            from superforecasting_agent.runtime.auth import resolve_api_key_provider_credentials
+            from superforecasting_agent.credentials.auth import resolve_api_key_provider_credentials
 
             creds = resolve_api_key_provider_credentials("gmi")
             api_key = str(creds.get("api_key") or "").strip()
@@ -2321,7 +1648,7 @@ def provider_model_ids(provider: Optional[str], *, force_refresh: bool = False) 
     # Replaces per-provider copy-paste blocks (stepfun, gmi, zai, etc.).
     try:
         from providers import get_provider_profile
-        from superforecasting_agent.runtime.auth import resolve_api_key_provider_credentials
+        from superforecasting_agent.credentials.auth import resolve_api_key_provider_credentials
 
         _p = get_provider_profile(normalized)
         if _p and _p.auth_type == "api_key" and _p.base_url:
@@ -2398,7 +1725,9 @@ def _credential_fingerprint(provider: str) -> str:
 
     # Env vars from PROVIDER_REGISTRY for this slug
     try:
-        from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY
+        from superforecasting_agent.configuration.authentication import (
+            PROVIDER_REGISTRY,
+        )
         pcfg = PROVIDER_REGISTRY.get(provider)
         if pcfg is not None:
             for ev in getattr(pcfg, "api_key_env_vars", ()) or ():
@@ -2638,7 +1967,7 @@ def copilot_default_headers() -> dict[str, str]:
     Copilot CLI send on every request.
     """
     try:
-        from superforecasting_agent.runtime.copilot_auth import copilot_request_headers
+        from superforecasting_agent.credentials.copilot import copilot_request_headers
         return copilot_request_headers(is_agent_turn=True)
     except ImportError:
         return {
@@ -2808,7 +2137,7 @@ def _lmstudio_fetch_raw_models(
             payload = json.loads(resp.read().decode())
     except urllib.error.HTTPError as exc:
         if exc.code in {401, 403}:
-            from superforecasting_agent.runtime.auth import AuthError
+            from superforecasting_agent.credentials.auth import AuthError
             raise AuthError(
                 f"LM Studio rejected the request with HTTP {exc.code}.",
                 provider="lmstudio",
@@ -3599,7 +2928,7 @@ def validate_requested_model(
         }
 
     if normalized == "lmstudio":
-        from superforecasting_agent.runtime.auth import AuthError
+        from superforecasting_agent.credentials.auth import AuthError
         # Use probe_lmstudio_models so we can distinguish None (unreachable
         # / malformed response) from [] (reachable, but no chat-capable models
         # are loaded). fetch_lmstudio_models collapses both to [].
@@ -3928,7 +3257,8 @@ def validate_requested_model(
     # AWS SDK control plane (ListFoundationModels + ListInferenceProfiles).
     if normalized == "bedrock":
         try:
-            from agent.bedrock_adapter import discover_bedrock_models, resolve_bedrock_region
+            from superforecasting_agent.hosting.aws_credentials import resolve_bedrock_region
+            from agent.bedrock_adapter import discover_bedrock_models
             region = resolve_bedrock_region()
             discovered = discover_bedrock_models(region)
             discovered_ids = {m["id"] for m in discovered}

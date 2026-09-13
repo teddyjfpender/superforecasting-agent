@@ -185,9 +185,9 @@ Reasoning content is stored in `assistant_msg["reasoning"]`.
 - `process_command()` is a method on the `ForecastCLI` class — dispatches on canonical command name resolved via `resolve_command()` from the central registry
 - Skill slash commands: `agent/skill_commands.py` scans the active forecast home's `skills/` directory, injects as **user message** (not system prompt) to preserve prompt caching
 
-### Slash Command Registry (`superforecasting_agent/runtime/commands.py`)
+### Slash Command Registry (`superforecasting_agent/application/command_catalog/`)
 
-All slash commands are defined in a central `COMMAND_REGISTRY` list of `CommandDef` objects. Every downstream consumer derives from this registry automatically:
+All slash commands are defined in a central `COMMAND_REGISTRY` list of `CommandDef` objects. The application catalog owns definitions, aliases and resolution without presentation imports. `runtime/commands.py` re-exports the catalog for compatibility and owns classic completion and platform-menu adapters. Every downstream consumer derives from this registry automatically:
 
 - **CLI** — `process_command()` resolves aliases via `resolve_command()`, dispatches on canonical name
 - **Gateway** — `GATEWAY_KNOWN_COMMANDS` frozenset for hook emission, `resolve_command()` for dispatch
@@ -199,7 +199,7 @@ All slash commands are defined in a central `COMMAND_REGISTRY` list of `CommandD
 
 ### Adding a Slash Command
 
-1. Add a `CommandDef` entry to `COMMAND_REGISTRY` in `superforecasting_agent/runtime/commands.py`:
+1. Add a `CommandDef` entry to `COMMANDS` in `superforecasting_agent/application/command_catalog/workflow.py` for forecast/session workflows, or `operations.py` for configuration/integration support. The catalog assembles `COMMAND_REGISTRY` from those owners:
 ```python
 CommandDef("mycommand", "Description of what it does", "Session",
            aliases=("mc",), args_hint="[arg]"),
@@ -380,7 +380,9 @@ Reference: #2810 (bounds pass), #9801 (SHA pinning + audit CI).
 ## Adding Configuration
 
 ### config.yaml options:
-1. Add to `DEFAULT_CONFIG` in `superforecasting_agent/runtime/config.py`
+1. Add to `DEFAULT_CONFIG` in `superforecasting_agent/configuration/defaults.py`.
+   The runtime module re-exports it for compatibility; defaults and normalization
+   belong to the shared configuration package, which imports no runtime or UI code.
 2. Bump `_config_version` (check the current value at the top of `DEFAULT_CONFIG`)
    ONLY if you need to actively migrate/transform existing user config
    (renaming keys, changing structure). Adding a new key to an existing
@@ -404,7 +406,8 @@ its own provider/model/base_url/max_tokens/reasoning_effort. See
 `archive_after_days`, `backup` (nested).
 
 ### .env variables (SECRETS ONLY — API keys, tokens, passwords):
-1. Add to `OPTIONAL_ENV_VARS` in `superforecasting_agent/runtime/config.py` with metadata:
+1. Add to `OPTIONAL_ENV_VARS` in `superforecasting_agent/configuration/environment_catalog.py` with metadata
+   (runtime configuration re-exports the same catalog for compatibility):
 ```python
 "NEW_API_KEY": {
     "description": "What it's for",

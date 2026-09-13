@@ -7,8 +7,19 @@ import { createInterface } from 'node:readline'
 import type { GatewayEvent } from './gatewayTypes.js'
 import { CircularBuffer } from './lib/circularBuffer.js'
 import { tuiEnvValue } from './lib/envAlias.js'
+import { GatewayRpcError } from './lib/rpc.js'
 import { runtimeEnvValue } from './lib/runtimeEnv.js'
 import { PROTOCOL_VERSION, WireEvent } from './protocol/generated.js'
+
+export const REQUIRED_HOST_CAPABILITIES = [
+  'forecast.operation',
+  'session.create',
+  'session.resume',
+  'session.branch_replace',
+  'session.status',
+  'session.interrupt',
+  'prompt.submit'
+] as const
 
 const MAX_GATEWAY_LOG_LINES = 200
 const MAX_LOG_LINE_BYTES = 4096
@@ -188,6 +199,9 @@ const redactUrl = (raw: string): string => {
 interface Pending {
   id: string
   method: string
+  sessionId?: string
+  commandId?: string
+  commandFinished?: boolean
   reject: (e: Error) => void
   resolve: (v: unknown) => void
   timeout: ReturnType<typeof setTimeout>
@@ -237,11 +251,14 @@ export class GatewayClient extends EventEmitter {
 
   private publish(ev: GatewayEvent) {
     if (ev.type === WireEvent.GATEWAY_READY) {
+      if (!this.checkHostCompatibility(ev.payload)) {
+        return
+      }
+
       this.ready = true
       // Start the stability clock: uptime measured from READY (not from spawn)
       // is what tells a healthy gateway apart from one that boots and dies.
       this.readyAt = Date.now()
-      this.checkProtocolVersion(ev.payload?.protocol_version)
 
       if (this.readyTimer) {
         clearTimeout(this.readyTimer)
@@ -298,6 +315,7 @@ export class GatewayClient extends EventEmitter {
     // handlers (now identity-gated to ignore unrelated transports)
     // never fire `rejectPending`, leaving callers hanging on promises
     // attached to a discarded child / socket.
+    this.compatibilityError = null
     this.rejectPending(new Error('gateway restarting'))
     this.ready = false
     this.bufferedEvents.clear()
@@ -354,6 +372,10 @@ export class GatewayClient extends EventEmitter {
     const message = reason || `gateway exited${code === null ? '' : ` (${code})`}`
 
     this.rejectPending(new Error(message))
+
+    if (this.compatibilityError) {
+      return
+    }
 
     const wasReady = this.ready
     const uptimeMs = this.readyAt ? Date.now() - this.readyAt : 0
@@ -492,8 +514,13 @@ export class GatewayClient extends EventEmitter {
     this.startReadyTimer(python, cwd)
     this.proc = spawn(python, ['-m', 'tui_gateway.entry'], { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] })
 
+    const ownedProc = this.proc
     this.stdoutRl = createInterface({ input: this.proc.stdout! })
     this.stdoutRl.on('line', raw => {
+      if (this.proc !== ownedProc || this.stopped) {
+        return
+      }
+
       try {
         this.dispatch(JSON.parse(raw))
       } catch {
@@ -506,6 +533,10 @@ export class GatewayClient extends EventEmitter {
 
     this.stderrRl = createInterface({ input: this.proc.stderr! })
     this.stderrRl.on('line', raw => {
+      if (this.proc !== ownedProc || this.stopped) {
+        return
+      }
+
       const line = truncateLine(raw.trim())
 
       if (!line) {
@@ -516,7 +547,6 @@ export class GatewayClient extends EventEmitter {
       this.publish({ type: WireEvent.GATEWAY_STDERR, payload: { line } })
     })
 
-    const ownedProc = this.proc
     this.proc.on('error', err => {
       // Skip stale errors on an already-replaced child.
       if (this.proc !== ownedProc) {
@@ -577,7 +607,9 @@ export class GatewayClient extends EventEmitter {
               resolve()
             }
 
-            this.connectSidecarMirror()
+            if (this.ws === ws && !this.stopped) {
+              this.connectSidecarMirror()
+            }
           },
           { once: true }
         )
@@ -614,7 +646,11 @@ export class GatewayClient extends EventEmitter {
       connectPromise.catch(() => {})
       this.wsConnectPromise = connectPromise
 
-      ws.addEventListener('message', ev => this.handleWebSocketFrame(ev.data))
+      ws.addEventListener('message', ev => {
+        if (this.ws === ws && !this.stopped) {
+          this.handleWebSocketFrame(ev.data)
+        }
+      })
       ws.addEventListener('close', ev => {
         // Skip close events from sockets that have already been
         // replaced — start() / closeGatewaySocket() can swap `this.ws`
@@ -630,6 +666,10 @@ export class GatewayClient extends EventEmitter {
         this.handleTransportExit(ev.code, `gateway websocket closed${ev.code ? ` (${ev.code})` : ''}`)
       })
       ws.addEventListener('error', () => {
+        if (this.ws !== ws || this.stopped) {
+          return
+        }
+
         const line = '[gateway] websocket transport error'
 
         this.pushLog(line)
@@ -700,15 +740,53 @@ export class GatewayClient extends EventEmitter {
       const ev = asGatewayEvent(msg.params)
 
       if (ev) {
+        this.trackCommand(ev)
         this.publish(ev)
       }
     }
   }
 
-  private toError(raw: unknown): Error {
-    const err = raw as { message?: unknown } | null | undefined
+  private trackCommand(ev: GatewayEvent) {
+    const payload = ev.payload as Record<string, unknown> | undefined
 
-    return new Error(typeof err?.message === 'string' ? err.message : 'request failed')
+    if (!payload || typeof payload.command_id !== 'string' || !payload.command_id) {return}
+
+    if (ev.type === WireEvent.COMMAND_STARTED && typeof payload.request_id === 'string') {
+      const pending = this.pending.get(payload.request_id)
+
+      // Only an acknowledgement for this request and session extends a command.
+      // Duplicate starts cannot suspend the final-response deadline.
+      if (pending?.method === 'slash.exec' && pending.sessionId === ev.session_id && !pending.commandId) {
+        pending.commandId = payload.command_id
+        clearTimeout(pending.timeout)
+      }
+    } else if (
+      ev.type === WireEvent.COMMAND_FINISHED &&
+      ['finished', 'cancelled', 'failed'].includes(String(payload.status))
+    ) {
+      for (const pending of this.pending.values()) {
+        if (
+          pending.commandId === payload.command_id &&
+          pending.sessionId === ev.session_id &&
+          !pending.commandFinished
+        ) {
+          pending.commandFinished = true
+          // A terminal event does not replace the RPC result or its error.
+          pending.timeout = setTimeout(this.onTimeout, REQUEST_TIMEOUT_MS, pending.id)
+          pending.timeout.unref?.()
+        }
+      }
+    }
+  }
+
+  private toError(raw: unknown): Error {
+    const err = raw as { message?: unknown; code?: unknown; data?: unknown } | null | undefined
+
+    return new GatewayRpcError(
+      typeof err?.message === 'string' ? err.message : 'request failed',
+      typeof err?.code === 'number' ? err.code : null,
+      err?.data
+    )
   }
 
   private settle(p: Pending, err: Error | null, result: unknown) {
@@ -726,24 +804,53 @@ export class GatewayClient extends EventEmitter {
     this.logs.push(truncateLine(line))
   }
 
-  // A4 version handshake — the gateway advertises its wire PROTOCOL_VERSION on
-  // gateway.ready. We WARN (once, never hard-fail) when it disagrees with the
-  // version baked into our generated protocol. A missing field (an older gateway
-  // that predates the handshake) is silently tolerated. The warning surfaces via
-  // the same startup-log channel the status line drains, so a mismatched build
-  // pair is diagnosable instead of a silent shape-drift mystery.
-  private versionWarned = false
+  private compatibilityError: Error | null = null
 
-  private checkProtocolVersion(advertised?: number) {
-    if (this.versionWarned || advertised == null || advertised === PROTOCOL_VERSION) {
-      return
+  private checkHostCompatibility(
+    payload:
+      | { protocol_version?: number | null; min_protocol_version?: number | null; capabilities?: string[] | null }
+      | undefined
+  ) {
+    if (this.compatibilityError) {
+      return false
     }
 
-    this.versionWarned = true
-    this.pushLog(
-      `[protocol] gateway wire version ${advertised} != TUI ${PROTOCOL_VERSION} — ` +
-        'RPC/event shapes may have drifted; rebuild the TUI (npm run build) to match the gateway.',
-    )
+    const version = payload?.protocol_version
+    const minimum = payload?.min_protocol_version ?? version
+    const capabilities = payload?.capabilities
+    let reason = ''
+
+    if (
+      !Number.isInteger(version) ||
+      !Number.isInteger(minimum) ||
+      minimum! > PROTOCOL_VERSION ||
+      version! < PROTOCOL_VERSION
+    ) {
+      reason = `gateway wire version ${String(minimum)}..${String(version)} is incompatible with TUI ${PROTOCOL_VERSION}`
+    } else {
+      const missing = REQUIRED_HOST_CAPABILITIES.filter(
+        name => !Array.isArray(capabilities) || !capabilities.includes(name)
+      )
+
+      if (missing.length) {
+        reason = `backend is missing required capabilities: ${missing.join(', ')}`
+      }
+    }
+
+    if (!reason) {
+      return true
+    }
+
+    const message = `[protocol] ${reason}. Install compatible TUI and backend versions.`
+
+    this.compatibilityError = new Error(message)
+    this.ready = false
+    this.pushLog(message)
+    this.rejectPending(this.compatibilityError)
+    void this.kill()
+    this.emitExit(1, { attempts: 0, reason: message, stderrTail: this.getLogTail(20), unexpected: true })
+
+    return false
   }
 
   private rejectPending(err: Error) {
@@ -832,6 +939,7 @@ export class GatewayClient extends EventEmitter {
           this.pending.set(id, {
             id,
             method,
+            sessionId: typeof params.session_id === 'string' ? params.session_id : undefined,
             reject,
             resolve: v => resolve(v as T),
             timeout
@@ -854,6 +962,10 @@ export class GatewayClient extends EventEmitter {
   }
 
   request<T = unknown>(method: string, params: Record<string, unknown> = {}): Promise<T> {
+    if (this.compatibilityError) {
+      return Promise.reject(this.compatibilityError)
+    }
+
     const attachUrl = resolveGatewayAttachUrl()
 
     if (attachUrl) {
@@ -887,6 +999,7 @@ export class GatewayClient extends EventEmitter {
       this.pending.set(id, {
         id,
         method,
+        sessionId: typeof params.session_id === 'string' ? params.session_id : undefined,
         reject,
         resolve: v => resolve(v as T),
         timeout

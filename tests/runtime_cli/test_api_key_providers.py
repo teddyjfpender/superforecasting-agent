@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from superforecasting_agent.runtime.auth import (
+from superforecasting_agent.credentials.auth import (
     PROVIDER_REGISTRY,
     ProviderConfig,
     resolve_provider,
@@ -166,7 +166,7 @@ PROVIDER_ENV_VARS = (
 def _clear_provider_env(monkeypatch):
     for key in PROVIDER_ENV_VARS:
         monkeypatch.delenv(key, raising=False)
-    monkeypatch.setattr("superforecasting_agent.runtime.auth._load_auth_store", lambda: {})
+    monkeypatch.setattr("superforecasting_agent.credentials.auth._load_auth_store", lambda: {})
 
 
 class TestResolveProvider:
@@ -324,7 +324,7 @@ class TestResolveProvider:
         # the specific "GitHub token alone shouldn't auto-pick copilot"
         # behavior, not the Bedrock fallback.
         monkeypatch.setattr(
-            "agent.bedrock_adapter.has_aws_credentials",
+            "superforecasting_agent.hosting.aws_credentials.has_aws_credentials",
             lambda env=None: False,
         )
         monkeypatch.setenv("GITHUB_TOKEN", "gh-test-token")
@@ -372,7 +372,7 @@ class TestApiKeyProviderStatus:
         assert status["base_url"] == STEPFUN_STEP_PLAN_CN_BASE_URL
 
     def test_copilot_status_uses_gh_cli_token(self, monkeypatch):
-        monkeypatch.setattr("superforecasting_agent.runtime.copilot_auth._try_gh_cli_token", lambda: "gho_gh_cli_token")
+        monkeypatch.setattr("superforecasting_agent.credentials.copilot._try_gh_cli_token", lambda: "gho_gh_cli_token")
         status = get_api_key_provider_status("copilot")
         assert status["configured"] is True
         assert status["logged_in"] is True
@@ -387,7 +387,7 @@ class TestApiKeyProviderStatus:
 
     def test_copilot_acp_status_detects_local_cli(self, monkeypatch):
         monkeypatch.setenv("SUPERFORECASTING_AGENT_COPILOT_ACP_ARGS", "--acp --stdio --debug")
-        monkeypatch.setattr("superforecasting_agent.runtime.auth.shutil.which", lambda command: f"/usr/local/bin/{command}")
+        monkeypatch.setattr("superforecasting_agent.credentials.auth.shutil.which", lambda command: f"/usr/local/bin/{command}")
 
         status = get_external_process_provider_status("copilot-acp")
 
@@ -403,7 +403,7 @@ class TestApiKeyProviderStatus:
         monkeypatch.setenv("HERMES_COPILOT_ACP_COMMAND", "legacy-copilot")
         monkeypatch.setenv("FORECAST_COPILOT_ACP_ARGS", "--acp --stdio --forecast")
         monkeypatch.setenv("HERMES_COPILOT_ACP_ARGS", "--acp --stdio --legacy")
-        monkeypatch.setattr("superforecasting_agent.runtime.auth.shutil.which", lambda command: f"/opt/bin/{command}")
+        monkeypatch.setattr("superforecasting_agent.credentials.auth.shutil.which", lambda command: f"/opt/bin/{command}")
 
         status = get_external_process_provider_status("copilot-acp")
 
@@ -412,7 +412,7 @@ class TestApiKeyProviderStatus:
         assert status["args"] == ["--acp", "--stdio", "--forecast"]
 
     def test_get_auth_status_dispatches_to_external_process(self, monkeypatch):
-        monkeypatch.setattr("superforecasting_agent.runtime.auth.shutil.which", lambda command: f"/opt/bin/{command}")
+        monkeypatch.setattr("superforecasting_agent.credentials.auth.shutil.which", lambda command: f"/opt/bin/{command}")
 
         status = get_auth_status("copilot-acp")
 
@@ -432,7 +432,7 @@ class TestResolveApiKeyProviderCredentials:
 
     def test_resolve_zai_with_key(self, monkeypatch):
         monkeypatch.setenv("GLM_API_KEY", "glm-secret-key")
-        monkeypatch.setattr("superforecasting_agent.runtime.auth.detect_zai_endpoint", lambda *a, **kw: None)
+        monkeypatch.setattr("superforecasting_agent.credentials.auth.detect_zai_endpoint", lambda *a, **kw: None)
         creds = resolve_api_key_provider_credentials("zai")
         assert creds["provider"] == "zai"
         assert creds["api_key"] == "glm-secret-key"
@@ -448,7 +448,7 @@ class TestResolveApiKeyProviderCredentials:
         assert creds["source"] == "GITHUB_TOKEN"
 
     def test_resolve_copilot_with_gh_cli_fallback(self, monkeypatch):
-        monkeypatch.setattr("superforecasting_agent.runtime.copilot_auth._try_gh_cli_token", lambda: "gho_cli_secret")
+        monkeypatch.setattr("superforecasting_agent.credentials.copilot._try_gh_cli_token", lambda: "gho_cli_secret")
         creds = resolve_api_key_provider_credentials("copilot")
         assert creds["provider"] == "copilot"
         assert creds["api_key"] == "gho_cli_secret"
@@ -506,7 +506,7 @@ class TestResolveApiKeyProviderCredentials:
 
     def test_resolve_copilot_acp_with_local_cli(self, monkeypatch):
         monkeypatch.setenv("SUPERFORECASTING_AGENT_COPILOT_ACP_ARGS", "--acp --stdio")
-        monkeypatch.setattr("superforecasting_agent.runtime.auth.shutil.which", lambda command: f"/usr/local/bin/{command}")
+        monkeypatch.setattr("superforecasting_agent.credentials.auth.shutil.which", lambda command: f"/usr/local/bin/{command}")
 
         creds = resolve_external_process_provider_credentials("copilot-acp")
 
@@ -603,7 +603,7 @@ class TestResolveApiKeyProviderCredentials:
         """GLM_API_KEY takes priority over ZAI_API_KEY."""
         monkeypatch.setenv("GLM_API_KEY", "primary")
         monkeypatch.setenv("ZAI_API_KEY", "secondary")
-        monkeypatch.setattr("superforecasting_agent.runtime.auth.detect_zai_endpoint", lambda *a, **kw: None)
+        monkeypatch.setattr("superforecasting_agent.credentials.auth.detect_zai_endpoint", lambda *a, **kw: None)
         creds = resolve_api_key_provider_credentials("zai")
         assert creds["api_key"] == "primary"
         assert creds["source"] == "GLM_API_KEY"
@@ -611,7 +611,7 @@ class TestResolveApiKeyProviderCredentials:
     def test_zai_key_fallback(self, monkeypatch):
         """ZAI_API_KEY used when GLM_API_KEY not set."""
         monkeypatch.setenv("ZAI_API_KEY", "secondary")
-        monkeypatch.setattr("superforecasting_agent.runtime.auth.detect_zai_endpoint", lambda *a, **kw: None)
+        monkeypatch.setattr("superforecasting_agent.credentials.auth.detect_zai_endpoint", lambda *a, **kw: None)
         creds = resolve_api_key_provider_credentials("zai")
         assert creds["api_key"] == "secondary"
         assert creds["source"] == "ZAI_API_KEY"
@@ -692,7 +692,7 @@ class TestRuntimeProviderResolution:
         assert result["api_key"] == "auto-kimi-key"
 
     def test_runtime_copilot_uses_gh_cli_token(self, monkeypatch):
-        monkeypatch.setattr("superforecasting_agent.runtime.copilot_auth._try_gh_cli_token", lambda: "gho_cli_secret")
+        monkeypatch.setattr("superforecasting_agent.credentials.copilot._try_gh_cli_token", lambda: "gho_cli_secret")
         from superforecasting_agent.runtime.runtime_provider import resolve_runtime_provider
         result = resolve_runtime_provider(requested="copilot")
         assert result["provider"] == "copilot"
@@ -701,10 +701,10 @@ class TestRuntimeProviderResolution:
         assert result["base_url"] == "https://api.githubcopilot.com"
 
     def test_runtime_copilot_uses_responses_for_gpt_5_4(self, monkeypatch):
-        monkeypatch.setattr("superforecasting_agent.runtime.copilot_auth._try_gh_cli_token", lambda: "gho_cli_secret")
+        monkeypatch.setattr("superforecasting_agent.credentials.copilot._try_gh_cli_token", lambda: "gho_cli_secret")
         monkeypatch.setattr(
             "superforecasting_agent.runtime.runtime_provider._get_model_config",
-            lambda: {"provider": "copilot", "default": "gpt-5.4"},
+            lambda **_snapshot: {"provider": "copilot", "default": "gpt-5.4"},
         )
         monkeypatch.setattr(
             "superforecasting_agent.runtime.models.fetch_github_model_catalog",
@@ -724,7 +724,7 @@ class TestRuntimeProviderResolution:
         assert result["api_mode"] == "codex_responses"
 
     def test_runtime_copilot_acp_uses_process_runtime(self, monkeypatch):
-        monkeypatch.setattr("superforecasting_agent.runtime.auth.shutil.which", lambda command: f"/usr/local/bin/{command}")
+        monkeypatch.setattr("superforecasting_agent.credentials.auth.shutil.which", lambda command: f"/usr/local/bin/{command}")
         monkeypatch.setenv("SUPERFORECASTING_AGENT_COPILOT_ACP_ARGS", "--acp --stdio --debug")
 
         from superforecasting_agent.runtime.runtime_provider import resolve_runtime_provider
@@ -767,7 +767,7 @@ class TestHasAnyProviderConfigured:
 
     def test_gh_cli_token_counts(self, monkeypatch, tmp_path):
         from superforecasting_agent.runtime import config as config_module
-        monkeypatch.setattr("superforecasting_agent.runtime.copilot_auth._try_gh_cli_token", lambda: "gho_cli_secret")
+        monkeypatch.setattr("superforecasting_agent.credentials.copilot._try_gh_cli_token", lambda: "gho_cli_secret")
         hermes_home = tmp_path / ".hermes"
         hermes_home.mkdir()
         monkeypatch.setattr(config_module, "get_env_path", lambda: hermes_home / ".env")
@@ -778,12 +778,12 @@ class TestHasAnyProviderConfigured:
     def test_claude_code_creds_ignored_on_fresh_install(self, monkeypatch, tmp_path):
         """Claude Code credentials should NOT skip the wizard when Hermes is unconfigured."""
         from superforecasting_agent.runtime import config as config_module
-        from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY
+        from superforecasting_agent.credentials.auth import PROVIDER_REGISTRY
         hermes_home = tmp_path / ".hermes"
         hermes_home.mkdir()
         monkeypatch.setattr(config_module, "get_env_path", lambda: hermes_home / ".env")
         monkeypatch.setattr(config_module, "get_agent_home", lambda: hermes_home)
-        monkeypatch.setattr("superforecasting_agent.runtime.copilot_auth.resolve_copilot_token", lambda: ("", ""))
+        monkeypatch.setattr("superforecasting_agent.credentials.copilot.resolve_copilot_token", lambda: ("", ""))
         # Clear all provider env vars so earlier checks don't short-circuit
         _all_vars = {"OPENROUTER_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
                       "ANTHROPIC_TOKEN", "OPENAI_BASE_URL"}
@@ -793,10 +793,10 @@ class TestHasAnyProviderConfigured:
         for var in _all_vars:
             monkeypatch.delenv(var, raising=False)
         # Prevent gh-cli / copilot auth fallback from leaking in
-        monkeypatch.setattr("superforecasting_agent.runtime.auth.get_auth_status", lambda _pid: {})
+        monkeypatch.setattr("superforecasting_agent.credentials.auth.get_auth_status", lambda _pid: {})
         # Simulate valid Claude Code credentials
         monkeypatch.setattr(
-            "agent.anthropic_adapter.read_claude_code_credentials",
+            "superforecasting_agent.credentials.anthropic.read_claude_code_credentials",
             lambda: {"accessToken": "sk-ant-test", "refreshToken": "ref-tok"},
         )
         monkeypatch.setattr(
@@ -868,7 +868,7 @@ class TestHasAnyProviderConfigured:
         """config.yaml model dict with empty default and no creds stays false."""
         import yaml
         from superforecasting_agent.runtime import config as config_module
-        from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY
+        from superforecasting_agent.credentials.auth import PROVIDER_REGISTRY
         hermes_home = tmp_path / ".hermes"
         hermes_home.mkdir()
         config_file = hermes_home / "config.yaml"
@@ -878,7 +878,7 @@ class TestHasAnyProviderConfigured:
         monkeypatch.setattr(config_module, "get_env_path", lambda: hermes_home / ".env")
         monkeypatch.setattr(config_module, "get_agent_home", lambda: hermes_home)
         monkeypatch.setenv("HERMES_HOME", str(hermes_home))
-        monkeypatch.setattr("superforecasting_agent.runtime.copilot_auth.resolve_copilot_token", lambda: ("", ""))
+        monkeypatch.setattr("superforecasting_agent.credentials.copilot.resolve_copilot_token", lambda: ("", ""))
         _all_vars = {"OPENROUTER_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
                       "ANTHROPIC_TOKEN", "OPENAI_BASE_URL"}
         for pconfig in PROVIDER_REGISTRY.values():
@@ -887,7 +887,7 @@ class TestHasAnyProviderConfigured:
         for var in _all_vars:
             monkeypatch.delenv(var, raising=False)
         # Prevent gh-cli / copilot auth fallback from leaking in
-        monkeypatch.setattr("superforecasting_agent.runtime.auth.get_auth_status", lambda _pid: {})
+        monkeypatch.setattr("superforecasting_agent.credentials.auth.get_auth_status", lambda _pid: {})
         from superforecasting_agent.runtime.main import _has_any_provider_configured
         assert _has_any_provider_configured() is False
 
@@ -909,7 +909,7 @@ class TestHasAnyProviderConfigured:
             monkeypatch.delenv(var, raising=False)
         # Simulate valid Claude Code credentials
         monkeypatch.setattr(
-            "agent.anthropic_adapter.read_claude_code_credentials",
+            "superforecasting_agent.credentials.anthropic.read_claude_code_credentials",
             lambda: {"accessToken": "sk-ant-test", "refreshToken": "ref-tok"},
         )
         monkeypatch.setattr(
@@ -1000,7 +1000,7 @@ class TestKimiCodeCredentialAutoDetect:
     def test_non_kimi_providers_unaffected(self, monkeypatch):
         """Ensure the auto-detect logic doesn't leak to other providers."""
         monkeypatch.setenv("GLM_API_KEY", "sk-kim...isnt")
-        monkeypatch.setattr("superforecasting_agent.runtime.auth.detect_zai_endpoint", lambda *a, **kw: None)
+        monkeypatch.setattr("superforecasting_agent.credentials.auth.detect_zai_endpoint", lambda *a, **kw: None)
         creds = resolve_api_key_provider_credentials("zai")
         assert creds["base_url"] == "https://api.z.ai/api/paas/v4"
 
@@ -1011,7 +1011,7 @@ class TestZaiEndpointAutoDetect:
     def test_probe_success_returns_detected_url(self, monkeypatch):
         monkeypatch.setenv("GLM_API_KEY", "glm-coding-key")
         monkeypatch.setattr(
-            "superforecasting_agent.runtime.auth.detect_zai_endpoint",
+            "superforecasting_agent.credentials.auth.detect_zai_endpoint",
             lambda *a, **kw: {
                 "id": "coding-global",
                 "base_url": "https://api.z.ai/api/coding/paas/v4",
@@ -1024,7 +1024,7 @@ class TestZaiEndpointAutoDetect:
 
     def test_probe_failure_falls_back_to_default(self, monkeypatch):
         monkeypatch.setenv("GLM_API_KEY", "glm-key")
-        monkeypatch.setattr("superforecasting_agent.runtime.auth.detect_zai_endpoint", lambda *a, **kw: None)
+        monkeypatch.setattr("superforecasting_agent.credentials.auth.detect_zai_endpoint", lambda *a, **kw: None)
         creds = resolve_api_key_provider_credentials("zai")
         assert creds["base_url"] == "https://api.z.ai/api/paas/v4"
 
@@ -1039,14 +1039,14 @@ class TestZaiEndpointAutoDetect:
             probe_called = True
             return None
 
-        monkeypatch.setattr("superforecasting_agent.runtime.auth.detect_zai_endpoint", _never_called)
+        monkeypatch.setattr("superforecasting_agent.credentials.auth.detect_zai_endpoint", _never_called)
         creds = resolve_api_key_provider_credentials("zai")
         assert creds["base_url"] == "https://custom.example/v4"
         assert not probe_called
 
     def test_no_key_skips_probe(self, monkeypatch):
         """Without an API key, no probe should occur."""
-        monkeypatch.setattr("superforecasting_agent.runtime.auth.detect_zai_endpoint", lambda *a, **kw: None)
+        monkeypatch.setattr("superforecasting_agent.credentials.auth.detect_zai_endpoint", lambda *a, **kw: None)
         creds = resolve_api_key_provider_credentials("zai")
         assert creds["api_key"] == ""
 
@@ -1292,7 +1292,7 @@ class TestMinimaxOAuthProvider:
         assert pconfig.id == "minimax-oauth"
 
     def test_minimax_oauth_has_correct_endpoints(self):
-        from superforecasting_agent.runtime.auth import (
+        from superforecasting_agent.credentials.auth import (
             MINIMAX_OAUTH_GLOBAL_BASE,
             MINIMAX_OAUTH_GLOBAL_INFERENCE,
             MINIMAX_OAUTH_CN_BASE,

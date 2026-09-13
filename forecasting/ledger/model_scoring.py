@@ -353,8 +353,8 @@ def _skill_weights_enabled(ledger) -> bool:
     harmless-by-construction on cold start (every multiplier is 1.0 until a
     model clears the resolved-binary sample gate)."""
     try:
-        from superforecasting_agent.runtime.config import load_config
-        cfg = load_config() or {}
+        from superforecasting_agent.storage.configuration import read_configuration
+        cfg = read_configuration() or {}
         fc = cfg.get("forecasting", {}) if isinstance(cfg, dict) else {}
         models_cfg = fc.get("models", {}) if isinstance(fc, dict) else {}
         if isinstance(models_cfg, dict) and "skill_weights" in models_cfg:

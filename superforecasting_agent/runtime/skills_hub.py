@@ -12,6 +12,7 @@ handler are thin wrappers that parse args and delegate.
 
 import json
 import re
+import shlex
 import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -409,7 +410,7 @@ def do_browse(page: int = 1, page_size: int = 20, source: str = "all",
 def do_install(identifier: str, category: str = "", force: bool = False,
                console: Optional[Console] = None, skip_confirm: bool = False,
                invalidate_cache: bool = True,
-               name_override: str = "") -> None:
+               name_override: str = "") -> bool:
     """Fetch, quarantine, scan, confirm, and install a skill.
 
     ``name_override`` lets non-interactive callers (slash commands, gateway,
@@ -436,7 +437,7 @@ def do_install(identifier: str, category: str = "", force: bool = False,
     if "/" not in identifier:
         identifier = _resolve_short_name(identifier, sources, c)
         if not identifier:
-            return
+            return False
 
     c.print(f"\n[bold]Fetching:[/] {identifier}")
 
@@ -460,7 +461,7 @@ def do_install(identifier: str, category: str = "", force: bool = False,
             )
         else:
             c.print()
-        return
+        return False
 
     # URL-sourced skills may arrive with an empty name when SKILL.md has no
     # ``name:`` in frontmatter AND the URL path doesn't yield a valid
@@ -477,7 +478,7 @@ def do_install(identifier: str, category: str = "", force: bool = False,
                 "Must be a lowercase identifier (letters, digits, hyphens, "
                 "underscores; starts with a letter).\n"
             )
-            return
+            return False
         elif skip_confirm:
             # Non-interactive surface (slash command / TUI / gateway). Can't
             # prompt — emit an actionable error.
@@ -492,14 +493,14 @@ def do_install(identifier: str, category: str = "", force: bool = False,
                 "[dim]Or ask the SKILL.md's author to add a `name:` field to "
                 "its YAML frontmatter.[/]\n"
             )
-            return
+            return False
         else:
             # Interactive TTY — prompt.
             url = bundle_meta.get("url") or identifier
             chosen = _prompt_for_skill_name(c, url)
             if not chosen:
                 c.print("[dim]Installation cancelled.[/]\n")
-                return
+                return False
             bundle.name = chosen
             bundle_meta["awaiting_name"] = False
         # Keep SkillMeta in sync so downstream "already installed" checks,
@@ -527,7 +528,7 @@ def do_install(identifier: str, category: str = "", force: bool = False,
         c.print(f"[yellow]Warning:[/] '{bundle.name}' is already installed at {existing['install_path']}")
         if not force:
             c.print("Use --force to reinstall.\n")
-            return
+            return False
 
     extra_metadata = dict(getattr(meta, "extra", {}) or {})
     extra_metadata.update(getattr(bundle, "metadata", {}) or {})
@@ -540,7 +541,7 @@ def do_install(identifier: str, category: str = "", force: bool = False,
         from tools.skills_hub import append_audit_log
         append_audit_log("BLOCKED", bundle.name, bundle.source,
                          bundle.trust_level, "invalid_path", str(exc))
-        return
+        return False
     c.print(f"[dim]Quarantined to {q_path.relative_to(q_path.parent.parent.parent)}[/]")
 
     # Scan
@@ -559,7 +560,7 @@ def do_install(identifier: str, category: str = "", force: bool = False,
         append_audit_log("BLOCKED", bundle.name, bundle.source,
                          bundle.trust_level, result.verdict,
                          f"{len(result.findings)}_findings")
-        return
+        return False
 
     if extra_metadata:
         metadata_lines = _format_extra_metadata_lines(extra_metadata)
@@ -597,7 +598,7 @@ def do_install(identifier: str, category: str = "", force: bool = False,
         if answer not in {"y", "yes"}:
             c.print("[dim]Installation cancelled.[/]\n")
             shutil.rmtree(q_path, ignore_errors=True)
-            return
+            return False
 
     # Install
     try:
@@ -608,7 +609,7 @@ def do_install(identifier: str, category: str = "", force: bool = False,
         from tools.skills_hub import append_audit_log
         append_audit_log("BLOCKED", bundle.name, bundle.source,
                          bundle.trust_level, "invalid_path", str(exc))
-        return
+        return False
     from tools.skills_hub import SKILLS_DIR
     c.print(f"[bold green]Installed:[/] {install_dir.relative_to(SKILLS_DIR)}")
     c.print(f"[dim]Files: {', '.join(bundle.files.keys())}[/]\n")
@@ -623,6 +624,8 @@ def do_install(identifier: str, category: str = "", force: bool = False,
     else:
         c.print("[dim]Skill will be available in your next session.[/]")
         c.print("[dim]Use /reset to start a new session now, or --now to activate immediately (invalidates prompt cache).[/]\n")
+
+    return True
 
 
 def do_inspect(identifier: str, console: Optional[Console] = None) -> None:
@@ -881,7 +884,8 @@ def do_check(name: Optional[str] = None, console: Optional[Console] = None) -> N
     c.print(f"[dim]{update_count} update(s) available across {len(results)} checked skill(s)[/]\n")
 
 
-def do_update(name: Optional[str] = None, console: Optional[Console] = None) -> None:
+def do_update(name: Optional[str] = None, console: Optional[Console] = None,
+              *, skip_confirm: bool = False) -> None:
     """Update hub-installed skills with upstream changes."""
     from tools.skills_hub import HubLockFile, check_for_skill_updates
 
@@ -892,13 +896,15 @@ def do_update(name: Optional[str] = None, console: Optional[Console] = None) -> 
         c.print("[dim]No updates available.[/]\n")
         return
 
+    completed = 0
     for entry in updates:
         installed = lock.get_installed(entry["name"])
         category = _derive_category_from_install_path(installed.get("install_path", "")) if installed else ""
         c.print(f"[bold]Updating:[/] {entry['name']}")
-        do_install(entry["identifier"], category=category, force=True, console=c)
+        completed += do_install(entry["identifier"], category=category, force=True, console=c,
+                                skip_confirm=skip_confirm) is True
 
-    c.print(f"[bold green]Updated {len(updates)} skill(s).[/]\n")
+    c.print(f"Updated {completed} skill(s); {len(updates) - completed} not updated.\n")
 
 
 def do_audit(name: Optional[str] = None, console: Optional[Console] = None) -> None:
@@ -1254,8 +1260,7 @@ def do_snapshot_export(output_path: str, console: Optional[Console] = None) -> N
 
     payload = json.dumps(snapshot, indent=2, ensure_ascii=False) + "\n"
     if output_path == "-":
-        import sys
-        sys.stdout.write(payload)
+        c.file.write(payload)
     else:
         out = Path(output_path)
         out.write_text(payload, encoding="utf-8")
@@ -1264,7 +1269,7 @@ def do_snapshot_export(output_path: str, console: Optional[Console] = None) -> N
 
 
 def do_snapshot_import(input_path: str, force: bool = False,
-                       console: Optional[Console] = None) -> None:
+                       console: Optional[Console] = None, *, skip_confirm: bool = False) -> None:
     """Re-install skills from a snapshot file."""
     from tools.skills_hub import TapsManager
 
@@ -1297,6 +1302,7 @@ def do_snapshot_import(input_path: str, force: bool = False,
         return
 
     c.print(f"[bold]Importing {len(skills)} skill(s) from snapshot...[/]\n")
+    completed = 0
     for entry in skills:
         identifier = entry.get("identifier", "")
         category = entry.get("category", "")
@@ -1305,9 +1311,10 @@ def do_snapshot_import(input_path: str, force: bool = False,
             continue
 
         c.print(f"[bold]--- {entry.get('name', identifier)} ---[/]")
-        do_install(identifier, category=category, force=force, console=c)
+        completed += do_install(identifier, category=category, force=force, console=c,
+                                skip_confirm=skip_confirm) is True
 
-    c.print("[bold green]Snapshot import complete.[/]\n")
+    c.print(f"Snapshot import: {completed} installed; {len(skills) - completed} not installed.\n")
 
 
 # ---------------------------------------------------------------------------
@@ -1374,6 +1381,16 @@ def skills_command(args) -> None:
 # Slash command entry point (/skills in forecast sessions)
 # ---------------------------------------------------------------------------
 
+def skills_slash_output(rest: str) -> str:
+    """Render the shared slash operation without a chat runtime or global IO swaps."""
+    from superforecasting_agent.application.command_output import capture_output
+
+    with capture_output(limit=65536) as (output, _):
+        console = Console(file=output, width=100, force_terminal=False, color_system=None)
+        handle_skills_slash("/skills " + rest, console)
+        return output.getvalue()
+
+
 def handle_skills_slash(cmd: str, console: Optional[Console] = None) -> None:
     """
     Parse and dispatch `/skills <subcommand> [args]` from the forecast session.
@@ -1396,7 +1413,11 @@ def handle_skills_slash(cmd: str, console: Optional[Console] = None) -> None:
         /skills tap remove owner/repo
     """
     c = console or _console
-    parts = cmd.strip().split()
+    try:
+        parts = shlex.split(cmd)
+    except ValueError as exc:
+        c.print(f"[bold red]Invalid skills command:[/] {exc}")
+        return
 
     # Strip the leading "/skills" if present
     if parts and parts[0].lower() == "/skills":
@@ -1501,7 +1522,7 @@ def handle_skills_slash(cmd: str, console: Optional[Console] = None) -> None:
 
     elif action == "update":
         name = args[0] if args else None
-        do_update(name=name, console=c)
+        do_update(name=name, console=c, skip_confirm=True)
 
     elif action == "audit":
         name = args[0] if args else None
@@ -1553,7 +1574,7 @@ def handle_skills_slash(cmd: str, console: Optional[Console] = None) -> None:
             do_snapshot_export(args[1], console=c)
         elif snap_action == "import" and len(args) > 1:
             force = "--force" in args
-            do_snapshot_import(args[1], force=force, console=c)
+            do_snapshot_import(args[1], force=force, console=c, skip_confirm=True)
         else:
             c.print("[bold red]Usage:[/] /skills snapshot export <file> | /skills snapshot import <file>\n")
 

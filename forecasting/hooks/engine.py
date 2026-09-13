@@ -33,9 +33,10 @@ def _sev(value, default: Severity = Severity.WARN) -> Severity:
 def load_hook_config() -> dict:
     """Read ``forecasting.hooks`` from the global config (defaults if absent)."""
     try:
-        from superforecasting_agent.runtime.config import cfg_get, load_config_readonly
+        from superforecasting_agent.configuration import cfg_get
+        from superforecasting_agent.storage.configuration import read_configuration
 
-        hooks = cfg_get(load_config_readonly(), "forecasting", "hooks", default=None)
+        hooks = cfg_get(read_configuration(), "forecasting", "hooks", default=None)
         return hooks if isinstance(hooks, dict) else {}
     except Exception:
         return {}

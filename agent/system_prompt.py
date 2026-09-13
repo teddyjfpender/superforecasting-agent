@@ -58,7 +58,7 @@ def _ra():
     directly here those patches would not reach us.  Looking them up
     through ``run_agent`` on every call preserves the patch contract.
     """
-    import run_agent
+    from agent import runtime as run_agent
     return run_agent
 
 
@@ -239,7 +239,7 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
     elif platform_key:
         # Check plugin registry for platform-specific LLM guidance
         try:
-            from gateway.platform_registry import platform_registry
+            from superforecasting_agent.platform_registry import platform_registry
             _entry = platform_registry.get(platform_key)
             if _entry and _entry.platform_hint:
                 stable_parts.append(_entry.platform_hint)

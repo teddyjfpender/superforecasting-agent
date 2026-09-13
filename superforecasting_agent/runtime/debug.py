@@ -25,6 +25,7 @@ from typing import Optional
 
 from superforecasting_agent.constants import get_agent_home
 from superforecasting_agent.storage.files import atomic_replace
+from superforecasting_agent.application.command_output import capture_output, emit as print
 
 logger = logging.getLogger(__name__)
 
@@ -520,16 +521,12 @@ def _capture_dump() -> str:
     class _FakeArgs:
         show_keys = False
 
-    old_stdout = sys.stdout
-    sys.stdout = capture = io.StringIO()
-    try:
-        run_dump(_FakeArgs())
-    except SystemExit:
-        pass
-    finally:
-        sys.stdout = old_stdout
-
-    return capture.getvalue()
+    with capture_output() as (capture, _):
+        try:
+            run_dump(_FakeArgs())
+        except SystemExit:
+            pass
+        return capture.getvalue()
 
 
 def collect_debug_report(
@@ -746,3 +743,16 @@ def run_debug(args):
         print()
         print("Options (delete):")
         print("  <url> ...    One or more paste URLs to delete")
+
+
+def slash_output() -> tuple[int, str]:
+    """Run the existing diagnostic share operation with request-local output."""
+    from types import SimpleNamespace
+
+    with capture_output(limit=65536) as (output, errors):
+        code = 0
+        try:
+            run_debug_share(SimpleNamespace(lines=200, expire=7, local=False))
+        except SystemExit as exc:
+            code = int(exc.code or 0)
+        return code, output.getvalue() + errors.getvalue()

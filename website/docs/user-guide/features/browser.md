@@ -285,7 +285,7 @@ When enabled, the runtime skips destructive cleanup at task end. Coordinate owne
 
 Attach browser tools to a running Chrome, Brave, Chromium, or Edge instance via Chrome DevTools Protocol (CDP). This is useful when you need your own cookies, want to watch the session, or need a local/private source.
 
-`/browser connect` is an interactive CLI slash command. It is not dispatched by the gateway. Run it in a terminal session:
+`/browser connect` is available in the terminal TUI and classic CLI. Run it in a terminal session:
 
 ```text
 /browser connect
@@ -293,6 +293,13 @@ Attach browser tools to a running Chrome, Brave, Chromium, or Edge instance via 
 /browser status
 /browser disconnect
 ```
+
+`/browser disconnect` disables CDP for the running backend process, including
+an endpoint saved under `browser.cdp_url`. It preserves that saved configuration;
+a fresh process inherits it again. `/browser connect` replaces the temporary
+disconnected state. An explicitly empty `BROWSER_CDP_URL` also disables CDP,
+whereas an unset variable allows the saved endpoint to apply. These commands
+change process-wide browser routing, so they affect sessions sharing that backend.
 
 If no browser is already running with remote debugging, the CLI attempts to auto-launch a supported Chromium-family browser on `http://127.0.0.1:9222`.
 

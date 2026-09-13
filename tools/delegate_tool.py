@@ -147,79 +147,25 @@ _MAX_SPAWN_DEPTH_CAP = 3
 # process, including nested orchestrator -> worker chains.
 # ---------------------------------------------------------------------------
 
-_spawn_pause_lock = threading.Lock()
-_spawn_paused: bool = False
-
-_active_subagents_lock = threading.Lock()
-# subagent_id -> mutable record tracking the live child agent.  Stays only
-# for the lifetime of the run; _run_single_child is the owner.
-_active_subagents: Dict[str, Dict[str, Any]] = {}
-
-
-def set_spawn_paused(paused: bool) -> bool:
-    """Globally block/unblock new delegate_task spawns.
-
-    Active children keep running; only NEW calls to delegate_task fail fast
-    with a "spawning paused" error until unblocked.  Returns the new state.
-    """
-    global _spawn_paused
-    with _spawn_pause_lock:
-        _spawn_paused = bool(paused)
-        return _spawn_paused
+from superforecasting_agent.hosting.delegations import (
+    ChildCleanup,
+    interrupt_subagent as interrupt_subagent,
+    is_spawn_paused as is_spawn_paused,
+    list_active_subagents as list_active_subagents,
+    record_progress as _record_subagent_progress,
+    register_subagent as _register_subagent,
+    set_spawn_paused as set_spawn_paused,
+    unregister_subagent as _unregister_subagent,
+)
 
 
-def is_spawn_paused() -> bool:
-    with _spawn_pause_lock:
-        return _spawn_paused
-
-
-def _register_subagent(record: Dict[str, Any]) -> None:
-    sid = record.get("subagent_id")
-    if not sid:
-        return
-    with _active_subagents_lock:
-        _active_subagents[sid] = record
-
-
-def _unregister_subagent(subagent_id: str) -> None:
-    with _active_subagents_lock:
-        _active_subagents.pop(subagent_id, None)
-
-
-def interrupt_subagent(subagent_id: str) -> bool:
-    """Request that a single running subagent stop at its next iteration boundary.
-
-    Does not hard-kill the worker thread (Python can't); sets the child's
-    interrupt flag which propagates to in-flight tools and recurses into
-    grandchildren via AIAgent.interrupt().  Returns True if a matching
-    subagent was found.
-    """
-    with _active_subagents_lock:
-        record = _active_subagents.get(subagent_id)
-    if not record:
-        return False
-    agent = record.get("agent")
-    if agent is None:
-        return False
-    try:
-        agent.interrupt(f"Interrupted via TUI ({subagent_id})")
-    except Exception as exc:
-        logger.debug("interrupt_subagent(%s) failed: %s", subagent_id, exc)
-        return False
-    return True
-
-
-def list_active_subagents() -> List[Dict[str, Any]]:
-    """Snapshot of the currently running subagent tree.
-
-    Each record: {subagent_id, parent_id, depth, goal, model, started_at,
-    tool_count, status}.  Safe to call from any thread — returns a copy.
-    """
-    with _active_subagents_lock:
-        return [
-            {k: v for k, v in r.items() if k != "agent"}
-            for r in _active_subagents.values()
-        ]
+def _delegation_session_key(agent) -> str:
+    """Preserve the root session owner through nested child runtimes."""
+    inherited = getattr(agent, "_delegation_owner_key", None)
+    if isinstance(inherited, str):
+        return inherited
+    session_id = getattr(agent, "session_id", None)
+    return session_id if isinstance(session_id, str) else ""
 
 
 def _extract_output_tail(
@@ -873,11 +819,7 @@ def _build_child_progress_callback(
         # TASK_TOOL_STARTED — display and batch for parent relay
         _tool_count[0] += 1
         if subagent_id is not None:
-            with _active_subagents_lock:
-                rec = _active_subagents.get(subagent_id)
-                if rec is not None:
-                    rec["tool_count"] = _tool_count[0]
-                    rec["last_tool"] = tool_name or ""
+            _record_subagent_progress(subagent_id, tool_count=_tool_count[0], last_tool=tool_name or "")
         if spinner:
             short = (
                 (preview[:35] + "...")
@@ -945,7 +887,7 @@ def _build_child_agent(
     routing subagents to a different provider:model pair (e.g. cheap/fast
     model on OpenRouter while the parent runs on Nous Portal).
     """
-    from run_agent import AIAgent
+    from agent.runtime import AIAgent
     import uuid as _uuid
 
     # ── Role resolution ─────────────────────────────────────────────────
@@ -1672,31 +1614,34 @@ def _run_single_child(
     # target it by subagent_id (kill, pause, status queries).  Unregistered
     # in the finally block, even when the child raises.  Test doubles that
     # hand us a MagicMock don't carry stable ids; skip registration then.
+    child._delegation_owner_key = _delegation_session_key(parent_agent)
     _raw_sid = getattr(child, "_subagent_id", None)
     _subagent_id = _raw_sid if isinstance(_raw_sid, str) else None
-    if _subagent_id:
-        _raw_depth = getattr(child, "_delegate_depth", 1)
-        _tui_depth = max(0, _raw_depth - 1) if isinstance(_raw_depth, int) else 0
-        _parent_sid = getattr(child, "_parent_subagent_id", None)
-        _register_subagent(
-            {
-                "subagent_id": _subagent_id,
-                "parent_id": _parent_sid if isinstance(_parent_sid, str) else None,
-                "depth": _tui_depth,
-                "goal": goal,
-                "model": (
-                    getattr(child, "model", None)
-                    if isinstance(getattr(child, "model", None), str)
-                    else None
-                ),
-                "started_at": time.time(),
-                "status": "running",
-                "tool_count": 0,
-                "agent": child,
-            }
-        )
-
+    cleanup = ChildCleanup(child, subagent_id=_subagent_id, session_key=child._delegation_owner_key)
     try:
+        if _subagent_id:
+            _raw_depth = getattr(child, "_delegate_depth", 1)
+            _tui_depth = max(0, _raw_depth - 1) if isinstance(_raw_depth, int) else 0
+            _parent_sid = getattr(child, "_parent_subagent_id", None)
+            _register_subagent(
+                {
+                    "subagent_id": _subagent_id,
+                    "session_key": child._delegation_owner_key,
+                    "parent_id": _parent_sid if isinstance(_parent_sid, str) else None,
+                    "depth": _tui_depth,
+                    "goal": goal,
+                    "model": (
+                        getattr(child, "model", None)
+                        if isinstance(getattr(child, "model", None), str)
+                        else None
+                    ),
+                    "started_at": time.time(),
+                    "status": "running",
+                    "tool_count": 0,
+                    "agent": child,
+                }
+            )
+
         _heartbeat_thread.start()
         if child_progress_cb:
             try:
@@ -2080,11 +2025,6 @@ def _run_single_child(
         if _heartbeat_thread.ident is not None:
             _heartbeat_thread.join(timeout=5)
 
-        # Drop the TUI-facing registry entry.  Safe to call even if the
-        # child was never registered (e.g. ID missing on test doubles).
-        if _subagent_id:
-            _unregister_subagent(_subagent_id)
-
         if child_pool is not None and leased_cred_id is not None:
             try:
                 child_pool.release_lease(leased_cred_id)
@@ -2116,11 +2056,7 @@ def _run_single_child(
         # Close tool resources (terminal sandboxes, browser daemons,
         # background processes, httpx clients) so subagent subprocesses
         # don't outlive the delegation.
-        try:
-            if hasattr(child, "close"):
-                child.close()
-        except Exception:
-            logger.debug("Failed to close child agent after delegation")
+        cleanup.close()
 
 
 def _recover_tasks_from_json_string(
@@ -2178,7 +2114,7 @@ def delegate_task(
     # Operator-controlled kill switch — lets the TUI freeze new fan-out
     # when a runaway tree is detected, without interrupting already-running
     # children.  Cleared via the matching `delegation.pause` RPC.
-    if is_spawn_paused():
+    if is_spawn_paused(session_key=_delegation_session_key(parent_agent)):
         return tool_error(
             "Delegation spawning is paused. Clear the pause via the TUI "
             "(`p` in /agents) or the `delegation.pause` RPC before retrying."
@@ -2798,7 +2734,7 @@ def _resolve_delegation_credentials(cfg: dict, parent_agent) -> dict:
         # Context-aware auth hint: inside the gateway/TUI the user must use the
         # in-TUI `/auth` slash command, not the shell command (see
         # superforecasting_agent.runtime.auth._auth_command_hint).
-        from superforecasting_agent.runtime.auth import _auth_command_hint
+        from superforecasting_agent.credentials.auth import _auth_command_hint
 
         raise ValueError(
             f"Delegation provider '{configured_provider}' resolved but has no API key. "
@@ -2817,26 +2753,14 @@ def _resolve_delegation_credentials(cfg: dict, parent_agent) -> dict:
 
 
 def _load_config() -> dict:
-    """Load delegation config from CLI_CONFIG or persistent config.
+    """Read detached delegation settings from the shared runtime owner."""
+    from copy import deepcopy
 
-    Checks the runtime config (cli.py CLI_CONFIG) first, then falls back
-    to the persistent config (superforecasting_agent/runtime/config.py load_config()) so that
-    ``delegation.model`` / ``delegation.provider`` are picked up regardless
-    of the entry point (CLI, gateway, cron).
-    """
     try:
-        from cli import CLI_CONFIG
+        from superforecasting_agent.runtime.config import load_config_readonly
 
-        cfg = CLI_CONFIG.get("delegation") or {}
-        if cfg:
-            return cfg
-    except Exception:
-        pass
-    try:
-        from superforecasting_agent.runtime.config import load_config
-
-        full = load_config()
-        return full.get("delegation") or {}
+        cfg = load_config_readonly().get("delegation")
+        return deepcopy(cfg) if isinstance(cfg, dict) else {}
     except Exception:
         return {}
 

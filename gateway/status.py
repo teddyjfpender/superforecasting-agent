@@ -17,6 +17,7 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from superforecasting_agent.constants import get_agent_home
@@ -35,6 +36,7 @@ _IS_WINDOWS = sys.platform == "win32"
 _UNSET = object()
 _GATEWAY_LOCK_FILENAME = "gateway.lock"
 _gateway_lock_handle = None
+_gateway_lock_guard = threading.RLock()
 # Windows byte-range locks are mandatory for other readers. Lock a byte well
 # past the JSON payload so runtime status / PID readers can still read the file
 # while another process holds the mutual-exclusion lock.
@@ -343,79 +345,7 @@ def _try_acquire_file_lock(handle) -> bool:
         return False
 
 
-def _pid_exists(pid: int) -> bool:
-    """Cross-platform "is this PID alive" check that does NOT kill the target.
-
-    CRITICAL on Windows: Python's ``os.kill(pid, 0)`` is NOT a no-op like it
-    is on POSIX. CPython's Windows implementation
-    (``Modules/posixmodule.c::os_kill_impl``) treats ``sig=0`` as
-    ``CTRL_C_EVENT`` because the two values collide at the C level, and
-    routes it through ``GenerateConsoleCtrlEvent(0, pid)`` — which sends
-    a Ctrl+C to the entire console process group containing the target
-    PID, not just the PID itself. Any caller that wanted to "check if
-    this PID is alive" via ``os.kill(pid, 0)`` on Windows was silently
-    killing that process (and often unrelated processes in the same
-    console group). Long-standing Python quirk; see bpo-14484.
-
-    Implementation: prefer :mod:`psutil` (hard dependency — the canonical
-    cross-platform answer, maintained by Giampaolo Rodolà, uses
-    ``OpenProcess + GetExitCodeProcess`` on Windows internally). Fall back
-    to a hand-rolled ctypes ``OpenProcess`` / ``WaitForSingleObject`` pair
-    on Windows + ``os.kill(pid, 0)`` on POSIX if psutil is somehow
-    unavailable — e.g. stripped-down install or import error during the
-    scaffold phase before ``psutil`` is pip-installed.
-    """
-    try:
-        import psutil  # type: ignore
-        return bool(psutil.pid_exists(int(pid)))
-    except ImportError:
-        pass  # Fall through to stdlib fallback.
-
-    if _IS_WINDOWS:
-        try:
-            import ctypes
-            kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
-            # Pin return types — default ctypes restype is c_int (signed),
-            # which mangles WAIT_* DWORD return codes into negative numbers.
-            kernel32.OpenProcess.restype = ctypes.c_void_p
-            kernel32.WaitForSingleObject.restype = ctypes.c_uint
-            kernel32.GetLastError.restype = ctypes.c_uint
-            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-            SYNCHRONIZE = 0x100000  # required for WaitForSingleObject
-            WAIT_TIMEOUT = 0x00000102
-            ERROR_INVALID_PARAMETER = 87
-            ERROR_ACCESS_DENIED = 5
-            handle = kernel32.OpenProcess(
-                PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, False, int(pid)
-            )
-            if not handle:
-                err = kernel32.GetLastError()
-                if err == ERROR_INVALID_PARAMETER:
-                    return False  # PID definitely gone
-                if err == ERROR_ACCESS_DENIED:
-                    return True   # Exists but owned by another user/session
-                return False      # Conservative default for unknown errors
-            try:
-                wait_result = kernel32.WaitForSingleObject(handle, 0)
-                # WAIT_TIMEOUT = still running; anything else (WAIT_OBJECT_0
-                # via exit, WAIT_FAILED via handle issue) = treat as gone.
-                return wait_result == WAIT_TIMEOUT
-            finally:
-                kernel32.CloseHandle(handle)
-        except (OSError, AttributeError):
-            return False
-    else:
-        try:
-            os.kill(int(pid), 0)  # windows-footgun: ok — POSIX-only branch (the whole point of _pid_exists)
-            return True
-        except ProcessLookupError:
-            return False
-        except PermissionError:
-            # Process exists but we can't signal it — still alive.
-            return True
-        except OSError:
-            return False
-
+from superforecasting_agent.processes import pid_exists as _pid_exists
 
 
 def _release_file_lock(handle) -> None:
@@ -436,40 +366,55 @@ def acquire_gateway_runtime_lock() -> bool:
     process dies abruptly, the OS releases the lock automatically.
     """
     global _gateway_lock_handle
-    if _gateway_lock_handle is not None:
+    with _gateway_lock_guard:
+        if _gateway_lock_handle is not None:
+            # A second embedded runner must not adopt the first runner's lease.
+            return False
+        path = _get_gateway_lock_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handle = open(path, "a+", encoding="utf-8")
+        try:
+            if not _try_acquire_file_lock(handle):
+                handle.close()
+                return False
+            _write_gateway_lock_record(handle)
+        except BaseException:
+            handle.close()
+            raise
+        _gateway_lock_handle = handle
         return True
 
-    path = _get_gateway_lock_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    handle = open(path, "a+", encoding="utf-8")
-    if not _try_acquire_file_lock(handle):
-        handle.close()
-        return False
-    _write_gateway_lock_record(handle)
-    _gateway_lock_handle = handle
-    return True
+
+def gateway_runtime_lock_owner():
+    """Opaque lease identity for cleanup by the acquiring runtime only."""
+    with _gateway_lock_guard:
+        return _gateway_lock_handle
 
 
-def release_gateway_runtime_lock() -> None:
-    """Release the gateway runtime lock when owned by this process."""
+def release_gateway_runtime_lock(*, owner=_UNSET, remove_pid: bool = False) -> None:
+    """Release an owned lease; stale cleanup cannot release a newer lease."""
     global _gateway_lock_handle
-    handle = _gateway_lock_handle
-    if handle is None:
-        return
-    _gateway_lock_handle = None
-    _release_file_lock(handle)
-    try:
-        handle.close()
-    except OSError:
-        pass
+    with _gateway_lock_guard:
+        handle = _gateway_lock_handle
+        if handle is None or (owner is not _UNSET and owner is not handle):
+            return
+        if remove_pid:
+            remove_pid_file()
+        _gateway_lock_handle = None
+        _release_file_lock(handle)
+        try:
+            handle.close()
+        except OSError:
+            pass
 
 
 def is_gateway_runtime_lock_active(lock_path: Optional[Path] = None) -> bool:
     """Return True when some process currently owns the gateway runtime lock."""
     global _gateway_lock_handle
     resolved_lock_path = lock_path or _get_gateway_lock_path()
-    if _gateway_lock_handle is not None and resolved_lock_path == _get_gateway_lock_path():
-        return True
+    with _gateway_lock_guard:
+        if _gateway_lock_handle is not None and resolved_lock_path == Path(_gateway_lock_handle.name):
+            return True
 
     if not resolved_lock_path.exists():
         return False

@@ -35,6 +35,7 @@ so plugin-defined tools appear alongside the built-in tools.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import importlib
 import importlib.metadata
 import importlib.util
@@ -48,11 +49,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from superforecasting_agent.paths import get_install_root
-from typing import Any, Callable, Dict, List, Optional, Set, Union
+from typing import Any, Callable, Dict, List, Optional, Set
 
 from superforecasting_agent.constants import get_agent_home
 from superforecasting_agent.environment import env_var_enabled
-from superforecasting_agent.runtime.config import cfg_get
+from superforecasting_agent.configuration import cfg_get
+from superforecasting_agent.application.plugins import plugin_activation
+from superforecasting_agent.configuration.plugin_manifest import PluginManifest
+from superforecasting_agent.storage.plugin_manifests import read_plugin_manifest
 
 
 _BUNDLED_PLUGIN_DIR_ENV_VARS = (
@@ -102,10 +106,6 @@ def get_bundled_plugins_dir() -> Path:
         return Path(env_override)
     return get_install_root() / "plugins"
 
-try:
-    import yaml
-except ImportError:  # pragma: no cover – yaml is optional at import time
-    yaml = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -215,8 +215,8 @@ def _get_disabled_plugins() -> set:
     ``plugins.enabled``.
     """
     try:
-        from superforecasting_agent.runtime.config import load_config
-        config = load_config()
+        from superforecasting_agent.storage.configuration import read_configuration
+        config = read_configuration(get_agent_home() / "config.yaml")
         disabled = cfg_get(config, "plugins", "disabled", default=[])
         return set(disabled) if isinstance(disabled, list) else set()
     except Exception:
@@ -238,8 +238,8 @@ def _get_enabled_plugins() -> Optional[set]:
     * ``set(...)`` — the concrete allow-list.
     """
     try:
-        from superforecasting_agent.runtime.config import load_config
-        config = load_config()
+        from superforecasting_agent.storage.configuration import read_configuration
+        config = read_configuration(get_agent_home() / "config.yaml")
         plugins_cfg = config.get("plugins")
         if not isinstance(plugins_cfg, dict):
             return None
@@ -257,45 +257,6 @@ def _get_enabled_plugins() -> Optional[set]:
 # Data classes
 # ---------------------------------------------------------------------------
 
-_VALID_PLUGIN_KINDS: Set[str] = {"standalone", "backend", "exclusive", "platform", "model-provider"}
-
-
-@dataclass
-class PluginManifest:
-    """Parsed representation of a plugin.yaml manifest."""
-
-    name: str
-    version: str = ""
-    description: str = ""
-    author: str = ""
-    requires_env: List[Union[str, Dict[str, Any]]] = field(default_factory=list)
-    provides_tools: List[str] = field(default_factory=list)
-    provides_hooks: List[str] = field(default_factory=list)
-    source: str = ""        # "user", "project", or "entrypoint"
-    path: Optional[str] = None
-    # Plugin kind — see plugins.py module docstring for semantics.
-    # ``standalone`` (default): hooks/tools of its own; opt-in via
-    #                           ``plugins.enabled``.
-    # ``backend``: pluggable backend for an existing core tool (e.g.
-    #              image_gen). Built-in (bundled) backends auto-load;
-    #              user-installed still gated by ``plugins.enabled``.
-    # ``exclusive``: category with exactly one active provider (memory).
-    #              Selection via ``<category>.provider`` config key; the
-    #              category's own discovery system handles loading and the
-    #              general scanner skips these.
-    # ``platform``: gateway messaging platform adapter (e.g. IRC). Bundled
-    #              platform plugins auto-load so every shipped platform is
-    #              available out of the box; user-installed platform plugins
-    #              in the runtime-home plugins dir are still gated by
-    #              ``plugins.enabled``
-    #              (untrusted code).
-    kind: str = "standalone"
-    # Registry key — path-derived, used by ``plugins.enabled``/``disabled``
-    # lookups and by ``superforecasting-agent plugins list``. For a flat plugin at
-    # ``plugins/disk-cleanup/`` the key is ``disk-cleanup``; for a nested
-    # category plugin at ``plugins/image_gen/openai/`` the key is
-    # ``image_gen/openai``. When empty, falls back to ``name``.
-    key: str = ""
 
 
 @dataclass
@@ -475,7 +436,7 @@ class PluginContext:
 
         # Reject if it conflicts with a built-in command
         try:
-            from superforecasting_agent.runtime.commands import resolve_command
+            from superforecasting_agent.application.command_catalog import resolve_command
             if resolve_command(clean) is not None:
                 logger.warning(
                     "Plugin '%s' tried to register command '/%s' which conflicts "
@@ -705,7 +666,7 @@ class PluginContext:
                 setup_fn=irc_interactive_setup,
             )
         """
-        from gateway.platform_registry import platform_registry, PlatformEntry
+        from superforecasting_agent.platform_registry import platform_registry, PlatformEntry
 
         entry_kwargs.setdefault("plugin_name", self.manifest.name)
         entry = PlatformEntry(
@@ -927,86 +888,17 @@ class PluginManager:
         for manifest in winners.values():
             lookup_key = manifest.key or manifest.name
 
-            # Explicit disable always wins (matches on key or on legacy
-            # bare name for back-compat with existing user configs).
-            if lookup_key in disabled or manifest.name in disabled:
-                loaded = LoadedPlugin(manifest=manifest, enabled=False)
-                loaded.error = "disabled via config"
-                self._plugins[lookup_key] = loaded
-                logger.debug("Skipping disabled plugin '%s'", lookup_key)
-                continue
-
-            # The bundled Obsidian vault is core to the agent's workspace — it
-            # holds all notes/research under ~/.superforecasting-agent/docs/vault.
-            # Auto-load it so the agent always has scoped, vault-locked note tools
-            # without an opt-in step; an explicit ``plugins.disabled: [obsidian]``
-            # still turns it off (handled by the check above).
-            if manifest.source == "bundled" and manifest.name == "obsidian":
+            activation = plugin_activation(manifest, enabled=enabled, disabled=disabled)
+            if activation.load:
                 self._load_plugin(manifest)
-                continue
-
-            # Exclusive plugins (memory providers) have their own
-            # discovery/activation path. The general loader records the
-            # manifest for introspection but does not load the module.
-            if manifest.kind == "exclusive":
-                loaded = LoadedPlugin(manifest=manifest, enabled=False)
-                loaded.error = (
-                    "exclusive plugin — activate via <category>.provider config"
+            else:
+                self._plugins[lookup_key] = LoadedPlugin(
+                    manifest=manifest, enabled=activation.enabled, error=activation.reason,
                 )
-                self._plugins[lookup_key] = loaded
                 logger.debug(
-                    "Skipping '%s' (exclusive, handled by category discovery)",
-                    lookup_key,
+                    "Skipping '%s': %s", lookup_key,
+                    activation.reason or "handled by provider discovery",
                 )
-                continue
-
-            # Model provider plugins are loaded by providers/__init__.py
-            # (its own lazy discovery keyed off first get_provider_profile()
-            # call). We record the manifest here for introspection but do
-            # not import the module — a second import would create two
-            # ProviderProfile instances and break the "last writer wins"
-            # override semantics between bundled and user plugins.
-            if manifest.kind == "model-provider":
-                loaded = LoadedPlugin(manifest=manifest, enabled=True)
-                self._plugins[lookup_key] = loaded
-                logger.debug(
-                    "Skipping '%s' (model-provider, handled by providers/ discovery)",
-                    lookup_key,
-                )
-                continue
-
-            # Built-in backends auto-load — they ship with hermes and must
-            # just work. Selection among them (e.g. which image_gen backend
-            # services calls) is driven by ``<category>.provider`` config,
-            # enforced by the tool wrapper.
-            #
-            # Bundled platform plugins (gateway adapters like IRC) auto-load
-            # for the same reason: every bundled platform must be
-            # available out of the box without the user having to opt in.
-            if manifest.source == "bundled" and manifest.kind in {"backend", "platform"}:
-                self._load_plugin(manifest)
-                continue
-
-            # Everything else (standalone, user-installed backends,
-            # entry-point plugins) is opt-in via plugins.enabled.
-            # Accept both the path-derived key and the legacy bare name
-            # so existing configs keep working.
-            is_enabled = (
-                enabled is not None
-                and (lookup_key in enabled or manifest.name in enabled)
-            )
-            if not is_enabled:
-                loaded = LoadedPlugin(manifest=manifest, enabled=False)
-                loaded.error = (
-                    "not enabled in config (run `superforecasting-agent plugins enable {}` to activate)"
-                    .format(lookup_key)
-                )
-                self._plugins[lookup_key] = loaded
-                logger.debug(
-                    "Skipping '%s' (not in plugins.enabled)", lookup_key
-                )
-                continue
-            self._load_plugin(manifest)
 
         if manifests:
             logger.info(
@@ -1112,79 +1004,12 @@ class PluginManager:
         Returns ``None`` on parse failure (logs a warning).
         """
         try:
-            if yaml is None:
-                logger.warning("PyYAML not installed – cannot load %s", manifest_file)
-                return None
-            data = yaml.safe_load(manifest_file.read_text(encoding="utf-8")) or {}
-
-            name = data.get("name", plugin_dir.name)
-            key = f"{prefix}/{plugin_dir.name}" if prefix else name
-
-            raw_kind = data.get("kind", "standalone")
-            if not isinstance(raw_kind, str):
-                raw_kind = "standalone"
-            kind = raw_kind.strip().lower()
-            if kind not in _VALID_PLUGIN_KINDS:
-                logger.warning(
-                    "Plugin %s: unknown kind '%s' (valid: %s); treating as 'standalone'",
-                    key, raw_kind, ", ".join(sorted(_VALID_PLUGIN_KINDS)),
-                )
-                kind = "standalone"
-
-            # Auto-coerce user-installed memory providers to kind="exclusive"
-            # so they're routed to plugins/memory discovery instead of being
-            # loaded by the general PluginManager (which has no
-            # register_memory_provider on PluginContext). Mirrors the
-            # heuristic in plugins/memory/__init__.py:_is_memory_provider_dir.
-            # Bundled memory providers are already skipped via skip_names.
-            if kind == "standalone" and "kind" not in data:
-                init_file = plugin_dir / "__init__.py"
-                if init_file.exists():
-                    try:
-                        source_text = init_file.read_text(errors="replace")[:8192]
-                        if (
-                            "register_memory_provider" in source_text
-                            or "MemoryProvider" in source_text
-                        ):
-                            kind = "exclusive"
-                            logger.debug(
-                                "Plugin %s: detected memory provider, "
-                                "treating as kind='exclusive'",
-                                key,
-                            )
-                        elif (
-                            "register_provider" in source_text
-                            and "ProviderProfile" in source_text
-                        ):
-                            # Model provider plugin (calls register_provider()
-                            # from ``providers`` with a ProviderProfile). Route
-                            # to providers/__init__.py discovery.
-                            kind = "model-provider"
-                            logger.debug(
-                                "Plugin %s: detected model provider, "
-                                "treating as kind='model-provider'",
-                                key,
-                            )
-                    except Exception:
-                        pass
-
+            manifest = read_plugin_manifest(manifest_file, plugin_dir, source, prefix)
             logger.debug(
                 "Parsed manifest: key=%s name=%s kind=%s source=%s path=%s",
-                key, name, kind, source, plugin_dir,
+                manifest.key, manifest.name, manifest.kind, source, plugin_dir,
             )
-            return PluginManifest(
-                name=name,
-                version=str(data.get("version", "")),
-                description=data.get("description", ""),
-                author=data.get("author", ""),
-                requires_env=data.get("requires_env", []),
-                provides_tools=data.get("provides_tools", []),
-                provides_hooks=data.get("provides_hooks", []),
-                source=source,
-                path=str(plugin_dir),
-                kind=kind,
-                key=key,
-            )
+            return manifest
         except Exception as exc:
             logger.warning(
                 "Failed to parse %s: %s", manifest_file, exc, exc_info=_PLUGINS_DEBUG,
@@ -1560,41 +1385,54 @@ def resolve_plugin_command_result(result: Any) -> Any:
     Sync CLI/TUI dispatch sites call plugin handlers from plain functions.
     If a handler is async, await it directly when no loop is running; if
     we're already inside an active loop, run it in a helper thread with its
-    own loop so the caller still gets a concrete result synchronously. The
-    threaded path is bounded by a 30s timeout so a hung async handler cannot
-    wedge the terminal indefinitely.
+    own loop so the caller still gets a concrete result synchronously.
+    Both paths request cancellation after 30s and retain ownership until async
+    cleanup finishes. The deadline is cooperative: blocking code or suppressed
+    cancellation can delay return, but must not become detached background work.
     """
     if not inspect.isawaitable(result):
         return result
 
+    async def _await_result():
+        deadline = asyncio.timeout(_PLUGIN_COMMAND_AWAIT_TIMEOUT_SECS)
+        try:
+            async with deadline:
+                return await result
+        except TimeoutError as exc:
+            if not deadline.expired() or not isinstance(exc.__cause__, asyncio.CancelledError):
+                raise
+            raise TimeoutError(
+                "Plugin command async handler exceeded "
+                f"{_PLUGIN_COMMAND_AWAIT_TIMEOUT_SECS:g}s; cancellation finished"
+            ) from exc
+
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(result)
+        return asyncio.run(_await_result())
 
+    context = contextvars.copy_context()
     outcome: Dict[str, Any] = {}
     failure: Dict[str, BaseException] = {}
-    done = threading.Event()
 
     def _runner() -> None:
         try:
-            outcome["value"] = asyncio.run(result)
+            outcome["value"] = asyncio.run(_await_result())
         except BaseException as exc:  # pragma: no cover - re-raised below
             failure["exc"] = exc
-        finally:
-            done.set()
 
     thread = threading.Thread(
-        target=_runner,
+        target=lambda: context.run(_runner),
         name="hermes-plugin-command-await",
         daemon=True,
     )
-    thread.start()
-    if not done.wait(timeout=_PLUGIN_COMMAND_AWAIT_TIMEOUT_SECS):
-        raise TimeoutError(
-            "Plugin command async handler did not complete within "
-            f"{_PLUGIN_COMMAND_AWAIT_TIMEOUT_SECS:.0f}s"
-        )
+    try:
+        thread.start()
+    except BaseException:
+        if inspect.iscoroutine(result):
+            result.close()
+        raise
+    thread.join()
     if "exc" in failure:
         raise failure["exc"]
     return outcome.get("value")

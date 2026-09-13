@@ -2,7 +2,6 @@ import type {
   BrowserManageResponse,
   CommandsCatalogResponse,
   DelegationPauseResponse,
-  ProcessStopResponse,
   ReloadEnvResponse,
   ReloadMcpResponse,
   RollbackDiffResponse,
@@ -63,16 +62,14 @@ interface SkillsReloadResponse {
 
 export const opsCommands: SlashCommand[] = [
   {
-    help: 'stop background processes',
+    help: 'stop this session’s background processes and delegations',
     name: 'stop',
     run: (_arg, ctx) => {
       ctx.gateway
-        .rpc<ProcessStopResponse>('process.stop', {})
+        .rpc<SlashExecResponse>('slash.exec', { command: 'stop', session_id: ctx.sid })
         .then(
-          ctx.guarded<ProcessStopResponse>(r => {
-            const killed = Number(r.killed ?? 0)
-            const noun = killed === 1 ? 'process' : 'processes'
-            ctx.transcript.sys(`stopped ${killed} background ${noun}`)
+          ctx.guarded<SlashExecResponse>(r => {
+            ctx.transcript.sys(r.output ?? '(no output)')
           })
         )
         .catch(ctx.guardedErr)
@@ -302,11 +299,11 @@ export const opsCommands: SlashCommand[] = [
       if (sub === 'pause' || sub === 'resume' || sub === 'unpause') {
         const paused = sub === 'pause'
         ctx.gateway.gw
-          .request<DelegationPauseResponse>('delegation.pause', { paused })
-          .then(r => {
+          .request<DelegationPauseResponse>('delegation.pause', { paused, session_id: ctx.sid })
+          .then(ctx.guarded<DelegationPauseResponse>(r => {
             applyDelegationStatus({ paused: r?.paused })
             ctx.transcript.sys(`delegation · ${r?.paused ? 'paused' : 'resumed'}`)
-          })
+          }))
           .catch(ctx.guardedErr)
 
         return
@@ -495,7 +492,7 @@ export const opsCommands: SlashCommand[] = [
       const { rpc } = ctx.gateway
       const { panel, sys } = ctx.transcript
 
-      const runViaSlashWorker = () => {
+      const runSharedSkillsCommand = () => {
         ctx.gateway.gw
           .request<SlashExecResponse>('slash.exec', { command: cmd.slice(1), session_id: ctx.sid })
           .then(r => {
@@ -655,7 +652,7 @@ export const opsCommands: SlashCommand[] = [
         return
       }
 
-      runViaSlashWorker()
+      runSharedSkillsCommand()
     }
   },
 

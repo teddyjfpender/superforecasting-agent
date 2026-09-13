@@ -1777,7 +1777,7 @@ class TestPreMigrationBackup:
         assert update_backup.exists(), "pre-migration rotation wrongly pruned the pre-update backup"
 
 
-def test_safe_copy_closes_connections_before_raw_fallback(tmp_path, monkeypatch):
+def test_safe_copy_closes_connections_without_publishing_failed_backup(tmp_path, monkeypatch):
     from superforecasting_agent.runtime.backup import _safe_copy_db
 
     source = tmp_path / "invalid.db"
@@ -1793,8 +1793,9 @@ def test_safe_copy_closes_connections_before_raw_fallback(tmp_path, monkeypatch)
 
     monkeypatch.setattr(sqlite3, "connect", connect)
     try:
-        assert _safe_copy_db(source, destination)
-        assert destination.read_bytes() == source.read_bytes()
+        assert _safe_copy_db(source, destination) is False
+        assert not destination.exists()
+        assert not list(tmp_path.glob(".*.backup-*"))
         assert len(connections) == 2
         for connection in connections:
             with pytest.raises(sqlite3.ProgrammingError, match="closed"):

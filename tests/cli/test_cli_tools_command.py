@@ -66,7 +66,7 @@ class TestToolsSlashDisableWithReset:
         with patch("superforecasting_agent.runtime.tools_config.load_config",
                    return_value={"platform_toolsets": {"cli": ["web", "memory"]}}), \
              patch("superforecasting_agent.runtime.tools_config.save_config"), \
-             patch("superforecasting_agent.runtime.tools_config._get_platform_tools", return_value={"memory"}), \
+             patch("superforecasting_agent.tooling.selection._get_platform_tools", return_value={"memory"}), \
              patch("superforecasting_agent.runtime.config.load_config", return_value={}), \
              patch.object(cli_obj, "new_session") as mock_reset:
             cli_obj._handle_tools_command("/tools disable web")
@@ -79,7 +79,7 @@ class TestToolsSlashDisableWithReset:
         with patch("superforecasting_agent.runtime.tools_config.load_config",
                    return_value={"platform_toolsets": {"cli": ["web", "memory"]}}), \
              patch("superforecasting_agent.runtime.tools_config.save_config"), \
-             patch("superforecasting_agent.runtime.tools_config._get_platform_tools", return_value={"memory"}), \
+             patch("superforecasting_agent.tooling.selection._get_platform_tools", return_value={"memory"}), \
              patch("superforecasting_agent.runtime.config.load_config", return_value={}), \
              patch.object(cli_obj, "new_session"), \
              patch("builtins.input") as mock_input:
@@ -92,7 +92,7 @@ class TestToolsSlashDisableWithReset:
         with patch("superforecasting_agent.runtime.tools_config.load_config",
                    return_value={"platform_toolsets": {"cli": ["web", "memory"]}}), \
              patch("superforecasting_agent.runtime.tools_config.save_config"), \
-             patch("superforecasting_agent.runtime.tools_config._get_platform_tools", return_value={"memory"}), \
+             patch("superforecasting_agent.tooling.selection._get_platform_tools", return_value={"memory"}), \
              patch("superforecasting_agent.runtime.config.load_config", return_value={}), \
              patch.object(cli_obj, "new_session") as mock_reset:
             cli_obj._handle_tools_command("/tools disable web")
@@ -116,7 +116,7 @@ class TestToolsSlashEnableWithReset:
         with patch("superforecasting_agent.runtime.tools_config.load_config",
                    return_value={"platform_toolsets": {"cli": ["memory"]}}), \
              patch("superforecasting_agent.runtime.tools_config.save_config"), \
-             patch("superforecasting_agent.runtime.tools_config._get_platform_tools", return_value={"memory", "web"}), \
+             patch("superforecasting_agent.tooling.selection._get_platform_tools", return_value={"memory", "web"}), \
              patch("superforecasting_agent.runtime.config.load_config", return_value={}), \
              patch.object(cli_obj, "new_session") as mock_reset:
             cli_obj._handle_tools_command("/tools enable web")
@@ -128,3 +128,13 @@ class TestToolsSlashEnableWithReset:
         cli_obj._handle_tools_command("/tools enable")
         out = capsys.readouterr().out
         assert "Usage" in out
+
+
+def test_invalid_tools_do_not_save_or_reset_history():
+    cli_obj = _make_cli()
+    with patch("superforecasting_agent.runtime.tools_config.load_config", return_value={}), \
+         patch("superforecasting_agent.runtime.tools_config.save_config") as save, \
+         patch.object(cli_obj, "new_session") as reset:
+        cli_obj._handle_tools_command("/tools disable definitely-unknown")
+    save.assert_not_called()
+    reset.assert_not_called()

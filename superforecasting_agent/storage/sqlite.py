@@ -24,9 +24,9 @@ logger = logging.getLogger(__name__)
 # works on NFS.  Concurrency drops — concurrent readers are blocked during
 # a write — but the feature works.
 _WAL_INCOMPAT_MARKERS = (
-    "locking protocol",       # SQLITE_PROTOCOL on NFS/SMB
-    "not authorized",         # Some FUSE mounts block WAL pragma outright
-    "disk i/o error",         # Flaky network FS during WAL setup
+    "locking protocol",  # SQLITE_PROTOCOL on NFS/SMB
+    "not authorized",  # Some FUSE mounts block WAL pragma outright
+    "disk i/o error",  # Flaky network FS during WAL setup
 )
 
 # Last SessionDB() init error, per-process.  Surfaced in /resume and
@@ -74,7 +74,9 @@ def get_last_init_error() -> Optional[str]:
     return _last_init_error
 
 
-def format_session_db_unavailable(prefix: str = "Session database not available") -> str:
+def format_session_db_unavailable(
+    prefix: str = "Session database not available",
+) -> str:
     """Format a user-facing 'session DB unavailable' message with cause.
 
     When ``SessionDB()`` init fails, callers set ``_session_db = None`` and
@@ -93,7 +95,9 @@ def format_session_db_unavailable(prefix: str = "Session database not available"
         return f"{prefix}."
     hint = ""
     if any(marker in cause.lower() for marker in _WAL_INCOMPAT_MARKERS):
-        hint = " (state.db may be on NFS/SMB/FUSE — see https://www.sqlite.org/wal.html)"
+        hint = (
+            " (state.db may be on NFS/SMB/FUSE — see https://www.sqlite.org/wal.html)"
+        )
     return f"{prefix}: {cause}{hint}."
 
 

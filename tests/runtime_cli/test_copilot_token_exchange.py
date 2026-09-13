@@ -101,14 +101,14 @@ class TestExchangeCopilotToken:
 class TestGetCopilotApiToken:
     """Tests for get_copilot_api_token() — the fallback wrapper."""
 
-    @patch("superforecasting_agent.runtime.copilot_auth.exchange_copilot_token")
+    @patch("superforecasting_agent.credentials.copilot.exchange_copilot_token")
     def test_returns_exchanged_token(self, mock_exchange):
         from superforecasting_agent.runtime.copilot_auth import get_copilot_api_token
 
         mock_exchange.return_value = ("exchanged_jwt", time.time() + 1800)
         assert get_copilot_api_token("gho_raw") == "exchanged_jwt"
 
-    @patch("superforecasting_agent.runtime.copilot_auth.exchange_copilot_token", side_effect=ValueError("fail"))
+    @patch("superforecasting_agent.credentials.copilot.exchange_copilot_token", side_effect=ValueError("fail"))
     def test_falls_back_to_raw_token(self, mock_exchange):
         from superforecasting_agent.runtime.copilot_auth import get_copilot_api_token
 
@@ -146,10 +146,10 @@ class TestTokenFingerprint:
 class TestCallerIntegration:
     """Test that callers correctly use token exchange."""
 
-    @patch("superforecasting_agent.runtime.copilot_auth.resolve_copilot_token", return_value=("gho_raw", "GH_TOKEN"))
-    @patch("superforecasting_agent.runtime.copilot_auth.get_copilot_api_token", return_value="exchanged_jwt")
+    @patch("superforecasting_agent.credentials.copilot.resolve_copilot_token", return_value=("gho_raw", "GH_TOKEN"))
+    @patch("superforecasting_agent.credentials.copilot.get_copilot_api_token", return_value="exchanged_jwt")
     def test_auth_resolve_uses_exchange(self, mock_exchange, mock_resolve):
-        from superforecasting_agent.runtime.auth import _resolve_api_key_provider_secret
+        from superforecasting_agent.credentials.auth import _resolve_api_key_provider_secret
 
         # Create a minimal pconfig mock
         pconfig = MagicMock()

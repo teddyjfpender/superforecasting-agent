@@ -662,8 +662,8 @@ class TestCheckNousFreeTierCache:
     def test_result_is_cached(self, mock_is_free, mock_fetch):
         """Second call within TTL returns cached result without API call."""
         mock_fetch.return_value = {"subscription": {"monthly_charge": 0}}
-        with patch("superforecasting_agent.runtime.auth.get_provider_auth_state", return_value={"access_token": "tok"}), \
-             patch("superforecasting_agent.runtime.auth.resolve_nous_runtime_credentials"):
+        with patch("superforecasting_agent.credentials.auth.get_provider_auth_state", return_value={"access_token": "tok"}), \
+             patch("superforecasting_agent.credentials.auth.resolve_nous_runtime_credentials"):
             result1 = check_nous_free_tier()
             result2 = check_nous_free_tier()
 
@@ -676,8 +676,8 @@ class TestCheckNousFreeTierCache:
     def test_cache_expires_after_ttl(self, mock_is_free, mock_fetch):
         """After TTL expires, the API is called again."""
         mock_fetch.return_value = {"subscription": {"monthly_charge": 20}}
-        with patch("superforecasting_agent.runtime.auth.get_provider_auth_state", return_value={"access_token": "tok"}), \
-             patch("superforecasting_agent.runtime.auth.resolve_nous_runtime_credentials"):
+        with patch("superforecasting_agent.credentials.auth.get_provider_auth_state", return_value={"access_token": "tok"}), \
+             patch("superforecasting_agent.credentials.auth.resolve_nous_runtime_credentials"):
             result1 = check_nous_free_tier()
             assert mock_fetch.call_count == 1
 

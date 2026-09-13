@@ -17,6 +17,9 @@ from superforecasting_agent.runtime.codex_device_flow import DeviceCodeGrant
 from tui_gateway import server
 
 
+from tests.runtime_session_cleanup import retire_test_session
+
+
 def _start(params=None):
     return server.handle_request(
         {"id": "1", "method": "auth.start", "params": params or {}}
@@ -58,12 +61,12 @@ def test_auth_start_returns_code_and_url(monkeypatch):
     assert result["provider"] == "openai-codex"
 
     assert _poll()["result"]["status"] == "pending"
-    _poll({"cancel": True})
-    _wait_status("cancelled")
+    assert _poll({"cancel": True})["result"]["status"] == "cancelled"
+    assert _poll()["result"]["status"] == "none"
 
 
 def test_auth_flow_success_persists_tokens(monkeypatch):
-    import superforecasting_agent.runtime.auth as auth_mod
+    import superforecasting_agent.credentials.auth as auth_mod
     import superforecasting_agent.runtime.codex_device_flow as flow
 
     saved = {}
@@ -131,7 +134,7 @@ def test_auth_success_refreshes_live_agent_credentials(monkeypatch):
         flow, "exchange_device_code",
         lambda ac, cv, **kw: {"tokens": {"access_token": "fresh_at", "refresh_token": "rt"}},
     )
-    monkeypatch.setattr("superforecasting_agent.runtime.auth._save_codex_tokens", lambda *a, **k: None)
+    monkeypatch.setattr("superforecasting_agent.credentials.auth._save_codex_tokens", lambda *a, **k: None)
     fresh_pool = object()
     monkeypatch.setattr(
         "superforecasting_agent.runtime.runtime_provider.resolve_runtime_provider",
@@ -157,19 +160,18 @@ def test_auth_success_refreshes_live_agent_credentials(monkeypatch):
                 api_key=api_key, base_url=base_url, api_mode=api_mode,
             )
 
-    monkeypatch.setattr(server, "_restart_slash_worker", lambda session: None)
     monkeypatch.setattr(server, "_emit", lambda *a, **k: None)
     monkeypatch.setattr(server, "_session_info", lambda agent: {})
-    server._sessions["sid_auth"] = {"agent": _FakeAgent(), "running": False}
+    server._host.sessions["sid_auth"] = {"agent": _FakeAgent(), "running": False}
     try:
         assert "result" in _start({"provider": "openai-codex", "session_id": "sid_auth"})
         result = _wait_status("success")
         assert result["credentials_applied"] is True
         assert switched["api_key"] == "fresh_at"
         assert switched["new_provider"] == "openai-codex"
-        assert server._sessions["sid_auth"]["agent"]._credential_pool is fresh_pool
+        assert server._host.sessions["sid_auth"]["agent"]._credential_pool is fresh_pool
     finally:
-        server._sessions.pop("sid_auth", None)
+        retire_test_session(server, "sid_auth")
 
 
 def test_auth_success_retries_agent_build_that_failed_before_sign_in(monkeypatch):
@@ -178,6 +180,7 @@ def test_auth_success_retries_agent_build_that_failed_before_sign_in(monkeypatch
     old_ready.set()
     started = {}
     session = {
+        "session_key": "sid_failed_auth",
         "agent": None,
         "agent_error": "No Codex credentials stored",
         "agent_ready": old_ready,
@@ -190,7 +193,7 @@ def test_auth_success_retries_agent_build_that_failed_before_sign_in(monkeypatch
         started["session"] = current
 
     monkeypatch.setattr(server, "_start_agent_build", _fake_start)
-    server._sessions["sid_failed_auth"] = session
+    server._host.sessions["sid_failed_auth"] = session
     try:
         assert server._refresh_agent_credentials_after_auth(
             "sid_failed_auth", "openai-codex"
@@ -201,7 +204,7 @@ def test_auth_success_retries_agent_build_that_failed_before_sign_in(monkeypatch
         assert session["agent_build_started"] is False
         assert started == {"sid": "sid_failed_auth", "session": session}
     finally:
-        server._sessions.pop("sid_failed_auth", None)
+        retire_test_session(server, "sid_failed_auth")
 
 
 def test_auth_poll_reports_terminal_status_once(monkeypatch):
@@ -221,7 +224,7 @@ def test_auth_poll_reports_terminal_status_once(monkeypatch):
         flow, "exchange_device_code",
         lambda ac, cv, **kw: {"tokens": {"access_token": "at", "refresh_token": "rt"}},
     )
-    monkeypatch.setattr("superforecasting_agent.runtime.auth._save_codex_tokens", lambda *a, **k: None)
+    monkeypatch.setattr("superforecasting_agent.credentials.auth._save_codex_tokens", lambda *a, **k: None)
 
     assert "result" in _start()
     assert _wait_status("success")["status"] == "success"
@@ -235,8 +238,8 @@ def test_auth_start_rejects_unsupported_provider():
     assert "/api-key" in resp["error"]["message"]
 
 
-def test_auth_poll_with_no_flow():
+def test_auth_poll_with_no_flow(monkeypatch):
     # Fresh-state behavior: clear any flow left by earlier tests.
-    with server._auth_flow_lock:
-        server._auth_flow.clear()
+    from superforecasting_agent.hosting.device_auth import DeviceSignIn
+    monkeypatch.setattr(server._host, "sign_in", DeviceSignIn())
     assert _poll()["result"]["status"] == "none"

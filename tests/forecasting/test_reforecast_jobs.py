@@ -73,7 +73,7 @@ def _commit_agent(monkeypatch, seen=None):
         _stage_side_effects(led, qid, stage)
         return {"final_response": f"{stage} done"}
 
-    monkeypatch.setattr(cli, "_run_update_agent", fake_agent)
+    monkeypatch.setattr("agent.forecast_stage.run_stage", fake_agent)
 
 
 # ── REFORECAST type lifecycle (runtime + monkeypatched agent stages) ──────────
@@ -123,7 +123,7 @@ def test_running_progress_is_streamed_per_question(home, tmp_path, monkeypatch):
         _stage_side_effects(led, qid, stage)
         return {"final_response": f"{stage} done"}
 
-    monkeypatch.setattr(cli, "_run_update_agent", fake_agent)
+    monkeypatch.setattr("agent.forecast_stage.run_stage", fake_agent)
     rf.start_job({"question_ids": [q1.id], "db": db}, wait=True)
 
     assert observations, "the agent must have run"
@@ -164,7 +164,7 @@ def test_chain_level_stage_failure_does_not_abort_batch(home, tmp_path, monkeypa
         _stage_side_effects(led, qid, stage)
         return {"final_response": "ok"}
 
-    monkeypatch.setattr(cli, "_run_update_agent", fake_agent)
+    monkeypatch.setattr("agent.forecast_stage.run_stage", fake_agent)
     run_id = rf.start_job({"question_ids": [q1.id, q2.id], "db": db}, wait=True)
     job = rf.read_job(run_id)
 

@@ -37,7 +37,7 @@ class FredObservation:
     series_id: str
     observation_date: str
     value: float | str
-    published_at: str
+    published_at: str | None
     source_url: str | None
     source_name: str
     entry_id: str
@@ -51,7 +51,7 @@ class EiaObservation:
     observation_period: str
     value: float | str
     unit: str | None
-    published_at: str
+    published_at: str | None
     source_url: str | None
     source_name: str
     entry_id: str
@@ -65,7 +65,7 @@ class TreasuryRecord:
     value: float | str | None
     value_field: str | None
     value_label: str | None
-    published_at: str
+    published_at: str | None
     source_url: str | None
     source_name: str
     entry_id: str
@@ -79,7 +79,7 @@ class BlsObservation:
     period: str
     period_name: str | None
     value: float | str
-    published_at: str
+    published_at: str | None
     source_url: str | None
     source_name: str
     entry_id: str
@@ -94,7 +94,7 @@ class WorldBankObservation:
     indicator_name: str | None
     observation_date: str
     value: float | str
-    published_at: str
+    published_at: str | None
     source_url: str | None
     source_name: str
     entry_id: str
@@ -109,7 +109,7 @@ class ImfDataMapperObservation:
     country_name: str | None
     observation_date: str
     value: float | str
-    published_at: str
+    published_at: str | None
     source_url: str | None
     source_name: str
     entry_id: str
@@ -175,7 +175,7 @@ class StooqPriceObservation:
     low_price: float | str | None
     close_price: float | str
     volume: float | int | str | None
-    published_at: str
+    published_at: str | None
     source_url: str | None
     source_name: str
     entry_id: str
@@ -192,7 +192,7 @@ class YahooFinancePriceObservation:
     low_price: float | str | None
     close_price: float | str
     volume: float | int | str | None
-    published_at: str
+    published_at: str | None
     currency: str | None
     exchange_name: str | None
     source_url: str | None

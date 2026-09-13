@@ -23,10 +23,10 @@ def oauth_file(monkeypatch, tmp_path):
     # `from agent.anthropic_adapter import get_hermes_oauth_file`, so we patch
     # the getter (NOT the _HERMES_OAUTH_FILE module constant upstream patched).
     monkeypatch.setattr(
-        'agent.anthropic_adapter.get_hermes_oauth_file', lambda: target
+        'superforecasting_agent.credentials.anthropic.get_hermes_oauth_file', lambda: target
     )
     monkeypatch.setattr(
-        'agent.credential_pool.load_pool', lambda _provider: _DummyPool()
+        'agent.credential_pool.load_pool', lambda _provider, **_snapshot: _DummyPool()
     )
     return target
 

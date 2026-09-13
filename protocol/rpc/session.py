@@ -55,6 +55,7 @@ class SessionInfo(WireModel):
 
     TS_NAME = "SessionInfo"
 
+    durable_session_id: str | None = wire_optional()
     model: str
     skills: dict[str, list[str]]
     tools: dict[str, list[str]]
@@ -134,6 +135,7 @@ class SessionResumeResponse(WireModel):
     info: SessionInfo | None = wire_optional()
     message_count: int | None = wire_optional()
     resumed: str | None = wire_optional()
+    recovery: dict | None = wire_optional()
 
 
 # ── session.list ───────────────────────────────────────────────────────────────
@@ -319,6 +321,7 @@ class SessionBranchRequest(WireModel):
     TS_NAME = "SessionBranchRequest"
 
     session_id: str | None = None
+    name: str = ""
 
 
 class SessionBranchResponse(WireModel):
@@ -326,6 +329,7 @@ class SessionBranchResponse(WireModel):
 
     session_id: str | None = wire_optional()
     title: str | None = wire_optional()
+    parent: str | None = wire_optional()
 
 
 # ── session.close ──────────────────────────────────────────────────────────────
@@ -354,6 +358,7 @@ class SessionInterruptRequest(WireModel):
 
 class SessionInterruptResponse(WireModel):
     TS_NAME = "SessionInterruptResponse"
+    status: str | None = wire_optional()
 
     ok: bool | None = wire_optional()
 

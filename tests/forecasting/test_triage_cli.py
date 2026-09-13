@@ -112,3 +112,20 @@ def test_new_apply_watch_flag(tmp_path, capsys):
     )
     # --apply-watch routes through the same apply seam as --apply-source-plan
     assert "applied_watches:" in out
+
+
+@pytest.mark.parametrize("payload", [{"action": "label_score"}, {"action": "relabel_route"}, {"action": "triage_contested"}])
+def test_triage_cli_tool_and_application_error_parity(tmp_path, capsys, payload):
+    import argparse
+    from forecasting.application.triage import execute_triage_action
+    from forecasting.cli.triage_calibration import _run_triage_tool
+    from tools.forecasting_tool import forecast_ledger_tool
+
+    db = str(tmp_path / "triage.db")
+    expected = execute_triage_action(payload, ForecastLedger(db))
+    assert expected["success"] is False
+    assert json.loads(forecast_ledger_tool({**payload, "db": db})) == expected
+    with pytest.raises(SystemExit) as exc:
+        _run_triage_tool(argparse.Namespace(db=db), payload)
+    assert exc.value.code == 1
+    assert json.loads(capsys.readouterr().out) == expected

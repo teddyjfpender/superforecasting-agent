@@ -51,12 +51,16 @@ from protocol.events.turn import (
     StatusUpdate,
     ThinkingDelta,
 )
+from protocol.events.commands import CommandStarted, CommandOutput, CommandFinished
 from protocol.events.voice import VoiceStatus, VoiceTranscript
 from protocol.events.warnings import AutomodeComplete, AutomodeError, AutomodeProgress
 
 # Every registered event name — the codegen emits a `WireEvent.<KEY>` constant for
 # each, and the TUI references ONLY those constants (the A2 grep-proof).
 EXPECTED_EVENT_NAMES = {
+    "command.started",
+    "command.output",
+    "command.finished",
     "pm.tick",
     "jobs.progress",
     "jobs.complete",
@@ -114,6 +118,9 @@ def test_every_event_name_registered_exactly_once():
 
 # (model, frame, exclude_none) — the frame is the server's actual _emit payload.
 CASES: list[tuple[type, dict, bool]] = [
+    (CommandStarted, {"command_id": "c1", "request_id": "r1", "name": "kanban"}, True),
+    (CommandOutput, {"command_id": "c1", "stream": "stdout", "text": "Watching…"}, True),
+    (CommandFinished, {"command_id": "c1", "status": "cancelled"}, True),
     # ── gateway lifecycle ────────────────────────────────────────────────────
     (Skin, {"name": "aurora", "appearance": "dark", "banner_logo": "L", "banner_hero": "H",
             "tool_prefix": "◇", "help_header": "?", "colors": {"fg": "#fff"}, "branding": {"x": "y"}}, True),
@@ -126,7 +133,7 @@ CASES: list[tuple[type, dict, bool]] = [
     # A cold-cache / offline gateway.ready: the version alone, nothing resolved.
     (GatewayReady, {"build": {"version": "0.19.0"}}, True),
     (GatewayReady, {}, True),
-    (SessionInfo, {"model": "anthropic/claude-sonnet-4", "reasoning_effort": "", "service_tier": "",
+    (SessionInfo, {"durable_session_id": "saved-session-123", "model": "anthropic/claude-sonnet-4", "reasoning_effort": "", "service_tier": "",
                    "fast": False, "cwd": "/x", "version": "1.2.3", "release_date": "2026-07-04",
                    "update_behind": None, "update_command": "", "profile_name": "default",
                    "usage": {"input_tokens": 10}, "tools": {}, "skills": {},
@@ -150,7 +157,7 @@ CASES: list[tuple[type, dict, bool]] = [
     (ReasoningAvailable, {"text": "block"}, True),
     (StatusUpdate, {"kind": "process", "text": "reforecasting…"}, False),
     (StatusUpdate, {"kind": "goal", "text": "✓ done"}, False),
-    (ErrorEvent, {"message": "agent init failed: boom"}, False),
+    (ErrorEvent, {"message": "agent init failed: boom"}, True),
     (BrowserProgress, {"message": "loaded", "level": "info"}, True),
     # ── tools ────────────────────────────────────────────────────────────────
     (ToolProgress, {"name": "web_search", "preview": "querying…"}, True),

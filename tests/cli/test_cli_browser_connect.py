@@ -251,3 +251,39 @@ class TestChromeDebugLaunch:
         assert "live Chrome browser" not in note
         assert "real browser" not in note
         assert "Please await their instruction" not in note
+
+
+def test_cli_browser_connect_uses_shared_local_alias_policy(monkeypatch):
+    from types import SimpleNamespace
+    import sys
+
+    monkeypatch.delenv("BROWSER_CDP_URL", raising=False)
+    monkeypatch.setitem(sys.modules, "tools.browser_tool", SimpleNamespace(
+        cleanup_all_browsers=lambda: None,
+        _ensure_cdp_supervisor=lambda task: None,
+    ))
+    checked = []
+    def ready(url, timeout):
+        checked.append(url)
+        return True
+    monkeypatch.setattr("superforecasting_agent.runtime.browser_commands.is_browser_debug_ready", ready)
+    cli = HermesCLI.__new__(HermesCLI)
+    cli._handle_browser_command("/browser connect ws://localhost:9222/json/version")
+    assert checked == ["http://127.0.0.1:9222"]
+    assert os.environ["BROWSER_CDP_URL"] == "http://127.0.0.1:9222"
+
+
+def test_cli_browser_rejects_invalid_url_before_cleanup(monkeypatch, capsys):
+    from types import SimpleNamespace
+    import sys
+
+    calls = []
+    monkeypatch.setenv("BROWSER_CDP_URL", "http://existing:9222")
+    monkeypatch.setitem(sys.modules, "tools.browser_tool", SimpleNamespace(
+        cleanup_all_browsers=lambda: calls.append("cleanup"),
+    ))
+    cli = HermesCLI.__new__(HermesCLI)
+    cli._handle_browser_command("/browser connect http://host:0")
+    assert "invalid port" in capsys.readouterr().out
+    assert not calls
+    assert os.environ["BROWSER_CDP_URL"] == "http://existing:9222"

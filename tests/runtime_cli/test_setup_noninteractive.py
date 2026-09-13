@@ -75,7 +75,7 @@ class TestNonInteractiveSetup:
             patch("superforecasting_agent.runtime.setup.ensure_hermes_home"),
             patch("superforecasting_agent.runtime.setup.load_config", return_value={}),
             patch("superforecasting_agent.runtime.setup.get_agent_home", return_value="/tmp/.hermes"),
-            patch("superforecasting_agent.runtime.auth.get_active_provider", side_effect=AssertionError("wizard continued")),
+            patch("superforecasting_agent.credentials.auth.get_active_provider", side_effect=AssertionError("wizard continued")),
             patch("builtins.input", side_effect=AssertionError("input should not be called")),
         ):
             run_setup_wizard(args)
@@ -93,7 +93,7 @@ class TestNonInteractiveSetup:
             patch("superforecasting_agent.runtime.setup.ensure_hermes_home"),
             patch("superforecasting_agent.runtime.setup.load_config", return_value={}),
             patch("superforecasting_agent.runtime.setup.get_agent_home", return_value="/tmp/.hermes"),
-            patch("superforecasting_agent.runtime.auth.get_active_provider", side_effect=AssertionError("wizard continued")),
+            patch("superforecasting_agent.credentials.auth.get_active_provider", side_effect=AssertionError("wizard continued")),
             patch("sys.stdin") as mock_stdin,
             patch("builtins.input", side_effect=AssertionError("input should not be called")),
         ):

@@ -42,3 +42,36 @@ class TestAtomicYamlWrite:
         text = target.read_text(encoding="utf-8")
         assert "key: value" in text
         assert "# comment" in text
+
+
+def _set_config_in_process(path, key):
+    from superforecasting_agent.storage.files import atomic_roundtrip_yaml_update
+    atomic_roundtrip_yaml_update(path, key, key)
+
+
+def test_parallel_process_updates_preserve_each_others_keys(tmp_path):
+    from concurrent.futures import ProcessPoolExecutor
+    import multiprocessing
+    import yaml
+    path = tmp_path / 'config.yaml'
+    path.write_text('providers:\n  - name: original\n')
+    with ProcessPoolExecutor(max_workers=2, mp_context=multiprocessing.get_context('spawn')) as pool:
+        futures = [pool.submit(_set_config_in_process, path, f'worker.key{i}') for i in range(8)]
+        for future in futures:
+            future.result(timeout=15)
+    from superforecasting_agent.storage.files import atomic_roundtrip_yaml_update
+    atomic_roundtrip_yaml_update(path, 'providers.0.name', 'updated')
+    config = yaml.safe_load(path.read_text())
+    assert config['worker'] == {f'key{i}': f'worker.key{i}' for i in range(8)}
+    assert config['providers'] == [{'name': 'updated'}]
+
+
+def test_invalid_yaml_is_not_overwritten(tmp_path):
+    from superforecasting_agent.storage.files import atomic_roundtrip_yaml_update
+    import pytest
+    path = tmp_path / 'config.yaml'
+    for original in ('providers: [broken', '- not-a-config-mapping\n'):
+        path.write_text(original)
+        with pytest.raises(Exception):
+            atomic_roundtrip_yaml_update(path, 'model.default', 'new')
+        assert path.read_text() == original

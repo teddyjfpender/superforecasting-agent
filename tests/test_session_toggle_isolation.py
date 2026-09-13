@@ -21,6 +21,9 @@ _KEYS = [
 ]
 
 
+from tests.runtime_session_cleanup import retire_test_session
+
+
 @pytest.fixture(autouse=True)
 def _clean(monkeypatch):
     saved = {k: os.environ.get(k) for k in _KEYS}
@@ -86,12 +89,12 @@ def test_tui_provider_isolated_per_session():
 # ── Voice flags (one-mic feature; per-session when each session sets its own) ──
 
 def test_voice_session_key_resolves_from_params_then_event_sid():
-    srv._sessions["sidA"] = {"session_key": "keyA"}
+    srv._host.sessions["sidA"] = {"session_key": "keyA"}
     try:
         assert srv._voice_session_key({"session_id": "sidA"}) == "keyA"
         assert srv._voice_session_key({}) is None  # no session_id, no active voice sid
     finally:
-        srv._sessions.pop("sidA", None)
+        retire_test_session(srv, "sidA")
 
 
 def test_two_sessions_each_keep_their_own_voice_state():

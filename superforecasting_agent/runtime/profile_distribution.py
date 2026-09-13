@@ -96,6 +96,7 @@ DEFAULT_DIST_OWNED: Tuple[str, ...] = (
 # ``profiles.py::_DEFAULT_EXPORT_EXCLUDE_ROOT`` plus the ``local/``
 # convention for user customizations.
 USER_OWNED_EXCLUDE: frozenset = frozenset({
+    ".profile-use.lock",
     # Credentials & runtime secrets
     "auth.json", ".env",
     # Databases & runtime state

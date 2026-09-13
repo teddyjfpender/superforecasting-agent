@@ -1,0 +1,180 @@
+"""Presentation-independent serving lifetime and resource ownership."""
+
+from __future__ import annotations
+
+import logging
+import threading
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Any
+
+from superforecasting_agent.hosting.configuration import ProfileConfiguration
+from superforecasting_agent.hosting.device_auth import DeviceSignIn
+from superforecasting_agent.hosting.registry import SessionRegistry
+from superforecasting_agent.hosting.sessions import use_session
+from superforecasting_agent.hosting.storage import SessionStore
+from superforecasting_agent.hosting.workers import RuntimeWorkers
+from superforecasting_agent.storage import turns
+from superforecasting_agent.storage.profile_lease import ProfileLease
+
+logger = logging.getLogger(__name__)
+
+
+class RuntimeHost:
+    """Own admission, session membership, storage and ordered shutdown.
+
+    Adapters supply protocol-specific interruption and durable-turn callbacks.
+    They cannot reopen admission until every previous resource is relinquished.
+    """
+
+    def __init__(self, *, max_workers: int = 4, home: Path | None = None) -> None:
+        self._lock = threading.Lock()
+        self._max_workers = max_workers
+        self._shutdown_complete = False
+        self.workers = RuntimeWorkers(max_workers=max_workers)
+        self.sessions = SessionRegistry()
+        self.store = SessionStore()
+        self.configuration = ProfileConfiguration()
+        self.sign_in = DeviceSignIn()
+        self._home = home
+        self._profile_lease = ProfileLease(home) if home is not None else None
+
+    @contextmanager
+    def command(self, session: dict[str, Any]) -> Iterator[threading.Event]:
+        """Retain command/session resources until cooperative work has finished."""
+        with self.workers.operation(), use_session(session):
+            if not any(current is session for current in self.sessions.values()):
+                raise ValueError("command session does not belong to this runtime host")
+            stop = threading.Event()
+            lock = session.setdefault("history_lock", threading.Lock())
+            with lock:
+                stops = session.setdefault("_command_stops", set())
+                stops.add(stop)
+            try:
+                # Shutdown may have passed its cancellation sweep just before
+                # registration. Closing admission must still cancel this call.
+                if self.workers.stopping:
+                    stop.set()
+                yield stop
+            finally:
+                with lock:
+                    stops.discard(stop)
+                    if not stops and session.get("_command_stops") is stops:
+                        session.pop("_command_stops", None)
+
+    def interrupt_commands(self, session: dict[str, Any]) -> int:
+        with session.setdefault("history_lock", threading.Lock()):
+            stops = tuple(session.get("_command_stops", ()))
+            for stop in stops:
+                stop.set()
+            return len(stops)
+
+    def start(self, *, reset_services: Callable[[], None]) -> None:
+        with self._lock:
+            if not self.workers.stopping:
+                return
+            if (
+                not self._shutdown_complete
+                or not self.workers.drain(0)
+                or self.sessions
+                or self.store.current is not None
+            ):
+                raise RuntimeError("previous runtime shutdown is incomplete")
+            self._profile_lease = (
+                ProfileLease(self._home) if self._home is not None else None
+            )
+            # A failed restart may have allocated resources in reset_services;
+            # retain admission until shutdown has disposed them.
+            self._shutdown_complete = False
+            reset_services()
+            self.sign_in = DeviceSignIn()
+            self.store.start()
+            self.workers = RuntimeWorkers(max_workers=self._max_workers)
+            self._shutdown_complete = False
+
+    def shutdown(
+        self,
+        timeout: float,
+        *,
+        stop_services: Callable[[], None],
+        release_prompts: Callable[[str, dict[str, Any]], None],
+        interrupt_delegations: Callable[[], None],
+        close_session: Callable[[str, dict[str, Any], Any], None],
+    ) -> bool:
+        """Drain before disposal; retain failed resources for an explicit retry."""
+        with self._lock:
+            if self._shutdown_complete:
+                return True
+            self.workers.stop()
+            self.sign_in.cancel()
+            interruption_failed = False
+            try:
+                stop_services()
+            except Exception:
+                interruption_failed = True
+                logger.exception("failed to stop runtime services")
+            for sid, session in self.sessions.items():
+                session["cancel_requested"] = True
+                self.interrupt_commands(session)
+                stop = session.get("_notif_stop")
+                if stop is not None:
+                    stop.set()
+                agents = [session.get("agent")]
+                with session.setdefault("history_lock", threading.Lock()):
+                    agents.extend(session.get("_background_agents", {}).values())
+                for agent in agents:
+                    if agent is not None and hasattr(agent, "interrupt"):
+                        try:
+                            agent.interrupt()
+                        except Exception:
+                            logger.exception(
+                                "failed to interrupt runtime session %s", sid
+                            )
+                try:
+                    release_prompts(sid, session)
+                except Exception:
+                    interruption_failed = True
+                    logger.exception("failed to release runtime prompts for %s", sid)
+            try:
+                interrupt_delegations()
+            except Exception:
+                interruption_failed = True
+                logger.exception("failed to interrupt runtime delegations")
+            if not self.workers.drain(timeout):
+                logger.error("runtime shutdown incomplete: workers still own resources")
+                return False
+            if interruption_failed:
+                return False
+            cleanup_failed = False
+            for sid, session in self.sessions.items():
+                try:
+                    db = self.store.current
+                    if session.get("turn_id"):
+                        if db is None:
+                            raise RuntimeError(
+                                "cannot finalize durable turn without its store"
+                            )
+                        # Workers have drained: a transport cannot report stopped
+                        # while the durable receipt still says running.
+                        turns.transition(db, session["turn_id"], "interrupted")
+                    close_session(sid, session, db)
+                except Exception:
+                    cleanup_failed = True
+                    logger.exception("runtime session cleanup incomplete: %s", sid)
+            if cleanup_failed or self.sessions:
+                return False
+            try:
+                self.store.close()
+            except Exception:
+                logger.exception("runtime session store cleanup incomplete")
+                return False
+            try:
+                if self._profile_lease is not None:
+                    self._profile_lease.close()
+                    self._profile_lease = None
+            except Exception:
+                logger.exception("runtime profile admission cleanup incomplete")
+                return False
+            self._shutdown_complete = True
+            return True

@@ -100,7 +100,7 @@ LAZY_DEPS: dict[str, tuple[str, ...]] = {
     # statsmodels powers the advanced families in forecasting/market_compute.py
     # (cointegration, event-study, ARIMA, backtests). numpy/scipy come from
     # forecast.bayes; the compute engine degrades to typed 'degraded' blocks for
-    # advanced models when statsmodels is absent, and provisions it on first use.
+    # advanced models when statsmodels is absent. Numerical operations do not install it.
     "market.econometrics": ("statsmodels==0.14.5",),
 
     # ─── Web search backends ───────────────────────────────────────────────

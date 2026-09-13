@@ -52,7 +52,7 @@ def register(forecast_sub: argparse._SubParsersAction) -> None:
 
     lifecycle = forecast_sub.add_parser("lifecycle", help="Inspect or recover forecast lifecycle handoffs")
     lifecycle.add_argument("action", choices=["status", "run", "review"], nargs="?", default="status", help="Inspect by default; run recovers confirmed score/postmortem handoffs")
-    lifecycle.add_argument("question_id", nargs="?")
+    lifecycle.add_argument("question_id", nargs="?", help="Question to review; status and run operate on the full ledger")
     from forecasting.settlement_reviews import STATES
     lifecycle.add_argument("--state", choices=STATES)
     lifecycle.add_argument("--next-action")
@@ -812,6 +812,8 @@ def _cmd_config_doctor(args: argparse.Namespace) -> None:
 def _cmd_lifecycle(args: argparse.Namespace) -> None:
     from forecasting.lifecycle import lifecycle_status, run_lifecycle
 
+    if args.question_id and args.action != "review":
+        raise SystemExit("a question ID is supported only for lifecycle review; lifecycle run operates on the full ledger")
     ledger = _ledger(args)
     if args.limit < 1:
         raise SystemExit("--limit must be positive")

@@ -14,7 +14,7 @@ def _prompt_api_key(pconfig, existing_key: str, provider_id: str = "") -> tuple:
     ``return`` immediately — the user cancelled entry, declined to replace, or
     cleared the key and is now unconfigured.
     """
-    from superforecasting_agent.runtime.auth import LMSTUDIO_NOAUTH_PLACEHOLDER
+    from superforecasting_agent.credentials.auth import LMSTUDIO_NOAUTH_PLACEHOLDER
     from superforecasting_agent.runtime.config import save_env_value
     from superforecasting_agent.runtime.secret_prompt import masked_secret_prompt
 
@@ -85,13 +85,9 @@ def _prompt_api_key(pconfig, existing_key: str, provider_id: str = "") -> tuple:
 
 def _model_flow_api_key_provider(config, provider_id, current_model="", *, _PROVIDER_MODELS, _prompt_api_key):
     """Generic flow for API-key providers (z.ai, MiniMax, OpenCode, etc.)."""
-    from superforecasting_agent.runtime.auth import (
-        LMSTUDIO_NOAUTH_PLACEHOLDER,
-        PROVIDER_REGISTRY,
-        _prompt_model_selection,
-        _save_model_choice,
-        deactivate_provider,
-    )
+    from superforecasting_agent.configuration.authentication import PROVIDER_REGISTRY
+    from superforecasting_agent.credentials.auth import LMSTUDIO_NOAUTH_PLACEHOLDER, deactivate_provider
+    from superforecasting_agent.runtime.auth import _prompt_model_selection, _save_model_choice
     from superforecasting_agent.runtime.config import (
         get_env_value,
         save_env_value,
@@ -218,7 +214,7 @@ def _model_flow_api_key_provider(config, provider_id, current_model="", *, _PROV
     # LM Studio: live /api/v1/models probe (no models.dev catalog).
     # Ollama Cloud: merged discovery (live API + models.dev + disk cache).
     if provider_id == "lmstudio":
-        from superforecasting_agent.runtime.auth import AuthError
+        from superforecasting_agent.credentials.auth import AuthError
         from superforecasting_agent.runtime.models import fetch_lmstudio_models
 
         api_key_for_probe = existing_key or (get_env_value(key_env) if key_env else "")

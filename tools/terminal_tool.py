@@ -229,50 +229,19 @@ _sudo_password_cache_lock = threading.Lock()
 # Optional UI callbacks for interactive prompts. When set, these are called
 # instead of the default /dev/tty or input() readers. The CLI registers these
 # so prompts route through prompt_toolkit's event loop.
-# Callback slots used by the approval prompt and sudo password prompt
-# routines. Stored in thread-local state so overlapping ACP sessions —
-# each running in its own ThreadPoolExecutor thread — don't stomp on
-# each other's callbacks. See GHSA-qg5c-hvr5-hjgr.
-#
-# CLI mode is single-threaded, so each thread (the only one) holds its
-# own callback exactly like before. Gateway mode resolves approvals via
-# the per-session queue in tools.approval, not through these callbacks,
-# so it's unaffected.
-import threading
-_callback_tls = threading.local()
-
-
-def _get_sudo_password_callback():
-    return getattr(_callback_tls, "sudo_password", None)
-
-
-def _get_approval_callback():
-    return getattr(_callback_tls, "approval", None)
-
-
-def set_sudo_password_callback(cb):
-    """Register a callback for sudo password prompts (used by CLI).
-
-    Per-thread scope — ACP sessions that run concurrently in a
-    ThreadPoolExecutor each have their own callback slot.
-    """
-    _callback_tls.sudo_password = cb
-
-
-def set_approval_callback(cb):
-    """Register a callback for dangerous command approval prompts.
-
-    Per-thread scope — ACP sessions that run concurrently in a
-    ThreadPoolExecutor each have their own callback slot. See
-    GHSA-qg5c-hvr5-hjgr.
-    """
-    _callback_tls.approval = cb
+# Prompt callbacks have a shared thread-local owner; retain tool import aliases.
+from superforecasting_agent.tooling.prompt_callbacks import (
+    get_sudo_password_callback as _get_sudo_password_callback,
+    get_approval_callback as _get_approval_callback,
+    set_sudo_password_callback,
+    set_approval_callback,
+)
 
 
 def _get_sudo_password_cache_scope() -> str:
     """Return the cache scope for interactive sudo passwords."""
     try:
-        from gateway.session_context import get_session_env
+        from superforecasting_agent.session_context import get_session_env
 
         session_key = get_session_env("HERMES_SESSION_KEY", "")
     except Exception:
@@ -1340,7 +1309,7 @@ def _cleanup_inactive_envs(lifetime_seconds: int = 300):
         # ShellFileOperations from referencing a dead sandbox)
         try:
             from tools.file_tools import clear_file_ops_cache
-            clear_file_ops_cache(task_id)
+            clear_file_ops_cache(task_id, expected_env=env)
         except ImportError:
             pass
 
@@ -1458,18 +1427,17 @@ def cleanup_vm(task_id: str):
     # actual (potentially slow) env.cleanup() call to outside the lock
     # so other tool calls aren't blocked.
     env = None
-    with _env_lock:
+    # Invalidate in-flight creators atomically with detaching the current env.
+    # Keep the same env -> creation lock order as the inactivity reaper.
+    with _env_lock, _creation_locks_lock:
         env = _active_environments.pop(task_id, None)
         _last_activity.pop(task_id, None)
-
-    # Clean up per-task creation lock
-    with _creation_locks_lock:
         _creation_locks.pop(task_id, None)
 
     # Invalidate stale file_ops cache entry
     try:
         from tools.file_tools import clear_file_ops_cache
-        clear_file_ops_cache(task_id)
+        clear_file_ops_cache(task_id, expected_env=env)
     except ImportError:
         pass
 
@@ -1771,19 +1739,13 @@ def terminal_tool(
         # before falling back to global env var config
         overrides = _task_env_overrides.get(effective_task_id, {})
         
-        # Select image based on env type, with per-task override support
-        if env_type == "docker":
-            image = overrides.get("docker_image") or config["docker_image"]
-        elif env_type == "singularity":
-            image = overrides.get("singularity_image") or config["singularity_image"]
-        elif env_type == "modal":
-            image = overrides.get("modal_image") or config["modal_image"]
-        elif env_type == "daytona":
-            image = overrides.get("daytona_image") or config["daytona_image"]
-        else:
-            image = ""
+        from tools.environments.configuration import environment_creation_options
 
-        cwd = overrides.get("cwd") or config["cwd"]
+        creation_options = environment_creation_options(
+            config, overrides, task_id=effective_task_id,
+            timeout=timeout or config["timeout"],
+        )
+        cwd = creation_options["cwd"]
 
         # If the default cwd was relocated out of the harness into the
         # workspace, tell the AGENT once (not silently). Only when the command
@@ -1871,8 +1833,15 @@ def terminal_tool(
                 task_lock = _creation_locks[effective_task_id]
 
             with task_lock:
-                # Double-check after acquiring the per-task lock
-                with _env_lock:
+                # A cleanup may invalidate this lock while this caller waits.
+                # Such a caller belongs to the retired generation, even if a
+                # replacement environment now exists under the same task ID.
+                with _env_lock, _creation_locks_lock:
+                    if _creation_locks.get(effective_task_id) is not task_lock:
+                        return json.dumps({
+                            "output": "", "exit_code": -1, "status": "cancelled",
+                            "error": "Environment creation cancelled by session cleanup",
+                        })
                     if effective_task_id in _active_environments:
                         _last_activity[effective_task_id] = time.time()
                         env = _active_environments[effective_task_id]
@@ -1883,50 +1852,7 @@ def terminal_tool(
                         _check_disk_usage_warning()
                     logger.info("Creating new %s environment for task %s...", env_type, effective_task_id[:8])
                     try:
-                        ssh_config = None
-                        if env_type == "ssh":
-                            ssh_config = {
-                                "host": config.get("ssh_host", ""),
-                                "user": config.get("ssh_user", ""),
-                                "port": config.get("ssh_port", 22),
-                                "key": config.get("ssh_key", ""),
-                                "persistent": config.get("ssh_persistent", False),
-                            }
-
-                        container_config = None
-                        if env_type in {"docker", "singularity", "modal", "daytona", "vercel_sandbox"}:
-                            container_config = {
-                                "container_cpu": config.get("container_cpu", 1),
-                                "container_memory": config.get("container_memory", 5120),
-                                "container_disk": config.get("container_disk", 51200),
-                                "container_persistent": config.get("container_persistent", True),
-                                "modal_mode": config.get("modal_mode", "auto"),
-                                "vercel_runtime": config.get("vercel_runtime", ""),
-                                "docker_volumes": config.get("docker_volumes", []),
-                                "docker_mount_cwd_to_workspace": config.get("docker_mount_cwd_to_workspace", False),
-                                "docker_forward_env": config.get("docker_forward_env", []),
-                                "docker_env": config.get("docker_env", {}),
-                                "docker_run_as_host_user": config.get("docker_run_as_host_user", False),
-                                "docker_extra_args": config.get("docker_extra_args", []),
-                            }
-
-                        local_config = None
-                        if env_type == "local":
-                            local_config = {
-                                "persistent": config.get("local_persistent", False),
-                            }
-
-                        new_env = _create_environment(
-                            env_type=env_type,
-                            image=image,
-                            cwd=cwd,
-                            timeout=effective_timeout,
-                            ssh_config=ssh_config,
-                            container_config=container_config,
-                            local_config=local_config,
-                            task_id=effective_task_id,
-                            host_cwd=config.get("host_cwd"),
-                        )
+                        new_env = _create_environment(**creation_options)
                     except ImportError as e:
                         return json.dumps({
                             "output": "",
@@ -1935,10 +1861,20 @@ def terminal_tool(
                             "status": "disabled"
                         }, ensure_ascii=False)
 
-                    with _env_lock:
-                        _active_environments[effective_task_id] = new_env
-                        _last_activity[effective_task_id] = time.time()
-                        env = new_env
+                    with _env_lock, _creation_locks_lock:
+                        retired = _creation_locks.get(effective_task_id) is not task_lock
+                        if not retired:
+                            _active_environments[effective_task_id] = new_env
+                            _last_activity[effective_task_id] = time.time()
+                            env = new_env
+                    if retired:
+                        # Dispose the unpublished object, never a task-ID lookup
+                        # that could tear down a replacement environment.
+                        new_env.cleanup()
+                        return json.dumps({
+                            "output": "", "exit_code": -1, "status": "cancelled",
+                            "error": "Environment creation cancelled by session cleanup",
+                        })
                     logger.info("%s environment ready for task %s", env_type, effective_task_id[:8])
 
         # Pre-exec security checks (tirith + dangerous command detection)
@@ -2050,7 +1986,7 @@ def terminal_tool(
                 # watch-pattern and completion notifications can be
                 # routed back to the correct chat/thread.
                 if background and (notify_on_complete or watch_patterns):
-                    from gateway.session_context import get_session_env as _gse
+                    from superforecasting_agent.session_context import get_session_env as _gse
                     _gw_platform = _gse("HERMES_SESSION_PLATFORM", "")
                     if _gw_platform:
                         _gw_chat_id = _gse("HERMES_SESSION_CHAT_ID", "")

@@ -73,7 +73,7 @@ class TestProviderSelectionGate:
                 "superforecasting_agent.runtime.runtime_provider.resolve_runtime_provider",
                 side_effect=RuntimeError("no oauth"),
             ), patch(
-                "superforecasting_agent.runtime.auth.resolve_xai_oauth_runtime_credentials",
+                "superforecasting_agent.credentials.auth.resolve_xai_oauth_runtime_credentials",
                 return_value={},
             ), patch(
                 "superforecasting_agent.runtime.config.load_env",

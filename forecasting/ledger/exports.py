@@ -74,12 +74,14 @@ def export_question(ledger, question_id: str, *, fmt: str = "markdown") -> str:
     if fmt == "json":
         from forecasting.applicability_facts import evidence_facts
         from forecasting.settlement_reviews import latest_reviews
+        from forecasting.source_transfer import export_sources
         return json_dumps(
             {
                 "product": _core._export_metadata(),
                 "generated_at": utc_now_iso(),
                 "question": ledger._question_to_dict(question),
                 "applicability_facts": evidence_facts(ledger, question),
+                "source_transfer": export_sources(ledger, question.id, evidence),
                 "settlement_review": latest_reviews(ledger).get(question.id),
                 "forecast_history": [ledger._snapshot_to_dict(snapshot) for snapshot in snapshots],
                 "evidence": [ledger._evidence_to_dict(item) for item in evidence],
@@ -343,7 +345,7 @@ def import_packet(ledger, packet: dict[str, Any], *, conflict: str = "error") ->
         "duplicates_in_packet": 0,
     }
     seen: set[tuple[str, str]] = set()
-    with ledger._connect() as conn:
+    with ledger.transaction(immediate=True) as conn:
         for question_packet in question_packets:
             ledger._import_question_packet(conn, question_packet, conflict=conflict, summary=summary, seen=seen)
         ledger._import_packet_rows(
@@ -488,7 +490,28 @@ def _import_question_packet(
         ("thesis_members", "thesis_members"),
         ("thesis_entities", "thesis_entities"),
     ):
-        ledger._import_packet_rows(conn, table, packet.get(key), conflict=conflict, summary=summary, seen=seen)
+        if table == "resolutions" and packet.get("source_transfer") is not None:
+            from forecasting.source_transfer import import_sources
+            import_sources(ledger, conn, packet, conflict=conflict)
+        rows = packet.get(key)
+        if table == "resolutions" and rows and packet.get("source_transfer"):
+            # Archive paths belong to the exporter. Preserve the original in
+            # transfer history and use the stable evidence identity locally.
+            refs = {e.get("snapshot_path"): e["id"] for e in packet.get("evidence", []) if e.get("snapshot_path")}
+            def portable_resolution(row):
+                ref = row.get("resolution_source_snapshot_ref")
+                return {**row, "resolution_source_snapshot_ref": refs.get(ref, ref)}
+            rows = portable_resolution(rows) if isinstance(rows, dict) else [portable_resolution(r) for r in rows]
+        if packet.get("source_transfer") and packet.get("question", {}).get("metadata", {}).get("settlement_binding"):
+            # Original learning records remain intact in transfer history. They
+            # must not silently become locally supported calibration evidence.
+            if table in ("forecast_snapshots", "score_records") and rows:
+                rows = [{**row, "forecast_origin": "imported", "calibration_eligible": False, "calibration_weight": 0.0} for row in rows]
+            elif table == "calibration_lessons" and rows:
+                rows = [{**row, "status": "tentative" if row.get("status") == "active" else row.get("status")} for row in rows]
+            elif table == "domain_error_profiles":
+                rows = None
+        ledger._import_packet_rows(conn, table, rows, conflict=conflict, summary=summary, seen=seen)
 
 
 def _import_packet_rows(
@@ -578,8 +601,51 @@ def _insert_packet_row(
         if column in json_fields:
             value = json_dumps(value)
         elif column in bool_fields:
-            value = 1 if bool(value) else 0
+            if type(value) is not bool and not (type(value) is int and value in (0, 1)):
+                raise ValidationError(f"imported {column} must be a boolean")
+            value = int(value)
         values.append(value)
+    if table == "forecast_questions":
+        from forecasting.models import OutcomeSpace
+        OutcomeSpace.from_dict(row.get("outcome_space"))
+    if table == "forecast_snapshots":
+        space = ledger.get_question(row["question_id"]).outcome_space
+        if space.censoring is not None:
+            from forecasting.censoring import threshold_probability
+            threshold_probability(row.get("probability_or_distribution"), space.censoring)
+    if table == "resolutions":
+        from forecasting.ledger.resolutions import validate_resolution
+        question = ledger.get_question(row["question_id"])
+        normalized = validate_resolution(
+            ledger, question, row.get("outcome"),
+            resolution_source=row.get("resolution_source"),
+            resolution_source_snapshot_ref=row.get("resolution_source_snapshot_ref"),
+            resolution_status=row.get("resolution_status", "confirmed"),
+            criteria_satisfied=bool(row.get("criteria_satisfied", True)),
+            scoreable=bool(row.get("scoreable", True)), confidence=row.get("confidence"),
+            correction_ref=row.get("correction_ref"),
+            historical_source_import=conn.execute('SELECT 1 FROM source_transfer_history WHERE question_id=?', (question.id,)).fetchone() is not None,
+            source_cutoff=row.get("resolved_at"),
+        )
+        if "outcome" in columns:
+            values[columns.index("outcome")] = json_dumps(normalized)
+    if table == "score_records":
+        snapshot = ledger.get_snapshot(row["forecast_id"])
+        resolution = ledger.get_resolution(row["resolution_id"])
+        if snapshot.question_id != row["question_id"] or resolution.question_id != row["question_id"]:
+            raise ValidationError("imported score provenance must refer to the same question")
+        import math
+        for field in ("brier_score", "log_score", "proper_score", "calibration_weight"):
+            value = row.get(field)
+            if value is not None and (type(value) not in (int, float) or not math.isfinite(value)):
+                raise ValidationError(f"imported {field} must be a finite number")
+        space = ledger.get_question(row["question_id"]).outcome_space
+        if space.censoring is not None:
+            expected = ledger._score_forecast_payload(snapshot.probability_or_distribution, resolution.outcome, space)
+            if row.get("score_rule") != expected["score_rule"] or row.get("calibration_eligible"):
+                raise ValidationError("censored score must retain its threshold rule and calibration exclusion")
+            if row.get("proper_score") is None or not math.isclose(row["proper_score"], expected["proper_score"], abs_tol=1e-12):
+                raise ValidationError("censored score differs from the declared tail probability")
     placeholders = ", ".join("?" for _ in columns)
     conn.execute(
         f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({placeholders})",

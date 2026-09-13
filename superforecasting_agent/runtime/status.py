@@ -14,7 +14,7 @@ from pathlib import Path
 
 PROJECT_ROOT = get_install_root()
 
-from superforecasting_agent.runtime.auth import AuthError, resolve_provider
+from superforecasting_agent.credentials.auth import AuthError, resolve_provider
 from superforecasting_agent.runtime.colors import Colors, color
 from superforecasting_agent.runtime.config import get_env_path, get_env_value, get_agent_home, load_config
 from superforecasting_agent.runtime.models import provider_label
@@ -168,7 +168,7 @@ def show_status(args):
         display = redact_key(value) if not show_all else value
         print(f"  {name:<12}  {check_mark(has_key)} {display}")
 
-    from superforecasting_agent.runtime.auth import get_anthropic_key
+    from superforecasting_agent.credentials.auth import get_anthropic_key
     anthropic_value = get_anthropic_key()
     anthropic_display = redact_key(anthropic_value) if not show_all else anthropic_value
     print(f"  {'Anthropic':<12}  {check_mark(bool(anthropic_value))} {anthropic_display}")
@@ -180,7 +180,7 @@ def show_status(args):
     print(color("◆ Auth Providers", Colors.CYAN, Colors.BOLD))
 
     try:
-        from superforecasting_agent.runtime.auth import (
+        from superforecasting_agent.credentials.auth import (
             get_nous_auth_status,
             get_codex_auth_status,
             get_qwen_auth_status,
@@ -264,7 +264,7 @@ def show_status(args):
     # xAI OAuth — separate try/except so an import failure here cannot
     # disrupt the already-printed Nous/Codex/Qwen/MiniMax rows above.
     try:
-        from superforecasting_agent.runtime.auth import get_xai_oauth_auth_status
+        from superforecasting_agent.credentials.auth import get_xai_oauth_auth_status
         xai_oauth_status = get_xai_oauth_auth_status() or {}
     except Exception:
         xai_oauth_status = {}
@@ -446,7 +446,7 @@ def show_status(args):
 
     # Plugin-registered platforms
     try:
-        from gateway.platform_registry import platform_registry
+        from superforecasting_agent.platform_registry import platform_registry
         for entry in platform_registry.plugin_entries():
             configured = entry.check_fn()
             status_str = "configured" if configured else "not configured"

@@ -42,7 +42,7 @@ from urllib.parse import unquote, urlparse
 from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import TYPE_CHECKING, List, Dict, Any, Optional
 from superforecasting_agent.runtime.model_env import inference_provider_env
 from superforecasting_agent.runtime.assistant_text import (
     _strip_reasoning_tags as _strip_reasoning_tags,
@@ -287,13 +287,9 @@ def _parse_reasoning_summary_config(raw: str) -> str:
 
 def _parse_service_tier_config(raw: str) -> str | None:
     """Parse a persisted service-tier preference into a Responses API value."""
-    value = str(raw or "").strip().lower()
-    if not value or value in {"normal", "default", "standard", "off", "none"}:
-        return None
-    if value in {"fast", "priority", "on"}:
-        return "priority"
-    logger.warning("Unknown service_tier '%s', ignoring", raw)
-    return None
+    from superforecasting_agent.constants import parse_service_tier
+    return parse_service_tier(raw)
+
 
 def load_cli_config() -> Dict[str, Any]:
     """Load interactive settings using this CLI's active home and project root."""
@@ -409,7 +405,10 @@ from rich.text import Text as _RichText
 import fire
 
 # Import the agent and tool systems
-from run_agent import AIAgent
+from agent.agent_factory import build_agent, build_forecast_agent
+
+if TYPE_CHECKING:
+    from agent.runtime import AIAgent
 from superforecasting_agent.tooling.runtime import get_tool_definitions, get_toolset_for_tool
 
 # Extracted CLI modules (Phase 3)
@@ -1305,7 +1304,6 @@ from agent.skill_commands import (
     scan_skill_commands,
     get_skill_commands,
     build_skill_invocation_message,
-    build_preloaded_skills_prompt,
 )
 from agent.skill_bundles import (
     get_skill_bundles,
@@ -1353,9 +1351,8 @@ def save_config_value(key_path: str, value: any) -> bool:
     """
     Save a value to the active config file at the specified key path.
     
-    Respects the same lookup order as load_cli_config():
-    1. Active agent-home config.yaml (user config - preferred, used if it exists)
-    2. ./cli-config.yaml (project config - fallback)
+    Writes to the active profile, including first use. Project defaults are
+    read-only compatibility input, never a persistence destination.
     
     Args:
         key_path: Dot-separated path like "agent.system_prompt"
@@ -1364,10 +1361,7 @@ def save_config_value(key_path: str, value: any) -> bool:
     Returns:
         True if successful, False otherwise
     """
-    # Use the same precedence as load_cli_config: user config first, then project config
-    user_config_path = _hermes_home / 'config.yaml'
-    project_config_path = Path(__file__).parent / 'cli-config.yaml'
-    config_path = user_config_path if user_config_path.exists() else project_config_path
+    config_path = _hermes_home / 'config.yaml'
     
     try:
         # Ensure parent directory exists (for config.yaml on first use)
@@ -1560,20 +1554,14 @@ class ForecastCLI:
             self.api_key = api_key or os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
         else:
             self.api_key = api_key or os.getenv("OPENAI_API_KEY") or os.getenv("OPENROUTER_API_KEY")
-        # Max turns priority: CLI arg > config file > env var > default
-        if max_turns is not None:  # CLI arg was explicitly set
-            self.max_turns = max_turns
-        elif CLI_CONFIG["agent"].get("max_turns"):
-            self.max_turns = CLI_CONFIG["agent"]["max_turns"]
-        elif CLI_CONFIG.get("max_turns"):  # Backwards compat: root-level max_turns
-            self.max_turns = CLI_CONFIG["max_turns"]
-        else:
-            # Honor FORECAST_AGENT_MAX_TOOL_ITERATIONS (or a legacy alias); default
-            # 200 — raised from 90 for deep-research turns. A soft-cap breach is a
-            # checkpoint-continuation, not a hard stop (see loop_should_continue).
-            from agent.iteration_budget import resolve_max_tool_iterations
-            self.max_turns = resolve_max_tool_iterations()
-        
+        # Shared interpretation; preserve the legacy fallback when no budget is configured.
+        from agent.iteration_budget import resolve_max_tool_iterations
+        from superforecasting_agent.configuration.agent_limits import agent_turn_budget, configured_turn_count
+
+        self.max_turns = configured_turn_count(CLI_CONFIG, override=max_turns)
+        if self.max_turns is None:
+            self.max_turns = agent_turn_budget({}, default=resolve_max_tool_iterations())
+
         # Parse and validate toolsets
         self.enabled_toolsets = toolsets
         self.disabled_toolsets = CLI_CONFIG["agent"].get("disabled_toolsets") or []
@@ -3096,26 +3084,15 @@ class ForecastCLI:
                 "credential_pool": getattr(self, "_credential_pool", None),
             }
             effective_model = model_override or self.model
-            from forecasting.protocol import build_forecast_chat_system_prompt
-
-            forecast_system_prompt = build_forecast_chat_system_prompt(
-                self.system_prompt
-            )
-            self.agent = AIAgent(
+            self.agent = build_forecast_agent(
+                system_prompt=self.system_prompt,
+                runtime=runtime,
                 model=effective_model,
-                api_key=runtime.get("api_key"),
-                base_url=runtime.get("base_url"),
-                provider=runtime.get("provider"),
-                api_mode=runtime.get("api_mode"),
-                acp_command=runtime.get("command"),
-                acp_args=runtime.get("args"),
-                credential_pool=runtime.get("credential_pool"),
                 max_iterations=self.max_turns,
                 enabled_toolsets=self.enabled_toolsets,
                 disabled_toolsets=self.disabled_toolsets,
                 verbose_logging=self.verbose,
                 quiet_mode=not self.verbose,
-                ephemeral_system_prompt=forecast_system_prompt,
                 prefill_messages=self.prefill_messages or None,
                 reasoning_config=self.reasoning_config,
                 reasoning_summary=self.reasoning_summary,
@@ -3393,67 +3370,16 @@ class ForecastCLI:
     from superforecasting_agent.runtime.checkpoint_commands import _handle_snapshot_command as _handle_snapshot_command
 
     def _handle_stop_command(self):
-        """Handle /stop — kill all running background processes.
+        """Stop background work in this standalone CLI process."""
+        from superforecasting_agent.tooling.background import stop_background
 
-        Inspired by OpenAI Codex's separation of interrupt (stop current turn)
-        from /stop (clean up background processes). See openai/codex#14602.
-        """
-        from tools.async_delegation import active_count, interrupt_all
-        from tools.process_registry import process_registry
-
-        processes = process_registry.list_sessions()
-        running = [p for p in processes if p.get("status") == "running"]
-        # Background subagents live in the async-delegation registry, not the
-        # process registry — interrupt them here too or /stop misses them.
-        n_async = active_count()
-
-        if not running and not n_async:
-            print("  No running background processes.")
-            return
-
-        if running:
-            print(f"  Stopping {len(running)} background process(es)...")
-            killed = process_registry.kill_all()
-            print(f"  ✅ Stopped {killed} process(es).")
-
-        if n_async:
-            stopped = interrupt_all(reason="/stop")
-            print(f"  ✅ Interrupted {stopped} background delegation(s).")
+        print(stop_background())
 
     def _handle_agents_command(self):
-        """Handle /agents — show background processes and agent status."""
-        from tools.process_registry import format_uptime_short, process_registry
+        """Inspect background work using the same scope as /stop."""
+        from superforecasting_agent.tooling.background import describe_background
 
-        processes = process_registry.list_sessions()
-        running = [p for p in processes if p.get("status") == "running"]
-        finished = [p for p in processes if p.get("status") != "running"]
-
-        _cprint(f"  Running processes: {len(running)}")
-        for p in running:
-            cmd = p.get("command", "")[:80]
-            up = format_uptime_short(p.get("uptime_seconds", 0))
-            _cprint(f"    {p.get('session_id', '?')} · {up} · {cmd}")
-
-        if finished:
-            _cprint(f"  Recently finished: {len(finished)}")
-
-        # Background subagents (delegate_task(background=true)) live outside the
-        # process registry — surface them here too.
-        try:
-            from tools.async_delegation import list_async_delegations
-
-            delegations = list_async_delegations()
-            running_d = [d for d in delegations if d.get("status") == "running"]
-            if running_d:
-                _cprint(f"  Background delegations: {len(running_d)} running")
-                for d in running_d:
-                    goal = (d.get("goal", "") or "")[:60]
-                    _cprint(f"    {d.get('delegation_id', '?')} · {d.get('status')} · {goal}")
-        except Exception:
-            pass
-
-        agent_running = getattr(self, "_agent_running", False)
-        _cprint(f"  Agent: {'running' if agent_running else 'idle'}")
+        _cprint(describe_background(agent_running=bool(getattr(self, "_agent_running", False))))
 
     def _handle_paste_command(self):
         """Handle /paste — explicitly check clipboard for an image.
@@ -3855,45 +3781,10 @@ class ForecastCLI:
     
     def show_tools(self):
         """Display available tools with forecast-desk ASCII framing."""
+        from superforecasting_agent.application.tools import describe_tools
+
         tools = get_tool_definitions(enabled_toolsets=self.enabled_toolsets, quiet_mode=True)
-        
-        if not tools:
-            print("No tools available")
-            return
-        
-        # Header
-        print()
-        title = "Forecast Desk Tools"
-        width = 78
-        pad = width - len(title)
-        print("+" + "-" * width + "+")
-        print("|" + " " * (pad // 2) + title + " " * (pad - pad // 2) + "|")
-        print("+" + "-" * width + "+")
-        print()
-        
-        # Group tools by toolset
-        toolsets = {}
-        for tool in sorted(tools, key=lambda t: t["function"]["name"]):
-            name = tool["function"]["name"]
-            toolset = get_toolset_for_tool(name) or "unknown"
-            if toolset not in toolsets:
-                toolsets[toolset] = []
-            desc = tool["function"].get("description", "")
-            # First sentence: split on ". " (period+space) to avoid breaking on "e.g." or "v2.0"
-            desc = desc.split("\n")[0]
-            if ". " in desc:
-                desc = desc[:desc.index(". ") + 1]
-            toolsets[toolset].append((name, desc))
-        
-        # Display by toolset
-        for toolset in sorted(toolsets.keys()):
-            print(f"  [{toolset}]")
-            for name, desc in toolsets[toolset]:
-                print(f"    * {name:<20} - {desc}")
-            print()
-        
-        print(f"  Total: {len(tools)} tools")
-        print()
+        print(describe_tools(tools, get_toolset_for_tool))
 
     def _handle_tools_command(self, cmd: str):
         """Handle /tools [list|disable|enable] slash commands.
@@ -3910,7 +3801,7 @@ class ForecastCLI:
         from io import StringIO
         from superforecasting_agent.runtime.tools_config import tools_disable_enable_command
 
-        def _run_capture(ns: Namespace) -> None:
+        def _run_capture(ns: Namespace):
             """Run tools_disable_enable_command, routing its ANSI-colored
             print() output through _cprint when inside the interactive TUI
             so escapes aren't mangled by patch_stdout's StdoutProxy into
@@ -3921,8 +3812,7 @@ class ForecastCLI:
             """
             # Standalone/tests, run as usual
             if getattr(self, "_app", None) is None:
-                tools_disable_enable_command(ns)
-                return
+                return tools_disable_enable_command(ns)
 
             # Buffer reports isatty()=True so color() in superforecasting_agent/runtime/colors.py
             # still emits ANSI escapes. StringIO.isatty() is False, which
@@ -3933,9 +3823,10 @@ class ForecastCLI:
 
             buf = _TTYBuf()
             with redirect_stdout(buf):
-                tools_disable_enable_command(ns)
+                result = tools_disable_enable_command(ns)
             for line in buf.getvalue().splitlines():
                 _cprint(line)
+            return result
 
         try:
             parts = shlex.split(cmd)
@@ -3965,10 +3856,12 @@ class ForecastCLI:
         label = ", ".join(names)
         _cprint(f"{_ACCENT}{verb} {label}...{_RST}")
 
-        _run_capture(Namespace(tools_action=subcommand, names=names, platform="cli"))
+        changed = _run_capture(Namespace(tools_action=subcommand, names=names, platform="cli"))
+        if not changed:
+            return
 
         # Reset session so the new tool config is picked up from a clean state
-        from superforecasting_agent.runtime.tools_config import _get_platform_tools
+        from superforecasting_agent.tooling.selection import _get_platform_tools
         from superforecasting_agent.runtime.config import load_config
         self.enabled_toolsets = _get_platform_tools(load_config(), "cli")
         self.new_session()
@@ -3976,7 +3869,9 @@ class ForecastCLI:
 
     def show_toolsets(self):
         """Display available toolsets with forecast-desk ASCII framing."""
-        toolset_names = get_public_toolset_names(include_legacy=False)
+        from superforecasting_agent.tooling.inventory import toolset_inventory
+
+        items = toolset_inventory(self.enabled_toolsets, include_legacy=False)
         
         # Header
         print()
@@ -3988,16 +3883,11 @@ class ForecastCLI:
         print("+" + "-" * width + "+")
         print()
         
-        for name in toolset_names:
-            info = get_toolset_info(name)
-            if info:
-                tool_count = info["tool_count"]
-                desc = info["description"]
-                
-                # Mark if currently enabled
-                marker = "(*)" if self.enabled_toolsets and name in self.enabled_toolsets else "   "
-                print(f"  {marker} {name:<18} [{tool_count:>2} tools] - {desc}")
-        
+        for info in items:
+            name = info["name"]
+            marker = "(*)" if info["enabled"] else "   "
+            print(f"  {marker} {name:<18} [{info['tool_count']:>2} tools] - {info['description']}")
+
         print()
         print("  (*) = currently enabled")
         print()
@@ -4009,72 +3899,36 @@ class ForecastCLI:
     from superforecasting_agent.runtime.maintenance_commands import _handle_profile_command as _handle_profile_command
 
     def show_config(self):
-        """Display current configuration with forecast-desk ASCII framing."""
-        # Get terminal config from environment (which was set from cli-config.yaml)
+        """Display the same safe configuration summary as the native TUI."""
+        from superforecasting_agent.application.configuration_view import configuration_sections, configuration_text
+
+        sections = configuration_sections(
+            model=self.model, base_url=self.base_url, api_key=self.api_key,
+            max_turns=self.max_turns, toolsets=self.enabled_toolsets,
+            verbose=self.verbose,
+            cwd=os.getenv("TERMINAL_CWD", os.getcwd()),
+            config_path=str(_hermes_home / "config.yaml"),
+        )
         terminal_env = os.getenv("TERMINAL_ENV", "local")
-        terminal_cwd = os.getenv("TERMINAL_CWD", os.getcwd())
-        terminal_timeout = os.getenv("TERMINAL_TIMEOUT", "60")
-        
-        user_config_path = _hermes_home / 'config.yaml'
-        project_config_path = Path(__file__).parent / 'cli-config.yaml'
-        if user_config_path.exists():
-            config_path = user_config_path
-        else:
-            config_path = project_config_path
-        config_status = "(loaded)" if config_path.exists() else "(not found)"
-        
-        # ``self.api_key`` may be a callable (Azure Foundry Entra ID bearer
-        # provider). Never invoke it; just identify the auth surface.
-        from agent.azure_identity_adapter import is_token_provider
-        if is_token_provider(self.api_key):
-            api_key_display = "Microsoft Entra ID"
-        elif isinstance(self.api_key, str) and len(self.api_key) > 12:
-            api_key_display = f"{self.api_key[:8]}...{self.api_key[-4:]}"
-        else:
-            api_key_display = "Not set!"
-        
-        print()
-        title = "Configuration"
-        width = 50
-        pad = width - len(title)
-        print("+" + "-" * width + "+")
-        print("|" + " " * (pad // 2) + title + " " * (pad - pad // 2) + "|")
-        print("+" + "-" * width + "+")
-        print()
-        print("  -- Model --")
-        print(f"  Model:     {self.model}")
-        print(f"  Base URL:  {self.base_url}")
-        print(f"  API Key:   {api_key_display}")
-        print()
-        print("  -- Terminal --")
-        print(f"  Environment:  {terminal_env}")
+        terminal_rows = [["Environment", terminal_env],
+                         ["Timeout", os.getenv("TERMINAL_TIMEOUT", "60") + "s"]]
         if terminal_env == "ssh":
-            ssh_host = os.getenv("TERMINAL_SSH_HOST", "not set")
-            ssh_user = os.getenv("TERMINAL_SSH_USER", "not set")
-            ssh_port = os.getenv("TERMINAL_SSH_PORT", "22")
-            print(f"  SSH Target:   {ssh_user}@{ssh_host}:{ssh_port}")
-        print(f"  Working Dir:  {terminal_cwd}")
-        print(f"  Timeout:      {terminal_timeout}s")
-        print()
-        print("  -- Agent --")
-        print(f"  Max Turns:  {self.max_turns}")
-        print(f"  Toolsets:   {', '.join(self.enabled_toolsets) if self.enabled_toolsets else 'all'}")
-        print(f"  Verbose:    {self.verbose}")
-        print()
-        print("  -- Session --")
-        print(f"  Started:     {self.session_start.strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"  Config File: {config_path} {config_status}")
-        print()
-    
+            terminal_rows.append(["SSH Target", f"{os.getenv('TERMINAL_SSH_USER', 'not set')}@{os.getenv('TERMINAL_SSH_HOST', 'not set')}:{os.getenv('TERMINAL_SSH_PORT', '22')}"])
+        sections.append({"title": "Terminal", "rows": terminal_rows})
+        started = getattr(self, "session_start", None)
+        if started is not None:
+            sections.append({"title": "Session", "rows": [["Started", started.strftime('%Y-%m-%d %H:%M:%S')]]})
+        print(configuration_text(sections))
+
     def _list_recent_sessions(self, limit: int = 10) -> list[dict[str, Any]]:
         """Return recent CLI sessions for resume affordances."""
         if not self._session_db:
             return []
         try:
-            sessions = self._session_db.list_sessions_rich(
-                source="cli",
-                exclude_sources=["tool"],
-                limit=limit,
+            from superforecasting_agent.application.sessions import list_resumable_sessions
+
+            sessions = list_resumable_sessions(
+                self._session_db, limit=limit, exclude_ids={self.session_id},
             )
         except Exception:
             return []
@@ -4501,62 +4355,21 @@ class ForecastCLI:
         short_uuid = uuid.uuid4().hex[:6]
         new_session_id = f"{timestamp_str}_{short_uuid}"
 
-        # Determine branch title
-        if branch_name:
-            branch_title = branch_name
-        else:
-            # Auto-generate from the current session title
-            current_title = None
-            if self._session_db:
-                current_title = self._session_db.get_session_title(self.session_id)
-            base = current_title or "branch"
-            branch_title = self._session_db.get_next_title_in_lineage(base)
-
-        # Save the current session's state before branching
         parent_session_id = self.session_id
-
-        # End the old session
         try:
-            self._session_db.end_session(self.session_id, "branched")
-        except Exception:
-            pass
-
-        # Create the new session with parent link
-        try:
-            self._session_db.create_session(
-                session_id=new_session_id,
-                source=env_var_alias_value(SESSION_SOURCE_ENV_NAMES, "cli"),
-                model=self.model,
-                model_config={
+            from superforecasting_agent.application.sessions import branch_session
+            branch_title = branch_session(
+                self._session_db, session_id=new_session_id,
+                parent_session_id=parent_session_id, history=self.conversation_history,
+                name=branch_name, source=env_var_alias_value(SESSION_SOURCE_ENV_NAMES, "cli"),
+                model=self.model, model_config={
                     "max_iterations": self.max_turns,
                     "reasoning_config": self.reasoning_config,
-                },
-                parent_session_id=parent_session_id,
+                }, end_parent=True,
             )
         except Exception as e:
             _cprint(f"  Failed to create branch session: {e}")
             return
-
-        # Copy conversation history to the new session
-        for msg in self.conversation_history:
-            try:
-                self._session_db.append_message(
-                    session_id=new_session_id,
-                    role=msg.get("role", "user"),
-                    content=msg.get("content"),
-                    tool_name=msg.get("tool_name") or msg.get("name"),
-                    tool_calls=msg.get("tool_calls"),
-                    tool_call_id=msg.get("tool_call_id"),
-                    reasoning=msg.get("reasoning"),
-                )
-            except Exception:
-                pass  # Best-effort copy
-
-        # Set title on the branch
-        try:
-            self._session_db.set_session_title(new_session_id, branch_title)
-        except Exception:
-            pass
 
         # Switch to the new session
         self.session_id = new_session_id
@@ -4622,23 +4435,14 @@ class ForecastCLI:
             print("No forecast transcript to save.")
             return
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        saved_dir = get_agent_home() / "sessions" / "saved"
-        try:
-            saved_dir.mkdir(parents=True, exist_ok=True)
-        except Exception as e:
-            print(f"Failed to create save directory {saved_dir}: {e}")
-            return
-        path = saved_dir / f"forecast_transcript_{timestamp}.json"
+        from superforecasting_agent.storage.transcripts import save_transcript
 
         try:
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump({
-                    "model": self.model,
-                    "session_id": self.session_id,
-                    "session_start": self.session_start.isoformat(),
-                    "messages": self.conversation_history,
-                }, f, indent=2, ensure_ascii=False)
+            path = save_transcript(
+                get_agent_home(), messages=self.conversation_history,
+                model=self.model, session_id=self.session_id,
+                session_start=self.session_start.isoformat(),
+            )
             print(f"Forecast transcript snapshot saved to: {path}")
             if self.session_id:
                 print(
@@ -4655,60 +4459,35 @@ class ForecastCLI:
         the last user message, then re-sends that forecast note to the agent.
         Returns the message to re-send, or None if there's nothing to retry.
         """
-        if not self.conversation_history:
-            print("No messages to retry.")
+        from superforecasting_agent.application.retry import prepare_retry, RetryUnavailable
+
+        try:
+            plan = prepare_retry(self.conversation_history, structured_messages=True)
+        except RetryUnavailable as exc:
+            print(str(exc))
             return None
-        
-        # Walk backwards to find the last user message
-        last_user_idx = None
-        for i in range(len(self.conversation_history) - 1, -1, -1):
-            if self.conversation_history[i].get("role") == "user":
-                last_user_idx = i
-                break
-        
-        if last_user_idx is None:
-            print("No user message found to retry.")
-            return None
-        
-        # Extract the message text and remove everything from that point forward
-        last_message = self.conversation_history[last_user_idx].get("content", "")
-        self.conversation_history = self.conversation_history[:last_user_idx]
-        
-        print(f"Retrying: \"{last_message[:60]}{'...' if len(last_message) > 60 else ''}\"")
-        return last_message
-    
+        self.conversation_history = plan.history
+        preview = str(plan.message)
+        print(f'Retrying: "{preview[:60]}{"..." if len(preview) > 60 else ""}"')
+        return plan.message
+
     def undo_last(self):
         """Remove the last user/forecaster exchange from conversation history.
         
         Walks backwards and removes all messages from the last user message
         onward (including forecaster responses, tool calls, etc.).
         """
-        if not self.conversation_history:
-            print("No messages to undo.")
+        from superforecasting_agent.application.history import prepare_undo
+
+        plan = prepare_undo(self.conversation_history)
+        if plan is None:
+            print("No user message found to undo." if self.conversation_history else "No messages to undo.")
             return
-        
-        # Walk backwards to find the last user message
-        last_user_idx = None
-        for i in range(len(self.conversation_history) - 1, -1, -1):
-            if self.conversation_history[i].get("role") == "user":
-                last_user_idx = i
-                break
-        
-        if last_user_idx is None:
-            print("No user message found to undo.")
-            return
-        
-        # Count how many messages we're removing
-        removed_count = len(self.conversation_history) - last_user_idx
-        removed_msg = self.conversation_history[last_user_idx].get("content", "")
-        
-        # Truncate history to before the last user message
-        self.conversation_history = self.conversation_history[:last_user_idx]
-        
-        print(f"Undid {removed_count} message(s). Removed: \"{removed_msg[:60]}{'...' if len(removed_msg) > 60 else ''}\"")
-        remaining = len(self.conversation_history)
-        print(f"  {remaining} message(s) remaining in history.")
-    
+        self.conversation_history = plan.history
+        preview = plan.preview[:60] + ('...' if len(plan.preview) > 60 else '')
+        print(f'Undid {plan.removed} message(s). Removed: "{preview}"')
+        print(f"  {len(plan.history)} message(s) remaining in history.")
+
     def _run_curses_picker(self, title: str, items: list[str], default_index: int = 0) -> int | None:
         """Run curses_single_select via run_in_terminal so prompt_toolkit handles terminal ownership cleanly."""
         import threading
@@ -5362,50 +5141,16 @@ class ForecastCLI:
         return str(value)
 
     def _handle_gquota_command(self, cmd_original: str) -> None:
-        """Show Google Gemini Code Assist quota usage for the current OAuth account."""
+        """Render shared Google account quota inspection in the active console."""
+        from superforecasting_agent.runtime.quota_commands import google_quota_lines
+
+        parts = cmd_original.split(None, 1)
         try:
-            from agent.google_oauth import get_valid_access_token, GoogleOAuthError, load_credentials
-            from agent.google_code_assist import retrieve_user_quota, CodeAssistError
-        except ImportError as exc:
-            self._console_print(f"  [red]Gemini modules unavailable: {exc}[/]")
-            return
-
-        try:
-            access_token = get_valid_access_token()
-        except GoogleOAuthError as exc:
-            self._console_print(f"  [yellow]{exc}[/]")
-            self._console_print("  Run [bold]/model[/] and pick 'Google Gemini (OAuth)' to sign in.")
-            return
-
-        creds = load_credentials()
-        project_id = (creds.project_id if creds else "") or ""
-
-        try:
-            buckets = retrieve_user_quota(access_token, project_id=project_id)
-        except CodeAssistError as exc:
-            self._console_print(f"  [red]Quota lookup failed:[/] {exc}")
-            return
-
-        if not buckets:
-            self._console_print("  [dim]No quota buckets reported (account may be on legacy/unmetered tier).[/]")
-            return
-
-        # Sort for stable display, group by model
-        buckets.sort(key=lambda b: (b.model_id, b.token_type))
-        self._console_print()
-        self._console_print(f"  [bold]Gemini Code Assist quota[/]  (project: {project_id or '(auto / free-tier)'})")
-        self._console_print()
-        for b in buckets:
-            pct = max(0.0, min(1.0, b.remaining_fraction))
-            width = 20
-            filled = int(round(pct * width))
-            bar = "▓" * filled + "░" * (width - filled)
-            pct_str = f"{int(pct * 100):3d}%"
-            header = b.model_id
-            if b.token_type:
-                header += f" [{b.token_type}]"
-            self._console_print(f"    {header:40s}  {bar}  {pct_str}")
-        self._console_print()
+            lines = google_quota_lines(parts[1] if len(parts) > 1 else "")
+        except ValueError as exc:
+            lines = [str(exc)]
+        for line in lines:
+            self._console_print(line)
 
     def _handle_personality_command(self, cmd: str):
         """Handle the /style command and legacy /personality alias."""
@@ -5508,63 +5253,20 @@ class ForecastCLI:
         else:  # pragma: no cover - defensive (no live input loop)
             print("  /learn needs an active chat session to run.")
 
-    def _show_gateway_status(self):
-        """Show status of the gateway and connected messaging platforms."""
-        from gateway.config import load_gateway_config, Platform
-        
-        print()
-        print("+" + "-" * 60 + "+")
-        print("|" + " " * 15 + "(✿◠‿◠) Gateway Status" + " " * 17 + "|")
-        print("+" + "-" * 60 + "+")
-        print()
-        
+    def _show_gateway_status(self, command: str = "/platforms"):
+        """Render shared messaging configuration without claiming connectivity."""
+        from superforecasting_agent.runtime.platform_commands import platform_configuration_lines
+
+        parts = command.split(None, 1)
         try:
-            config = load_gateway_config()
-            
-            print("  Messaging Platform Configuration:")
-            print("  " + "-" * 55)
-            
-            platform_status = {
-                Platform.TELEGRAM: ("Telegram", "TELEGRAM_BOT_TOKEN"),
-                Platform.DISCORD: ("Discord", "DISCORD_BOT_TOKEN"),
-                Platform.SLACK: ("Slack", "SLACK_BOT_TOKEN"),
-                Platform.WHATSAPP: ("WhatsApp", "WHATSAPP_ENABLED"),
-            }
-            
-            for platform, (name, env_var) in platform_status.items():
-                pconfig = config.platforms.get(platform)
-                if pconfig and pconfig.enabled:
-                    home = config.get_home_channel(platform)
-                    home_str = f" → {home.name}" if home else ""
-                    print(f"    ✓ {name:<12} Enabled{home_str}")
-                else:
-                    print(f"    ○ {name:<12} Not configured ({env_var})")
-            
-            print()
-            print("  Session Reset Policy:")
-            print("  " + "-" * 55)
-            policy = config.default_reset_policy
-            print(f"    Mode: {policy.mode}")
-            print(f"    Daily reset at: {policy.at_hour}:00")
-            print(f"    Idle timeout: {policy.idle_minutes} minutes")
-            
-            print()
-            print("  To start the gateway:")
-            print("    python cli.py --gateway")
-            print()
-            print(f"  Configuration file: {display_agent_home()}/config.yaml")
-            print()
-            
-        except Exception as e:
-            print(f"  Error loading gateway config: {e}")
-            print()
-            print("  To configure the gateway:")
-            print("    1. Set environment variables:")
-            print("       TELEGRAM_BOT_TOKEN=your_token")
-            print("       DISCORD_BOT_TOKEN=your_token")
-            print(f"    2. Or configure settings in {display_agent_home()}/config.yaml")
-            print()
-    
+            lines = platform_configuration_lines(parts[1] if len(parts) > 1 else "")
+        except ValueError as exc:
+            lines = [str(exc)]
+        except Exception as exc:
+            lines = [f"Platform configuration unavailable: {exc}"]
+        for line in lines:
+            print(line)
+
     def process_command(self, command: str) -> bool:
         """
         Process a slash command.
@@ -5575,7 +5277,7 @@ class ForecastCLI:
         Returns:
             bool: True to continue, False to exit
         """
-        from superforecasting_agent.runtime.commands import expand_quick_alias
+        from superforecasting_agent.application.command_catalog import expand_quick_alias
         quick_commands = (getattr(self, "config", None) or {}).get("quick_commands", {})
         try:
             command = expand_quick_alias(command, quick_commands)
@@ -5590,7 +5292,7 @@ class ForecastCLI:
 
         # Resolve aliases via central registry so adding an alias is a one-line
         # change in superforecasting_agent/runtime/commands.py instead of touching every dispatch site.
-        from superforecasting_agent.runtime.commands import resolve_command as _resolve_cmd
+        from superforecasting_agent.application.command_catalog import resolve_command as _resolve_cmd
         _base_word = cmd_lower.split()[0].lstrip("/")
         _cmd_def = _resolve_cmd(_base_word)
         canonical = _cmd_def.name if _cmd_def else _base_word
@@ -5703,33 +5405,16 @@ class ForecastCLI:
                 raw_title = parts[1].strip()
                 if raw_title:
                     if self._session_db:
-                        # Sanitize the title early so feedback matches what gets stored
+                        from superforecasting_agent.application.sessions import set_session_title
                         try:
-                            from superforecasting_agent.storage.session import SessionDB
-                            new_title = SessionDB.sanitize_title(raw_title)
+                            new_title, pending = set_session_title(self._session_db, self.session_id, raw_title)
+                            self._pending_title = new_title if pending else None
+                            if pending:
+                                _cprint(f"  Forecast session title queued: {new_title} (will be saved on first message)")
+                            else:
+                                _cprint(f"  Forecast session title set: {new_title}")
                         except ValueError as e:
                             _cprint(f"  {e}")
-                            new_title = None
-                        if not new_title:
-                            _cprint("  Title is empty after cleanup. Please use printable characters.")
-                        elif self._session_db.get_session(self.session_id):
-                            # Session exists in DB — set title directly
-                            try:
-                                if self._session_db.set_session_title(self.session_id, new_title):
-                                    _cprint(f"  Forecast session title set: {new_title}")
-                                else:
-                                    _cprint("  Forecast session not found in database.")
-                            except ValueError as e:
-                                _cprint(f"  {e}")
-                        else:
-                            # Session not created yet — defer the title
-                            # Check uniqueness proactively with the sanitized title
-                            existing = self._session_db.get_session_by_title(new_title)
-                            if existing:
-                                _cprint(f"  Title '{new_title}' is already in use by session {existing['id']}")
-                            else:
-                                self._pending_title = new_title
-                                _cprint(f"  Forecast session title queued: {new_title} (will be saved on first message)")
                     else:
                         from superforecasting_agent.storage.session import format_session_db_unavailable
                         _cprint(f"  {format_session_db_unavailable()}")
@@ -5817,7 +5502,7 @@ class ForecastCLI:
         elif canonical == "learn":
             self._handle_learn_command(cmd_original)
         elif canonical == "platforms":
-            self._show_gateway_status()
+            self._show_gateway_status(cmd_original)
         elif canonical == "status":
             self._show_session_status()
         elif canonical == "statusbar":
@@ -5873,24 +5558,9 @@ class ForecastCLI:
             self._handle_browser_command(cmd_original)
         elif canonical == "plugins":
             try:
-                from superforecasting_agent.runtime.plugins import get_plugin_manager
-                mgr = get_plugin_manager()
-                plugins = mgr.list_plugins()
-                if not plugins:
-                    print("No plugins installed.")
-                    print(f"Drop plugin directories into {display_agent_home()}/plugins/ to get started.")
-                else:
-                    print(f"Plugins ({len(plugins)}):")
-                    for p in plugins:
-                        status = "✓" if p["enabled"] else "✗"
-                        version = f" v{p['version']}" if p["version"] else ""
-                        tools = f"{p['tools']} tools" if p["tools"] else ""
-                        hooks = f"{p['hooks']} hooks" if p["hooks"] else ""
-                        commands = f"{p['commands']} commands" if p.get("commands") else ""
-                        parts = [x for x in [tools, hooks, commands] if x]
-                        detail = f" ({', '.join(parts)})" if parts else ""
-                        error = f" — {p['error']}" if p["error"] else ""
-                        print(f"  {status} {p['name']}{version}{detail}{error}")
+                from superforecasting_agent.runtime.plugin_commands import describe_plugins
+
+                print(describe_plugins())
             except Exception as e:
                 print(f"Plugin system error: {e}")
         elif canonical == "rollback":
@@ -5955,27 +5625,10 @@ class ForecastCLI:
             if base_cmd.lstrip("/") in quick_commands:
                 qcmd = quick_commands[base_cmd.lstrip("/")]
                 if qcmd.get("type") == "exec":
-                    import subprocess
-                    exec_cmd = qcmd.get("command", "")
-                    if exec_cmd:
-                        try:
-                            # shell=True is intentional: quick_commands are user-defined
-                            # shell snippets from config.yaml — not agent/LLM controlled.
-                            result = subprocess.run(
-                                exec_cmd, shell=True, capture_output=True,
-                                text=True, timeout=30
-                            )
-                            output = result.stdout.strip() or result.stderr.strip()
-                            if output:
-                                self._console_print(_rich_text_from_ansi(output))
-                            else:
-                                self._console_print("[dim]Command returned no output[/]")
-                        except subprocess.TimeoutExpired:
-                            self._console_print("[bold red]Quick command timed out (30s)[/]")
-                        except Exception as e:
-                            self._console_print(f"[bold red]Quick command error: {e}[/]")
-                    else:
-                        self._console_print(f"[bold red]Quick command '{base_cmd}' has no command defined[/]")
+                    from superforecasting_agent.runtime.quick_commands import execute_sync
+
+                    result = execute_sync(qcmd["command"])
+                    self._console_print(_rich_text_from_ansi(result.message))
                 else:
                     self._console_print(f"[bold red]Quick command '{base_cmd}' has unsupported type (supported: 'exec', 'alias')[/]")
             # Check for plugin-registered slash commands
@@ -6113,14 +5766,9 @@ class ForecastCLI:
             except Exception:
                 pass
             try:
-                bg_agent = AIAgent(
+                bg_agent = build_agent(
+                    runtime=turn_route["runtime"],
                     model=turn_route["model"],
-                    api_key=turn_route["runtime"].get("api_key"),
-                    base_url=turn_route["runtime"].get("base_url"),
-                    provider=turn_route["runtime"].get("provider"),
-                    api_mode=turn_route["runtime"].get("api_mode"),
-                    acp_command=turn_route["runtime"].get("command"),
-                    acp_args=turn_route["runtime"].get("args"),
                     max_iterations=self.max_turns,
                     enabled_toolsets=self.enabled_toolsets,
                     quiet_mode=True,
@@ -6326,56 +5974,13 @@ class ForecastCLI:
             print("  Prompt + TUI colors updated.")
 
     def _handle_footer_command(self, cmd_original: str) -> None:
-        """Toggle or inspect ``display.runtime_footer.enabled`` from the CLI.
+        from superforecasting_agent.application.footer import footer_command
 
-        Usage:
-            /footer           → toggle
-            /footer on|off    → explicit
-            /footer status    → show current state
-        """
-        from superforecasting_agent.runtime.config import load_config
-        from superforecasting_agent.runtime.colors import Colors as _Colors
-
-        # Parse arg
-        arg = ""
+        parts = cmd_original.strip().split(None, 1)
         try:
-            parts = (cmd_original or "").strip().split(None, 1)
-            if len(parts) > 1:
-                arg = parts[1].strip().lower()
-        except Exception:
-            arg = ""
-
-        cfg = load_config() or {}
-        footer_cfg = ((cfg.get("display") or {}).get("runtime_footer") or {})
-        current = bool(footer_cfg.get("enabled", False))
-        fields = footer_cfg.get("fields") or ["model", "context_pct", "cwd"]
-
-        if arg in {"status", "?"}:
-            state = "ON" if current else "OFF"
-            _cprint(
-                f"  {_Colors.BOLD}Runtime footer:{_Colors.RESET} {state}\n"
-                f"  Fields: {', '.join(fields)}"
-            )
-            return
-
-        if arg in {"on", "enable", "true", "1"}:
-            new_state = True
-        elif arg in {"off", "disable", "false", "0"}:
-            new_state = False
-        elif arg == "":
-            new_state = not current
-        else:
-            _cprint("  Usage: /footer [on|off|status]")
-            return
-
-        if save_config_value("display.runtime_footer.enabled", new_state):
-            state = (
-                f"{_Colors.GREEN}ON{_Colors.RESET}" if new_state
-                else f"{_Colors.DIM}OFF{_Colors.RESET}"
-            )
-            _cprint(f"  Runtime footer: {state}")
-        else:
-            _cprint("  Failed to save runtime_footer setting to config.yaml")
+            _cprint(footer_command(parts[1] if len(parts) > 1 else "", _hermes_home / "config.yaml"))
+        except Exception as exc:
+            _cprint(f"  {exc}")
 
     def _toggle_verbose(self):
         """Cycle tool progress mode: off → new → all → verbose → off."""
@@ -6457,16 +6062,18 @@ class ForecastCLI:
             self.show_reasoning = True
             if self.agent:
                 self.agent.reasoning_callback = self._current_reasoning_callback()
-            save_config_value("display.show_reasoning", True)
-            _cprint(f"  {_ACCENT}✓ Reasoning display: ON (saved){_RST}")
+            saved = save_config_value("display.show_reasoning", True)
+            scope = "saved" if saved else "session only; configuration save failed"
+            _cprint(f"  {_ACCENT}✓ Reasoning display: ON ({scope}){_RST}")
             _cprint(f"  {_DIM}  Model thinking will be shown during and after each response.{_RST}")
             return
         if arg in {"hide", "off"}:
             self.show_reasoning = False
             if self.agent:
                 self.agent.reasoning_callback = self._current_reasoning_callback()
-            save_config_value("display.show_reasoning", False)
-            _cprint(f"  {_ACCENT}✓ Reasoning display: OFF (saved){_RST}")
+            saved = save_config_value("display.show_reasoning", False)
+            scope = "saved" if saved else "session only; configuration save failed"
+            _cprint(f"  {_ACCENT}✓ Reasoning display: OFF ({scope}){_RST}")
             return
 
         # Effort level change
@@ -6549,20 +6156,15 @@ class ForecastCLI:
             _cprint(f"  {_DIM}Usage: /fast [normal|fast|status]{_RST}")
             return
 
-        arg = parts[1].strip().lower()
-
-        if arg in {"fast", "on"}:
-            self.service_tier = "priority"
-            saved_value = "fast"
-            label = "FAST"
-        elif arg in {"normal", "off"}:
-            self.service_tier = None
-            saved_value = "normal"
-            label = "NORMAL"
-        else:
-            _cprint(f"  {_DIM}Unknown argument: {arg}{_RST}")
-            _cprint(f"  {_DIM}Usage: /fast [normal|fast|status]{_RST}")
+        from superforecasting_agent.constants import parse_fast_mode_command
+        try:
+            saved_value = parse_fast_mode_command(parts[1], current_fast=self.service_tier == "priority")
+        except ValueError as exc:
+            _cprint(f"  {_DIM}{exc}{_RST}")
+            _cprint(f"  {_DIM}Usage: /fast [normal|fast|status|toggle]{_RST}")
             return
+        self.service_tier = "priority" if saved_value == "fast" else None
+        label = saved_value.upper()
 
         self.agent = None  # Force agent re-init with new service-tier config
         if save_config_value("agent.service_tier", saved_value):
@@ -6801,37 +6403,26 @@ class ForecastCLI:
 
     def _show_insights(self, command: str = "/insights"):
         """Show usage insights and analytics from session history."""
-        # Parse optional --days flag
-        parts = command.split()
-        days = 30
-        source = None
-        i = 1
-        while i < len(parts):
-            if parts[i] == "--days" and i + 1 < len(parts):
-                try:
-                    days = int(parts[i + 1])
-                except ValueError:
-                    print(f"  Invalid --days value: {parts[i + 1]}")
-                    return
-                i += 2
-            elif parts[i] == "--source" and i + 1 < len(parts):
-                source = parts[i + 1]
-                i += 2
-            elif parts[i].isdigit():
-                days = int(parts[i])
-                i += 1
-            else:
-                i += 1
+        from superforecasting_agent.application.insights import parse_insights_arguments
+
+        parts = command.split(maxsplit=1)
+        try:
+            query = parse_insights_arguments(parts[1] if len(parts) > 1 else "")
+        except ValueError as exc:
+            print(f"  {exc}")
+            return
 
         try:
             from superforecasting_agent.storage.session import SessionDB
             from agent.insights import InsightsEngine
 
             db = SessionDB()
-            engine = InsightsEngine(db)
-            report = engine.generate(days=days, source=source)
-            print(engine.format_terminal(report))
-            db.close()
+            try:
+                engine = InsightsEngine(db)
+                report = engine.generate(days=query.days, source=query.source)
+                print(engine.format_terminal(report))
+            finally:
+                db.close()
         except Exception as e:
             print(f"  Error generating insights: {e}")
 
@@ -8337,7 +7928,7 @@ class ForecastCLI:
         # rich-text editors (Google Docs, Word, etc.).  Lone surrogates are invalid
         # UTF-8 and crash JSON serialization in the OpenAI SDK.
         if isinstance(message, str):
-            from run_agent import _sanitize_surrogates
+            from agent.runtime import _sanitize_surrogates
             message = _sanitize_surrogates(message)
 
         # Add user message to history
@@ -8870,7 +8461,7 @@ class ForecastCLI:
 
         # Prepend profile name when not default
         try:
-            from superforecasting_agent.runtime.profiles import get_active_profile_name
+            from superforecasting_agent.constants import get_active_profile_name
             profile = get_active_profile_name()
             if profile not in {"default", "custom"}:
                 symbol = f"{profile} {symbol}"
@@ -10073,7 +9664,7 @@ class ForecastCLI:
                 event.app.invalidate()
             if pasted_text:
                 # Sanitize surrogate characters (e.g. from Word/Google Docs paste) before writing
-                from run_agent import _sanitize_surrogates
+                from agent.runtime import _sanitize_surrogates
                 pasted_text = _sanitize_surrogates(pasted_text)
                 line_count = pasted_text.count('\n')
                 buf = event.current_buffer
@@ -11560,7 +11151,7 @@ def main(
                     toolsets_list.append(str(t))
     else:
         # Use the shared resolver so MCP servers are included at runtime
-        from superforecasting_agent.runtime.tools_config import _get_platform_tools
+        from superforecasting_agent.tooling.selection import _get_platform_tools
         toolsets_list = sorted(_get_platform_tools(CLI_CONFIG, "cli"))
     
     parsed_skills = _parse_skills_argument(skills)
@@ -11582,18 +11173,11 @@ def main(
     )
 
     if parsed_skills:
-        skills_prompt, loaded_skills, missing_skills = build_preloaded_skills_prompt(
-            parsed_skills,
-            task_id=cli.session_id,
+        from agent.startup_prompt import prepare_startup_prompt
+
+        cli.system_prompt, cli.preloaded_skills = prepare_startup_prompt(
+            cli.system_prompt, parsed_skills, session_id=cli.session_id,
         )
-        if missing_skills:
-            missing_display = ", ".join(missing_skills)
-            raise ValueError(f"Unknown skill(s): {missing_display}")
-        if skills_prompt:
-            cli.system_prompt = "\n\n".join(
-                part for part in (cli.system_prompt, skills_prompt) if part
-            ).strip()
-            cli.preloaded_skills = loaded_skills
 
     # Inject worktree context into agent's system prompt
     if wt_info:

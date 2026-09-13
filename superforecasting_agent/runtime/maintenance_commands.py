@@ -3,7 +3,7 @@
 def _handle_profile_command(self):
     """Display active profile name and home directory."""
     from superforecasting_agent.constants import display_agent_home
-    from superforecasting_agent.runtime.profiles import get_active_profile_name
+    from superforecasting_agent.constants import get_active_profile_name
 
     display = display_agent_home()
     profile_name = get_active_profile_name()

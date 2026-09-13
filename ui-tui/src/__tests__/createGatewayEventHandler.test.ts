@@ -72,6 +72,37 @@ describe('createGatewayEventHandler', () => {
     }
   })
 
+  it('rejects duplicate and stale identified turn frames across retries', () => {
+    resetUiState()
+    turnController.fullReset()
+    const appended: Msg[] = []
+    const onEvent = createGatewayEventHandler(buildCtx(appended))
+    onEvent({ type: 'message.start', payload: { turn_id: 'old' } } as any)
+    onEvent({ type: 'message.complete', payload: { turn_id: 'old', text: 'first', status: 'complete' } } as any)
+    onEvent({ type: 'message.start', payload: { turn_id: 'new' } } as any)
+    onEvent({ type: 'message.complete', payload: { turn_id: 'old', text: 'stale' } } as any)
+    expect(getUiState().busy).toBe(true)
+    onEvent({
+      type: 'message.complete',
+      payload: { turn_id: 'new', text: 'retry failed', status: 'error', durable_status: 'error' }
+    } as any)
+    expect(getUiState().status).toBe('turn failed · ready to retry')
+    onEvent({ type: 'message.start', payload: { turn_id: 'new' } } as any)
+    expect(getUiState().busy).toBe(false)
+    expect(appended.some(m => m.text === 'stale')).toBe(false)
+  })
+
+  it('reports failed durable storage instead of a saved completion', () => {
+    resetUiState()
+    turnController.fullReset()
+    const onEvent = createGatewayEventHandler(buildCtx([]))
+    onEvent({
+      type: 'message.complete',
+      payload: { text: 'answer', status: 'complete', durable_status: 'unavailable' }
+    } as any)
+    expect(getUiState().status).toBe('recovery state not saved')
+  })
+
   beforeEach(() => {
     resetOverlayState()
     resetUiState()
@@ -125,7 +156,11 @@ describe('createGatewayEventHandler', () => {
 
     // API call #1's usage folded server-side, shipped on the first tool.complete.
     onEvent({
-      payload: { name: 'web_search', tool_id: 'tc_1', usage: { calls: 6, input: 108_000, output: 21_000, total: 950_000 } },
+      payload: {
+        name: 'web_search',
+        tool_id: 'tc_1',
+        usage: { calls: 6, input: 108_000, output: 21_000, total: 950_000 }
+      },
       type: 'tool.complete'
     } as never)
 
@@ -253,9 +288,7 @@ describe('createGatewayEventHandler', () => {
       type: 'review.summary'
     } as any)
 
-    expect(ctx.system.sys).toHaveBeenCalledWith(
-      "💾 Self-improvement review: Skill 'hermes-release' patched"
-    )
+    expect(ctx.system.sys).toHaveBeenCalledWith("💾 Self-improvement review: Skill 'hermes-release' patched")
   })
 
   it('ignores review.summary events with empty or missing text', () => {
@@ -910,12 +943,7 @@ describe('createGatewayEventHandler', () => {
         title: 'Ensemble'
       },
       {
-        rows: [
-          [
-            'bt_fixture001',
-            'src forecast-engine  agent 0.080000  edge +0.020  replay only'
-          ]
-        ],
+        rows: [['bt_fixture001', 'src forecast-engine  agent 0.080000  edge +0.020  replay only']],
         title: 'Backtests'
       }
     ])
@@ -1011,7 +1039,7 @@ describe('createGatewayEventHandler', () => {
     expect(resumeById).not.toHaveBeenCalled()
   })
 
-  it('on gateway.ready when config.get rejects, falls back to new session', async () => {
+  it.each(['reject', 'null'])('config.get %s preserves startup failure without creating a replacement', async mode => {
     const appended: Msg[] = []
     const newSession = vi.fn()
     const resumeById = vi.fn()
@@ -1022,6 +1050,10 @@ describe('createGatewayEventHandler', () => {
     ctx.session.STARTUP_RESUME_ID = ''
     ctx.gateway.rpc = vi.fn(async (method: string) => {
       if (method === 'config.get') {
+        if (mode === 'null') {
+          return null
+        }
+
         throw new Error('gateway timeout')
       }
 
@@ -1030,11 +1062,12 @@ describe('createGatewayEventHandler', () => {
 
     createGatewayEventHandler(ctx)({ payload: {}, type: 'gateway.ready' } as any)
 
-    await vi.waitFor(() => expect(newSession).toHaveBeenCalled())
+    await vi.waitFor(() => expect(getUiState().status).toBe('session startup unavailable'))
+    expect(newSession).not.toHaveBeenCalled()
     expect(resumeById).not.toHaveBeenCalled()
   })
 
-  it('on gateway.ready when session.most_recent rejects, falls back to new session', async () => {
+  it.each(['reject', 'null'])('session.most_recent %s preserves startup failure without creating a replacement', async mode => {
     const appended: Msg[] = []
     const newSession = vi.fn()
     const resumeById = vi.fn()
@@ -1049,6 +1082,10 @@ describe('createGatewayEventHandler', () => {
       }
 
       if (method === 'session.most_recent') {
+        if (mode === 'null') {
+          return null
+        }
+
         throw new Error('db locked')
       }
 
@@ -1057,8 +1094,35 @@ describe('createGatewayEventHandler', () => {
 
     createGatewayEventHandler(ctx)({ payload: {}, type: 'gateway.ready' } as any)
 
-    await vi.waitFor(() => expect(newSession).toHaveBeenCalled())
+    await vi.waitFor(() => expect(getUiState().status).toBe('session startup unavailable'))
+    expect(newSession).not.toHaveBeenCalled()
     expect(resumeById).not.toHaveBeenCalled()
+  })
+
+  it('ignores a stale startup failure after a newer ready starts a session', async () => {
+    const ctx = buildCtx([])
+    const newSession = vi.fn()
+    ctx.session.newSession = newSession
+    ctx.session.STARTUP_RESUME_ID = ''
+    let rejectOld!: (reason: Error) => void
+    const oldLookup = new Promise((_, reject) => { rejectOld = reject })
+    let reads = 0
+    ctx.gateway.rpc = vi.fn(async (method: string) => {
+      if (method === 'config.get') {
+        return ++reads === 1 ? oldLookup : { config: { display: { tui_auto_resume_recent: false } } }
+      }
+
+      return null
+    })
+    const onEvent = createGatewayEventHandler(ctx)
+    onEvent({ payload: {}, type: 'gateway.ready' } as any)
+    onEvent({ payload: {}, type: 'gateway.ready' } as any)
+    await vi.waitFor(() => expect(newSession).toHaveBeenCalledTimes(1))
+    rejectOld(new Error('old connection closed'))
+    await oldLookup.catch(() => {})
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(getUiState().status).not.toBe('session startup unavailable')
+    expect(newSession).toHaveBeenCalledTimes(1)
   })
 
   it('on gateway.ready with STARTUP_RESUME_ID set, the env wins over config auto_resume', async () => {
@@ -1083,8 +1147,12 @@ describe('createGatewayEventHandler', () => {
   it('keeps gateway noise informational and approval out of Activity', async () => {
     const appended: Msg[] = []
     const ctx = buildCtx(appended)
-    ctx.gateway.rpc = vi.fn(async () => {
-      throw new Error('cold start')
+    ctx.gateway.rpc = vi.fn(async (method: string) => {
+      if (method === 'commands.catalog') {
+        throw new Error('cold start')
+      }
+
+      return { config: { display: { tui_auto_resume_recent: false } } }
     })
 
     const onEvent = createGatewayEventHandler(ctx)
@@ -1442,7 +1510,10 @@ describe('createGatewayEventHandler', () => {
         setWarningsRunActive(true)
 
         for (let i = 0; i < 130; i += 1) {
-          onEvent({ payload: { line: `LedgerNotFoundError: no active autopilot policy #${i}` }, type: 'gateway.stderr' } as any)
+          onEvent({
+            payload: { line: `LedgerNotFoundError: no active autopilot policy #${i}` },
+            type: 'gateway.stderr'
+          } as any)
         }
 
         vi.advanceTimersByTime(1000)

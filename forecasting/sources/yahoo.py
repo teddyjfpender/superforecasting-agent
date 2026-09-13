@@ -35,6 +35,13 @@ def load_yahoo_finance_prices(
         api_base_url=api_base_url,
     )
     payload = _read_json_endpoint(endpoint, "yahoo finance chart")
+    return _yahoo_prices_from_payload(payload, symbol=symbol, interval=normalized_interval,
+                                      range_value=normalized_range, endpoint=endpoint,
+                                      since_dt=since_dt, limit=limit)
+
+
+def _yahoo_prices_from_payload(payload, *, symbol, interval, range_value, endpoint, since_dt=None, limit=10):
+    """Parse the requested instrument; chart bar times are not publication times."""
     result = _yahoo_chart_result(payload)
     meta = result.get("meta") if isinstance(result.get("meta"), dict) else {}
     timestamps = result.get("timestamp") if isinstance(result.get("timestamp"), list) else []
@@ -49,7 +56,12 @@ def load_yahoo_finance_prices(
     if not timestamps or not closes:
         raise ValidationError("yahoo finance chart response contains no price observations")
 
-    effective_symbol = _optional_str(meta.get("symbol")) or symbol
+    effective_symbol = _optional_str(meta.get("symbol"))
+    if effective_symbol is None or effective_symbol.upper() != symbol.upper():
+        raise ValidationError("yahoo finance returned a missing or different symbol")
+    if len(closes) != len(timestamps) or any(values and len(values) != len(timestamps)
+                                           for values in (opens, highs, lows, volumes)):
+        raise ValidationError("yahoo finance price arrays do not match timestamps")
     currency = _optional_str(meta.get("currency"))
     exchange_name = _optional_str(_first_present(meta.get("exchangeName"), meta.get("fullExchangeName")))
     observations: list[YahooFinancePriceObservation] = []
@@ -66,25 +78,25 @@ def load_yahoo_finance_prices(
         observations.append(
             YahooFinancePriceObservation(
                 symbol=effective_symbol,
-                interval=normalized_interval,
+                interval=interval,
                 observation_time=observation_time,
                 open_price=_yahoo_optional_number(_list_get(opens, index)),
                 high_price=_yahoo_optional_number(_list_get(highs, index)),
                 low_price=_yahoo_optional_number(_list_get(lows, index)),
                 close_price=close_price,
                 volume=_yahoo_optional_number(_list_get(volumes, index)),
-                published_at=observation_time,
+                published_at=None,
                 currency=currency,
                 exchange_name=exchange_name,
                 source_url=f"https://finance.yahoo.com/quote/{quote(effective_symbol, safe='=^.-')}",
                 source_name="Yahoo Finance",
-                entry_id=f"{effective_symbol}:{normalized_interval}:{observation_time}",
+                entry_id=f"{effective_symbol}:{interval}:{observation_time}",
                 raw={
                     "endpoint": endpoint,
                     "timestamp": raw_timestamp,
                     "symbol": effective_symbol,
-                    "range": normalized_range,
-                    "interval": normalized_interval,
+                    "range": range_value,
+                    "interval": interval,
                     "meta": dict(meta),
                 },
             )
@@ -157,7 +169,7 @@ def _yahoo_series(value: object) -> list[object]:
 
 
 def _yahoo_timestamp(value: object) -> str | None:
-    number = _optional_float(value)
+    number = None if isinstance(value, bool) else _optional_float(value)
     if number is None:
         return None
     try:
@@ -167,9 +179,9 @@ def _yahoo_timestamp(value: object) -> str | None:
 
 
 def _yahoo_optional_number(value: object) -> float | int | str | None:
-    number = _optional_float(value)
-    if number is not None:
-        if number.is_integer():
-            return int(number)
-        return number
-    return _optional_str(value)
+    if value is None:
+        return None
+    number = None if isinstance(value, bool) else _optional_float(value)
+    if number is None:
+        raise ValidationError("yahoo price must be finite numeric data")
+    return int(number) if number.is_integer() else number

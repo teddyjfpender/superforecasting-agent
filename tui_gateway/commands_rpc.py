@@ -21,6 +21,8 @@ import os
 import subprocess
 import sys
 
+from superforecasting_agent.configuration.goals import configured_goal_turn_budget
+
 import tui_gateway.server as _core
 from tui_gateway.server import _TUI_EXTRA, _TUI_HIDDEN, _err, _ok
 
@@ -45,6 +47,12 @@ def method(name: str):
 
 def register(server) -> None:
     """(Re-)register every carved command/cli.exec handler into ``server._methods``."""
+    global _core, _ok, _err, _TUI_EXTRA, _TUI_HIDDEN
+    _core = server
+    _ok = server._ok
+    _err = server._err
+    _TUI_EXTRA = server._TUI_EXTRA
+    _TUI_HIDDEN = server._TUI_HIDDEN
     for kind, name, fn in _REGISTRARS:
         getattr(server, kind)(name)(fn)
 
@@ -54,7 +62,7 @@ __all__ = ["register"]
 def _(rid, params: dict) -> dict:
     """Registry-backed slash metadata for the TUI — categorized, no aliases."""
     try:
-        from superforecasting_agent.runtime.commands import (
+        from superforecasting_agent.application.command_catalog import (
             COMMAND_REGISTRY,
             SUBCOMMANDS,
             _build_description,
@@ -119,11 +127,32 @@ def _(rid, params: dict) -> dict:
             if not warning:
                 warning = f"quick_commands discovery unavailable: {e}"
 
+        bundle_keys = set()
+        try:
+            from agent.skill_bundles import get_skill_bundles
+
+            for key, info in sorted(get_skill_bundles().items()):
+                if key.lower() in canon:
+                    continue
+                description = str(info.get("description") or "Load a skill bundle")
+                pair = [key, description[:120] + ("…" if len(description) > 120 else "")]
+                all_pairs.append(pair)
+                canon[key.lower()] = key
+                bundle_keys.add(key)
+                if "Skill bundles" not in cat_map:
+                    cat_map["Skill bundles"] = []
+                    cat_order.append("Skill bundles")
+                cat_map["Skill bundles"].append(pair)
+        except Exception as exc:
+            warning = warning or f"bundle discovery unavailable: {exc}"
+
         skill_count = 0
         try:
             from agent.skill_commands import scan_skill_commands
 
             for k, info in sorted(scan_skill_commands().items()):
+                if k in bundle_keys:
+                    continue
                 d = str(info.get("description", "Skill"))
                 all_pairs.append([k, d[:120] + ("…" if len(d) > 120 else "")])
                 skill_count += 1
@@ -197,7 +226,7 @@ def _(rid, params: dict) -> dict:
 @method("command.resolve")
 def _(rid, params: dict) -> dict:
     try:
-        from superforecasting_agent.runtime.commands import resolve_command
+        from superforecasting_agent.application.command_catalog import resolve_command
 
         r = resolve_command(params.get("name", ""))
         if r:
@@ -216,7 +245,7 @@ def _(rid, params: dict) -> dict:
 
 def _resolve_name(name: str) -> str:
     try:
-        from superforecasting_agent.runtime.commands import resolve_command
+        from superforecasting_agent.application.command_catalog import resolve_command
 
         r = resolve_command(name)
         return r.name if r else name
@@ -230,33 +259,27 @@ def _(rid, params: dict) -> dict:
     resolved = _resolve_name(name)
     if resolved != name:
         name = resolved
-    session = _core._sessions.get(params.get("session_id", ""))
+    session = _core._host.sessions.get(params.get("session_id", ""))
+
+    from superforecasting_agent.application.command_catalog import configured_command, expand_quick_alias, resolve_command
 
     qcmds = _core._load_cfg().get("quick_commands", {})
-    if name in qcmds:
-        qc = qcmds[name]
+    try:
+        qc = configured_command(name, qcmds)
+        if qc is not None and qc["type"] == "alias":
+            # The client appends the invocation's original arguments once.
+            target = expand_quick_alias(f"/{name}", qcmds)
+            return _ok(rid, {"type": "alias", "target": target.lstrip("/")})
+    except ValueError as exc:
+        return _err(rid, 4018, str(exc))
+    if qc is not None:
         if qc.get("type") == "exec":
-            r = subprocess.run(
-                qc.get("command", ""),
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            output = (
-                (r.stdout or "")
-                + ("\n" if r.stdout and r.stderr else "")
-                + (r.stderr or "")
-            ).strip()[:4000]
-            if r.returncode != 0:
-                return _err(
-                    rid,
-                    4018,
-                    output or f"quick command failed with exit code {r.returncode}",
-                )
-            return _ok(rid, {"type": "exec", "output": output})
-        if qc.get("type") == "alias":
-            return _ok(rid, {"type": "alias", "target": qc.get("target", "")})
+            from superforecasting_agent.runtime.quick_commands import execute_sync
+
+            result = execute_sync(qc["command"])
+            if result.error:
+                return _err(rid, 4018, result.error)
+            return _ok(rid, {"type": "exec", "output": result.message})
 
     try:
         from superforecasting_agent.runtime.plugins import (
@@ -264,12 +287,39 @@ def _(rid, params: dict) -> dict:
             resolve_plugin_command_result,
         )
 
-        handler = get_plugin_command_handler(name)
+        handler = None if resolve_command(name) else get_plugin_command_handler(name)
         if handler:
-            result = resolve_plugin_command_result(handler(arg))
+            try:
+                result = resolve_plugin_command_result(handler(arg))
+            except Exception as exc:
+                return _err(rid, 5030, f"Plugin command error: {exc}")
             return _ok(rid, {"type": "plugin", "output": str(result or "")})
     except Exception:
         pass
+
+    try:
+        from agent.skill_bundles import get_skill_bundles
+        from superforecasting_agent.application.command_catalog import resolve_command
+
+        bundle = None if resolve_command(name) else get_skill_bundles().get(f"/{name}")
+    except Exception:
+        bundle = None
+    if bundle is not None:
+        from agent.skill_bundles import build_bundle_invocation_message
+
+        try:
+            result = build_bundle_invocation_message(
+                f"/{name}", arg, task_id=session.get("session_key", "") if session else ""
+            )
+            if result is None:
+                return _err(rid, 4018, f"Failed to load bundle for /{name}")
+            message, loaded, missing = result
+            notice = f"Loading bundle: {bundle['name']} ({len(loaded)} skills)"
+            if missing:
+                notice += f"\nSkipped missing skills: {', '.join(missing)}"
+            return _ok(rid, {"type": "send", "notice": notice, "message": message})
+        except Exception as exc:
+            return _err(rid, 5030, f"Bundle command error: {exc}")
 
     try:
         from agent.skill_commands import (
@@ -280,9 +330,14 @@ def _(rid, params: dict) -> dict:
         cmds = scan_skill_commands()
         key = f"/{name}"
         if key in cmds:
-            msg = build_skill_invocation_message(
-                key, arg, task_id=session.get("session_key", "") if session else ""
-            )
+            try:
+                msg = build_skill_invocation_message(
+                    key, arg, task_id=session.get("session_key", "") if session else ""
+                )
+            except Exception as exc:
+                return _err(rid, 5030, f"Skill command error: {exc}")
+            if not msg:
+                return _err(rid, 4018, f"skill payload missing message: {key}")
             if msg:
                 return _ok(
                     rid,
@@ -294,6 +349,166 @@ def _(rid, params: dict) -> dict:
                 )
     except Exception:
         pass
+
+    if name in {"agents", "stop"}:
+        if session is None:
+            return _err(rid, 4001, "session not found")
+        try:
+            return _ok(rid, {"type": "exec", "output": _core._background_command_output(session, name)})
+        except ValueError as exc:
+            return _err(rid, 4004, str(exc))
+        except Exception as exc:
+            return _err(rid, 5030, f"Background command failed: {exc}")
+
+    if name == "config":
+        from superforecasting_agent.application.configuration_view import configuration_text
+
+        result = _core._methods["config.show"](rid, params)
+        if "error" in result:
+            return result
+        return _ok(rid, {"type": "exec", "output": configuration_text(result["result"]["sections"])})
+
+    if name == "curator":
+        from superforecasting_agent.runtime.curator import command_output
+
+        def confirm(question):
+            if session is None:
+                raise ValueError("Curator confirmation requires an active session")
+            return _core._block(
+                "clarify.request", params.get("session_id", ""),
+                {"question": question, "choices": ["No", "Yes"]},
+            )
+
+        try:
+            code, output = command_output(arg, confirm=confirm, workers=_core._host.workers)
+            if code:
+                return _err(rid, 5017, output or "Curator command failed")
+            return _ok(rid, {"type": "exec", "output": output})
+        except Exception as exc:
+            return _err(rid, 5017, f"Curator command failed: {exc}")
+
+    if name == "cron":
+        from superforecasting_agent.runtime.cron_commands import cron_command_output
+
+        try:
+            return _ok(rid, {"type": "exec", "output": cron_command_output(arg)})
+        except Exception as exc:
+            return _err(rid, 5017, f"Scheduled task command failed: {exc}")
+
+    if name == "platforms":
+        from superforecasting_agent.runtime.platform_commands import platform_configuration_lines
+
+        try:
+            return _ok(rid, {"type": "exec", "output": "\n".join(platform_configuration_lines(arg))})
+        except ValueError as exc:
+            return _err(rid, 4004, str(exc))
+        except Exception as exc:
+            return _err(rid, 5017, f"Platform configuration unavailable: {exc}")
+
+    if name == "gquota":
+        from superforecasting_agent.runtime.quota_commands import google_quota_lines
+
+        try:
+            return _ok(rid, {"type": "exec", "output": "\n".join(google_quota_lines(arg))})
+        except ValueError as exc:
+            return _err(rid, 4004, str(exc))
+        except Exception as exc:
+            return _err(rid, 5017, str(exc))
+
+    if name == "codex-runtime":
+        from superforecasting_agent.runtime import codex_runtime_switch
+
+        value, errors = codex_runtime_switch.parse_args(arg)
+        if errors:
+            return _err(rid, 4004, "\n".join(errors))
+        try:
+            config = _core._load_cfg()
+            if _core._host.configuration.last_error:
+                return _err(rid, 5017, _core._host.configuration.last_error)
+            result = codex_runtime_switch.apply(
+                config, value,
+                persist_callback=_core._save_cfg if value is not None else None,
+            )
+            if not result.success:
+                return _err(rid, 5017, result.message)
+            return _ok(rid, {"type": "exec", "output": result.message})
+        except Exception as exc:
+            return _err(rid, 5017, str(exc))
+
+    if name == "insights":
+        from superforecasting_agent.application.insights import parse_insights_arguments
+
+        try:
+            query = parse_insights_arguments(arg)
+        except ValueError as exc:
+            return _err(rid, 4004, str(exc))
+        database = _core._get_db()
+        if database is None:
+            return _core._db_unavailable_error(rid, code=5017)
+        try:
+            from agent.insights import InsightsEngine
+
+            engine = InsightsEngine(database)
+            report = engine.generate(days=query.days, source=query.source)
+            return _ok(rid, {"type": "exec", "output": engine.format_terminal(report)})
+        except Exception as exc:
+            return _err(rid, 5017, str(exc))
+
+    if name == "profile":
+        from superforecasting_agent.constants import display_agent_home, get_active_profile_name
+
+        output = f"Profile: {get_active_profile_name()}\nHome:    {display_agent_home()}"
+        return _ok(rid, {"type": "exec", "output": output})
+
+    if name == "bundles":
+        try:
+            from agent.skill_bundles import list_bundles, _bundles_dir
+
+            bundles = list_bundles()
+            if not bundles:
+                output = (
+                    "No skill bundles installed.\n"
+                    "Create one with: superforecasting-agent bundles create <name> --skill <s1> --skill <s2>\n"
+                    f"Directory: {_bundles_dir()}"
+                )
+            else:
+                lines = [f"Optional Skill Bundles ({len(bundles)} installed):", ""]
+                for bundle in bundles:
+                    skills = bundle.get("skills", [])
+                    description = bundle.get("description") or f"Load {len(skills)} skills"
+                    lines.append(f"/{bundle['slug']} — {description} ({len(skills)} skills)")
+                    lines.extend(f"    · {skill}" for skill in skills)
+                lines.extend(["", "Invoke a bundle with /<slug>. Manage with `superforecasting-agent bundles`."])
+                output = "\n".join(lines)
+            return _ok(rid, {"type": "exec", "output": output})
+        except Exception as exc:
+            return _err(rid, 5030, f"Bundle subsystem unavailable: {exc}")
+
+    if name == "toolsets":
+        from superforecasting_agent.tooling.inventory import toolset_inventory, session_toolset_selection
+
+        try:
+            selection = session_toolset_selection(
+                _core._host.sessions.get(params.get("session_id", "")),
+                _core._load_enabled_toolsets,
+            )
+            items = toolset_inventory(selection, include_legacy=False)
+            lines = ["Forecast Desk Toolsets", ""]
+            for item in items:
+                marker = "(*)" if item["enabled"] else "   "
+                lines.append(f"{marker} {item['name']} [{item['tool_count']} tools] - {item['description']}")
+            lines.extend(["", "(*) = currently enabled"])
+            return _ok(rid, {"type": "exec", "output": "\n".join(lines)})
+        except Exception as exc:
+            return _err(rid, 5032, str(exc))
+
+    if name == "plugins":
+        from superforecasting_agent.runtime.plugin_commands import describe_plugins
+
+        try:
+            return _ok(rid, {"type": "exec", "output": describe_plugins()})
+        except Exception as exc:
+            return _err(rid, 5030, f"Plugin system error: {exc}")
 
     # ── Commands that queue messages onto _pending_input in the CLI ───
     # In the TUI the slash worker subprocess has no reader for that queue,
@@ -316,36 +531,18 @@ def _(rid, params: dict) -> dict:
     if name == "retry":
         if not session:
             return _err(rid, 4001, "no active forecast session to retry")
-        if session.get("running"):
-            return _err(
-                rid, 4009, "session busy — /interrupt the current turn before /retry"
-            )
-        history = session.get("history", [])
-        if not history:
-            return _err(rid, 4018, "no previous forecast note to retry")
-        # Walk backwards to find the last user note.
-        last_user_idx = None
-        for i in range(len(history) - 1, -1, -1):
-            if history[i].get("role") == "user":
-                last_user_idx = i
-                break
-        if last_user_idx is None:
-            return _err(rid, 4018, "no previous forecast note to retry")
-        content = history[last_user_idx].get("content", "")
-        if isinstance(content, list):
-            content = " ".join(
-                p.get("text", "")
-                for p in content
-                if isinstance(p, dict) and p.get("type") == "text"
-            )
-        if not content:
-            return _err(rid, 4018, "last forecast note is empty")
-        # Truncate history: remove everything from the last user note onward
-        # (mirrors CLI retry_last() which strips the failed exchange)
+        from superforecasting_agent.application.retry import prepare_retry, RetryUnavailable
+
         with session["history_lock"]:
-            session["history"] = history[:last_user_idx]
+            if session.get("running"):
+                return _err(rid, 4009, "session busy — /interrupt the current turn before /retry")
+            try:
+                plan = prepare_retry(session.get("history", []))
+            except RetryUnavailable as exc:
+                return _err(rid, 4018, str(exc))
+            session["history"] = plan.history
             session["history_version"] = int(session.get("history_version", 0)) + 1
-        return _ok(rid, {"type": "send", "message": content})
+        return _ok(rid, {"type": "send", "message": plan.message})
 
     if name == "steer":
         if not arg:
@@ -367,7 +564,7 @@ def _(rid, params: dict) -> dict:
         # Fallback: no active run, treat as next-turn message
         return _ok(rid, {"type": "send", "message": arg})
 
-    if name == "goal":
+    if name in {"goal", "subgoal"}:
         if not session:
             return _err(rid, 4001, "no active forecast session")
         try:
@@ -381,20 +578,29 @@ def _(rid, params: dict) -> dict:
 
         try:
             goals_cfg = _core._load_cfg().get("goals") or {}
-            max_turns = int(goals_cfg.get("max_turns", 20) or 20)
+            max_turns = configured_goal_turn_budget(goals_cfg)
         except Exception:
-            max_turns = 20
-        mgr = GoalManager(session_id=sid_key, default_max_turns=max_turns)
+            max_turns = configured_goal_turn_budget(None)
+        mgr = GoalManager(session_id=sid_key, default_max_turns=max_turns, database_provider=_core._get_db)
+        if name == "subgoal":
+            from superforecasting_agent.application.goals import execute_subgoal
 
-        lower = arg.strip().lower()
-        if not arg.strip() or lower == "status":
-            return _ok(rid, {"type": "exec", "output": mgr.status_line()})
-        if lower == "pause":
-            state = mgr.pause(reason="user-paused")
+            return _ok(rid, {"type": "exec", "output": execute_subgoal(mgr, arg)})
+
+
+        from superforecasting_agent.application.goals import execute_goal
+
+        try:
+            result = execute_goal(mgr, arg)
+        except ValueError as exc:
+            return _err(rid, 4004, f"invalid goal: {exc}")
+        state = result.state
+        if result.action == "status":
+            return _ok(rid, {"type": "exec", "output": result.status})
+        if result.action == "pause":
             out = "No goal set." if state is None else f"⏸ Goal paused: {state.goal}"
             return _ok(rid, {"type": "exec", "output": out})
-        if lower == "resume":
-            state = mgr.resume()
+        if result.action == "resume":
             if state is None:
                 return _ok(rid, {"type": "exec", "output": "No goal to resume."})
             return _ok(
@@ -407,22 +613,16 @@ def _(rid, params: dict) -> dict:
                     ),
                 },
             )
-        if lower in {"clear", "stop", "done"}:
-            had = mgr.has_goal()
-            mgr.clear()
+        if result.action == "clear":
             return _ok(
                 rid,
                 {
                     "type": "exec",
-                    "output": "✓ Goal cleared." if had else "No active goal.",
+                    "output": "✓ Goal cleared." if result.had_goal else "No active goal.",
                 },
             )
 
-        # Otherwise — treat the remaining text as the new goal.
-        try:
-            state = mgr.set(arg)
-        except ValueError as exc:
-            return _err(rid, 4004, f"invalid goal: {exc}")
+        assert state is not None
 
         notice = (
             f"⊙ Goal set ({state.max_turns}-turn budget): {state.goal}\n"
@@ -438,19 +638,22 @@ def _(rid, params: dict) -> dict:
             {"type": "send", "notice": notice, "message": state.goal},
         )
 
-    if name in {"snapshot", "snap"}:
-        subcommand = arg.split(maxsplit=1)[0].lower() if arg else ""
-        if subcommand in {"restore", "rewind"}:
-            return _ok(
-                rid,
-                {
-                    "type": "exec",
-                    "output": (
-                        "/snapshot restore is blocked in the TUI because it changes "
-                        "config/state on disk while the live agent has cached settings. "
-                        "Run it in the classic CLI, then restart the TUI."
-                    ),
-                },
-            )
+    if name == "snapshot":
+        from superforecasting_agent.application.snapshots import execute_snapshot
 
-    return _err(rid, 4018, f"not a quick/plugin/skill command: {name}")
+        try:
+            return _ok(rid, {"type": "exec", "output": execute_snapshot(arg, allow_restore=False)})
+        except ValueError as exc:
+            return _err(rid, 4004, str(exc))
+        except OSError as exc:
+            return _err(rid, 5017, str(exc))
+
+    from superforecasting_agent.application.command_catalog import resolve_command
+
+    if resolve_command(name) is None:
+        return _err(rid, 4011, f"unknown command: {name}")
+    from tui_gateway.command_routes import terminal_command_names
+
+    if name in terminal_command_names():
+        return _ok(rid, {"type": "alias", "target": name})
+    return _core._command_handoff(rid, f"not a quick/plugin/skill command: {name}", dispatch="slash.exec")

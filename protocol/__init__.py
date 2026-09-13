@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from protocol.events import commands as _events_commands
 from protocol.events import desk as _events_desk
 from protocol.events import gateway as _events_gateway
 from protocol.events import jobs as _events_jobs
@@ -27,6 +28,7 @@ from protocol.rpc import commands as _rpc_commands
 from protocol.rpc import config as _rpc_config
 from protocol.rpc import forecast as _rpc_forecast
 from protocol.rpc import interact as _rpc_interact
+from protocol.rpc import host as _rpc_host
 from protocol.rpc import jobs as _rpc_jobs
 from protocol.rpc import markets as _rpc_markets
 from protocol.rpc import model as _rpc_model
@@ -67,6 +69,7 @@ class EventSpec:
 
 
 RPC_SPECS: list[RpcSpec] = [
+    RpcSpec("host.negotiate", _rpc_host.HostNegotiateRequest, _rpc_host.HostNegotiateResponse),
     RpcSpec("pm.list", _rpc_pm.PmListRequest, _rpc_pm.PmListResponse),
     RpcSpec("pm.detail", _rpc_pm.PmDetailRequest, _rpc_pm.PmDetailResponse),
     RpcSpec("pm.book", _rpc_pm.PmBookRequest, _rpc_pm.PmBookResponse),
@@ -114,6 +117,9 @@ RPC_SPECS: list[RpcSpec] = [
     RpcSpec("forecast.schedule.status", _rpc_forecast.ForecastScheduleStatusRequest, _rpc_forecast.ForecastScheduleStatusResponse),
     RpcSpec("forecast.reviews.next", _rpc_forecast.ForecastReviewsNextRequest, _rpc_forecast.ForecastReviewsNextResponse),
     RpcSpec("forecast.calibration", _rpc_forecast.ForecastCalibrationRequest, _rpc_forecast.ForecastCalibrationResponse),
+    RpcSpec("forecast.operation", _rpc_forecast.ForecastOperationRequest, _rpc_forecast.ForecastOperationResponse),
+    RpcSpec("forecast.review", _rpc_forecast.ForecastReviewRequest, _rpc_forecast.ForecastReviewResponse),
+    RpcSpec("forecast.resolve", _rpc_forecast.ForecastResolveRequest, _rpc_forecast.ForecastResolveResponse),
     RpcSpec("forecast.command", _rpc_forecast.ForecastCommandRequest, _rpc_forecast.ForecastCommandResponse),
     RpcSpec("forecast.reforecast", _rpc_forecast.ForecastReforecastRequest, _rpc_forecast.ForecastReforecastMarkResponse),
     RpcSpec("forecast.config", _rpc_forecast.ForecastConfigRequest, _rpc_forecast.ForecastConfigResponse),
@@ -152,6 +158,7 @@ RPC_SPECS: list[RpcSpec] = [
     RpcSpec("session.status", _rpc_session.SessionStatusRequest, _rpc_session.SessionStatusResponse),
     RpcSpec("session.compress", _rpc_session.SessionCompressRequest, _rpc_session.SessionCompressResponse),
     RpcSpec("session.branch", _rpc_session.SessionBranchRequest, _rpc_session.SessionBranchResponse),
+    RpcSpec("session.branch_replace", _rpc_session.SessionBranchRequest, _rpc_session.SessionBranchResponse),
     RpcSpec("session.close", _rpc_session.SessionCloseRequest, _rpc_session.SessionCloseResponse),
     RpcSpec("session.interrupt", _rpc_session.SessionInterruptRequest, _rpc_session.SessionInterruptResponse),
     RpcSpec("session.steer", _rpc_session.SessionSteerRequest, _rpc_session.SessionSteerResponse),
@@ -217,6 +224,7 @@ RPC_SPECS: list[RpcSpec] = [
 # them.
 EXTRA_MODELS: list[type[WireModel]] = [
     _rpc_config.ConfigMtimeResponse,
+    _rpc_config.ConfigProviderResponse,
     _rpc_config.ConfigGetValueResponse,
     _rpc_agents.SubagentEventPayload,
     _rpc_interact.GatewaySkin,
@@ -229,6 +237,9 @@ EXTRA_MODELS: list[type[WireModel]] = [
 ]
 
 EVENT_SPECS: list[EventSpec] = [
+    EventSpec("command.started", _events_commands.CommandStarted),
+    EventSpec("command.output", _events_commands.CommandOutput),
+    EventSpec("command.finished", _events_commands.CommandFinished),
     # ── pm.* + jobs.* (A1 / Arc B) ───────────────────────────────────────────
     EventSpec("pm.tick", _events_pm.PmTick),
     EventSpec("jobs.progress", _events_jobs.JobProgress),

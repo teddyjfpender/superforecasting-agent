@@ -226,3 +226,21 @@ Manual Smoke Test Checklist:
    Type interrupt during the first tool call.
    Expected: only 1 tool executes, remaining are skipped.
 """
+
+
+
+def test_legacy_and_shared_interrupt_paths_share_one_owner():
+    from tools import interrupt as legacy
+    from superforecasting_agent.tooling import interrupts as shared
+
+    assert legacy._interrupt_event is shared._interrupt_event
+    assert legacy._interrupted_threads is shared._interrupted_threads
+    try:
+        legacy.set_interrupt(True)
+        assert shared.is_interrupted()
+        shared.set_interrupt(False)
+        assert not legacy.is_interrupted()
+        shared._interrupt_event.set()
+        assert legacy._interrupt_event.is_set()
+    finally:
+        shared.set_interrupt(False)

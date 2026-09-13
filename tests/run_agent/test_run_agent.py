@@ -3789,7 +3789,7 @@ class TestNousCredentialRefresh:
             return _RebuiltClient()
 
         monkeypatch.setattr(
-            "superforecasting_agent.runtime.auth.resolve_nous_runtime_credentials", _fake_resolve
+            "superforecasting_agent.credentials.auth.resolve_nous_runtime_credentials", _fake_resolve
         )
 
         agent.client = _ExistingClient()

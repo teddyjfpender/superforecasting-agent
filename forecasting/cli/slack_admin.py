@@ -242,7 +242,7 @@ def _cmd_slack_whoami(args: argparse.Namespace) -> None:
     slack_info: Optional[dict[str, Any]] = None
     token_present = False
     try:
-        from tools.slack_tool import _resolve_bot_token, _slack_api_call
+        from forecasting.transports.slack import resolve_bot_token as _resolve_bot_token, api_call as _slack_api_call
 
         token = _resolve_bot_token(getattr(args, "team_id", None))
         token_present = bool(token)
@@ -265,7 +265,7 @@ def _cmd_slack_share(args: argparse.Namespace) -> None:
     """`forecast slack share <question> --channel` — render + post the current
     forecast card over the same path as the ``share_forecast`` tool action."""
     from forecasting.ledger import ForecastLedger
-    from tools.forecast_actions.share import execute_share
+    from forecasting.application.sharing import execute_share
 
     ledger = ForecastLedger(getattr(args, "db", None))
     outcome = execute_share(

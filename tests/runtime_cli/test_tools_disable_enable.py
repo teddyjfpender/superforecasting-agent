@@ -82,8 +82,8 @@ class TestToolsDisableMcp:
             tools_disable_enable_command(
                 Namespace(tools_action="disable", names=["github:create_issue"], platform="cli")
             )
-        saved = mock_save.call_args[0][0]
-        assert saved["mcp_servers"]["github"]["tools"]["exclude"].count("create_issue") == 1
+        mock_save.assert_not_called()
+        assert config["mcp_servers"]["github"]["tools"]["exclude"].count("create_issue") == 1
 
     def test_disable_unknown_server_prints_error(self, capsys):
         config = {"mcp_servers": {}}
@@ -208,9 +208,8 @@ class TestToolsValidation:
             tools_disable_enable_command(
                 Namespace(tools_action="disable", names=["nonexistent_toolset"], platform="cli")
             )
-        saved = mock_save.call_args[0][0]
-        assert "web" in saved["platform_toolsets"]["cli"]
-        assert "memory" in saved["platform_toolsets"]["cli"]
+        mock_save.assert_not_called()
+        assert config["platform_toolsets"]["cli"] == ["web", "memory"]
 
     def test_mixed_valid_and_invalid_applies_valid_only(self):
         config = {"platform_toolsets": {"cli": ["web", "memory"]}}

@@ -10,7 +10,7 @@ import pytest
 @pytest.fixture
 def home(tmp_path, monkeypatch):
     monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", str(tmp_path))
-    # the loader caches rules-file reads on mtime; start clean
+    # Reset warning suppression between fixtures.
     from forecasting.hooks.loader import clear_cache
 
     clear_cache()
@@ -172,3 +172,116 @@ def test_user_rule_on_quorum_signal_enforces_at_commit(home, tmp_path):
     snap = lg.create_snapshot(question_id=q.id, probability_or_distribution=0.5, rationale="r",
                               panel_run_ref=judged["id"], **common)
     assert snap is not None
+
+
+def _fixture_rule(name):
+    return {
+        "id": name, "severity": "error",
+        "check": {"signal": "components.count", "op": ">=", "value": 2},
+        "message": "More drivers required",
+    }
+
+
+def test_concurrent_rule_edits_read_inside_shared_lock(home, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+    from forecasting.hooks import store
+
+    read_started, release_read, second_started = (threading.Event() for _ in range(3))
+    original = store._read_rules
+    reads = []
+
+    def read(path):
+        result = original(path)
+        reads.append(path)
+        if len(reads) == 1:
+            read_started.set()
+            assert release_read.wait(3)
+        return result
+
+    monkeypatch.setattr(store, "_read_rules", read)
+
+    def second():
+        second_started.set()
+        return store.save_rule(_fixture_rule("second-rule"))
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(store.save_rule, _fixture_rule("first-rule"))
+        try:
+            assert read_started.wait(2)
+            other = pool.submit(second)
+            assert second_started.wait(2)
+            assert len(reads) == 1
+        finally:
+            release_read.set()
+        assert first.result(timeout=3)["saved"]
+        assert other.result(timeout=3)["saved"]
+    assert {rule["id"] for rule in original(store._rules_path())} == {"first-rule", "second-rule"}
+
+
+@pytest.mark.parametrize("contents", ["not: a-list\n", "- a-scalar\n", "- id: kept\n- false\n"])
+def test_malformed_rule_file_is_not_silently_replaced(home, contents):
+    from forecasting.hooks import store
+
+    path = home / "hooks/rules.yaml"
+    path.parent.mkdir()
+    path.write_text(contents, encoding="utf-8")
+    with pytest.raises(store.HookWriteError, match="repair"):
+        store.save_rule(_fixture_rule("new-rule"))
+    assert path.read_text(encoding="utf-8") == contents
+
+
+def test_failed_atomic_write_does_not_fall_back_to_unowned_temp_file(home, monkeypatch):
+    from forecasting.hooks import store
+
+    store.save_rule(_fixture_rule("first-rule"))
+    path = home / "hooks/rules.yaml"
+    before = path.read_bytes()
+
+    def fail(*args, **kwargs):
+        raise PermissionError("fixture atomic write refused")
+
+    monkeypatch.setattr(store, "atomic_yaml_write", fail)
+    with pytest.raises(PermissionError, match="refused"):
+        store.save_rule(_fixture_rule("second-rule"))
+    assert path.read_bytes() == before
+    assert not path.with_suffix(".yaml.tmp").exists()
+
+
+def test_hook_setting_edits_preserve_unrelated_raw_config(home):
+    import yaml
+    from forecasting.hooks import store
+
+    path = home / "config.yaml"
+    path.write_text("# Operator settings\nmodel: custom-model\ndisplay:\n  skin: mono\n", encoding="utf-8")
+    store.set_profile("strict")
+    store.set_enabled(False)
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert data["model"] == "custom-model"
+    assert data["display"] == {"skin": "mono"}
+    assert data["forecasting"]["hooks"] == {"profile": "strict", "enabled": False}
+    assert set(data) == {"model", "display", "forecasting"}
+
+
+@pytest.mark.parametrize("value", ["false", 0, 1, None])
+def test_enabled_requires_boolean(home, value):
+    from forecasting.hooks import store
+
+    with pytest.raises(store.HookWriteError, match="boolean"):
+        store.set_enabled(value)
+    assert not (home / "config.yaml").exists()
+
+
+@pytest.mark.parametrize(
+    "contents",
+    ["forecasting: false\n", "forecasting:\n  hooks: []\n",
+     "forecasting:\n  hooks:\n    overrides: false\n"],
+)
+def test_malformed_config_blocks_fail_without_rewriting(home, contents):
+    from forecasting.hooks import store
+
+    path = home / "config.yaml"
+    path.write_text(contents, encoding="utf-8")
+    with pytest.raises(store.HookWriteError, match="mapping"):
+        store.clear_override("require_components")
+    assert path.read_text(encoding="utf-8") == contents

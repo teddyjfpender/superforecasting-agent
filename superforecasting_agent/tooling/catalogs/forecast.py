@@ -1,7 +1,7 @@
 """Forecast toolset catalog."""
 
 TOOLSETS = {
-    'forecast-desk': {
+    "forecast-desk": {
         "description": "Default forecasting desk tools for research, modeling, ledger writes, and scheduled review",
         "tools": [],
         "includes": [
@@ -22,7 +22,7 @@ TOOLSETS = {
             "delegation",
         ],
     },
-    'market-models': {
+    "market-models": {
         "description": "Agentic quant-research for Market Models: research data, compute deterministic stats/models, and emit a structured presentation",
         # Deliberately excludes approval-gated tools (terminal/browser/code_execution):
         # the build runs as a HEADLESS background agent with no approval callback, so
@@ -36,7 +36,7 @@ TOOLSETS = {
             "delegation",
         ],
     },
-    'market-models-interactive': {
+    "market-models-interactive": {
         "description": "Market Models with the sandboxed code_execution + browser tools added, for richer custom quant pipelines and multi-step web research",
         # Opt-in (HERMES_MARKET_INTERACTIVE=1) variant. Adds code_execution (a
         # custom-Python sandbox beyond the fixed market_compute menu) + browser
@@ -54,7 +54,7 @@ TOOLSETS = {
             "clarify",
         ],
     },
-    'forecast-messaging': {
+    "forecast-messaging": {
         "description": "Forecast-scoped messaging runtime tools for platform conversations and review alerts",
         "tools": [],
         "includes": [
@@ -70,7 +70,7 @@ TOOLSETS = {
             "delegation",
         ],
     },
-    'forecast-api-server': {
+    "forecast-api-server": {
         "description": "Forecast-scoped OpenAI-compatible HTTP runtime preset",
         "tools": [],
         "includes": [
@@ -84,7 +84,7 @@ TOOLSETS = {
             "delegation",
         ],
     },
-    'forecast-cron': {
+    "forecast-cron": {
         "description": "Forecast-scoped cron runtime tools for scheduled research, evidence checks, and delivery",
         "tools": [],
         "includes": [
@@ -98,97 +98,97 @@ TOOLSETS = {
             "delegation",
         ],
     },
-    'forecast-telegram': {
+    "forecast-telegram": {
         "description": "Forecast-scoped Telegram runtime preset",
         "tools": [],
         "includes": ["forecast-messaging"],
     },
-    'forecast-discord': {
+    "forecast-discord": {
         "description": "Forecast-scoped Discord runtime preset with read/participation tools",
         "tools": [],
         "includes": ["forecast-messaging", "discord"],
     },
-    'forecast-whatsapp': {
+    "forecast-whatsapp": {
         "description": "Forecast-scoped WhatsApp runtime preset",
         "tools": [],
         "includes": ["forecast-messaging"],
     },
-    'forecast-slack': {
+    "forecast-slack": {
         "description": "Forecast-scoped Slack runtime preset",
         "tools": [],
         "includes": ["forecast-messaging"],
     },
-    'forecast-signal': {
+    "forecast-signal": {
         "description": "Forecast-scoped Signal runtime preset",
         "tools": [],
         "includes": ["forecast-messaging"],
     },
-    'forecast-bluebubbles': {
+    "forecast-bluebubbles": {
         "description": "Forecast-scoped BlueBubbles runtime preset",
         "tools": [],
         "includes": ["forecast-messaging"],
     },
-    'forecast-homeassistant': {
+    "forecast-homeassistant": {
         "description": "Forecast-scoped Home Assistant conversation preset without smart-home control tools by default",
         "tools": [],
         "includes": ["forecast-messaging"],
     },
-    'forecast-email': {
+    "forecast-email": {
         "description": "Forecast-scoped email runtime preset",
         "tools": [],
         "includes": ["forecast-messaging"],
     },
-    'forecast-mattermost': {
+    "forecast-mattermost": {
         "description": "Forecast-scoped Mattermost runtime preset",
         "tools": [],
         "includes": ["forecast-messaging"],
     },
-    'forecast-matrix': {
+    "forecast-matrix": {
         "description": "Forecast-scoped Matrix runtime preset",
         "tools": [],
         "includes": ["forecast-messaging"],
     },
-    'forecast-dingtalk': {
+    "forecast-dingtalk": {
         "description": "Forecast-scoped DingTalk runtime preset",
         "tools": [],
         "includes": ["forecast-messaging"],
     },
-    'forecast-feishu': {
+    "forecast-feishu": {
         "description": "Forecast-scoped Feishu/Lark runtime preset with document-read support",
         "tools": [],
         "includes": ["forecast-messaging", "feishu_doc"],
     },
-    'forecast-weixin': {
+    "forecast-weixin": {
         "description": "Forecast-scoped Weixin runtime preset",
         "tools": [],
         "includes": ["forecast-messaging"],
     },
-    'forecast-qqbot': {
+    "forecast-qqbot": {
         "description": "Forecast-scoped QQBot runtime preset",
         "tools": [],
         "includes": ["forecast-messaging"],
     },
-    'forecast-wecom': {
+    "forecast-wecom": {
         "description": "Forecast-scoped WeCom runtime preset",
         "tools": [],
         "includes": ["forecast-messaging"],
     },
-    'forecast-wecom-callback': {
+    "forecast-wecom-callback": {
         "description": "Forecast-scoped WeCom callback runtime preset",
         "tools": [],
         "includes": ["forecast-messaging"],
     },
-    'forecast-yuanbao': {
+    "forecast-yuanbao": {
         "description": "Forecast-scoped Yuanbao runtime preset",
         "tools": [],
         "includes": ["forecast-messaging"],
     },
-    'forecast-sms': {
+    "forecast-sms": {
         "description": "Forecast-scoped SMS runtime preset",
         "tools": [],
         "includes": ["forecast-messaging"],
     },
-    'forecast-webhook': {
+    "forecast-webhook": {
         "description": "Forecast-scoped webhook runtime preset",
         "tools": [],
         "includes": ["forecast-messaging"],

@@ -67,9 +67,8 @@ class TestCacheMcpImageBlock:
         )
         tag = _cache_mcp_image_block(block)
         assert tag.startswith("MEDIA:"), f"expected MEDIA: tag, got {tag!r}"
-        # The cached file should be in Hermes' image cache dir
-        from gateway.platforms.base import get_image_cache_dir
-        cache_dir = str(get_image_cache_dir().resolve())
+        # The active profile, not an earlier gateway import, owns this cache.
+        cache_dir = str((tmp_path / "cache" / "images").resolve())
         assert tag.startswith(f"MEDIA:{cache_dir}"), (
             f"cached file not under HERMES_HOME image cache dir. "
             f"tag={tag!r}, cache_dir={cache_dir!r}"

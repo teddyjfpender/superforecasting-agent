@@ -27,11 +27,13 @@ def hermes_home(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setenv("HERMES_HOME", str(home))
 
-    from superforecasting_agent.runtime import goals
+    from contextlib import closing
+    from gateway.run import GatewayRunner
+    from superforecasting_agent.storage.session import SessionDB
 
-    goals._DB_CACHE.clear()
-    yield home
-    goals._DB_CACHE.clear()
+    with closing(SessionDB()) as database:
+        monkeypatch.setattr(GatewayRunner, "_session_db", database, raising=False)
+        yield home
 
 
 def _make_source() -> SessionSource:

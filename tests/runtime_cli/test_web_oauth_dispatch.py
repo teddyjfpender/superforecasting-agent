@@ -82,10 +82,10 @@ def test_minimax_login_does_not_launch_anthropic_flow(client):
         "state": "stub-state",
     }
     with patch(
-        "superforecasting_agent.runtime.auth._minimax_request_user_code",
+        "superforecasting_agent.credentials.auth._minimax_request_user_code",
         return_value=fake_user_code_resp,
     ), patch(
-        "superforecasting_agent.runtime.auth._minimax_pkce_pair",
+        "superforecasting_agent.credentials.auth._minimax_pkce_pair",
         return_value=("verifier-stub", "challenge-stub", "stub-state"),
     ), patch(
         "superforecasting_agent.runtime.web_server._minimax_poller",
@@ -112,7 +112,7 @@ def test_minimax_login_does_not_launch_anthropic_flow(client):
 
 
 def test_nous_dashboard_device_flow_honors_legacy_scope_override(monkeypatch):
-    from superforecasting_agent.runtime import auth as auth_mod
+    from superforecasting_agent.credentials import auth as auth_mod
     from superforecasting_agent.runtime import web_server as ws
 
     requested_scopes = []
@@ -139,7 +139,7 @@ def test_nous_dashboard_device_flow_honors_legacy_scope_override(monkeypatch):
 
 
 def test_nous_dashboard_device_flow_retries_legacy_scope_on_invoke_refusal(monkeypatch):
-    from superforecasting_agent.runtime import auth as auth_mod
+    from superforecasting_agent.credentials import auth as auth_mod
     from superforecasting_agent.runtime import web_server as ws
 
     requested_scopes = []
@@ -170,7 +170,7 @@ def test_nous_dashboard_device_flow_retries_legacy_scope_on_invoke_refusal(monke
 
 def test_codex_dashboard_worker_persists_runtime_provider(tmp_path, monkeypatch):
     from superforecasting_agent.runtime import web_server as ws
-    from superforecasting_agent.runtime.auth import get_active_provider
+    from superforecasting_agent.credentials.auth import get_active_provider
     from superforecasting_agent.runtime.runtime_provider import resolve_runtime_provider
 
     access_token = "h.eyJleHAiOjk5OTk5OTk5OTl9.s"
@@ -230,7 +230,7 @@ def test_codex_dashboard_worker_persists_runtime_provider(tmp_path, monkeypatch)
 
 
 def test_nous_dashboard_poller_preserves_effective_scope_when_token_omits_scope(monkeypatch):
-    from superforecasting_agent.runtime import auth as auth_mod
+    from superforecasting_agent.credentials import auth as auth_mod
     from superforecasting_agent.runtime import web_server as ws
 
     session_id = "nous-effective-scope-test"
@@ -305,7 +305,7 @@ def test_minimax_dashboard_poller_accepts_absolute_ms_expired_in():
 
     try:
         with patch(
-            "superforecasting_agent.runtime.auth._minimax_poll_token",
+            "superforecasting_agent.credentials.auth._minimax_poll_token",
             return_value={
                 "status": "success",
                 "access_token": "access",
@@ -314,7 +314,7 @@ def test_minimax_dashboard_poller_accepts_absolute_ms_expired_in():
                 "token_type": "Bearer",
             },
         ), patch(
-            "superforecasting_agent.runtime.auth._minimax_save_auth_state",
+            "superforecasting_agent.credentials.auth._minimax_save_auth_state",
             side_effect=lambda state: captured_state.update(state),
         ):
             ws._minimax_poller(session_id)

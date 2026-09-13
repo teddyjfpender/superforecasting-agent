@@ -230,3 +230,48 @@ class TeeTransport:
                     sec.close()
                 except Exception:
                     pass
+
+
+class TransportBindings:
+    """Own layered default sinks; hosts can detach in any shutdown order.
+
+    The supplied slot remains compatible with the dispatcher's default sink.
+    Replacing that slot externally starts a new ownership generation: stale
+    registrations must never restore an old sink over its new owner.
+    """
+
+    def __init__(self, get: Callable[[], Transport], set: Callable[[Transport], None]):
+        self._get = get
+        self._set = set
+        self._lock = threading.RLock()
+        self._base = get()
+        self._installed = self._base
+        self._entries: list[tuple[object, Transport, bool]] = []
+
+    def attach(self, sink: Transport, *, alongside: bool = False) -> object:
+        with self._lock:
+            if self._get() is not self._installed:
+                self._base = self._get()
+                self._entries.clear()
+            token = object()
+            self._entries.append((token, sink, alongside))
+            self._publish()
+            return token
+
+    def detach(self, token: object) -> None:
+        with self._lock:
+            if not any(entry[0] is token for entry in self._entries):
+                return
+            self._entries = [entry for entry in self._entries if entry[0] is not token]
+            if self._get() is not self._installed:
+                # A new external owner already replaced the slot. Never touch it.
+                self._entries.clear()
+                return
+            self._publish()
+
+    def _publish(self) -> None:
+        sink = self._base
+        for _, next_sink, alongside in self._entries:
+            sink = TeeTransport(sink, next_sink) if alongside else next_sink
+        self._installed = sink
+        self._set(sink)

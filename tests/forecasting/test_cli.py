@@ -6639,7 +6639,7 @@ def test_owid_adapter_loads_grapher_rows(monkeypatch):
     assert observations[0].entity == "United States"
     assert observations[0].code == "USA"
     assert observations[0].observation_date == "2025"
-    assert observations[0].published_at == "2025-01-01T00:00:00Z"
+    assert observations[0].published_at is None
     assert observations[0].value == 67000.0
     assert observations[0].value_column == "gdp_per_capita"
 
@@ -7065,7 +7065,7 @@ def test_fred_adapter_loads_recent_csv_observations(monkeypatch):
     assert len(observations) == 1
     assert observations[0].series_id == "UNRATE"
     assert observations[0].observation_date == "2026-03-01"
-    assert observations[0].published_at == "2026-03-01T00:00:00Z"
+    assert observations[0].published_at is None  # observation date is not a release timestamp
     assert observations[0].value == 4.2
 
 
@@ -7195,7 +7195,7 @@ def test_eia_adapter_loads_energy_series_observations(monkeypatch):
     assert observations[0].series_id == "PET.RWTC.M"
     assert observations[0].series_name == "WTI crude oil spot price"
     assert observations[0].observation_period == "2026-03"
-    assert observations[0].published_at == "2026-03-01T00:00:00Z"
+    assert observations[0].published_at is None
     assert observations[0].value == 72.5
     assert observations[0].unit == "dollars per barrel"
 
@@ -7325,7 +7325,7 @@ def test_treasury_adapter_loads_fiscal_data_records(monkeypatch):
     assert len(records) == 1
     assert records[0].dataset == "v2/accounting/od/avg_interest_rates"
     assert records[0].record_date == "2026-04-01"
-    assert records[0].published_at == "2026-04-01T00:00:00Z"
+    assert records[0].published_at is None
     assert records[0].value == 4.4
     assert records[0].value_field == "avg_interest_rate_amt"
     assert records[0].value_label == "Average Interest Rate"
@@ -7470,7 +7470,7 @@ def test_bls_adapter_loads_public_api_observations(monkeypatch):
     assert len(observations) == 1
     assert observations[0].series_id == "LNS14000000"
     assert observations[0].observation_date == "2026-03-01"
-    assert observations[0].published_at == "2026-03-01T00:00:00Z"
+    assert observations[0].published_at is None  # API period is not a publication timestamp
     assert observations[0].period == "M03"
     assert observations[0].value == 4.2
 
@@ -7592,18 +7592,21 @@ def test_worldbank_adapter_loads_indicator_observations(monkeypatch):
             [
                 {
                     "country": {"id": "US", "value": "United States"},
+                    "countryiso3code": "USA",
                     "indicator": {"id": "NY.GDP.MKTP.CD", "value": "GDP (current US$)"},
                     "date": "2025",
                     "value": "30000000000000",
                 },
                 {
                     "country": {"id": "US", "value": "United States"},
+                    "countryiso3code": "USA",
                     "indicator": {"id": "NY.GDP.MKTP.CD", "value": "GDP (current US$)"},
                     "date": "2024",
                     "value": None,
                 },
                 {
                     "country": {"id": "US", "value": "United States"},
+                    "countryiso3code": "USA",
                     "indicator": {"id": "NY.GDP.MKTP.CD", "value": "GDP (current US$)"},
                     "date": "2023",
                     "value": "28000000000000",
@@ -7632,7 +7635,7 @@ def test_worldbank_adapter_loads_indicator_observations(monkeypatch):
     assert observations[0].country_name == "United States"
     assert observations[0].indicator == "NY.GDP.MKTP.CD"
     assert observations[0].observation_date == "2025-12-31"
-    assert observations[0].published_at == "2025-12-31T00:00:00Z"
+    assert observations[0].published_at is None
     assert observations[0].value == 30000000000000.0
 
 
@@ -7766,7 +7769,7 @@ def test_imf_datamapper_adapter_loads_indicator_observations(monkeypatch):
     assert observations[0].country == "USA"
     assert observations[0].country_name == "United States"
     assert observations[0].observation_date == "2025-12-31"
-    assert observations[0].published_at == "2025-12-31T00:00:00Z"
+    assert observations[0].published_at is None
     assert observations[0].value == 1.8
 
 
@@ -7895,7 +7898,7 @@ def test_census_adapter_loads_api_rows(monkeypatch):
     assert records[0].dataset == "2023/acs/acs5"
     assert records[0].dataset_year == 2023
     assert records[0].observation_date == "2023-12-31"
-    assert records[0].published_at == "2023-12-31T00:00:00Z"
+    assert records[0].published_at is None
     assert records[0].values == {"NAME": "California", "B01003_001E": 39100000.0}
     assert records[0].geography == {"state": "06"}
     assert "key=" not in (records[0].source_url or "")
@@ -8307,7 +8310,7 @@ def test_stooq_adapter_loads_recent_price_observations(monkeypatch):
     assert observations[0].symbol == "AAPL.US"
     assert observations[0].interval == "d"
     assert observations[0].observation_date == "2026-05-22"
-    assert observations[0].published_at == "2026-05-22T00:00:00Z"
+    assert observations[0].published_at is None
     assert observations[0].close_price == 198.4
     assert observations[0].volume == 62000000
 
@@ -8367,7 +8370,7 @@ def test_yahoo_adapter_loads_chart_observations(monkeypatch):
     assert observations[0].symbol == "AAPL"
     assert observations[0].interval == "1d"
     assert observations[0].observation_time == "2026-05-23T00:00:00Z"
-    assert observations[0].published_at == "2026-05-23T00:00:00Z"
+    assert observations[0].published_at is None
     assert observations[0].close_price == 199.1
     assert observations[0].volume == 63000000
     assert observations[0].currency == "USD"

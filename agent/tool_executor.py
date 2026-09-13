@@ -58,7 +58,7 @@ _MAX_TOOL_WORKERS = 8
 
 def _ra():
     """Lazy reference to ``run_agent`` so patches like ``run_agent._set_interrupt`` work."""
-    import run_agent
+    from agent import runtime as run_agent
     return run_agent
 
 

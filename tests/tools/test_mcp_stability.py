@@ -134,7 +134,7 @@ class TestStdioPidTracking:
         # ``gateway.status._pid_exists`` (so it's safe on Windows — see
         # bpo-14484). Return True so the SIGKILL escalation fires.
         with patch("tools.mcp_tool.os.kill") as mock_kill, \
-             patch("gateway.status._pid_exists", return_value=True), \
+             patch("superforecasting_agent.processes.pid_exists", return_value=True), \
              patch("tools.mcp_tool._sleep") as mock_sleep:
             _kill_orphaned_mcp_children()
 

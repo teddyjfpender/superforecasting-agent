@@ -477,7 +477,7 @@ def _cmd_thesis_dashboard(args: argparse.Namespace) -> None:
     """The dedicated thesis dashboard: a master list of every active thesis (health /
     score / Δ / coverage / members), reusing the same payload the gateway serves on
     `forecast.theses` and the TUI lens renders."""
-    from forecasting.dashboard import build_factor_summary, build_thesis_summary
+    from forecasting.application.aggregate_summaries import build_factor_summary, build_thesis_summary
 
     ledger = _ledger(args)
     rows = build_thesis_summary(ledger=ledger)

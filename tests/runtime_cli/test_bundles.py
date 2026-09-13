@@ -19,7 +19,7 @@ def bundles_env(tmp_path, monkeypatch):
     # Reset module-level cache between tests.
     import agent.skill_bundles as mod
     mod._bundles_cache = {}
-    mod._bundles_cache_mtime = None
+    mod._bundles_cache_root = None
     return bundles_dir
 
 

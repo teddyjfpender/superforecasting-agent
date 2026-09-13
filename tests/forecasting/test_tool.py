@@ -419,7 +419,7 @@ def test_forecast_ledger_tool_imports_imf_datamapper_observations(tmp_path, monk
             )
         ]
 
-    monkeypatch.setattr("tools.forecasting_tool.load_imf_datamapper_observations", fake_imf_observations)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_imf_datamapper_observations", fake_imf_observations)
     imported = json.loads(
         forecast_ledger_tool(
             {
@@ -485,7 +485,7 @@ def test_forecast_ledger_tool_imports_airquality_forecasts(tmp_path, monkeypatch
             )
         ]
 
-    monkeypatch.setattr("tools.forecasting_tool.load_openmeteo_air_quality_forecasts", fake_airquality_forecasts)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_openmeteo_air_quality_forecasts", fake_airquality_forecasts)
     imported = json.loads(
         forecast_ledger_tool(
             {
@@ -555,7 +555,7 @@ def test_forecast_ledger_tool_imports_who_gho_observations(tmp_path, monkeypatch
             )
         ]
 
-    monkeypatch.setattr("tools.forecasting_tool.load_who_gho_observations", fake_who_gho)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_who_gho_observations", fake_who_gho)
     imported = json.loads(
         forecast_ledger_tool(
             {
@@ -629,7 +629,7 @@ def test_forecast_ledger_tool_imports_fema_declarations(tmp_path, monkeypatch):
             )
         ]
 
-    monkeypatch.setattr("tools.forecasting_tool.load_fema_disaster_declarations", fake_fema)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_fema_disaster_declarations", fake_fema)
     imported = json.loads(
         forecast_ledger_tool(
             {
@@ -697,7 +697,7 @@ def test_forecast_ledger_tool_imports_weatherhistory_observations(tmp_path, monk
             )
         ]
 
-    monkeypatch.setattr("tools.forecasting_tool.load_openmeteo_historical_weather", fake_weatherhistory)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_openmeteo_historical_weather", fake_weatherhistory)
     imported = json.loads(
         forecast_ledger_tool(
             {
@@ -772,7 +772,7 @@ def test_forecast_ledger_tool_imports_sec_company_facts(tmp_path, monkeypatch):
             )
         ]
 
-    monkeypatch.setattr("tools.forecasting_tool.load_sec_company_facts", fake_sec_company_facts)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_sec_company_facts", fake_sec_company_facts)
     imported = json.loads(
         forecast_ledger_tool(
             {
@@ -852,7 +852,7 @@ def test_forecast_ledger_tool_imports_fivethirtyeight_polls(tmp_path, monkeypatc
             )
         ]
 
-    monkeypatch.setattr("tools.forecasting_tool.load_fivethirtyeight_polls", fake_fivethirtyeight_polls)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_fivethirtyeight_polls", fake_fivethirtyeight_polls)
     imported = json.loads(
         forecast_ledger_tool(
             {
@@ -3094,7 +3094,7 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
             )
         ]
 
-    monkeypatch.setattr("tools.forecasting_tool.load_wikimedia_pageviews", fake_pageviews)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_wikimedia_pageviews", fake_pageviews)
     imported = json.loads(
         forecast_ledger_tool(
             {
@@ -3165,7 +3165,7 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
             )
         ]
 
-    monkeypatch.setattr("tools.forecasting_tool.load_github_repository_snapshots", fake_githubrepo)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_github_repository_snapshots", fake_githubrepo)
     githubrepo_imported = json.loads(
         forecast_ledger_tool(
             {
@@ -3214,7 +3214,7 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
             )
         ]
 
-    monkeypatch.setattr("tools.forecasting_tool.load_github_commits", fake_github_commits)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_github_commits", fake_github_commits)
     github_imported = json.loads(
         forecast_ledger_tool(
             {
@@ -3271,7 +3271,7 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
             )
         ]
 
-    monkeypatch.setattr("tools.forecasting_tool.load_github_workflow_runs", fake_githubactions)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_github_workflow_runs", fake_githubactions)
     githubactions_imported = json.loads(
         forecast_ledger_tool(
             {
@@ -3321,7 +3321,7 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
             )
         ]
 
-    monkeypatch.setattr("tools.forecasting_tool.load_coingecko_market_snapshots", fake_coingecko)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_coingecko_market_snapshots", fake_coingecko)
     coingecko_imported = json.loads(
         forecast_ledger_tool(
             {
@@ -3367,7 +3367,7 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
             )
         ]
 
-    monkeypatch.setattr("tools.forecasting_tool.load_eia_observations", fake_eia)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_eia_observations", fake_eia)
     eia_imported = json.loads(
         forecast_ledger_tool(
             {
@@ -3414,7 +3414,7 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
             )
         ]
 
-    monkeypatch.setattr("tools.forecasting_tool.load_treasury_records", fake_treasury)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_treasury_records", fake_treasury)
     treasury_imported = json.loads(
         forecast_ledger_tool(
             {
@@ -3464,7 +3464,7 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
             )
         ]
 
-    monkeypatch.setattr("tools.forecasting_tool.load_census_records", fake_census)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_census_records", fake_census)
     census_imported = json.loads(
         forecast_ledger_tool(
             {
@@ -3509,7 +3509,7 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
             )
         ]
 
-    monkeypatch.setattr("tools.forecasting_tool.load_socrata_records", fake_socrata)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_socrata_records", fake_socrata)
     socrata_imported = json.loads(
         forecast_ledger_tool(
             {
@@ -3561,7 +3561,7 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
             )
         ]
 
-    monkeypatch.setattr("tools.forecasting_tool.load_ckan_datasets", fake_ckan)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_ckan_datasets", fake_ckan)
     ckan_imported = json.loads(
         forecast_ledger_tool(
             {
@@ -3613,7 +3613,7 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
             )
         ]
 
-    monkeypatch.setattr("tools.forecasting_tool.load_github_issues", fake_githubissues)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_github_issues", fake_githubissues)
     githubissues_imported = json.loads(
         forecast_ledger_tool(
             {
@@ -3662,7 +3662,7 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
             )
         ]
 
-    monkeypatch.setattr("tools.forecasting_tool.load_hackernews_items", fake_hackernews)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_hackernews_items", fake_hackernews)
     hackernews_imported = json.loads(
         forecast_ledger_tool(
             {
@@ -3711,7 +3711,7 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
             )
         ]
 
-    monkeypatch.setattr("tools.forecasting_tool.load_reddit_posts", fake_reddit)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_reddit_posts", fake_reddit)
     reddit_imported = json.loads(
         forecast_ledger_tool(
             {
@@ -3767,7 +3767,7 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
             )
         ]
 
-    monkeypatch.setattr("tools.forecasting_tool.load_bluesky_posts", fake_bluesky)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_bluesky_posts", fake_bluesky)
     bluesky_imported = json.loads(
         forecast_ledger_tool(
             {
@@ -3829,7 +3829,7 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
             )
         ]
 
-    monkeypatch.setattr("tools.forecasting_tool.load_mastodon_statuses", fake_mastodon)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_mastodon_statuses", fake_mastodon)
     mastodon_imported = json.loads(
         forecast_ledger_tool(
             {
@@ -3881,7 +3881,7 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
             )
         ]
 
-    monkeypatch.setattr("tools.forecasting_tool.load_reliefweb_reports", fake_reliefweb)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_reliefweb_reports", fake_reliefweb)
     reliefweb_imported = json.loads(
         forecast_ledger_tool(
             {
@@ -3932,7 +3932,7 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
             )
         ]
 
-    monkeypatch.setattr("tools.forecasting_tool.load_cisa_kev_vulnerabilities", fake_cisakev)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_cisa_kev_vulnerabilities", fake_cisakev)
     cisakev_imported = json.loads(
         forecast_ledger_tool(
             {
@@ -3981,7 +3981,7 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
             )
         ]
 
-    monkeypatch.setattr("tools.forecasting_tool.load_stooq_prices", fake_stooq)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_stooq_prices", fake_stooq)
     stooq_imported = json.loads(
         forecast_ledger_tool(
             {
@@ -4034,7 +4034,7 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
             )
         ]
 
-    monkeypatch.setattr("tools.forecasting_tool.load_yahoo_finance_prices", fake_yahoo)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_yahoo_finance_prices", fake_yahoo)
     yahoo_imported = json.loads(
         forecast_ledger_tool(
             {
@@ -4091,7 +4091,7 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
             )
         ]
 
-    monkeypatch.setattr("tools.forecasting_tool.load_clinicaltrials_studies", fake_clinicaltrials)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_clinicaltrials_studies", fake_clinicaltrials)
     clinicaltrials_imported = json.loads(
         forecast_ledger_tool(
             {
@@ -4144,7 +4144,7 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
             )
         ]
 
-    monkeypatch.setattr("tools.forecasting_tool.load_openfda_drug_applications", fake_openfda)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_openfda_drug_applications", fake_openfda)
     openfda_imported = json.loads(
         forecast_ledger_tool(
             {
@@ -4192,7 +4192,7 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
             )
         ]
 
-    monkeypatch.setattr("tools.forecasting_tool.load_pubmed_articles", fake_pubmed)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_pubmed_articles", fake_pubmed)
     pubmed_imported = json.loads(
         forecast_ledger_tool(
             {
@@ -4243,7 +4243,7 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
             )
         ]
 
-    monkeypatch.setattr("tools.forecasting_tool.load_crossref_works", fake_crossref)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_crossref_works", fake_crossref)
     crossref_imported = json.loads(
         forecast_ledger_tool(
             {
@@ -4293,7 +4293,7 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
             )
         ]
 
-    monkeypatch.setattr("tools.forecasting_tool.load_pypi_releases", fake_pypi)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_pypi_releases", fake_pypi)
     pypi_imported = json.loads(
         forecast_ledger_tool(
             {
@@ -4342,7 +4342,7 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
             )
         ]
 
-    monkeypatch.setattr("tools.forecasting_tool.load_npm_package_versions", fake_npm)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_npm_package_versions", fake_npm)
     npm_imported = json.loads(
         forecast_ledger_tool(
             {
@@ -4394,7 +4394,7 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
             )
         ]
 
-    monkeypatch.setattr("tools.forecasting_tool.load_usgs_earthquakes", fake_usgs)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_usgs_earthquakes", fake_usgs)
     usgs_imported = json.loads(
         forecast_ledger_tool(
             {
@@ -4444,7 +4444,7 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
             )
         ]
 
-    monkeypatch.setattr("tools.forecasting_tool.load_nasa_eonet_events", fake_eonet)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_nasa_eonet_events", fake_eonet)
     eonet_imported = json.loads(
         forecast_ledger_tool(
             {
@@ -4501,7 +4501,7 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
             )
         ]
 
-    monkeypatch.setattr("tools.forecasting_tool.load_nws_alerts", fake_nws)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_nws_alerts", fake_nws)
     nws_imported = json.loads(
         forecast_ledger_tool(
             {
@@ -4595,7 +4595,7 @@ def test_forecast_ledger_imports_market_evidence_via_adapter(tmp_path, monkeypat
         description="Polymarket CPI market.", url="https://polymarket.com/event/cpi-above-3",
         probability=0.62, distribution=None, as_of="2026-05-26T00:00:00Z", raw={"id": "0xabc"},
     )
-    monkeypatch.setattr(ft, "load_polymarket_market", lambda source, **kw: fake)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_polymarket_market", lambda source, **kw: fake)
 
     out = json.loads(forecast_ledger_tool({
         "action": "import_source_evidence", "db": db, "question_id": qid,
@@ -4616,7 +4616,7 @@ def test_market_adapters_no_longer_unsupported(tmp_path, monkeypatch):
 
     sentinel = RuntimeError("loader reached")
     for fn in ("load_polymarket_market", "load_kalshi_market", "load_manifold_market", "load_metaculus_question"):
-        monkeypatch.setattr(ft, fn, lambda *a, **k: (_ for _ in ()).throw(sentinel))
+        monkeypatch.setattr("forecasting.sources.dispatch." + fn, lambda *a, **k: (_ for _ in ()).throw(sentinel))
 
     for source_type in ("polymarket", "kalshi", "manifold", "metaculus"):
         with pytest.raises(RuntimeError, match="loader reached"):
@@ -4644,7 +4644,7 @@ def test_auto_watch_attaches_and_dedupes(tmp_path, monkeypatch):
         description="Polymarket CPI market.", url="https://polymarket.com/event/cpi-above-3",
         probability=0.62, distribution=None, as_of="2026-05-28T00:00:00Z", raw={"id": "0xabc"},
     )
-    monkeypatch.setattr(ft, "load_polymarket_market", lambda source, **kw: fake)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_polymarket_market", lambda source, **kw: fake)
 
     first = json.loads(forecast_ledger_tool({
         "action": "import_source_evidence", "db": db, "question_id": qid,
@@ -4682,7 +4682,7 @@ def test_auto_watch_default_off_is_unchanged(tmp_path, monkeypatch):
     fake = SimpleNamespace(market_id="x", slug="x", question="q", description="",
                            url="https://example.com/m", probability=0.5, distribution=None,
                            as_of="2026-05-28T00:00:00Z", raw={})
-    monkeypatch.setattr(ft, "load_polymarket_market", lambda source, **kw: fake)
+    monkeypatch.setattr("forecasting.sources.dispatch.load_polymarket_market", lambda source, **kw: fake)
     out = json.loads(forecast_ledger_tool({
         "action": "import_source_evidence", "db": db, "question_id": qid,
         "source_type": "polymarket", "source": "x",

@@ -131,9 +131,9 @@ def _auto_install_enabled() -> bool:
     Best-effort: a config-read failure degrades to enabled — the auto-install is
     the intended default for the autonomous spine."""
     try:
-        from superforecasting_agent.runtime.config import load_config
+        from superforecasting_agent.storage.configuration import read_configuration
 
-        cfg = load_config() or {}
+        cfg = read_configuration() or {}
         fc = cfg.get("forecasting", {}) if isinstance(cfg, dict) else {}
         cron_cfg = fc.get("cron", {}) if isinstance(fc, dict) else {}
         if isinstance(cron_cfg, dict) and "auto_install" in cron_cfg:
@@ -249,9 +249,9 @@ def ensure_default_warning_automode_routine(
 
 def _warning_automode_auto_install_enabled() -> bool:
     try:
-        from superforecasting_agent.runtime.config import load_config
+        from superforecasting_agent.storage.configuration import read_configuration
 
-        cfg = load_config() or {}
+        cfg = read_configuration() or {}
         block = ((cfg.get("forecasting") or {}).get("cron") or {})
         return bool(block.get("warning_automode_auto_install", True))
     except Exception:
@@ -268,9 +268,9 @@ def ensure_default_source_estimator_routine(
 ) -> dict[str, Any]:
     """Ensure source estimation has a cadence independent of warning work."""
     try:
-        from superforecasting_agent.runtime.config import load_config
+        from superforecasting_agent.storage.configuration import read_configuration
 
-        cfg = load_config() or {}
+        cfg = read_configuration() or {}
         block = ((cfg.get("cron") or {}).get("source_estimator") or {})
         enabled = bool(block.get("enabled", True))
         minutes = max(int(block.get("interval_minutes", 15)), 1)

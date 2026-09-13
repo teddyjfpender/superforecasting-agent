@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { GatewayClient } from '../gatewayClient.js'
+import { GatewayClient, REQUIRED_HOST_CAPABILITIES } from '../gatewayClient.js'
 import { PROTOCOL_VERSION } from '../protocol/generated.js'
 
 interface ListenerEntry {
@@ -159,6 +159,100 @@ describe('GatewayClient websocket attach mode', () => {
     gw.kill()
   })
 
+  it.each(['result', 'disconnect', 'missing-result'] as const)(
+    'keeps acknowledged commands pending until %s',
+    async ending => {
+      vi.useFakeTimers()
+      process.env.HERMES_TUI_GATEWAY_URL = 'ws://gateway.test/api/ws'
+      const gw = new GatewayClient()
+
+      try {
+        gw.start()
+        const socket = FakeWebSocket.instances[0]!
+        socket.open()
+        const request = gw.request('slash.exec', { command: 'kanban watch', session_id: 's1' })
+
+        const outcome = request.then(
+          value => ({ value }),
+          error => ({ error: String(error) })
+        )
+
+        await Promise.resolve()
+        const frame = JSON.parse(socket.sent[0]!)
+
+        const event = (type: string, payload: Record<string, unknown>, session = 's1') =>
+          socket.message(JSON.stringify({ method: 'event', params: { type, session_id: session, payload } }))
+
+        const start = { request_id: frame.id, command_id: 'c1', name: 'kanban' }
+        event('command.started', start)
+        const settled = vi.fn()
+        void outcome.then(settled)
+        await vi.advanceTimersByTimeAsync(300_000)
+        expect(settled).not.toHaveBeenCalled()
+
+        if (ending === 'disconnect') {
+          socket.close()
+          expect(await outcome).toHaveProperty('error')
+        } else {
+          event('command.finished', { command_id: 'c1', status: 'cancelled' })
+
+          if (ending === 'result') {
+            socket.message(JSON.stringify({ id: frame.id, result: { output: '(stopped)' } }))
+            expect(await outcome).toEqual({ value: { output: '(stopped)' } })
+          } else {
+            await vi.advanceTimersByTimeAsync(60_000)
+            event('command.started', start)
+            event('command.finished', { command_id: 'c1', status: 'cancelled' })
+            await vi.advanceTimersByTimeAsync(60_001)
+            expect(await outcome).toEqual({ error: 'Error: timeout: slash.exec' })
+          }
+        }
+      } finally {
+        gw.kill()
+        vi.useRealTimers()
+      }
+    }
+  )
+
+  it.each(['wrong-session', 'wrong-request', 'not-command'])(
+    'does not extend an RPC deadline for %s acknowledgements',
+    async mismatch => {
+      vi.useFakeTimers()
+      process.env.HERMES_TUI_GATEWAY_URL = 'ws://gateway.test/api/ws'
+      const gw = new GatewayClient()
+
+      try {
+        gw.start()
+        const socket = FakeWebSocket.instances[0]!
+        socket.open()
+        const method = mismatch === 'not-command' ? 'session.list' : 'slash.exec'
+        const request = gw.request(method, { session_id: 's1' })
+        const outcome = request.catch(error => String(error))
+        await Promise.resolve()
+        const frame = JSON.parse(socket.sent[0]!)
+        socket.message(
+          JSON.stringify({
+            method: 'event',
+            params: {
+              type: 'command.started',
+              session_id: mismatch === 'wrong-session' ? 's2' : 's1',
+              payload: {
+                request_id: mismatch === 'wrong-request' ? 'unknown' : frame.id,
+                command_id: 'c1',
+                name: 'kanban'
+              }
+            }
+          })
+        )
+        await vi.advanceTimersByTimeAsync(120_001)
+        expect(await outcome).toBe(`Error: timeout: ${method}`)
+      } finally {
+        gw.kill()
+        vi.useRealTimers()
+      }
+    }
+  )
+
   it('accepts forecast-native websocket attach aliases', async () => {
     process.env.FORECAST_TUI_GATEWAY_URL = 'ws://gateway.test/api/ws?token=abc'
     const gw = new GatewayClient()
@@ -181,39 +275,49 @@ describe('GatewayClient websocket attach mode', () => {
   const ready = (payload: unknown): string =>
     JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { type: 'gateway.ready', payload } })
 
-  it('warns (once, never throws) when gateway.ready advertises a mismatched protocol_version', () => {
+  it.each([
+    { protocol_version: 999, min_protocol_version: 999, capabilities: REQUIRED_HOST_CAPABILITIES },
+    { protocol_version: PROTOCOL_VERSION, capabilities: [] },
+    {}
+  ])('rejects incompatible hosts before session creation: %j', async payload => {
     process.env.HERMES_TUI_GATEWAY_URL = 'ws://gateway.test/api/ws?token=abc'
     const gw = new GatewayClient()
-
     gw.start()
     const sock = FakeWebSocket.instances[0]!
     sock.open()
+    sock.message(ready(payload))
+    await expect(gw.request('session.create')).rejects.toThrow('Install compatible TUI and backend versions')
+    expect(sock.sent).toEqual([])
+    expect(sock.readyState).toBe(FakeWebSocket.CLOSED)
 
-    sock.message(ready({ protocol_version: 999 }))
-    sock.message(ready({ protocol_version: 999 })) // second frame must NOT re-warn
-
-    const tail = gw.getLogTail(50)
-    expect(tail).toContain('[protocol]')
-    expect(tail).toContain('gateway wire version 999')
-    // warn-once: exactly one occurrence
-    expect(tail.split('gateway wire version 999').length - 1).toBe(1)
-
-    gw.kill()
+    // An explicit restart after installing a compatible backend clears admission failure.
+    gw.start()
+    const replacement = FakeWebSocket.instances.at(-1)!
+    replacement.open()
+    replacement.message(ready({ protocol_version: PROTOCOL_VERSION, capabilities: REQUIRED_HOST_CAPABILITIES }))
+    const request = gw.request('session.create')
+    await vi.waitFor(() => expect(replacement.sent).toHaveLength(1))
+    const frame = JSON.parse(replacement.sent[0]!)
+    replacement.message(JSON.stringify({ jsonrpc: '2.0', id: frame.id, result: { session_id: 'recovered' } }))
+    await expect(request).resolves.toEqual({ session_id: 'recovered' })
+    await gw.kill()
   })
 
-  it('does not warn when the advertised protocol_version matches or is absent', () => {
+  it('accepts a host with a compatible version range and required operations', () => {
     process.env.HERMES_TUI_GATEWAY_URL = 'ws://gateway.test/api/ws?token=abc'
     const gw = new GatewayClient()
-
     gw.start()
     const sock = FakeWebSocket.instances[0]!
     sock.open()
-
-    sock.message(ready({})) // older gateway: no protocol_version → tolerated
-    sock.message(ready({ protocol_version: PROTOCOL_VERSION })) // matching → silent
-
-    expect(gw.getLogTail(50)).not.toContain('gateway wire version')
-
+    sock.message(
+      ready({
+        protocol_version: PROTOCOL_VERSION + 1,
+        min_protocol_version: PROTOCOL_VERSION,
+        capabilities: REQUIRED_HOST_CAPABILITIES
+      })
+    )
+    expect(gw.getLogTail(50)).not.toContain('[protocol]')
+    expect(sock.readyState).toBe(FakeWebSocket.OPEN)
     gw.kill()
   })
 
@@ -297,6 +401,23 @@ describe('GatewayClient websocket attach mode', () => {
     spent.kill()
   })
 
+  it('preserves RPC error code and handoff metadata from the wire', async () => {
+    process.env.HERMES_TUI_GATEWAY_URL = 'ws://gateway.test/api/ws?token=abc'
+    const gw = new GatewayClient()
+    gw.start()
+    const socket = FakeWebSocket.instances[0]!
+    socket.open()
+    gw.drain()
+    const pending = gw.request('fixture.command', {})
+    await vi.waitFor(() => expect(socket.sent.some(frame => JSON.parse(frame).method === 'fixture.command')).toBe(true))
+    const request = JSON.parse(socket.sent.find(frame => JSON.parse(frame).method === 'fixture.command')!)
+    const data = { dispatch: 'command.dispatch', execution_started: false }
+    const assertion = expect(pending).rejects.toMatchObject({ code: 4018, data, message: 'handoff' })
+    socket.message(JSON.stringify({ jsonrpc: '2.0', id: request.id, error: { code: 4018, message: 'handoff', data } }))
+    await assertion
+    gw.kill()
+  })
+
   it('rejects pending RPCs with websocket wording when the attached socket closes', async () => {
     process.env.HERMES_TUI_GATEWAY_URL = 'ws://gateway.test/api/ws?token=abc'
     const gw = new GatewayClient()
@@ -363,6 +484,47 @@ describe('GatewayClient websocket attach mode', () => {
 
     await expect(next).resolves.toEqual({ ok: true })
     gw.kill()
+  })
+
+  it('ignores late events and replies from a replaced transport', async () => {
+    process.env.HERMES_TUI_GATEWAY_URL = 'ws://gateway-old.test/api/ws'
+    const gw = new GatewayClient()
+    gw.start()
+    const old = FakeWebSocket.instances[0]!
+    old.open()
+    gw.drain()
+    const events: unknown[] = []
+    gw.on('event', event => events.push(event))
+    process.env.HERMES_TUI_GATEWAY_URL = 'ws://gateway-new.test/api/ws'
+    const pending = gw.request('session.resume', { session_id: 'saved' })
+    const current = FakeWebSocket.instances[1]!
+    current.open()
+    await vi.waitFor(() => expect(current.sent.length).toBeGreaterThan(0))
+    const { id } = JSON.parse(current.sent[0]!)
+    old.message(
+      JSON.stringify({
+        method: 'event',
+        params: {
+          type: 'gateway.ready',
+          payload: { protocol_version: PROTOCOL_VERSION, capabilities: REQUIRED_HOST_CAPABILITIES }
+        }
+      })
+    )
+    old.message(JSON.stringify({ id, result: { session_id: 'wrong' } }))
+    current.message(JSON.stringify({ id, result: { session_id: 'saved' } }))
+    await expect(pending).resolves.toEqual({ session_id: 'saved' })
+    expect(events).toEqual([])
+    gw.kill()
+    current.message(
+      JSON.stringify({
+        method: 'event',
+        params: {
+          type: 'gateway.ready',
+          payload: { protocol_version: PROTOCOL_VERSION, capabilities: REQUIRED_HOST_CAPABILITIES }
+        }
+      })
+    )
+    expect(events).toEqual([])
   })
 
   it('redacts query string secrets in attach failure logs and events', () => {

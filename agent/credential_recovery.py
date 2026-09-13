@@ -25,13 +25,13 @@ def _try_refresh_codex_client_credentials(self, *, force: bool = True) -> bool:
     # MUST only fire when the agent really is on singleton tokens.
     try:
         if self.provider == "openai-codex":
-            from superforecasting_agent.runtime.auth import resolve_codex_runtime_credentials
+            from superforecasting_agent.credentials.auth import resolve_codex_runtime_credentials
 
             singleton_now = resolve_codex_runtime_credentials(
                 refresh_if_expiring=False,
             )
         else:
-            from superforecasting_agent.runtime.auth import resolve_xai_oauth_runtime_credentials
+            from superforecasting_agent.credentials.auth import resolve_xai_oauth_runtime_credentials
 
             singleton_now = resolve_xai_oauth_runtime_credentials(
                 refresh_if_expiring=False,
@@ -53,11 +53,11 @@ def _try_refresh_codex_client_credentials(self, *, force: bool = True) -> bool:
 
     try:
         if self.provider == "openai-codex":
-            from superforecasting_agent.runtime.auth import resolve_codex_runtime_credentials
+            from superforecasting_agent.credentials.auth import resolve_codex_runtime_credentials
 
             creds = resolve_codex_runtime_credentials(force_refresh=force)
         else:
-            from superforecasting_agent.runtime.auth import resolve_xai_oauth_runtime_credentials
+            from superforecasting_agent.credentials.auth import resolve_xai_oauth_runtime_credentials
 
             creds = resolve_xai_oauth_runtime_credentials(force_refresh=force)
     except Exception as exc:
@@ -87,7 +87,7 @@ def _try_refresh_nous_client_credentials(self, *, force: bool = True) -> bool:
         return False
 
     try:
-        from superforecasting_agent.runtime.auth import (
+        from superforecasting_agent.credentials.auth import (
             NOUS_INFERENCE_AUTH_MODE_AUTO,
             NOUS_INFERENCE_AUTH_MODE_LEGACY,
             resolve_nous_runtime_credentials,
@@ -143,7 +143,7 @@ def _try_refresh_copilot_client_credentials(self) -> bool:
         return False
 
     try:
-        from superforecasting_agent.runtime.copilot_auth import resolve_copilot_token
+        from superforecasting_agent.credentials.copilot import resolve_copilot_token
 
         new_token, token_source = resolve_copilot_token()
     except Exception as exc:

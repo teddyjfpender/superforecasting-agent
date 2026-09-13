@@ -63,3 +63,32 @@ def test_explicit_default_database_override_is_respected(monkeypatch, tmp_path):
         assert database.db_path == override
     finally:
         database.close()
+
+
+def test_metadata_mutation_serializes_independent_connections(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from superforecasting_agent.storage.session import SessionDB
+
+    databases = [SessionDB(tmp_path / "state.db") for _ in range(2)]
+    ready = Barrier(2)
+    def increment(database):
+        ready.wait(timeout=5)
+        for _ in range(20):
+            database.mutate_meta("counter", lambda current: str(int(current or "0") + 1))
+    try:
+        with ThreadPoolExecutor(max_workers=2) as workers:
+            list(workers.map(increment, databases))
+        assert databases[0].get_meta("counter") == "40"
+        def reject(current):
+            assert current == "40"
+            raise ValueError("rejected update")
+        with pytest.raises(ValueError, match="rejected update"):
+            databases[1].mutate_meta("counter", reject)
+        assert databases[0].get_meta("counter") == "40"
+        with pytest.raises(TypeError, match="must return a string"):
+            databases[1].mutate_meta("counter", lambda current: None)
+        assert databases[0].get_meta("counter") == "40"
+    finally:
+        for database in databases:
+            database.close()

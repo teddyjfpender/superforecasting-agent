@@ -616,7 +616,7 @@ class TestConfigRoundTrip:
     def test_get_config_no_internal_keys(self):
         """GET /api/config should not expose _config_version or _model_meta."""
         config = self.client.get("/api/config").json()
-        internal = [k for k in config if k.startswith("_")]
+        internal = [k for k in config if k.startswith("_") and k != "_revision"]
         assert not internal, f"Internal keys leaked to frontend: {internal}"
 
     def test_get_config_model_is_string(self):
@@ -1074,11 +1074,11 @@ class TestNewEndpoints:
 
     def test_toolsets_list_matches_cli_enabled_state(self, monkeypatch):
         import superforecasting_agent.runtime.tools_config as tools_config
-        from superforecasting_agent.tooling import toolsets as toolsets_module
+        from superforecasting_agent.tooling import selection, toolsets as toolsets_module
         import superforecasting_agent.runtime.web_server as web_server
 
         monkeypatch.setattr(
-            tools_config,
+            selection,
             "_get_effective_configurable_toolsets",
             lambda: [
                 ("web", "🔍 Web Search & Scraping", "web_search, web_extract"),
@@ -1087,7 +1087,7 @@ class TestNewEndpoints:
             ],
         )
         monkeypatch.setattr(
-            tools_config,
+            selection,
             "_get_platform_tools",
             lambda config, platform, include_default_mcp_servers=False: {"web", "skills"},
         )
@@ -1148,7 +1148,7 @@ class TestNewEndpoints:
     def test_config_raw_put_valid(self):
         resp = self.client.put(
             "/api/config/raw",
-            json={"yaml_text": "model: test\ntoolsets:\n  - all\n"},
+            json={"yaml_text": "model: test\ntoolsets:\n  - all\n", "revision": self.client.get("/api/config/raw").json()["revision"]},
         )
         assert resp.status_code == 200
         assert resp.json()["ok"] is True

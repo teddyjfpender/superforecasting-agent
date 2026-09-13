@@ -1,0 +1,17 @@
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+WORKLOAD {"contexts": 200, "mutations": 6741}
+[Inferior 1 (process 3827) exited normally]
+From                To                  Syms Read   Shared Object Library
+0x00007ffff7fc6000  0x00007ffff7ff0195  Yes         /lib64/ld-linux-x86-64.so.2
+0x00007ffff7fad040  0x00007ffff7fad105  Yes         /lib/x86_64-linux-gnu/libpthread.so.0
+0x00007ffff7fa8040  0x00007ffff7fa8105  Yes         /lib/x86_64-linux-gnu/libdl.so.2
+0x00007ffff7fa3040  0x00007ffff7fa3105  Yes         /lib/x86_64-linux-gnu/libutil.so.1
+0x00007ffff7f9e080  0x00007ffff7f9e2b1  Yes         /lib/x86_64-linux-gnu/librt.so.1
+0x00007ffff7ec4420  0x00007ffff7f423a6  Yes         /lib/x86_64-linux-gnu/libm.so.6
+0x00007ffff7c28800  0x00007ffff7db0039  Yes         /lib/x86_64-linux-gnu/libc.so.6
+                                        No          linux-vdso.so.1
+warning: Could not load shared library symbols for linux-vdso.so.1.
+Do you need "set solib-search-path" or "set sysroot"?
+/home/runner/work/superforecasting-agent/superforecasting-agent/native-tls-results/explicit-ca-environment-unset.gdb:9: Error in sourced command file:
+You can't do that without a process to debug.

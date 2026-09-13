@@ -14,6 +14,9 @@ import pytest
 _original_stdout = sys.stdout
 
 
+from tests.runtime_session_cleanup import retire_test_sessions
+
+
 @pytest.fixture(autouse=True)
 def _restore_stdout():
     yield
@@ -31,7 +34,8 @@ def server():
         import importlib
         mod = importlib.import_module("tui_gateway.server")
         yield mod
-        mod._sessions.clear()
+        assert mod.shutdown_runtime(5), "protocol test left runtime workers active"
+        retire_test_sessions(mod)
         mod._pending.clear()
         mod._answers.clear()
         mod._methods.clear()
@@ -280,7 +284,7 @@ def test_sess_missing(server):
 
 
 def test_sess_found(server):
-    server._sessions["abc"] = {"agent": MagicMock()}
+    server._host.sessions["abc"] = {"agent": MagicMock(), "session_key": "test-session"}
     s, err = server._sess({"session_id": "abc"}, "r1")
 
     assert s is not None
@@ -313,7 +317,7 @@ def test_session_resume_returns_hydrated_messages(server, monkeypatch):
 
     monkeypatch.setattr(server, "_get_db", lambda: _DB())
     monkeypatch.setattr(server, "_make_agent", lambda sid, key, session_id=None: object())
-    monkeypatch.setattr(server, "_init_session", lambda sid, key, agent, history, cols=80: None)
+    monkeypatch.setattr(server, "_init_session", lambda sid, key, agent, history, cols=80, pending_handoff=False: server._host.sessions.register(sid, {"session_key": key, "history_lock": threading.Lock(), "running": pending_handoff, "_replacing": pending_handoff}))
     monkeypatch.setattr(server, "_session_info", lambda _agent: {"model": "test/model"})
 
     resp = server.handle_request(
@@ -333,8 +337,13 @@ def test_session_resume_returns_hydrated_messages(server, monkeypatch):
     ]
 
 
-def test_session_resume_replaces_old_runtime_only_after_success(server, monkeypatch):
+@pytest.mark.parametrize("fail_end", [False, True])
+def test_session_resume_replaces_old_runtime_only_after_success(server, monkeypatch, fail_end):
     class _DB:
+        def end_session(self, _sid, _reason):
+            if fail_end:
+                raise OSError("injected prior session end failure")
+
         def get_session(self, _sid):
             return {"id": "saved"}
 
@@ -344,7 +353,7 @@ def test_session_resume_replaces_old_runtime_only_after_success(server, monkeypa
         def get_messages_as_conversation(self, _sid, include_ancestors=False):
             return []
 
-    server._sessions["old-runtime"] = {"session_key": "old", "agent": None}
+    server._host.sessions["old-runtime"] = {"session_key": "old", "agent": None}
     monkeypatch.setattr(server, "_get_db", lambda: _DB())
     monkeypatch.setattr(server, "_make_agent", lambda sid, key, session_id=None: object())
     monkeypatch.setattr(server, "_session_info", lambda _agent: {})
@@ -360,9 +369,15 @@ def test_session_resume_replaces_old_runtime_only_after_success(server, monkeypa
         }
     )
 
-    assert "error" not in resp
-    assert "old-runtime" not in server._sessions
-    assert resp["result"]["session_id"] in server._sessions
+    if fail_end:
+        assert "injected prior session end failure" in resp["error"]["message"]
+        assert list(server._host.sessions) == ["old-runtime"]
+        assert not server._host.sessions["old-runtime"]["running"]
+        assert not server._host.sessions["old-runtime"].get("_closing")
+    else:
+        assert "error" not in resp
+        assert "old-runtime" not in server._host.sessions
+        assert resp["result"]["session_id"] in server._host.sessions
 
 
 def test_session_resume_failure_preserves_old_runtime(server, monkeypatch):
@@ -377,7 +392,7 @@ def test_session_resume_failure_preserves_old_runtime(server, monkeypatch):
             return []
 
     old = {"session_key": "old", "agent": None}
-    server._sessions["old-runtime"] = old
+    server._host.sessions["old-runtime"] = old
     monkeypatch.setattr(server, "_get_db", lambda: _DB())
     monkeypatch.setattr(
         server,
@@ -397,7 +412,7 @@ def test_session_resume_failure_preserves_old_runtime(server, monkeypatch):
     )
 
     assert resp["error"]["code"] == 5000
-    assert server._sessions["old-runtime"] is old
+    assert server._host.sessions["old-runtime"] is old
     assert old.get("running") is False
 
 
@@ -420,12 +435,12 @@ def test_session_resume_rolls_back_partial_new_runtime(server, monkeypatch):
 
     old = {"session_key": "old", "agent": None}
     db = _DB()
-    server._sessions["old-runtime"] = old
+    server._host.sessions["old-runtime"] = old
     monkeypatch.setattr(server, "_get_db", lambda: db)
     monkeypatch.setattr(server, "_make_agent", lambda *args, **kwargs: object())
 
     def fail_after_insert(sid, *_args, **_kwargs):
-        server._sessions[sid] = {"session_key": "saved", "agent": None}
+        server._host.sessions[sid] = {"session_key": "saved", "agent": None}
         raise RuntimeError("partial init")
 
     monkeypatch.setattr(server, "_init_session", fail_after_insert)
@@ -442,7 +457,7 @@ def test_session_resume_rolls_back_partial_new_runtime(server, monkeypatch):
     )
 
     assert resp["error"]["code"] == 5000
-    assert server._sessions == {"old-runtime": old}
+    assert server._host.sessions == {"old-runtime": old}
     assert old.get("running") is False
     assert db.ended == []
 
@@ -453,7 +468,7 @@ def test_session_resume_refuses_to_replace_busy_runtime(server, monkeypatch):
             return {"id": "saved"}
 
     old = {"session_key": "old", "agent": None, "running": True}
-    server._sessions["old-runtime"] = old
+    server._host.sessions["old-runtime"] = old
     monkeypatch.setattr(server, "_get_db", lambda: _DB())
 
     resp = server.handle_request(
@@ -465,7 +480,7 @@ def test_session_resume_refuses_to_replace_busy_runtime(server, monkeypatch):
     )
 
     assert resp["error"]["code"] == 4009
-    assert server._sessions == {"old-runtime": old}
+    assert server._host.sessions == {"old-runtime": old}
 
 
 def test_session_resume_refuses_already_active_durable_session(server, monkeypatch):
@@ -474,7 +489,7 @@ def test_session_resume_refuses_already_active_durable_session(server, monkeypat
             return {"id": "saved"}
 
     active = {"session_key": "saved", "agent": None, "running": False}
-    server._sessions["active-runtime"] = active
+    server._host.sessions["active-runtime"] = active
     monkeypatch.setattr(server, "_get_db", lambda: _DB())
 
     resp = server.handle_request(
@@ -482,18 +497,18 @@ def test_session_resume_refuses_already_active_durable_session(server, monkeypat
     )
 
     assert resp["error"]["code"] == 4010
-    assert server._sessions == {"active-runtime": active}
+    assert server._host.sessions == {"active-runtime": active}
 
 
 def test_session_list_omits_active_durable_sessions(server, monkeypatch):
     class _DB:
-        def list_sessions_rich(self, source=None, limit=200):
+        def list_sessions_rich(self, source=None, limit=200, offset=0, exclude_sources=None):
             return [
                 {"id": "active", "title": "Active", "source": "tui"},
                 {"id": "saved", "title": "Saved", "source": "cli"},
             ]
 
-    server._sessions["runtime"] = {"session_key": "active", "running": False}
+    server._host.sessions["runtime"] = {"session_key": "active", "running": False}
     monkeypatch.setattr(server, "_get_db", lambda: _DB())
 
     resp = server.handle_request(
@@ -513,7 +528,9 @@ def test_config_load_missing(server, tmp_path):
 
 def test_config_roundtrip(server, tmp_path):
     server._hermes_home = tmp_path
-    server._save_cfg({"model": "test/model"})
+    cfg = server._load_cfg()
+    cfg["model"] = "test/model"
+    server._save_cfg(cfg)
     assert server._load_cfg()["model"] == "test/model"
 
 
@@ -555,7 +572,7 @@ def test_slash_exec_rejects_skill_commands(server):
     """slash.exec must reject skill commands so the TUI falls through to command.dispatch."""
     # Register a mock session
     sid = "test-session"
-    server._sessions[sid] = {"session_key": sid, "agent": None}
+    server._host.sessions[sid] = {"session_key": sid, "agent": None}
 
     # Mock scan_skill_commands to return a known skill
     fake_skills = {"/hermes-agent-dev": {"name": "hermes-agent-dev", "description": "Dev workflow"}}
@@ -577,16 +594,8 @@ def test_slash_exec_handles_plugin_commands_in_live_gateway(server):
     """Plugin slash commands return normal slash.exec output without using the worker."""
     sid = "test-session"
 
-    class Worker:
-        def __init__(self):
-            self.calls = []
 
-        def run(self, cmd):
-            self.calls.append(cmd)
-            return f"worker:{cmd}"
-
-    worker = Worker()
-    server._sessions[sid] = {"session_key": sid, "agent": None, "slash_worker": worker}
+    server._host.sessions[sid] = {"session_key": sid, "agent": None}
 
     with patch(
         "superforecasting_agent.runtime.plugins.get_plugin_command_handler",
@@ -600,23 +609,14 @@ def test_slash_exec_handles_plugin_commands_in_live_gateway(server):
 
     assert "error" not in resp
     assert resp["result"] == {"output": "plugin:hello"}
-    assert worker.calls == []
 
 
-def test_slash_exec_plugin_lookup_failure_falls_back_to_worker(server):
-    """Plugin discovery failures must not break ordinary slash-worker commands."""
+def test_slash_exec_plugin_lookup_failure_keeps_terminal_ownership(server):
+    """Plugin discovery failures cannot divert terminal commands to a worker."""
     sid = "test-session"
 
-    class Worker:
-        def __init__(self):
-            self.calls = []
 
-        def run(self, cmd):
-            self.calls.append(cmd)
-            return f"worker:{cmd}"
-
-    worker = Worker()
-    server._sessions[sid] = {"session_key": sid, "agent": None, "slash_worker": worker}
+    server._host.sessions[sid] = {"session_key": sid, "agent": None}
 
     with patch(
         "superforecasting_agent.runtime.plugins.get_plugin_command_handler",
@@ -628,28 +628,18 @@ def test_slash_exec_plugin_lookup_failure_falls_back_to_worker(server):
             "params": {"command": "help", "session_id": sid},
         })
 
-    assert "error" not in resp
-    assert resp["result"] == {"output": "worker:help"}
-    assert worker.calls == ["help"]
+    assert resp["error"]["data"] == {"dispatch": "terminal", "execution_started": False}
 
 
 def test_slash_exec_plugin_handler_error_returns_output(server):
     """Plugin handler failures return slash output so the TUI does not redispatch."""
     sid = "test-session"
 
-    class Worker:
-        def __init__(self):
-            self.calls = []
-
-        def run(self, cmd):
-            self.calls.append(cmd)
-            return f"worker:{cmd}"
 
     def handler(arg):
         raise RuntimeError(f"handler boom: {arg}")
 
-    worker = Worker()
-    server._sessions[sid] = {"session_key": sid, "agent": None, "slash_worker": worker}
+    server._host.sessions[sid] = {"session_key": sid, "agent": None}
 
     with patch(
         "superforecasting_agent.runtime.plugins.get_plugin_command_handler",
@@ -663,14 +653,13 @@ def test_slash_exec_plugin_handler_error_returns_output(server):
 
     assert "error" not in resp
     assert resp["result"] == {"output": "Plugin command error: handler boom: hello"}
-    assert worker.calls == []
 
 
-@pytest.mark.parametrize("cmd", ["retry", "queue hello", "q hello", "steer fix the test", "plan"])
+@pytest.mark.parametrize("cmd", ["retry", "queue hello", "q hello", "steer fix the test"])
 def test_slash_exec_rejects_pending_input_commands(server, cmd):
     """slash.exec must reject commands that use _pending_input in the CLI."""
     sid = "test-session"
-    server._sessions[sid] = {"session_key": sid, "agent": None}
+    server._host.sessions[sid] = {"session_key": sid, "agent": None}
 
     resp = server.handle_request({
         "id": "r1",
@@ -686,7 +675,7 @@ def test_slash_exec_rejects_pending_input_commands(server, cmd):
 def test_command_dispatch_queue_sends_message(server):
     """command.dispatch /queue returns {type: 'send', message: ...} for the TUI."""
     sid = "test-session"
-    server._sessions[sid] = {"session_key": sid}
+    server._host.sessions[sid] = {"session_key": sid}
 
     resp = server.handle_request({
         "id": "r1",
@@ -703,7 +692,7 @@ def test_command_dispatch_queue_sends_message(server):
 def test_command_dispatch_queue_requires_arg(server):
     """command.dispatch /queue without an argument returns an error."""
     sid = "test-session"
-    server._sessions[sid] = {"session_key": sid}
+    server._host.sessions[sid] = {"session_key": sid}
 
     resp = server.handle_request({
         "id": "r2",
@@ -748,7 +737,7 @@ def test_skills_manage_search_uses_tools_hub_sources(server):
 def test_command_dispatch_steer_fallback_sends_message(server):
     """command.dispatch /steer with no active agent falls back to send."""
     sid = "test-session"
-    server._sessions[sid] = {"session_key": sid, "agent": None}
+    server._host.sessions[sid] = {"session_key": sid, "agent": None}
 
     resp = server.handle_request({
         "id": "r3",
@@ -771,7 +760,7 @@ def test_command_dispatch_retry_finds_last_user_message(server):
         {"role": "user", "content": "second question"},
         {"role": "assistant", "content": "second answer"},
     ]
-    server._sessions[sid] = {
+    server._host.sessions[sid] = {
         "session_key": sid,
         "agent": None,
         "history": history,
@@ -790,15 +779,15 @@ def test_command_dispatch_retry_finds_last_user_message(server):
     assert result["type"] == "send"
     assert result["message"] == "second question"
     # Verify history was truncated: everything from last user note onward removed
-    assert len(server._sessions[sid]["history"]) == 2
-    assert server._sessions[sid]["history"][-1]["role"] == "assistant"
-    assert server._sessions[sid]["history_version"] == 1
+    assert len(server._host.sessions[sid]["history"]) == 2
+    assert server._host.sessions[sid]["history"][-1]["role"] == "assistant"
+    assert server._host.sessions[sid]["history_version"] == 1
 
 
 def test_command_dispatch_retry_empty_history(server):
     """command.dispatch /retry with empty history returns error."""
     sid = "test-session"
-    server._sessions[sid] = {
+    server._host.sessions[sid] = {
         "session_key": sid,
         "agent": None,
         "history": [],
@@ -816,8 +805,8 @@ def test_command_dispatch_retry_empty_history(server):
     assert resp["error"]["code"] == 4018
 
 
-def test_command_dispatch_retry_handles_multipart_content(server):
-    """command.dispatch /retry extracts text from multipart content lists."""
+def test_command_dispatch_retry_preserves_unsupported_multipart_content(server):
+    """Text-only retry must not silently drop the original image."""
     sid = "test-session"
     history = [
         {"role": "user", "content": [
@@ -826,7 +815,7 @@ def test_command_dispatch_retry_handles_multipart_content(server):
         ]},
         {"role": "assistant", "content": "I see the image."},
     ]
-    server._sessions[sid] = {
+    server._host.sessions[sid] = {
         "session_key": sid,
         "agent": None,
         "history": history,
@@ -840,16 +829,17 @@ def test_command_dispatch_retry_handles_multipart_content(server):
         "params": {"name": "retry", "session_id": sid},
     })
 
-    assert "error" not in resp
-    result = resp["result"]
-    assert result["type"] == "send"
-    assert result["message"] == "analyze this"
+    assert resp["error"]["code"] == 4018
+    assert "attachments" in resp["error"]["message"]
+    assert server._host.sessions[sid]["history"] is history
+    assert len(history) == 2
+    assert server._host.sessions[sid]["history_version"] == 0
 
 
 def test_command_dispatch_returns_skill_payload(server):
     """command.dispatch returns structured skill payload for the TUI to send()."""
     sid = "test-session"
-    server._sessions[sid] = {"session_key": sid}
+    server._host.sessions[sid] = {"session_key": sid}
 
     fake_skills = {"/hermes-agent-dev": {"name": "hermes-agent-dev", "description": "Dev workflow"}}
     fake_msg = "Loaded skill content here"

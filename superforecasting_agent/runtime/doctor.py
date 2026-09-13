@@ -164,19 +164,19 @@ def _has_healthy_oauth_fallback_for_apikey_provider(provider_label: str) -> bool
     normalized = (provider_label or "").strip().lower()
     if normalized in {"google / gemini", "gemini"}:
         try:
-            from superforecasting_agent.runtime.auth import get_gemini_oauth_auth_status
+            from superforecasting_agent.credentials.auth import get_gemini_oauth_auth_status
             return bool((get_gemini_oauth_auth_status() or {}).get("logged_in"))
         except Exception:
             return False
     if normalized == "minimax":
         try:
-            from superforecasting_agent.runtime.auth import get_minimax_oauth_auth_status
+            from superforecasting_agent.credentials.auth import get_minimax_oauth_auth_status
             return bool((get_minimax_oauth_auth_status() or {}).get("logged_in"))
         except Exception:
             return False
     if normalized == "xai":
         try:
-            from superforecasting_agent.runtime.auth import get_xai_oauth_auth_status
+            from superforecasting_agent.credentials.auth import get_xai_oauth_auth_status
             return bool((get_xai_oauth_auth_status() or {}).get("logged_in"))
         except Exception:
             return False
@@ -611,8 +611,10 @@ def run_doctor(args):
 
             known_providers: set = set()
             try:
-                from superforecasting_agent.runtime.auth import (
+                from superforecasting_agent.configuration.authentication import (
                     PROVIDER_REGISTRY,
+                )
+                from superforecasting_agent.credentials.auth import (
                     resolve_provider as _resolve_auth_provider,
                 )
                 known_providers = set(PROVIDER_REGISTRY.keys()) | {"openrouter", "custom", "auto"}
@@ -740,7 +742,10 @@ def run_doctor(args):
                             or str(get_env_value("OPENAI_API_KEY") or "").strip()
                         )
                     else:
-                        from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY, get_auth_status
+                        from superforecasting_agent.configuration.authentication import (
+                            PROVIDER_REGISTRY,
+                        )
+                        from superforecasting_agent.credentials.auth import get_auth_status
 
                         pconfig = PROVIDER_REGISTRY.get(runtime_provider)
                         configured = True
@@ -817,8 +822,8 @@ def run_doctor(args):
         # Detect stale root-level model keys (known bug source — PR #4329)
         try:
             import yaml
-            with open(config_path, encoding="utf-8") as f:
-                raw_config = yaml.safe_load(f) or {}
+            from superforecasting_agent.runtime.config import read_raw_config
+            raw_config = read_raw_config()
             stale_root_keys = [k for k in ("provider", "base_url") if k in raw_config and isinstance(raw_config[k], str)]
             if stale_root_keys:
                 check_warn(
@@ -832,8 +837,7 @@ def run_doctor(args):
                             model_section[k] = raw_config.pop(k)
                         else:
                             raw_config.pop(k)
-                    from superforecasting_agent.storage.files import atomic_yaml_write
-                    atomic_yaml_write(config_path, raw_config)
+                    save_config(raw_config)
                     check_ok("Migrated stale root-level keys into model section")
                     fixed_count += 1
                 else:
@@ -863,7 +867,7 @@ def run_doctor(args):
 
     _section("Auth Providers")
     try:
-        from superforecasting_agent.runtime.auth import (
+        from superforecasting_agent.credentials.auth import (
             get_nous_auth_status,
             get_codex_auth_status,
             get_gemini_oauth_auth_status,
@@ -920,7 +924,7 @@ def run_doctor(args):
     # xAI OAuth — separate try/except so an import failure here cannot
     # disrupt the already-printed Nous/Codex/Gemini/MiniMax rows above.
     try:
-        from superforecasting_agent.runtime.auth import get_xai_oauth_auth_status
+        from superforecasting_agent.credentials.auth import get_xai_oauth_auth_status
         xai_oauth_status = get_xai_oauth_auth_status() or {}
         if xai_oauth_status.get("logged_in"):
             check_ok("xAI OAuth", "(logged in)")
@@ -1496,7 +1500,7 @@ def run_doctor(args):
             )
 
     def _probe_anthropic() -> _ConnectivityResult:
-        from superforecasting_agent.runtime.auth import get_anthropic_key
+        from superforecasting_agent.credentials.auth import get_anthropic_key
         key = get_anthropic_key()
         if not key:
             return _ConnectivityResult("Anthropic API", [], [])
@@ -1651,7 +1655,7 @@ def run_doctor(args):
 
     def _probe_bedrock() -> _ConnectivityResult:
         try:
-            from agent.bedrock_adapter import (
+            from superforecasting_agent.hosting.aws_credentials import (
                 has_aws_credentials,
                 resolve_aws_auth_env_var,
                 resolve_bedrock_region,
@@ -1726,12 +1730,8 @@ def run_doctor(args):
             return _ConnectivityResult("Azure Foundry (Entra ID)", [], [])
 
         try:
-            from agent.azure_identity_adapter import (
-                EntraIdentityConfig,
-                SCOPE_AI_AZURE_DEFAULT,
-                describe_active_credential,
-                has_azure_identity_installed,
-            )
+            from superforecasting_agent.credentials.azure import EntraIdentityConfig, has_azure_identity_installed
+            from agent.azure_identity_adapter import SCOPE_AI_AZURE_DEFAULT, describe_active_credential
         except Exception as exc:
             return _ConnectivityResult(
                 "Azure Foundry (Entra ID)",

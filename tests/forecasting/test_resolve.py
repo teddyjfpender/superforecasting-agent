@@ -136,7 +136,7 @@ def test_cli_refresh_resolves_name(tmp_path, capsys, monkeypatch):
                                "metadata": {"adapter": "manifold", "source": s["source"], "adapter_item": {"probability": 0.7}}}],
                  "error": None} for s in specs]
 
-    monkeypatch.setattr(ft, "fetch_watched_source_payloads", fake_fetch)
+    monkeypatch.setattr("forecasting.sources.watched.fetch_watched_source_payloads", fake_fetch)
     parser = _parser()
     args = parser.parse_args(["forecast", "--db", db, "refresh", "Texas Senate"])  # NAME, not id
     args.func(args)

@@ -69,17 +69,10 @@ class TestResolvePath:
             cwd=str(start_dir),
         )
 
-        with file_tools._file_ops_lock:
-            previous = file_tools._file_ops_cache.get(task_id)
-            file_tools._file_ops_cache[task_id] = fake_ops
+        from tools import terminal_tool
 
-        try:
-            result = file_tools._resolve_path("nested/file.txt", task_id=task_id)
-        finally:
-            with file_tools._file_ops_lock:
-                if previous is None:
-                    file_tools._file_ops_cache.pop(task_id, None)
-                else:
-                    file_tools._file_ops_cache[task_id] = previous
+        monkeypatch.setattr(file_tools, "_file_ops_cache", {task_id: fake_ops})
+        monkeypatch.setattr(terminal_tool, "_active_environments", {task_id: fake_ops.env})
+        result = file_tools._resolve_path("nested/file.txt", task_id=task_id)
 
         assert result == live_dir / "nested" / "file.txt"

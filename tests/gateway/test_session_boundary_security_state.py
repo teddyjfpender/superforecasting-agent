@@ -189,8 +189,13 @@ async def test_branch_clears_session_scoped_approval_and_yolo_state():
 
 
 @pytest.mark.asyncio
-async def test_branch_preserves_persisted_assistant_metadata():
+async def test_branch_preserves_persisted_assistant_metadata(tmp_path, request):
     runner, _session_key = _make_branch_runner()
+    from superforecasting_agent.storage.session import SessionDB
+    db = SessionDB(db_path=tmp_path / "sessions.db")
+    request.addfinalizer(db.close)
+    db.create_session("current-session", source="telegram")
+    runner._session_db = db
     runner.session_store.load_transcript.return_value = [
         {"role": "user", "content": "hello"},
         {
@@ -208,9 +213,10 @@ async def test_branch_preserves_persisted_assistant_metadata():
     result = await runner._handle_branch_command(_make_event("/branch"))
 
     assert "Branched to" in result
-    append_calls = runner._session_db.append_message.call_args_list
-    assert len(append_calls) == 2
-    assistant_kwargs = append_calls[1].kwargs
+    new_id = runner.session_store.switch_session.call_args.args[1]
+    messages = db.get_messages_as_conversation(new_id)
+    assert len(messages) == 2
+    assistant_kwargs = messages[1]
     assert assistant_kwargs["role"] == "assistant"
     assert assistant_kwargs["finish_reason"] == "stop"
     assert assistant_kwargs["reasoning"] == "thinking"

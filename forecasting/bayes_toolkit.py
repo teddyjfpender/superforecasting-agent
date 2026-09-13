@@ -33,9 +33,8 @@ from forecasting.models import ValidationError
 
 # ── Optional industry-standard accelerators ─────────────────────────────────
 # NumPy + SciPy are the preferred backends (the feedback explicitly asked for
-# "industry-standard python libraries"). They are auto-provisioned via
-# tools/lazy_deps.py ("forecast.bayes") and degrade to exact stdlib math so the
-# toolkit works on any install.
+# "industry-standard python libraries"). Installed packages are used when
+# available; numerical operations never mutate the Python installation.
 try:  # pragma: no cover - import guard
     import numpy as _np
 except Exception:  # pragma: no cover - numpy optional
@@ -75,23 +74,15 @@ def using_industry_libraries() -> dict[str, bool]:
 
 
 def ensure_industry_backends() -> dict[str, bool]:
-    """Best-effort provision NumPy + SciPy (the toolkit's preferred backends).
+    """Load available NumPy/SciPy backends without installing packages.
 
-    Triggers the lazy-install of the ``forecast.bayes`` dependency group and
-    re-imports the modules. A no-op once installed, and harmless offline (the
-    toolkit keeps working on the stdlib fallback). Returns which backends are
-    active afterwards.
+    The compatibility name is retained; setup owns dependency installation.
+    Missing libraries leave the existing standard-library fallback active.
     """
 
     global _np, _scipy_stats, _scipy_stats_probed
     if _np is not None and _get_scipy_stats() is not None:
         return using_industry_libraries()
-    try:
-        from tools.lazy_deps import ensure as _lazy_ensure
-
-        _lazy_ensure("forecast.bayes", prompt=False)
-    except Exception:
-        pass
     if _np is None:
         try:  # pragma: no cover - depends on environment
             import numpy as _np_mod

@@ -254,7 +254,7 @@ class TestBlocklistCoverage:
     def test_registry_vars_are_in_blocklist(self):
         """Every api_key_env_var and base_url_env_var from PROVIDER_REGISTRY
         must appear in the blocklist — ensures no drift."""
-        from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY
+        from superforecasting_agent.credentials.auth import PROVIDER_REGISTRY
 
         for pconfig in PROVIDER_REGISTRY.values():
             for var in pconfig.api_key_env_vars:

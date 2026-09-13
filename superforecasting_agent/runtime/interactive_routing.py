@@ -181,7 +181,7 @@ def _ensure_runtime_credentials(self) -> bool:
 
     # Primary provider auth failed — try fallback providers before giving up.
     if runtime is None and _primary_exc is not None:
-        from superforecasting_agent.runtime.auth import AuthError
+        from superforecasting_agent.credentials.auth import AuthError
         if isinstance(_primary_exc, AuthError):
             _fb_chain = self._fallback_model if isinstance(self._fallback_model, list) else []
             for _fb in _fb_chain:

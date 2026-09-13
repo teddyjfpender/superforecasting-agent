@@ -1587,17 +1587,12 @@ class AutoSetHomeMiddleware(InboundMiddleware):
             if _should_set:
                 try:
                     from superforecasting_agent.constants import get_agent_home
-                    from superforecasting_agent.storage.files import atomic_yaml_write
+                    from superforecasting_agent.storage.files import atomic_roundtrip_yaml_update
                     import yaml
 
                     _home = get_agent_home()
                     config_path = _home / "config.yaml"
-                    user_config: dict = {}
-                    if config_path.exists():
-                        with open(config_path, encoding="utf-8") as f:
-                            user_config = yaml.safe_load(f) or {}
-                    user_config["YUANBAO_HOME_CHANNEL"] = ctx.chat_id
-                    atomic_yaml_write(config_path, user_config)
+                    atomic_roundtrip_yaml_update(config_path, "YUANBAO_HOME_CHANNEL", ctx.chat_id)
                     os.environ["YUANBAO_HOME_CHANNEL"] = str(ctx.chat_id)
                     logger.info(
                         "[%s] Auto-sethome: designated %s (%s) as Yuanbao home channel",

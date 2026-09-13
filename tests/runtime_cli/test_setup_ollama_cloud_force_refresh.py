@@ -3,7 +3,8 @@ from unittest.mock import Mock
 
 
 def test_setup_ollama_cloud_passes_force_refresh(monkeypatch):
-    from superforecasting_agent.runtime import auth, config, main, models
+    from superforecasting_agent.credentials import auth
+    from superforecasting_agent.runtime import auth as interactive_auth, config, main, models
 
     provider = auth.PROVIDER_REGISTRY["ollama-cloud"]
     if provider.base_url_env_var:
@@ -16,7 +17,7 @@ def test_setup_ollama_cloud_passes_force_refresh(monkeypatch):
     monkeypatch.setattr("builtins.input", lambda prompt="": "")
     fetch = Mock(return_value=["fixture-model"])
     monkeypatch.setattr(models, "fetch_ollama_cloud_models", fetch)
-    monkeypatch.setattr(auth, "_prompt_model_selection", lambda *args, **kwargs: None)
+    monkeypatch.setattr(interactive_auth, "_prompt_model_selection", lambda *args, **kwargs: None)
 
     main._model_flow_api_key_provider({}, "ollama-cloud")
 

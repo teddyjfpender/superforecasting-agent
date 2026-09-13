@@ -204,7 +204,7 @@ class TestProviderModelIds:
 
     def test_stepfun_prefers_live_catalog(self):
         with patch(
-            "superforecasting_agent.runtime.auth.resolve_api_key_provider_credentials",
+            "superforecasting_agent.credentials.auth.resolve_api_key_provider_credentials",
             return_value={"api_key": "***", "base_url": "https://api.stepfun.com/step_plan/v1"},
         ), patch(
             "superforecasting_agent.runtime.models.fetch_api_models",
@@ -213,12 +213,12 @@ class TestProviderModelIds:
             assert provider_model_ids("stepfun") == ["step-3.5-flash", "step-3-agent-lite"]
 
     def test_copilot_prefers_live_catalog(self):
-        with patch("superforecasting_agent.runtime.auth.resolve_api_key_provider_credentials", return_value={"api_key": "gh-token"}), \
+        with patch("superforecasting_agent.credentials.auth.resolve_api_key_provider_credentials", return_value={"api_key": "gh-token"}), \
              patch("superforecasting_agent.runtime.models._fetch_github_models", return_value=["gpt-5.4", "claude-sonnet-4.6"]):
             assert provider_model_ids("copilot") == ["gpt-5.4", "claude-sonnet-4.6"]
 
     def test_copilot_acp_reuses_copilot_catalog(self):
-        with patch("superforecasting_agent.runtime.auth.resolve_api_key_provider_credentials", return_value={"api_key": "gh-token"}), \
+        with patch("superforecasting_agent.credentials.auth.resolve_api_key_provider_credentials", return_value={"api_key": "gh-token"}), \
              patch("superforecasting_agent.runtime.models._fetch_github_models", return_value=["gpt-5.4", "claude-sonnet-4.6"]):
             assert provider_model_ids("copilot-acp") == ["gpt-5.4", "claude-sonnet-4.6"]
 
@@ -679,7 +679,7 @@ class TestValidateApiFallback:
 
     def test_fetch_lmstudio_models_raises_auth_error_on_401(self):
         import urllib.error
-        from superforecasting_agent.runtime.auth import AuthError
+        from superforecasting_agent.credentials.auth import AuthError
         import pytest
 
         http_error = urllib.error.HTTPError(

@@ -21,13 +21,15 @@ import { fromSkin } from '../theme.js'
 import type { Msg, SubagentProgress, SubagentStatus } from '../types.js'
 
 import { agentsActiveFromResult, setAgentsActive } from './agentsActiveStore.js'
+import { applyCommandEvent } from './commandStore.js'
 import { applyDelegationStatus, getDelegationState } from './delegationStore.js'
 import { forecastDeskRailSections, forecastDeskStatusLabel } from './forecastPanel.js'
-import { markLinkLive, takeResumeSid } from './gatewayLinkStore.js'
+import { getGatewayLink, markLinkLive, takeResumeSid } from './gatewayLinkStore.js'
 import type { GatewayEventHandlerContext } from './interfaces.js'
 import { raisePrompt } from './overlayStore.js'
 import { turnController } from './turnController.js'
 import { getUiState, patchUiState } from './uiStore.js'
+import { writeActiveSessionFile } from './useSessionLifecycle.js'
 import { isWarningsRunActive } from './warningsRunStore.js'
 
 const NO_PROVIDER_RE = /\bNo (?:LLM|inference) provider configured\b/i
@@ -97,7 +99,13 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
   const { appendMessage, panel, setHistoryItems } = ctx.transcript
   const { setInput } = ctx.composer
   const { submitRef } = ctx.submission
-  const { setProcessing: setVoiceProcessing, setRecording: setVoiceRecording, setSpeaking: setVoiceSpeaking, setVoiceEnabled } = ctx.voice
+
+  const {
+    setProcessing: setVoiceProcessing,
+    setRecording: setVoiceRecording,
+    setSpeaking: setVoiceSpeaking,
+    setVoiceEnabled
+  } = ctx.voice
 
   let pendingThinkingStatus = ''
   let thinkingStatusTimer: null | ReturnType<typeof setTimeout> = null
@@ -179,8 +187,13 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
     }
 
     lastDelegationFetchAt = now
-    rpc<DelegationStatusResponse>('delegation.status', {})
-      .then(r => applyDelegationStatus(r))
+    const sessionId = getUiState().sid
+
+    if (!sessionId) {return}
+    rpc<DelegationStatusResponse>('delegation.status', { session_id: sessionId })
+      .then(r => {
+        if (getUiState().sid === sessionId) {applyDelegationStatus(r)}
+      })
       .catch(() => {})
   }
 
@@ -279,8 +292,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
   const pullContestedCount = () => {
     rpc<{ contested?: unknown[]; count?: number }>('forecast.triage.contested', { limit: 200 })
       .then(r => {
-        const count =
-          typeof r?.count === 'number' ? r.count : Array.isArray(r?.contested) ? r.contested.length : 0
+        const count = typeof r?.count === 'number' ? r.count : Array.isArray(r?.contested) ? r.contested.length : 0
 
         patchUiState({ forecastContestedCount: Math.max(0, count) })
       })
@@ -342,7 +354,12 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
     }
   }
 
+  let startupGeneration = 0
+
   const handleReady = (skin?: GatewaySkin) => {
+    const generation = ++startupGeneration
+    const currentStartup = () => generation === startupGeneration && getGatewayLink().phase === 'live'
+
     if (skin) {
       applySkin(skin)
     }
@@ -421,7 +438,15 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
     // users aren't surprised.
     rpc<ConfigFullResponse>('config.get', { key: 'full' })
       .then(cfg => {
-        if (!cfg?.config?.display?.tui_auto_resume_recent) {
+        if (!currentStartup()) {
+          return
+        }
+
+        if (!cfg?.config) {
+          throw new Error('configuration unavailable')
+        }
+
+        if (!cfg.config.display?.tui_auto_resume_recent) {
           patchUiState({ status: 'starting forecast session…' })
           startNewSession()
 
@@ -429,7 +454,15 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         }
 
         return rpc<SessionMostRecentResponse>('session.most_recent', {}).then(r => {
-          const target = r?.session_id
+          if (!currentStartup()) {
+            return
+          }
+
+          if (!r || !('session_id' in r)) {
+            throw new Error('saved session lookup unavailable')
+          }
+
+          const target = r.session_id
 
           if (target) {
             patchUiState({ status: 'resuming most recent…' })
@@ -442,17 +475,60 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
           startNewSession()
         })
       })
-      .catch(() => {
-        patchUiState({ status: 'starting forecast session…' })
-        startNewSession()
+      .catch((error: unknown) => {
+        if (!currentStartup()) {
+          return
+        }
+
+        patchUiState({ status: 'session startup unavailable' })
+        turnController.pushActivity(
+          `Could not check saved session state: ${rpcErrorMessage(error)}. Use /resume to retry, or /new to explicitly start a session.`,
+          'error'
+        )
       })
   }
+
+  let currentTurnId: string | null = null
+  const finishedTurnIds = new Set<string>()
 
   return (ev: GatewayEvent) => {
     const sid = getUiState().sid
 
+    if (applyCommandEvent(ev)) {
+      return
+    }
+
     if (ev.session_id && sid && ev.session_id !== sid && !ev.type.startsWith('gateway.')) {
       return
+    }
+
+    const turnId = (ev.payload as { turn_id?: string } | undefined)?.turn_id
+
+    if (
+      turnId &&
+      (
+        [WireEvent.MESSAGE_START, WireEvent.MESSAGE_DELTA, WireEvent.MESSAGE_COMPLETE, WireEvent.ERROR] as string[]
+      ).includes(ev.type)
+    ) {
+      if (finishedTurnIds.has(turnId)) {
+        return
+      }
+
+      if (ev.type === WireEvent.MESSAGE_START) {
+        currentTurnId = turnId
+      } else if (currentTurnId && turnId !== currentTurnId) {
+        return
+      }
+
+      if (ev.type === WireEvent.MESSAGE_COMPLETE || ev.type === WireEvent.ERROR) {
+        finishedTurnIds.add(turnId)
+
+        // Only recent transport duplicates need retaining; old sessions use
+        // a different handler and session identity.
+        if (finishedTurnIds.size > 64) {
+          finishedTurnIds.delete(finishedTurnIds.values().next().value!)
+        }
+      }
     }
 
     switch (ev.type) {
@@ -472,6 +548,10 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         return
       case WireEvent.SESSION_INFO: {
         const info = ev.payload
+
+        if (info.durable_session_id) {
+          writeActiveSessionFile(info.durable_session_id)
+        }
 
         // session.info lands after the background update check has usually
         // finished, so it UPGRADES a cold-cache "version only" build into a real
@@ -973,7 +1053,13 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
           }
         }
 
-        setStatus('ready')
+        setStatus(
+          ev.payload?.durable_status === 'unavailable'
+            ? 'recovery state not saved'
+            : ev.payload?.status === 'error'
+              ? 'turn failed · ready to retry'
+              : 'ready'
+        )
 
         if (ev.payload?.usage) {
           patchUiState(state => ({ ...state, usage: { ...state.usage, ...ev.payload!.usage } }))

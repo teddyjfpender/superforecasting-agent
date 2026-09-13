@@ -14,9 +14,6 @@ from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 from forecasting.agent_protocol import (
-    AGENT_PROTOCOL_METHOD,
-    AGENT_PROTOCOL_PROMPT_VERSION,
-    agent_protocol_binary_probability,
     build_agent_protocol_prompt_packet,
 )
 from forecasting.backtesting import (
@@ -47,7 +44,6 @@ from forecasting.ensembles import (
     weighted_binary_probability,
 )
 from forecasting.extensions import extension_registry
-from forecasting.forecast_engine import forecast_engine_binary_probability
 from forecasting.learning import (
     apply_active_lesson_adjustments,
     should_apply_active_lessons,
@@ -1505,55 +1501,13 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     evidence_list.set_defaults(_forecast_handler=_cmd_evidence_list)
 
     resolve_parser = forecast_sub.add_parser("resolve", help="Record a forecast resolution")
-    resolve_parser.add_argument("id")
-    resolve_parser.add_argument("--outcome", required=True)
-    resolve_parser.add_argument("--source", "--resolution-source", dest="resolution_source")
-    resolve_parser.add_argument("--source-snapshot-ref", dest="resolution_source_snapshot_ref")
-    resolve_parser.add_argument(
-        "--resolver-type",
-        choices=["manual", "source_adapter", "scheduled_check"],
-        default="manual",
-    )
-    resolve_parser.add_argument(
-        "--status",
-        dest="resolution_status",
-        choices=["proposed", "confirmed", "disputed", "corrected"],
-        default="confirmed",
-    )
-    resolve_parser.add_argument(
-        "--confirmed",
-        dest="resolution_status",
-        action="store_const",
-        const="confirmed",
-        help="Alias for --status confirmed",
-    )
-    resolve_parser.add_argument(
-        "--criteria-satisfied",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-    )
-    resolve_parser.add_argument("--confidence", type=float)
-    resolve_parser.add_argument("--confirmed-by")
-    resolve_parser.add_argument("--notes", dest="resolver_notes")
-    resolve_parser.add_argument("--correction-ref")
-    resolve_parser.add_argument("--trusted-policy")
-    resolve_parser.add_argument("--not-scoreable", action="store_true")
-    resolve_parser.add_argument(
-        "--auto-score",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Automatically score the current live snapshot on a confirmed, criteria-satisfied resolution (default on; --no-auto-score to defer).",
-    )
+    from forecasting.interfaces.commands import add_resolution_arguments
+    add_resolution_arguments(resolve_parser)
     resolve_parser.set_defaults(_forecast_handler=_cmd_resolve)
 
     score_parser = forecast_sub.add_parser("score", help="Score the current forecast snapshot")
-    score_parser.add_argument("id")
-    score_parser.add_argument("--force", action="store_true")
-    score_parser.add_argument(
-        "--baselines",
-        action="store_true",
-        help="Also score imported market/crowd/baseline comparisons without changing the current forecast",
-    )
+    from forecasting.interfaces.commands import add_scoring_arguments
+    add_scoring_arguments(score_parser)
     score_parser.set_defaults(_forecast_handler=_cmd_score)
 
     scores_parser = forecast_sub.add_parser("scores", help="List score records")
@@ -1821,6 +1775,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     track_record_parser.set_defaults(_forecast_handler=_cmd_track_record)
 
     errors_parser = forecast_sub.add_parser("errors", help="Show domain error profile summary")
+    errors_parser.add_argument("--recompute-question", help="Recompute the domain and topic profiles for this question using current review rules")
     errors_parser.add_argument("--domain")
     errors_parser.add_argument("--topic")
     errors_parser.add_argument(
@@ -2305,9 +2260,9 @@ def main(argv: list[str] | None = None, *, prog: str = CLI_SURFACE) -> None:
     # are active for subsequent invocations. Best-effort: a missing dotenv
     # dependency or unreadable file must not block the CLI.
     try:
-        from superforecasting_agent.runtime.env_loader import load_hermes_dotenv
+        from superforecasting_agent.startup_environment import load_forecast_dotenv
 
-        load_hermes_dotenv()
+        load_forecast_dotenv()
     except Exception:  # pragma: no cover — defensive
         pass
 
@@ -2843,8 +2798,11 @@ def _cmd_hooks_enable(args: argparse.Namespace) -> None:
 
 def _cmd_hooks_disable(args: argparse.Namespace) -> None:
     from forecasting.hooks import store
-    store.disable(args.rule_id)
-    print(f"{args.rule_id} disabled (off)")
+    try:
+        store.disable(args.rule_id)
+        print(f"{args.rule_id} disabled (off)")
+    except store.HookWriteError as e:
+        raise SystemExit(str(e))
 
 
 def _cmd_hooks_add(args: argparse.Namespace) -> None:
@@ -2975,10 +2933,10 @@ def _draft_resolution_criteria(spec: Any, *, model: str | None = None, provider:
     is never trusted — it still passes the full spec validation before commit."""
 
     try:
-        from superforecasting_agent.runtime.config import load_config
+        from superforecasting_agent.storage.configuration import read_configuration
         from forecasting.quorum import make_aiagent_runner
 
-        active = model or _resolve_active_model_id(load_config().get("model"))
+        active = model or _resolve_active_model_id(read_configuration().get("model"))
         if not active:
             return None
         runner = make_aiagent_runner(max_iterations=1, toolsets=(), quiet=True, timeout=120)
@@ -6813,7 +6771,7 @@ def _cmd_bayes(args: argparse.Namespace) -> None:
         print("forecast bayes: payload must be a JSON object", file=sys.stderr)
         raise SystemExit(2)
 
-    # Provision NumPy/SciPy on first use; the toolkit falls back to stdlib math
+    # Load installed NumPy/SciPy; the toolkit falls back to stdlib math
     # offline so this never blocks the command.
     ensure_industry_backends()
     outcome = run_bayes_action(action, payload)
@@ -6970,27 +6928,26 @@ def _cmd_apikey_unset(args: argparse.Namespace) -> None:
 def _cmd_model_build(args: argparse.Namespace) -> None:
     """`forecast model build <ref>` — build a deterministic Market Model as a
     forecast leg and link it to the question. ``<ref>`` may be an existing forecast
-    (id or name) OR free-text quant question. Delegates to the forecast_ledger
-    build_model action so the CLI and the agent share one code path."""
-    from tools.forecasting_tool import forecast_ledger_tool
+    (id or name) OR free-text quant question. Uses the same application operation as the forecast tool."""
+    from forecasting.application.model_build import build_model
 
     ref = (args.build_question or "").strip()
     if not ref:
         raise SystemExit("forecast model build requires a question ref or quant question text")
     ledger = _ledger(args)
-    tool_args: dict[str, Any] = {"action": "build_model", "db": getattr(args, "db", None)}
+    build_args: dict[str, Any] = {}
     # Attach to an existing forecast when the ref uniquely resolves; otherwise treat
     # it as free-text to build a standalone model for.
     resolution = resolve_question_ref(ledger, ref)
     if resolution.question is not None:
-        tool_args["question_id"] = resolution.question.id
+        build_args["question_id"] = resolution.question.id
     else:
-        tool_args["question"] = ref
+        build_args["question"] = ref
     if args.depth:
-        tool_args["depth"] = args.depth
+        build_args["depth"] = args.depth
     if args.analysis_type:
-        tool_args["analysis_type"] = args.analysis_type
-    result = json.loads(forecast_ledger_tool(tool_args))
+        build_args["analysis_type"] = args.analysis_type
+    result = build_model(build_args, ledger)
     if not result.get("success"):
         raise SystemExit(f"model build failed: {result.get('error') or result}")
     rec = result.get("recommended_model") or {}
@@ -7170,7 +7127,7 @@ def _cmd_pipeline(args: argparse.Namespace) -> None:
     ledger = _ledger(args)
     args.id = _resolve_question_id(ledger, args.id)
     if getattr(args, "refresh", False):
-        from tools.forecasting_tool import fetch_watched_source_payloads
+        from forecasting.sources.watched import fetch_watched_source_payloads
 
         refresh = ledger.refresh_forecast(
             args.id,
@@ -7237,88 +7194,22 @@ def _run_update_agent(
     commit_policy: str | None = None,
     supplemental: str | None = None,
 ) -> dict[str, Any]:
-    """Run the LLM agent for one question's pipeline stage and RETURN the structured
-    result (no printing). The agent commits through the forecasting tool, whose commit
-    hook writes the analyst brief — so the loop closes. Shared by `forecast agent`,
-    `refresh --agent`, and the autonomous `cycle run --agent` sweep (run_agent is
-    imported lazily here so the ledger/cron layers never depend on it).
+    """Compatibility adapter; agent execution is owned by the runtime library."""
+    from agent.forecast_stage import run_stage
 
-    ``commit_policy="commit_material"`` commits a material move for an explicit run;
-    ``"proposal_only"`` forces unattended work through review. ``supplemental`` injects a
-    stage-scoped note (the chain's research re-run passes the adequacy gap list)."""
-    messages = build_protocol_messages(
-        ledger, question_id, stage=stage, commit_policy=commit_policy,
-        supplemental=supplemental,
-    )
-    enabled_toolsets = _toolsets_for_stage(stage)
-    from run_agent import AIAgent
-
-    agent = AIAgent(
-        model=model or "",
+    return run_stage(
+        ledger,
+        question_id,
+        model=model,
         provider=provider,
         max_iterations=max_iterations,
-        enabled_toolsets=enabled_toolsets,
-        platform="cli",
+        stage=stage,
+        commit_policy=commit_policy,
+        supplemental=supplemental,
     )
-    agent.forecast_commit_policy = commit_policy or ""
-    return agent.run_conversation(messages[1].content, system_message=messages[0].content)
 
 
-# The default stage chain a lazy prompter's "just forecast this" runs through:
-# gather evidence (research) → set an outside view (base_rate) → commit (update).
-# `parse` is skipped — commit_spec already structured the question — and the later
-# resolve/postmortem stages only run once the world resolves.
-AUTO_FORECAST_STAGES: tuple[str, ...] = ("research", "base_rate", "update")
-
-
-def auto_forecast_stages(question: Any) -> tuple[str, ...]:
-    """Resolve the autonomous stage chain for THIS question's outcome shape.
-
-    Numeric/distribution questions get the optional ``model`` stage between
-    base_rate and update — a deterministic quant model (time-series trend,
-    monte-carlo fan) is exactly what anchors a level/path forecast, and the
-    lazy path must not silently skip the leg the machinery supports
-    (``OPTIONAL_PIPELINE_STAGES`` already marks ``model`` optional, so a stage
-    agent that finds no usable series simply moves on — the chain captures a
-    non-committing stage without aborting). Binary/categorical keep the lighter
-    3-stage chain: their outside view IS the base_rate stage."""
-
-    outcome = getattr(getattr(question, "outcome_space", None), "type", None)
-    if (outcome or "").strip().lower() in {"numeric", "distribution"}:
-        return ("research", "base_rate", "model", "update")
-    return AUTO_FORECAST_STAGES
-
-
-def _snapshot_summary(snapshot: Any) -> dict[str, Any] | None:
-    """Compact, JSON-safe view of a committed snapshot for chain results."""
-    if snapshot is None:
-        return None
-    return {
-        "forecast_id": getattr(snapshot, "forecast_id", None),
-        "question_id": getattr(snapshot, "question_id", None),
-        "probability_or_distribution": getattr(snapshot, "probability_or_distribution", None),
-        "rationale": getattr(snapshot, "rationale", None),
-        "created_at": getattr(snapshot, "created_at", None),
-    }
-
-
-def _format_research_gaps(audit: dict[str, Any]) -> str:
-    """Render a research_audit result's gap list into the supplemental note the
-    chain injects when it re-runs the research stage. Prose only."""
-    gaps = audit.get("gaps") or []
-    lines = [
-        f"Your research is not yet adequate (score {audit.get('score')}/100, "
-        f"threshold {audit.get('threshold')}). Close these specific gaps with fresh "
-        "research + import_source_evidence, then finish:",
-    ]
-    for gap in gaps:
-        detail = str(gap.get("detail") or gap.get("kind") or "").strip()
-        queries = gap.get("suggested_queries") or []
-        line = f"- {detail}"
-        if queries:
-            line += " Suggested searches: " + "; ".join(str(q) for q in queries[:3]) + "."
-        lines.append(line)
-    return "\n".join(lines)
+from forecasting.application.pipeline import AUTO_FORECAST_STAGES, auto_forecast_stages
 
 
 def run_forecast_chain(
@@ -7332,175 +7223,20 @@ def run_forecast_chain(
     commit_policy: str | None = "commit_material",
     on_stage: Callable[[str, dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
-    """Drive one question through a sequence of pipeline stages, each via the same
-    gated update agent (:func:`_run_update_agent`) a manual ``forecast agent --stage S``
-    run uses. This is ORCHESTRATION ONLY — every stage runs the identical
-    protocol/toolset/commit path, so the panel gate, analyst brief, and
-    scheduled-review side-effects fire unchanged; nothing here weakens or bypasses a
-    gate. The chain is what turns a lazy prompter's one committed question row into a
-    researched, base-rated, committed forecast.
+    """Compatibility adapter to the shared workflow; no command-owned business logic."""
+    from forecasting.application.pipeline import run_forecast_chain as run_chain
 
-    A stage that raises is captured (``status="error"``) and the chain CONTINUES: a
-    flaky research stage must not abort the run, and the update stage's own commit
-    gate still refuses if prerequisites are genuinely missing (so a skipped/failed
-    prerequisite surfaces as an un-committed, still-gated result — never a fabricated
-    number). ``on_stage(stage, outcome)`` fires after each stage for progress
-    reporting.
-
-    Returns ``{question_id, stages:[per-stage outcome], committed, snapshot,
-    update_ready, update_blockers}``.
-    """
-    if stages is None:
-        # Outcome-shape-aware default: numeric/distribution questions include the
-        # optional `model` stage so the lazy path gets the deterministic quant leg.
-        stages = auto_forecast_stages(ledger.get_question(question_id))
-    stage_results: list[dict[str, Any]] = []
-    research_audit_final: dict[str, Any] | None = None
-    research_audit_rounds = 0
-    for stage in stages:
-        prior = ledger.get_current_snapshot(question_id)
-        outcome: dict[str, Any] = {"stage": stage, "status": "ran", "committed": False}
-        try:
-            result = _run_update_agent(
-                ledger,
-                question_id,
-                model=model,
-                provider=provider,
-                max_iterations=max_iterations,
-                stage=stage,
-                commit_policy=commit_policy,
-            )
-        except Exception as exc:  # one bad stage must not abort the chain
-            outcome["status"] = "error"
-            outcome["detail"] = str(exc)[:200]
-        else:
-            post = ledger.get_current_snapshot(question_id)
-            committed = post is not None and (prior is None or post.forecast_id != prior.forecast_id)
-            outcome["committed"] = committed
-            if committed:
-                outcome["forecast_id"] = post.forecast_id
-            response = result.get("final_response") if isinstance(result, dict) else None
-            if response:
-                outcome["detail"] = _truncate(str(response).strip(), 200)
-        stage_results.append(outcome)
-        if on_stage is not None:
-            on_stage(stage, outcome)
-
-        # VOI-directed research adequacy loop: after the research stage completes for
-        # a LIVE (active) question, audit whether the evidence set covers the levers
-        # that would move the forecast (deterministic — NO LLM runner, cheap). If it
-        # is inadequate and rounds remain, re-run the research stage ONCE per round
-        # with the concrete gap list injected. This is BOUNDED (max_audit_rounds
-        # counts EXTRA passes) and fail-open: any audit error simply stops the loop.
-        if stage == "research":
-            research_audit_rounds, research_audit_final = _run_research_audit_loop(
-                ledger, question_id,
-                model=model, provider=provider, max_iterations=max_iterations,
-                commit_policy=commit_policy, on_stage=on_stage,
-                stage_results=stage_results,
-            )
-
-    final = ledger.get_current_snapshot(question_id)
-    status = build_pipeline_status(ledger, question_id)
-    return {
-        "question_id": question_id,
-        "stages": stage_results,
-        "committed": any(s.get("committed") for s in stage_results),
-        "snapshot": _snapshot_summary(final),
-        "update_ready": status.get("update_ready"),
-        "update_blockers": status.get("update_blockers") or [],
-        "research_audit_rounds": research_audit_rounds,
-        "research_audit": research_audit_final,
-    }
-
-
-def _run_research_audit_loop(
-    ledger: ForecastLedger,
-    question_id: str,
-    *,
-    model: str | None,
-    provider: str | None,
-    max_iterations: int,
-    commit_policy: str | None,
-    on_stage: Callable[[str, dict[str, Any]], None] | None,
-    stage_results: list[dict[str, Any]],
-) -> tuple[int, dict[str, Any] | None]:
-    """Deterministic research-adequacy re-run loop (see run_forecast_chain). Returns
-    ``(extra_rounds_run, final_audit)``. Fully fail-open: never raises."""
-    from forecasting.research_audit import audit_research, research_stage_incomplete
-
-    try:
-        question = ledger.get_question(question_id)
-    except Exception:
-        return 0, None
-    # Only live (active) questions get the extra research passes.
-    if getattr(question, "status", None) != "active":
-        try:
-            return 0, audit_research(ledger, question)
-        except Exception:
-            return 0, None
-
-    try:
-        from superforecasting_agent.runtime.config import cfg_get, load_config_readonly
-
-        max_rounds = int(cfg_get(load_config_readonly(), "forecasting", "research", "max_audit_rounds", default=2) or 0)
-    except Exception:
-        max_rounds = 2
-    max_rounds = max(0, max_rounds)
-
-    def _safe_audit(q: Any) -> dict[str, Any] | None:
-        try:
-            return audit_research(ledger, q)
-        except Exception:
-            return None
-
-    audit = _safe_audit(question)
-    rounds = 0
-    # Re-run RESEARCH only for research-stage-controllable gaps (evidence floor,
-    # independence, disconfirming, recency, trigger coverage). reference_class is the
-    # base_rate stage's job (it runs after this checkpoint), so it never drives a
-    # research re-run here.
-    while research_stage_incomplete(audit) and rounds < max_rounds:
-        rounds += 1
-        prev_score = audit.get("score")
-        supplemental = _format_research_gaps(audit)
-        re_outcome: dict[str, Any] = {
-            "stage": "research", "status": "ran", "committed": False,
-            "audit_round": rounds, "audit_score": prev_score,
-        }
-        try:
-            result = _run_update_agent(
-                ledger, question_id,
-                model=model, provider=provider, max_iterations=max_iterations,
-                stage="research", commit_policy=commit_policy, supplemental=supplemental,
-            )
-        except Exception as exc:
-            re_outcome["status"] = "error"
-            re_outcome["detail"] = str(exc)[:200]
-        else:
-            response = result.get("final_response") if isinstance(result, dict) else None
-            if response:
-                re_outcome["detail"] = _truncate(str(response).strip(), 200)
-        stage_results.append(re_outcome)
-        if on_stage is not None:
-            on_stage("research", re_outcome)
-        try:
-            question = ledger.get_question(question_id)
-        except Exception:
-            break
-        audit = _safe_audit(question)
-        # No-progress guard (spend bound): a re-run that did not RAISE the adequacy
-        # score won't be helped by another identical pass — stop rather than burn the
-        # remaining rounds on research that isn't finding anything.
-        if (
-            research_stage_incomplete(audit)
-            and isinstance(audit.get("score"), (int, float))
-            and isinstance(prev_score, (int, float))
-            and audit["score"] <= prev_score
-        ):
-            break
-    return rounds, audit
-
+    return run_chain(
+        ledger,
+        question_id,
+        model=model,
+        provider=provider,
+        max_iterations=max_iterations,
+        stages=stages,
+        commit_policy=commit_policy,
+        on_stage=on_stage,
+        stage_runner=_run_update_agent,
+    )
 
 def _cmd_agent(args: argparse.Namespace) -> None:
     if args.dry_run:
@@ -7641,7 +7377,9 @@ def _cmd_evidence_list(args: argparse.Namespace) -> None:
 
 def _cmd_resolve(args: argparse.Namespace) -> None:
     ledger = _ledger(args)
-    resolution = ledger.resolve_question(
+    from forecasting.application.resolution import resolve_forecast
+
+    result = resolve_forecast(ledger, dict(
         question_id=args.id,
         outcome=args.outcome,
         resolution_source=args.resolution_source,
@@ -7656,56 +7394,19 @@ def _cmd_resolve(args: argparse.Namespace) -> None:
         trusted_policy_id=args.trusted_policy,
         scoreable=not args.not_scoreable,
         auto_score=args.auto_score,
-    )
-    print(f"recorded resolution {resolution.id}")
-    print(f"status: {resolution.resolution_status}")
-    print(f"criteria_satisfied: {resolution.criteria_satisfied}")
-    score = None
-    if (
-        args.auto_score
-        and resolution.resolution_status == "confirmed"
-        and resolution.criteria_satisfied
-        and not args.not_scoreable
-    ):
-        score = ledger.get_current_score(args.id)
-        if score is not None:
-            print(
-                "auto_score: "
-                f"brier={_format_metric(score.brier_score)} "
-                f"log={_format_metric(score.log_score)} "
-                f"origin={score.forecast_origin}"
-            )
-    # Once the question is finalized, write the closing retrospective into the same
-    # time-indexed note stream. Best-effort, after the resolution is recorded.
-    if resolution.resolution_status == "confirmed" and resolution.criteria_satisfied:
-        _write_retrospective(ledger, args.id, score=score)
+    ))
+    from forecasting.interfaces.commands import format_resolution
+    print(format_resolution(result))
 
 
 def _cmd_score(args: argparse.Namespace) -> None:
-    ledger = _ledger(args)
-    score = ledger.score_question(args.id, force=args.force)
-    print(f"score: {score.id}")
-    print(f"brier_score: {score.brier_score:.6f}" if score.brier_score is not None else "brier_score: -")
-    print(f"log_score: {score.log_score:.6f}" if score.log_score is not None else "log_score: -")
-    print(f"proper_score: {score.proper_score:.6f}" if score.proper_score is not None else "proper_score: -")
-    print(f"score_rule: {score.score_rule or '-'}")
-    print(f"bucket: {score.calibration_bucket or '-'}")
-    print(f"origin: {score.forecast_origin}")
-    if args.baselines:
-        baselines = ledger.score_baseline_comparisons(args.id, force=args.force)
-        if not baselines:
-            print("baseline_scores: none")
-        else:
-            print(f"baseline_scores: {len(baselines)}")
-            for baseline in baselines:
-                baseline_score = baseline["score"]
-                name = f"{baseline['baseline_type']}:{baseline['source']}"
-                print(
-                    f"  {baseline['id']} {name} "
-                    f"brier={_format_metric(baseline_score.brier_score)} "
-                    f"log={_format_metric(baseline_score.log_score)} "
-                    f"origin={baseline_score.forecast_origin}"
-                )
+    from forecasting.application.scoring import score_forecast
+    from forecasting.interfaces.commands import format_scoring
+
+    result = score_forecast(_ledger(args), {
+        "question_id": args.id, "force": args.force, "baselines": args.baselines,
+    })
+    print(format_scoring(result))
 
 
 def _cmd_scores(args: argparse.Namespace) -> None:
@@ -8671,6 +8372,8 @@ def _print_cohort_scoreboard(board: dict[str, Any]) -> None:
 
 def _cmd_errors(args: argparse.Namespace) -> None:
     ledger = _ledger(args)
+    if getattr(args, "recompute_question", None):
+        ledger.update_domain_error_profile(ledger.get_question(_resolve_question_id(ledger, args.recompute_question)))
     profiles = ledger.list_domain_error_profiles(domain=args.domain, topic=args.topic)
     summary = ledger.calibration_summary(domain=args.domain)
     active_reviews = _active_learned_error_review_rows(
@@ -8712,351 +8415,70 @@ def _cmd_errors(args: argparse.Namespace) -> None:
         print("recurring_errors: no high-level pattern detected from scored forecasts")
 
 
-def _active_learned_error_review_rows(
-    ledger: ForecastLedger,
-    *,
-    domain: str | None = None,
-    topic: str | None = None,
-    horizon: str | None = None,
-    confidence_below: float | None = None,
-    confidence_above: float | None = None,
-    limit: int | None = None,
-) -> list[dict[str, Any]]:
-    if limit is not None and limit <= 0:
-        return []
-    rows: list[dict[str, Any]] = []
-    seen: set[tuple[str, str]] = set()
-    for alert in ledger.list_alerts(unresolved_only=True):
-        if alert.scope_type != "question" or not is_learned_error_review_reason(alert.reason):
-            continue
-        key = (alert.scope_ref, alert.reason)
-        if key in seen:
-            continue
-        seen.add(key)
-        try:
-            question = ledger.get_question(alert.scope_ref)
-        except ForecastingError:
-            continue
-        if question.status != "active":
-            continue
-        snapshot = ledger.get_current_snapshot(question.id)
-        if not _review_alert_matches_filters(
-            ledger,
-            question=question,
-            snapshot=snapshot,
-            domain=domain,
-            topic=topic,
-            horizon=horizon,
-            confidence_below=confidence_below,
-            confidence_above=confidence_above,
-        ):
-            continue
-        rows.append(
-            {
-                "alert": alert,
-                "question": question,
-                "current_snapshot": snapshot,
-                "profile_id": learned_error_profile_id(alert.reason),
-            }
-        )
-        if limit is not None and len(rows) >= limit:
-            break
-    return rows
-
-
-def _review_alert_matches_filters(
-    ledger: ForecastLedger,
-    *,
-    question: Any,
-    snapshot: Any,
-    domain: str | None,
-    topic: str | None,
-    horizon: str | None,
-    confidence_below: float | None,
-    confidence_above: float | None,
-) -> bool:
-    if domain and question.domain != domain:
-        return False
-    if topic and topic not in question.topics:
-        return False
-    if horizon and (
-        snapshot is None or not ledger._horizon_matches(snapshot.forecast_horizon_days, horizon)
-    ):
-        return False
-    if confidence_below is not None or confidence_above is not None:
-        if snapshot is None or snapshot.confidence is None:
-            return False
-        if confidence_below is not None and snapshot.confidence >= confidence_below:
-            return False
-        if confidence_above is not None and snapshot.confidence <= confidence_above:
-            return False
-    return True
+# Compatibility imports only: review selection belongs to application services.
+from forecasting.application.reviews import (
+    _active_learned_error_review_rows,
+    _review_alert_matches_filters,
+)
 
 
 def _build_cycle_reforecast_runner(
     args: argparse.Namespace, *, commit_policy: str = "commit_material"
 ):
-    """The CLI-layer callable the cron cycle invokes to autonomously re-forecast the
-    questions a sweep flagged. It validates each candidate is a LIVE question, honors
-    the pipeline update gate (skip + report blockers unless --force), caps the count
-    (--max-questions), runs the LLM update stage, and returns per-question result
-    dicts. Lives here so run_agent is never imported by cron_runner/ledger.
+    """Adapt CLI options to the shared bounded reforecast operation."""
+    from forecasting.application.warning_runners import build_cycle_reforecast_runner
 
-    ``commit_policy="proposal_only"`` is used by cron: the agent tool is forced through
-    the normal gates but cannot write a snapshot. The default remains the explicit
-    operator-run material-commit behavior."""
-    from forecasting.warnings import is_material_move
-
-    ledger = _ledger(args)
-    model, provider = args.model, args.provider
-    _mi = getattr(args, "max_iterations", None)
-    max_iter = 12 if _mi is None else _mi
-    max_q = getattr(args, "max_questions", None)
-    force = getattr(args, "force", False)
-
-    def _runner(question_ids: list[str]) -> list[dict[str, Any]]:
-        results: list[dict[str, Any]] = []
-        processed = 0  # questions an LLM run was actually started for (the expensive bit)
-        for qid in question_ids:
-            if max_q is not None and processed >= max_q:
-                results.append({"question_id": qid, "status": "skipped", "detail": f"--max-questions {max_q} reached"})
-                continue
-            try:
-                question = ledger.get_question(qid)
-            except Exception:
-                question = None
-            if question is None or getattr(question, "status", None) != "active":
-                results.append({"question_id": qid, "status": "skipped", "detail": "not an active question"})
-                continue
-            counted = False  # whether this question already consumed one of the max_q session budgets
-            if not force:
-                pstatus = build_pipeline_status(ledger, qid)
-                if not pstatus.get("update_ready", True):
-                    # BOOTSTRAP instead of skip: drive the missing prerequisite
-                    # stages (research, then base_rate) through the SAME gated agent
-                    # chain, then re-check the gate. This is what lets the cron sweep
-                    # re-forecast a FRESH question an operator just dropped in — not
-                    # only ones hand-researched already. Skip stays the honest
-                    # fallback when bootstrap fails to satisfy the gate.
-                    blockers = pstatus.get("update_blockers") or []
-                    prereq_stages = [s for s in ("research", "base_rate") if s in blockers]
-                    errored: list[str] = []
-                    if prereq_stages:
-                        # A bootstrap runs up to 2 real, multi-minute LLM stages, so it
-                        # must COUNT against --max-questions the moment it starts —
-                        # otherwise a batch of never-ready questions burns 2N uncounted
-                        # sessions (each hits `continue` below without incrementing).
-                        # Counting here (not after) bounds the expensive work honestly;
-                        # `counted` then suppresses the pre-update increment so a
-                        # question that bootstraps AND proceeds to update is charged once.
-                        processed += 1
-                        counted = True
-                        # run_forecast_chain captures a raising stage per-stage (it
-                        # never re-raises), so the sweep is not aborted by a flaky
-                        # bootstrap; a still-closed gate below is the honest fallback.
-                        boot = run_forecast_chain(
-                            ledger, qid, model=model, provider=provider,
-                            max_iterations=max_iter, stages=prereq_stages,
-                            commit_policy=commit_policy,
-                        )
-                        errored = [s["stage"] for s in boot["stages"] if s.get("status") == "error"]
-                        pstatus = build_pipeline_status(ledger, qid)
-                    if not pstatus.get("update_ready", True):
-                        still = ", ".join(pstatus.get("update_blockers") or []) or "prerequisites missing"
-                        detail = f"update gated after bootstrap: {still}"
-                        if errored:
-                            detail += f" (bootstrap stage error: {', '.join(errored)})"
-                        results.append({"question_id": qid, "status": "skipped", "detail": detail})
-                        continue
-            prior = ledger.get_current_snapshot(qid)
-            prior_proposals = (
-                {
-                    proposal["id"]
-                    for proposal in ledger.list_forecast_update_proposals(
-                        question_id=qid, status="pending", limit=100
-                    )
-                }
-                if commit_policy == "proposal_only"
-                else set()
-            )
-            # Count BEFORE the agent runs: the cap bounds expensive multi-minute LLM
-            # sessions, so a question that ran but declined to commit still counts.
-            # A question that already paid for its budget in the bootstrap above
-            # (counted=True) is not charged twice.
-            if not counted:
-                processed += 1
-            try:
-                _run_update_agent(
-                    ledger, qid, model=model, provider=provider,
-                    max_iterations=max_iter, commit_policy=commit_policy,
-                )
-            except Exception as exc:  # one failure must not abort the sweep
-                results.append({"question_id": qid, "status": "error", "detail": str(exc)[:160]})
-                continue
-            post = ledger.get_current_snapshot(qid)
-            if commit_policy == "proposal_only":
-                proposal = next(
-                    (
-                        item
-                        for item in ledger.list_forecast_update_proposals(
-                            question_id=qid, status="pending", limit=100
-                        )
-                        if item["id"] not in prior_proposals
-                    ),
-                    None,
-                )
-                if proposal is not None:
-                    results.append(
-                        {
-                            "question_id": qid,
-                            "status": "proposed",
-                            "detail": f"pending proposal {proposal['id']}; no snapshot committed",
-                        }
-                    )
-                else:
-                    results.append(
-                        {
-                            "question_id": qid,
-                            "status": "skipped",
-                            "detail": "agent created no material proposal; no snapshot committed",
-                        }
-                    )
-                continue
-            new_commit = post is not None and (prior is None or post.forecast_id != prior.forecast_id)
-            if new_commit:
-                # Classify the commit by MATERIALITY (the same is_material_move
-                # primitive the prompt instructs the agent to apply): a MATERIAL
-                # move is the success the auto-reforecast wants; a MARGINAL-delta
-                # commit that slipped through the prompt-level policy is reported
-                # HONESTLY as "marginal" — it is NOT tallied as a material-move
-                # success, so the sweep's status counts and the result detail stay
-                # truthful (and surface the Δp that justifies the classification).
-                prior_p = prior.probability_or_distribution if prior is not None else None
-                material = is_material_move(prior_p, post.probability_or_distribution)
-                delta = None
-                if isinstance(prior_p, (int, float)) and not isinstance(prior_p, bool) and isinstance(
-                    post.probability_or_distribution, (int, float)
-                ) and not isinstance(post.probability_or_distribution, bool):
-                    delta = float(post.probability_or_distribution) - float(prior_p)
-                if material:
-                    detail = f"new snapshot {post.forecast_id}"
-                    if delta is not None:
-                        detail += f" (Δp {delta:+.3f})"
-                    results.append({"question_id": qid, "status": "committed", "detail": detail})
-                else:
-                    detail = f"new snapshot {post.forecast_id} committed at a MARGINAL move"
-                    if delta is not None:
-                        detail += f" (Δp {delta:+.3f}, under the |Δp|>=0.03 material-move threshold)"
-                    results.append({"question_id": qid, "status": "marginal", "detail": detail})
-            else:
-                results.append({"question_id": qid, "status": "skipped", "detail": "agent committed no new snapshot"})
-        return results
-
-    return _runner
-
+    limit = getattr(args, "max_iterations", None)
+    return build_cycle_reforecast_runner(
+        _ledger(args),
+        model=args.model,
+        provider=args.provider,
+        max_iterations=12 if limit is None else limit,
+        max_questions=getattr(args, "max_questions", None),
+        force=getattr(args, "force", False),
+        commit_policy=commit_policy,
+        stage_runner=_run_update_agent,
+    )
 
 # ---------------------------------------------------------------------------
 # Warning resolution (the open alert_events backlog)
 # ---------------------------------------------------------------------------
 
 def _build_warning_runners(args: argparse.Namespace, ledger: ForecastLedger):
-    """Wire the slice-1 dispatcher's injected runners to the REAL gated paths.
+    """Adapt command options to the shared warning-runner composition."""
+    from forecasting.application.warning_runners import build_operator_warning_runners
 
-    Each runner performs genuine gated work and signals success by returning a
-    truthy result (a committed snapshot / a non-failed autopilot run / a written
-    postmortem). The dispatcher acks ONLY on that truthy result, so the
-    load-bearing rule holds: no bare ack to make the number drop.
-    """
-    from forecasting.cron_runner import build_warning_runners
-
-    # REFORECAST runner: only wired when --agent is set, because the real gated
-    # work is an LLM update-stage run. Without --agent we leave REFORECAST alerts
-    # OPEN (the dispatcher reports them "skipped") rather than bare-acking them.
-    reforecast_runner = None
-    evidence_search = None
-    triage_runner = None
-    triage_model = None
-    if getattr(args, "agent", False):
-        _inner = _build_cycle_reforecast_runner(args)
-
-        def reforecast_runner(_led, warning):  # noqa: ARG001 — uses the closed-over runner
-            if not warning.scope_ref:
-                return None
-            results = _inner([warning.scope_ref])
-            # A landed snapshot is real gated work regardless of materiality, so the
-            # alert resolves on either a "committed" (material) OR a "marginal" commit
-            # — the material/marginal split is the cycle TALLY's honesty concern, not
-            # the alert-ack decision. A gated/declined/errored run lands no snapshot
-            # ("skipped"/"error") → falsy → the alert stays open (never bare-acked).
-            landed = [r for r in results if r.get("status") in {"committed", "marginal"}]
-            return landed[0] if landed else None
-
-        # EVIDENCE_COLLECTION search: the LLM/web research-stage pass that
-        # bootstraps a question with NO evidence yet (it searches + imports through
-        # the gated import_source_evidence path). cron_runner wraps this in the
-        # >= 1-new-row gate, so the alert acks ONLY when real evidence landed.
-        evidence_search = _build_evidence_search(args)
-
-        # PAID evidence-autopilot (S6.1): the CHEAP auto-labeler for the
-        # MATERIAL_CHANGE path. Wired only under --agent so the free continuous tick
-        # never spends; bounded to one small labeler call per material change.
-        triage_runner, triage_model = build_triage_runner(model=getattr(args, "model", None))
-
-    # The autopilot (MATERIAL_CHANGE) + score (POSTMORTEM) runners are the shared,
-    # non-LLM gated paths — factored into cron_runner so the CLI, the cron phase,
-    # the gateway, and the agent tool all wire identical "real work" semantics.
-    return build_warning_runners(
+    limit = getattr(args, "max_iterations", None)
+    return build_operator_warning_runners(
         ledger,
+        agent=getattr(args, "agent", False),
+        model=getattr(args, "model", None),
+        provider=getattr(args, "provider", None),
+        max_iterations=12 if limit is None else limit,
+        max_questions=getattr(args, "max_questions", None),
+        force=getattr(args, "force", False),
         now=getattr(args, "now", None),
-        reforecast_runner=reforecast_runner,
-        evidence_search=evidence_search,
-        triage_runner=triage_runner,
-        triage_model=triage_model,
+        stage_runner=_run_update_agent,
     )
 
 
 def build_triage_runner(*, model: str | None = None):
-    """Construct the CHEAP triage auto-labeler runner + resolved model id.
+    """Compatibility facade for the runtime-owned triage adapter."""
+    from agent.forecast_stage import build_triage_runner as build
 
-    Returns ``(runner, model)`` where ``runner`` has the injected labeler shape
-    ``(model, system, user) -> str``. The SAME construction the ``triage_label``
-    tool action uses (``forecasting.quorum.make_aiagent_runner``), so the CLI, the
-    tool, and the evidence-autopilot all label with identical wiring. Accessed via
-    the ``quorum`` module (not a ``from`` import) so tests can monkeypatch
-    ``forecasting.quorum.make_aiagent_runner`` like ``tests/forecasting/test_triage.py``.
-    """
-    from forecasting import appconfig, quorum
-
-    configured = appconfig.get_str("FORECAST_TRIAGE_MODEL")
-    if model or configured:
-        resolved = model or configured
-    else:
-        from superforecasting_agent.runtime.config import load_config
-
-        resolved = _resolve_active_model_id(load_config().get("model")) or quorum.DEFAULT_JUDGE_MODEL
-    runner = quorum.make_aiagent_runner(toolsets=(), max_iterations=2, quiet=True, timeout=180)
-    return runner, resolved
-
+    return build(model=model)
 
 def _build_evidence_search(args: argparse.Namespace):
-    """The AGENT-tier callable the EVIDENCE_COLLECTION runner invokes to research +
-    import evidence for a no-evidence question. Runs the LLM `research`-stage agent
-    (web + forecasting toolsets), which imports readings through the gated
-    `import_source_evidence` path. Lives here so run_agent is never imported by
-    cron_runner/ledger; cron_runner owns the >= 1-new-row ack gate."""
-    model, provider = args.model, args.provider
-    _mi = getattr(args, "max_iterations", None)
-    max_iter = 12 if _mi is None else _mi
+    """Adapt CLI research options; durable evidence admission remains shared."""
+    from forecasting.application.warning_runners import build_evidence_search
 
-    def _search(led, warning):  # noqa: ARG001 — uses the question id off the warning
-        if warning.scope_type != "question" or not warning.scope_ref:
-            return None
-        return _run_update_agent(
-            led, warning.scope_ref,
-            model=model, provider=provider, max_iterations=max_iter, stage="research",
-        )
-
-    return _search
+    limit = getattr(args, "max_iterations", None)
+    return build_evidence_search(
+        model=args.model,
+        provider=args.provider,
+        max_iterations=12 if limit is None else limit,
+        stage_runner=_run_update_agent,
+    )
 
 
 def build_cron_warning_agent_runners(
@@ -9067,37 +8489,19 @@ def build_cron_warning_agent_runners(
     max_iterations: int | None = None,
     now: str | None = None,
 ):
-    """Build the paid-tier (LLM) warning-automode runners for the no-agent cron
-    entrypoint: returns ``(reforecast_runner, evidence_search)``.
+    """Compatibility facade for the shared scheduled warning operation."""
+    from forecasting.application.warning_runners import (
+        build_cron_warning_agent_runners as build,
+    )
 
-    Lives in the CLI layer so ``run_agent`` is NEVER imported by
-    ``forecasting.cron_runner`` (layer purity). ``cron_runner.main_warning_automode``
-    imports this lazily only when ``--agent`` is set. The reforecast closure is
-    truthy only when the agent created a fresh pending proposal; the evidence
-    search is the research-stage import pass cron_runner wraps in its >=1-new-row
-    ack gate."""
-    args = argparse.Namespace(
-        db=db_path,
+    return build(
+        db_path=db_path,
         model=model,
         provider=provider,
         max_iterations=max_iterations,
         now=now,
-        agent=True,
-        force=False,
-        max_questions=None,
+        stage_runner=_run_update_agent,
     )
-    _inner = _build_cycle_reforecast_runner(args, commit_policy="proposal_only")
-
-    def reforecast_runner(_led, warning):  # noqa: ARG001 — uses the closed-over runner
-        if not warning.scope_ref:
-            return None
-        results = _inner([warning.scope_ref])
-        proposed = [r for r in results if r.get("status") == "proposed"]
-        return proposed[0] if proposed else None
-
-    evidence_search = _build_evidence_search(args)
-    return reforecast_runner, evidence_search
-
 
 def _warning_plan_entry(warning, runners) -> dict[str, Any]:
     """Pure (no-write) preview of what ``resolve_alert`` WOULD do for ``warning``.
@@ -9892,29 +9296,9 @@ def _print_live_performance_report(report: dict[str, Any]) -> None:
 
 
 def _run_safe_benchmarks(ledger: ForecastLedger, probability_source: str) -> dict[str, Any]:
-    """Run the OFFLINE builtin benchmark suite (no network / no paid LLM) via a
-    deterministic generated probability source, persisting one backtest run per
-    dataset so readiness evidence can advance unattended. Both external families
-    (manifold + kalshi) are in the builtin set, so the external-families gap can
-    close; the positive-edge gap is data-dependent (reported, not guaranteed)."""
-    runs = cases = scored = 0
-    results: list[dict[str, Any]] = []
-    for row in list_builtin_benchmarks():
-        dataset = f"builtin:{row['name']}"
-        prepared = _apply_backtest_probability_source(
-            _load_backtest_cases(dataset, ledger=ledger), probability_source,
-        )
-        run = ledger.run_backtest_dataset(dataset=dataset, cases=prepared)
-        summary = run["result_summary"]
-        runs += 1
-        cases += int(summary.get("case_count", 0) or 0)
-        scored += int(summary.get("scored_cases", 0) or 0)
-        results.append({
-            "dataset": dataset, "run_id": run["id"],
-            "case_count": summary.get("case_count"), "scored_cases": summary.get("scored_cases"),
-            "agent_mean_brier": summary.get("agent_mean_brier"), "leakage_checks_passed": run["leakage_checks_passed"],
-        })
-    return {"runs": runs, "cases": cases, "scored": scored, "results": results}
+    from forecasting.application.benchmarks import run_safe_benchmarks
+
+    return run_safe_benchmarks(ledger, probability_source)
 
 
 def _cmd_readiness(args: argparse.Namespace) -> None:
@@ -10806,14 +10190,7 @@ def _json_value_arg(raw: str, name: str) -> Any:
         raise SystemExit(f"--{name} must be valid JSON") from exc
 
 
-def _format_probability(value: Any) -> str:
-    if isinstance(value, float):
-        return f"{value:.3f}"
-    if isinstance(value, int):
-        return f"{float(value):.3f}"
-    if isinstance(value, dict):
-        return json.dumps(value, sort_keys=True)
-    return str(value)
+from forecasting.interfaces.commands import _format_probability
 
 
 def _new_evidence_count(evidence: list[Any], current_snapshot: Any) -> int:
@@ -10852,40 +10229,10 @@ def _research_change_summary(evidence: list[Any], current_snapshot: Any) -> str:
     )
 
 
-def _review_next_action(question_id: str, reasons: list[str]) -> str:
-    if any(reason.startswith("new_evidence:") for reason in reasons):
-        return f"forecast research {question_id}; forecast update {question_id} --preview ..."
-    if any(is_learned_error_review_reason(reason) for reason in reasons):
-        return f"forecast show {question_id}; forecast update {question_id} --preview ..."
-    if "no_forecast_snapshot" in reasons:
-        return f"forecast update {question_id} --preview ..."
-    if any(
-        reason in {"resolution_check_due", "close_time_passed"}
-        or reason.startswith("close_time_within_")
-        for reason in reasons
-    ):
-        return f"forecast resolve {question_id} --outcome <value>"
-    if "no_evidence" in reasons or any(reason.startswith("evidence_stale_") for reason in reasons):
-        return f"forecast research {question_id}"
-    if any(reason.startswith(("assumption_", "reference_class_")) for reason in reasons):
-        return f"forecast protocol {question_id} --stage self_check"
-    if "review_due" in reasons or any(reason.startswith("last_update_") for reason in reasons):
-        return f"forecast research {question_id}; forecast update {question_id} --preview ..."
-    return f"forecast show {question_id}"
+from forecasting.interfaces.commands import _review_next_action
 
 
-def _toolsets_for_stage(stage: str) -> list[str]:
-    toolsets = {
-        "parse": ["forecasting", "file"],
-        "research": ["forecasting", "file", "web"],
-        "base_rate": ["forecasting", "file", "web"],
-        "model": ["forecasting", "file", "terminal"],
-        "update": ["forecasting"],
-        "resolve": ["forecasting", "file", "web"],
-        "postmortem": ["forecasting"],
-        "self_check": ["forecasting", "file", "web"],
-    }
-    return toolsets.get(stage, ["forecasting"])
+from agent.forecast_stage import toolsets_for_stage as _toolsets_for_stage
 
 
 def _format_delta(delta: float | None) -> str:
@@ -10923,8 +10270,7 @@ def _format_score_breakdown(items: dict[str, dict[str, Any]]) -> str:
     )
 
 
-def _format_metric(value: float | None) -> str:
-    return "-" if value is None else f"{value:.6f}"
+from forecasting.interfaces.commands import _format_metric
 
 
 def _format_optional_float(value: float | None) -> str:
@@ -10974,14 +10320,7 @@ def _parse_stance(value: str) -> str:
     raise argparse.ArgumentTypeError("stance must be increases/decreases/mixed/context or supports/opposes")
 
 
-def _parse_day_count(value: str) -> int:
-    raw = str(value).strip().lower()
-    if raw.endswith("d"):
-        raw = raw[:-1]
-    days = int(raw)
-    if days < 0:
-        raise argparse.ArgumentTypeError("day count must be non-negative")
-    return days
+from forecasting.interfaces.commands import _parse_day_count
 
 
 def _watch_scope(args: argparse.Namespace, *, required: bool) -> tuple[str | None, str | None]:
@@ -11100,149 +10439,15 @@ def _apply_backtest_probability_source(
     agent_model: str | None = None,
     agent_provider: str | None = None,
 ) -> list[dict[str, Any]]:
-    if source == "dataset":
-        return cases
-    if source == "agent-protocol" and agent_runner is None:
-        raise SystemExit("agent-protocol probability source requires an agent runner")
+    from forecasting.application.benchmarks import apply_probability_source
 
-    transformed: list[dict[str, Any]] = []
-    agent_skipped = 0
-    for index, case in enumerate(cases):
-        next_case = dict(case)
-        if source == "naive":
-            next_case["probability"] = 0.5
-            next_case["probability_source"] = "naive"
-            transformed.append(next_case)
-            continue
-        if source == "forecast-engine":
-            result = forecast_engine_binary_probability(case)
-            if result is not None:
-                next_case["probability"] = result["probability"]
-                next_case["method"] = "forecast_engine_v0"
-                next_case["component_forecasts"] = result["components"]
-                next_case["probability_source"] = "forecast-engine"
-                next_case["rationale"] = (
-                    "Backtest probability generated by the local forecast "
-                    "engine from pre-cutoff baselines, base rates, evidence "
-                    "stance metadata, and fixed extremization."
-                )
-            transformed.append(next_case)
-            continue
-        if source == "agent-protocol":
-            try:
-                result = agent_protocol_binary_probability(
-                    case,
-                    runner=agent_runner,
-                    case_index=index,
-                )
-            except Exception as exc:  # noqa: BLE001 — a single bad/timed-out response
-                # must NOT abort the whole backtest. Over a long run a flaky endpoint
-                # would otherwise lose every case (the run never reaches persistence).
-                # Skip this case + continue; the run still persists what succeeded.
-                case_id = case.get("id") or f"index:{index}"
-                agent_skipped += 1
-                print(f"⚠️  skipped {case_id}: agent response invalid/failed ({type(exc).__name__}: {exc})")
-                continue
-            next_case["probability"] = result["probability"]
-            next_case["confidence"] = result.get("confidence")
-            next_case["method"] = AGENT_PROTOCOL_METHOD
-            next_case["prompt_version"] = AGENT_PROTOCOL_PROMPT_VERSION
-            next_case["probability_source"] = "agent-protocol"
-            if agent_model or result.get("agent_model"):
-                next_case["agent_model"] = result.get("agent_model") or agent_model
-            if agent_provider:
-                next_case.setdefault("forecast_metadata", {})["agent_provider"] = agent_provider
-            next_case["ensemble_components"] = _normalize_ensemble_components(result.get("components"))
-            next_case["rationale"] = result.get("rationale") or (
-                "Backtest probability generated by the agent forecasting protocol."
-            )
-            transformed.append(next_case)
-            continue
-        probability = _baseline_ensemble_probability(case)
-        if probability is not None:
-            next_case["probability"] = probability
-            next_case["method"] = "baseline_ensemble"
-            next_case["probability_source"] = "baseline-ensemble"
-            next_case["rationale"] = (
-                "Backtest probability generated from explicit benchmark "
-                "baselines with deterministic weights."
-            )
-        transformed.append(next_case)
-    if agent_skipped:
-        print(
-            f"⚠️  {agent_skipped} case(s) skipped on invalid/failed agent responses; "
-            f"persisting {len(transformed)} scored case(s)."
+    try:
+        return apply_probability_source(
+            cases, source, notify=print, agent_runner=agent_runner,
+            agent_model=agent_model, agent_provider=agent_provider,
         )
-    return transformed
-
-
-def _normalize_ensemble_components(components: Any) -> dict[str, Any]:
-    if isinstance(components, dict):
-        return components
-    if not isinstance(components, list):
-        return {}
-    normalized: dict[str, Any] = {}
-    for index, component in enumerate(components, start=1):
-        if isinstance(component, dict):
-            name = component.get("name") or component.get("source") or f"component_{index}"
-            normalized[str(name)] = component
-        else:
-            normalized[f"component_{index}"] = component
-    return normalized
-
-
-def _baseline_ensemble_probability(case: dict[str, Any]) -> float | None:
-    weighted_sum = 0.0
-    total_weight = 0.0
-    for baseline in case.get("baselines") or []:
-        if not isinstance(baseline, dict):
-            continue
-        probability = _optional_probability(baseline.get("probability"))
-        if probability is None:
-            continue
-        weight = _baseline_ensemble_weight(
-            str(baseline.get("baseline_type") or ""),
-            str(baseline.get("source") or ""),
-        )
-        weighted_sum += probability * weight
-        total_weight += weight
-
-    base_rate = case.get("base_rate", case.get("base_rate_probability"))
-    base_rate_probability = _optional_probability(base_rate)
-    if base_rate_probability is not None:
-        weighted_sum += base_rate_probability * 2.0
-        total_weight += 2.0
-
-    if total_weight <= 0:
-        return None
-    return round(weighted_sum / total_weight, 6)
-
-
-def _baseline_ensemble_weight(baseline_type: str, source: str) -> float:
-    if baseline_type in {"market", "crowd"}:
-        return 4.0
-    if baseline_type == "base_rate":
-        return 2.0
-    if baseline_type == "naive_0_5" and source == "auto":
-        return 1.0
-    return 1.0
-
-
-def _optional_probability(value: Any) -> float | None:
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        probability = float(value)
-    elif isinstance(value, str):
-        try:
-            probability = float(value)
-        except ValueError:
-            return None
-    else:
-        return None
-    if not 0 <= probability <= 1:
-        return None
-    return probability
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
 
 
 def _load_backtest_cases_json_text(text: str, label: str) -> list[dict[str, Any]]:

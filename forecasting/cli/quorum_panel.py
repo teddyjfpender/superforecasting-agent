@@ -432,7 +432,7 @@ def _cmd_quorum(args: argparse.Namespace) -> None:
 
 
 def _quorum_overview() -> None:
-    from superforecasting_agent.runtime.config import load_config
+    from superforecasting_agent.storage.configuration import read_configuration as load_config
 
     cfg = load_config().get("quorum", {})
     print("forecast quorum — model-diverse forecast panel with judge synthesis")
@@ -450,7 +450,7 @@ def _quorum_overview() -> None:
 
 
 def _quorum_run(args: argparse.Namespace, *, question_id: str) -> None:
-    from superforecasting_agent.runtime.config import load_config
+    from superforecasting_agent.storage.configuration import read_configuration as load_config
     from forecasting.jobs.types.quorum import read_job, start_job
 
     cfg = load_config().get("quorum", {})
@@ -731,10 +731,14 @@ def _print_quorum_job(job: dict[str, Any], *, json_output: bool) -> None:
 
 
 def _quorum_config(rest: list[str]) -> None:
-    from superforecasting_agent.runtime.config import load_config, set_config_value
+    from superforecasting_agent.storage.configuration import read_configuration as load_config
+    from superforecasting_agent.storage.configuration import ProfileConfiguration
+    from superforecasting_agent.configuration import parse_setting_value
+    from superforecasting_agent.installation import require_configuration_writable
+    from superforecasting_agent.constants import get_agent_home
 
     if rest and rest[0] == "set":
-        if len(rest) < 3:
+        if len(rest) != 3:
             raise SystemExit("forecast quorum config set <key> <value>")
         key, value = rest[1], rest[2]
         # An appconfig panel key (QUORUM_PANEL_MODELS / QUORUM_JUDGE_MODEL) is written
@@ -754,11 +758,16 @@ def _quorum_config(rest: list[str]) -> None:
                     validate_panel_models(parse_panel_models_config(value))
                 except ValidationError as exc:
                     raise SystemExit(f"forecast quorum config set: {exc}") from exc
-            set_config_value(f"env.{canonical}", value)
+        path = f"env.{canonical}" if canonical else f"quorum.{key}"
+        try:
+            require_configuration_writable("set configuration values", home=get_agent_home())
+            ProfileConfiguration().update(get_agent_home() / "config.yaml", path, parse_setting_value(value))
+        except (PermissionError, ValueError, OSError) as exc:
+            raise SystemExit(str(exc)) from exc
+        if canonical:
             print(f"✓ set {canonical} = {value}  (config.yaml env:)")
-            return
-        set_config_value(f"quorum.{key}", value)
-        print(f"✓ set quorum.{key} = {value}")
+        else:
+            print(f"✓ set quorum.{key} = {value}")
         return
     cfg = load_config().get("quorum", {})
     print("quorum config:")
@@ -782,18 +791,29 @@ def _quorum_config(rest: list[str]) -> None:
 
 
 def _quorum_default(rest: list[str], *, scope: str | None) -> None:
-    from superforecasting_agent.runtime.config import load_config, set_config_value
+    from forecasting.configuration.quorum import default_policy_changes
+    from superforecasting_agent.constants import get_agent_home
+    from superforecasting_agent.installation import require_configuration_writable
+    from superforecasting_agent.storage.configuration import ProfileConfiguration, read_configuration
 
-    state = rest[0].strip().lower() if rest else None
-    if state in {"on", "off"}:
-        set_config_value("quorum.default_enabled", "true" if state == "on" else "false")
-        print(f"✓ quorum-by-default {'enabled' if state == 'on' else 'disabled'}")
-    elif state is not None:
+    if len(rest) > 1:
         raise SystemExit("forecast quorum default on|off")
-    if scope:
-        set_config_value("quorum.default_scope", scope)
-        print(f"✓ quorum default scope = {scope}")
-    cfg = load_config().get("quorum", {})
+    try:
+        changes = default_policy_changes(rest[0] if rest else None, scope)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    if changes:
+        try:
+            require_configuration_writable("set quorum defaults", home=get_agent_home())
+        except PermissionError as exc:
+            print(str(exc))
+            return
+        ProfileConfiguration().update_many(get_agent_home() / "config.yaml", changes)
+        if "quorum.default_enabled" in changes:
+            print(f"✓ quorum-by-default {'enabled' if changes['quorum.default_enabled'] else 'disabled'}")
+        if "quorum.default_scope" in changes:
+            print(f"✓ quorum default scope = {scope}")
+    cfg = read_configuration().get("quorum", {})
     print(f"quorum default_enabled: {bool(cfg.get('default_enabled'))}  "
           f"scope: {cfg.get('default_scope', 'high_impact')}")
 

@@ -380,3 +380,64 @@ def test_maybe_base_rate_rejects_market_share():
                         "value": 0.2, "unit": "probability"}]}
     p2 = MM._primary_projection(prob)
     assert p2 is not None and p2["base_rate"] == 0.2
+
+
+@pytest.mark.parametrize("failure", [RuntimeError("link interrupted"), KeyboardInterrupt()])
+def test_build_model_link_failure_rolls_back_both_edges(ledger, tmp_path, monkeypatch, failure):
+    from tools.forecasting_tool import forecast_ledger_tool
+
+    monkeypatch.setattr(MM, "_run_market_agent", lambda **k: _agent_emit(_regression_pres()))
+    with allow_ledger_writes(reason="test"):
+        q = ledger.create_question(title="Revenue above 20B?", resolution_criteria="Reported revenue exceeds 20B USD.")
+    original = ForecastLedger.link_question_market_model
+
+    def interrupted(self, question_id, model_id):
+        original(self, question_id, model_id)
+        raise failure
+
+    monkeypatch.setattr(ForecastLedger, "link_question_market_model", interrupted)
+    args = {"action": "build_model", "db": str(tmp_path / "ledger.db"), "question_id": q.id}
+    if isinstance(failure, KeyboardInterrupt):
+        with pytest.raises(KeyboardInterrupt):
+            forecast_ledger_tool(args)
+    else:
+        result = json.loads(forecast_ledger_tool(args))
+        assert result["success"] is False
+        assert result["model_id"]
+        assert "link interrupted" in result["error"]
+    models = ledger.list_market_models()
+    assert len(models) == 1
+    assert "forecast_question_id" not in models[0]["spec"]
+    assert "source_market_model" not in ledger.get_question(q.id).metadata
+
+    from forecasting.application.model_build import link_built_model
+
+    monkeypatch.setattr(ForecastLedger, "link_question_market_model", original)
+    link_built_model(ledger, q.id, models[0]["id"])
+    link_built_model(ledger, q.id, models[0]["id"])
+    assert len(ledger.list_market_models()) == 1
+    assert ledger.get_market_model(models[0]["id"])["spec"]["forecast_question_id"] == q.id
+    assert ledger.get_question(q.id).metadata["source_market_model"] == models[0]["id"]
+
+
+@pytest.mark.parametrize("surface", ["application", "tool", "cli"])
+def test_model_build_surfaces_share_parameters(tmp_path, monkeypatch, surface):
+    from forecasting.application.model_build import build_model
+    from tools.forecasting_tool import forecast_ledger_tool
+    from forecasting import cli
+
+    captured = []
+
+    def build(question, params, **kwargs):
+        captured.append((question, params))
+        return {"model_id": "mm_test", "version": 1, "status": "complete"}
+
+    monkeypatch.setattr(MM, "build_market_model", build)
+    args = {"question": "project revenue", "depth": "quick", "analysis_type": "ols"}
+    if surface == "application":
+        build_model(args, ForecastLedger(tmp_path / "ledger.db"))
+    elif surface == "tool":
+        forecast_ledger_tool({**args, "action": "build_model", "db": str(tmp_path / "ledger.db")})
+    else:
+        cli._cmd_model_build(argparse.Namespace(db=str(tmp_path / "ledger.db"), build_question=args["question"], depth="quick", analysis_type="ols"))
+    assert captured == [("project revenue", {"depth": "quick", "analysis_type": "ols"})]

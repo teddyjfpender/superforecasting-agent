@@ -67,7 +67,7 @@ def _ra():
     ``run_agent.OpenAI`` / ``run_agent.cleanup_vm`` / ... and have those
     patches reach this code path.
     """
-    import run_agent
+    from agent import runtime as run_agent
     return run_agent
 
 
@@ -187,6 +187,10 @@ def init_agent(
             identity even when skip_context_files=True. Project context files from the cwd
             remain skipped.
     """
+    agent._resource_close_lock = threading.RLock()
+    agent._resources_closed = False
+    agent._owns_session_tools = True
+
     _install_safe_stdio()
 
     agent.model = model
@@ -709,7 +713,9 @@ def init_agent(
                     # (e.g. alibaba → DASHSCOPE_API_KEY, not ALIBABA_API_KEY).
                     _env_hint = f"{_explicit.upper()}_API_KEY"
                     try:
-                        from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY
+                        from superforecasting_agent.configuration.authentication import (
+                            PROVIDER_REGISTRY,
+                        )
                         _pcfg = PROVIDER_REGISTRY.get(_explicit)
                         if _pcfg and _pcfg.api_key_env_vars:
                             _env_hint = _pcfg.api_key_env_vars[0]
@@ -955,7 +961,7 @@ def init_agent(
     # sessions in one process).  Also writes os.environ as fallback for
     # CLI mode where ContextVars aren't used.
     try:
-        from gateway.session_context import set_process_session_env
+        from superforecasting_agent.session_context import set_process_session_env
         set_process_session_env("SUPERFORECASTING_AGENT_SESSION_ID", agent.session_id)
     except Exception:
         os.environ["SUPERFORECASTING_AGENT_SESSION_ID"] = agent.session_id
@@ -1093,7 +1099,7 @@ def init_agent(
                         _init_kwargs["gateway_session_key"] = agent._gateway_session_key
                     # Profile identity for per-profile provider scoping
                     try:
-                        from superforecasting_agent.runtime.profiles import get_active_profile_name
+                        from superforecasting_agent.constants import get_active_profile_name
                         _profile = get_active_profile_name()
                         _init_kwargs["agent_identity"] = _profile
                         _init_kwargs["agent_workspace"] = "hermes"

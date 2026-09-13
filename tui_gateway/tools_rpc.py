@@ -15,6 +15,8 @@ registry are reached via the ``_core.`` call-time hop. ``_reset_session_agent``
 """
 from __future__ import annotations
 
+from superforecasting_agent.hosting.sessions import SessionBusy
+
 import tui_gateway.server as _core
 from tui_gateway.server import _err, _ok, _reset_session_agent
 
@@ -39,37 +41,33 @@ def method(name: str):
 
 def register(server) -> None:
     """(Re-)register every carved tools/toolsets handler into ``server._methods``."""
+    global _core, _ok, _err, _reset_session_agent
+    _core = server
+    _ok = server._ok
+    _err = server._err
+    _reset_session_agent = server._reset_session_agent
     for kind, name, fn in _REGISTRARS:
         getattr(server, kind)(name)(fn)
 
 
 __all__ = ["register"]
+
+
+def _session_toolsets(params: dict):
+    """Use a live agent's selection, or configured selection before its build."""
+    from superforecasting_agent.tooling.inventory import session_toolset_selection
+    return session_toolset_selection(
+        _core._host.sessions.get(params.get("session_id", "")),
+        _core._load_enabled_toolsets,
+    )
+
+
 @method("tools.list")
 def _(rid, params: dict) -> dict:
     try:
-        from superforecasting_agent.tooling.toolsets import get_all_toolsets, get_toolset_info
+        from superforecasting_agent.tooling.inventory import toolset_inventory
 
-        session = _core._sessions.get(params.get("session_id", ""))
-        enabled = (
-            set(getattr(session["agent"], "enabled_toolsets", []) or [])
-            if session
-            else set(_core._load_enabled_toolsets() or [])
-        )
-
-        items = []
-        for name in sorted(get_all_toolsets().keys()):
-            info = get_toolset_info(name)
-            if not info:
-                continue
-            items.append(
-                {
-                    "name": name,
-                    "description": info["description"],
-                    "tool_count": info["tool_count"],
-                    "enabled": name in enabled if enabled else True,
-                    "tools": info["resolved_tools"],
-                }
-            )
+        items = toolset_inventory(_session_toolsets(params))
         return _ok(rid, {"toolsets": items})
     except Exception as e:
         return _err(rid, 5031, str(e))
@@ -80,12 +78,7 @@ def _(rid, params: dict) -> dict:
     try:
         from superforecasting_agent.tooling.runtime import get_toolset_for_tool, get_tool_definitions
 
-        session = _core._sessions.get(params.get("session_id", ""))
-        enabled = (
-            getattr(session["agent"], "enabled_toolsets", None)
-            if session
-            else _core._load_enabled_toolsets()
-        )
+        enabled = _session_toolsets(params)
         tools = get_tool_definitions(enabled_toolsets=enabled, quiet_mode=True)
         sections = {}
 
@@ -117,57 +110,56 @@ def _(rid, params: dict) -> dict:
 
 @rpc_validated("tools.configure")
 def _(rid, params: dict) -> dict:
-    action = str(params.get("action", "") or "").strip().lower()
-    targets = [
-        str(name).strip() for name in params.get("names", []) or [] if str(name).strip()
-    ]
-    if action not in {"disable", "enable"}:
+    from superforecasting_agent.tooling.selection import normalize_tool_names
+
+    action = params.get("action")
+    if isinstance(action, str):
+        action = action.strip().lower()
+    if not isinstance(action, str) or action not in {"disable", "enable"}:
         return _err(rid, 4017, f"unknown tools action: {action}")
-    if not targets:
-        return _err(rid, 4018, "names required")
+    try:
+        targets = normalize_tool_names(params.get("names"))
+    except ValueError as exc:
+        return _err(rid, 4018, str(exc))
+
+    session = _core._host.sessions.get(params.get("session_id", ""))
+    if params.get("session_id") and session is None:
+        return _err(rid, 4001, "session not found")
 
     try:
         from superforecasting_agent.runtime.config import load_config, save_config
-        from superforecasting_agent.runtime.tools_config import (
-            CONFIGURABLE_TOOLSETS,
-            _apply_mcp_change,
-            _apply_toolset_change,
-            _get_platform_tools,
-            _get_plugin_toolset_keys,
-        )
+        from superforecasting_agent.tooling.selection import change_tools, _get_platform_tools
 
         cfg = load_config()
-        valid_toolsets = {
-            ts_key for ts_key, _, _ in CONFIGURABLE_TOOLSETS
-        } | _get_plugin_toolset_keys()
-        toolset_targets = [name for name in targets if ":" not in name]
-        mcp_targets = [name for name in targets if ":" in name]
-        unknown = [name for name in toolset_targets if name not in valid_toolsets]
-        toolset_targets = [name for name in toolset_targets if name in valid_toolsets]
+        result = change_tools(cfg, "cli", targets, action)
+        changed = result["changed"]
+        unknown = result["unknown"] + result["restricted"]
+        missing_servers = result["missing_servers"]
+        info = None
+        if changed:
+            from contextlib import ExitStack
+            from superforecasting_agent.hosting.sessions import replacement
 
-        if toolset_targets:
-            _apply_toolset_change(cfg, "cli", toolset_targets, action)
-
-        missing_servers = (
-            _apply_mcp_change(cfg, mcp_targets, action) if mcp_targets else set()
-        )
-        save_config(cfg)
-
-        session = _core._sessions.get(params.get("session_id", ""))
-        info = (
-            _reset_session_agent(params.get("session_id", ""), session)
-            if session
-            else None
-        )
+            with ExitStack() as reservation:
+                # Own admission rather than the dispatcher's ordinary use lease:
+                # that lease would make this request reject its own replacement.
+                with _core._host.sessions.lock:
+                    if _core._host.sessions.get(params.get("session_id", "")) is not session:
+                        raise SessionBusy("session changed before tool configuration could be applied")
+                    if session is not None:
+                        reservation.enter_context(replacement(session))
+                save_config(cfg)
+                if session is not None:
+                    try:
+                        info = _reset_session_agent(params.get("session_id", ""), session, reserved=True)
+                    except Exception as exc:
+                        raise RuntimeError(
+                            "Tool configuration saved, but session reset failed; "
+                            "close or recreate the session to recover. " + str(exc)
+                        ) from exc
         enabled = sorted(
             _get_platform_tools(load_config(), "cli", include_default_mcp_servers=False)
         )
-        changed = [
-            name
-            for name in targets
-            if name not in unknown
-            and (":" not in name or name.split(":", 1)[0] not in missing_servers)
-        ]
 
         return _ok(
             rid,
@@ -176,39 +168,26 @@ def _(rid, params: dict) -> dict:
                 "enabled_toolsets": enabled,
                 "info": info,
                 "missing_servers": sorted(missing_servers),
-                "reset": bool(session),
+                "reset": bool(session and changed),
                 "unknown": unknown,
             },
         )
+    except SessionBusy:
+        raise
     except Exception as e:
         return _err(rid, 5035, str(e))
 
 
+@method("toolsets.list")
 @method("superforecasting_agent.tooling.toolsets.list")
 def _(rid, params: dict) -> dict:
     try:
-        from superforecasting_agent.tooling.toolsets import get_all_toolsets, get_toolset_info
+        from superforecasting_agent.tooling.inventory import toolset_inventory
 
-        session = _core._sessions.get(params.get("session_id", ""))
-        enabled = (
-            set(getattr(session["agent"], "enabled_toolsets", []) or [])
-            if session
-            else set(_core._load_enabled_toolsets() or [])
-        )
-
-        items = []
-        for name in sorted(get_all_toolsets().keys()):
-            info = get_toolset_info(name)
-            if not info:
-                continue
-            items.append(
-                {
-                    "name": name,
-                    "description": info["description"],
-                    "tool_count": info["tool_count"],
-                    "enabled": name in enabled if enabled else True,
-                }
-            )
+        items = [
+            {key: value for key, value in item.items() if key != "tools"}
+            for item in toolset_inventory(_session_toolsets(params))
+        ]
         return _ok(rid, {"toolsets": items})
     except Exception as e:
         return _err(rid, 5032, str(e))

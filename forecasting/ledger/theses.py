@@ -574,9 +574,8 @@ def _belief_record(
     membership AND per-entity weight vectors (the suitability layer reuses
     the exact same 0..1-signal reduction, just with a different weight set)."""
 
-    # Lazy import: dashboard imports the ledger, so importing it at module
-    # scope would be circular.
-    from forecasting.dashboard import _distribution_view
+    # Interpretation is shared with presentation but has no ledger/UI dependency.
+    from forecasting.distribution_summary import summarize_distribution
 
     if outcome_type is None or title is None:
         try:
@@ -618,7 +617,7 @@ def _belief_record(
         record["probability"] = float(belief)
     elif isinstance(belief, dict):
         record["kind"] = "distribution"
-        record["dist"] = _distribution_view(belief) or {"mean": None}
+        record["dist"] = summarize_distribution(belief) or {"mean": None}
     elif isinstance(belief, (int, float)):
         record["kind"] = "distribution"
         record["dist"] = {"mean": float(belief)}
@@ -886,7 +885,7 @@ def _aggregate_factor(
     """Portfolio-aggregate a factor's constituent return distributions."""
 
     from forecasting import factor as factor_math
-    from forecasting.dashboard import _distribution_view
+    from forecasting.distribution_summary import summarize_distribution
 
     members = ledger.list_thesis_members(factor.id)
     as_of = now or utc_now_iso()
@@ -898,7 +897,7 @@ def _aggregate_factor(
         mean: float | None = None
         sd: float | None = None
         if isinstance(belief, dict):
-            view = _distribution_view(belief) or {}
+            view = summarize_distribution(belief) or {}
             mean = view.get("mean")
             sd = view.get("sd")
         elif isinstance(belief, (int, float)):

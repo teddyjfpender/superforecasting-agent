@@ -26,6 +26,7 @@ from superforecasting_agent.paths import get_install_root
 import json
 import os
 import re
+
 import shutil
 import stat
 import subprocess
@@ -33,6 +34,15 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import List, Optional
+
+from superforecasting_agent.constants import get_active_profile_name  # compatibility export
+from superforecasting_agent.profile_paths import (
+    _RESERVED_NAMES,
+    get_profile_dir,
+    normalize_profile_name,
+    resolve_profile_env,
+    validate_profile_name,
+)
 
 _PROFILE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
@@ -180,6 +190,7 @@ def _clone_all_copytree_ignore(source_dir: Path):
 # caches, binaries) that named profiles don't have. We exclude those so the
 # export is a portable, reasonable-size archive of actual profile data.
 _DEFAULT_EXPORT_EXCLUDE_ROOT = frozenset({
+    ".profile-use.lock",
     # Infrastructure
     "superforecasting-agent",  # fork-native repo checkout (multi-GB)
     "hermes-agent",            # legacy repo checkout (multi-GB)
@@ -206,18 +217,7 @@ _DEFAULT_EXPORT_EXCLUDE_ROOT = frozenset({
 })
 
 # Names that cannot be used as profile aliases
-_RESERVED_NAMES = frozenset({
-    "forecast",
-    "hermes",
-    "hermes-agent",
-    "superforecast",
-    "superforecasting-agent",
-    "default",
-    "test",
-    "tmp",
-    "root",
-    "sudo",
-})
+
 
 # CLI subcommands that cannot be used as profile names/aliases
 _HERMES_SUBCOMMANDS = frozenset({
@@ -272,62 +272,6 @@ def _get_wrapper_dir() -> Path:
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
-
-def normalize_profile_name(name: str) -> str:
-    """Return the canonical profile id used on disk and in CLI ``-p`` argv.
-
-    Named profiles are stored lowercase under ``profiles/<id>/``. The special
-    alias ``default`` is matched case-insensitively (``Default`` → ``default``).
-    Dashboards and tools may pass title-cased display labels; normalize before
-    validation, assignment, and subprocess spawn (see issue #18498).
-    """
-    if not isinstance(name, str):
-        name = str(name)
-    stripped = name.strip()
-    if not stripped:
-        raise ValueError("profile name cannot be empty")
-    if stripped.casefold() == "default":
-        return "default"
-    return stripped.lower()
-
-
-def validate_profile_name(name: str) -> None:
-    """Raise ``ValueError`` if *name* is not a valid profile identifier.
-
-    Validates the input as-given — strict lowercase match. Callers that accept
-    mixed-case or title-cased input from users (dashboard UI, CLI args) should
-    call :func:`normalize_profile_name` first. This separation keeps validate
-    honest about what the on-disk directory name must look like, while
-    ingress-point normalization handles UX flexibility (see #18498).
-
-    Also rejects names in :data:`_RESERVED_NAMES` that would create confusing
-    on-disk collisions, clobber fork-native wrapper commands such as
-    ``forecast`` or ``superforecasting-agent``, or get refused at
-    alias-creation time anyway. ``default`` is a special pass-through — it's a
-    valid alias for the built-in root profile.
-    """
-    if name == "default":
-        return  # special alias for the default runtime root
-    if not _PROFILE_ID_RE.match(name):
-        raise ValueError(
-            f"Invalid profile name {name!r}. Must match "
-            f"[a-z0-9][a-z0-9_-]{{0,63}}"
-        )
-    if name in _RESERVED_NAMES:
-        raise ValueError(
-            f"Profile name {name!r} is reserved — it collides with either "
-            f"the Superforecasting Agent installation itself or a common system binary.  "
-            f"Pick a different name."
-        )
-
-
-def get_profile_dir(name: str) -> Path:
-    """Resolve a profile name to its HERMES_HOME directory."""
-    canon = normalize_profile_name(name)
-    if canon == "default":
-        return _get_default_hermes_home()
-    return _get_profiles_root() / canon
-
 
 def profile_exists(name: str) -> bool:
     """Check whether a profile directory exists."""
@@ -573,23 +517,13 @@ def write_profile_meta(
     """
     if not profile_dir.is_dir():
         raise FileNotFoundError(f"profile directory does not exist: {profile_dir}")
-    import yaml
-    path = _profile_yaml_path(profile_dir)
-    existing: dict = {}
-    if path.is_file():
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                loaded = yaml.safe_load(f) or {}
-            if isinstance(loaded, dict):
-                existing = loaded
-        except Exception:
-            existing = {}
-    if description is not None:
-        existing["description"] = description.strip()
-    if description_auto is not None:
-        existing["description_auto"] = bool(description_auto)
-    with open(path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(existing, f, sort_keys=False, default_flow_style=False)
+    from superforecasting_agent.storage.files import atomic_roundtrip_yaml_mutate
+    def update(existing):
+        if description is not None:
+            existing["description"] = description.strip()
+        if description_auto is not None:
+            existing["description_auto"] = bool(description_auto)
+    atomic_roundtrip_yaml_mutate(_profile_yaml_path(profile_dir), update)
 
 
 # ---------------------------------------------------------------------------
@@ -1090,32 +1024,6 @@ def set_active_profile(name: str) -> None:
         tmp.replace(path)
 
 
-def get_active_profile_name() -> str:
-    """Infer the current profile name from HERMES_HOME.
-
-    Returns ``"default"`` if HERMES_HOME is not set or points to the default
-    runtime root. Returns the profile name if HERMES_HOME points into
-    ``<default-root>/profiles/<name>``.
-    Returns ``"custom"`` if HERMES_HOME is set to an unrecognized path.
-    """
-    from superforecasting_agent.constants import get_agent_home
-    hermes_home = get_agent_home()
-    resolved = hermes_home.resolve()
-
-    default_resolved = _get_default_hermes_home().resolve()
-    if resolved == default_resolved:
-        return "default"
-
-    profiles_root = _get_profiles_root().resolve()
-    try:
-        rel = resolved.relative_to(profiles_root)
-        parts = rel.parts
-        if len(parts) == 1 and _PROFILE_ID_RE.match(parts[0]):
-            return parts[0]
-    except ValueError:
-        pass
-
-    return "custom"
 
 
 # ---------------------------------------------------------------------------
@@ -1445,21 +1353,3 @@ def rename_profile(old_name: str, new_name: str) -> Path:
 # ---------------------------------------------------------------------------
 # Profile env resolution (called from _apply_profile_override)
 # ---------------------------------------------------------------------------
-
-def resolve_profile_env(profile_name: str) -> str:
-    """Resolve a profile name to a HERMES_HOME path string.
-
-    Called early in the CLI entry point, before any runtime modules
-    are imported, to set the HERMES_HOME environment variable.
-    """
-    canon = normalize_profile_name(profile_name)
-    validate_profile_name(canon)
-    profile_dir = get_profile_dir(canon)
-
-    if canon != "default" and not profile_dir.is_dir():
-        raise FileNotFoundError(
-            f"Profile '{canon}' does not exist. "
-            f"Create it with: superforecasting-agent profile create {canon}"
-        )
-
-    return str(profile_dir)

@@ -106,6 +106,8 @@ def _ts_scalar(annotation: Any) -> str:
             return f"Record<string, {_ts_scalar(args[1])}>"
         return "Record<string, unknown>"
 
+    if annotation is _NONE:
+        return "null"
     if annotation is str:
         return "string"
     if annotation is bool:

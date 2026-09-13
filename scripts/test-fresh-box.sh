@@ -62,20 +62,27 @@ printf '\n\033[1m✦ Fresh-box proof — %s\033[0m\n\n' "$TEST_IMAGE"
 
 # ── STAGE 0: build the wheel locally (hermetic — no published release needed) ─
 say "STAGE 0: ensure a local wheel"
-WHEEL="$(ls -1 "$REPO_ROOT"/dist/superforecasting_agent-*.whl 2>/dev/null | head -n1 || true)"
-if [ -z "$WHEEL" ]; then
-  say "no wheel in dist/ — building (SKIP_NPM reuses the prebuilt TUI bundle)"
-  if [ -f "$REPO_ROOT/ui-tui/dist/entry.js" ]; then
-    ( cd "$REPO_ROOT" && SKIP_NPM=1 scripts/build-release.sh >/dev/null )
-  else
-    ( cd "$REPO_ROOT" && scripts/build-release.sh >/dev/null )
-  fi
-  WHEEL="$(ls -1 "$REPO_ROOT"/dist/superforecasting_agent-*.whl 2>/dev/null | head -n1 || true)"
+# Build a coherent artifact set from this checkout, not whichever stale wheel
+# happens to sort first in dist. The terminal has an independent version.
+if [ -f "$REPO_ROOT/ui-tui/dist/entry.js" ]; then
+  ( cd "$REPO_ROOT" && SKIP_NPM=1 scripts/build-release.sh >/dev/null )
+else
+  ( cd "$REPO_ROOT" && scripts/build-release.sh >/dev/null )
 fi
-[ -n "$WHEEL" ] && [ -f "$WHEEL" ] || { stage FAIL "0-wheel-build"; exit 1; }
-cp "$WHEEL" "$SCRATCH/"; WHEEL_NAME="$(basename "$WHEEL")"
-# A SHA256SUMS so the bootstrap's checksum-verify path is exercised too.
-( cd "$SCRATCH" && { command -v sha256sum >/dev/null 2>&1 && sha256sum "$WHEEL_NAME" || shasum -a 256 "$WHEEL_NAME"; } > SHA256SUMS )
+shopt -s nullglob
+BACKEND_WHEELS=("$REPO_ROOT"/dist/superforecasting_agent-*.whl)
+TERMINAL_WHEELS=("$REPO_ROOT"/dist/superforecasting_agent_tui-*.whl)
+[ "${#BACKEND_WHEELS[@]}" = 1 ] && [ "${#TERMINAL_WHEELS[@]}" = 1 ] \
+  || { stage FAIL "0-product-build"; exit 1; }
+WHEEL="${BACKEND_WHEELS[0]}"
+TUI_WHEEL="${TERMINAL_WHEELS[0]}"
+WHEEL_NAME="$(basename "$WHEEL")"
+TUI_WHEEL_NAME="$(basename "$TUI_WHEEL")"
+cp "$WHEEL" "$TUI_WHEEL" "$SCRATCH/"
+# Exercise verification of both independently versioned products.
+( cd "$SCRATCH" && { command -v sha256sum >/dev/null 2>&1 \
+    && sha256sum "$WHEEL_NAME" "$TUI_WHEEL_NAME" \
+    || shasum -a 256 "$WHEEL_NAME" "$TUI_WHEEL_NAME"; } > SHA256SUMS )
 # Copy the deploy scripts the bootstrap installs from beside itself.
 cp "$REPO_ROOT/scripts/hetzner-install.sh" "$REPO_ROOT/scripts/forecast-desk" \
    "$REPO_ROOT/scripts/migration_guard.py" "$SCRATCH/"
@@ -118,6 +125,7 @@ set +e
 docker exec \
   -e LANE=pipx -e SUPERVISOR=none -e SKIP_HARDENING=1 \
   -e FORECAST_WHEEL="/opt/boot/$WHEEL_NAME" \
+  -e FORECAST_TUI_WHEEL="/opt/boot/$TUI_WHEEL_NAME" \
   -e FORECAST_CHECKSUMS="/opt/boot/SHA256SUMS" \
   -e SSH_PUBKEY="$PUBKEY" \
   "$CNAME" bash /opt/boot/hetzner-install.sh
@@ -137,8 +145,8 @@ fi
 if inx "grep -qiE 'cron|scheduler|messaging' /home/forecast/.superforecasting-agent/logs/gateway.out 2>/dev/null"; then
   stage PASS "3b-cron-scheduler-banner"
 else
-  warn "cron/scheduler banner not found in gateway.out (non-fatal; gateway may log elsewhere)"
-  stage PASS "3b-cron-scheduler-banner (skipped)"
+  warn "cron/scheduler banner not found in gateway.out"
+  stage FAIL "3b-cron-scheduler-banner"
 fi
 DOCTOR_JSON="$(inx "sudo -u forecast env HOME=/home/forecast SUPERFORECASTING_AGENT_HOME=/home/forecast/.superforecasting-agent \
   /usr/local/bin/superforecasting-agent forecast config doctor --json 2>/dev/null" || true)"
@@ -212,13 +220,8 @@ fi
 #     escape-code parsing here), which is the cheapest possible proof that the
 #     first frame actually landed on a real box.
 #
-#     Deliberately WARN-only: this stage was added without a docker daemon
-#     available to run the proof even once, so it must not be able to turn a
-#     green fresh-box run red. Promote it to a hard gate — replace the warn
-#     branch with `stage FAIL "4e-tui-first-paint"` — after one observed pass.
-#
-#     The Python-side equivalent (which IS a hard gate) is tests/tui_pty/:
-#     same idea, own pty, asserts against a reconstructed screen.
+#     This is a hard gate following the observed split-product Ubuntu pass.
+#     A live process or arbitrary error text is not evidence that Ink painted.
 if [ "$LANDED" = PASS ]; then
   PANE="$(inx "sudo -u forecast tmux capture-pane -p -t desk 2>/dev/null" || true)"
   PANE_CHARS="$(printf '%s' "$PANE" | tr -d '[:space:]' | wc -c | tr -d '[:space:]')"
@@ -231,12 +234,12 @@ if [ "$LANDED" = PASS ]; then
   elif [ "$PANE_CHARS" -ge 100 ]; then
     warn "pane has ${PANE_CHARS} chars but no known TUI anchor — first frame may have changed"
     printf '%s\n' "$PANE" | head -n 20
-    stage PASS "4e-tui-first-paint (unrecognised frame; see dump above)"
+    stage FAIL "4e-tui-first-paint (unrecognised frame; see dump above)"
   else
     warn "tmux pane is effectively BLANK (${PANE_CHARS} printable chars) — the TUI"
     warn "process is alive but nothing was painted. This is the failure 4d cannot see."
     inx "tail -n 15 /tmp/desk.out 2>/dev/null" || true
-    stage PASS "4e-tui-first-paint (BLANK — warn-only, see comment)"
+    stage FAIL "4e-tui-first-paint (blank pane)"
   fi
 fi
 

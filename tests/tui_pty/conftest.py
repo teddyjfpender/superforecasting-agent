@@ -30,11 +30,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # baffling child-process failure.
 MIN_NODE_MAJOR = 20
 
-# The bundle the wheel ships (built at release time, gitignored) is preferred:
-# it is the artefact users actually run.  ``ui-tui/dist`` is the dev build.
+# Source-tree tests prefer the current development build. The canonical test
+# runner rebuilds it when the local Node toolchain is installed. Packaged-only
+# environments can still exercise their supplied distribution artifact.
 BUNDLE_CANDIDATES = (
-    REPO_ROOT / 'superforecasting_agent/runtime' / "tui_dist" / "entry.js",
     REPO_ROOT / "ui-tui" / "dist" / "entry.js",
+    REPO_ROOT / 'superforecasting_agent/runtime' / "tui_dist" / "entry.js",
 )
 
 # ``ui-tui/src/entry.tsx`` prints this and exits 0 when stdin is not a TTY.

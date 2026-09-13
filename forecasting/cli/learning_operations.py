@@ -8,6 +8,11 @@ from forecasting.cli import core as _core
 
 
 def register(sub):
+    policy = sub.add_parser('censoring-policy', help='Audit and convert historical prose censoring without rewriting forecasts')
+    policy.add_argument('id')
+    policy.add_argument('--spec-file', required=True)
+    policy.add_argument('--apply', action='store_true', help='Apply the reviewed spec with its expected_sha256')
+    policy.set_defaults(_forecast_handler=handle_censoring_policy)
     domain = sub.add_parser('domain', help='Correct semantic domain with preserved history')
     domain.add_argument('id')
     domain.add_argument('--domain', required=True)
@@ -39,6 +44,9 @@ def register(sub):
     show.add_argument('id')
     show.add_argument('--cutoff')
     show.set_defaults(_forecast_handler=handle_facts)
+    verify = commands.add_parser('verify-import', help='Re-fetch transferred sources without backdating verification')
+    verify.add_argument('id')
+    verify.set_defaults(_forecast_handler=handle_facts)
     bind = commands.add_parser('bind')
     bind.add_argument('id')
     bind.add_argument('--key', required=True)
@@ -48,14 +56,21 @@ def register(sub):
     bind.add_argument('--value-type', choices=['string', 'number', 'boolean'], default='string')
     bind.add_argument('--max-age-seconds', type=int, default=3600)
     bind.set_defaults(_forecast_handler=handle_facts)
-    source = commands.add_parser('bind-source', help='Bind a verified NWS or USGS measurement contract')
+    settlement = commands.add_parser('bind-settlement', help='Require an exact verified measurement at resolution')
+    settlement.add_argument('id')
+    for option in ('fact-key', 'entity', 'units', 'measurement', 'window-start', 'window-end', 'reason'):
+        settlement.add_argument('--' + option, required=True)
+    settlement.set_defaults(_forecast_handler=handle_facts)
+    source = commands.add_parser('bind-source', help='Bind a verified source measurement contract')
     source.add_argument('id')
     source.add_argument('--key', required=True)
-    source.add_argument('--adapter', required=True, choices=['nws_temperature_v1', 'usgs_magnitude_v1'])
+    source.add_argument('--adapter', required=True, choices=['nws_temperature_v1', 'usgs_magnitude_v1', 'bls_observation_v1', 'fred_observation_v1'])
     source.add_argument('--entity', required=True)
     source.add_argument('--window-start', required=True)
     source.add_argument('--window-end', required=True)
     source.add_argument('--magnitude-type')
+    for option in ('units', 'revision-policy', 'observation-date', 'vintage-date', 'metadata-evidence-id'):
+        source.add_argument('--' + option)
     source.add_argument('--max-age-seconds', type=int, default=3600)
     source.set_defaults(_forecast_handler=handle_facts)
 
@@ -131,10 +146,18 @@ def _handle_facts(args):
     from forecasting.applicability_facts import bind_fact, evidence_facts
     ledger = _core._ledger(args)
     q = ledger.get_question(_core._resolve_question_id(ledger, args.id))
-    if args.facts_action == 'bind-source':
+    if args.facts_action == 'verify-import':
+        from forecasting.source_transfer import reverify_sources
+        report = reverify_sources(ledger, q.id)
+    elif args.facts_action == 'bind-settlement':
+        from forecasting.settlement_binding import bind_settlement
+        report = bind_settlement(ledger, q.id, **{key: getattr(args, key) for key in
+            ('fact_key', 'entity', 'units', 'measurement', 'window_start', 'window_end', 'reason')})
+    elif args.facts_action == 'bind-source':
         from forecasting.source_bindings import source_contract, binding_spec
         contract = source_contract(adapter=args.adapter, entity=args.entity, window_start=args.window_start,
-            window_end=args.window_end, magnitude_type=args.magnitude_type)
+            window_end=args.window_end, magnitude_type=args.magnitude_type,
+            **{key: getattr(args, key) for key in ('units', 'revision_policy', 'observation_date', 'vintage_date', 'metadata_evidence_id') if getattr(args, key, None) is not None})
         report = bind_fact(ledger, question_id=q.id, key=args.key, **binding_spec(contract),
             value_type='number', max_age_seconds=args.max_age_seconds, source_contract=contract)
     elif args.facts_action == 'bind':
@@ -158,4 +181,17 @@ def handle_domain(args):
         qid = _core._resolve_question_id(ledger, args.id)
         print(json.dumps(asdict(set_question_domain(ledger, qid, domain=args.domain,
             expected_domain=args.expected_domain or None, reason=args.reason)), indent=2))
+    return _run_operation(operation, args)
+
+
+def handle_censoring_policy(args):
+    def operation(args):
+        from forecasting.censoring_policy import policy_preview, convert_policy
+        ledger = _core._ledger(args)
+        spec = json.loads(Path(args.spec_file).read_text(encoding='utf-8'))
+        qid = _core._resolve_question_id(ledger, args.id)
+        if not args.apply:
+            spec.pop('expected_sha256', None)
+        result = (convert_policy if args.apply else policy_preview)(ledger, qid, **spec)
+        print(json.dumps(result, indent=2))
     return _run_operation(operation, args)

@@ -130,11 +130,13 @@ def _safe_float(value: Any) -> float | None:
     return round(number, 4)
 
 
-def normalize_label(value: Any) -> str:
-    if not value:
-        return RELEVANT_UNINTERESTING
-    text = str(value).strip().lower().replace("-", "_").replace(" ", "_")
-    return _LABEL_ALIASES.get(text, RELEVANT_UNINTERESTING)
+def normalize_label(value: Any, *, strict: bool = False) -> str:
+    """Normalize suggestions tolerantly; expert labels must name a known class."""
+    text = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    label = _LABEL_ALIASES.get(text)
+    if strict and (not isinstance(value, str) or label is None):
+        raise ValueError(f"Invalid triage label: expected one of {', '.join(THREE_WAY_LABELS)} (or a known alias)")
+    return label or RELEVANT_UNINTERESTING
 
 
 def _normalize_materiality(value: Any) -> str:

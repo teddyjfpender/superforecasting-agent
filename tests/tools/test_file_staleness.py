@@ -171,27 +171,18 @@ class TestStalenessCheck(unittest.TestCase):
 
         from tools import file_tools
 
-        with file_tools._file_ops_lock:
-            previous = file_tools._file_ops_cache.get("live_task")
-            file_tools._file_ops_cache["live_task"] = fake_ops
+        with patch.dict("tools.terminal_tool._active_environments", {"live_task": fake_ops.env}), \
+             patch.dict(file_tools._file_ops_cache, {"live_task": fake_ops}), \
+             patch.dict(os.environ, {"TERMINAL_CWD": start_dir}, clear=False):
+            read_file_tool("shared.txt", task_id="live_task")
 
-        try:
-            with patch.dict(os.environ, {"TERMINAL_CWD": start_dir}, clear=False):
-                read_file_tool("shared.txt", task_id="live_task")
+            time.sleep(0.05)
+            with open(live_file, "w") as f:
+                f.write("live copy modified elsewhere\n")
 
-                time.sleep(0.05)
-                with open(live_file, "w") as f:
-                    f.write("live copy modified elsewhere\n")
-
-                result = json.loads(
-                    write_file_tool("shared.txt", "replacement", task_id="live_task")
-                )
-        finally:
-            with file_tools._file_ops_lock:
-                if previous is None:
-                    file_tools._file_ops_cache.pop("live_task", None)
-                else:
-                    file_tools._file_ops_cache["live_task"] = previous
+            result = json.loads(
+                write_file_tool("shared.txt", "replacement", task_id="live_task")
+            )
 
         self.assertIn("_warning", result)
         self.assertIn("modified since you last read", result["_warning"])

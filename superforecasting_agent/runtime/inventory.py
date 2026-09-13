@@ -190,7 +190,7 @@ def _apply_picker_hints(rows: list[dict]) -> None:
     the unconfigured skeleton rows from ``_append_unconfigured_rows`` get
     the picker's setup-hint shape.
     """
-    from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY
+    from superforecasting_agent.configuration.authentication import PROVIDER_REGISTRY
 
     for row in rows:
         if "authenticated" in row:

@@ -1,5 +1,4 @@
 import atexit
-import concurrent.futures
 import contextlib
 import contextvars
 import copy
@@ -7,7 +6,6 @@ import io
 import json
 import logging
 import os
-import queue
 import subprocess
 import sys
 import threading
@@ -17,9 +15,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+from superforecasting_agent.configuration.goals import configured_goal_turn_budget
+
 from superforecasting_agent.constants import get_agent_home
 from superforecasting_agent.runtime.env_loader import load_forecast_dotenv
-from superforecasting_agent.environment import INTERACTIVE_ENV_NAMES, is_truthy_value
+from superforecasting_agent.environment import INTERACTIVE_ENV_NAMES
 from tui_gateway.transport import (
     StdioTransport,
     Transport,
@@ -227,23 +227,10 @@ def start_build_check() -> None:
 
 from tui_gateway.render import make_stream_renderer, render_diff, render_message
 
-_sessions: dict[str, dict] = {}
-_session_resume_lock = threading.RLock()
 _methods: dict[str, callable] = {}
 _pending: dict[str, tuple[str, threading.Event]] = {}
 _answers: dict[str, str] = {}
-_db = None
-_db_error: str | None = None
 _stdout_lock = threading.Lock()
-_cfg_lock = threading.Lock()
-_cfg_cache: dict | None = None
-_cfg_mtime: float | None = None
-_cfg_path = None
-try:
-    _slash_timeout = float(_tui_env("SLASH_TIMEOUT_S") or "45")
-except (ValueError, TypeError):
-    _slash_timeout = 45.0
-_SLASH_WORKER_TIMEOUT_S = max(5.0, _slash_timeout)
 _DETAIL_SECTION_NAMES = ("thinking", "tools", "subagents", "activity")
 _DETAIL_MODES = frozenset({"hidden", "collapsed", "expanded"})
 
@@ -279,6 +266,7 @@ _LONG_HANDLERS = frozenset(
         "pm.stream.start",
         "pm.stream.stop",
         "session.branch",
+        "session.branch_replace",
         "session.compress",
         "session.resume",
         "shell.exec",
@@ -293,17 +281,16 @@ try:
     )
 except (ValueError, TypeError):
     _rpc_pool_workers = 4
-_pool = concurrent.futures.ThreadPoolExecutor(
-    max_workers=_rpc_pool_workers,
-    thread_name_prefix="tui-rpc",
-)
-atexit.register(lambda: _pool.shutdown(wait=False, cancel_futures=True))
+from superforecasting_agent.hosting.workers import HostStopping
+from superforecasting_agent.hosting.runtime import RuntimeHost
+from superforecasting_agent.hosting.sessions import SessionBusy, dispose_session, finalize_session, in_use, replacement, use_session
 
-# Reserve real stdout for JSON-RPC only; redirect Python's stdout to stderr
-# so stray print() from libraries/tools becomes harmless gateway.stderr instead
-# of corrupting the JSON protocol.
+_host = RuntimeHost(max_workers=_rpc_pool_workers, home=_hermes_home)
+
+
+# Embedded hosts retain their process streams. The stdio entrypoint explicitly
+# owns redirection while serving its JSON-RPC command pipe.
 _real_stdout = sys.stdout
-sys.stdout = sys.stderr
 
 # Module-level stdio transport — fallback sink when no transport is bound via
 # contextvar or session. Stream resolved through a lambda so runtime monkey-
@@ -311,88 +298,6 @@ sys.stdout = sys.stderr
 _stdio_transport = StdioTransport(lambda: _real_stdout, _stdout_lock)
 
 
-class _SlashWorker:
-    """Persistent classic CLI subprocess for slash commands."""
-
-    def __init__(self, session_key: str, model: str):
-        self._lock = threading.Lock()
-        self._seq = 0
-        self.stderr_tail: list[str] = []
-        self.stdout_queue: queue.Queue[dict | None] = queue.Queue()
-
-        argv = [
-            sys.executable,
-            "-m",
-            "tui_gateway.slash_worker",
-            "--session-key",
-            session_key,
-        ]
-        if model:
-            argv += ["--model", model]
-
-        self.proc = subprocess.Popen(
-            argv,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,
-            cwd=os.getcwd(),
-            env=os.environ.copy(),
-        )
-        threading.Thread(target=self._drain_stdout, daemon=True).start()
-        threading.Thread(target=self._drain_stderr, daemon=True).start()
-
-    def _drain_stdout(self):
-        for line in self.proc.stdout or []:
-            try:
-                self.stdout_queue.put(json.loads(line))
-            except json.JSONDecodeError:
-                continue
-        self.stdout_queue.put(None)
-
-    def _drain_stderr(self):
-        for line in self.proc.stderr or []:
-            if text := line.rstrip("\n"):
-                self.stderr_tail = (self.stderr_tail + [text])[-80:]
-
-    def run(self, command: str) -> str:
-        if self.proc.poll() is not None:
-            raise RuntimeError("slash worker exited")
-
-        with self._lock:
-            self._seq += 1
-            rid = self._seq
-            self.proc.stdin.write(json.dumps({"id": rid, "command": command}) + "\n")
-            self.proc.stdin.flush()
-
-            while True:
-                try:
-                    msg = self.stdout_queue.get(timeout=_SLASH_WORKER_TIMEOUT_S)
-                except queue.Empty:
-                    raise RuntimeError("slash worker timed out")
-                if msg is None:
-                    break
-                if msg.get("id") != rid:
-                    continue
-                if not msg.get("ok"):
-                    raise RuntimeError(msg.get("error", "slash worker failed"))
-                return str(msg.get("output", "")).rstrip()
-
-            raise RuntimeError(
-                f"slash worker closed pipe{': ' + chr(10).join(self.stderr_tail[-8:]) if self.stderr_tail else ''}"
-            )
-
-    def close(self):
-        try:
-            if self.proc.poll() is None:
-                self.proc.terminate()
-                self.proc.wait(timeout=1)
-        except Exception:
-            try:
-                self.proc.kill()
-            except Exception:
-                pass
 
 
 def _load_busy_input_mode() -> str:
@@ -419,57 +324,19 @@ def _finalize_session(
     *,
     mark_ended: bool = True,
 ) -> None:
-    """Best-effort finalize hook + memory commit for a session.
-
-    ``mark_ended`` controls whether the durable ``state.db`` row is marked
-    ended. A user-initiated close/branch is a real conversation boundary and
-    SHOULD end the row (``mark_ended=True``, the default). A gateway-PROCESS
-    restart/shutdown is NOT a conversation boundary: ending the row there
-    conflates an involuntary restart with a deliberate end, so the shutdown
-    path passes ``mark_ended=False`` to preserve the session across restarts
-    (port of upstream 86e64900b's ``_end_session_on_close = False`` guard).
-    The transcript already lives in ``state.db``; leaving the row un-ended lets
-    ``session.resume``/``session.most_recent`` restore it intact on the next
-    launch.
-    """
-    if not session or session.get("_finalized"):
+    if not session:
         return
-    session["_finalized"] = True
-    stop_event = session.get("_notif_stop")
-    if stop_event is not None:
-        stop_event.set()
 
-    agent = session.get("agent")
-    lock = session.get("history_lock")
-    if lock is not None:
-        with lock:
-            history = list(session.get("history", []))
-    else:
-        history = list(session.get("history", []))
-    if agent is not None and history and hasattr(agent, "commit_memory_session"):
-        try:
-            agent.commit_memory_session(history)
-        except Exception:
-            pass
+    def end_session(session_id: str, reason: str) -> None:
+        db = _get_db()
+        if db is None:
+            raise RuntimeError("Session store unavailable; session close can be retried")
+        db.end_session(session_id, reason)
 
-    session_key = session.get("session_key")
-    session_id = getattr(agent, "session_id", None) or session_key
-    _notify_session_boundary("on_session_finalize", session_id)
-
-    # Mark session ended in DB so it doesn't linger as a ghost row in /resume.
-    # Use session_id (from agent.session_id) not session_key — after compression,
-    # session_key may be stale (the ended parent) while session_id is the live
-    # continuation. Fix for #20001.
-    #
-    # Skipped on process restart/shutdown (``mark_ended=False``): the row stays
-    # live so the conversation is restored across restarts instead of being lost.
-    if session_id and mark_ended:
-        try:
-            db = _get_db()
-            if db is not None:
-                db.end_session(session_id, end_reason)
-        except Exception:
-            pass
+    finalize_session(
+        session, end_session=end_session, notify=_notify_session_boundary,
+        end_reason=end_reason, mark_ended=mark_ended,
+    )
 
 
 # ── Cron ticker ───────────────────────────────────────────────────────
@@ -544,13 +411,10 @@ def start_cron_ticker() -> None:
     global _cron_ticker_thread
     if _cron_ticker_thread is not None or _cron_ticker_disabled():
         return
-    _cron_ticker_thread = threading.Thread(
-        target=_cron_ticker_loop,
-        args=(_cron_ticker_stop, _cron_ticker_interval()),
-        name="tui-cron-ticker",
-        daemon=True,
+    _cron_ticker_thread = _host.workers.start(
+        lambda: _cron_ticker_loop(_cron_ticker_stop, _cron_ticker_interval()),
+        name="forecast-cron-ticker",
     )
-    _cron_ticker_thread.start()
 
 
 def _stop_cron_ticker() -> None:
@@ -784,58 +648,57 @@ def _maybe_run_review_sweep() -> dict | None:
     return _run_review_sweep(now=now_iso)
 
 
-def _shutdown_sessions() -> None:
-    # Stop the cron ticker first so no new tick starts mid-shutdown.
+def _reset_runtime_services() -> None:
+    global _cron_ticker_stop, _cron_ticker_thread
+    _cron_ticker_stop = threading.Event()
+    _cron_ticker_thread = None
+
+
+def start_runtime() -> None:
+    _host.start(reset_services=_reset_runtime_services)
+
+
+def _stop_runtime_services() -> None:
     _stop_cron_ticker()
-    # Interrupt dangling background subagents so they don't keep running with
-    # no one to deliver their result to.
-    try:
-        from tools.async_delegation import interrupt_all as _interrupt_async
-
-        _interrupt_async(reason="tui_shutdown")
-    except Exception:
-        pass
-    for session in list(_sessions.values()):
-        # Process restart/shutdown is NOT a conversation boundary: finalize
-        # (commit memory, stop pollers) but DO NOT end the durable session row,
-        # so the conversation is preserved and restored on the next launch.
-        _finalize_session(
-            session, end_reason="tui_shutdown", mark_ended=False
-        )
-        try:
-            worker = session.get("slash_worker")
-            if worker:
-                worker.close()
-        except Exception:
-            pass
 
 
-atexit.register(_shutdown_sessions)
+def _release_runtime_prompts(sid: str, session: dict) -> None:
+    _clear_pending(sid)
+    from tools.approval import resolve_gateway_approval
+    resolve_gateway_approval(session["session_key"], "deny", resolve_all=True)
+
+
+def _interrupt_runtime_delegations() -> None:
+    from tools.async_delegation import interrupt_all
+    interrupt_all(reason="runtime_shutdown")
+
+
+def _close_drained_session(sid: str, session: dict, db) -> None:
+    _close_runtime_session(sid, mark_ended=False, drained=True)
+
+
+def shutdown_runtime(timeout: float = 5.0) -> bool:
+    return _host.shutdown(
+        timeout,
+        stop_services=_stop_runtime_services,
+        release_prompts=_release_runtime_prompts,
+        interrupt_delegations=_interrupt_runtime_delegations,
+        close_session=_close_drained_session,
+    )
+
+
+atexit.register(shutdown_runtime, 0)
 
 
 # ── Plumbing ──────────────────────────────────────────────────────────
 
 
 def _get_db():
-    global _db, _db_error
-    if _db is None:
-        from superforecasting_agent.storage.session import SessionDB
-
-        try:
-            _db = SessionDB()
-            _db_error = None
-        except Exception as exc:
-            _db_error = str(exc)
-            logger.warning(
-                "TUI session store unavailable — continuing without state.db features: %s",
-                exc,
-            )
-            return None
-    return _db
+    return _host.store.get()
 
 
 def _db_unavailable_error(rid, *, code: int):
-    detail = _db_error or "state.db unavailable"
+    detail = _host.store.last_error or "state.db unavailable"
     return _err(rid, code, f"state.db unavailable: {detail}")
 
 
@@ -854,13 +717,45 @@ def write_json(obj: dict) -> bool:
     """
     if obj.get("method") == "event":
         sid = ((obj.get("params") or {}).get("session_id")) or ""
-        if sid and (t := (_sessions.get(sid) or {}).get("transport")) is not None:
+        if sid and (t := (_host.sessions.get(sid) or {}).get("transport")) is not None:
             return t.write(obj)
 
     return (current_transport() or _stdio_transport).write(obj)
 
 
+def _turn_recovery(db, session_key, *, recover=False):
+    from superforecasting_agent.storage import turns as turn_journal
+    if not callable(getattr(db, "_execute_write", None)):
+        return None
+    result = turn_journal.latest(db, session_key, recover=recover)
+    return result if isinstance(result, dict) else None
+
+
 def _emit(event: str, sid: str, payload: dict | None = None):
+    session = _host.sessions.get(sid, {})
+    turn_id = session.get("turn_id")
+    if turn_id and event in ("message.start", "message.delta", "message.complete", "error"):
+        payload = dict(payload or {})
+        if payload.get("turn_id", turn_id) != turn_id:
+            return
+        payload["turn_id"] = turn_id
+        try:
+            from superforecasting_agent.storage import turns as turn_journal
+            status = "error" if event == "error" else payload.get("status", "running")
+            receipt = turn_journal.transition(_get_db(), turn_id, status,
+                delta=payload.get("text", "") if event == "message.delta" else None,
+                text=(payload.get("text") or None) if event == "message.complete" else None,
+                error=payload.get("message") if event == "error" else None)
+            if event in ("message.start", "message.delta") and receipt["status"] in turn_journal.TERMINAL:
+                return
+            payload["durable_status"] = receipt["status"]
+        except Exception:
+            logger.exception("Turn receipt could not be persisted")
+            payload["durable_status"] = "unavailable"
+            payload["warning"] = "Turn recovery state could not be saved; keep this response before exiting."
+    elif session.get("turn_persistence_unavailable") and event in ("message.start", "message.delta", "message.complete", "error"):
+        payload = {**(payload or {}), "durable_status": "unavailable",
+                   "warning": "Session storage is unavailable; keep this response before exiting."}
     params = {"type": event, "session_id": sid}
     if payload is not None:
         params["payload"] = payload
@@ -1019,10 +914,27 @@ def handle_request(req: dict) -> dict | None:
     fn = _methods.get(method)
     if not fn:
         return _err(rid, -32601, f"unknown method: {method}")
-    return fn(rid, params)
+    session = _host.sessions.get(params.get("session_id")) if isinstance(params.get("session_id"), str) else None
+    try:
+        if session is not None and method not in {"session.close", "session.resume", "session.branch_replace", "tools.configure"}:
+            with use_session(session):
+                return fn(rid, params)
+        return fn(rid, params)
+    except SessionBusy as exc:
+        return _err(rid, 4009, str(exc))
+    except HostStopping:
+        return _err(rid, 5030, "runtime host is stopping")
 
 
 def dispatch(req: dict, transport: Optional[Transport] = None) -> dict | None:
+    try:
+        with _host.workers.operation():
+            return _dispatch(req, transport)
+    except HostStopping:
+        return _err(req.get("id") if isinstance(req, dict) else None, 5030, "runtime host is stopping")
+
+
+def _dispatch(req: dict, transport: Optional[Transport] = None) -> dict | None:
     """Route inbound RPCs — long handlers to the pool, everything else inline.
 
     Returns a response dict when handled inline. Returns None when the
@@ -1056,7 +968,7 @@ def dispatch(req: dict, transport: Optional[Transport] = None) -> dict | None:
             if resp is not None:
                 t.write(resp)
 
-        _pool.submit(lambda: ctx.run(run))
+        _host.workers.submit(lambda: ctx.run(run))
 
         return None
     finally:
@@ -1071,6 +983,33 @@ def _wait_agent(session: dict, rid: str, timeout: float = 30.0) -> dict | None:
     return _err(rid, 5032, err) if err else None
 
 
+def _initialize_built_agent(sid: str, session: dict, agent) -> None:
+    key = session["session_key"]
+    try:
+        from tools.approval import register_gateway_notify, load_permanent_allowlist
+
+        register_gateway_notify(key, lambda data: _emit("approval.request", sid, data))
+        session.pop("_build_notifications_released", None)
+        load_permanent_allowlist()
+    except Exception:
+        pass
+
+    _wire_callbacks(sid)
+    _notify_session_boundary("on_session_reset", key)
+
+    info = _session_info(agent)
+    warn = _probe_credentials(agent)
+    if warn:
+        info["credential_warning"] = warn
+    cfg_warn = _probe_config_health(_load_cfg())
+    if cfg_warn:
+        info["config_warning"] = cfg_warn
+        logger.warning(cfg_warn)
+    _emit("session.info", sid, info)
+
+    session["_notif_stop"] = _start_notification_poller(sid, session)
+
+
 def _start_agent_build(sid: str, session: dict) -> None:
     """Start building the real AIAgent for a TUI session, once.
 
@@ -1081,92 +1020,38 @@ def _start_agent_build(sid: str, session: dict) -> None:
     command that actually needs the agent), while retaining the same ready/error
     event contract for the frontend.
     """
-    ready = session.get("agent_ready")
-    if ready is None:
+    from superforecasting_agent.hosting.builds import execute_build, start_build
+
+    if session.get("agent_ready") is None:
         return
-    lock = session.setdefault("agent_build_lock", threading.Lock())
-    with lock:
-        if ready.is_set() or session.get("agent_build_started"):
-            return
-        session["agent_build_started"] = True
+    host = _host
     key = session["session_key"]
 
-    def _build() -> None:
-        current = _sessions.get(sid)
-        if current is None:
-            ready.set()
-            return
-
-        worker = None
-        notify_registered = False
+    @contextlib.contextmanager
+    def construction_scope():
+        if host.sessions.get(sid) is not session:
+            raise RuntimeError("session closed during agent initialization")
+        tokens = _set_session_context(key)
         try:
-            tokens = _set_session_context(key)
-            try:
-                agent = _make_agent(sid, key)
-            finally:
-                _clear_session_context(tokens)
-
-            # Session DB row deferred to first run_conversation() call.
-            # pending_title applied post-first-message (see cli.exec handler).
-            current["agent"] = agent
-
-            try:
-                worker = _SlashWorker(key, getattr(agent, "model", _resolve_model()))
-                current["slash_worker"] = worker
-            except Exception:
-                pass
-
-            try:
-                from tools.approval import (
-                    register_gateway_notify,
-                    load_permanent_allowlist,
-                )
-
-                register_gateway_notify(
-                    key, lambda data: _emit("approval.request", sid, data)
-                )
-                notify_registered = True
-                load_permanent_allowlist()
-            except Exception:
-                pass
-
-            _wire_callbacks(sid)
-            _sessions[sid]["_notif_stop"] = _start_notification_poller(sid, _sessions[sid])
-            _notify_session_boundary("on_session_reset", key)
-
-            info = _session_info(agent)
-            warn = _probe_credentials(agent)
-            if warn:
-                info["credential_warning"] = warn
-            cfg_warn = _probe_config_health(_load_cfg())
-            if cfg_warn:
-                info["config_warning"] = cfg_warn
-                logger.warning(cfg_warn)
-            _emit("session.info", sid, info)
-        except Exception as e:
-            current["agent_error"] = str(e)
-            _emit("error", sid, {"message": f"agent init failed: {e}"})
+            yield
         finally:
-            if _sessions.get(sid) is not current:
-                if worker is not None:
-                    try:
-                        worker.close()
-                    except Exception:
-                        pass
-                if notify_registered:
-                    try:
-                        from tools.approval import unregister_gateway_notify
+            _clear_session_context(tokens)
 
-                        unregister_gateway_notify(key)
-                    except Exception:
-                        pass
-            ready.set()
 
-    threading.Thread(target=_build, daemon=True).start()
+    start_build(
+        session,
+        build=lambda ready: execute_build(
+            session, ready, construct=lambda: _make_agent(sid, key),
+            initialize=lambda agent: _initialize_built_agent(sid, session, agent),
+            construction_scope=construction_scope,
+            report_error=lambda message: _emit("error", sid, {"message": f"agent init failed: {message}"}),
+        ),
+        start=lambda build: host.workers.start(build, name="forecast-agent-build"),
+    )
 
 
 def _sess_nowait(params, rid):
-    s = _sessions.get(params.get("session_id") or "")
+    s = _host.sessions.get(params.get("session_id") or "")
     return (s, None) if s else (None, _err(rid, 4001, "session not found"))
 
 
@@ -1209,44 +1094,11 @@ def _normalize_indicator_style(value: object) -> str:
 
 
 def _load_cfg() -> dict:
-    global _cfg_cache, _cfg_mtime, _cfg_path
-    try:
-        import yaml
-
-        p = _hermes_home / "config.yaml"
-        mtime = p.stat().st_mtime if p.exists() else None
-        with _cfg_lock:
-            if _cfg_cache is not None and _cfg_mtime == mtime and _cfg_path == p:
-                return copy.deepcopy(_cfg_cache)
-        if p.exists():
-            with open(p, encoding="utf-8") as f:
-                data = yaml.safe_load(f) or {}
-        else:
-            data = {}
-        with _cfg_lock:
-            _cfg_cache = copy.deepcopy(data)
-            _cfg_mtime = mtime
-            _cfg_path = p
-        return data
-    except Exception:
-        pass
-    return {}
+    return _host.configuration.load(_hermes_home / "config.yaml")
 
 
 def _save_cfg(cfg: dict):
-    global _cfg_cache, _cfg_mtime, _cfg_path
-    import yaml
-
-    path = _hermes_home / "config.yaml"
-    with open(path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(cfg, f)
-    with _cfg_lock:
-        _cfg_cache = copy.deepcopy(cfg)
-        _cfg_path = path
-        try:
-            _cfg_mtime = path.stat().st_mtime
-        except Exception:
-            _cfg_mtime = None
+    _host.configuration.save(_hermes_home / "config.yaml", cfg)
 
 
 def _set_session_context(session_key: str):
@@ -1256,7 +1108,7 @@ def _set_session_context(session_key: str):
     value. Returns an opaque token bundle for _clear_session_context."""
     session_tokens: list = []
     try:
-        from gateway.session_context import set_session_vars
+        from superforecasting_agent.session_context import set_session_vars
 
         session_tokens = set_session_vars(session_key=session_key)
     except Exception:
@@ -1286,7 +1138,7 @@ def _clear_session_context(tokens) -> None:
             pass
     if session_tokens:
         try:
-            from gateway.session_context import clear_session_vars
+            from superforecasting_agent.session_context import clear_session_vars
 
             clear_session_vars(session_tokens)
         except Exception:
@@ -1358,60 +1210,22 @@ def resolve_skin() -> dict:
         return {}
 
 
-def _resolve_model() -> str:
-    env = _first_runtime_env_value(("MODEL", "INFERENCE_MODEL"))
-    if env:
-        return env
-    m = _load_cfg().get("model", "")
-    if isinstance(m, dict):
-        return str(m.get("default", "") or "").strip()
-    if isinstance(m, str) and m:
-        return m.strip()
-    return "anthropic/claude-sonnet-4"
+def _resolve_model(cfg: dict | None = None) -> str:
+    from superforecasting_agent.hosting.desk_agent import selected_model
 
+    return selected_model(
+        cfg if cfg is not None else _load_cfg(),
+        _first_runtime_env_value(("MODEL", "INFERENCE_MODEL")),
+    )
 
-def _resolve_startup_runtime() -> tuple[str, str | None]:
-    model = _resolve_model()
-    explicit_provider = _tui_env("PROVIDER").strip()
-    if explicit_provider:
-        return model, explicit_provider
+def _resolve_startup_runtime(cfg: dict | None = None) -> tuple[str, str | None]:
+    from superforecasting_agent.hosting.desk_agent import startup_runtime
 
-    explicit_model = _first_runtime_env_value(("MODEL", "INFERENCE_MODEL"))
-    if not explicit_model:
-        return model, None
-
-    try:
-        from superforecasting_agent.runtime.models import detect_static_provider_for_model
-
-        cfg = _load_cfg().get("model") or {}
-        current_provider = (
-            (
-                str(cfg.get("provider") or "").strip().lower()
-                if isinstance(cfg, dict)
-                else ""
-            )
-            or _runtime_env_value("INFERENCE_PROVIDER").lower()
-            or "auto"
-        )
-        detected = detect_static_provider_for_model(explicit_model, current_provider)
-        if detected:
-            provider, detected_model = detected
-            return detected_model, provider
-    except Exception:
-        pass
-    return model, None
-
+    return startup_runtime(cfg if cfg is not None else _load_cfg(), _desk_launch_overrides())
 
 def _write_config_key(key_path: str, value):
-    cfg = _load_cfg()
-    current = cfg
-    keys = key_path.split(".")
-    for key in keys[:-1]:
-        if key not in current or not isinstance(current.get(key), dict):
-            current[key] = {}
-        current = current[key]
-    current[keys[-1]] = value
-    _save_cfg(cfg)
+    """Merge a single setting into the latest profile, preserving user comments."""
+    _host.configuration.update(_hermes_home / "config.yaml", key_path, value)
 
 
 _STATUSBAR_MODES = frozenset({"off", "top", "bottom"})
@@ -1440,194 +1254,42 @@ def _display_mouse_tracking(display: dict) -> bool:
     return True
 
 
-def _load_reasoning_config() -> dict | None:
-    from superforecasting_agent.constants import parse_reasoning_effort
+def _load_reasoning_config(cfg: dict | None = None) -> dict | None:
+    from superforecasting_agent.hosting.desk_agent import reasoning_config
 
-    effort = str(
-        (_load_cfg().get("agent") or {}).get("reasoning_effort", "") or ""
-    ).strip()
-    return parse_reasoning_effort(effort)
+    return reasoning_config(cfg if cfg is not None else _load_cfg())
 
+def _load_service_tier(cfg: dict | None = None) -> str | None:
+    from superforecasting_agent.hosting.desk_agent import service_tier
 
-def _load_service_tier() -> str | None:
-    raw = (
-        str((_load_cfg().get("agent") or {}).get("service_tier", "") or "")
-        .strip()
-        .lower()
-    )
-    if not raw or raw in {"normal", "default", "standard", "off", "none"}:
-        return None
-    if raw in {"fast", "priority", "on"}:
-        return "priority"
-    return None
-
+    return service_tier(cfg if cfg is not None else _load_cfg())
 
 def _load_show_reasoning() -> bool:
     return bool((_load_cfg().get("display") or {}).get("show_reasoning", False))
 
 
-def _load_tool_progress_mode() -> str:
-    env = _tui_env("TOOL_PROGRESS").strip().lower()
-    if env in {"off", "new", "all", "verbose"}:
-        return env
-    raw = (_load_cfg().get("display") or {}).get("tool_progress", "all")
-    if raw is False:
-        return "off"
-    if raw is True:
-        return "all"
-    mode = str(raw or "all").strip().lower()
-    return mode if mode in {"off", "new", "all", "verbose"} else "all"
+def _load_tool_progress_mode(cfg: dict | None = None) -> str:
+    from superforecasting_agent.hosting.desk_agent import tool_progress_mode
 
+    return tool_progress_mode(cfg if cfg is not None else _load_cfg(), _tui_env("TOOL_PROGRESS"))
 
-def _load_enabled_toolsets() -> list[str] | None:
-    explicit = [
-        item.strip()
-        for item in _tui_env("TOOLSETS").split(",")
-        if item.strip()
-    ]
-    cfg = None
-    fallback_notice = None
+def _load_enabled_toolsets(cfg: dict | None = None) -> list[str] | None:
+    from superforecasting_agent.tooling.startup_selection import resolve_startup_toolsets
 
-    try:
-        from superforecasting_agent.tooling.toolsets import validate_toolset
-    except Exception:
-        validate_toolset = None
-
-    if explicit and validate_toolset is not None:
-        built_in = [name for name in explicit if validate_toolset(name)]
-        unresolved = [name for name in explicit if name not in built_in]
-
-        if unresolved:
-            try:
-                from superforecasting_agent.runtime.plugins import discover_plugins
-
-                discover_plugins()
-                plugin_valid = [name for name in unresolved if validate_toolset(name)]
-            except Exception:
-                plugin_valid = []
-
-            if plugin_valid:
-                built_in.extend(plugin_valid)
-                unresolved = [name for name in unresolved if name not in plugin_valid]
-
-        if any(name in {"all", "*"} for name in built_in):
-            ignored = [name for name in explicit if name not in {"all", "*"}]
-            if ignored:
-                print(
-                    "[tui] SUPERFORECASTING_AGENT_TUI_TOOLSETS=all enables every toolset; "
-                    f"ignoring additional entries: {', '.join(ignored)}",
-                    file=sys.stderr,
-                    flush=True,
-                )
-            return None
-
-        if not unresolved:
-            return built_in
-
-        mcp_names: set[str] = set()
-        mcp_disabled: set[str] = set()
-        try:
-            from superforecasting_agent.runtime.config import read_raw_config
-            from superforecasting_agent.runtime.tools_config import _parse_enabled_flag
-
-            raw_cfg = read_raw_config()
-            mcp_servers = (
-                raw_cfg.get("mcp_servers")
-                if isinstance(raw_cfg.get("mcp_servers"), dict)
-                else {}
-            )
-            for name, server_cfg in mcp_servers.items():
-                if not isinstance(server_cfg, dict):
-                    continue
-                if _parse_enabled_flag(server_cfg.get("enabled", True), default=True):
-                    mcp_names.add(str(name))
-                else:
-                    mcp_disabled.add(str(name))
-        except Exception:
-            mcp_names = set()
-            mcp_disabled = set()
-
-        mcp_valid = [name for name in unresolved if name in mcp_names]
-        disabled = [name for name in unresolved if name in mcp_disabled]
-        unknown = [
-            name
-            for name in unresolved
-            if name not in mcp_names and name not in mcp_disabled
-        ]
-        valid = built_in + mcp_valid
-
-        if unknown:
-            print(
-                f"[tui] ignoring unknown SUPERFORECASTING_AGENT_TUI_TOOLSETS entries: {', '.join(unknown)}",
-                file=sys.stderr,
-                flush=True,
-            )
-        if disabled:
-            print(
-                "[tui] ignoring disabled MCP servers in SUPERFORECASTING_AGENT_TUI_TOOLSETS "
-                "(set enabled: true in config.yaml to use): "
-                f"{', '.join(disabled)}",
-                file=sys.stderr,
-                flush=True,
-            )
-
-        if valid:
-            return valid
-
-        fallback_notice = (
-            "[tui] no valid SUPERFORECASTING_AGENT_TUI_TOOLSETS entries; using configured CLI toolsets"
-        )
-
-    try:
-        from superforecasting_agent.runtime.config import load_config
-        from superforecasting_agent.runtime.tools_config import _get_platform_tools
-
-        cfg = cfg if cfg is not None else load_config()
-
-        # Runtime toolset resolution must include default MCP servers so the
-        # agent can actually call them. Passing ``False`` here is the
-        # config-editing variant — used when we need to persist a toolset
-        # list without baking in implicit MCP defaults. Using the wrong
-        # variant at agent creation time makes MCP tools silently missing
-        # from the TUI. See PR #3252 for the original design split.
-        enabled = sorted(
-            _get_platform_tools(cfg, "cli", include_default_mcp_servers=True)
-        )
-        if fallback_notice is not None:
-            print(fallback_notice, file=sys.stderr, flush=True)
-        return enabled or None
-    except Exception:
-        if fallback_notice is not None:
-            print(
-                "[tui] no valid SUPERFORECASTING_AGENT_TUI_TOOLSETS entries and configured CLI toolsets could not be loaded; enabling all toolsets",
-                file=sys.stderr,
-                flush=True,
-            )
-        return None
+    return resolve_startup_toolsets(
+        _tui_env("TOOLSETS"), setting_label="SUPERFORECASTING_AGENT_TUI_TOOLSETS", config=cfg,
+        warn=lambda message: print(f"[tui] {message}", file=sys.stderr, flush=True),
+    )
 
 
 def _session_tool_progress_mode(sid: str) -> str:
-    return str(_sessions.get(sid, {}).get("tool_progress_mode", "all") or "all")
+    return str(_host.sessions.get(sid, {}).get("tool_progress_mode", "all") or "all")
 
 
 def _tool_progress_enabled(sid: str) -> bool:
     return _session_tool_progress_mode(sid) != "off"
 
 
-def _restart_slash_worker(session: dict):
-    worker = session.get("slash_worker")
-    if worker:
-        try:
-            worker.close()
-        except Exception:
-            pass
-    try:
-        session["slash_worker"] = _SlashWorker(
-            session["session_key"],
-            getattr(session.get("agent"), "model", _resolve_model()),
-        )
-    except Exception:
-        session["slash_worker"] = None
 
 
 def _persist_model_switch(result) -> None:
@@ -1733,7 +1395,6 @@ def _apply_model_switch(sid: str, session: dict, raw_input: str) -> dict:
             base_url=result.base_url,
             api_mode=result.api_mode,
         )
-        _restart_slash_worker(session)
         _emit("session.info", sid, _session_info(agent))
 
     # The switched model belongs to this session. New sessions use the persisted
@@ -1849,14 +1510,13 @@ def _sync_session_key_after_compress(
     session: dict,
     *,
     clear_pending_title: bool = True,
-    restart_slash_worker: bool = True,
 ) -> None:
     """Re-anchor session_key when AIAgent._compress_context rotates session_id.
 
     AIAgent._compress_context ends the current SessionDB session and creates
     a new continuation session, rotating ``agent.session_id``.  The TUI
     gateway keeps the gateway-side ``session_key`` separate (used for
-    approval routing, slash worker init, DB title/history lookups, yolo
+    approval routing, DB title/history lookups, yolo
     state).  Without this sync, those operations would target the ended
     parent session while the agent writes to the new continuation session.
 
@@ -1864,9 +1524,6 @@ def _sync_session_key_after_compress(
         clear_pending_title: True for manual /compress (title belongs to old
             session). False for post-turn auto-compression (preserve user
             intent so pending_title can be applied to the continuation).
-        restart_slash_worker: True for manual /compress and post-turn
-            auto-compression (worker holds stale session key). False only
-            if the caller manages the worker lifecycle separately.
     """
     agent = session.get("agent")
     new_session_id = getattr(agent, "session_id", None) or ""
@@ -1911,13 +1568,13 @@ def _sync_session_key_after_compress(
         # don't keep targeting the ended row.
         session["session_key"] = new_session_id
 
+    if session.get("turn_id"):
+        from superforecasting_agent.storage import turns as turn_journal
+        turn_journal.reanchor(_get_db(), session["turn_id"], new_session_id)
+
     if clear_pending_title:
         session["pending_title"] = None
-    if restart_slash_worker:
-        try:
-            _restart_slash_worker(session)
-        except Exception:
-            pass
+    _emit("session.info", sid, _session_info(agent))
 
 
 def _get_usage(agent) -> dict:
@@ -2013,7 +1670,7 @@ def _probe_config_health(cfg: dict) -> str:
 
 def _current_profile_name() -> str:
     try:
-        from superforecasting_agent.runtime.profiles import get_active_profile_name
+        from superforecasting_agent.constants import get_active_profile_name
 
         return get_active_profile_name() or "default"
     except Exception:
@@ -2052,6 +1709,7 @@ def _session_info(agent) -> dict:
         reasoning_effort = str(reasoning_config.get("effort", "") or "")
     service_tier = getattr(agent, "service_tier", None) or ""
     info: dict = {
+        "durable_session_id": getattr(agent, "session_id", None) or "",
         "model": getattr(agent, "model", ""),
         "reasoning_effort": reasoning_effort,
         "service_tier": service_tier,
@@ -2185,7 +1843,7 @@ def _tool_summary(name: str, result: str, duration_s: float | None) -> str | Non
 
 
 def _on_tool_start(sid: str, tool_call_id: str, name: str, args: dict):
-    session = _sessions.get(sid)
+    session = _host.sessions.get(sid)
     if session is not None:
         try:
             from agent.display import capture_local_edit_snapshot
@@ -2208,7 +1866,7 @@ def _on_tool_start(sid: str, tool_call_id: str, name: str, args: dict):
 
 def _on_tool_complete(sid: str, tool_call_id: str, name: str, args: dict, result: str):
     payload = {"tool_id": tool_call_id, "name": name}
-    session = _sessions.get(sid)
+    session = _host.sessions.get(sid)
     snapshot = None
     started_at = None
     if session is not None:
@@ -2400,9 +2058,16 @@ def _render_personality_prompt(value) -> str:
 
 def _available_personalities(cfg: dict | None = None) -> dict:
     try:
-        from cli import load_cli_config
+        from superforecasting_agent.runtime.interactive_config import read_cli_config
 
-        return (load_cli_config().get("agent") or {}).get("personalities", {}) or {}
+        ignore_config = next((os.environ[name] for name in (
+            "SUPERFORECASTING_AGENT_IGNORE_USER_CONFIG", "FORECAST_IGNORE_USER_CONFIG",
+            "HERMES_IGNORE_USER_CONFIG",
+        ) if name in os.environ), "") == "1"
+        settings = read_cli_config(
+            _hermes_home, Path(__file__).resolve().parents[1] / "cli-config.yaml", ignore_config,
+        )
+        return (settings.get("agent") or {}).get("personalities", {}) or {}
     except Exception:
         try:
             from superforecasting_agent.runtime.config import load_config as _load_full_cfg
@@ -2481,88 +2146,66 @@ def _apply_personality_to_session(
 
 
 def _cfg_max_turns(cfg: dict, default: int) -> int:
-    try:
-        env_max = int(_tui_env("MAX_TURNS") or 0)
-        if env_max > 0:
-            return env_max
-    except (TypeError, ValueError):
-        pass
-    agent_cfg = cfg.get("agent") or {}
-    return int(agent_cfg.get("max_turns") or cfg.get("max_turns") or default)
+    from superforecasting_agent.configuration.agent_limits import agent_turn_budget
 
-
-def _parse_tui_skills_env() -> list[str]:
-    raw = _tui_env("SKILLS")
-    skills: list[str] = []
-    seen: set[str] = set()
-    for part in raw.replace("\n", ",").split(","):
-        item = part.strip()
-        if item and item not in seen:
-            seen.add(item)
-            skills.append(item)
-    return skills
+    return agent_turn_budget(cfg, override=_tui_env("MAX_TURNS"), default=default)
 
 
 def _background_agent_kwargs(agent, task_id: str) -> dict:
-    cfg = _load_cfg()
+    from superforecasting_agent.hosting.desk_agent import background_options
 
-    return {
-        "base_url": getattr(agent, "base_url", None) or None,
-        "api_key": getattr(agent, "api_key", None) or None,
-        "provider": getattr(agent, "provider", None) or None,
-        "api_mode": getattr(agent, "api_mode", None) or None,
-        "acp_command": getattr(agent, "acp_command", None) or None,
-        "acp_args": getattr(agent, "acp_args", None) or None,
-        "model": getattr(agent, "model", None) or _resolve_model(),
-        "max_iterations": _cfg_max_turns(cfg, 25),
-        "enabled_toolsets": getattr(agent, "enabled_toolsets", None)
-        or _load_enabled_toolsets(),
-        "quiet_mode": True,
-        "verbose_logging": False,
-        "ephemeral_system_prompt": getattr(agent, "ephemeral_system_prompt", None)
-        or None,
-        "providers_allowed": getattr(agent, "providers_allowed", None),
-        "providers_ignored": getattr(agent, "providers_ignored", None),
-        "providers_order": getattr(agent, "providers_order", None),
-        "provider_sort": getattr(agent, "provider_sort", None),
-        "provider_require_parameters": getattr(
-            agent, "provider_require_parameters", False
-        ),
-        "provider_data_collection": getattr(agent, "provider_data_collection", None),
-        "openrouter_min_coding_score": getattr(agent, "openrouter_min_coding_score", None),
-        "session_id": task_id,
-        "reasoning_config": getattr(agent, "reasoning_config", None)
-        or _load_reasoning_config(),
-        "service_tier": getattr(agent, "service_tier", None) or _load_service_tier(),
-        "request_overrides": dict(getattr(agent, "request_overrides", {}) or {}),
-        "platform": "tui",
-        "session_db": _get_db(),
-        "fallback_model": getattr(agent, "_fallback_model", None),
+    return background_options(
+        agent, task_id, _load_cfg(), overrides=_desk_launch_overrides(), session_db=_get_db(),
+        warn=lambda message: print(f"[tui] {message}", file=sys.stderr, flush=True),
+    )
+
+
+def _reset_session_agent(sid: str, session: dict, *, reserved: bool = False) -> dict:
+    if not reserved:
+        with replacement(session):
+            return _reset_session_agent(sid, session, reserved=True)
+    from superforecasting_agent.hosting.builds import execute_build
+    from tools.approval import unregister_gateway_notify
+
+    stop = session.get("_notif_stop")
+    if stop is not None:
+        stop.set()
+    dispose_session(session, release_notifications=lambda: unregister_gateway_notify(session["session_key"]))
+    session["agent"] = None
+    session.pop("_disposed_resources", None)
+    session.pop("_notifications_released", None)
+    session["agent_error"] = None
+    ready = threading.Event()
+    session["agent_ready"] = ready
+    session["agent_build_started"] = True
+
+    @contextlib.contextmanager
+    def scope():
+        tokens = _set_session_context(session["session_key"])
+        try:
+            yield
+        finally:
+            _clear_session_context(tokens)
+
+    execute_build(
+        session, ready,
+        construct=lambda: _make_agent(sid, session["session_key"], session_id=session["session_key"]),
+        construction_scope=scope,
+        initialize=lambda agent: _initialize_built_agent(sid, session, agent),
+        report_error=lambda message: logger.error("session reset failed: %s", message),
+    )
+    if session.get("agent_error"):
+        raise RuntimeError(f"Agent reset failed; history preserved: {session['agent_error']}")
+    updates = {
+        "attached_images": [], "edit_snapshots": {}, "image_counter": 0,
+        "show_reasoning": _load_show_reasoning(),
+        "tool_progress_mode": _load_tool_progress_mode(), "tool_started_at": {},
     }
-
-
-def _reset_session_agent(sid: str, session: dict) -> dict:
-    tokens = _set_session_context(session["session_key"])
-    try:
-        new_agent = _make_agent(
-            sid, session["session_key"], session_id=session["session_key"]
-        )
-    finally:
-        _clear_session_context(tokens)
-    session["agent"] = new_agent
-    session["attached_images"] = []
-    session["edit_snapshots"] = {}
-    session["image_counter"] = 0
-    session["running"] = False
-    session["show_reasoning"] = _load_show_reasoning()
-    session["tool_progress_mode"] = _load_tool_progress_mode()
-    session["tool_started_at"] = {}
+    info = _session_info(session["agent"])
     with session["history_lock"]:
+        session.update(updates)
         session["history"] = []
         session["history_version"] = int(session.get("history_version", 0)) + 1
-    info = _session_info(new_agent)
-    _emit("session.info", sid, info)
-    _restart_slash_worker(session)
     return info
 
 
@@ -2572,7 +2215,7 @@ def _session_runtime(sid: str) -> dict:
     land on a different/unconfigured provider and get an HTML auth page. Uses the
     same resolve_runtime_provider path as _make_agent (carries OAuth credential
     pools, not just API keys), seeded by the session's CURRENT provider/model."""
-    sess = _sessions.get(sid) or {}
+    sess = _host.sessions.get(sid) or {}
     agent = sess.get("agent")
     try:
         from superforecasting_agent.runtime.runtime_provider import resolve_runtime_provider
@@ -2614,67 +2257,42 @@ def _session_runtime(sid: str) -> dict:
         return {}
 
 
+def _desk_launch_overrides() -> dict[str, str]:
+    """Capture this thread's session/environment aliases for host construction."""
+    overrides = {
+        name.lower(): _tui_env(name)
+        for name in ("PROVIDER", "MAX_TURNS", "TOOL_PROGRESS", "TOOLSETS", "SKILLS",
+                     "CHECKPOINTS", "PASS_SESSION_ID")
+    }
+    overrides.update(
+        model=_first_runtime_env_value(("MODEL", "INFERENCE_MODEL")),
+        inference_provider=_runtime_env_value("INFERENCE_PROVIDER"),
+        ignore_rules=_runtime_env("IGNORE_RULES"),
+    )
+    return overrides
+
+
 def _make_agent(sid: str, key: str, session_id: str | None = None):
-    from run_agent import AIAgent
-    from superforecasting_agent.runtime.runtime_provider import resolve_runtime_provider
+    from superforecasting_agent.hosting.desk_agent import build_desk_agent
 
-    cfg = _load_cfg()
-    agent_cfg = cfg.get("agent") or {}
-    system_prompt = (agent_cfg.get("system_prompt", "") or "").strip()
-    startup_skills = _parse_tui_skills_env()
-    if startup_skills:
-        from agent.skill_commands import build_preloaded_skills_prompt
-
-        skills_prompt, _loaded_skills, missing_skills = build_preloaded_skills_prompt(
-            startup_skills,
-            task_id=session_id or key,
-        )
-        if missing_skills:
-            raise ValueError(f"Unknown skill(s): {', '.join(missing_skills)}")
-        if skills_prompt:
-            system_prompt = "\n\n".join(
-                part for part in (system_prompt, skills_prompt) if part
-            ).strip()
-    model, requested_provider = _resolve_startup_runtime()
-    from agent.agent_factory import build_agent
-    from forecasting.protocol import build_forecast_chat_system_prompt
-
-    # Single resolve->construct path: build_agent resolves the runtime provider and
-    # maps provider/base_url/api_key/api_mode/acp_*/credential_pool onto the AIAgent
-    # kwargs (behaviour-identical to the hand-written mapping it replaces).
-    return build_agent(
-        model=model,
-        requested_provider=requested_provider,
-        max_iterations=_cfg_max_turns(cfg, 90),
-        quiet_mode=True,
-        verbose_logging=_load_tool_progress_mode() == "verbose",
-        reasoning_config=_load_reasoning_config(),
-        service_tier=_load_service_tier(),
-        enabled_toolsets=_load_enabled_toolsets(),
-        platform="tui",
-        session_id=session_id or key,
-        session_db=_get_db(),
-        ephemeral_system_prompt=build_forecast_chat_system_prompt(system_prompt),
-        checkpoints_enabled=is_truthy_value(_tui_env("CHECKPOINTS")),
-        pass_session_id=is_truthy_value(_tui_env("PASS_SESSION_ID")),
-        skip_context_files=is_truthy_value(_runtime_env("IGNORE_RULES")),
-        skip_memory=is_truthy_value(_runtime_env("IGNORE_RULES")),
-        **_agent_cbs(sid),
+    return build_desk_agent(
+        _load_cfg(), overrides=_desk_launch_overrides(),
+        session_id=session_id or key, session_db=_get_db(), callbacks=_agent_cbs(sid),
+        warn=lambda message: print(f"[tui] {message}", file=sys.stderr, flush=True),
     )
 
-
-def _init_session(sid: str, key: str, agent, history: list, cols: int = 80):
-    _sessions[sid] = {
+def _init_session(sid: str, key: str, agent, history: list, cols: int = 80, *, pending_handoff: bool = False):
+    _host.sessions.register(sid, {
         "agent": agent,
         "session_key": key,
         "history": history,
         "history_lock": threading.Lock(),
         "history_version": 0,
-        "running": False,
+        "running": pending_handoff,
+        "_replacing": pending_handoff,
         "attached_images": [],
         "image_counter": 0,
         "cols": cols,
-        "slash_worker": None,
         "show_reasoning": _load_show_reasoning(),
         "tool_progress_mode": _load_tool_progress_mode(),
         "edit_snapshots": {},
@@ -2682,14 +2300,7 @@ def _init_session(sid: str, key: str, agent, history: list, cols: int = 80):
         # Pin async event emissions to whichever transport created the
         # session (stdio for Ink, JSON-RPC WS for the dashboard sidebar).
         "transport": current_transport() or _stdio_transport,
-    }
-    try:
-        _sessions[sid]["slash_worker"] = _SlashWorker(
-            key, getattr(agent, "model", _resolve_model())
-        )
-    except Exception:
-        # Defer hard-failure to slash.exec; chat still works without slash worker.
-        _sessions[sid]["slash_worker"] = None
+    })
     try:
         from tools.approval import register_gateway_notify, load_permanent_allowlist
 
@@ -2711,7 +2322,7 @@ def _init_session(sid: str, key: str, agent, history: list, cols: int = 80):
         # session startup resilient).
         pass
     _wire_callbacks(sid)
-    _sessions[sid]["_notif_stop"] = _start_notification_poller(sid, _sessions[sid])
+    _host.sessions[sid]["_notif_stop"] = _start_notification_poller(sid, _host.sessions[sid])
     _notify_session_boundary("on_session_reset", key)
     _emit("session.info", sid, _session_info(agent))
 
@@ -2853,7 +2464,7 @@ def _(rid, params: dict) -> dict:
 
     ready = threading.Event()
 
-    _sessions[sid] = {
+    _host.sessions.register(sid, {
         "agent": None,
         "agent_error": None,
         "agent_ready": ready,
@@ -2868,30 +2479,32 @@ def _(rid, params: dict) -> dict:
         "running": False,
         "session_key": key,
         "show_reasoning": _load_show_reasoning(),
-        "slash_worker": None,
         "tool_progress_mode": _load_tool_progress_mode(),
         "tool_started_at": {},
         "transport": current_transport() or _stdio_transport,
-    }
+    })
 
     # Return the lightweight session immediately so Ink can paint the composer
     # + skeleton panel, then build the real AIAgent just after this response is
     # flushed.  This keeps startup responsive while still hydrating tools/skills
     # without requiring the user to submit a first prompt.
     def _deferred_build() -> None:
-        session = _sessions.get(sid)
+        session = _host.sessions.get(sid)
         if session is not None:
             _start_agent_build(sid, session)
 
-    build_timer = threading.Timer(0.05, _deferred_build)
-    build_timer.daemon = True
-    build_timer.start()
+    def delayed_build() -> None:
+        time.sleep(0.05)
+        if not _host.workers.stopping:
+            _deferred_build()
+    _host.workers.start(delayed_build, name="forecast-deferred-build")
 
     return _ok(
         rid,
         {
             "session_id": sid,
             "info": {
+                "durable_session_id": key,
                 "model": _resolve_model(),
                 "tools": {},
                 "skills": {},
@@ -2909,32 +2522,17 @@ def _(rid, params: dict) -> dict:
     if db is None:
         return _db_unavailable_error(rid, code=5006)
     try:
-        # Resume picker should surface human forecast sessions from every
-        # user-facing surface — CLI, TUI, all gateway platforms (including new
-        # ones not enumerated here), ACP adapter clients, webhook sessions,
-        # custom `HERMES_SESSION_SOURCE` values, and older installs with
-        # different source labels. We deny-list only the noisy internal
-        # sources (``tool`` sub-agent runs) rather than allow-listing a
-        # fixed set of platform names that goes stale whenever a new
-        # platform is added or a user names their own source.
-        deny = frozenset({"tool"})
+        from superforecasting_agent.application.sessions import list_resumable_sessions
 
-        limit = int(params.get("limit", 200) or 200)
-        # Over-fetch modestly so per-source filtering doesn't leave us
-        # short; the compression-tip projection in ``list_sessions_rich``
-        # can also merge rows.
-        fetch_limit = max(limit * 2, 200)
+        limit = params.get("limit", 200)
+        if limit is None:
+            limit = 200
         active_keys = {
             session.get("session_key")
-            for session in list(_sessions.values())
+            for session in list(_host.sessions.values())
             if session.get("session_key")
         }
-        rows = [
-            s
-            for s in db.list_sessions_rich(source=None, limit=fetch_limit)
-            if (s.get("source") or "").strip().lower() not in deny
-            and s.get("id") not in active_keys
-        ][:limit]
+        rows = list_resumable_sessions(db, limit=limit, exclude_ids=active_keys)
         return _ok(
             rid,
             {
@@ -2951,6 +2549,8 @@ def _(rid, params: dict) -> dict:
                 ]
             },
         )
+    except ValueError as e:
+        return _err(rid, 4003, str(e))
     except Exception as e:
         return _err(rid, 5006, str(e))
 
@@ -2965,32 +2565,22 @@ def _(rid, params: dict) -> dict:
     for any CLI tooling that wants "latest session" without paginating
     the full list.
 
-    Contract: a ``{"session_id": null}`` result means "no eligible
-    session found right now".  Errors are also folded into that
-    null-result shape (and logged) so callers don't have to special-
-    case JSON-RPC error envelopes for what is a normal "no answer".
+    A null session_id means the durable query found no eligible conversation.
+    Storage failures remain errors so clients cannot mistake them for empty
+    history and silently start a replacement session.
     """
     db = _get_db()
     if db is None:
-        return _ok(rid, {"session_id": None})
+        return _db_unavailable_error(rid, code=5006)
     try:
-        deny = frozenset({"tool"})
-        # Over-fetch by a generous bounded amount so heavy sub-agent
-        # users (lots of recent ``tool`` rows) don't get a false
-        # "no eligible session" answer.  ``session.list`` uses a
-        # similar over-fetch strategy.
-        rows = db.list_sessions_rich(source=None, limit=200)
+        from superforecasting_agent.application.sessions import list_resumable_sessions
+
         active_keys = {
             session.get("session_key")
-            for session in list(_sessions.values())
+            for session in list(_host.sessions.values())
             if session.get("session_key")
         }
-        for row in rows:
-            src = (row.get("source") or "").strip().lower()
-            if src in deny:
-                continue
-            if row.get("id") in active_keys:
-                continue
+        for row in list_resumable_sessions(db, limit=1, exclude_ids=active_keys):
             return _ok(
                 rid,
                 {
@@ -3001,9 +2591,9 @@ def _(rid, params: dict) -> dict:
                 },
             )
         return _ok(rid, {"session_id": None})
-    except Exception:
+    except Exception as exc:
         logger.exception("session.most_recent failed")
-        return _ok(rid, {"session_id": None})
+        return _err(rid, 5006, f"session history unavailable: {exc}")
 
 
 @rpc_validated("session.resume")
@@ -3021,11 +2611,11 @@ def _(rid, params: dict) -> dict:
             target = found["id"]
         else:
             return _err(rid, 4007, "session not found")
-    with _session_resume_lock:
+    with _host.sessions.lock:
         replace_sid = str(params.get("replace_session_id") or "").strip()
-        replace_session = _sessions.get(replace_sid) if replace_sid else None
+        replace_session = _host.sessions.get(replace_sid) if replace_sid else None
         try:
-            live_sessions = list(_sessions.items())
+            live_sessions = list(_host.sessions.items())
         except RuntimeError:
             return _err(rid, 5000, "session registry changed during resume; retry")
         active_sid = next(
@@ -3038,12 +2628,18 @@ def _(rid, params: dict) -> dict:
         )
         if active_sid is not None:
             return _err(rid, 4010, "session is already active")
+        recovery = _turn_recovery(db, target, recover=True)
+        if recovery and recovery.get("owner_active"):
+            return _err(rid, 4010, "session turn is still owned by a running gateway")
+        sid = uuid.uuid4().hex[:8]
+        if sid in _host.sessions:
+            return _err(rid, 5000, "runtime session identifier collision; retry")
         if replace_session:
             replace_lock = replace_session.get("history_lock")
             if replace_lock is None:
                 replace_lock = contextlib.nullcontext()
             with replace_lock:
-                if replace_session.get("running"):
+                if in_use(replace_session) or replace_session.get("_closing") or replace_session.get("_cleanup_pending"):
                     return _err(
                         rid,
                         4009,
@@ -3052,7 +2648,6 @@ def _(rid, params: dict) -> dict:
                 # Reserve the old runtime so prompt/notification dispatch cannot
                 # start work while its replacement is being constructed.
                 replace_session["running"] = True
-        sid = uuid.uuid4().hex[:8]
         _enable_gateway_prompts()
         try:
             history = db.get_messages_as_conversation(target)
@@ -3065,25 +2660,25 @@ def _(rid, params: dict) -> dict:
                 agent = _make_agent(sid, target, session_id=target)
             finally:
                 _clear_session_context(tokens)
-            _init_session(sid, target, agent, history, cols=int(params.get("cols", 80)))
+            _init_session(sid, target, agent, history, cols=int(params.get("cols", 80)), pending_handoff=True)
             db.reopen_session(target)
+            if replace_sid and replace_sid != sid:
+                _close_runtime_session(replace_sid, reserved=True)
         except Exception as e:
             try:
-                _close_runtime_session(sid, mark_ended=False)
+                _close_runtime_session(sid, mark_ended=False, reserved=True)
             except Exception:
                 logger.exception("failed to roll back partial resumed session %s", sid)
-            if replace_session and _sessions.get(replace_sid) is replace_session:
+            if replace_session and _host.sessions.get(replace_sid) is replace_session:
                 replace_lock = replace_session.get("history_lock")
                 if replace_lock is None:
                     replace_lock = contextlib.nullcontext()
                 with replace_lock:
                     replace_session["running"] = False
             return _err(rid, 5000, f"resume failed: {e}")
-        if replace_sid and replace_sid != sid:
-            try:
-                _close_runtime_session(replace_sid)
-            except Exception:
-                logger.exception("failed to close replaced session %s", replace_sid)
+        with _host.sessions[sid]["history_lock"]:
+            _host.sessions[sid]["_replacing"] = False
+            _host.sessions[sid]["running"] = False
         return _ok(
             rid,
             {
@@ -3092,6 +2687,7 @@ def _(rid, params: dict) -> dict:
                 "message_count": len(messages),
                 "messages": messages,
                 "info": _session_info(agent),
+                "recovery": recovery,
             },
         )
 
@@ -3116,12 +2712,12 @@ def _(rid, params: dict) -> dict:
     # Block deletion of any session currently bound to a live TUI session
     # in this process.  The picker hides the active session anyway, but a
     # racing caller could still target it.  Snapshot via ``list(...)``
-    # because ``_sessions`` is mutated by concurrent RPCs on the thread
+    # because ``_host.sessions`` is mutated by concurrent RPCs on the thread
     # pool — iterating the dict directly can raise ``RuntimeError:
     # dictionary changed size during iteration``.  If even the snapshot
     # raises, fail closed (refuse the delete) rather than fail open.
     try:
-        snapshot = list(_sessions.values())
+        snapshot = list(_host.sessions.values())
     except Exception as e:
         return _err(rid, 5036, f"could not enumerate active forecast sessions: {e}")
     active = {s.get("session_key") for s in snapshot if s.get("session_key")}
@@ -3147,53 +2743,25 @@ def _(rid, params: dict) -> dict:
         return _db_unavailable_error(rid, code=5007)
     key = session["session_key"]
     if "title" not in params:
-        fallback = session.get("pending_title") or ""
+        from superforecasting_agent.application.sessions import reconcile_session_title
+
         try:
-            resolved_title = db.get_session_title(key) or ""
-            if fallback:
-                if db.set_session_title(key, fallback):
-                    session["pending_title"] = None
-                    resolved_title = fallback
-                else:
-                    existing_row = db.get_session(key)
-                    existing_title = ((existing_row or {}).get("title") or "").strip()
-                    if existing_title == fallback:
-                        session["pending_title"] = None
-                        resolved_title = fallback
-                    elif not resolved_title:
-                        resolved_title = fallback
-            elif resolved_title:
-                session["pending_title"] = None
-        except Exception:
-            resolved_title = fallback
-        return _ok(
-            rid,
-            {
-                "title": resolved_title,
-                "session_key": key,
-            },
-        )
+            title, pending = reconcile_session_title(db, key, session.get("pending_title"))
+            session["pending_title"] = title if pending else None
+            return _ok(rid, {"title": title, "session_key": key})
+        except ValueError as exc:
+            return _err(rid, 4022, str(exc))
+        except Exception as exc:
+            return _err(rid, 5007, str(exc))
     title = (params.get("title", "") or "").strip()
     if not title:
         return _err(rid, 4021, "title required")
     try:
-        if db.set_session_title(key, title):
-            session["pending_title"] = None
-            return _ok(rid, {"pending": False, "title": title})
-        # rowcount == 0 can mean "same value" as well as "missing row".
-        # Queue only when the session row truly does not exist yet.
-        existing_row = db.get_session(key)
-        if existing_row:
-            session["pending_title"] = None
-            return _ok(
-                rid,
-                {
-                    "pending": False,
-                    "title": (existing_row.get("title") or title),
-                },
-            )
-        session["pending_title"] = title
-        return _ok(rid, {"pending": True, "title": title})
+        from superforecasting_agent.application.sessions import set_session_title
+
+        title, pending = set_session_title(db, key, title)
+        session["pending_title"] = title if pending else None
+        return _ok(rid, {"pending": pending, "title": title})
     except ValueError as e:
         return _err(rid, 4022, str(e))
     except Exception as e:
@@ -3270,7 +2838,11 @@ def _(rid, params: dict) -> dict:
             f"Agent Running: {'Yes' if session.get('running') else 'No'}",
         ]
     )
-    return _ok(rid, {"output": "\n".join(lines)})
+    from superforecasting_agent.storage import turns as turn_journal
+    recovery = _turn_recovery(db, key) if db is not None else None
+    if isinstance(recovery, dict):
+        lines.append(f"Durable turn: {recovery['status']}")
+    return _ok(rid, {"output": "\n".join(lines), "recovery": recovery})
 
 
 # The warning-automode background job + the generic jobs.* runtime RPCs live in
@@ -3315,30 +2887,20 @@ def _(rid, params: dict) -> dict:
 
 @rpc_validated("session.undo")
 def _(rid, params: dict) -> dict:
-    session, err = _sess(params, rid)
+    session, err = _sess_nowait(params, rid)
     if err:
         return err
-    # Reject during an in-flight turn.  If we mutated history while
-    # the agent thread is running, prompt.submit's post-run history
-    # write would either clobber the undo (version matches) or
-    # silently drop the agent's output (version mismatch, see below).
-    # Neither is what the user wants — make them /interrupt first.
-    if session.get("running"):
-        return _err(
-            rid, 4009, "session busy — /interrupt the current turn before /undo"
-        )
-    removed = 0
+    from superforecasting_agent.application.history import prepare_undo
+
     with session["history_lock"]:
-        history = session.get("history", [])
-        while history and history[-1].get("role") in {"assistant", "tool"}:
-            history.pop()
-            removed += 1
-        if history and history[-1].get("role") == "user":
-            history.pop()
-            removed += 1
-        if removed:
+        # Admission and mutation share the same lock as prompt submission.
+        if session.get("running"):
+            return _err(rid, 4009, "session busy — /interrupt the current turn before /undo")
+        plan = prepare_undo(session.get("history", []))
+        if plan is not None:
+            session["history"] = plan.history
             session["history_version"] = int(session.get("history_version", 0)) + 1
-    return _ok(rid, {"removed": removed})
+    return _ok(rid, {"removed": plan.removed if plan is not None else 0})
 
 
 @rpc_validated("session.compress")
@@ -3439,69 +3001,69 @@ def _(rid, params: dict) -> dict:
 
 @rpc_validated("session.save")
 def _(rid, params: dict) -> dict:
-    session, err = _sess(params, rid)
+    session, err = _sess_nowait(params, rid)
     if err:
         return err
-    import time as _time
+    from superforecasting_agent.storage.transcripts import save_transcript
 
-    saved_dir = _hermes_home / "sessions" / "saved"
-    filename = saved_dir / f"forecast_transcript_{_time.strftime('%Y%m%d_%H%M%S')}.json"
     try:
-        saved_dir.mkdir(parents=True, exist_ok=True)
-        with open(filename, "w", encoding="utf-8") as f:
-            json.dump(
-                {
-                    "model": getattr(session["agent"], "model", ""),
-                    "session_id": params.get("session_id", ""),
-                    "session_key": session.get("session_key", ""),
-                    "messages": session.get("history", []),
-                },
-                f,
-                indent=2,
-                ensure_ascii=False,
-            )
+        with session["history_lock"]:
+            history = copy.deepcopy(session.get("history", []))
+            model = getattr(session.get("agent"), "model", "")
+        filename = save_transcript(
+            _hermes_home, messages=history, model=model,
+            session_id=params.get("session_id", ""),
+            session_key=session.get("session_key", ""),
+        )
         return _ok(rid, {"file": str(filename)})
     except Exception as e:
         return _err(rid, 5011, str(e))
 
 
-def _close_runtime_session(sid: str, *, mark_ended: bool = True) -> bool:
-    session = _sessions.pop(sid, None)
-    if not session:
+def _close_runtime_session(sid: str, *, mark_ended: bool = True, reserved: bool = False, drained: bool = False) -> bool:
+    def finish(session: dict) -> None:
+        _finalize_session(session, mark_ended=mark_ended)
+
+        def release_notifications() -> None:
+            from tools.approval import unregister_gateway_notify
+
+            unregister_gateway_notify(session["session_key"])
+
+        dispose_session(session, release_notifications=release_notifications)
+
+    session = _host.sessions.retire(sid, finish, reserved=reserved, drained=drained)
+    if session is None:
         return False
     _session_toggles.pop(session.get("session_key", ""), None)
-    try:
-        _finalize_session(session, mark_ended=mark_ended)
-    except Exception:
-        logger.exception("failed to finalize runtime session %s", sid)
-    try:
-        from tools.approval import unregister_gateway_notify
-
-        unregister_gateway_notify(session["session_key"])
-    except Exception:
-        pass
-    try:
-        agent = session.get("agent")
-        if agent and hasattr(agent, "close"):
-            agent.close()
-    except Exception:
-        pass
-    try:
-        worker = session.get("slash_worker")
-        if worker:
-            worker.close()
-    except Exception:
-        pass
     return True
 
 
 @rpc_validated("session.close")
 def _(rid, params: dict) -> dict:
-    return _ok(rid, {"closed": _close_runtime_session(params.get("session_id", ""))})
+    try:
+        return _ok(rid, {"closed": _close_runtime_session(params.get("session_id", ""))})
+    except SessionBusy:
+        raise
+    except Exception as exc:
+        logger.exception("session close failed; retained for retry")
+        return _err(rid, 5000, f"session close failed; retry: {exc}")
 
 
 @rpc_validated("session.branch")
 def _(rid, params: dict) -> dict:
+    return _branch_session(rid, params, replace_current=False)
+
+
+@rpc_validated("session.branch_replace")
+def _(rid, params: dict) -> dict:
+    session, err = _sess_nowait(params, rid)
+    if err:
+        return err
+    with replacement(session):
+        return _branch_session(rid, params, replace_current=True)
+
+
+def _branch_session(rid, params: dict, *, replace_current: bool) -> dict:
     session, err = _sess(params, rid)
     if err:
         return err
@@ -3514,50 +3076,55 @@ def _(rid, params: dict) -> dict:
     if not history:
         return _err(rid, 4008, "nothing to branch — send a forecast note first")
     new_key = _new_session_key()
-    branch_name = params.get("name", "")
-    try:
-        if branch_name:
-            title = branch_name
-        else:
-            current = db.get_session_title(old_key) or "branch"
-            title = (
-                db.get_next_title_in_lineage(current)
-                if hasattr(db, "get_next_title_in_lineage")
-                else f"{current} (branch)"
-            )
-        db.create_session(
-            new_key, source="tui", model=_resolve_model(), parent_session_id=old_key
-        )
-        for msg in history:
-            db.append_message(
-                session_id=new_key,
-                role=msg.get("role", "user"),
-                content=msg.get("content"),
-            )
-        db.set_session_title(new_key, title)
-    except Exception as e:
-        return _err(rid, 5008, f"branch failed: {e}")
     new_sid = uuid.uuid4().hex[:8]
+    created = False
+    agent = None
     try:
+        from superforecasting_agent.application.sessions import branch_session
+        title = branch_session(
+            db, session_id=new_key, parent_session_id=old_key, history=history,
+            name=params.get("name", ""), source="tui", model=_resolve_model(),
+        )
+        created = True
         tokens = _set_session_context(new_key)
         try:
             agent = _make_agent(new_sid, new_key, session_id=new_key)
         finally:
             _clear_session_context(tokens)
-        _init_session(
-            new_sid, new_key, agent, list(history), cols=session.get("cols", 80)
-        )
-    except Exception as e:
-        return _err(rid, 5000, f"agent init failed on branch: {e}")
+        _init_session(new_sid, new_key, agent, list(history), cols=session.get("cols", 80), pending_handoff=replace_current)
+        if replace_current:
+            _close_runtime_session(params["session_id"], reserved=True)
+    except Exception as exc:
+        cleanup_error = ""
+        try:
+            if (_host.sessions.get(new_sid) or {}).get("session_key") == new_key:
+                _close_runtime_session(new_sid, mark_ended=False, reserved=replace_current)
+            elif agent is not None:
+                agent.close()
+            if created:
+                db.delete_session(new_key)
+        except Exception as cleanup_exc:
+            logger.exception("failed to roll back branch %s", new_key)
+            cleanup_error = f"; branch cleanup failed: {cleanup_exc}"
+        return _err(rid, 5008, f"branch failed: {exc}{cleanup_error}")
+    if replace_current:
+        with _host.sessions[new_sid]["history_lock"]:
+            _host.sessions[new_sid]["_replacing"] = False
+            _host.sessions[new_sid]["running"] = False
     return _ok(rid, {"session_id": new_sid, "title": title, "parent": old_key})
 
 
 @rpc_validated("session.interrupt")
 def _(rid, params: dict) -> dict:
-    session, err = _sess(params, rid)
+    session, err = _sess_nowait(params, rid)
     if err:
         return err
-    if hasattr(session["agent"], "interrupt"):
+    session["cancel_requested"] = True
+    commands_pending = _host.interrupt_commands(session)
+    if session.get("turn_id"):
+        from superforecasting_agent.storage import turns as turn_journal
+        turn_journal.transition(_get_db(), session["turn_id"], "cancelling")
+    if hasattr(session.get("agent"), "interrupt"):
         session["agent"].interrupt()
     # Scope the pending-prompt release to THIS session.  A global
     # _clear_pending() would collaterally cancel clarify/sudo/secret
@@ -3570,7 +3137,7 @@ def _(rid, params: dict) -> dict:
         resolve_gateway_approval(session["session_key"], "deny", resolve_all=True)
     except Exception:
         pass
-    return _ok(rid, {"status": "interrupted"})
+    return _ok(rid, {"status": "cancelling" if session.get("running") or commands_pending else "interrupted"})
 
 
 # ── Delegation: subagent tree observability + controls ───────────────
@@ -3679,17 +3246,49 @@ def _(rid, params: dict) -> dict:
 # ── Methods: prompt ──────────────────────────────────────────────────
 
 
+def _handoff_admission_error(rid, session):
+    if session.get("handoff_reserved"):
+        return _err(rid, 4009, "session handoff is being prepared")
+    from superforecasting_agent.application.handoff import require_local_turn
+    try:
+        db = _get_db()
+        if db is None:
+            if session.get("handoff_attempt"):
+                return _err(rid, 5030, "Cannot verify handoff without session storage")
+            return None
+        require_local_turn(db, session["session_key"], session.get("handoff_attempt"))
+    except ValueError as exc:
+        return _err(rid, 4009, str(exc))
+    except Exception as exc:
+        return _err(rid, 5030, f"Cannot verify handoff state: {exc}")
+    return None
+
+
 @rpc_validated("prompt.submit")
 def _(rid, params: dict) -> dict:
     sid, text = params.get("session_id", ""), params.get("text", "")
     session, err = _sess_nowait(params, rid)
     if err:
         return err
+    err = _handoff_admission_error(rid, session)
+    if err:
+        return err
     with session["history_lock"]:
+        if session.get("handoff_complete"):
+            return _err(rid, 4009, "session handed off; use /new or explicitly /resume before continuing")
         if session.get("running"):
             return _err(rid, 4009, "session busy")
         session["running"] = True
 
+    try:
+        from superforecasting_agent.storage import turns as turn_journal
+        db = _get_db()
+        session["turn_id"] = turn_journal.start(db, session["session_key"], text) if db is not None else None
+    except Exception as exc:
+        with session["history_lock"]:
+            session["running"] = False
+        return _err(rid, 5000, f"Cannot preserve turn for recovery: {exc}")
+    session["cancel_requested"] = False
     _start_agent_build(sid, session)
 
     def run_after_agent_ready() -> None:
@@ -3707,141 +3306,52 @@ def _(rid, params: dict) -> dict:
             with session["history_lock"]:
                 session["running"] = False
             return
+        if session.get("cancel_requested"):
+            _emit("message.complete", sid, {"text": "", "status": "interrupted", "usage": {}})
+            with session["history_lock"]:
+                session["running"] = False
+            return
         _run_prompt_submit(rid, sid, session, text)
 
-    threading.Thread(target=run_after_agent_ready, daemon=True).start()
+    _host.workers.start(run_after_agent_ready, name="forecast-agent-ready")
     return _ok(rid, {"status": "streaming"})
 
 
-# How many times a foreign async-delegation completion may bounce between session
-# pollers before the next poller takes it as an orphan (originating session gone) —
-# so a background result is routed to the right session, but NEVER silently lost.
-_MAX_ASYNC_ROUTE_ATTEMPTS = 200
-
-
 def _route_async_completion(evt: dict, my_session_key: str | None) -> str:
-    """Decide whether THIS session's poller should CONSUME an async-delegation
-    completion event or REQUEUE it for the originating session's poller. Pure +
-    unit-testable. An async event carries ``session_key`` (the session that dispatched
-    it); only that session's poller may consume it — otherwise a background subagent's
-    result surfaces in the WRONG session's chat on a multi-session gateway. A
-    session-less event (CLI single-session) or a non-async event is always consumed; a
-    foreign event that no live session claims after _MAX_ASYNC_ROUTE_ATTEMPTS bounces
-    is consumed as an orphan rather than dropped."""
-    if evt.get("type") != "async_delegation":
-        return "consume"
-    evt_key = evt.get("session_key") or ""
-    if not evt_key or evt_key == (my_session_key or ""):
-        return "consume"
-    attempts = int(evt.get("_route_attempts", 0) or 0) + 1
-    evt["_route_attempts"] = attempts
-    return "consume" if attempts > _MAX_ASYNC_ROUTE_ATTEMPTS else "requeue"
+    """Compatibility name for shared host notification ownership policy."""
+    from superforecasting_agent.hosting.notifications import route_notification
+
+    return route_notification(evt, my_session_key)
 
 
 def _notification_poller_loop(
     stop_event: threading.Event, sid: str, session: dict
 ) -> None:
-    """Poll completion_queue and dispatch notifications autonomously.
-
-    Runs in a daemon thread started by _init_session(). Emits a
-    status.update (kind=process) for user visibility, then chains an
-    agent turn via _run_prompt_submit if the session is idle.
-
-    NOTE: The completion_queue is global (one per process). If multiple
-    TUI sessions coexist, whichever poller wakes first grabs the event,
-    even if the process was started by a different session. This matches
-    CLI/gateway behavior (single session per process).
-    """
+    """Adapt host notification admission to RPC events and turn submission."""
+    from superforecasting_agent.hosting.notifications import poll_notifications
     from tools.process_registry import process_registry, format_process_notification
 
-    while not stop_event.is_set() and not session.get("_finalized"):
-        try:
-            evt = process_registry.completion_queue.get(timeout=0.5)
-        except Exception:
-            continue
-
-        _evt_sid = evt.get("session_id", "")
-        if evt.get("type") == "completion" and process_registry.is_completion_consumed(_evt_sid):
-            continue
-
-        # Route async-delegation completions back to the session that dispatched them
-        # (not first-poller-wins) so a background subagent's result can't surface in
-        # the wrong session's chat on a multi-session gateway.
-        if _route_async_completion(evt, session.get("session_key")) == "requeue":
-            process_registry.completion_queue.put(evt)
-            time.sleep(0.02)  # let the originating session's poller pick it up
-            continue
-
-        text = format_process_notification(evt)
-        if not text:
-            continue
-
-        _emit("status.update", sid, {"kind": "process", "text": text})
-
-        with session["history_lock"]:
-            if session.get("running"):
-                process_registry.completion_queue.put(evt)
-                continue
-            session["running"] = True
-
+    def dispatch(text: str) -> None:
         rid = f"__notif__{int(time.time() * 1000)}"
         try:
-            _emit("message.start", sid)
-            _run_prompt_submit(rid, sid, session, text)
-        except Exception as exc:
-            print(
-                f"[tui_gateway] notification poller dispatch failed: "
-                f"{type(exc).__name__}: {exc}",
-                file=sys.stderr,
-            )
-            with session["history_lock"]:
-                session["running"] = False
-
-    # Drain any remaining events after stop signal (process all pending
-    # before exiting so nothing is lost on shutdown).
-    while not process_registry.completion_queue.empty():
-        try:
-            evt = process_registry.completion_queue.get_nowait()
+            _emit("status.update", sid, {"kind": "process", "text": text})
         except Exception:
-            break
-        _evt_sid = evt.get("session_id", "")
-        if evt.get("type") == "completion" and process_registry.is_completion_consumed(_evt_sid):
-            continue
-        text = format_process_notification(evt)
-        if not text:
-            continue
+            logger.exception("Notification status display failed")
+        _run_prompt_submit(rid, sid, session, text)
 
-        _emit("status.update", sid, {"kind": "process", "text": text})
-
-        with session["history_lock"]:
-            if session.get("running"):
-                process_registry.completion_queue.put(evt)
-                break
-            session["running"] = True
-
-        rid = f"__notif__{int(time.time() * 1000)}"
-        try:
-            _emit("message.start", sid)
-            _run_prompt_submit(rid, sid, session, text)
-        except Exception as exc:
-            print(
-                f"[tui_gateway] notification poller dispatch failed: "
-                f"{type(exc).__name__}: {exc}",
-                file=sys.stderr,
-            )
-            with session["history_lock"]:
-                session["running"] = False
+    poll_notifications(
+        stop_event, session, process_registry.completion_queue,
+        consumed=process_registry.is_completion_consumed,
+        format_event=format_process_notification,
+        host_stopping=lambda: _host.workers.stopping,
+        dispatch=dispatch,
+    )
 
 
 def _start_notification_poller(sid: str, session: dict) -> threading.Event:
     """Start the background notification poller for a TUI session."""
     stop = threading.Event()
-    t = threading.Thread(
-        target=_notification_poller_loop,
-        args=(stop, sid, session),
-        daemon=True,
-    )
-    t.start()
+    _host.workers.start(lambda: _notification_poller_loop(stop, sid, session), name="forecast-notifications")
     return stop
 
 
@@ -3852,6 +3362,14 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
         images = list(session.get("attached_images", []))
         session["attached_images"] = []
     agent = session["agent"]
+    from superforecasting_agent.storage import turns as turn_journal
+    db = _get_db()
+    if db is not None:
+        receipt = _turn_recovery(db, session["session_key"])
+        if not session.get("turn_id") or not receipt or receipt["status"] in turn_journal.TERMINAL:
+            session["turn_id"] = turn_journal.start(db, session["session_key"], text)
+    session["turn_persistence_unavailable"] = db is None
+    turn_id = session.get("turn_id")
     _emit("message.start", sid)
 
     def run():
@@ -3957,7 +3475,7 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
                     run_message = _enrich_with_attached_images(prompt, images)
 
             def _stream(delta):
-                payload = {"text": delta}
+                payload = {"text": delta, "turn_id": turn_id}
                 if streamer and (r := streamer.feed(delta)) is not None:
                     payload["rendered"] = r
                 _emit("message.delta", sid, payload)
@@ -4000,11 +3518,10 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
                 # If auto-compression fired inside run_conversation(), agent.session_id
                 # may have rotated. Sync session_key before downstream title/goal/finalize
                 # handling uses it. Preserve pending_title (user intent) so it can be
-                # applied to the continuation. Restart slash worker so subsequent
-                # worker-backed commands (/title etc.) target the live session.
+                # applied to the continuation and later commands target the live session.
                 # Fix for #20001.
                 _sync_session_key_after_compress(
-                    sid, session, clear_pending_title=False, restart_slash_worker=True,
+                    sid, session, clear_pending_title=False,
                 )
 
                 raw = result.get("final_response", "")
@@ -4032,7 +3549,7 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
                 raw = str(result)
                 status = "complete"
 
-            payload = {"text": raw, "usage": _get_usage(agent), "status": status}
+            payload = {"text": raw, "usage": _get_usage(agent), "status": status, "turn_id": turn_id}
             if last_reasoning:
                 payload["reasoning"] = last_reasoning
             if status_note:
@@ -4058,12 +3575,13 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
                     if sid_key:
                         try:
                             goals_cfg = _load_cfg().get("goals") or {}
-                            goal_max_turns = int(goals_cfg.get("max_turns", 20) or 20)
+                            goal_max_turns = configured_goal_turn_budget(goals_cfg)
                         except Exception:
-                            goal_max_turns = 20
+                            goal_max_turns = configured_goal_turn_budget(None)
                         goal_mgr = GoalManager(
                             session_id=sid_key,
                             default_max_turns=goal_max_turns,
+                            database_provider=_get_db,
                         )
                         if goal_mgr.is_active():
                             decision = goal_mgr.evaluate_after_turn(
@@ -4143,14 +3661,12 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
                     from superforecasting_agent.runtime.voice import speak_text  # noqa: F401 — availability check
 
                     spoken = raw
-                    threading.Thread(
-                        target=_speak_with_status, args=(spoken, sid), daemon=True
-                    ).start()
+                    _host.workers.start(lambda: _speak_with_status(spoken, sid), name="forecast-speech")
                 except ImportError:
                     logger.warning("voice TTS skipped: superforecasting_agent.runtime.voice unavailable")
                 except Exception as e:
                     logger.warning("voice TTS dispatch failed: %s", e)
-        except Exception as e:
+        except BaseException as e:
             import traceback
 
             trace = traceback.format_exc()
@@ -4167,7 +3683,7 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
             print(
                 f"[gateway-turn] {type(e).__name__}: {e}", file=sys.stderr, flush=True
             )
-            _emit("error", sid, {"message": str(e)})
+            _emit("error", sid, {"message": str(e), "turn_id": turn_id})
         finally:
             try:
                 if approval_token is not None:
@@ -4233,7 +3749,7 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
                 file=sys.stderr,
             )
 
-    threading.Thread(target=run, daemon=True).start()
+    _host.workers.start(run, name="forecast-turn")
 
 
 @rpc_validated("clipboard.paste")
@@ -4372,47 +3888,42 @@ def _(rid, params: dict) -> dict:
 
 @rpc_validated("prompt.background")
 def _(rid, params: dict) -> dict:
+    session, err = _sess_nowait(params, rid)
+    if err:
+        return err
+    err = _handoff_admission_error(rid, session)
+    if err:
+        return err
     session, err = _sess(params, rid)
     if err:
         return err
     text, parent = params.get("text", ""), params.get("session_id", "")
     if not text:
         return _err(rid, 4012, "text required")
-    task_id = f"bg_{uuid.uuid4().hex[:6]}"
+    task_id = f"bg_{uuid.uuid4().hex}"
+    from superforecasting_agent.hosting.background import start_background
 
-    def run():
-        session_tokens = _set_session_context(task_id)
+    @contextlib.contextmanager
+    def scope():
+        from tools.approval import set_current_session_key, reset_current_session_key
+
+        owner = session["session_key"]
+        tokens = _set_session_context(owner)
         try:
-            from run_agent import AIAgent
-
-            result = AIAgent(
-                **_background_agent_kwargs(session["agent"], task_id)
-            ).run_conversation(
-                user_message=text,
-                task_id=task_id,
-            )
-            _emit(
-                "background.complete",
-                parent,
-                {
-                    "task_id": task_id,
-                    "text": (
-                        result.get("final_response", str(result))
-                        if isinstance(result, dict)
-                        else str(result)
-                    ),
-                },
-            )
-        except Exception as e:
-            _emit(
-                "background.complete",
-                parent,
-                {"task_id": task_id, "text": f"error: {e}"},
-            )
+            approval = set_current_session_key(owner)
+            try:
+                yield
+            finally:
+                reset_current_session_key(approval)
         finally:
-            _clear_session_context(session_tokens)
+            _clear_session_context(tokens)
 
-    threading.Thread(target=run, daemon=True).start()
+    start_background(
+        session, _host.workers, task_id=task_id, text=text,
+        options=lambda: _background_agent_kwargs(session["agent"], task_id),
+        scope=scope,
+        report=lambda output: _emit("background.complete", parent, {"task_id": task_id, "text": output}),
+    )
     return _ok(rid, {"task_id": task_id})
 
 
@@ -4518,7 +4029,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 4030, "llm.oneshot requires a template or instructions/input")
 
     # Optional: inherit the live session's model (no error if absent).
-    session = _sessions.get(params.get("session_id") or "")
+    session = _host.sessions.get(params.get("session_id") or "")
     main_runtime = _main_runtime_from_agent(session.get("agent")) if session else None
 
     try:
@@ -4551,7 +4062,7 @@ def _(rid, params: dict) -> dict:
 @rpc_validated("config.set")
 def _(rid, params: dict) -> dict:
     key, value = params.get("key", ""), params.get("value", "")
-    session = _sessions.get(params.get("session_id", ""))
+    session = _host.sessions.get(params.get("session_id", ""))
 
     if key == "model":
         try:
@@ -4592,20 +4103,13 @@ def _(rid, params: dict) -> dict:
         else:
             current_fast = _load_service_tier() == "priority"
 
-        if raw in {"status"}:
-            return _ok(
-                rid,
-                {"key": key, "value": "fast" if current_fast else "normal"},
-            )
-
-        if raw in {"", "toggle"}:
-            nv = "normal" if current_fast else "fast"
-        elif raw in {"fast", "on"}:
-            nv = "fast"
-        elif raw in {"normal", "off"}:
-            nv = "normal"
-        else:
-            return _err(rid, 4002, f"unknown fast mode: {value}")
+        from superforecasting_agent.constants import parse_fast_mode_command
+        try:
+            nv = parse_fast_mode_command(raw, current_fast=current_fast)
+        except ValueError as exc:
+            return _err(rid, 4002, str(exc))
+        if nv == "status":
+            return _ok(rid, {"key": key, "value": "fast" if current_fast else "normal"})
 
         overrides = None
         if nv == "fast":
@@ -4942,18 +4446,40 @@ def _(rid, params: dict) -> dict:
     key = params.get("key", "")
     if key == "provider":
         try:
-            from superforecasting_agent.runtime.models import list_available_providers, normalize_provider
+            from superforecasting_agent.configuration.provider_catalog import PROVIDER_LABELS
+            from superforecasting_agent.configuration.providers import (
+                PROVIDER_ALIASES,
+                configured_provider,
+            )
 
-            model = _resolve_model()
-            parts = model.split("/", 1)
+            cfg = _load_cfg()
+            if _host.configuration.last_error:
+                return _err(rid, 5013, "Cannot inspect provider: configuration could not be read")
+            overrides = _desk_launch_overrides()
+            # This is a configuration snapshot, not a login/refresh operation.
+            # Null is deliberate: configured material never proves usable access.
             return _ok(
                 rid,
                 {
-                    "model": model,
-                    "provider": (
-                        normalize_provider(parts[0]) if len(parts) > 1 else "unknown"
+                    "model": _resolve_model(cfg),
+                    "provider": configured_provider(
+                        cfg,
+                        override=overrides.get("provider", ""),
+                        environment=overrides.get("inference_provider", ""),
                     ),
-                    "providers": list_available_providers(),
+                    "authentication_status": "not_checked",
+                    "providers": [
+                        {
+                            "id": pid,
+                            "label": label,
+                            "aliases": [
+                                alias for alias, target in PROVIDER_ALIASES.items()
+                                if target == pid
+                            ],
+                            "authenticated": None,
+                        }
+                        for pid, label in PROVIDER_LABELS.items()
+                    ],
                 },
             )
         except Exception as e:
@@ -5004,7 +4530,7 @@ def _(rid, params: dict) -> dict:
             {
                 "value": (
                     "fast"
-                    if (session := _sessions.get(params.get("session_id", "")))
+                    if (session := _host.sessions.get(params.get("session_id", "")))
                     and getattr(session.get("agent"), "service_tier", None)
                     == "priority"
                     else ("fast" if _load_service_tier() == "priority" else "normal")
@@ -5085,17 +4611,23 @@ def _(rid, params: dict) -> dict:
 
 @rpc_validated("process.stop")
 def _(rid, params: dict) -> dict:
+    session, err = _sess_nowait(params, rid)
+    if err:
+        return err
+    session_key = session.get("session_key")
+    if not session_key:
+        return _err(rid, 4004, "session has no background-work owner")
     try:
         from tools.process_registry import process_registry
 
-        return _ok(rid, {"killed": process_registry.kill_all()})
+        return _ok(rid, {"killed": process_registry.kill_all(session_key=session_key)})
     except Exception as e:
         return _err(rid, 5010, str(e))
 
 
 @rpc_validated("reload.mcp")
 def _(rid, params: dict) -> dict:
-    session = _sessions.get(params.get("session_id", ""))
+    session = _host.sessions.get(params.get("session_id", ""))
     try:
         # Gate: /reload-mcp invalidates the prompt cache for this session.
         # Respect the ``approvals.mcp_reload_confirm`` config toggle — if
@@ -5148,9 +4680,7 @@ def _(rid, params: dict) -> dict:
         # Honor `always=true` by persisting the opt-out to config.
         if bool(params.get("always", False)):
             try:
-                from cli import save_config_value as _save_cfg
-
-                _save_cfg("approvals.mcp_reload_confirm", False)
+                _write_config_key("approvals.mcp_reload_confirm", False)
             except Exception as _exc:
                 logger.warning("Failed to persist mcp_reload_confirm=false: %s", _exc)
 
@@ -5196,21 +4726,19 @@ _TUI_EXTRA: list[tuple[str, str, str]] = [
     ("/mouse", "Toggle mouse/wheel tracking [on|off|toggle]", "TUI"),
 ]
 
-# Commands that queue messages onto _pending_input in the CLI.
-# In the TUI the slash worker subprocess has no reader for that queue,
-# so slash.exec rejects them → TUI falls through to command.dispatch.
+# Pending-input workflows are owned by command.dispatch; slash.exec hands off
+# before executing them so the client cannot repeat side effects.
 _PENDING_INPUT_COMMANDS: frozenset[str] = frozenset(
     {
         "retry",
         "queue",
         "q",
         "steer",
-        "plan",
         "goal",
+        "subgoal",
+        "learn",
     }
 )
-
-_WORKER_BLOCKED_COMMANDS: frozenset[str] = frozenset({"snapshot", "snap"})
 
 
 # ── Methods: paste ────────────────────────────────────────────────────
@@ -5527,7 +5055,7 @@ def _(rid, params: dict) -> dict:
     try:
         from superforecasting_agent.runtime.inventory import build_models_payload, load_picker_context
 
-        session = _sessions.get(params.get("session_id", ""))
+        session = _host.sessions.get(params.get("session_id", ""))
         agent = session.get("agent") if session else None
         # Layer agent-session state on top of disk config — once an agent
         # is spawned, IT owns the live provider/model/base_url. Empty
@@ -5586,7 +5114,9 @@ def _(rid, params: dict) -> dict:
     model.options entries) on success.
     """
     try:
-        from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY
+        from superforecasting_agent.configuration.authentication import (
+            PROVIDER_REGISTRY,
+        )
         from superforecasting_agent.runtime.config import is_managed, save_env_value
         from superforecasting_agent.runtime.inventory import build_models_payload, load_picker_context
 
@@ -5623,7 +5153,7 @@ def _(rid, params: dict) -> dict:
         # surface stays in lock-step with model.options + dashboard
         # /api/model/options. picker_hints=True ensures the returned row
         # carries `authenticated` for the TUI frontend.
-        session = _sessions.get(params.get("session_id", ""))
+        session = _host.sessions.get(params.get("session_id", ""))
         agent = session.get("agent") if session else None
         ctx = load_picker_context().with_overrides(
             current_provider=getattr(agent, "provider", "") if agent else "",
@@ -5663,54 +5193,38 @@ def _(rid, params: dict) -> dict:
 # which makes it fully drivable from the TUI: auth.start returns the
 # verification URL + user code immediately and polls in a background
 # thread; auth.poll reports pending/success/failure.
-_auth_flow_lock = threading.Lock()
-_auth_flow: dict = {}
+def _run_codex_device_poll(owner, attempt, grant) -> None:
+    from superforecasting_agent.runtime import codex_device_flow as flow
+    from superforecasting_agent.credentials.auth import _save_codex_tokens
 
-
-def _auth_flow_snapshot() -> dict:
-    with _auth_flow_lock:
-        return dict(_auth_flow)
-
-
-def _auth_flow_update(**fields) -> None:
-    with _auth_flow_lock:
-        _auth_flow.update(fields)
-
-
-def _run_codex_device_poll(grant, interval: int) -> None:
-    """Background poller: wait for the user to finish signing in, then
-    exchange + persist tokens. All terminal states land in _auth_flow."""
-    import time as _time
-
-    from superforecasting_agent.runtime import codex_device_flow as _flow
-
-    deadline = _time.monotonic() + _flow.DEVICE_FLOW_MAX_WAIT_SECONDS
-    try:
-        while _time.monotonic() < deadline:
-            snapshot = _auth_flow_snapshot()
-            if snapshot.get("cancelled"):
-                _auth_flow_update(status="cancelled", message="sign-in cancelled")
-                return
-            _time.sleep(interval)
-            result = _flow.poll_device_token_once(grant)
-            if result is None:
-                continue
-            creds = _flow.exchange_device_code(
-                result["authorization_code"], result["code_verifier"]
-            )
-            from superforecasting_agent.runtime.auth import _save_codex_tokens
-
-            _save_codex_tokens(creds["tokens"], creds.get("last_refresh"))
-            _auth_flow_update(status="success", message="signed in to OpenAI Codex")
-            return
-        _auth_flow_update(
-            status="failed", message="sign-in timed out after 15 minutes — run /auth again"
-        )
-    except Exception as e:  # AuthError or network failure — surface, don't crash
-        _auth_flow_update(status="failed", message=str(e))
+    owner.run(
+        attempt,
+        interval=grant.interval,
+        max_wait=flow.DEVICE_FLOW_MAX_WAIT_SECONDS,
+        poll=lambda: flow.poll_device_token_once(grant),
+        exchange=lambda result: flow.exchange_device_code(
+            result["authorization_code"], result["code_verifier"]
+        ),
+        persist=lambda credentials: _save_codex_tokens(
+            credentials["tokens"], credentials.get("last_refresh")
+        ),
+        success_message="signed in to OpenAI Codex",
+        timeout_message="sign-in timed out after 15 minutes — run /auth again",
+    )
 
 
 def _refresh_agent_credentials_after_auth(sid: str, provider: str) -> bool:
+    session = _host.sessions.get(sid or "")
+    if session is None:
+        return False
+    try:
+        with use_session(session):
+            return _refresh_session_credentials_after_auth(sid, provider)
+    except SessionBusy:
+        return False
+
+
+def _refresh_session_credentials_after_auth(sid: str, provider: str) -> bool:
     """Re-resolve *provider* credentials from disk and apply them to the live
     agent, so a fresh in-TUI sign-in takes effect WITHOUT a TUI restart.
 
@@ -5720,7 +5234,7 @@ def _refresh_agent_credentials_after_auth(sid: str, provider: str) -> bool:
     the process restarts. If the pre-auth agent build failed, it is reset and
     retried. Returns True when credentials were applied or a rebuild started.
     """
-    session = _sessions.get(sid or "")
+    session = _host.sessions.get(sid or "")
     if not session:
         return False
     # Don't mutate the agent mid-turn; the user just signed in interactively,
@@ -5728,62 +5242,40 @@ def _refresh_agent_credentials_after_auth(sid: str, provider: str) -> bool:
     # /model running-guard rather than risk a torn client swap.
     if session.get("running"):
         return False
-    agent = session.get("agent")
-    if not agent:
-        # A new TUI session starts building its agent shortly after the shell
-        # appears. When Codex is not authenticated yet that build completes
-        # with ``agent_error`` and ``agent_ready`` stays set. Merely writing
-        # fresh tokens cannot revive it: later prompts see the completed event
-        # and replay the cached pre-auth error. Reset the one-shot build state
-        # and retry against the credentials that were just persisted.
-        ready = session.get("agent_ready")
-        if ready is None:
-            return False
-        if session.get("agent_build_started") and not ready.is_set():
-            # Finish this recovery before auth.poll reports success. Otherwise
-            # an immediately submitted prompt can race the old failing build,
-            # observe its cached error, and miss the scheduled retry.
-            if not ready.wait(timeout=30.0):
-                return False
-            agent = session.get("agent")
-            if agent:
-                return _refresh_agent_credentials_after_auth(sid, provider)
-        if not session.get("agent_build_started"):
-            session["agent_error"] = None
-            _start_agent_build(sid, session)
-            return True
-        lock = session.setdefault("agent_build_lock", threading.Lock())
-        with lock:
-            current_ready = session.get("agent_ready")
-            if current_ready is None or not current_ready.is_set():
-                return False
-            session["agent_error"] = None
-            session["agent_ready"] = threading.Event()
-            session["agent_build_started"] = False
-        _start_agent_build(sid, session)
-        return True
-    current_provider = (getattr(agent, "provider", "") or "").strip()
-    # Only refresh when the agent is actually on the provider we re-authed
-    # (or an alias of it) — otherwise leave the agent's current creds alone.
-    codex_aliases = {"openai-codex", "openai", "codex"}
-    if provider == "openai-codex" and current_provider not in codex_aliases:
-        return False
+    from superforecasting_agent.hosting.builds import retry_build
+
+    def cleanup_failed_build():
+        # Keep each completed cleanup step across retries. Only a failed build
+        # uses these markers; normal session disposal has its own owner.
+        stop = session.get("_notif_stop")
+        if stop is not None:
+            stop.set()
+        if not session.get("_build_notifications_released"):
+            from tools.approval import unregister_gateway_notify
+            unregister_gateway_notify(session["session_key"])
+            session["_build_notifications_released"] = True
+        failed_agent = session.get("agent")
+        if failed_agent is not None:
+            failed_agent.close()
+            session["agent"] = None
+
     try:
+        status = retry_build(
+            session, cleanup=cleanup_failed_build,
+            start=lambda: _start_agent_build(sid, session),
+        )
+    except Exception as exc:
+        logger.warning("post-auth agent rebuild could not start: %s", exc)
+        return False
+    if status != "ready":
+        return status == "started"
+    agent = session.get("agent")
+    try:
+        from superforecasting_agent.hosting.credentials import refresh_credentials
         from superforecasting_agent.runtime.runtime_provider import resolve_runtime_provider
 
-        runtime = resolve_runtime_provider(requested=current_provider or provider)
-        agent.switch_model(
-            new_model=getattr(agent, "model", "") or "",
-            new_provider=runtime.get("provider", current_provider) or current_provider,
-            api_key=runtime.get("api_key", ""),
-            base_url=runtime.get("base_url", "") or "",
-            api_mode=runtime.get("api_mode", "") or "",
-        )
-        # switch_model replaces the client and scalar credential fields, but
-        # recovery also consults the pool captured when the agent was built.
-        # Replace that stale pre-auth pool with the freshly resolved one.
-        agent._credential_pool = runtime.get("credential_pool")
-        _restart_slash_worker(session)
+        if not refresh_credentials(agent, provider, resolve=resolve_runtime_provider):
+            return False
         _emit("session.info", sid, _session_info(agent))
         return True
     except Exception as e:  # never turn a successful sign-in into an error
@@ -5817,25 +5309,20 @@ def _(rid, params: dict) -> dict:
     except Exception as e:
         return _err(rid, 5035, str(e))
 
-    with _auth_flow_lock:
-        _auth_flow.clear()
-        _auth_flow.update(
-            {
-                "provider": provider,
-                "status": "pending",
-                "user_code": grant.user_code,
-                "url": grant.verification_url,
-                "cancelled": False,
-                "session_id": (params.get("session_id") or "").strip(),
-                "consumed": False,
-            }
+    owner = _host.sign_in
+    attempt = owner.begin(
+        provider=provider,
+        session_id=(params.get("session_id") or "").strip(),
+        user_code=grant.user_code,
+        url=grant.verification_url,
+    )
+    try:
+        _host.workers.start(
+            lambda: _run_codex_device_poll(owner, attempt, grant), name="codex-device-poll"
         )
-    threading.Thread(
-        target=_run_codex_device_poll,
-        args=(grant, grant.interval),
-        daemon=True,
-        name="codex-device-poll",
-    ).start()
+    except Exception as exc:
+        owner.fail(attempt, str(exc))
+        return _err(rid, 5035, str(exc))
     return _ok(
         rid,
         {
@@ -5857,9 +5344,7 @@ def _(rid, params: dict) -> dict:
     marks the flow consumed — a terminal status is reported exactly once, so
     a lingering second poll loop can't double-report "signed in".
     """
-    if params.get("cancel"):
-        _auth_flow_update(cancelled=True)
-    snapshot = _auth_flow_snapshot()
+    snapshot = _host.sign_in.poll(cancel=bool(params.get("cancel")))
     if not snapshot:
         return _ok(rid, {"status": "none"})
 
@@ -5867,15 +5352,13 @@ def _(rid, params: dict) -> dict:
 
     # Terminal states are reported once, then the flow is cleared so repeat
     # polls (and any stale concurrent watcher) see "none".
-    if status in {"success", "failed", "cancelled"} and not snapshot.get("consumed"):
+    if status in {"success", "failed", "cancelled"}:
         applied = False
         if status == "success":
             session_id = snapshot.get("session_id") or params.get("session_id") or ""
             applied = _refresh_agent_credentials_after_auth(
                 session_id, snapshot.get("provider") or "openai-codex"
             )
-        with _auth_flow_lock:
-            _auth_flow["consumed"] = True
         return _ok(
             rid,
             {
@@ -5887,9 +5370,6 @@ def _(rid, params: dict) -> dict:
                 "credentials_applied": applied,
             },
         )
-
-    if snapshot.get("consumed"):
-        return _ok(rid, {"status": "none"})
 
     return _ok(
         rid,
@@ -5913,7 +5393,10 @@ def _(rid, params: dict) -> dict:
     Returns success status and the provider's slug.
     """
     try:
-        from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY, clear_provider_auth
+        from superforecasting_agent.configuration.authentication import (
+            PROVIDER_REGISTRY,
+        )
+        from superforecasting_agent.credentials.auth import clear_provider_auth
         from superforecasting_agent.runtime.config import remove_env_value
 
         slug = (params.get("slug") or "").strip()
@@ -5952,76 +5435,28 @@ def _(rid, params: dict) -> dict:
 # ── Methods: slash.exec ──────────────────────────────────────────────
 
 
-def _mirror_slash_side_effects(sid: str, session: dict, command: str) -> str:
-    """Apply side effects that must also hit the gateway's live agent."""
-    parts = command.lstrip("/").split(None, 1)
-    if not parts:
-        return ""
-    name, arg, agent = (
-        parts[0],
-        (parts[1].strip() if len(parts) > 1 else ""),
-        session.get("agent"),
-    )
 
-    # Reject agent-mutating commands during an in-flight turn.  These
-    # all do read-then-mutate on live agent/session state that the
-    # worker thread running agent.run_conversation is using.  Parity
-    # with the session.compress / session.undo guards and the gateway
-    # runner's running-agent /model guard.
-    _MUTATES_WHILE_RUNNING = {"model", "style", "personality", "prompt", "compress"}
-    if name in _MUTATES_WHILE_RUNNING and session.get("running"):
-        return f"session busy — /interrupt the current turn before running /{name}"
 
-    try:
-        if name == "model" and arg and agent:
-            result = _apply_model_switch(sid, session, arg)
-            return result.get("warning", "")
-        elif name in {"style", "personality"} and arg and agent:
-            _, new_prompt = _validate_personality(arg, _load_cfg())
-            _apply_personality_to_session(sid, session, new_prompt)
-        elif name == "prompt" and agent:
-            cfg = _load_cfg()
-            new_prompt = (cfg.get("agent") or {}).get("system_prompt", "") or ""
-            from forecasting.protocol import build_forecast_chat_system_prompt
+def _background_command_output(session: dict, name: str) -> str:
+    from superforecasting_agent.tooling.background import describe_background, stop_background
 
-            agent.ephemeral_system_prompt = build_forecast_chat_system_prompt(
-                new_prompt
-            )
-            agent._cached_system_prompt = None
-        elif name == "compress" and agent:
-            _compress_session_history(session, arg)
-            _sync_session_key_after_compress(sid, session)
-            _emit("session.info", sid, _session_info(agent))
-        elif name == "fast" and agent:
-            mode = arg.lower()
-            if mode in {"fast", "on"}:
-                agent.service_tier = "priority"
-            elif mode in {"normal", "off"}:
-                agent.service_tier = None
-            _emit("session.info", sid, _session_info(agent))
-        elif name == "reload-mcp" and agent and hasattr(agent, "reload_mcp_tools"):
-            agent.reload_mcp_tools()
-        elif name == "stop":
-            from tools.process_registry import process_registry
+    session_key = session.get("session_key")
+    if not session_key:
+        raise ValueError("session has no background-work owner")
+    if name == "stop":
+        return stop_background(session_key=session_key)
+    return describe_background(agent_running=bool(session.get("running")), session_key=session_key)
 
-            process_registry.kill_all()
-    except Exception as e:
-        # Expired/missing provider sign-in is fixable WITHOUT leaving the TUI
-        # — point at /auth instead of echoing the CLI's "run
-        # `superforecasting-agent auth`" guidance (rate-limit errors are not
-        # auth problems and keep their own message).
-        if getattr(e, "relogin_required", False) or "missing access_token" in str(e):
-            return (
-                f"{e}\n\nSign in without leaving the TUI: run /auth "
-                "(shows a code to enter at auth.openai.com, then reconnects this session)."
-            )
-        return f"live session sync failed: {e}"
-    return ""
+
+def _command_handoff(rid, message: str, dispatch: str = "command.dispatch") -> dict:
+    response = _err(rid, 4018, message)
+    response["error"]["data"] = {"dispatch": dispatch, "execution_started": False}
+    return response
 
 
 @rpc_validated("slash.exec")
 def _(rid, params: dict) -> dict:
-    session, err = _sess(params, rid)
+    session, err = _sess_nowait(params, rid)
     if err:
         return err
 
@@ -6029,43 +5464,250 @@ def _(rid, params: dict) -> dict:
     if not cmd:
         return _err(rid, 4004, "empty command")
 
-    # Skill slash commands and _pending_input commands must NOT go through the
-    # slash worker — see _PENDING_INPUT_COMMANDS definition above. Plugin
-    # commands must also avoid the worker, but unlike skills/pending-input they
-    # still return normal slash.exec output so the TUI keeps the pager path.
+    # Skills and pending-input workflows hand off to command.dispatch. Plugin
+    # handlers return slash.exec output directly so the TUI retains its pager path.
     _cmd_text = cmd.lstrip("/") if cmd.startswith("/") else cmd
     _cmd_parts = _cmd_text.split(maxsplit=1)
     _cmd_base = (_cmd_parts[0] if _cmd_parts else "").lower()
     _cmd_arg = _cmd_parts[1] if len(_cmd_parts) > 1 else ""
 
+    from superforecasting_agent.application.command_catalog import configured_command, resolve_command
+    try:
+        quick = configured_command(_cmd_base, _load_cfg().get("quick_commands", {}))
+    except ValueError as exc:
+        return _err(rid, 4018, str(exc))
+    if quick is not None:
+        # Execute only in command.dispatch: executing here and then returning an
+        # error would make the client's fallback repeat a failed shell command.
+        return _command_handoff(rid, "configured command: use command.dispatch")
+
+    # Match dispatch's canonical command identity before selecting an owner.
+    # Otherwise registry aliases can initialize the classic worker even when
+    # their canonical operation is already native (for example /gateway).
+    definition = resolve_command(_cmd_base)
+    if definition is not None and definition.gateway_only:
+        return _err(rid, 4011, f"/{definition.name} is available only in messaging gateways")
+    if definition is not None:
+        _cmd_base = definition.name
+
+    tool_action = None
+    if _cmd_base == "tools":
+        import shlex
+
+        try:
+            tool_arguments = shlex.split(_cmd_arg)
+        except ValueError:
+            tool_arguments = _cmd_arg.split()
+        tool_action = tool_arguments[0] if tool_arguments else ""
+
+    if tool_action == "list":
+        from superforecasting_agent.application.tools import describe_tool_configuration
+        from superforecasting_agent.tooling.selection import _get_platform_tools
+
+        try:
+            config = _load_cfg()
+            enabled = _get_platform_tools(config, "cli", include_default_mcp_servers=False)
+            output = describe_tool_configuration(enabled, config.get("mcp_servers") or {}, platform="cli")
+            return _ok(rid, {"output": output})
+        except ValueError as exc:
+            return _err(rid, 4004, str(exc))
+
+    if tool_action is not None and tool_action not in {"list", "enable", "disable"}:
+        from superforecasting_agent.application.tools import describe_tools
+        from superforecasting_agent.tooling.inventory import session_toolset_selection
+        from superforecasting_agent.tooling.runtime import get_tool_definitions, get_toolset_for_tool
+
+        selection = session_toolset_selection(session, _load_enabled_toolsets)
+        definitions = get_tool_definitions(enabled_toolsets=selection, quiet_mode=True)
+        return _ok(rid, {"output": describe_tools(definitions, get_toolset_for_tool)})
+
+    if _cmd_base in {"agents", "stop"}:
+        try:
+            return _ok(rid, {"output": _background_command_output(session, _cmd_base)})
+        except ValueError as exc:
+            return _err(rid, 4004, str(exc))
+        except Exception as exc:
+            return _err(rid, 5030, f"Background command failed: {exc}")
+
+    if _cmd_base == "handoff":
+        from superforecasting_agent.application.handoff import wait_for_handoff
+        from gateway.config import Platform, load_gateway_config
+
+        try:
+            platform = Platform(_cmd_arg.strip().lower())
+            config = load_gateway_config()
+            configured = config.platforms.get(platform)
+            home = config.get_home_channel(platform)
+            if not configured or not configured.enabled or not home or not home.chat_id:
+                return _err(rid, 4004, "Handoff requires an enabled platform with a home channel")
+        except ValueError:
+            return _err(rid, 4004, "Usage: /handoff <configured-platform>")
+        except Exception as exc:
+            return _err(rid, 5030, f"Cannot load handoff destination: {exc}")
+        with session.setdefault("history_lock", threading.Lock()):
+            busy = [label for key, label in (("running", "turn"), ("_command_stops", "command"), ("_background_jobs", "background job"), ("_background_agents", "background agent")) if session.get(key)]
+            if session.get("_active_calls", 0) > 1:
+                busy.append("session operation")
+            if session.get("agent_build_started") and session.get("agent_ready") is not None and not session["agent_ready"].is_set():
+                busy.append("agent initialization")
+            if busy:
+                return _err(rid, 4009, f"session busy ({', '.join(busy)}); finish active work before handoff")
+            session["running"] = True
+            session["handoff_reserved"] = True
+        try:
+            with _host.command(session) as stop:
+                if stop.is_set():
+                    return _err(rid, 5030, "Handoff cancelled before execution")
+                db = _get_db()
+                if db is None:
+                    return _err(rid, 5030, "Session storage unavailable for handoff")
+                key = session["session_key"]
+                if not db.get_session(key):
+                    db.create_session(key, source="tui")
+                attempt_id = uuid.uuid4().hex
+                if not db.request_handoff(key, platform.value, attempt_id=attempt_id):
+                    return _err(rid, 4009, "Session already has a handoff or active durable turn")
+                session["handoff_attempt"] = attempt_id
+                def notify(event, payload):
+                    try:
+                        _emit(event, params.get("session_id", ""), {"command_id": attempt_id, **payload})
+                    except Exception:
+                        logger.exception("Handoff event delivery failed")
+                notify("command.started", {"request_id": str(rid), "name": "handoff"})
+                notify("command.output", {"stream": "stdout", "text": f"Queued handoff to {platform.value}; waiting for gateway pickup.\n"})
+                status = "failed"
+                try:
+                    result = wait_for_handoff(db, key, attempt_id, stop=stop)
+                    status = "cancelled" if stop.is_set() else "finished"
+                finally:
+                    notify("command.finished", {"status": status})
+                session["handoff_complete"] = result.state == "completed"
+                if result.state == "completed":
+                    output = f"Handoff complete to {platform.value}. Use /new to continue here. Close this session before resuming it locally later."
+                elif result.state == "running":
+                    output = "Gateway transfer is still running. Local turns remain blocked until it settles."
+                else:
+                    output = f"Handoff {result.state}: {result.error or 'no transfer completed'}"
+                return _ok(rid, {"output": output})
+        except Exception as exc:
+            return _err(rid, 5030, f"Handoff failed: {exc}")
+        finally:
+            with session["history_lock"]:
+                session["running"] = False
+                session.pop("handoff_reserved", None)
+
+    if _cmd_base == "footer":
+        from superforecasting_agent.application.footer import footer_command
+        from superforecasting_agent.constants import get_agent_home
+
+        try:
+            with _host.command(session):
+                output = footer_command(_cmd_arg, get_agent_home() / "config.yaml")
+            return _ok(rid, {"output": output})
+        except ValueError as exc:
+            return _err(rid, 4004, str(exc))
+        except Exception as exc:
+            return _err(rid, 5030, f"Footer command failed: {exc}")
+
+    if _cmd_base == "debug":
+        from superforecasting_agent.runtime.debug import slash_output
+
+        try:
+            with _host.command(session) as stop:
+                if stop.is_set():
+                    return _err(rid, 5030, "Debug command cancelled before execution")
+                code, output = slash_output()
+            if code:
+                return _err(rid, 5030, output or "Debug command failed")
+            return _ok(rid, {"output": output})
+        except Exception as exc:
+            return _err(rid, 5030, f"Debug command failed: {exc}")
+
+    if _cmd_base == "skills":
+        from superforecasting_agent.runtime.skills_hub import skills_slash_output
+
+        try:
+            with _host.command(session) as stop:
+                if stop.is_set():
+                    return _err(rid, 5030, "Skills command cancelled before execution")
+                output = skills_slash_output(_cmd_arg)
+            return _ok(rid, {"output": output})
+        except Exception as exc:
+            return _err(rid, 5030, f"Skills command failed: {exc}")
+
+    if _cmd_base == "kanban":
+        from superforecasting_agent.runtime.kanban import run_slash
+
+        try:
+            with _host.command(session) as stop:
+                command_id = uuid.uuid4().hex
+                sid = params.get("session_id", "")
+                status = "failed"
+                delivery_failed = False
+                def notify(event, payload):
+                    nonlocal delivery_failed
+                    if delivery_failed:
+                        return
+                    try:
+                        _emit(event, sid, {"command_id": command_id, **payload})
+                    except Exception:
+                        delivery_failed = True
+                        logger.exception("Native command event delivery failed")
+                def output(stream, text):
+                    for offset in range(0, len(text), 4096):
+                        notify("command.output", {"stream": stream, "text": text[offset:offset + 4096]})
+                notify("command.started", {"request_id": str(rid), "name": "kanban"})
+                try:
+                    result = run_slash(_cmd_arg, stop_event=stop, output_limit=65536, on_output=output)
+                    status = "cancelled" if stop.is_set() else "finished"
+                    return _ok(rid, {"output": result})
+                finally:
+                    notify("command.finished", {"status": status})
+        except ValueError as exc:
+            return _err(rid, 4004, str(exc))
+        except OSError as exc:
+            return _err(rid, 5017, str(exc))
+
+    if _cmd_base in {"config", "plugins", "toolsets", "profile", "bundles", "insights", "codex-runtime", "gquota", "platforms", "cron", "curator"}:
+        return _command_handoff(rid, "native command: use command.dispatch")
+
     if _cmd_base in _PENDING_INPUT_COMMANDS:
-        return _err(
-            rid, 4018, f"pending-input command: use command.dispatch for /{_cmd_base}"
+        return _command_handoff(
+            rid, f"pending-input command: use command.dispatch for /{_cmd_base}"
         )
 
-    if _cmd_base in _WORKER_BLOCKED_COMMANDS:
+    if _cmd_base == "snapshot":
         subcommand = _cmd_arg.split(maxsplit=1)[0].lower() if _cmd_arg else ""
         if subcommand in {"restore", "rewind"}:
-            return _err(
+            return _command_handoff(
                 rid,
-                4018,
                 "snapshot restore mutates live config/state; use command.dispatch for /snapshot restore",
             )
+        return _command_handoff(rid, "snapshot command: use command.dispatch")
+
+    try:
+        from agent.skill_bundles import get_skill_bundles
+        from superforecasting_agent.application.command_catalog import resolve_command
+
+        if resolve_command(_cmd_base) is None and f"/{_cmd_base}" in get_skill_bundles():
+            return _command_handoff(rid, "bundle command: use command.dispatch")
+    except Exception:
+        pass
 
     try:
         from agent.skill_commands import get_skill_commands
 
         _cmd_key = f"/{_cmd_base}"
         if _cmd_key in get_skill_commands():
-            return _err(
-                rid, 4018, f"skill command: use command.dispatch for {_cmd_key}"
+            return _command_handoff(
+                rid, f"skill command: use command.dispatch for {_cmd_key}"
             )
     except Exception:
         pass
 
     plugin_handler = None
     resolve_plugin_command_result = None
-    if _cmd_base:
+    if _cmd_base and resolve_command(_cmd_base) is None:
         try:
             from superforecasting_agent.runtime.plugins import (
                 get_plugin_command_handler,
@@ -6084,31 +5726,19 @@ def _(rid, params: dict) -> dict:
         except Exception as e:
             return _ok(rid, {"output": f"Plugin command error: {e}"})
 
-    worker = session.get("slash_worker")
-    if not worker:
-        try:
-            worker = _SlashWorker(
-                session["session_key"],
-                getattr(session.get("agent"), "model", _resolve_model()),
-            )
-            session["slash_worker"] = worker
-        except Exception as e:
-            return _err(rid, 5030, f"slash worker start failed: {e}")
+    from superforecasting_agent.application.command_catalog import resolve_command
 
-    try:
-        output = worker.run(cmd)
-        warning = _mirror_slash_side_effects(params.get("session_id", ""), session, cmd)
-        payload = {"output": output or "(no output)"}
-        if warning:
-            payload["warning"] = warning
-        return _ok(rid, payload)
-    except Exception as e:
-        try:
-            worker.close()
-        except Exception:
-            pass
-        session["slash_worker"] = None
-        return _err(rid, 5030, str(e))
+    if resolve_command(_cmd_base) is None:
+        return _err(rid, 4011, f"unknown command: {_cmd_base}")
+
+    from tui_gateway.command_routes import terminal_command_names
+
+    if _cmd_base in terminal_command_names():
+        return _command_handoff(
+            rid, f"/{_cmd_base} is owned by the terminal client; use its dedicated command handler",
+            dispatch="terminal",
+        )
+    return _err(rid, 5030, f"Native command handler missing: /{_cmd_base}")
 
 
 # ── Methods: voice ───────────────────────────────────────────────────
@@ -6160,7 +5790,7 @@ def _voice_session_key(params: dict | None) -> str | None:
     back to the process-global os.environ flag, i.e. today's behaviour)."""
     with _voice_sid_lock:
         sid = (params or {}).get("session_id") or _voice_event_sid
-    return (_sessions.get(sid) or {}).get("session_key") if sid else None
+    return (_host.sessions.get(sid) or {}).get("session_key") if sid else None
 
 
 def _voice_flag(session_key: str | None, name: str) -> bool:
@@ -6247,36 +5877,24 @@ def _(rid, params: dict) -> dict:
 def _(rid, params: dict) -> dict:
     try:
         cfg = _load_cfg()
-        model = _resolve_model()
+        model = _resolve_model(cfg)
         api_key = os.environ.get("HERMES_API_KEY", "") or cfg.get("api_key", "")
-        masked = f"****{api_key[-4:]}" if len(api_key) > 4 else "(not set)"
-        base_url = os.environ.get("HERMES_BASE_URL", "") or cfg.get("base_url", "")
+        from superforecasting_agent.configuration import model_section
+        from superforecasting_agent.application.configuration_view import configuration_sections
+        from superforecasting_agent.tooling.inventory import session_toolset_selection
 
-        sections = [
-            {
-                "title": "Model",
-                "rows": [
-                    ["Model", model],
-                    ["Base URL", base_url or "(default)"],
-                    ["API Key", masked],
-                ],
-            },
-            {
-                "title": "Agent",
-                "rows": [
-                    ["Max Turns", str(_cfg_max_turns(cfg, 90))],
-                    ["Toolsets", ", ".join(cfg.get("enabled_toolsets", [])) or "all"],
-                    ["Verbose", str(cfg.get("verbose", False))],
-                ],
-            },
-            {
-                "title": "Environment",
-                "rows": [
-                    ["Working Dir", os.getcwd()],
-                    ["Config File", str(_hermes_home / "config.yaml")],
-                ],
-            },
-        ]
+        session = _host.sessions.get(params.get("session_id", "")) or {}
+        agent = session.get("agent")
+        base_url = os.environ.get("HERMES_BASE_URL", "") or model_section(cfg).get("base_url", "")
+        sections = configuration_sections(
+            model=getattr(agent, "model", model),
+            base_url=getattr(agent, "base_url", base_url),
+            api_key=getattr(agent, "api_key", api_key),
+            max_turns=getattr(agent, "max_iterations", _cfg_max_turns(cfg, 90)),
+            toolsets=session_toolset_selection(session, lambda: _load_enabled_toolsets(cfg)),
+            verbose=getattr(agent, "verbose_logging", cfg.get("verbose", False)),
+            cwd=os.getcwd(), config_path=str(_hermes_home / "config.yaml"),
+        )
         return _ok(rid, {"sections": sections})
     except Exception as e:
         return _err(rid, 5030, str(e))
@@ -6353,6 +5971,8 @@ from tui_gateway import cron_skills_rpc as _cron_skills_rpc  # noqa: E402
 _obsidian_rpc.register(sys.modules[__name__])
 _market_models_rpc.register(sys.modules[__name__])
 _forecast_rpc.register(sys.modules[__name__])
+from tui_gateway import forecast_operations_rpc as _forecast_operations_rpc
+_forecast_operations_rpc.register(sys.modules[__name__])
 _rollback_rpc.register(sys.modules[__name__])
 _agents_rpc.register(sys.modules[__name__])
 _subagents_rpc.register(sys.modules[__name__])
@@ -6366,3 +5986,6 @@ _cron_skills_rpc.register(sys.modules[__name__])
 # Façade re-bind: tests call `server._cli_exec_blocked(argv)` directly (read-form),
 # so keep the moved helper importable at its original path.
 _cli_exec_blocked = _commands_rpc._cli_exec_blocked
+
+from tui_gateway import host_rpc as _host_rpc
+_host_rpc.register(sys.modules[__name__])

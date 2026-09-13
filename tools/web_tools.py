@@ -469,109 +469,31 @@ def _truncate_with_footer(
 
 
 def web_search_tool(query: str, limit: int = 5) -> str:
-    """
-    Search the web for information using available search API backend.
+    """Serialize the shared search operation and record tool diagnostics."""
+    from superforecasting_agent.tooling.web_search import normalize_search_limit, search_web
 
-    This function provides a generic interface for web search that can work
-    with multiple backends (Parallel or Firecrawl).
-
-    Note: This function returns search result metadata only (URLs, titles, descriptions).
-    Use web_extract_tool to get full content from specific URLs.
-    
-    Args:
-        query (str): The search query to look up
-        limit (int): Maximum number of results to return (default: 5)
-    
-    Returns:
-        str: JSON string containing search results with the following structure:
-             {
-                 "success": bool,
-                 "data": {
-                     "web": [
-                         {
-                             "title": str,
-                             "url": str,
-                             "description": str,
-                             "position": int
-                         },
-                         ...
-                     ]
-                 }
-             }
-    
-    Raises:
-        Exception: If search fails or API key is not set
-    """
+    limit = normalize_search_limit(limit)
+    response = search_web(query, limit)
     try:
-        limit = int(limit)
-    except (TypeError, ValueError):
-        limit = 5
-    limit = min(max(limit, 1), 100)
-
+        result_json = json.dumps(response, indent=2, ensure_ascii=False)
+    except (TypeError, ValueError) as exc:
+        response = {"error": f"Error searching web: {exc}"}
+        result_json = json.dumps(response, ensure_ascii=False)
+    data = response.get("data")
+    rows = data.get("web") if isinstance(data, dict) else None
     debug_call_data = {
-        "parameters": {
-            "query": query,
-            "limit": limit
-        },
-        "error": None,
-        "results_count": 0,
+        "parameters": {"query": query, "limit": limit},
+        "error": response.get("error"),
+        "results_count": len(rows) if isinstance(rows, list) else 0,
         "original_response_size": 0,
-        "final_response_size": 0
+        "final_response_size": len(result_json),
     }
-    
     try:
-        from tools.interrupt import is_interrupted
-        if is_interrupted():
-            return tool_error("Interrupted", success=False)
-
-        # Dispatch through the web search registry. All 7 providers
-        # (brave-free, ddgs, searxng, exa, parallel, tavily, firecrawl)
-        # now live as plugins; the dispatcher is just a registry lookup +
-        # delegation. Sync only — every provider's search() is sync.
-        from agent.web_search_registry import (
-            get_active_search_provider,
-            get_provider as _wsp_get_provider,
-        )
-
-        backend = _get_search_backend()
-        provider = _wsp_get_provider(backend) if backend else None
-        if provider is None or not provider.supports_search():
-            # Fall back to availability-walked active provider when the
-            # configured backend isn't a registered search provider (typo,
-            # uninstalled plugin, or capability mismatch).
-            provider = get_active_search_provider()
-
-        if provider is None:
-            response_data = {
-                "success": False,
-                "error": (
-                    "No web search provider configured. "
-                    "Run `superforecasting-agent tools` to set one up."
-                ),
-            }
-        else:
-            logger.info(
-                "Web search via %s: '%s' (limit: %d)",
-                provider.name, query, limit,
-            )
-            response_data = provider.search(query, limit)
-
-        debug_call_data["results_count"] = len(response_data.get("data", {}).get("web", []))
-        result_json = json.dumps(response_data, indent=2, ensure_ascii=False)
-        debug_call_data["final_response_size"] = len(result_json)
         _debug.log_call("web_search_tool", debug_call_data)
         _debug.save()
-        return result_json
-
-    except Exception as e:
-        error_msg = f"Error searching web: {str(e)}"
-        logger.debug("%s", error_msg)
-
-        debug_call_data["error"] = error_msg
-        _debug.log_call("web_search_tool", debug_call_data)
-        _debug.save()
-
-        return tool_error(error_msg)
+    except Exception:
+        logger.debug("Could not save web search diagnostics", exc_info=True)
+    return result_json
 
 
 async def web_extract_tool(

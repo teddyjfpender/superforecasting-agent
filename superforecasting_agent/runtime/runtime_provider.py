@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import logging
 import os
 import re
@@ -12,12 +13,15 @@ _PRIMARY_CLI = "superforecasting-agent"
 
 from superforecasting_agent.runtime import auth as auth_mod
 from agent.credential_pool import CredentialPool, PooledCredential, get_custom_provider_pool_key, load_pool
-from superforecasting_agent.runtime.auth import (
+from superforecasting_agent.configuration.authentication import (
+    PROVIDER_REGISTRY,
+    has_usable_secret,
+)
+from superforecasting_agent.credentials.auth import (
     AuthError,
     DEFAULT_CODEX_BASE_URL,
     DEFAULT_QWEN_BASE_URL,
     DEFAULT_XAI_OAUTH_BASE_URL,
-    PROVIDER_REGISTRY,
     _agent_key_is_usable,
     format_auth_error,
     resolve_provider,
@@ -28,7 +32,6 @@ from superforecasting_agent.runtime.auth import (
     resolve_gemini_oauth_runtime_credentials,
     resolve_api_key_provider_credentials,
     resolve_external_process_provider_credentials,
-    has_usable_secret,
 )
 from superforecasting_agent.runtime.config import get_compatible_custom_providers, load_config
 from superforecasting_agent.runtime.model_env import inference_provider_env
@@ -65,7 +68,7 @@ def _config_base_url_trustworthy_for_bare_custom(cfg_base_url: str, cfg_provider
     # is, otherwise a legit LAN/WireGuard ollama endpoint silently falls
     # through to OpenRouter.
     try:
-        from superforecasting_agent.runtime.auth import resolve_provider as _resolve_provider
+        from superforecasting_agent.credentials.auth import resolve_provider as _resolve_provider
 
         if _resolve_provider(cfg_provider_norm) == "custom":
             return True
@@ -220,9 +223,9 @@ def _auto_detect_local_model(base_url: str) -> str:
     return ""
 
 
-def _get_model_config() -> Dict[str, Any]:
+def _get_model_config(config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     from superforecasting_agent.runtime.model_configuration import model_section
-    cfg = model_section(load_config())
+    cfg = model_section(config if config is not None else load_config())
     base_url = cfg.get('base_url') or ''
     if not cfg.get('default') and _loopback_hostname(base_url_hostname(base_url)):
         detected = _auto_detect_local_model(base_url)
@@ -324,7 +327,7 @@ def _resolve_runtime_from_pool_entry(
     pool: Optional[CredentialPool] = None,
     target_model: Optional[str] = None,
 ) -> Dict[str, Any]:
-    model_cfg = model_cfg or _get_model_config()
+    model_cfg = model_cfg if model_cfg is not None else _get_model_config()
     # When the caller is resolving for a specific target model (e.g. a /model
     # mid-session switch), prefer that over the persisted model.default. This
     # prevents api_mode being computed from a stale config default that no
@@ -454,12 +457,14 @@ def _resolve_runtime_from_pool_entry(
     }
 
 
-def resolve_requested_provider(requested: Optional[str] = None) -> str:
+def resolve_requested_provider(
+    requested: Optional[str] = None, *, model_cfg: Optional[Dict[str, Any]] = None,
+) -> str:
     """Resolve provider request from explicit arg, config, then env."""
     if requested and requested.strip():
         return requested.strip().lower()
 
-    model_cfg = _get_model_config()
+    model_cfg = model_cfg if model_cfg is not None else _get_model_config()
     cfg_provider = model_cfg.get("provider")
     if isinstance(cfg_provider, str) and cfg_provider.strip():
         return cfg_provider.strip().lower()
@@ -478,13 +483,14 @@ def _try_resolve_from_custom_pool(
     provider_label: str,
     api_mode_override: Optional[str] = None,
     provider_name: Optional[str] = None,
+    config: Optional[Dict[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
     """Check if a credential pool exists for a custom endpoint and return a runtime dict if so."""
-    pool_key = get_custom_provider_pool_key(base_url, provider_name=provider_name)
+    pool_key = get_custom_provider_pool_key(base_url, provider_name=provider_name, config=config)
     if not pool_key:
         return None
     try:
-        pool = load_pool(pool_key)
+        pool = load_pool(pool_key, config=config)
         if not pool.has_credentials():
             return None
         entry = pool.select()
@@ -505,7 +511,9 @@ def _try_resolve_from_custom_pool(
         return None
 
 
-def _get_named_custom_provider(requested_provider: str) -> Optional[Dict[str, Any]]:
+def _get_named_custom_provider(
+    requested_provider: str, *, config: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
     requested_norm = _normalize_custom_provider_name(requested_provider or "")
     if not requested_norm or requested_norm == "custom":
         return None
@@ -517,7 +525,7 @@ def _get_named_custom_provider(requested_provider: str) -> Optional[Dict[str, An
         return None
     if not requested_norm.startswith("custom:"):
         try:
-            canonical = auth_mod.resolve_provider(requested_norm)
+            canonical = auth_mod.resolve_provider(requested_norm, config=config)
         except AuthError:
             pass
         else:
@@ -532,7 +540,7 @@ def _get_named_custom_provider(requested_provider: str) -> Optional[Dict[str, An
             if (canonical or "").strip().lower() == requested_norm:
                 return None
 
-    config = load_config()
+    config = config if config is not None else load_config()
     
     # First check providers: dict (new-style user-defined providers)
     providers = config.get("providers")
@@ -643,6 +651,7 @@ def _resolve_named_custom_runtime(
     requested_provider: str,
     explicit_api_key: Optional[str] = None,
     explicit_base_url: Optional[str] = None,
+    config: Optional[Dict[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
     # Bare `provider="custom"` with an explicit base_url (e.g. propagated
     # from a `model_aliases:` direct-alias resolution) — build a runtime
@@ -655,9 +664,9 @@ def _resolve_named_custom_runtime(
     requested_norm = (requested_provider or "").strip().lower()
     if requested_norm and requested_norm != "custom":
         try:
-            from superforecasting_agent.runtime.auth import resolve_provider as _resolve_provider
+            from superforecasting_agent.credentials.auth import resolve_provider as _resolve_provider
 
-            if _resolve_provider(requested_norm) == "custom":
+            if _resolve_provider(requested_norm, config=config) == "custom":
                 requested_norm = "custom"
         except Exception:
             pass
@@ -666,7 +675,7 @@ def _resolve_named_custom_runtime(
         # Check credential pool first — mirrors the named-custom-provider path
         # so bare `provider: custom` with a configured custom_providers entry
         # also gets its api_key from the pool instead of env var fallbacks.
-        pool_result = _try_resolve_from_custom_pool(base_url, "custom", None)
+        pool_result = _try_resolve_from_custom_pool(base_url, "custom", None, config=config)
         if pool_result:
             pool_result["source"] = "direct-alias"
             return pool_result
@@ -695,7 +704,7 @@ def _resolve_named_custom_runtime(
             "requested_provider": requested_provider,
         }
 
-    custom_provider = _get_named_custom_provider(requested_provider)
+    custom_provider = _get_named_custom_provider(requested_provider, config=config)
     if not custom_provider:
         return None
 
@@ -707,7 +716,7 @@ def _resolve_named_custom_runtime(
         return None
 
     # Check if a credential pool exists for this custom endpoint
-    pool_result = _try_resolve_from_custom_pool(base_url, "custom", custom_provider.get("api_mode"), provider_name=custom_provider.get("name"))
+    pool_result = _try_resolve_from_custom_pool(base_url, "custom", custom_provider.get("api_mode"), provider_name=custom_provider.get("name"), config=config)
     if pool_result:
         # Propagate the model name even when using pooled credentials —
         # the pool doesn't know about the custom_providers model field.
@@ -753,8 +762,10 @@ def _resolve_openrouter_runtime(
     requested_provider: str,
     explicit_api_key: Optional[str] = None,
     explicit_base_url: Optional[str] = None,
+    model_cfg: Optional[Dict[str, Any]] = None,
+    config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    model_cfg = _get_model_config()
+    model_cfg = model_cfg if model_cfg is not None else _get_model_config()
     cfg_base_url = model_cfg.get("base_url") if isinstance(model_cfg.get("base_url"), str) else ""
     cfg_provider = model_cfg.get("provider") if isinstance(model_cfg.get("provider"), str) else ""
     cfg_api_key = ""
@@ -772,9 +783,9 @@ def _resolve_openrouter_runtime(
     # gate up the stack — alias-aware without duplicating the alias map.
     if requested_norm and requested_norm != "custom":
         try:
-            from superforecasting_agent.runtime.auth import resolve_provider as _resolve_provider
+            from superforecasting_agent.credentials.auth import resolve_provider as _resolve_provider
 
-            if _resolve_provider(requested_norm) == "custom":
+            if _resolve_provider(requested_norm, config=config) == "custom":
                 requested_norm = "custom"
         except Exception:
             pass
@@ -975,11 +986,8 @@ def _resolve_azure_foundry_runtime(
             auth_mode = "api_key"
         else:
             try:
-                from agent.azure_identity_adapter import (
-                    EntraIdentityConfig,
-                    SCOPE_AI_AZURE_DEFAULT,
-                    build_token_provider,
-                )
+                from superforecasting_agent.credentials.azure import EntraIdentityConfig
+                from agent.azure_identity_adapter import SCOPE_AI_AZURE_DEFAULT, build_token_provider
             except Exception as exc:
                 raise AuthError(
                     "Azure Foundry Entra ID auth requires the 'azure-identity' "
@@ -1205,8 +1213,13 @@ def resolve_runtime_provider(
     explicit_api_key: Optional[str] = None,
     explicit_base_url: Optional[str] = None,
     target_model: Optional[str] = None,
+    config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Resolve runtime provider credentials for agent execution.
+
+    config is an optional already-normalized runtime configuration. When
+    omitted, load it once. All endpoint/model/Bedrock decisions in this resolver
+    use that snapshot; credential stores and refresh operations remain live.
 
     target_model: Optional override for model_cfg.get("default") when
     computing provider-specific api_mode (e.g. OpenCode Zen/Go where different
@@ -1235,7 +1248,9 @@ def resolve_runtime_provider(
             if explicit_base_url is None:
                 explicit_base_url = _ctx.get("base_url")
 
-    requested_provider = resolve_requested_provider(requested)
+    config = copy.deepcopy(config) if config is not None else load_config()
+    model_cfg = _get_model_config(config=config)
+    requested_provider = resolve_requested_provider(requested, model_cfg=model_cfg)
 
     # Azure Anthropic short-circuit: when explicitly targeting an Azure endpoint
     # with provider="anthropic", bypass _resolve_named_custom_runtime (which would
@@ -1265,7 +1280,7 @@ def resolve_runtime_provider(
     if requested_provider == "azure-foundry":
         azure_runtime = _resolve_azure_foundry_runtime(
             requested_provider=requested_provider,
-            model_cfg=_get_model_config(),
+            model_cfg=model_cfg,
             explicit_api_key=explicit_api_key,
             explicit_base_url=explicit_base_url,
             target_model=target_model,
@@ -1273,6 +1288,7 @@ def resolve_runtime_provider(
         return azure_runtime
 
     custom_runtime = _resolve_named_custom_runtime(
+        config=config,
         requested_provider=requested_provider,
         explicit_api_key=explicit_api_key,
         explicit_base_url=explicit_base_url,
@@ -1287,7 +1303,7 @@ def resolve_runtime_provider(
     # resolve_provider() pick up an ANTHROPIC_API_KEY or OPENAI_API_KEY from
     # the environment and send the request to a cloud API. Fixes #3846.
     if not explicit_base_url and not explicit_api_key:
-        _bypass_model_cfg = _get_model_config()
+        _bypass_model_cfg = model_cfg
         _bypass_cfg_provider = str(_bypass_model_cfg.get("provider") or "").strip().lower()
         _bypass_cfg_base_url = str(_bypass_model_cfg.get("base_url") or "").strip()
         if _bypass_cfg_base_url and _bypass_cfg_provider in ("auto", ""):
@@ -1311,6 +1327,8 @@ def resolve_runtime_provider(
                 for host in _known_cloud_hosts
             ):
                 runtime = _resolve_openrouter_runtime(
+                    config=config,
+                    model_cfg=model_cfg,
                     requested_provider=requested_provider,
                     explicit_api_key=explicit_api_key,
                     explicit_base_url=explicit_base_url,
@@ -1320,10 +1338,10 @@ def resolve_runtime_provider(
 
     provider = resolve_provider(
         requested_provider,
+        config=config,
         explicit_api_key=explicit_api_key,
         explicit_base_url=explicit_base_url,
     )
-    model_cfg = _get_model_config()
     explicit_runtime = _resolve_explicit_runtime(
         provider=provider,
         requested_provider=requested_provider,
@@ -1355,7 +1373,7 @@ def resolve_runtime_provider(
         )
 
     try:
-        pool = load_pool(provider) if should_use_pool else None
+        pool = load_pool(provider, config=config) if should_use_pool else None
     except Exception:
         pool = None
     if pool and pool.has_credentials():
@@ -1475,7 +1493,7 @@ def resolve_runtime_provider(
     if provider == "minimax-oauth":
         pconfig = PROVIDER_REGISTRY.get(provider)
         if pconfig and pconfig.auth_type == "oauth_minimax":
-            from superforecasting_agent.runtime.auth import resolve_minimax_oauth_runtime_credentials
+            from superforecasting_agent.credentials.auth import resolve_minimax_oauth_runtime_credentials
             creds = resolve_minimax_oauth_runtime_credentials()
             return {
                 "provider": provider,
@@ -1590,12 +1608,12 @@ def resolve_runtime_provider(
 
     # AWS Bedrock (native Converse API via boto3)
     if provider == "bedrock":
-        from agent.bedrock_adapter import (
+        from superforecasting_agent.hosting.aws_credentials import (
             has_aws_credentials,
             resolve_aws_auth_env_var,
             resolve_bedrock_region,
-            is_anthropic_bedrock_model,
         )
+        from agent.bedrock_adapter import is_anthropic_bedrock_model
         # When the user explicitly selected bedrock (not auto-detected),
         # trust boto3's credential chain — it handles IMDS, ECS task roles,
         # Lambda execution roles, SSO, and other implicit sources that our
@@ -1611,7 +1629,7 @@ def resolve_runtime_provider(
                 code="no_aws_credentials",
             )
         # Read bedrock-specific config from config.yaml
-        _bedrock_cfg = load_config().get("bedrock", {})
+        _bedrock_cfg = config.get("bedrock", {})
         # Region priority: config.yaml bedrock.region → env var → us-east-1
         region = (_bedrock_cfg.get("region") or "").strip() or resolve_bedrock_region()
         auth_source = resolve_aws_auth_env_var() or "aws-sdk-default-chain"
@@ -1714,6 +1732,8 @@ def resolve_runtime_provider(
         }
 
     runtime = _resolve_openrouter_runtime(
+        config=config,
+        model_cfg=model_cfg,
         requested_provider=requested_provider,
         explicit_api_key=explicit_api_key,
         explicit_base_url=explicit_base_url,

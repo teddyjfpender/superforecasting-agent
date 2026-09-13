@@ -1,0 +1,83 @@
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+
+Program received signal SIGABRT, Aborted.
+__pthread_kill_implementation (no_tid=0, signo=6, threadid=<optimized out>) at ./nptl/pthread_kill.c:44
+
+Thread 1 (Thread 0x7ffff7eaf740 (LWP 3766) "python3.11"):
+#0  __pthread_kill_implementation (no_tid=0, signo=6, threadid=<optimized out>) at ./nptl/pthread_kill.c:44
+        tid = <optimized out>
+        ret = 0
+        pd = <optimized out>
+        old_mask = {__val = {0}}
+        ret = <optimized out>
+        pd = <optimized out>
+        old_mask = <optimized out>
+        ret = <optimized out>
+        tid = <optimized out>
+        ret = <optimized out>
+        resultvar = <optimized out>
+        resultvar = <optimized out>
+        __arg3 = <optimized out>
+        __arg2 = <optimized out>
+        __arg1 = <optimized out>
+        _a3 = <optimized out>
+        _a2 = <optimized out>
+        _a1 = <optimized out>
+        __futex = <optimized out>
+        resultvar = <optimized out>
+        __arg3 = <optimized out>
+        __arg2 = <optimized out>
+        __arg1 = <optimized out>
+        _a3 = <optimized out>
+        _a2 = <optimized out>
+        _a1 = <optimized out>
+        __futex = <optimized out>
+        __private = <optimized out>
+        __oldval = <optimized out>
+#1  __pthread_kill_internal (signo=6, threadid=<optimized out>) at ./nptl/pthread_kill.c:78
+No locals.
+#2  __GI___pthread_kill (threadid=<optimized out>, signo=signo@entry=6) at ./nptl/pthread_kill.c:89
+No locals.
+#3  0x00007ffff7c4527e in __GI_raise (sig=sig@entry=6) at ../sysdeps/posix/raise.c:26
+        ret = <optimized out>
+#4  0x00007ffff7c288ff in __GI_abort () at ./stdlib/abort.c:79
+        save_stage = 1
+        act = {__sigaction_handler = {sa_handler = 0x20, sa_sigaction = 0x20}, sa_mask = {__val = {140737343117313, 9933634890088669072, 140737349512688, 93825010394096, 140737348879024, 140737349895488, 93825045221220, 0, 93824995616841, 4609, 93824995479968, 13195534344096203481, 140737342604806, 140737342944896, 0, 93825011498448}}, sa_flags = -139177020, sa_restorer = 0x7ffff7b453c6}
+#5  0x0000555555828df6 in os_abort ()
+No symbol table info available.
+#6  0x000055555588e240 in cfunction_vectorcall_NOARGS ()
+No symbol table info available.
+#7  0x00005555558fcaa7 in _PyEval_EvalFrameDefault ()
+No symbol table info available.
+#8  0x00005555559eff94 in _PyEval_Vector ()
+No symbol table info available.
+#9  0x00005555559ef528 in PyEval_EvalCode ()
+No symbol table info available.
+#10 0x0000555555a23f31 in run_mod ()
+No symbol table info available.
+#11 0x00005555557a5072 in pyrun_file ()
+No symbol table info available.
+#12 0x00005555557a4ba9 in _PyRun_SimpleFileObject ()
+No symbol table info available.
+#13 0x00005555557a45c5 in _PyRun_AnyFileObject ()
+No symbol table info available.
+#14 0x00005555557aecb9 in pymain_run_file_obj ()
+No symbol table info available.
+#15 0x00005555557ae800 in pymain_run_file ()
+No symbol table info available.
+#16 0x0000555555a3110b in Py_RunMain ()
+No symbol table info available.
+#17 0x0000555555735028 in main ()
+No symbol table info available.
+From                To                  Syms Read   Shared Object Library
+0x00007ffff7fc6000  0x00007ffff7ff0195  Yes         /lib64/ld-linux-x86-64.so.2
+0x00007ffff7fad040  0x00007ffff7fad105  Yes         /lib/x86_64-linux-gnu/libpthread.so.0
+0x00007ffff7fa8040  0x00007ffff7fa8105  Yes         /lib/x86_64-linux-gnu/libdl.so.2
+0x00007ffff7fa3040  0x00007ffff7fa3105  Yes         /lib/x86_64-linux-gnu/libutil.so.1
+0x00007ffff7f9e080  0x00007ffff7f9e2b1  Yes         /lib/x86_64-linux-gnu/librt.so.1
+0x00007ffff7ec4420  0x00007ffff7f423a6  Yes         /lib/x86_64-linux-gnu/libm.so.6
+0x00007ffff7c28800  0x00007ffff7db0039  Yes         /lib/x86_64-linux-gnu/libc.so.6
+Saved corefile /home/runner/work/superforecasting-agent/superforecasting-agent/native-tls-results/capture-selftest.core
+warning: 44	./nptl/pthread_kill.c: No such file or directory
+warning: Memory read failed for corefile section, 4096 bytes at 0xffffffffff600000.

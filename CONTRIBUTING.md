@@ -2,8 +2,31 @@
 
 Thank you for contributing to Superforecasting Agent. This guide covers the local development workflow, the inherited runtime architecture, and the extra bar for forecast-first changes.
 
-**New to the repo? Install the local gates once:** `scripts/install-hooks.sh` (git
-hooks cannot self-install). They enforce the laws below on every commit and push.
+**Fresh checkout:** install Python 3.11–3.13, uv and Node 22, then run:
+
+```sh
+python3 scripts/dev.py bootstrap
+```
+
+This consumes `uv.lock` (including development, web and POSIX PTY extras) and
+the TUI npm lockfile, builds the TUI, installs the
+tracked Git hooks, and runs the shared blocking quality gates. Existing checkouts
+run `python3 scripts/dev.py check`; the explicit `--python-only` option runs the
+Python and contract gates without Node. CI calls the same bootstrap/check code.
+
+The check includes repository-wide encoding lint, stricter Ruff rules/formatting
+and `ty` for the extracted application layer and gate runner, import contracts,
+protocol generation checks, and TUI ESLint/type checking. The strict Python scope
+is listed in `scripts/dev.py` and grows with ownership migrations. Configuration,
+hosting, application, tooling and storage are covered as entire directories,
+including newly added modules. Warning-level
+type diagnostics also fail this strict gate; advisory reporting for inherited
+code does not weaken enforcement here. It is not a
+claim that all inherited Python code is type checked or formatted. Run behavioral
+tests through `scripts/run_tests.sh`; quality checks do not replace that suite.
+
+If dependencies are already installed, `scripts/install-hooks.sh` installs just
+the hooks. Hooks never stage or rewrite your files.
 
 ---
 
@@ -60,8 +83,11 @@ that the diff is moves plus delegates only.
 **Import directions are declared once and enforced.** `pyproject.toml
 [tool.importlinter]` names the allowed edges — `protocol/` imports nothing
 app-side, `forecasting.ledger` never imports `forecasting.cli`, `forecasting`
-never imports `tui_gateway`, and three ratchets (`* → run_agent`, `forecasting →
-superforecasting_agent.runtime`, `forecasting → tools`) whose frozen violation lists may only shrink.
+never imports `tui_gateway`, and application packages cannot import the
+`run_agent` entrypoint. Two remaining ratchets (`forecasting →
+superforecasting_agent.runtime`, `forecasting → tools`) have frozen violation
+lists that may only shrink. Host ownership modules and application services also
+have strict transitive presentation boundaries.
 `lint-imports` is exit-code gated in CI (`lint-architecture` in
 `.github/workflows/lint.yml`). Adding a feature? The **ownership map + per-
 extension-point checklists** in `docs/architecture/ownership-map.md` name the one
@@ -147,9 +173,17 @@ callers, no drift.
 
 | Hook | Speed | Gates |
 |------|-------|-------|
-| **pre-commit** | fast (<10s) | ruff on changed `.py` files; protocol codegen staleness; wire-drift (generated.ts/dist without a `protocol/` change); `tsc --noEmit` when `ui-tui/` is staged |
+| **pre-commit** | fast | Index/worktree agreement; shared Python quality and import/protocol checks; wire drift; TUI lint/types when staged |
 | **commit-msg** | instant | message shape `type(scope): subject`; a WHY-body for `feat`/`refactor`; the oversize / `MOVES-ONLY` gate |
-| **pre-push** | bounded (~2-3min) | targeted `pytest` for the changed python domains; `vitest --changed` when `ui-tui/` is touched; codegen staleness again |
+| **pre-push** | full Python suite plus changed TUI tests | Every pushed tree must match the index/worktree; shared quality gates; full Python tests and changed TUI tests |
+
+Hooks run tools in place and require the checked files to match the submitted
+index (commit) or every submitted commit tree (push), before and after checks.
+Unstaged tracked changes and untracked non-ignored files block these checks;
+stage the intended work or set other work aside yourself. Hooks never stash or
+rewrite your files. Partial staging with remaining edits requires a separate
+checkout for validation. Push different product trees from their corresponding
+clean checkouts. Ignored dependency/build directories remain supported.
 
 ### The escape hatch (visible, never silent)
 
@@ -353,7 +387,7 @@ superforecasting-agent/
 │       ├── auth.py                   # Provider resolution, OAuth, Nous Portal
 │       ├── models.py                 # OpenRouter model selection lists
 │       ├── banner.py                 # Welcome banner, ASCII art
-│       ├── commands.py               # Central slash command registry (CommandDef), autocomplete, gateway helpers
+│       ├── commands.py               # Classic autocomplete/menu adapters; shared registry lives in application/command_catalog/
 │       ├── callbacks.py              # Interactive callbacks (clarify, sudo, approval)
 │       ├── doctor.py                 # Diagnostics
 │       ├── skills_hub.py             # Skills Hub CLI + /skills slash command
@@ -1053,6 +1087,26 @@ After the [litellm supply chain compromise](https://github.com/BerriAI/litellm/i
 **Reference PRs:** #2796 (litellm removal), #2810 (upper bounds pass), #9801 (SHA pinning + supply-chain-audit CI).
 
 ---
+
+## Installed product upgrade checks
+
+Build and check the independent distributions outside the checkout:
+
+```bash
+python3 scripts/build_profiles.py --out dist/profiles
+python3 scripts/verify_profiles.py dist/profiles --python .venv/bin/python
+python3 scripts/verify_profiles.py dist/profiles --python .venv/bin/python \
+  --upgrade-from /path/to/previous-superforecasting-agent.whl
+```
+
+The upgrade mode installs the supplied previous backend wheel in an isolated
+environment, creates a forecast, evidence and Unicode session history, then
+installs the candidate. It checks existing values and types, permits additive
+schema fields, and requires unchanged configuration. It continues resolution and
+scoring through the installed backend and independent local/remote terminal.
+The receipt prints both backend versions and wheel SHA-256 hashes. Supply a
+retained, identified prior artifact; a fresh-install pass does not prove upgrades.
+Platform qualifications remain specific to the machine running this command.
 
 ## Pull Request Process
 

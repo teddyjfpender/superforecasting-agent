@@ -23,15 +23,17 @@ class _FakeSessionStore:
 
 
 @pytest.mark.asyncio
-async def test_gateway_goal_uses_goals_max_turns_from_full_config(tmp_path, monkeypatch):
+async def test_gateway_goal_uses_goals_max_turns_from_full_config(tmp_path, monkeypatch, request):
     """Gateway /goal should honor top-level goals.max_turns from config.yaml."""
     home = tmp_path / ".hermes"
     home.mkdir()
     (home / "config.yaml").write_text("goals:\n  max_turns: 7\n", encoding="utf-8")
     monkeypatch.setenv("HERMES_HOME", str(home))
-    goals._DB_CACHE.clear()
 
     runner = object.__new__(GatewayRunner)
+    from superforecasting_agent.storage.session import SessionDB
+    runner._session_db = SessionDB()
+    request.addfinalizer(runner._session_db.close)
     runner.config = GatewayConfig(
         platforms={Platform.DISCORD: PlatformConfig(enabled=True, token="token")}
     )
@@ -53,10 +55,8 @@ async def test_gateway_goal_uses_goals_max_turns_from_full_config(tmp_path, monk
 
     response = await GatewayRunner._handle_goal_command(runner, event)
 
-    try:
-        assert "⊙ Goal set (7-turn budget): ship the benchmark" in response
-        state = goals.GoalManager("sid-gateway-goal-config").state
+    assert "⊙ Goal set (7-turn budget): ship the benchmark" in response
+    with goals.GoalManager("sid-gateway-goal-config") as manager:
+        state = manager.state
         assert state is not None
         assert state.max_turns == 7
-    finally:
-        goals._DB_CACHE.clear()

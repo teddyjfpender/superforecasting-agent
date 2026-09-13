@@ -80,7 +80,7 @@ def maybe_autorun_quorum(
     if (forecast_origin or "live") != "live":
         return {"skipped": True, "reason": f"origin {forecast_origin!r} is not live"}
     try:
-        from superforecasting_agent.runtime.config import load_config
+        from superforecasting_agent.storage.configuration import read_configuration
         from forecasting.panel import should_run_panel
         from forecasting.jobs.types.quorum import start_job
         from forecasting.quorum import (
@@ -94,7 +94,7 @@ def maybe_autorun_quorum(
             resolve_trial_count,
         )
 
-        full_cfg = load_config()
+        full_cfg = read_configuration()
         cfg = full_cfg.get("quorum", {}) or {}
         if not cfg.get("default_enabled"):
             return {"skipped": True, "reason": "quorum.default_enabled is off"}

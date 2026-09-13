@@ -115,17 +115,17 @@ export const api = {
       body: JSON.stringify(body),
     }),
   saveConfig: (config: Record<string, unknown>) =>
-    fetchJSON<{ ok: boolean }>("/api/config", {
+    fetchJSON<{ ok: boolean; revision: string | null }>("/api/config", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ config }),
     }),
-  getConfigRaw: () => fetchJSON<{ yaml: string }>("/api/config/raw"),
-  saveConfigRaw: (yaml_text: string) =>
-    fetchJSON<{ ok: boolean }>("/api/config/raw", {
+  getConfigRaw: () => fetchJSON<{ yaml: string; revision: string | null }>("/api/config/raw"),
+  saveConfigRaw: (yaml_text: string, revision: string | null) =>
+    fetchJSON<{ ok: boolean; revision: string | null }>("/api/config/raw", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ yaml_text }),
+      body: JSON.stringify({ yaml_text, revision }),
     }),
   getEnvVars: () => fetchJSON<Record<string, EnvVarInfo>>("/api/env"),
   setEnvVar: (key: string, value: string) =>

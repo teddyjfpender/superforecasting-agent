@@ -98,9 +98,9 @@ def get_provider(name: str) -> Optional[WebSearchProvider]:
 def _read_config_key(*path: str) -> Optional[str]:
     """Resolve a dotted config key from ``config.yaml``. Returns None on miss."""
     try:
-        from superforecasting_agent.runtime.config import load_config
+        from superforecasting_agent.storage.configuration import read_configuration
 
-        cfg = load_config()
+        cfg = read_configuration()
         cur = cfg
         for segment in path:
             if not isinstance(cur, dict):
@@ -185,6 +185,9 @@ def _resolve(configured: Optional[str], *, capability: str) -> Optional[WebSearc
     #    backend switch. Matches _get_backend() in web_tools.py.
     if configured:
         provider = snapshot.get(configured)
+        if provider is None:
+            # Legacy CLI configuration accepted case-insensitive backend names.
+            provider = snapshot.get(configured.strip().lower())
         if provider is not None and _capable(provider):
             return provider
         if provider is None:

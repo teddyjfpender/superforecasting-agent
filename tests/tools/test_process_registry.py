@@ -854,7 +854,7 @@ class TestKillProcess:
             # ``gateway.status._pid_exists``), and the actual kill on POSIX
             # routes through ``psutil.Process(pid).terminate()``. Neither
             # touches ``os.kill`` directly. Mock both seams.
-            with patch("gateway.status._pid_exists", return_value=True), \
+            with patch("superforecasting_agent.processes.pid_exists", return_value=True), \
                  patch.object(_psutil, "Process", side_effect=lambda pid: FakeProcess(pid)):
                 result = registry.kill_process(s.id)
 
@@ -992,12 +992,14 @@ def test_completion_notification_redacts_secret(monkeypatch):
     monkeypatch.setattr(redact, "_REDACT_ENABLED", True)
     registry = ProcessRegistry()
     session = _make_session(command="env", output="OPENAI_API_KEY=sk-proj-secret123")
+    session.session_key = "originating-conversation"
     session.notify_on_complete = True
     registry._running[session.id] = session
 
     registry._move_to_finished(session)
 
     event, text = registry.drain_notifications()[0]
+    assert event["session_key"] == "originating-conversation"
     assert "sk-proj-secret123" not in event["output"]
     assert "sk-proj-secret123" not in text
 

@@ -13,6 +13,7 @@ config value. This module just persists the value and reports the change.
 
 from __future__ import annotations
 
+import copy
 import logging
 from dataclasses import dataclass
 from typing import Optional
@@ -172,18 +173,26 @@ def apply(
                 codex_version=None,
             )
 
-    set_runtime(config, new_value)
+    candidate = copy.deepcopy(config)
+    set_runtime(candidate, new_value)
     if persist_callback is not None:
         try:
-            persist_callback(config)
+            persist_callback(candidate)
         except Exception as exc:
             logger.exception("failed to persist openai_runtime change")
             return CodexRuntimeStatus(
                 success=False,
                 new_value=new_value,
                 old_value=current,
-                message=f"updated config in memory but persist failed: {exc}",
+                message=f"runtime unchanged: persist failed: {exc}",
             )
+
+    config.clear()
+    config.update(candidate)
+    from superforecasting_agent.storage.files import ConfigSnapshot
+
+    if isinstance(config, ConfigSnapshot):
+        config._path, config._revision = candidate._path, candidate._revision
 
     msg_lines = [
         f"openai_runtime: {current} → {new_value}",

@@ -11,8 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from superforecasting_agent.constants import get_agent_home
-from superforecasting_agent.runtime.config import get_config_path, load_config
-from superforecasting_agent.storage.files import atomic_roundtrip_yaml_update
+from superforecasting_agent.storage.configuration import ProfileConfiguration, read_configuration
 
 from forecasting import ForecastLedger
 from forecasting.change_control import ChangeControl
@@ -184,7 +183,7 @@ def _repository(value: str) -> str:
 
 
 def _configuration() -> tuple[dict[str, Any], dict[str, Any]]:
-    collaboration = dict(load_config().get("collaboration") or {})
+    collaboration = dict(read_configuration().get("collaboration") or {})
     return collaboration, dict(collaboration.get("repository") or {})
 
 
@@ -205,17 +204,17 @@ def _save_link(
     default_branch: str,
     ledger_path: Path | None = None,
 ) -> None:
-    path = get_config_path()
-    for key, value in (
-        ("collaboration.enabled", True),
-        ("collaboration.github.enabled", True),
-        ("collaboration.repository.slug", repository),
-        ("collaboration.repository.workspace_id", workspace_id),
-        ("collaboration.repository.default_branch", default_branch),
-    ):
-        atomic_roundtrip_yaml_update(path, key, value)
+    path = get_agent_home() / "config.yaml"
+    changes = {
+        "collaboration.enabled": True,
+        "collaboration.github.enabled": True,
+        "collaboration.repository.slug": repository,
+        "collaboration.repository.workspace_id": workspace_id,
+        "collaboration.repository.default_branch": default_branch,
+    }
     if ledger_path is not None:
-        atomic_roundtrip_yaml_update(path, "env.FORECAST_LEDGER_DB", str(ledger_path))
+        changes["env.FORECAST_LEDGER_DB"] = str(ledger_path)
+    ProfileConfiguration().update_many(path, changes)
     try:
         path.chmod(0o600)
     except (OSError, NotImplementedError):

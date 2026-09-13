@@ -16,8 +16,12 @@ call-time hop; ``_ok`` / ``_err`` are not patched — imported bare from core.
 """
 from __future__ import annotations
 
-import os
 import time
+
+from superforecasting_agent.configuration.browser import (
+    parse_cdp_url, is_default_local_cdp as _is_default_local_cdp,
+    normalize_cdp_url as _normalize_cdp_url,
+)
 
 import tui_gateway.server as _core
 from tui_gateway.server import _err, _ok
@@ -35,6 +39,10 @@ def rpc_validated(name: str):
 
 def register(server) -> None:
     """(Re-)register the carved browser.manage handler into ``server._methods``."""
+    global _core, _err, _ok
+    _core = server
+    _err = server._err
+    _ok = server._ok
     for kind, name, fn in _REGISTRARS:
         getattr(server, kind)(name)(fn)
 
@@ -52,46 +60,19 @@ def _resolve_browser_cdp_url() -> str:
     an override is set.
 
     Mirrors the env/config precedence of ``_get_cdp_override`` (env
-    var first, then ``browser.cdp_url`` from config.yaml) without the
+    var first, including an explicit empty/disconnected value, then
+    ``browser.cdp_url`` from config.yaml) without the
     websocket-resolution step, so the answer reflects user intent
     even when the configured host is not currently reachable.  The
     actual WS normalization happens in ``browser_navigate`` on the
     next tool call.
     """
-    env_url = os.environ.get("BROWSER_CDP_URL", "").strip()
-    if env_url:
-        return env_url
-    try:
-        from superforecasting_agent.runtime.config import read_raw_config
+    from superforecasting_agent.runtime.browser_connect import get_browser_endpoint
 
-        cfg = read_raw_config()
-        browser_cfg = cfg.get("browser", {}) if isinstance(cfg, dict) else {}
-        if isinstance(browser_cfg, dict):
-            return str(browser_cfg.get("cdp_url", "") or "").strip()
+    try:
+        return get_browser_endpoint()
     except Exception:
-        pass
-    return ""
-
-
-def _is_default_local_cdp(parsed) -> bool:
-    """Match the discovery-style local default; never the concrete WS form.
-
-    A user-supplied ``ws://127.0.0.1:9222/devtools/browser/<id>`` is a
-    real, connectable endpoint — collapsing it to bare ``http://...:9222``
-    would strip the path and break the connect.
-    """
-    try:
-        port = parsed.port or 80
-    except ValueError:
-        return False
-
-    discovery_path = parsed.path in {"", "/", "/json", "/json/version"}
-    return (
-        parsed.scheme in {"http", "ws"}
-        and parsed.hostname in {"127.0.0.1", "localhost"}
-        and port == 9222
-        and discovery_path
-    )
+        return ""
 
 
 def _http_ok(url: str, timeout: float) -> bool:
@@ -108,16 +89,6 @@ def _probe_urls(parsed) -> list[str]:
     scheme = {"ws": "http", "wss": "https"}.get(parsed.scheme, parsed.scheme)
     root = f"{scheme}://{parsed.netloc}".rstrip("/")
     return [f"{root}/json/version", f"{root}/json"]
-
-
-def _normalize_cdp_url(parsed) -> str:
-    # Concrete ``/devtools/browser/<id>`` endpoints (Browserbase et al.)
-    # are connectable as-is. Discovery-style inputs collapse to bare
-    # ``scheme://host:port`` so ``_resolve_cdp_override`` can append
-    # ``/json/version`` later without doubling the path.
-    if parsed.path.startswith("/devtools/browser/"):
-        return parsed.geturl()
-    return parsed._replace(path="", params="", query="", fragment="").geturl()
 
 
 def _failure_messages(url: str, port: int, system: str) -> list[str]:
@@ -159,16 +130,9 @@ def _(rid, params: dict) -> dict:
 def _browser_connect(rid, params: dict) -> dict:
     import platform
 
-    from superforecasting_agent.runtime.browser_connect import DEFAULT_BROWSER_CDP_URL
-    from tools.browser_tool import cleanup_all_browsers
-    from urllib.parse import urlparse
+    from superforecasting_agent.runtime.browser_connect import set_browser_endpoint
 
-    raw_url = params.get("url")
-    if raw_url is not None and not isinstance(raw_url, str):
-        return _err(
-            rid, 4015, f"browser url must be a string, got {type(raw_url).__name__}"
-        )
-    url = (raw_url or "").strip() or DEFAULT_BROWSER_CDP_URL
+    url = params.get("url")
 
     sid = params.get("session_id") or ""
     system = platform.system()
@@ -182,22 +146,12 @@ def _browser_connect(rid, params: dict) -> dict:
         if sid:
             _core._emit("browser.progress", sid, {"message": message, "level": level})
 
-    parsed = urlparse(url if "://" in url else f"http://{url}")
-    if parsed.scheme not in {"http", "https", "ws", "wss"}:
-        return _err(rid, 4015, f"unsupported browser url: {url}")
-    if not parsed.hostname:
-        return _err(rid, 4015, f"missing host in browser url: {url}")
     try:
-        port = parsed.port or (443 if parsed.scheme in {"https", "wss"} else 80)
-    except ValueError:
-        return _err(rid, 4015, f"invalid port in browser url: {url}")
-
-    # Always normalize default-local to 127.0.0.1:9222 so downstream
-    # comparisons + messaging match what we'll actually persist.
-    if _is_default_local_cdp(parsed):
-        url = DEFAULT_BROWSER_CDP_URL
-        parsed = urlparse(url)
-        port = parsed.port or 9222
+        parsed = parse_cdp_url(url)
+    except ValueError as exc:
+        return _err(rid, 4015, str(exc))
+    url = parsed.geturl()
+    port = parsed.port or (443 if parsed.scheme in {"https", "wss"} else 80)
 
     try:
         # ws[s]://.../devtools/browser/<id> endpoints (hosted CDP
@@ -246,13 +200,7 @@ def _browser_connect(rid, params: dict) -> dict:
 
         normalized = _normalize_cdp_url(parsed)
 
-        # Order matters: reap sessions BEFORE publishing the new env
-        # so an in-flight tool call sees the old supervisor closed,
-        # then again AFTER so the default task's cached supervisor
-        # is drained against the new URL.
-        cleanup_all_browsers()
-        os.environ["BROWSER_CDP_URL"] = normalized
-        cleanup_all_browsers()
+        set_browser_endpoint(normalized)
     except Exception as e:
         return _err(rid, 5031, str(e))
 
@@ -263,17 +211,10 @@ def _browser_connect(rid, params: dict) -> dict:
 
 
 def _browser_disconnect(rid) -> dict:
-    # Reap, drop the env override, reap again — closes the same swap
-    # window covered by ``_browser_connect``.
-    def reap() -> None:
-        try:
-            from tools.browser_tool import cleanup_all_browsers
+    from superforecasting_agent.runtime.browser_connect import set_browser_endpoint
 
-            cleanup_all_browsers()
-        except Exception:
-            pass
-
-    reap()
-    os.environ.pop("BROWSER_CDP_URL", None)
-    reap()
+    try:
+        set_browser_endpoint(None)
+    except Exception as exc:
+        return _err(rid, 5031, f"Browser disconnect failed: {exc}")
     return _ok(rid, {"connected": False})

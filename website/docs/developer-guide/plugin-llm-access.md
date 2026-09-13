@@ -131,6 +131,13 @@ def _tldr(ctx, raw_args: str) -> str:
 `result.text` is the model's response; `result.usage` carries token
 counts; `result.provider` and `result.model` carry attribution.
 
+Async slash-command handlers have a cooperative 30-second deadline in the shared
+CLI/TUI result resolver. On expiry, it cancels the coroutine and waits for its
+cleanup before releasing the command. Use `finally` or async context managers to
+release resources, and let cancellation propagate. Blocking code or suppression
+of cancellation can delay completion; the deadline cannot forcibly stop Python
+code. When a helper thread is required, it inherits the caller's context variables.
+
 ### Structured extraction — `/paste-to-evidence`
 
 ```python

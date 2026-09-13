@@ -28,7 +28,7 @@ from agent.credential_pool import (
     load_pool,
 )
 import superforecasting_agent.runtime.auth as auth_mod
-from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY
+from superforecasting_agent.configuration.authentication import PROVIDER_REGISTRY
 from superforecasting_agent.constants import OPENROUTER_BASE_URL
 
 from superforecasting_agent.runtime.secret_prompt import masked_secret_prompt
@@ -187,7 +187,7 @@ def auth_add_command(args) -> None:
     # Matches the Codex device_code re-link pattern that predates this.
     if not provider.startswith(CUSTOM_POOL_PREFIX):
         try:
-            from superforecasting_agent.runtime.auth import (
+            from superforecasting_agent.credentials.auth import (
                 _load_auth_store,
                 unsuppress_credential_source,
             )
@@ -494,7 +494,7 @@ def auth_remove_command(args) -> None:
     # user-facing output here so every source behaves identically from
     # the user's perspective.
     from agent.credential_sources import find_removal_step
-    from superforecasting_agent.runtime.auth import suppress_credential_source
+    from superforecasting_agent.credentials.auth import suppress_credential_source
 
     step = find_removal_step(provider, removed.source)
     if step is None:
@@ -555,7 +555,11 @@ def _interactive_auth() -> None:
 
     # Show AWS Bedrock credential status (not in the pool — uses boto3 chain)
     try:
-        from agent.bedrock_adapter import has_aws_credentials, resolve_aws_auth_env_var, resolve_bedrock_region
+        from superforecasting_agent.hosting.aws_credentials import (
+            has_aws_credentials,
+            resolve_aws_auth_env_var,
+            resolve_bedrock_region,
+        )
         if has_aws_credentials():
             auth_source = resolve_aws_auth_env_var() or "unknown"
             region = resolve_bedrock_region()
@@ -583,12 +587,8 @@ def _interactive_auth() -> None:
             _cfg_provider = str(_model_cfg.get("provider") or "").strip().lower()
             _cfg_auth_mode = str(_model_cfg.get("auth_mode") or "").strip().lower()
             if _cfg_provider == "azure-foundry" and _cfg_auth_mode == "entra_id":
-                from agent.azure_identity_adapter import (
-                    EntraIdentityConfig,
-                    SCOPE_AI_AZURE_DEFAULT,
-                    describe_active_credential,
-                    has_azure_identity_installed,
-                )
+                from superforecasting_agent.credentials.azure import EntraIdentityConfig, has_azure_identity_installed
+                from agent.azure_identity_adapter import SCOPE_AI_AZURE_DEFAULT, describe_active_credential
                 _base_url = str(_model_cfg.get("base_url") or "").strip()
                 _entra = _model_cfg.get("entra") or {}
                 if not isinstance(_entra, dict):

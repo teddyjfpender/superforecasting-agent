@@ -135,10 +135,13 @@ def test_runtime_execute_exception_records_error(tmp_path):
         _REGISTRY.pop("_test_boom", None)
 
 
-def test_main_entrypoint_runs_a_job(tmp_path, monkeypatch):
+@pytest.mark.parametrize("module", ["forecasting.jobs.__main__", "superforecasting_agent.worker"])
+def test_main_entrypoint_runs_a_job(tmp_path, monkeypatch, module):
     """python -m forecasting.jobs run <id> executes the job and exit-codes on
     its terminal status."""
-    from forecasting.jobs.__main__ import main
+    from importlib import import_module
+
+    main = import_module(module).main
 
     _seed_ledger()
     store = JobStore(home=tmp_path)

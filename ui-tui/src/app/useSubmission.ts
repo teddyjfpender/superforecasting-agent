@@ -95,9 +95,13 @@ export function useSubmission(opts: UseSubmissionOptions) {
   const send = useCallback(
     (text: string, showUserMessage = true) => {
       const expand = expandSnips(composerState.pasteSnips)
+      const sid = getUiState().sid
+      const stale = () => getUiState().sid !== sid
 
       const startSubmit = (displayText: string, submitText: string, showUserMessage = true) => {
-        const sid = getUiState().sid
+        if (stale()) {
+          return
+        }
 
         if (!sid) {
           return sys('forecast session not ready yet')
@@ -116,6 +120,10 @@ export function useSubmission(opts: UseSubmissionOptions) {
         turnController.interrupted = false
 
         gw.request<PromptSubmitResponse>('prompt.submit', { session_id: sid, text: submitText }).catch((e: Error) => {
+          if (stale()) {
+            return
+          }
+
           if (isSessionBusyError(e)) {
             composerActions.enqueue(submitText)
             patchUiState({ busy: true, status: 'queued for next turn' })
@@ -127,8 +135,6 @@ export function useSubmission(opts: UseSubmissionOptions) {
           patchUiState({ busy: false, status: 'ready' })
         })
       }
-
-      const sid = getUiState().sid
 
       if (!sid) {
         return sys('forecast session not ready yet')
@@ -150,6 +156,10 @@ export function useSubmission(opts: UseSubmissionOptions) {
       // letters, and escaped characters correctly.
       gw.request<InputDetectDropResponse>('input.detect_drop', { session_id: sid, text })
         .then(r => {
+          if (stale()) {
+            return
+          }
+
           if (!r?.matched) {
             return startSubmit(text, expand(text), showUserMessage)
           }
@@ -169,11 +179,18 @@ export function useSubmission(opts: UseSubmissionOptions) {
 
   const shellExec = useCallback(
     (cmd: string) => {
+      const sid = getUiState().sid
+      const stale = () => getUiState().sid !== sid
+
       appendMessage({ role: 'user', text: `!${cmd}` })
       patchUiState({ busy: true, status: 'running…' })
 
       gw.request<ShellExecResponse>('shell.exec', { command: cmd })
         .then(raw => {
+          if (stale()) {
+            return
+          }
+
           const r = asRpcResult<ShellExecResponse>(raw)
 
           if (!r) {
@@ -190,14 +207,24 @@ export function useSubmission(opts: UseSubmissionOptions) {
             sys(`exit ${r.code}`)
           }
         })
-        .catch((e: Error) => sys(`error: ${e.message}`))
-        .finally(() => patchUiState({ busy: false, status: 'ready' }))
+        .catch((e: Error) => {
+          if (!stale()) {
+            sys(`error: ${e.message}`)
+          }
+        })
+        .finally(() => {
+          if (!stale()) {
+            patchUiState({ busy: false, status: 'ready' })
+          }
+        })
     },
     [appendMessage, gw, sys]
   )
 
   const interpolate = useCallback(
     (text: string, then: (result: string) => void) => {
+      const sid = getUiState().sid
+
       patchUiState({ status: 'interpolating…' })
       const matches = [...text.matchAll(new RegExp(INTERPOLATION_RE.source, 'g'))]
 
@@ -212,7 +239,11 @@ export function useSubmission(opts: UseSubmissionOptions) {
             })
             .catch(() => '(error)')
         )
-      ).then(results => then(spliceMatches(text, matches, results)))
+      ).then(results => {
+        if (getUiState().sid === sid) {
+          then(spliceMatches(text, matches, results))
+        }
+      })
     },
     [gw]
   )
@@ -251,6 +282,10 @@ export function useSubmission(opts: UseSubmissionOptions) {
       const mode = live.busyInputMode
 
       const fallback = (note: string) => {
+        if (getUiState().sid !== live.sid) {
+          return
+        }
+
         if (opts.fallbackToFront) {
           composerRefs.queueRef.current.unshift(full)
           composerActions.syncQueue()

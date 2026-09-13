@@ -8,6 +8,7 @@ from fastapi import HTTPException
 def isolated_profiles(tmp_path, monkeypatch):
     """Give profile discovery an isolated default home with one named profile."""
     from superforecasting_agent.runtime import profiles
+    from superforecasting_agent import profile_paths
 
     default_home = tmp_path / ".hermes"
     profiles_root = default_home / "profiles"
@@ -17,6 +18,7 @@ def isolated_profiles(tmp_path, monkeypatch):
         (home / "cron").mkdir(parents=True, exist_ok=True)
         (home / "config.yaml").write_text("model: test-model\n", encoding="utf-8")
 
+    monkeypatch.setattr(profile_paths, "get_default_agent_root", lambda: default_home)
     monkeypatch.setattr(profiles, "_get_default_hermes_home", lambda: default_home)
     monkeypatch.setattr(profiles, "_get_profiles_root", lambda: profiles_root)
     return {"default": default_home, "worker_alpha": worker_home}

@@ -6,6 +6,8 @@ that can be copy-pasted into Discord/GitHub/Telegram for support context.
 No ANSI colors, no checkmarks — just data.
 """
 
+from superforecasting_agent.application.command_output import emit as print
+
 import json
 import os
 import platform
@@ -224,7 +226,7 @@ def run_dump(args):
 
     # Profile
     try:
-        from superforecasting_agent.runtime.profiles import get_active_profile_name
+        from superforecasting_agent.constants import get_active_profile_name
         profile = get_active_profile_name() or "(default)"
     except Exception:
         profile = "(default)"

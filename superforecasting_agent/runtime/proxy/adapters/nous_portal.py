@@ -16,7 +16,7 @@ import logging
 import threading
 from typing import Any, Dict, FrozenSet, Optional
 
-from superforecasting_agent.runtime.auth import (
+from superforecasting_agent.credentials.auth import (
     AuthError,
     DEFAULT_NOUS_INFERENCE_URL,
     NOUS_INFERENCE_AUTH_MODE_AUTO,

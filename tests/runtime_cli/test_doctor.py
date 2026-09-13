@@ -5,6 +5,7 @@ import sys
 import types
 import io
 import contextlib
+import importlib
 from argparse import Namespace
 from types import SimpleNamespace
 
@@ -173,8 +174,8 @@ class TestHonchoDoctorConfigDetection:
         fake_config = SimpleNamespace(enabled=True, api_key="***")
 
         monkeypatch.setattr(
-            "plugins.memory.honcho.client.HonchoClientConfig.from_global_config",
-            lambda: fake_config,
+            importlib.import_module("plugins.memory.honcho.client").HonchoClientConfig,
+            "from_global_config", lambda: fake_config,
         )
 
         assert doctor._honcho_is_configured_for_doctor()
@@ -183,8 +184,8 @@ class TestHonchoDoctorConfigDetection:
         fake_config = SimpleNamespace(enabled=True, api_key="")
 
         monkeypatch.setattr(
-            "plugins.memory.honcho.client.HonchoClientConfig.from_global_config",
-            lambda: fake_config,
+            importlib.import_module("plugins.memory.honcho.client").HonchoClientConfig,
+            "from_global_config", lambda: fake_config,
         )
 
         assert not doctor._honcho_is_configured_for_doctor()
@@ -341,7 +342,7 @@ class TestDoctorMemoryProviderSection:
 
         # Stub auth checks to avoid real API calls
         try:
-            from superforecasting_agent.runtime import auth as _auth_mod
+            from superforecasting_agent.credentials import auth as _auth_mod
             monkeypatch.setattr(_auth_mod, "get_nous_auth_status", lambda: {})
             monkeypatch.setattr(_auth_mod, "get_codex_auth_status", lambda: {})
             monkeypatch.setattr(_auth_mod, "get_xai_oauth_auth_status", lambda: {})
@@ -448,7 +449,7 @@ def test_run_doctor_accepts_named_provider_from_providers_section(monkeypatch, t
     monkeypatch.setitem(sys.modules, "superforecasting_agent.tooling.runtime", fake_model_tools)
 
     try:
-        from superforecasting_agent.runtime import auth as _auth_mod
+        from superforecasting_agent.credentials import auth as _auth_mod
         monkeypatch.setattr(_auth_mod, "get_nous_auth_status", lambda: {})
         monkeypatch.setattr(_auth_mod, "get_codex_auth_status", lambda: {})
         monkeypatch.setattr(_auth_mod, "get_xai_oauth_auth_status", lambda: {})
@@ -486,7 +487,7 @@ def test_run_doctor_accepts_bare_custom_provider(monkeypatch, tmp_path):
     monkeypatch.setitem(sys.modules, "superforecasting_agent.tooling.runtime", fake_model_tools)
 
     try:
-        from superforecasting_agent.runtime import auth as _auth_mod
+        from superforecasting_agent.credentials import auth as _auth_mod
         monkeypatch.setattr(_auth_mod, "get_nous_auth_status", lambda: {})
         monkeypatch.setattr(_auth_mod, "get_codex_auth_status", lambda: {})
         monkeypatch.setattr(_auth_mod, "get_xai_oauth_auth_status", lambda: {})
@@ -525,7 +526,7 @@ def test_run_doctor_flags_missing_credentials_for_active_openrouter_provider(mon
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
     try:
-        from superforecasting_agent.runtime import auth as _auth_mod
+        from superforecasting_agent.credentials import auth as _auth_mod
 
         monkeypatch.setattr(_auth_mod, "get_nous_auth_status", lambda: {})
         monkeypatch.setattr(_auth_mod, "get_codex_auth_status", lambda: {})
@@ -578,7 +579,7 @@ def test_run_doctor_accepts_hermes_provider_ids_that_catalog_aliases(
     monkeypatch.setitem(sys.modules, "superforecasting_agent.tooling.runtime", fake_model_tools)
 
     try:
-        from superforecasting_agent.runtime import auth as _auth_mod
+        from superforecasting_agent.credentials import auth as _auth_mod
         monkeypatch.setattr(_auth_mod, "get_nous_auth_status", lambda: {})
         monkeypatch.setattr(_auth_mod, "get_codex_auth_status", lambda: {})
         monkeypatch.setattr(_auth_mod, "get_xai_oauth_auth_status", lambda: {})
@@ -624,7 +625,7 @@ def test_run_doctor_accepts_kimi_coding_cn_provider(monkeypatch, tmp_path):
     monkeypatch.setitem(sys.modules, "superforecasting_agent.tooling.runtime", fake_model_tools)
 
     try:
-        from superforecasting_agent.runtime import auth as _auth_mod
+        from superforecasting_agent.credentials import auth as _auth_mod
         monkeypatch.setattr(_auth_mod, "get_nous_auth_status", lambda: {})
         monkeypatch.setattr(_auth_mod, "get_codex_auth_status", lambda: {})
         monkeypatch.setattr(_auth_mod, "get_auth_status", lambda provider: {"logged_in": True})
@@ -664,7 +665,7 @@ def test_run_doctor_termux_does_not_mark_browser_available_without_agent_browser
     monkeypatch.setitem(sys.modules, "superforecasting_agent.tooling.runtime", fake_model_tools)
 
     try:
-        from superforecasting_agent.runtime import auth as _auth_mod
+        from superforecasting_agent.credentials import auth as _auth_mod
         monkeypatch.setattr(_auth_mod, "get_nous_auth_status", lambda: {})
         monkeypatch.setattr(_auth_mod, "get_codex_auth_status", lambda: {})
         monkeypatch.setattr(_auth_mod, "get_xai_oauth_auth_status", lambda: {})
@@ -704,7 +705,7 @@ def test_run_doctor_kimi_cn_env_is_detected_and_probe_is_null_safe(monkeypatch, 
     monkeypatch.setitem(sys.modules, "superforecasting_agent.tooling.runtime", fake_model_tools)
 
     try:
-        from superforecasting_agent.runtime import auth as _auth_mod
+        from superforecasting_agent.credentials import auth as _auth_mod
         monkeypatch.setattr(_auth_mod, "get_nous_auth_status", lambda: {})
         monkeypatch.setattr(_auth_mod, "get_codex_auth_status", lambda: {})
         monkeypatch.setattr(_auth_mod, "get_xai_oauth_auth_status", lambda: {})
@@ -753,7 +754,7 @@ def test_run_doctor_dashscope_retries_china_endpoint_after_intl_unauthorized(mon
     monkeypatch.setitem(sys.modules, "superforecasting_agent.tooling.runtime", fake_model_tools)
 
     try:
-        from superforecasting_agent.runtime import auth as _auth_mod
+        from superforecasting_agent.credentials import auth as _auth_mod
         monkeypatch.setattr(_auth_mod, "get_nous_auth_status", lambda: {})
         monkeypatch.setattr(_auth_mod, "get_codex_auth_status", lambda: {})
         monkeypatch.setattr(_auth_mod, "get_xai_oauth_auth_status", lambda: {})
@@ -812,7 +813,7 @@ def test_run_doctor_opencode_go_skips_invalid_models_probe(monkeypatch, tmp_path
     monkeypatch.setitem(sys.modules, "superforecasting_agent.tooling.runtime", fake_model_tools)
 
     try:
-        from superforecasting_agent.runtime import auth as _auth_mod
+        from superforecasting_agent.credentials import auth as _auth_mod
         monkeypatch.setattr(_auth_mod, "get_nous_auth_status", lambda: {})
         monkeypatch.setattr(_auth_mod, "get_codex_auth_status", lambda: {})
         monkeypatch.setattr(_auth_mod, "get_xai_oauth_auth_status", lambda: {})
@@ -958,7 +959,7 @@ def _run_doctor_with_healthy_oauth_fallback(
     )
     monkeypatch.setitem(sys.modules, "superforecasting_agent.tooling.runtime", fake_model_tools)
 
-    from superforecasting_agent.runtime import auth as _auth_mod
+    from superforecasting_agent.credentials import auth as _auth_mod
 
     monkeypatch.setattr(_auth_mod, "get_nous_auth_status", lambda: {"logged_in": True})
     monkeypatch.setattr(_auth_mod, "get_codex_auth_status", lambda: {})
@@ -1046,19 +1047,19 @@ def test_has_healthy_oauth_fallback_returns_false_for_unknown_provider():
 
 class TestHasHealthyOauthFallbackForXai:
     def test_returns_true_when_xai_oauth_healthy(self, monkeypatch):
-        from superforecasting_agent.runtime import auth as _auth_mod
+        from superforecasting_agent.credentials import auth as _auth_mod
         monkeypatch.setattr(_auth_mod, "get_xai_oauth_auth_status", lambda: {"logged_in": True})
         from superforecasting_agent.runtime.doctor import _has_healthy_oauth_fallback_for_apikey_provider
         assert _has_healthy_oauth_fallback_for_apikey_provider("xai") is True
 
     def test_returns_false_when_xai_oauth_not_logged_in(self, monkeypatch):
-        from superforecasting_agent.runtime import auth as _auth_mod
+        from superforecasting_agent.credentials import auth as _auth_mod
         monkeypatch.setattr(_auth_mod, "get_xai_oauth_auth_status", lambda: {"logged_in": False})
         from superforecasting_agent.runtime.doctor import _has_healthy_oauth_fallback_for_apikey_provider
         assert _has_healthy_oauth_fallback_for_apikey_provider("xai") is False
 
     def test_returns_false_when_xai_oauth_returns_none(self, monkeypatch):
-        from superforecasting_agent.runtime import auth as _auth_mod
+        from superforecasting_agent.credentials import auth as _auth_mod
         monkeypatch.setattr(_auth_mod, "get_xai_oauth_auth_status", lambda: None)
         from superforecasting_agent.runtime.doctor import _has_healthy_oauth_fallback_for_apikey_provider
         assert _has_healthy_oauth_fallback_for_apikey_provider("xai") is False
@@ -1066,7 +1067,7 @@ class TestHasHealthyOauthFallbackForXai:
     def test_returns_false_when_xai_import_unavailable(self, monkeypatch):
         import sys
         # Simulate get_xai_oauth_auth_status missing from auth module
-        monkeypatch.delattr("superforecasting_agent.runtime.auth.get_xai_oauth_auth_status", raising=False)
+        monkeypatch.delattr("superforecasting_agent.credentials.auth.get_xai_oauth_auth_status", raising=False)
         # Force doctor module to re-import the function
         monkeypatch.delitem(sys.modules, "superforecasting_agent.runtime.doctor", raising=False)
         from superforecasting_agent.runtime.doctor import _has_healthy_oauth_fallback_for_apikey_provider
@@ -1074,7 +1075,7 @@ class TestHasHealthyOauthFallbackForXai:
 
     def test_xai_import_failure_does_not_affect_gemini(self, monkeypatch):
         import sys
-        from superforecasting_agent.runtime import auth as _auth_mod
+        from superforecasting_agent.credentials import auth as _auth_mod
         # xAI function missing, but Gemini is healthy
         monkeypatch.delattr(_auth_mod, "get_xai_oauth_auth_status", raising=False)
         monkeypatch.setattr(_auth_mod, "get_gemini_oauth_auth_status", lambda: {"logged_in": True})
@@ -1114,7 +1115,7 @@ class TestDoctorXaiOAuthStatus:
         )
         monkeypatch.setitem(sys.modules, "superforecasting_agent.tooling.runtime", fake_model_tools)
 
-        from superforecasting_agent.runtime import auth as _auth_mod
+        from superforecasting_agent.credentials import auth as _auth_mod
         monkeypatch.setattr(_auth_mod, "get_nous_auth_status", lambda: {"logged_in": False})
         monkeypatch.setattr(_auth_mod, "get_codex_auth_status", lambda: {"logged_in": False})
         monkeypatch.setattr(_auth_mod, "get_gemini_oauth_auth_status", lambda: {"logged_in": False})
@@ -1189,7 +1190,7 @@ class TestDoctorXaiOAuthStatus:
         )
         monkeypatch.setitem(sys.modules, "superforecasting_agent.tooling.runtime", fake_model_tools)
 
-        from superforecasting_agent.runtime import auth as _auth_mod
+        from superforecasting_agent.credentials import auth as _auth_mod
         monkeypatch.setattr(_auth_mod, "get_nous_auth_status", lambda: {"logged_in": False})
         monkeypatch.setattr(_auth_mod, "get_codex_auth_status", lambda: {"logged_in": False})
         monkeypatch.setattr(_auth_mod, "get_gemini_oauth_auth_status", lambda: {"logged_in": False})
@@ -1221,7 +1222,7 @@ class TestDoctorXaiOAuthStatus:
         )
         monkeypatch.setitem(sys.modules, "superforecasting_agent.tooling.runtime", fake_model_tools)
 
-        from superforecasting_agent.runtime import auth as _auth_mod
+        from superforecasting_agent.credentials import auth as _auth_mod
         monkeypatch.setattr(_auth_mod, "get_nous_auth_status", lambda: {"logged_in": True})
         monkeypatch.setattr(_auth_mod, "get_codex_auth_status", lambda: {"logged_in": False})
         monkeypatch.setattr(_auth_mod, "get_gemini_oauth_auth_status", lambda: {"logged_in": False})
@@ -1282,7 +1283,7 @@ class TestDoctorCodexCliHintPlacement:
         )
         monkeypatch.setitem(sys.modules, "superforecasting_agent.tooling.runtime", fake_model_tools)
 
-        from superforecasting_agent.runtime import auth as _auth_mod
+        from superforecasting_agent.credentials import auth as _auth_mod
         monkeypatch.setattr(_auth_mod, "get_nous_auth_status", lambda: {"logged_in": False})
         monkeypatch.setattr(_auth_mod, "get_codex_auth_status", lambda: {"logged_in": codex_logged_in})
         monkeypatch.setattr(_auth_mod, "get_gemini_oauth_auth_status", lambda: {"logged_in": False})

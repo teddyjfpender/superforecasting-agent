@@ -4,12 +4,12 @@ Discovery precedes compatibility-map initialization. This module owns the
 cache and last-resolved tool names used by delegation and sandbox fallback.
 """
 
-import os
 import logging
-from typing import Dict, Any, List, Optional, Tuple
+import os
+from typing import Any, Dict, List, Optional, Tuple
 
-from tools.registry import discover_builtin_tools, registry
 from superforecasting_agent.tooling.toolsets import resolve_toolset, validate_toolset
+from tools.registry import discover_builtin_tools, registry
 
 logger = logging.getLogger("superforecasting_agent.tooling.runtime")
 
@@ -36,6 +36,7 @@ discover_builtin_tools()
 # Plugin tool discovery (user/project/pip plugins)
 try:
     from superforecasting_agent.runtime.plugins import discover_plugins
+
     discover_plugins()
 except Exception as e:
     logger.debug("Plugin discovery failed: %s", e)
@@ -66,10 +67,16 @@ _LEGACY_TOOLSET_MAP = {
     "image_tools": ["image_generate"],
     "skills_tools": ["skills_list", "skill_view", "skill_manage"],
     "browser_tools": [
-        "browser_navigate", "browser_snapshot", "browser_click",
-        "browser_type", "browser_scroll", "browser_back",
-        "browser_press", "browser_get_images",
-        "browser_vision", "browser_console"
+        "browser_navigate",
+        "browser_snapshot",
+        "browser_click",
+        "browser_type",
+        "browser_scroll",
+        "browser_back",
+        "browser_press",
+        "browser_get_images",
+        "browser_vision",
+        "browser_console",
     ],
     "cronjob_tools": ["cronjob"],
     "file_tools": ["read_file", "write_file", "patch", "search_files"],
@@ -103,8 +110,8 @@ def _clear_tool_defs_cache() -> None:
 
 
 def get_tool_definitions(
-    enabled_toolsets: List[str] = None,
-    disabled_toolsets: List[str] = None,
+    enabled_toolsets: Optional[List[str]] = None,
+    disabled_toolsets: Optional[List[str]] = None,
     quiet_mode: bool = False,
 ) -> List[Dict[str, Any]]:
     """
@@ -131,6 +138,7 @@ def get_tool_definitions(
     if quiet_mode:
         try:
             from superforecasting_agent.runtime.config import get_config_path
+
             cfg_path = get_config_path()
             cfg_stat = cfg_path.stat()
             cfg_fp = (cfg_stat.st_mtime_ns, cfg_stat.st_size)
@@ -168,8 +176,8 @@ def get_tool_definitions(
 
 
 def _compute_tool_definitions(
-    enabled_toolsets: List[str] = None,
-    disabled_toolsets: List[str] = None,
+    enabled_toolsets: Optional[List[str]] = None,
+    disabled_toolsets: Optional[List[str]] = None,
     quiet_mode: bool = False,
 ) -> List[Dict[str, Any]]:
     """Uncached implementation of :func:`get_tool_definitions`."""
@@ -178,7 +186,10 @@ def _compute_tool_definitions(
 
     if enabled_toolsets is not None:
         effective_enabled_toolsets = list(enabled_toolsets)
-        if os.environ.get("HERMES_KANBAN_TASK") and "kanban" not in effective_enabled_toolsets:
+        if (
+            os.environ.get("HERMES_KANBAN_TASK")
+            and "kanban" not in effective_enabled_toolsets
+        ):
             # Dispatcher-spawned workers are scoped by HERMES_KANBAN_TASK and
             # must always receive the lifecycle handoff tools. Assignee
             # profiles may intentionally restrict their normal chat toolsets
@@ -190,17 +201,22 @@ def _compute_tool_definitions(
                 resolved = resolve_toolset(toolset_name)
                 tools_to_include.update(resolved)
                 if not quiet_mode:
-                    print(f"✅ Enabled toolset '{toolset_name}': {', '.join(resolved) if resolved else 'no tools'}")
+                    print(
+                        f"✅ Enabled toolset '{toolset_name}': {', '.join(resolved) if resolved else 'no tools'}"
+                    )
             elif toolset_name in _LEGACY_TOOLSET_MAP:
                 legacy_tools = _LEGACY_TOOLSET_MAP[toolset_name]
                 tools_to_include.update(legacy_tools)
                 if not quiet_mode:
-                    print(f"✅ Enabled legacy toolset '{toolset_name}': {', '.join(legacy_tools)}")
+                    print(
+                        f"✅ Enabled legacy toolset '{toolset_name}': {', '.join(legacy_tools)}"
+                    )
             elif not quiet_mode:
                 print(f"⚠️  Unknown toolset: {toolset_name}")
     else:
         # Default: start with everything
         from superforecasting_agent.tooling.toolsets import get_all_toolsets
+
         for ts_name in get_all_toolsets():
             tools_to_include.update(resolve_toolset(ts_name))
 
@@ -214,12 +230,16 @@ def _compute_tool_definitions(
                 resolved = resolve_toolset(toolset_name)
                 tools_to_include.difference_update(resolved)
                 if not quiet_mode:
-                    print(f"🚫 Disabled toolset '{toolset_name}': {', '.join(resolved) if resolved else 'no tools'}")
+                    print(
+                        f"🚫 Disabled toolset '{toolset_name}': {', '.join(resolved) if resolved else 'no tools'}"
+                    )
             elif toolset_name in _LEGACY_TOOLSET_MAP:
                 legacy_tools = _LEGACY_TOOLSET_MAP[toolset_name]
                 tools_to_include.difference_update(legacy_tools)
                 if not quiet_mode:
-                    print(f"🚫 Disabled legacy toolset '{toolset_name}': {', '.join(legacy_tools)}")
+                    print(
+                        f"🚫 Disabled legacy toolset '{toolset_name}': {', '.join(legacy_tools)}"
+                    )
             elif not quiet_mode:
                 print(f"⚠️  Unknown toolset: {toolset_name}")
 
@@ -243,9 +263,16 @@ def _compute_tool_definitions(
     # execute_code" even when the API key isn't configured or the toolset is
     # disabled (#560-discord).
     if "execute_code" in available_tool_names:
-        from tools.code_execution_tool import SANDBOX_ALLOWED_TOOLS, build_execute_code_schema, _get_execution_mode
+        from tools.code_execution_tool import (
+            SANDBOX_ALLOWED_TOOLS,
+            _get_execution_mode,
+            build_execute_code_schema,
+        )
+
         sandbox_enabled = SANDBOX_ALLOWED_TOOLS & available_tool_names
-        dynamic_schema = build_execute_code_schema(sandbox_enabled, mode=_get_execution_mode())
+        dynamic_schema = build_execute_code_schema(
+            sandbox_enabled, mode=_get_execution_mode()
+        )
         for i, td in enumerate(filtered_tools):
             if td.get("function", {}).get("name") == "execute_code":
                 filtered_tools[i] = {"type": "function", "function": dynamic_schema}
@@ -264,13 +291,15 @@ def _compute_tool_definitions(
         if discord_tool_name in available_tool_names:
             try:
                 from tools import discord_tool as _dt
+
                 schema_fn = getattr(_dt, _discord_schema_fns[discord_tool_name])
                 dynamic = schema_fn()
             except Exception:
                 dynamic = None
             if dynamic is None:
                 filtered_tools = [
-                    t for t in filtered_tools
+                    t
+                    for t in filtered_tools
                     if t.get("function", {}).get("name") != discord_tool_name
                 ]
                 available_tool_names.discard(discord_tool_name)
@@ -303,7 +332,9 @@ def _compute_tool_definitions(
     if not quiet_mode:
         if filtered_tools:
             tool_names = [t["function"]["name"] for t in filtered_tools]
-            print(f"🛠️  Final tool selection ({len(filtered_tools)} tools): {', '.join(tool_names)}")
+            print(
+                f"🛠️  Final tool selection ({len(filtered_tools)} tools): {', '.join(tool_names)}"
+            )
         else:
             print("🛠️  No tools selected (all filtered out or unavailable)")
 
@@ -318,6 +349,7 @@ def _compute_tool_definitions(
     # is a no-op for schemas that are already well-formed.
     try:
         from tools.schema_sanitizer import sanitize_tool_schemas
+
         filtered_tools = sanitize_tool_schemas(filtered_tools)
     except Exception as e:  # pragma: no cover — defensive
         logger.warning("Schema sanitization skipped: %s", e)
@@ -328,6 +360,7 @@ def _compute_tool_definitions(
 # =============================================================================
 # Backward-compat wrapper functions
 # =============================================================================
+
 
 def get_all_tool_names() -> List[str]:
     """Return all registered tool names."""

@@ -1,19 +1,28 @@
 """Memory session boundaries, client eviction, and full task shutdown."""
 
+import logging
+import threading
 from typing import Any
 
-from tools.terminal_tool import cleanup_vm
+from agent.openai_clients import detach_primary_client, require_client_cleanup_complete
+from agent.review_lifecycle import reviews_for
 from tools.browser_tool import cleanup_browser
+from tools.terminal_tool import cleanup_vm
+
+# Only partially constructed agents lack their own lock.
+_partial_agent_close_lock = threading.RLock()
+logger = logging.getLogger(__name__)
 
 
-def shutdown_memory_provider(self, messages: list = None) -> None:
+def shutdown_memory_provider(self, messages: list | None = None) -> None:
     """Shut down the memory provider and context engine — call at actual session boundaries.
 
-        This calls on_session_end() then shutdown_all() on the memory
-        manager, and on_session_end() on the context engine.
-        NOT called per-turn — only at CLI exit, /reset, gateway
-        session expiry, etc.
-        """
+    This calls on_session_end() then shutdown_all() on the memory
+    manager, and on_session_end() on the context engine.
+    NOT called per-turn — only at CLI exit, /reset, gateway
+    session expiry, etc.
+    """
+    reviews_for(self).stop()
     if self._memory_manager:
         try:
             self._memory_manager.on_session_end(messages or [])
@@ -34,11 +43,11 @@ def shutdown_memory_provider(self, messages: list = None) -> None:
             pass
 
 
-def commit_memory_session(self, messages: list = None) -> None:
+def commit_memory_session(self, messages: list | None = None) -> None:
     """Trigger end-of-session extraction without tearing providers down.
-        Called when session_id rotates (e.g. /new, context compression);
-        providers keep their state and continue running under the old
-        session_id — they just flush pending extraction now."""
+    Called when session_id rotates (e.g. /new, context compression);
+    providers keep their state and continue running under the old
+    session_id — they just flush pending extraction now."""
     if self._memory_manager:
         try:
             self._memory_manager.on_session_end(messages or [])
@@ -69,37 +78,38 @@ def _sync_external_memory_for_turn(
 ) -> None:
     """Mirror a completed turn into external memory providers.
 
-        Called at the end of ``run_conversation`` with the cleaned user
-        message (``original_user_message``) and the finalised assistant
-        response.  The external memory backend gets both ``sync_all`` (to
-        persist the exchange) and ``queue_prefetch_all`` (to start
-        warming context for the next turn) in one shot.
+    Called at the end of ``run_conversation`` with the cleaned user
+    message (``original_user_message``) and the finalised assistant
+    response.  The external memory backend gets both ``sync_all`` (to
+    persist the exchange) and ``queue_prefetch_all`` (to start
+    warming context for the next turn) in one shot.
 
-        Uses ``original_user_message`` rather than ``user_message``
-        because the latter may carry injected skill content that bloats
-        or breaks provider queries.
+    Uses ``original_user_message`` rather than ``user_message``
+    because the latter may carry injected skill content that bloats
+    or breaks provider queries.
 
-        Interrupted turns are skipped entirely (#15218).  A partial
-        assistant output, an aborted tool chain, or a mid-stream reset
-        is not durable conversational truth — mirroring it into an
-        external memory backend pollutes future recall with state the
-        user never saw completed.  The prefetch is gated on the same
-        flag: the user's next message is almost certainly a retry of
-        the same intent, and a prefetch keyed on the interrupted turn
-        would fire against stale context.
+    Interrupted turns are skipped entirely (#15218).  A partial
+    assistant output, an aborted tool chain, or a mid-stream reset
+    is not durable conversational truth — mirroring it into an
+    external memory backend pollutes future recall with state the
+    user never saw completed.  The prefetch is gated on the same
+    flag: the user's next message is almost certainly a retry of
+    the same intent, and a prefetch keyed on the interrupted turn
+    would fire against stale context.
 
-        Normal completed turns still sync as before.  The whole body is
-        wrapped in ``try/except Exception`` because external memory
-        providers are strictly best-effort — a misconfigured or offline
-        backend must not block the user from seeing their response.
-        """
+    Normal completed turns still sync as before.  The whole body is
+    wrapped in ``try/except Exception`` because external memory
+    providers are strictly best-effort — a misconfigured or offline
+    backend must not block the user from seeing their response.
+    """
     if interrupted:
         return
     if not (self._memory_manager and final_response and original_user_message):
         return
     try:
         self._memory_manager.sync_all(
-            original_user_message, final_response,
+            original_user_message,
+            final_response,
             session_id=self.session_id or "",
         )
         self._memory_manager.queue_prefetch_all(
@@ -113,103 +123,154 @@ def _sync_external_memory_for_turn(
 def release_clients(self) -> None:
     """Release LLM client resources WITHOUT tearing down session tool state.
 
-        Used by the gateway when evicting this agent from _agent_cache for
-        memory-management reasons (LRU cap or idle TTL) — the session may
-        resume at any time with a freshly-built AIAgent that reuses the
-        same task_id / session_id, so we must NOT kill:
-          - process_registry entries for task_id (user's bg shells)
-          - terminal sandbox for task_id (cwd, env, shell state)
-          - browser daemon for task_id (open tabs, cookies)
-          - memory provider (has its own lifecycle; keeps running)
+    Used by the gateway when evicting this agent from _agent_cache for
+    memory-management reasons (LRU cap or idle TTL) — the session may
+    resume at any time with a freshly-built AIAgent that reuses the
+    same task_id / session_id, so we must NOT kill:
+      - process_registry entries for task_id (user's bg shells)
+      - terminal sandbox for task_id (cwd, env, shell state)
+      - browser daemon for task_id (open tabs, cookies)
+      - memory provider (has its own lifecycle; keeps running)
 
-        We DO close:
-          - OpenAI/httpx client pool (big chunk of held memory + sockets;
-            the rebuilt agent gets a fresh client anyway)
-          - Active child subagents (per-turn artefacts; safe to drop)
+    We DO close:
+      - OpenAI/httpx client pool (big chunk of held memory + sockets;
+        the rebuilt agent gets a fresh client anyway)
+      - Active child subagents (per-turn artefacts; safe to drop)
 
-        Safe to call multiple times.  Distinct from close() — which is the
-        hard teardown for actual session boundaries (/new, /reset, session
-        expiry).
-        """
-    # Close active child agents (per-turn; no cross-turn persistence).
-    try:
-        with self._active_children_lock:
-            children = list(self._active_children)
-            self._active_children.clear()
-        for child in children:
-            try:
-                child.release_clients()
-            except Exception:
-                # Fall back to full close on children; they're per-turn.
-                try:
-                    child.close()
-                except Exception:
-                    pass
-    except Exception:
-        pass
+    Safe to call multiple times.  Distinct from close() — which is the
+    hard teardown for actual session boundaries (/new, /reset, session
+    expiry).
+    """
+    with getattr(self, "_resource_close_lock", _partial_agent_close_lock):
+        reviews_for(self).stop()
+        if getattr(self, "_resources_closed", False):
+            return
+        _release_clients(self)
+        _require_children_disposed(self)
+        require_client_cleanup_complete(self)
+
+
+def _release_clients(self) -> None:
+    _close_children(self, release_only=True)
 
     # Close the OpenAI/httpx client to release sockets immediately.
     try:
-        client = getattr(self, "client", None)
+        client = detach_primary_client(self)
         if client is not None:
             self._close_openai_client(client, reason="cache_evict", shared=True)
-            self.client = None
     except Exception:
         pass
+
+
+def _close_children(self, *, release_only: bool, collect_active: bool = True) -> None:
+    """Dispose captured children; failed handles stay owned for a later retry.
+
+    The caller holds the resource-close lock. Detach the pending batch before
+    callbacks so a reentrant parent close cannot repeat an in-flight disposal.
+    """
+    if getattr(self, "_child_cleanup_running", False):
+        return
+    self._child_cleanup_running = True
+    try:
+        children = list(getattr(self, "_pending_child_closes", []))
+        self._pending_child_closes = []
+        if collect_active:
+            lock = getattr(self, "_active_children_lock", _partial_agent_close_lock)
+            with lock:
+                active = getattr(self, "_active_children", [])
+                children.extend(active)
+                active.clear()
+        seen: set[int] = set()
+        for child in children:
+            if id(child) in seen:
+                continue
+            seen.add(id(child))
+            try:
+                if release_only:
+                    try:
+                        child.release_clients()
+                        continue
+                    except Exception:
+                        # Per-turn children may be fully closed on failed eviction.
+                        pass
+                child.close()
+            except Exception:
+                self._pending_child_closes.append(child)
+                logger.warning(
+                    "Child agent cleanup failed; retaining handle for retry",
+                    exc_info=True,
+                )
+    finally:
+        self._child_cleanup_running = False
+
+
+def _require_children_disposed(self) -> None:
+    if not getattr(self, "_child_cleanup_running", False) and getattr(
+        self, "_pending_child_closes", []
+    ):
+        raise RuntimeError("Child agent cleanup incomplete; retry close")
 
 
 def close(self) -> None:
     """Release all resources held by this agent instance.
 
-        Cleans up subprocess resources that would otherwise become orphans:
-        - Background processes tracked in ProcessRegistry
-        - Terminal sandbox environments
-        - Browser daemon sessions
-        - Active child agents (subagent delegation)
-        - OpenAI/httpx client connections
+    Cleans up subprocess resources that would otherwise become orphans:
+    - Background processes tracked in ProcessRegistry
+    - Terminal sandbox environments
+    - Browser daemon sessions
+    - Active child agents (subagent delegation)
+    - OpenAI/httpx client connections
 
-        Safe to call multiple times (idempotent).  Each cleanup step is
-        independently guarded so a failure in one does not prevent the rest.
-        """
+    Safe to call multiple times (idempotent).  Each cleanup step is
+    independently guarded so a failure in one does not prevent the rest.
+    """
+    with getattr(self, "_resource_close_lock", _partial_agent_close_lock):
+        reviews_for(self).stop()
+        if getattr(self, "_resources_closed", False):
+            # Retry only retained object handles, never session/task-ID lookups.
+            _close_children(self, release_only=False, collect_active=False)
+            _require_children_disposed(self)
+            require_client_cleanup_complete(self)
+            return
+        # Claim once before callbacks: teardown may re-enter close(). A later
+        # agent can reuse this session ID, so repeated cleanup is destructive.
+        self._resources_closed = True
+        _close_resources(self)
+        _require_children_disposed(self)
+        require_client_cleanup_complete(self)
+
+
+def _close_resources(self) -> None:
     task_id = getattr(self, "session_id", None) or ""
 
-    # 1. Kill background processes for this task
-    try:
-        from tools.process_registry import process_registry
-        process_registry.kill_all(task_id=task_id)
-    except Exception:
-        pass
+    if getattr(self, "_owns_session_tools", True):
+        # 1. Kill background processes for this task
+        try:
+            from tools.process_registry import process_registry
 
-    # 2. Clean terminal sandbox environments
-    try:
-        cleanup_vm(task_id)
-    except Exception:
-        pass
+            process_registry.kill_all(task_id=task_id)
+        except Exception:
+            pass
 
-    # 3. Clean browser daemon sessions
-    try:
-        cleanup_browser(task_id)
-    except Exception:
-        pass
+        # 2. Clean terminal sandbox environments
+        try:
+            cleanup_vm(task_id)
+        except Exception:
+            pass
 
-    # 4. Close active child agents
-    try:
-        with self._active_children_lock:
-            children = list(self._active_children)
-            self._active_children.clear()
-        for child in children:
-            try:
-                child.close()
-            except Exception:
-                pass
-    except Exception:
-        pass
+        # 3. Clean browser daemon sessions
+        try:
+            cleanup_browser(task_id)
+        except Exception:
+            pass
+
+    # 4. Close active children, retaining exact handles if disposal fails.
+    _close_children(self, release_only=False)
 
     # 5. Close the OpenAI/httpx client
     try:
-        client = getattr(self, "client", None)
+        client = detach_primary_client(self)
         if client is not None:
             self._close_openai_client(client, reason="agent_close", shared=True)
-            self.client = None
     except Exception:
         pass

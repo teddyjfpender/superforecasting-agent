@@ -19,12 +19,14 @@ import re
 #
 # Ported from ironclaw#1639.
 _TOOL_ERROR_ROLE_TAG_RE = re.compile(
-    r'</?(?:tool_call|function_call|result|response|output|input|system|assistant|user)>',
+    r"</?(?:tool_call|function_call|result|response|output|input|system|assistant|user)>",
     re.IGNORECASE,
 )
-_TOOL_ERROR_FENCE_OPEN_RE = re.compile(r'^\s*```(?:json|xml|html|markdown)?\s*', re.MULTILINE)
-_TOOL_ERROR_FENCE_CLOSE_RE = re.compile(r'\s*```\s*$', re.MULTILINE)
-_TOOL_ERROR_CDATA_RE = re.compile(r'<!\[CDATA\[.*?\]\]>', re.DOTALL)
+_TOOL_ERROR_FENCE_OPEN_RE = re.compile(
+    r"^\s*```(?:json|xml|html|markdown)?\s*", re.MULTILINE
+)
+_TOOL_ERROR_FENCE_CLOSE_RE = re.compile(r"\s*```\s*$", re.MULTILINE)
+_TOOL_ERROR_CDATA_RE = re.compile(r"<!\[CDATA\[.*?\]\]>", re.DOTALL)
 _TOOL_ERROR_MAX_LEN = 2000
 
 
@@ -40,5 +42,5 @@ def _sanitize_tool_error(error_msg: str) -> str:
     sanitized = _TOOL_ERROR_FENCE_CLOSE_RE.sub("", sanitized)
     sanitized = _TOOL_ERROR_CDATA_RE.sub("", sanitized)
     if len(sanitized) > _TOOL_ERROR_MAX_LEN:
-        sanitized = sanitized[:_TOOL_ERROR_MAX_LEN - 3] + "..."
+        sanitized = sanitized[: _TOOL_ERROR_MAX_LEN - 3] + "..."
     return f"[TOOL_ERROR] {sanitized}"

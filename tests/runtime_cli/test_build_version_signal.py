@@ -153,7 +153,7 @@ def test_remedy_for_a_checkout_rebuilds_and_reinstalls(banner):
     """A `git pull` alone leaves an installed binary — and its frozen TUI — stale."""
     with patch.object(banner, "_resolve_repo_dir", return_value=banner.Path("/repo")):
         remedy = banner.stale_build_remedy("git")
-    assert remedy == "scripts/build-release.sh && pipx install --force dist/*.whl"
+    assert remedy == "scripts/build-release.sh && pipx install --force dist/superforecasting_agent-*.whl && pipx inject --force superforecasting-agent dist/superforecasting_agent_tui-*.whl"
 
 
 def test_remedy_for_a_wheel_is_the_one_line_installer(banner):
@@ -169,7 +169,7 @@ def test_remedy_detects_the_lane_when_not_told_one(banner):
         assert banner.stale_build_remedy().startswith("curl -fsSL")
     with patch("superforecasting_agent.runtime.config.detect_install_method", return_value="git"):
         with patch.object(banner, "_resolve_repo_dir", return_value=banner.Path("/repo")):
-            assert banner.stale_build_remedy() == "scripts/build-release.sh && pipx install --force dist/*.whl"
+            assert banner.stale_build_remedy() == "scripts/build-release.sh && pipx install --force dist/superforecasting_agent-*.whl && pipx inject --force superforecasting-agent dist/superforecasting_agent_tui-*.whl"
 
 
 def test_remedy_defers_to_the_package_manager_when_managed(banner):
@@ -412,4 +412,7 @@ def test_bundled_tui_declares_itself_an_es_module():
 
     pyproject = tomllib.loads((root / "pyproject.toml").read_text())
     globs = pyproject["tool"]["setuptools"]["package-data"]["superforecasting_agent.runtime"]
-    assert any(g.startswith("tui_dist/") for g in globs), "the marker would not ship in the wheel"
+    assert not any(g.startswith("tui_dist/") for g in globs), "the backend must not bundle terminal assets"
+    terminal = tomllib.loads((root / "products/tui/pyproject.toml").read_text(encoding="utf-8"))
+    assets = terminal["tool"]["setuptools"]["package-data"]["superforecasting_agent_tui"]
+    assert "dist/package.json" in assets, "the terminal wheel must ship its ES module marker"

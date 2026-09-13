@@ -5,15 +5,18 @@
 
 export const PROTOCOL_VERSION = 1
 
-export type WireEventName = 'approval.request' | 'background.complete' | 'browser.progress' | 'clarify.request' | 'cron.fired' | 'error' | 'forecast.warnings.automode.complete' | 'forecast.warnings.automode.error' | 'forecast.warnings.automode.progress' | 'gateway.protocol_error' | 'gateway.ready' | 'gateway.start_timeout' | 'gateway.stderr' | 'jobs.complete' | 'jobs.error' | 'jobs.progress' | 'markets.model.complete' | 'markets.model.error' | 'markets.model.progress' | 'markets.model.refreshed' | 'message.complete' | 'message.delta' | 'message.start' | 'pm.tick' | 'reasoning.available' | 'reasoning.delta' | 'review.summary' | 'review.sweep' | 'secret.request' | 'session.info' | 'skin.changed' | 'status.update' | 'subagent.complete' | 'subagent.progress' | 'subagent.spawn_requested' | 'subagent.start' | 'subagent.thinking' | 'subagent.tool' | 'sudo.request' | 'thinking.delta' | 'tool.complete' | 'tool.generating' | 'tool.progress' | 'tool.start' | 'voice.status' | 'voice.transcript'
+export type WireEventName = 'approval.request' | 'background.complete' | 'browser.progress' | 'clarify.request' | 'command.finished' | 'command.output' | 'command.started' | 'cron.fired' | 'error' | 'forecast.warnings.automode.complete' | 'forecast.warnings.automode.error' | 'forecast.warnings.automode.progress' | 'gateway.protocol_error' | 'gateway.ready' | 'gateway.start_timeout' | 'gateway.stderr' | 'jobs.complete' | 'jobs.error' | 'jobs.progress' | 'markets.model.complete' | 'markets.model.error' | 'markets.model.progress' | 'markets.model.refreshed' | 'message.complete' | 'message.delta' | 'message.start' | 'pm.tick' | 'reasoning.available' | 'reasoning.delta' | 'review.summary' | 'review.sweep' | 'secret.request' | 'session.info' | 'skin.changed' | 'status.update' | 'subagent.complete' | 'subagent.progress' | 'subagent.spawn_requested' | 'subagent.start' | 'subagent.thinking' | 'subagent.tool' | 'sudo.request' | 'thinking.delta' | 'tool.complete' | 'tool.generating' | 'tool.progress' | 'tool.start' | 'voice.status' | 'voice.transcript'
 
-export const WIRE_EVENT_NAMES: readonly WireEventName[] = ['approval.request', 'background.complete', 'browser.progress', 'clarify.request', 'cron.fired', 'error', 'forecast.warnings.automode.complete', 'forecast.warnings.automode.error', 'forecast.warnings.automode.progress', 'gateway.protocol_error', 'gateway.ready', 'gateway.start_timeout', 'gateway.stderr', 'jobs.complete', 'jobs.error', 'jobs.progress', 'markets.model.complete', 'markets.model.error', 'markets.model.progress', 'markets.model.refreshed', 'message.complete', 'message.delta', 'message.start', 'pm.tick', 'reasoning.available', 'reasoning.delta', 'review.summary', 'review.sweep', 'secret.request', 'session.info', 'skin.changed', 'status.update', 'subagent.complete', 'subagent.progress', 'subagent.spawn_requested', 'subagent.start', 'subagent.thinking', 'subagent.tool', 'sudo.request', 'thinking.delta', 'tool.complete', 'tool.generating', 'tool.progress', 'tool.start', 'voice.status', 'voice.transcript']
+export const WIRE_EVENT_NAMES: readonly WireEventName[] = ['approval.request', 'background.complete', 'browser.progress', 'clarify.request', 'command.finished', 'command.output', 'command.started', 'cron.fired', 'error', 'forecast.warnings.automode.complete', 'forecast.warnings.automode.error', 'forecast.warnings.automode.progress', 'gateway.protocol_error', 'gateway.ready', 'gateway.start_timeout', 'gateway.stderr', 'jobs.complete', 'jobs.error', 'jobs.progress', 'markets.model.complete', 'markets.model.error', 'markets.model.progress', 'markets.model.refreshed', 'message.complete', 'message.delta', 'message.start', 'pm.tick', 'reasoning.available', 'reasoning.delta', 'review.summary', 'review.sweep', 'secret.request', 'session.info', 'skin.changed', 'status.update', 'subagent.complete', 'subagent.progress', 'subagent.spawn_requested', 'subagent.start', 'subagent.thinking', 'subagent.tool', 'sudo.request', 'thinking.delta', 'tool.complete', 'tool.generating', 'tool.progress', 'tool.start', 'voice.status', 'voice.transcript']
 
 export const WireEvent = {
   APPROVAL_REQUEST: 'approval.request',
   BACKGROUND_COMPLETE: 'background.complete',
   BROWSER_PROGRESS: 'browser.progress',
   CLARIFY_REQUEST: 'clarify.request',
+  COMMAND_FINISHED: 'command.finished',
+  COMMAND_OUTPUT: 'command.output',
+  COMMAND_STARTED: 'command.started',
   CRON_FIRED: 'cron.fired',
   ERROR: 'error',
   FORECAST_WARNINGS_AUTOMODE_COMPLETE: 'forecast.warnings.automode.complete',
@@ -197,6 +200,23 @@ export interface ClipboardPasteResponse {
   width?: number
 }
 
+export interface CommandFinished {
+  command_id: string
+  status: 'cancelled' | 'failed' | 'finished'
+}
+
+export interface CommandOutput {
+  command_id: string
+  stream: 'stderr' | 'stdout'
+  text: string
+}
+
+export interface CommandStarted {
+  command_id: string
+  name: string
+  request_id: string
+}
+
 export interface CommandsCatalogRequest {
 }
 
@@ -259,6 +279,20 @@ export interface ConfigMtimeResponse {
   mtime?: number
 }
 
+export interface ConfigProviderEntry {
+  aliases: string[]
+  authenticated: null
+  id: string
+  label: string
+}
+
+export interface ConfigProviderResponse {
+  authentication_status: 'not_checked'
+  model: string
+  provider: string
+  providers: ConfigProviderEntry[]
+}
+
 export interface ConfigSetRequest {
   key: null | string
   session_id: null | string
@@ -284,6 +318,7 @@ export interface CronFiredPayload {
 export interface DelegationActiveEntry {
   depth?: number
   goal?: string
+  kind?: string
   model?: null | string
   parent_id?: null | string
   started_at?: number
@@ -294,6 +329,7 @@ export interface DelegationActiveEntry {
 
 export interface DelegationPauseRequest {
   paused: null | boolean
+  session_id?: string
 }
 
 export interface DelegationPauseResponse {
@@ -301,6 +337,7 @@ export interface DelegationPauseResponse {
 }
 
 export interface DelegationStatusRequest {
+  session_id?: string
 }
 
 export interface DelegationStatusResponse {
@@ -311,7 +348,9 @@ export interface DelegationStatusResponse {
 }
 
 export interface ErrorPayload {
+  durable_status?: string
   message: string
+  turn_id?: string
 }
 
 export interface EvidenceShareBody {
@@ -1118,6 +1157,18 @@ export interface ForecastOnboardProposeResponse {
   spec?: Record<string, unknown>
 }
 
+export interface ForecastOperationRequest {
+  arg: null | string
+  argv: null | string[]
+  operation: string
+}
+
+export interface ForecastOperationResponse {
+  code: number
+  data: null | Record<string, unknown>
+  output: string
+}
+
 export interface ForecastOutcomeSpace {
   choices?: unknown[]
   type?: string
@@ -1395,6 +1446,52 @@ export interface ForecastRelatedView {
   stance?: null | string
   title?: string
   verdict?: null | string
+}
+
+export interface ForecastResolveRequest {
+  auto_score: boolean
+  confidence: null | number
+  confirmed_by: null | string
+  correction_ref: null | string
+  criteria_satisfied: boolean
+  outcome: unknown
+  question_id: string
+  resolution_source: null | string
+  resolution_source_snapshot_ref: null | string
+  resolution_status: string
+  resolver_notes: null | string
+  resolver_type: string
+  scoreable: boolean
+  trusted_policy_id: null | string
+}
+
+export interface ForecastResolveResponse {
+  resolution: Record<string, unknown>
+  retrospective: null | Record<string, unknown>
+  score: null | Record<string, unknown>
+}
+
+export interface ForecastReviewRequest {
+  confidence_above: null | number
+  confidence_below: null | number
+  domain: null | string
+  horizon: null | string
+  large_delta_threshold: null | number
+  last_days: number
+  now: null | string
+  stale: boolean
+  topic: null | string
+}
+
+export interface ForecastReviewResponse {
+  rows: ForecastReviewRow[]
+}
+
+export interface ForecastReviewRow {
+  current_snapshot: null | Record<string, unknown>
+  priority: number
+  question: Record<string, unknown>
+  reasons: string[]
 }
 
 export interface ForecastReviewsNextRequest {
@@ -2030,6 +2127,8 @@ export interface GatewayProtocolErrorPayload {
 
 export interface GatewayReadyPayload {
   build?: BuildInfoPayload
+  capabilities?: string[]
+  min_protocol_version?: number
   protocol_version?: number
   skin?: SkinPayload
 }
@@ -2059,6 +2158,17 @@ export interface GatewayTranscriptMessage {
   name?: string
   role: 'assistant' | 'system' | 'tool' | 'user'
   text?: string
+}
+
+export interface HostNegotiateRequest {
+  protocol_version: number
+  required_capabilities: string[]
+}
+
+export interface HostNegotiateResponse {
+  capabilities: string[]
+  min_protocol_version: number
+  protocol_version: number
 }
 
 export interface ImageAttachRequest {
@@ -2238,20 +2348,26 @@ export interface McpServerStatus {
 }
 
 export interface MessageCompletePayload {
+  durable_status?: string
   reasoning?: string
   rendered?: string
   status: string
   text: string
+  turn_id?: string
   usage: Record<string, unknown>
   warning?: string
 }
 
 export interface MessageDeltaPayload {
+  durable_status?: string
   rendered?: string
   text?: string
+  turn_id?: string
 }
 
 export interface MessageStartPayload {
+  durable_status?: string
+  turn_id?: string
 }
 
 export interface ModelOptionProvider {
@@ -2500,6 +2616,7 @@ export interface PmStreamStopResponse {
 }
 
 export interface ProcessStopRequest {
+  session_id?: string
 }
 
 export interface ProcessStopResponse {
@@ -2630,10 +2747,12 @@ export interface SecretRespondResponse {
 }
 
 export interface SessionBranchRequest {
+  name: string
   session_id: null | string
 }
 
 export interface SessionBranchResponse {
+  parent?: string
   session_id?: string
   title?: string
 }
@@ -2674,6 +2793,7 @@ export interface SessionCreateInfo {
   config_warning?: string
   credential_warning?: string
   cwd?: string
+  durable_session_id?: string
   fast?: boolean
   lazy?: boolean
   mcp_servers?: McpServerStatus[]
@@ -2720,6 +2840,7 @@ export interface SessionHistoryResponse {
 export interface SessionInfo {
   build?: BuildInfoPayload
   cwd?: string
+  durable_session_id?: string
   fast?: boolean
   lazy?: boolean
   mcp_servers?: McpServerStatus[]
@@ -2741,6 +2862,7 @@ export interface SessionInfo {
 export interface SessionInfoPayload {
   build?: BuildInfoPayload
   cwd: string
+  durable_session_id?: string
   fast: boolean
   model: string
   profile_name: string
@@ -2762,6 +2884,7 @@ export interface SessionInterruptRequest {
 
 export interface SessionInterruptResponse {
   ok?: boolean
+  status?: string
 }
 
 export interface SessionListItem {
@@ -2800,6 +2923,7 @@ export interface SessionResumeResponse {
   info?: SessionInfo
   message_count?: number
   messages: GatewayTranscriptMessage[]
+  recovery?: Record<string, unknown>
   resumed?: string
   session_id: string
 }
@@ -3043,6 +3167,7 @@ export interface SubagentEventPayload {
 }
 
 export interface SubagentInterruptRequest {
+  session_id?: string
   subagent_id: null | string
 }
 

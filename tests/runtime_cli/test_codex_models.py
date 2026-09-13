@@ -118,11 +118,11 @@ def test_model_command_uses_runtime_access_token_for_codex_list(monkeypatch):
 
     monkeypatch.setattr("builtins.input", lambda prompt="": next(choices))
     monkeypatch.setattr(
-        "superforecasting_agent.runtime.auth.get_codex_auth_status",
+        "superforecasting_agent.credentials.auth.get_codex_auth_status",
         lambda: {"logged_in": True},
     )
     monkeypatch.setattr(
-        "superforecasting_agent.runtime.auth.resolve_codex_runtime_credentials",
+        "superforecasting_agent.credentials.auth.resolve_codex_runtime_credentials",
         lambda *args, **kwargs: {"api_key": "codex-access-token"},
     )
 
@@ -159,11 +159,11 @@ def test_model_command_prompts_to_reuse_or_reauthenticate_codex_session(monkeypa
 
     monkeypatch.setattr("builtins.input", lambda prompt="": next(choices))
     monkeypatch.setattr(
-        "superforecasting_agent.runtime.auth.get_codex_auth_status",
+        "superforecasting_agent.credentials.auth.get_codex_auth_status",
         lambda: {"logged_in": True, "source": "hermes-auth-store"},
     )
     monkeypatch.setattr(
-        "superforecasting_agent.runtime.auth.resolve_codex_runtime_credentials",
+        "superforecasting_agent.credentials.auth.resolve_codex_runtime_credentials",
         lambda *args, **kwargs: {"api_key": "fresh-codex-token"},
     )
 
@@ -198,11 +198,11 @@ def test_model_command_uses_existing_codex_session_without_relogin(monkeypatch):
 
     monkeypatch.setattr("builtins.input", lambda prompt="": next(choices))
     monkeypatch.setattr(
-        "superforecasting_agent.runtime.auth.get_codex_auth_status",
+        "superforecasting_agent.credentials.auth.get_codex_auth_status",
         lambda: {"logged_in": True, "source": "hermes-auth-store"},
     )
     monkeypatch.setattr(
-        "superforecasting_agent.runtime.auth.resolve_codex_runtime_credentials",
+        "superforecasting_agent.credentials.auth.resolve_codex_runtime_credentials",
         lambda *args, **kwargs: {"api_key": "existing-codex-token"},
     )
 

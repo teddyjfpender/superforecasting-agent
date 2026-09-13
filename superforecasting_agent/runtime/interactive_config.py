@@ -13,12 +13,11 @@ from .interactive_defaults import default_cli_config
 logger = logging.getLogger("cli")
 
 
-def load_cli_config(
+def _read_cli_config(
     agent_home: Path,
     project_config_path: Path,
     ignore_user_config: bool,
-    set_redact_env_aliases: Callable[[object], None],
-) -> Dict[str, Any]:
+) -> tuple[Dict[str, Any], bool]:
     """
     Load CLI configuration from config files.
     
@@ -103,6 +102,28 @@ def load_cli_config(
     # Expand ${ENV_VAR} references in config values before bridging to env vars.
     from superforecasting_agent.runtime.config import _expand_env_vars
     defaults = _expand_env_vars(defaults)
+
+    return defaults, _file_has_terminal_config
+
+
+def read_cli_config(
+    agent_home: Path, project_config_path: Path, ignore_user_config: bool = False,
+) -> Dict[str, Any]:
+    """Read shared interactive defaults and overrides without mutating the process."""
+    config, _ = _read_cli_config(agent_home, project_config_path, ignore_user_config)
+    return config
+
+
+def load_cli_config(
+    agent_home: Path,
+    project_config_path: Path,
+    ignore_user_config: bool,
+    set_redact_env_aliases: Callable[[object], None],
+) -> Dict[str, Any]:
+    """Load interactive settings and explicitly bridge them into this process."""
+    defaults, _file_has_terminal_config = _read_cli_config(
+        agent_home, project_config_path, ignore_user_config,
+    )
 
     # Apply terminal config to environment variables (so terminal_tool picks them up)
     terminal_config = defaults.get("terminal", {})

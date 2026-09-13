@@ -70,6 +70,7 @@ new locking.
 from __future__ import annotations
 
 import contextlib
+from contextvars import ContextVar
 import json
 import os
 import re
@@ -262,11 +263,27 @@ def current_board_path() -> Path:
     return kanban_home() / "kanban" / "current"
 
 
+_board_override: ContextVar[Optional[str]] = ContextVar("kanban_board_override", default=None)
+
+
+@contextlib.contextmanager
+def board_scope(board: Optional[str]) -> Iterator[None]:
+    """Select a board for this command without mutating process environment."""
+    normalized = _normalize_board_slug(board)
+    token = _board_override.set(normalized) if normalized is not None else None
+    try:
+        yield
+    finally:
+        if token is not None:
+            _board_override.reset(token)
+
+
 def get_current_board() -> str:
     """Return the active board slug, honouring the resolution chain.
 
     Order (highest precedence first):
 
+    0. A request-local :func:`board_scope` override.
     1. ``SUPERFORECASTING_AGENT_KANBAN_BOARD`` env var (set by the dispatcher
        on worker spawn, or manually for ad-hoc overrides). ``FORECAST_*`` and
        inherited ``HERMES_*`` aliases are accepted.
@@ -278,6 +295,9 @@ def get_current_board() -> str:
     with a best-effort warning — the dispatcher must never crash because a
     user hand-edited a file or removed a board directory.
     """
+    scoped = _board_override.get()
+    if scoped is not None:
+        return scoped
     env = _first_env_value(KANBAN_BOARD_ENV_NAMES)
     if env:
         try:
@@ -4117,10 +4137,8 @@ def detect_stale_running(
     if stale_timeout_seconds <= 0:
         return []
 
-    import signal as _signal_mod
 
     now = int(time.time())
-    host_prefix = f"{_claimer_id().split(':', 1)[0]}:"
     reclaimed: list[str] = []
 
     rows = conn.execute(
@@ -4426,7 +4444,6 @@ def _record_task_failure(
         if row is None:
             return False
         failures = int(row["consecutive_failures"]) + 1
-        cur_status = row["status"]
 
         # Per-task override wins over both caller-supplied and default
         # thresholds. None (the common case) falls through.
@@ -5481,41 +5498,47 @@ def run_daemon(
     import signal
     import threading
 
+    owns_signals = stop_event is None
     if stop_event is None:
         stop_event = threading.Event()
 
     def _handle(_signum, _frame):
         stop_event.set()
 
-    # Install handlers only when running on the main thread — tests call
-    # this inline from worker threads and signal() would raise there.
-    if threading.current_thread() is threading.main_thread():
-        for sig_name in ("SIGINT", "SIGTERM"):
-            sig = getattr(signal, sig_name, None)
-            if sig is not None:
-                try:
-                    signal.signal(sig, _handle)
-                except (ValueError, OSError):
-                    pass
+    previous_handlers = {}
+    try:
+        # Embedded hosts supply cancellation and retain their signal ownership.
+        if owns_signals and threading.current_thread() is threading.main_thread():
+            for sig_name in ("SIGINT", "SIGTERM"):
+                sig = getattr(signal, sig_name, None)
+                if sig is not None:
+                    try:
+                        previous = signal.signal(sig, _handle)
+                        previous_handlers[sig] = previous
+                    except (ValueError, OSError):
+                        pass
 
-    while not stop_event.is_set():
-        try:
-            with contextlib.closing(connect()) as conn:
-                res = dispatch_once(
-                    conn,
-                    max_spawn=max_spawn,
-                    failure_limit=failure_limit,
-                )
-            if on_tick is not None:
-                try:
-                    on_tick(res)
-                except Exception:
-                    pass
-        except Exception:
-            # Don't let any single tick kill the daemon.
-            import traceback
-            traceback.print_exc()
-        stop_event.wait(timeout=interval)
+        while not stop_event.is_set():
+            try:
+                with contextlib.closing(connect()) as conn:
+                    res = dispatch_once(
+                        conn,
+                        max_spawn=max_spawn,
+                        failure_limit=failure_limit,
+                    )
+                if on_tick is not None:
+                    try:
+                        on_tick(res)
+                    except Exception:
+                        _log.exception("Kanban tick callback failed")
+            except Exception:
+                _log.exception("Kanban dispatcher tick failed")
+            stop_event.wait(timeout=interval)
+    finally:
+        for sig, previous in previous_handlers.items():
+            # Do not overwrite a successor component's handler during teardown.
+            if signal.getsignal(sig) is _handle:
+                signal.signal(sig, previous)
 
 
 # ---------------------------------------------------------------------------
@@ -5785,7 +5808,7 @@ def _to_epoch(val) -> Optional[int]:
         pass
     # ISO-8601 fallback (e.g. '2026-05-10T15:00:00Z')
     try:
-        from datetime import datetime, timezone
+        from datetime import datetime
         dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
         return int(dt.timestamp())
     except (ValueError, OSError):

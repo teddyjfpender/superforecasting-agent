@@ -240,6 +240,7 @@ class TestGatewayCleanupWiring:
         loop = asyncio.new_event_loop()
         try:
             with patch("gateway.status.remove_pid_file"), \
+                 patch("gateway.status.release_gateway_runtime_lock"), \
                  patch("gateway.status.write_runtime_status"), \
                  patch("tools.terminal_tool.cleanup_all_environments"), \
                  patch("tools.browser_tool.cleanup_all_browsers"), \
@@ -301,3 +302,24 @@ class TestDelegationCleanup:
         child.close.assert_called_once()
         assert child not in parent._active_children
         assert result["status"] == "error"
+
+
+def test_cancelled_stop_waiter_does_not_cancel_shared_cleanup():
+    import asyncio
+    from gateway.run import GatewayRunner
+    async def exercise():
+        runner = object.__new__(GatewayRunner)
+        finish = asyncio.Event()
+        runner._stop_task = asyncio.create_task(finish.wait())
+        waiter = asyncio.create_task(runner.stop())
+        await asyncio.sleep(0)
+        waiter.cancel()
+        try:
+            await waiter
+        except asyncio.CancelledError:
+            pass
+        assert not runner._stop_task.cancelled()
+        finish.set()
+        await runner.stop()
+        assert runner._stop_task.done()
+    asyncio.run(exercise())

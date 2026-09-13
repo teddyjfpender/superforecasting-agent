@@ -51,6 +51,7 @@ from typing import Dict, Optional, Any, List, Union
 # `gateway.run.fetch_account_usage` as a module-level attribute. The
 # gateway is a long-running daemon, so its boot cost matters less than
 # preserving the established test-patch surface.
+from superforecasting_agent.configuration.goals import configured_goal_turn_budget
 from agent.account_usage import fetch_account_usage, render_account_usage_lines
 from agent.async_utils import safe_schedule_threadsafe
 from agent.i18n import t
@@ -575,7 +576,7 @@ from superforecasting_agent.environment import (
     env_var_alias_value,
     is_truthy_value,
 )
-from superforecasting_agent.storage.files import atomic_json_write, atomic_yaml_write
+from superforecasting_agent.storage.files import atomic_json_write, atomic_roundtrip_yaml_update
 from superforecasting_agent.urls import base_url_host_matches
 _hermes_home = get_agent_home()
 
@@ -735,7 +736,8 @@ def _reload_runtime_env_preserving_config_authority() -> None:
 
     agent_cfg = cfg.get("agent", {})
     if isinstance(agent_cfg, dict) and "max_turns" in agent_cfg:
-        _set_max_iterations_env_aliases(agent_cfg["max_turns"])
+        from superforecasting_agent.configuration.agent_limits import agent_turn_budget
+        _set_max_iterations_env_aliases(agent_turn_budget(cfg))
 
 
 _DOCKER_VOLUME_SPEC_RE = re.compile(r"^(?P<host>.+):(?P<container>/[^:]+?)(?::(?P<options>[^:]+))?$")
@@ -854,7 +856,8 @@ if _config_path.exists():
         _agent_cfg = _cfg.get("agent", {})
         if _agent_cfg and isinstance(_agent_cfg, dict):
             if "max_turns" in _agent_cfg:
-                _set_max_iterations_env_aliases(_agent_cfg["max_turns"])
+                from superforecasting_agent.configuration.agent_limits import agent_turn_budget
+                _set_max_iterations_env_aliases(agent_turn_budget(_cfg))
             if "gateway_timeout" in _agent_cfg:
                 _set_env_aliases(_AGENT_TIMEOUT_ENV_NAMES, _agent_cfg["gateway_timeout"])
             if "gateway_timeout_warning" in _agent_cfg:
@@ -1009,7 +1012,7 @@ def _resolve_runtime_agent_kwargs() -> dict:
         format_runtime_provider_error,
     )
     from superforecasting_agent.runtime.model_env import inference_provider_env
-    from superforecasting_agent.runtime.auth import AuthError, is_rate_limited_auth_error
+    from superforecasting_agent.credentials.auth import AuthError, is_rate_limited_auth_error
 
     try:
         runtime = resolve_runtime_provider(
@@ -2614,7 +2617,7 @@ class GatewayRunner:
             return False
         try:
             from superforecasting_agent.runtime.goals import GoalManager
-            return GoalManager(session_id=session_id).is_active()
+            return GoalManager(session_id=session_id, database_provider=lambda: getattr(self, "_session_db", None)).is_active()
         except Exception as exc:
             logger.debug("goal continuation: active-state recheck failed: %s", exc)
             return False
@@ -2879,13 +2882,8 @@ class GatewayRunner:
         except Exception:
             pass
 
-        value = raw.lower()
-        if not value or value in {"normal", "default", "standard", "off", "none"}:
-            return None
-        if value in {"fast", "priority", "on"}:
-            return "priority"
-        logger.warning("Unknown service_tier '%s', ignoring", raw)
-        return None
+        from superforecasting_agent.constants import parse_service_tier
+        return parse_service_tier(raw)
 
     @staticmethod
     def _load_show_reasoning() -> bool:
@@ -4480,7 +4478,7 @@ class GatewayRunner:
         except Exception:
             pass
         try:
-            from superforecasting_agent.runtime.profiles import get_active_profile_name
+            from superforecasting_agent.constants import get_active_profile_name
             _profile = get_active_profile_name()
             if _profile and _profile != "default":
                 logger.info("Active profile: %s", _profile)
@@ -4555,7 +4553,7 @@ class GatewayRunner:
         _plugin_allowed_vars: tuple = ()
         _plugin_allow_all_vars: tuple = ()
         try:
-            from gateway.platform_registry import platform_registry
+            from superforecasting_agent.platform_registry import platform_registry
             _plugin_allowed_vars = tuple(
                 e.allowed_users_env for e in platform_registry.plugin_entries()
                 if e.allowed_users_env
@@ -4995,18 +4993,22 @@ class GatewayRunner:
                     session_id = row.get("id")
                     if not session_id:
                         continue
-                    if not self._session_db.claim_handoff(session_id):
+                    attempt_id = row.get("handoff_attempt_id")
+                    if not attempt_id:
+                        logger.warning("Handoff %s has no attempt identity", session_id)
+                        continue
+                    if not self._session_db.claim_handoff(session_id, attempt_id=attempt_id):
                         # Another tick or another gateway already claimed it.
                         continue
                     try:
                         await self._process_handoff(row)
-                        self._session_db.complete_handoff(session_id)
+                        self._session_db.complete_handoff(session_id, attempt_id=attempt_id)
                     except Exception as exc:
                         logger.warning(
                             "Handoff for session %s failed: %s",
                             session_id, exc, exc_info=True,
                         )
-                        self._session_db.fail_handoff(session_id, str(exc))
+                        self._session_db.fail_handoff(session_id, str(exc), attempt_id=attempt_id)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -5346,7 +5348,7 @@ class GatewayRunner:
     def _active_profile_name(self) -> str:
         """Return the profile name this gateway represents."""
         try:
-            from superforecasting_agent.runtime.profiles import get_active_profile_name
+            from superforecasting_agent.constants import get_active_profile_name
             return get_active_profile_name() or "default"
         except Exception:
             return "default"
@@ -6415,7 +6417,7 @@ class GatewayRunner:
             self._restart_detached = detached_restart
             self._restart_via_service = service_restart
         if self._stop_task is not None:
-            await self._stop_task
+            await asyncio.shield(self._stop_task)
             return
 
         async def _stop_impl() -> None:
@@ -6701,9 +6703,10 @@ class GatewayRunner:
                 _phase_elapsed(),
             )
 
-            from gateway.status import remove_pid_file, release_gateway_runtime_lock
-            remove_pid_file()
-            release_gateway_runtime_lock()
+            from gateway.status import release_gateway_runtime_lock
+            owner = getattr(self, "_runtime_lock_owner", None)
+            if owner is not None:
+                release_gateway_runtime_lock(owner=owner, remove_pid=True)
 
             # Write a clean-shutdown marker so the next startup knows this
             # wasn't a crash.  suspend_recently_active() only needs to run
@@ -6742,7 +6745,7 @@ class GatewayRunner:
             logger.info("Gateway stopped (total teardown %.2fs)", _phase_elapsed())
 
         self._stop_task = asyncio.create_task(_stop_impl())
-        await self._stop_task
+        await asyncio.shield(self._stop_task)
 
     async def wait_for_shutdown(self) -> None:
         """Wait for shutdown signal."""
@@ -6770,7 +6773,7 @@ class GatewayRunner:
 
         # ── Plugin-registered platforms (checked first) ───────────────────
         try:
-            from gateway.platform_registry import platform_registry
+            from superforecasting_agent.platform_registry import platform_registry
             if platform_registry.is_registered(platform.value):
                 adapter = platform_registry.create_adapter(platform.value, config)
                 if adapter is not None:
@@ -7071,7 +7074,7 @@ class GatewayRunner:
         # Plugin platforms: check the registry for auth env var names
         if source.platform not in platform_env_map:
             try:
-                from gateway.platform_registry import platform_registry
+                from superforecasting_agent.platform_registry import platform_registry
                 entry = platform_registry.get(source.platform.value)
                 if entry:
                     if entry.allowed_users_env:
@@ -7946,7 +7949,7 @@ class GatewayRunner:
 
         # Shared alias expansion runs before access control and command hooks.
         if command and _cmd_def is None:
-            from superforecasting_agent.runtime.commands import expand_quick_alias
+            from superforecasting_agent.application.command_catalog import expand_quick_alias
 
             quick_commands = (self.config.get("quick_commands") if isinstance(self.config, dict)
                               else getattr(self.config, "quick_commands", None))
@@ -8180,50 +8183,9 @@ class GatewayRunner:
             if command in quick_commands:
                 qcmd = quick_commands[command]
                 if qcmd.get("type") == "exec":
-                    exec_cmd = qcmd.get("command", "")
-                    if exec_cmd:
-                        try:
-                            # Sanitize env to prevent credential leakage —
-                            # quick commands run in the gateway process which
-                            # has all API keys in os.environ.
-                            from tools.environments.local import _sanitize_subprocess_env
-                            sanitized_env = _sanitize_subprocess_env(os.environ.copy())
-                            process_kwargs = {} if os.name == "nt" else {"start_new_session": True}
-                            proc = await asyncio.create_subprocess_shell(
-                                exec_cmd,
-                                stdout=asyncio.subprocess.PIPE,
-                                stderr=asyncio.subprocess.PIPE,
-                                env=sanitized_env,
-                                **process_kwargs,
-                            )
-                            communicate = asyncio.create_task(proc.communicate())
-                            try:
-                                stdout, stderr = await asyncio.wait_for(
-                                    asyncio.shield(communicate), timeout=30
-                                )
-                            except (asyncio.CancelledError, asyncio.TimeoutError):
-                                try:
-                                    if os.name == "nt":
-                                        from gateway.status import terminate_pid
-                                        terminate_pid(proc.pid, force=True)
-                                    else:
-                                        os.killpg(proc.pid, signal.SIGKILL)  # windows-footgun: ok — os.name guard above
-                                except (ProcessLookupError, OSError):
-                                    pass
-                                await communicate
-                                raise
-                            output = (stdout or stderr).decode().strip()
-                            # Redact any remaining sensitive patterns in output
-                            if output:
-                                from agent.redact import redact_sensitive_text
-                                output = redact_sensitive_text(output)
-                            return output if output else "Command returned no output."
-                        except asyncio.TimeoutError:
-                            return "Quick command timed out (30s)."
-                        except Exception as e:
-                            return f"Quick command error: {e}"
-                    else:
-                        return f"Quick command '/{command}' has no command defined."
+                    from superforecasting_agent.runtime.quick_commands import execute
+
+                    return (await execute(qcmd["command"])).message
                 elif qcmd.get("type") == "alias":
                     target = qcmd.get("target", "").strip()
                     if target:
@@ -9065,7 +9027,7 @@ class GatewayRunner:
                     _hyg_meta = self._thread_metadata_for_source(source, self._reply_anchor_for_event(event))
 
                     try:
-                        from run_agent import AIAgent
+                        from agent.runtime import AIAgent
 
                         _hyg_model, _hyg_runtime = self._resolve_session_agent_runtime(
                             source=source,
@@ -10090,7 +10052,7 @@ class GatewayRunner:
     async def _handle_profile_command(self, event: MessageEvent) -> str:
         """Handle /profile — show active profile name and home directory."""
         from superforecasting_agent.constants import display_agent_home
-        from superforecasting_agent.runtime.profiles import get_active_profile_name
+        from superforecasting_agent.constants import get_active_profile_name
 
         display = display_agent_home()
         profile_name = get_active_profile_name()
@@ -11258,10 +11220,8 @@ class GatewayRunner:
 
         if args in {"none", "default", "neutral"}:
             try:
-                if "agent" not in config or not isinstance(config.get("agent"), dict):
-                    config["agent"] = {}
-                config["agent"]["system_prompt"] = ""
-                atomic_yaml_write(config_path, config)
+                from superforecasting_agent.storage.files import atomic_roundtrip_yaml_update
+                atomic_roundtrip_yaml_update(config_path, "agent.system_prompt", "")
             except Exception as e:
                 return t("gateway.personality.save_failed", error=str(e))
             self._ephemeral_system_prompt = ""
@@ -11271,10 +11231,8 @@ class GatewayRunner:
 
             # Write to config.yaml, same pattern as CLI save_config_value.
             try:
-                if "agent" not in config or not isinstance(config.get("agent"), dict):
-                    config["agent"] = {}
-                config["agent"]["system_prompt"] = new_prompt
-                atomic_yaml_write(config_path, config)
+                from superforecasting_agent.storage.files import atomic_roundtrip_yaml_update
+                atomic_roundtrip_yaml_update(config_path, "agent.system_prompt", new_prompt)
             except Exception as e:
                 return t("gateway.personality.save_failed", error=str(e))
 
@@ -11292,27 +11250,19 @@ class GatewayRunner:
         session_entry = self.session_store.get_or_create_session(source)
         history = self.session_store.load_transcript(session_entry.session_id)
         
-        # Find the last user message
-        last_user_msg = None
-        last_user_idx = None
-        for i in range(len(history) - 1, -1, -1):
-            if history[i].get("role") == "user":
-                last_user_msg = history[i].get("content", "")
-                last_user_idx = i
-                break
-        
-        if not last_user_msg:
-            return t("gateway.retry.no_previous")
-        
-        # Truncate history to before the last user message and persist
-        truncated = history[:last_user_idx]
-        self.session_store.rewrite_transcript(session_entry.session_id, truncated)
+        from superforecasting_agent.application.retry import prepare_retry, RetryUnavailable
+
+        try:
+            plan = prepare_retry(history)
+        except RetryUnavailable as exc:
+            return str(exc)
+        self.session_store.rewrite_transcript(session_entry.session_id, plan.history)
         # Reset stored token count — transcript was truncated
         session_entry.last_prompt_tokens = 0
         
         # Re-send by creating a fake text event with the old message
         retry_event = MessageEvent(
-            text=last_user_msg,
+            text=plan.message,
             message_type=MessageType.TEXT,
             source=source,
             raw_message=event.raw_message,
@@ -11342,9 +11292,9 @@ class GatewayRunner:
                 from superforecasting_agent.runtime.config import load_config
 
                 goals_cfg = (load_config() or {}).get("goals") or {}
-            return int(goals_cfg.get("max_turns", 20) or 20)
+            return configured_goal_turn_budget(goals_cfg)
         except Exception:
-            return 20
+            return configured_goal_turn_budget(None)
 
     def _get_goal_manager_for_event(self, event: "MessageEvent"):
         """Return a GoalManager bound to the session for this gateway event.
@@ -11366,7 +11316,13 @@ class GatewayRunner:
         if not sid:
             return None, None
         max_turns = self._goal_max_turns_from_config()
-        return GoalManager(session_id=sid, default_max_turns=max_turns), session_entry
+        try:
+            manager = GoalManager(session_id=sid, default_max_turns=max_turns,
+                                  database_provider=lambda: getattr(self, "_session_db", None))
+        except Exception as exc:
+            logger.warning("goal storage unavailable: %s", exc)
+            return None, None
+        return manager, session_entry
 
     async def _handle_goal_command(self, event: "MessageEvent") -> str:
         """Handle /goal for gateway platforms.
@@ -11380,17 +11336,22 @@ class GatewayRunner:
         continuation hook then takes over from there.
         """
         args = (event.get_command_args() or "").strip()
-        lower = args.lower()
 
         mgr, session_entry = self._get_goal_manager_for_event(event)
         if mgr is None:
             return t("gateway.goal.unavailable")
 
-        if not args or lower == "status":
-            return mgr.status_line()
+        from superforecasting_agent.application.goals import execute_goal
 
-        if lower == "pause":
-            state = mgr.pause(reason="user-paused")
+        try:
+            result = execute_goal(mgr, args)
+        except ValueError as exc:
+            return t("gateway.goal.invalid", error=str(exc))
+        state = result.state
+        if result.action == "status":
+            return result.status
+
+        if result.action == "pause":
             if state is None:
                 return t("gateway.goal.no_goal_set")
             try:
@@ -11402,15 +11363,12 @@ class GatewayRunner:
                 logger.debug("goal pause: pending continuation cleanup failed: %s", exc)
             return t("gateway.goal.paused", goal=state.goal)
 
-        if lower == "resume":
-            state = mgr.resume()
+        if result.action == "resume":
             if state is None:
                 return t("gateway.goal.no_resume")
             return t("gateway.goal.resumed", goal=state.goal)
 
-        if lower in {"clear", "stop", "done"}:
-            had = mgr.has_goal()
-            mgr.clear()
+        if result.action == "clear":
             try:
                 adapter = self.adapters.get(event.source.platform) if event.source else None
                 _quick_key = self._session_key_for_source(event.source) if event.source else None
@@ -11418,13 +11376,9 @@ class GatewayRunner:
                     self._clear_goal_pending_continuations(_quick_key, adapter)
             except Exception as exc:
                 logger.debug("goal clear: pending continuation cleanup failed: %s", exc)
-            return t("gateway.goal_cleared") if had else t("gateway.no_active_goal")
+            return t("gateway.goal_cleared") if result.had_goal else t("gateway.no_active_goal")
 
-        # Otherwise — treat the remaining text as the new goal.
-        try:
-            state = mgr.set(args)
-        except ValueError as exc:
-            return t("gateway.goal.invalid", error=str(exc))
+        assert state is not None
 
         # Queue the goal text as an immediate first turn so the agent
         # starts making progress. The post-turn hook takes over after.
@@ -11456,45 +11410,9 @@ class GatewayRunner:
         mgr, _session_entry = self._get_goal_manager_for_event(event)
         if mgr is None:
             return t("gateway.goal.unavailable")
-        if not mgr.has_goal():
-            return "No active goal. Set one with /goal <text>."
+        from superforecasting_agent.application.goals import execute_subgoal
 
-        # No args → list current subgoals.
-        if not args:
-            return f"{mgr.status_line()}\n{mgr.render_subgoals()}"
-
-        tokens = args.split(None, 1)
-        verb = tokens[0].lower()
-        rest = tokens[1].strip() if len(tokens) > 1 else ""
-
-        if verb == "remove":
-            if not rest:
-                return "Usage: /subgoal remove <n>"
-            try:
-                idx = int(rest.split()[0])
-            except ValueError:
-                return "/subgoal remove: <n> must be an integer (1-based index)."
-            try:
-                removed = mgr.remove_subgoal(idx)
-            except (IndexError, RuntimeError) as exc:
-                return f"/subgoal remove: {exc}"
-            return f"✓ Removed subgoal {idx}: {removed}"
-
-        if verb == "clear":
-            try:
-                prev = mgr.clear_subgoals()
-            except RuntimeError as exc:
-                return f"/subgoal clear: {exc}"
-            if prev:
-                return f"✓ Cleared {prev} subgoal{'s' if prev != 1 else ''}."
-            return "No subgoals to clear."
-
-        try:
-            text = mgr.add_subgoal(args)
-        except (ValueError, RuntimeError) as exc:
-            return f"/subgoal: {exc}"
-        idx = len(mgr.state.subgoals) if mgr.state else 0
-        return f"✓ Added subgoal {idx}: {text}"
+        return execute_subgoal(mgr, args)
 
     async def _send_goal_status_notice(self, source: Any, message: str) -> None:
         """Send a /goal judge status line back to the originating chat/thread."""
@@ -11587,7 +11505,12 @@ class GatewayRunner:
 
         max_turns = self._goal_max_turns_from_config()
 
-        mgr = GoalManager(session_id=sid, default_max_turns=max_turns)
+        try:
+            mgr = GoalManager(session_id=sid, default_max_turns=max_turns,
+                              database_provider=lambda: getattr(self, "_session_db", None))
+        except Exception as exc:
+            logger.warning("goal continuation storage unavailable: %s", exc)
+            return
         if not mgr.is_active():
             return
 
@@ -11633,24 +11556,16 @@ class GatewayRunner:
         session_entry = self.session_store.get_or_create_session(source)
         history = self.session_store.load_transcript(session_entry.session_id)
         
-        # Find the last user message and remove everything from it onward
-        last_user_idx = None
-        for i in range(len(history) - 1, -1, -1):
-            if history[i].get("role") == "user":
-                last_user_idx = i
-                break
-        
-        if last_user_idx is None:
+        from superforecasting_agent.application.history import prepare_undo
+
+        plan = prepare_undo(history)
+        if plan is None:
             return t("gateway.undo.nothing")
-        
-        removed_msg = history[last_user_idx].get("content", "")
-        removed_count = len(history) - last_user_idx
-        self.session_store.rewrite_transcript(session_entry.session_id, history[:last_user_idx])
-        # Reset stored token count — transcript was truncated
+        self.session_store.rewrite_transcript(session_entry.session_id, plan.history)
+        # Reset accounting only after the durable rewrite succeeds.
         session_entry.last_prompt_tokens = 0
-        
-        preview = removed_msg[:40] + "..." if len(removed_msg) > 40 else removed_msg
-        return t("gateway.undo.removed", count=removed_count, preview=preview)
+        preview = plan.preview[:40] + "..." if len(plan.preview) > 40 else plan.preview
+        return t("gateway.undo.removed", count=plan.removed, preview=preview)
 
     async def _handle_set_home_command(self, event: MessageEvent) -> str:
         """Handle /sethome command -- set the current chat as the platform's home channel."""
@@ -12313,7 +12228,7 @@ class GatewayRunner:
         media_types: Optional[List[str]] = None,
     ) -> None:
         """Execute a background agent task and deliver the result to the chat."""
-        from run_agent import AIAgent
+        from agent.runtime import AIAgent
 
         media_urls = media_urls or []
         media_types = media_types or []
@@ -12341,7 +12256,7 @@ class GatewayRunner:
 
             platform_key = _platform_config_key(source.platform)
 
-            from superforecasting_agent.runtime.tools_config import _get_platform_tools
+            from superforecasting_agent.tooling.selection import _get_platform_tools
             enabled_toolsets = sorted(_get_platform_tools(user_config, platform_key))
             agent_cfg = user_config.get("agent") or {}
             disabled_toolsets = agent_cfg.get("disabled_toolsets") or None
@@ -12501,18 +12416,7 @@ class GatewayRunner:
         def _save_config_key(key_path: str, value):
             """Save a dot-separated key to config.yaml."""
             try:
-                user_config = {}
-                if config_path.exists():
-                    with open(config_path, encoding="utf-8") as f:
-                        user_config = yaml.safe_load(f) or {}
-                keys = key_path.split(".")
-                current = user_config
-                for k in keys[:-1]:
-                    if k not in current or not isinstance(current[k], dict):
-                        current[k] = {}
-                    current = current[k]
-                current[keys[-1]] = value
-                atomic_yaml_write(config_path, user_config)
+                atomic_roundtrip_yaml_update(config_path, key_path, value)
                 return True
             except Exception as e:
                 logger.error("Failed to save config key %s: %s", key_path, e)
@@ -12549,12 +12453,14 @@ class GatewayRunner:
         platform_key = _platform_config_key(event.source.platform)
         if args in {"show", "on"}:
             self._show_reasoning = True
-            _save_config_key(f"display.platforms.{platform_key}.show_reasoning", True)
+            if not _save_config_key(f"display.platforms.{platform_key}.show_reasoning", True):
+                return t("gateway.config_save_failed", error="Reasoning display changed for this process only")
             return t("gateway.reasoning.display_set_on", platform=platform_key)
 
         if args in {"hide", "off"}:
             self._show_reasoning = False
-            _save_config_key(f"display.platforms.{platform_key}.show_reasoning", False)
+            if not _save_config_key(f"display.platforms.{platform_key}.show_reasoning", False):
+                return t("gateway.config_save_failed", error="Reasoning display changed for this process only")
             return t("gateway.reasoning.display_set_off", platform=platform_key)
 
         # Effort level change
@@ -12566,11 +12472,9 @@ class GatewayRunner:
             self._reasoning_config = self._load_reasoning_config()
             self._evict_cached_agent(session_key)
             return t("gateway.reasoning.reset_done")
-        if effort == "none":
-            parsed = {"enabled": False}
-        elif effort in {"minimal", "low", "medium", "high", "xhigh"}:
-            parsed = {"enabled": True, "effort": effort}
-        else:
+        from superforecasting_agent.constants import parse_reasoning_effort
+        parsed = parse_reasoning_effort(effort)
+        if parsed is None:
             return t(
                 "gateway.reasoning.unknown_arg",
                 arg=effort or raw_args.lower(),
@@ -12607,18 +12511,7 @@ class GatewayRunner:
         def _save_config_key(key_path: str, value):
             """Save a dot-separated key to config.yaml."""
             try:
-                user_config = {}
-                if config_path.exists():
-                    with open(config_path, encoding="utf-8") as f:
-                        user_config = yaml.safe_load(f) or {}
-                keys = key_path.split(".")
-                current = user_config
-                for k in keys[:-1]:
-                    if k not in current or not isinstance(current[k], dict):
-                        current[k] = {}
-                    current = current[k]
-                current[keys[-1]] = value
-                atomic_yaml_write(config_path, user_config)
+                atomic_roundtrip_yaml_update(config_path, key_path, value)
                 return True
             except Exception as e:
                 logger.error("Failed to save config key %s: %s", key_path, e)
@@ -12628,16 +12521,13 @@ class GatewayRunner:
             status = t("gateway.fast.status_fast") if self._service_tier == "priority" else t("gateway.fast.status_normal")
             return t("gateway.fast.status", mode=status)
 
-        if args in {"fast", "on"}:
-            self._service_tier = "priority"
-            saved_value = "fast"
-            label = t("gateway.fast.label_fast")
-        elif args in {"normal", "off"}:
-            self._service_tier = None
-            saved_value = "normal"
-            label = t("gateway.fast.label_normal")
-        else:
-            return t("gateway.fast.unknown_arg", arg=args)
+        from superforecasting_agent.constants import parse_fast_mode_command
+        try:
+            saved_value = parse_fast_mode_command(args, current_fast=self._service_tier == "priority")
+        except ValueError as exc:
+            return str(exc)
+        self._service_tier = "priority" if saved_value == "fast" else None
+        label = t("gateway.fast.label_fast" if saved_value == "fast" else "gateway.fast.label_normal")
 
         if _save_config_key("agent.service_tier", saved_value):
             return t("gateway.fast.saved", label=label)
@@ -12713,7 +12603,7 @@ class GatewayRunner:
             if platform_key not in display["platforms"] or not isinstance(display["platforms"].get(platform_key), dict):
                 display["platforms"][platform_key] = {}
             display["platforms"][platform_key]["tool_progress"] = new_mode
-            atomic_yaml_write(config_path, user_config)
+            atomic_roundtrip_yaml_update(config_path, f"display.platforms.{platform_key}.tool_progress", new_mode)
             return (
                 f"{descriptions[new_mode]}\n"
                 + t("gateway.verbose.saved_suffix", platform=platform_key)
@@ -12770,24 +12660,12 @@ class GatewayRunner:
                 platform=platform_key,
             )
 
-        if arg in {"on", "enable", "true", "1"}:
-            new_state = True
-        elif arg in {"off", "disable", "false", "0"}:
-            new_state = False
-        elif arg == "":
-            new_state = not effective["enabled"]
-        else:
-            return t("gateway.footer.usage")
+        from superforecasting_agent.application.footer import change_footer
 
-        # --- write global flag ---------------------------------------------
         try:
-            if not isinstance(user_config.get("display"), dict):
-                user_config["display"] = {}
-            display = user_config["display"]
-            if not isinstance(display.get("runtime_footer"), dict):
-                display["runtime_footer"] = {}
-            display["runtime_footer"]["enabled"] = new_state
-            atomic_yaml_write(config_path, user_config)
+            new_state = change_footer(arg, config_path)
+        except ValueError as e:
+            return str(e)
         except Exception as e:
             logger.warning("Failed to save runtime_footer.enabled: %s", e)
             return t("gateway.config_save_failed", error=e)
@@ -12825,7 +12703,7 @@ class GatewayRunner:
         focus_topic = (event.get_command_args() or "").strip() or None
 
         try:
-            from run_agent import AIAgent
+            from agent.runtime import AIAgent
             from agent.manual_compression_feedback import summarize_manual_compression
             from agent.model_metadata import estimate_request_tokens_rough
 
@@ -13466,33 +13344,26 @@ class GatewayRunner:
 
         # Ensure session exists in SQLite DB (it may only exist in session_store
         # if this is the first command in a new session)
-        existing_title = self._session_db.get_session_title(session_id)
-        if existing_title is None:
-            # Session doesn't exist in DB yet — create it
+        if self._session_db.get_session(session_id) is None:
             try:
                 self._session_db.create_session(
                     session_id=session_id,
                     source=source.platform.value if source.platform else "unknown",
                     user_id=source.user_id,
                 )
-            except Exception:
-                pass  # Session might already exist, ignore errors
+            except Exception as exc:
+                return t("gateway.shared.warn_passthrough", error=exc)
 
         title_arg = event.get_command_args().strip()
         if title_arg:
-            # Sanitize the title before setting
+            from superforecasting_agent.application.sessions import EmptySessionTitle, set_session_title
             try:
-                sanitized = self._session_db.sanitize_title(title_arg)
-            except ValueError as e:
-                return t("gateway.shared.warn_passthrough", error=e)
-            if not sanitized:
-                return t("gateway.title.empty_after_clean")
-            # Set the title
-            try:
-                if self._session_db.set_session_title(session_id, sanitized):
-                    return t("gateway.title.set_to", title=sanitized)
-                else:
+                sanitized, pending = set_session_title(self._session_db, session_id, title_arg)
+                if pending:
                     return t("gateway.title.not_found")
+                return t("gateway.title.set_to", title=sanitized)
+            except EmptySessionTitle:
+                return t("gateway.title.empty_after_clean")
             except ValueError as e:
                 return t("gateway.shared.warn_passthrough", error=e)
         else:
@@ -13610,53 +13481,18 @@ class GatewayRunner:
         short_uuid = _uuid.uuid4().hex[:6]
         new_session_id = f"{timestamp_str}_{short_uuid}"
 
-        # Determine branch title
-        if branch_name:
-            branch_title = branch_name
-        else:
-            current_title = self._session_db.get_session_title(current_entry.session_id)
-            base = current_title or "branch"
-            branch_title = self._session_db.get_next_title_in_lineage(base)
-
         parent_session_id = current_entry.session_id
-
-        # Create the new session with parent link
         try:
-            self._session_db.create_session(
-                session_id=new_session_id,
+            from superforecasting_agent.application.sessions import branch_session
+            branch_title = branch_session(
+                self._session_db, session_id=new_session_id,
+                parent_session_id=parent_session_id, history=history, name=branch_name,
                 source=source.platform.value if source.platform else "gateway",
                 model=(self.config.get("model", {}) or {}).get("default") if isinstance(self.config, dict) else None,
-                parent_session_id=parent_session_id,
             )
         except Exception as e:
             logger.error("Failed to create branch session: %s", e)
             return t("gateway.branch.create_failed", error=e)
-
-        # Copy conversation history to the new session
-        for msg in history:
-            try:
-                self._session_db.append_message(
-                    session_id=new_session_id,
-                    role=msg.get("role", "user"),
-                    content=msg.get("content"),
-                    tool_name=msg.get("tool_name") or msg.get("name"),
-                    tool_calls=msg.get("tool_calls"),
-                    tool_call_id=msg.get("tool_call_id"),
-                    finish_reason=msg.get("finish_reason"),
-                    reasoning=msg.get("reasoning"),
-                    reasoning_content=msg.get("reasoning_content"),
-                    reasoning_details=msg.get("reasoning_details"),
-                    codex_reasoning_items=msg.get("codex_reasoning_items"),
-                    codex_message_items=msg.get("codex_message_items"),
-                )
-            except Exception:
-                pass  # Best-effort copy
-
-        # Set title
-        try:
-            self._session_db.set_session_title(new_session_id, branch_title)
-        except Exception:
-            pass
 
         # Switch the session store entry to the new session
         new_entry = self.session_store.switch_session(session_key, new_session_id)
@@ -13810,33 +13646,12 @@ class GatewayRunner:
 
     async def _handle_insights_command(self, event: MessageEvent) -> str:
         """Handle /insights command -- show usage insights and analytics."""
-        args = event.get_command_args().strip()
+        from superforecasting_agent.application.insights import parse_insights_arguments
 
-        # Normalize Unicode dashes (Telegram/iOS auto-converts -- to em/en dash)
-        args = re.sub(r'[\u2012\u2013\u2014\u2015](days|source)', r'--\1', args)
-
-        days = 30
-        source = None
-
-        # Parse simple args: /insights 7  or  /insights --days 7
-        if args:
-            parts = args.split()
-            i = 0
-            while i < len(parts):
-                if parts[i] == "--days" and i + 1 < len(parts):
-                    try:
-                        days = int(parts[i + 1])
-                    except ValueError:
-                        return t("gateway.insights.invalid_days", value=parts[i + 1])
-                    i += 2
-                elif parts[i] == "--source" and i + 1 < len(parts):
-                    source = parts[i + 1]
-                    i += 2
-                elif parts[i].isdigit():
-                    days = int(parts[i])
-                    i += 1
-                else:
-                    i += 1
+        try:
+            query = parse_insights_arguments(event.get_command_args() or "")
+        except ValueError as exc:
+            return str(exc)
 
         try:
             from superforecasting_agent.storage.session import SessionDB
@@ -13846,11 +13661,12 @@ class GatewayRunner:
 
             def _run_insights():
                 db = SessionDB()
-                engine = InsightsEngine(db)
-                report = engine.generate(days=days, source=source)
-                result = engine.format_gateway(report)
-                db.close()
-                return result
+                try:
+                    engine = InsightsEngine(db)
+                    report = engine.generate(days=query.days, source=query.source)
+                    return engine.format_gateway(report)
+                finally:
+                    db.close()
 
             return await loop.run_in_executor(None, _run_insights)
         except Exception as e:
@@ -13894,11 +13710,14 @@ class GatewayRunner:
         async def _on_confirm(choice: str) -> Optional[str]:
             if choice == "cancel":
                 return t("gateway.reload_mcp.cancelled")
+            preference_saved = False
             if choice == "always":
                 # Persist the opt-out and run the reload.
                 try:
-                    from cli import save_config_value
-                    save_config_value("approvals.mcp_reload_confirm", False)
+                    atomic_roundtrip_yaml_update(
+                        _hermes_home / "config.yaml", "approvals.mcp_reload_confirm", False,
+                    )
+                    preference_saved = True
                     logger.info(
                         "User opted out of /reload-mcp confirmation (session=%s)",
                         session_key,
@@ -13908,7 +13727,11 @@ class GatewayRunner:
             # once / always → run the reload
             result = await self._execute_mcp_reload(event)
             if choice == "always":
-                return f"{result}\n\n" + t("gateway.reload_mcp.always_followup")
+                note = (
+                    t("gateway.reload_mcp.always_followup") if preference_saved else
+                    "Could not save the preference; confirmation remains enabled."
+                )
+                return f"{result}\n\n{note}"
             return result
 
         prompt_message = t("gateway.reload_mcp.confirm_prompt")
@@ -14186,10 +14009,13 @@ class GatewayRunner:
         async def _on_confirm(choice: str):
             if choice == "cancel":
                 return f"🟡 /{command} cancelled. Conversation unchanged."
+            preference_saved = False
             if choice == "always":
                 try:
-                    from cli import save_config_value
-                    save_config_value("approvals.destructive_slash_confirm", False)
+                    atomic_roundtrip_yaml_update(
+                        _hermes_home / "config.yaml", "approvals.destructive_slash_confirm", False,
+                    )
+                    preference_saved = True
                     logger.info(
                         "User opted out of destructive slash confirm (session=%s)",
                         session_key,
@@ -14205,11 +14031,13 @@ class GatewayRunner:
                     "without confirmation. Re-enable via "
                     "`approvals.destructive_slash_confirm: true` in config.yaml."
                 )
+                if not preference_saved:
+                    note = "\n\nCould not save the preference; confirmation remains enabled."
                 if isinstance(result, str):
                     return result + note
                 # EphemeralReply or other — leave untouched; the opt-out note
                 # would otherwise mangle structured replies.  The persist itself
-                # already happened above; user gets the same UX next time.
+                # is reported through logging when the reply cannot carry text.
                 return result
             return result
 
@@ -14518,7 +14346,7 @@ class GatewayRunner:
         # Plugin platforms with allow_update_command=True are also allowed
         if platform not in _allowed:
             try:
-                from gateway.platform_registry import platform_registry
+                from superforecasting_agent.platform_registry import platform_registry
                 entry = platform_registry.get(platform.value)
                 if not entry or not entry.allow_update_command:
                     return t("gateway.update.platform_not_messaging")
@@ -15093,7 +14921,7 @@ class GatewayRunner:
         Returns a list of reset tokens; pass them to ``_clear_session_env``
         in a ``finally`` block.
         """
-        from gateway.session_context import set_session_vars
+        from superforecasting_agent.session_context import set_session_vars
         return set_session_vars(
             platform=context.source.platform.value,
             chat_id=context.source.chat_id,
@@ -15107,7 +14935,7 @@ class GatewayRunner:
 
     def _clear_session_env(self, tokens: list) -> None:
         """Restore session context variables to their pre-handler values."""
-        from gateway.session_context import clear_session_vars
+        from superforecasting_agent.session_context import clear_session_vars
         clear_session_vars(tokens)
 
     async def _run_in_executor_with_context(self, func, *args):
@@ -15351,7 +15179,7 @@ class GatewayRunner:
             # registered in the platform registry.
             if platform.value not in _BUILTIN_PLATFORM_VALUES:
                 try:
-                    from gateway.platform_registry import platform_registry
+                    from superforecasting_agent.platform_registry import platform_registry
                     if not platform_registry.is_registered(platform.value):
                         raise ValueError(platform_name)
                 except Exception:
@@ -16411,7 +16239,7 @@ class GatewayRunner:
                 event_message_id=event_message_id,
             )
 
-        from run_agent import AIAgent
+        from agent.runtime import AIAgent
         import queue
 
         def _run_still_current() -> bool:
@@ -16422,7 +16250,7 @@ class GatewayRunner:
         user_config = _load_gateway_config()
         platform_key = _platform_config_key(source.platform)
 
-        from superforecasting_agent.runtime.tools_config import _get_platform_tools
+        from superforecasting_agent.tooling.selection import _get_platform_tools
         enabled_toolsets = sorted(_get_platform_tools(user_config, platform_key))
         agent_cfg_local = user_config.get("agent") or {}
         disabled_toolsets = agent_cfg_local.get("disabled_toolsets") or None
@@ -18888,6 +18716,7 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
     setup_logging(hermes_home=_hermes_home, mode="gateway")
 
     _stderr_handler = None
+    release_owned_runtime = None
     _root_logger = logging.getLogger()
     _previous_root_level = _root_logger.level
 
@@ -19044,17 +18873,23 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
                 "Gateway runtime lock is already held by another instance. Exiting."
             )
             return False
+        from gateway.status import gateway_runtime_lock_owner
+        owner = gateway_runtime_lock_owner()
+        runner._runtime_lock_owner = owner
+        pid_written = False
+
+        def release_owned_runtime():
+            release_gateway_runtime_lock(owner=owner, remove_pid=pid_written)
+
+        atexit.register(release_owned_runtime)
         try:
             write_pid_file()
+            pid_written = True
         except FileExistsError:
-            release_gateway_runtime_lock()
             logger.error(
                 "PID file race lost to another gateway instance. Exiting."
             )
             return False
-        atexit.register(remove_pid_file)
-        atexit.register(release_gateway_runtime_lock)
-
         # Only the process that owns the gateway runtime lock may reconcile runs.
         # Doing this in GatewayRunner.__init__ would let a losing second process
         # mark the live owner's executions failed before it noticed the lock.
@@ -19178,6 +19013,9 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
 
         return True
     finally:
+        if release_owned_runtime is not None:
+            release_owned_runtime()
+            atexit.unregister(release_owned_runtime)
         if _stderr_handler is not None:
             _root_logger.removeHandler(_stderr_handler)
             _stderr_handler.close()

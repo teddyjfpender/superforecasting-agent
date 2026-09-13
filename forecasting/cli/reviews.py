@@ -20,7 +20,6 @@ from typing import Any
 from forecasting.cli import core as _core
 from forecasting.cli.core import (
     ForecastLedger,
-    _active_learned_error_review_rows,
     _format_probability,
     _format_schedule_scope,
     _parse_day_count,
@@ -40,15 +39,8 @@ def register(forecast_sub: argparse._SubParsersAction) -> None:
     """Register the ``review`` + ``schedule`` command groups (contiguous block)."""
 
     review_parser = forecast_sub.add_parser("review", help="Review stale or active forecasts")
-    review_parser.add_argument("--stale", action="store_true")
-    review_parser.add_argument("--last", dest="last_days", type=_parse_day_count, default=7)
-    review_parser.add_argument("--domain")
-    review_parser.add_argument("--topic")
-    review_parser.add_argument("--horizon", help="Filter by forecast horizon in days, e.g. 30 or 30-90")
-    review_parser.add_argument("--confidence-below", type=float)
-    review_parser.add_argument("--confidence-above", type=float)
-    review_parser.add_argument("--large-delta-threshold", type=float)
-    review_parser.add_argument("--now")
+    from forecasting.interfaces.commands import add_review_arguments
+    add_review_arguments(review_parser)
     review_parser.set_defaults(_forecast_handler=_cmd_review)
 
     schedule_parser = forecast_sub.add_parser("schedule", help="Manage scheduled self-checks")
@@ -187,7 +179,9 @@ def register(forecast_sub: argparse._SubParsersAction) -> None:
 
 def _cmd_review(args: argparse.Namespace) -> None:
     ledger = _ledger(args)
-    rows = ledger.review_questions(
+    from forecasting.application.reviews import review_forecasts
+
+    rows = review_forecasts(ledger,
         stale=args.stale,
         last_days=args.last_days,
         domain=args.domain,
@@ -198,80 +192,12 @@ def _cmd_review(args: argparse.Namespace) -> None:
         large_delta_threshold=args.large_delta_threshold,
         now=args.now,
     )
-    _merge_learned_error_reviews(
-        rows,
-        ledger=ledger,
-        domain=args.domain,
-        topic=args.topic,
-        horizon=args.horizon,
-        confidence_below=args.confidence_below,
-        confidence_above=args.confidence_above,
-    )
-    if not rows:
-        print("No forecasts need review.")
-        return
-    print("ID             P(now)    As of                 Close                Priority  Reasons              Title")
-    for row in rows:
-        question = row["question"]
-        snapshot = row["current_snapshot"]
-        probability = _format_probability(snapshot.probability_or_distribution) if snapshot else "-"
-        as_of = snapshot.as_of if snapshot else "-"
-        close = question.close_time or "-"
-        reasons = ",".join(row["reasons"]) or "active"
-        print(
-            f"{question.id:<14} {probability:<9} {as_of:<20} {close:<20} "
-            f"{row.get('priority', 9):<9} {reasons:<20} {question.title}"
-        )
-        print(f"  next: {_review_next_action(question.id, row['reasons'])}")
+    from forecasting.interfaces.commands import format_review
+    print(format_review(rows))
 
 
-def _merge_learned_error_reviews(
-    rows: list[dict[str, Any]],
-    *,
-    ledger: ForecastLedger,
-    domain: str | None = None,
-    topic: str | None = None,
-    horizon: str | None = None,
-    confidence_below: float | None = None,
-    confidence_above: float | None = None,
-) -> None:
-    rows_by_id = {row["question"].id: row for row in rows}
-    for learned_row in _active_learned_error_review_rows(
-        ledger,
-        domain=domain,
-        topic=topic,
-        horizon=horizon,
-        confidence_below=confidence_below,
-        confidence_above=confidence_above,
-    ):
-        question = learned_row["question"]
-        alert = learned_row["alert"]
-        existing = rows_by_id.get(question.id)
-        if existing is not None:
-            reasons = existing.setdefault("reasons", [])
-            if alert.reason not in reasons:
-                reasons.append(alert.reason)
-            existing["priority"] = min(int(existing.get("priority") or 9), 4)
-            continue
-        row = {
-            "question": question,
-            "current_snapshot": learned_row["current_snapshot"],
-            "reasons": [alert.reason],
-            "priority": 4,
-        }
-        rows.append(row)
-        rows_by_id[question.id] = row
-    _sort_review_rows(rows)
-
-
-def _sort_review_rows(rows: list[dict[str, Any]]) -> None:
-    rows.sort(
-        key=lambda row: (
-            int(row.get("priority") or 9),
-            row["question"].close_time or row["question"].resolution_time or "9999-12-31T00:00:00Z",
-            row["question"].title.lower(),
-        )
-    )
+# Compatibility names for callers; these helpers have one application owner.
+from forecasting.application.reviews import _merge_learned_error_reviews, _sort_review_rows
 
 
 def _cmd_schedule_add(args: argparse.Namespace) -> None:

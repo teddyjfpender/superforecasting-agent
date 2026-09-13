@@ -85,9 +85,8 @@ class TestResolveAwsAuthEnvVar:
         # Mock botocore to return no credentials (covers EC2 IMDS fallback)
         mock_session = MagicMock()
         mock_session.get_credentials.return_value = None
-        with patch.dict("sys.modules", {"botocore": MagicMock(), "botocore.session": MagicMock()}):
-            import botocore.session as _bs
-            _bs.get_session = MagicMock(return_value=mock_session)
+        sdk = MagicMock(get_session=MagicMock(return_value=mock_session))
+        with patch.dict("sys.modules", {"botocore": MagicMock(session=sdk), "botocore.session": sdk}):
             assert resolve_aws_auth_env_var({}) is None
 
     def test_ignores_whitespace_only_values(self):
@@ -95,9 +94,8 @@ class TestResolveAwsAuthEnvVar:
         env = {"AWS_PROFILE": "  ", "AWS_ACCESS_KEY_ID": " "}
         mock_session = MagicMock()
         mock_session.get_credentials.return_value = None
-        with patch.dict("sys.modules", {"botocore": MagicMock(), "botocore.session": MagicMock()}):
-            import botocore.session as _bs
-            _bs.get_session = MagicMock(return_value=mock_session)
+        sdk = MagicMock(get_session=MagicMock(return_value=mock_session))
+        with patch.dict("sys.modules", {"botocore": MagicMock(session=sdk), "botocore.session": sdk}):
             assert resolve_aws_auth_env_var(env) is None
 
 
@@ -110,9 +108,8 @@ class TestHasAwsCredentials:
         from agent.bedrock_adapter import has_aws_credentials
         mock_session = MagicMock()
         mock_session.get_credentials.return_value = None
-        with patch.dict("sys.modules", {"botocore": MagicMock(), "botocore.session": MagicMock()}):
-            import botocore.session as _bs
-            _bs.get_session = MagicMock(return_value=mock_session)
+        sdk = MagicMock(get_session=MagicMock(return_value=mock_session))
+        with patch.dict("sys.modules", {"botocore": MagicMock(session=sdk), "botocore.session": sdk}):
             assert has_aws_credentials({}) is False
 
 

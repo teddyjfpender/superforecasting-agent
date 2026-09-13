@@ -33,7 +33,22 @@ def curator_env(tmp_path, monkeypatch):
     # Default: no config file → curator defaults. Tests can override.
     monkeypatch.setattr(curator, "_load_config", lambda: {})
 
-    return {"home": home, "curator": curator, "usage": usage}
+    # Own every thread this fixture starts. Joining after monkeypatch teardown
+    # would let an old review observe the next test's reloaded module/profile.
+    import threading
+    from types import SimpleNamespace
+    threads = []
+    def start_thread(*args, **kwargs):
+        thread = threading.Thread(*args, **kwargs)
+        threads.append(thread)
+        return thread
+    monkeypatch.setattr(curator, "threading", SimpleNamespace(Thread=start_thread))
+    try:
+        yield {"home": home, "curator": curator, "usage": usage}
+    finally:
+        for thread in threads:
+            thread.join(timeout=5)
+            assert not thread.is_alive(), "curator review outlived its test profile"
 
 
 def _write_skill(skills_dir: Path, name: str):

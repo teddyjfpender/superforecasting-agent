@@ -6,11 +6,13 @@ import {
   $delegationState,
   $overlaySectionsOpen,
   applyDelegationStatus,
+  patchDelegationState,
   toggleOverlaySection
 } from '../app/delegationStore.js'
 import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
 import { $spawnDiff, $spawnHistory, clearDiffPair, type SpawnSnapshot } from '../app/spawnHistoryStore.js'
 import { useTurnSelector } from '../app/turnStore.js'
+import { $uiSessionId, getUiState } from '../app/uiStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import type { DelegationPauseResponse, DelegationStatusResponse, SubagentInterruptResponse } from '../gatewayTypes.js'
 import { asRpcResult } from '../lib/rpc.js'
@@ -699,8 +701,15 @@ function DiffView({
 // ── Main overlay ─────────────────────────────────────────────────────
 
 export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: AgentsOverlayProps) {
-  const liveSubagents = useTurnSelector(state => state.subagents)
+  const sessionId = useStore($uiSessionId)
+  const turnSubagents = useTurnSelector(state => state.subagents)
   const delegation = useStore($delegationState)
+
+  const liveSubagents = useMemo(
+    () => [...turnSubagents, ...delegation.backgroundAgents],
+    [turnSubagents, delegation.backgroundAgents]
+  )
+
   const history = useStore($spawnHistory)
   const diffPair = useStore($spawnDiff)
   // Go inert while the Ctrl+K palette / `?` cheat-sheet stacks above the view.
@@ -786,11 +795,42 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
   }, [cursor, historyIndex, mode])
 
   useEffect(() => {
-    // Warm caps + paused flag on open.
-    gw.request<DelegationStatusResponse>('delegation.status', {})
-      .then(r => applyDelegationStatus(asRpcResult<DelegationStatusResponse>(r)))
-      .catch(() => {})
-  }, [gw])
+    // Refresh backend-owned background work while this view is open.
+    if (!sessionId) {
+      return
+    }
+
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+
+    const refresh = () => {
+      gw.request<DelegationStatusResponse>('delegation.status', { session_id: sessionId })
+        .then(r => {
+          if (!cancelled && getUiState().sid === sessionId) {
+            applyDelegationStatus(asRpcResult<DelegationStatusResponse>(r))
+          }
+        })
+        .catch(() => {
+          if (!cancelled && getUiState().sid === sessionId) {
+            patchDelegationState({
+              backgroundStatusError: 'Background status unavailable; showing last observed state.'
+            })
+          }
+        })
+        .finally(() => {
+          if (!cancelled && getUiState().sid === sessionId) {
+            timer = setTimeout(refresh, 1000)
+          }
+        })
+    }
+
+    refresh()
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [gw, sessionId])
 
   useEffect(() => {
     if (cursor >= rows.length) {
@@ -808,7 +848,7 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
     }
   }
 
-  const interrupt = (id: string) => gw.request<SubagentInterruptResponse>('subagent.interrupt', { subagent_id: id })
+  const interrupt = (id: string) => gw.request<SubagentInterruptResponse>('subagent.interrupt', { subagent_id: id, session_id: sessionId })
 
   const killOne = (id: string) =>
     guardLive(() => {
@@ -829,8 +869,9 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
 
   const togglePause = () =>
     guardLive(() => {
-      gw.request<DelegationPauseResponse>('delegation.pause', { paused: !delegation.paused })
+      gw.request<DelegationPauseResponse>('delegation.pause', { paused: !delegation.paused, session_id: sessionId })
         .then(raw => {
+          if (getUiState().sid !== sessionId) {return}
           const r = asRpcResult<DelegationPauseResponse>(raw)
           applyDelegationStatus({ paused: r?.paused })
           setFlash(r?.paused ? 'spawning paused' : 'spawning resumed')
@@ -1052,6 +1093,10 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
           ) : null}
         </Text>
       </Box>
+
+      {!replayMode && delegation.backgroundStatusError ? (
+        <Text color={t.color.muted}>{delegation.backgroundStatusError}</Text>
+      ) : null}
 
       {rows.length === 0 ? (
         <Box flexDirection="column" flexGrow={1}>

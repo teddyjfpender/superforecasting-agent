@@ -2,7 +2,7 @@
 
 def named_custom_provider_map(cfg) -> dict[str, dict[str, str]]:
     from superforecasting_agent.runtime.config import read_raw_config, get_compatible_custom_providers
-    from superforecasting_agent.runtime.auth import resolve_provider, AuthError
+    from superforecasting_agent.credentials.auth import resolve_provider, AuthError
 
     # Build lookups of raw (un-expanded) templates keyed by a
     # stable identity. We intentionally bypass

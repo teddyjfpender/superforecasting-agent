@@ -66,13 +66,7 @@ def _handle_handoff_command(self, cmd_original: str) -> bool:
         _cprint("  Forecast agent is busy. Wait for the current turn to finish, then retry /handoff.")
         return True
 
-    # Make sure we have a SessionDB handle.
-    if not self._session_db:
-        try:
-            from superforecasting_agent.storage.session import SessionDB
-            self._session_db = SessionDB()
-        except Exception:
-            pass
+    # Storage is borrowed from the host; a command must not open an implicit owner.
     if not self._session_db:
         _cprint(f"  {format_session_db_unavailable()}")
         return True
@@ -84,12 +78,8 @@ def _handle_handoff_command(self, cmd_original: str) -> bool:
     try:
         row = self._session_db.get_session(self.session_id)
         if not row:
-            # Nothing has flushed yet. Create a stub so the gateway has
-            # something to switch_session onto. Inserting via title-set
-            # is the simplest path because set_session_title's INSERT OR
-            # IGNORE creates the row.
-            placeholder_title = f"handoff-{self.session_id[:8]}"
-            self._session_db.set_session_title(self.session_id, placeholder_title)
+            self._session_db.create_session(self.session_id, source="cli")
+            self._session_db.set_session_title(self.session_id, f"handoff-{self.session_id[:8]}")
     except Exception as exc:
         _cprint(f"  Could not ensure session row in state.db: {exc}")
         return True
@@ -106,7 +96,9 @@ def _handle_handoff_command(self, cmd_original: str) -> bool:
         session_title = self.session_id[:8]
 
     # Mark pending — gateway watcher will pick this up.
-    ok = self._session_db.request_handoff(self.session_id, platform_name)
+    from uuid import uuid4
+    attempt_id = uuid4().hex
+    ok = self._session_db.request_handoff(self.session_id, platform_name, attempt_id=attempt_id)
     if not ok:
         _cprint("  Session is already in flight for handoff. Wait for it to settle, then retry.")
         return True
@@ -114,40 +106,25 @@ def _handle_handoff_command(self, cmd_original: str) -> bool:
     _cprint(f"  Queued handoff of '{session_title}' → {platform_name} (home: {home.name}).")
     _cprint(f"  Waiting for the gateway to pick it up...")
 
-    # Poll-block on terminal state. Tick every 0.5s; bail at ~60s.
-    import time as _time
-    deadline = _time.time() + 60.0
-    last_state = "pending"
-    while _time.time() < deadline:
-        try:
-            state_row = self._session_db.get_handoff_state(self.session_id)
-        except Exception:
-            state_row = None
-        current = (state_row or {}).get("state") or "pending"
-        if current != last_state:
-            if current == "running":
-                _cprint("  Gateway picked it up; transferring...")
-            last_state = current
-        if current == "completed":
-            _cprint("")
-            _cprint(f"  ↻ Handoff complete. The session is now active on {platform_name}.")
-            _cprint(f"  Resume it on this CLI later with: /resume {session_title}")
-            _cprint("")
-            # End the CLI cleanly — same exit semantics as /quit.
-            self._should_exit = True
-            return False
-        if current == "failed":
-            err = (state_row or {}).get("error") or "unknown error"
-            _cprint(f"  Handoff failed: {err}")
-            _cprint("  Your CLI session is intact. Try /handoff again, or /resume on the platform manually.")
-            return True
-        _time.sleep(0.5)
+    from superforecasting_agent.application.handoff import wait_for_handoff
 
-    # Timed out. Clear the pending flag so the user can retry.
     try:
-        self._session_db.fail_handoff(self.session_id, "timed out waiting for gateway")
-    except Exception:
-        pass
-    _cprint("  Timed out waiting for the gateway. Is `superforecasting-agent gateway` running?")
-    _cprint("  Your CLI session is intact.")
+        result = wait_for_handoff(self._session_db, self.session_id, attempt_id)
+    except Exception as exc:
+        _cprint(f"  Could not verify handoff state: {exc}. Check the gateway before retrying.")
+        return True
+    if result.state == "completed":
+        _cprint(f"  Handoff complete. The session is now active on {platform_name}.")
+        _cprint(f"  Resume it later with: /resume {session_title}")
+        self._should_exit = True
+        return False
+    if result.state == "running":
+        _cprint("  Gateway transfer is still running. The handoff remains owned by the gateway; do not retry yet.")
+    elif result.state == "failed":
+        if result.wait_ended and result.error == "timed out waiting for gateway":
+            _cprint("  Timed out before gateway pickup; the pending handoff was cancelled.")
+        else:
+            _cprint(f"  Handoff failed: {result.error or 'unknown error'}")
+    else:
+        _cprint(f"  {result.error or 'Handoff state is unavailable'}. Check the gateway before retrying.")
     return True

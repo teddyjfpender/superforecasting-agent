@@ -34,9 +34,10 @@ import json
 import logging
 import re
 import time
+import weakref
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,7 @@ logger = logging.getLogger(__name__)
 # Constants & defaults
 # ──────────────────────────────────────────────────────────────────────
 
-DEFAULT_MAX_TURNS = 20
+from superforecasting_agent.configuration.goals import DEFAULT_MAX_TURNS
 DEFAULT_JUDGE_TIMEOUT = 30.0
 # Judge output budget. The freeform judge returns a one-line JSON verdict, but
 # reasoning models (deepseek-v4, qwq, etc.) burn tokens on hidden reasoning
@@ -204,37 +205,15 @@ def _meta_key(session_id: str) -> str:
     return f"goal:{session_id}"
 
 
-_DB_CACHE: Dict[str, Any] = {}
-
-
 def _get_session_db() -> Optional[Any]:
-    """Return a SessionDB instance for the current HERMES_HOME.
-
-    SessionDB has no built-in singleton, but opening a new connection per
-    /goal call would thrash the file. We cache one instance per
-    ``hermes_home`` path so profile switches still pick up the right DB.
-    Defensive against import/instantiation failures so tests and
-    non-standard launchers can still use the GoalManager.
-    """
+    """Open a standalone goal database; the caller owns its lifetime."""
     try:
-        from superforecasting_agent.constants import get_agent_home
         from superforecasting_agent.storage.session import SessionDB
 
-        home = str(get_agent_home())
+        return SessionDB()
     except Exception as exc:  # pragma: no cover
         logger.debug("GoalManager: SessionDB bootstrap failed (%s)", exc)
         return None
-
-    cached = _DB_CACHE.get(home)
-    if cached is not None:
-        return cached
-    try:
-        db = SessionDB()
-    except Exception as exc:  # pragma: no cover
-        logger.debug("GoalManager: SessionDB() raised (%s)", exc)
-        return None
-    _DB_CACHE[home] = db
-    return db
 
 
 def load_goal(session_id: str) -> Optional[GoalState]:
@@ -249,6 +228,8 @@ def load_goal(session_id: str) -> Optional[GoalState]:
     except Exception as exc:
         logger.debug("GoalManager: get_meta failed: %s", exc)
         return None
+    finally:
+        db.close()
     if not raw:
         return None
     try:
@@ -269,6 +250,8 @@ def save_goal(session_id: str, state: GoalState) -> None:
         db.set_meta(_meta_key(session_id), state.to_json())
     except Exception as exc:
         logger.debug("GoalManager: set_meta failed: %s", exc)
+    finally:
+        db.close()
 
 
 def clear_goal(session_id: str) -> None:
@@ -486,24 +469,98 @@ class GoalManager:
       feed back into ``run_conversation``.
     """
 
-    def __init__(self, session_id: str, *, default_max_turns: int = DEFAULT_MAX_TURNS):
+    def __init__(
+        self, session_id: str, *, default_max_turns: int = DEFAULT_MAX_TURNS,
+        database_provider: Optional[Callable[[], Any]] = None,
+    ):
         self.session_id = session_id
         self.default_max_turns = int(default_max_turns or DEFAULT_MAX_TURNS)
-        self._state: Optional[GoalState] = load_goal(session_id)
+        self._database = (database_provider or _get_session_db)()
+        self._owns_database = database_provider is None
+        self._closed = False
+        self._database_finalizer = None
+        if self._database is None:
+            raise RuntimeError("Goal storage is unavailable")
+        try:
+            self._refresh()
+        except Exception:
+            if self._owns_database:
+                self._database.close()
+            raise
+        if self._owns_database:
+            # Compatibility callers can omit a context manager. There is no
+            # process-global cache retaining their abandoned connections.
+            self._database_finalizer = weakref.finalize(self, self._database.close)
+
+    def close(self) -> None:
+        """Close an owned store; borrowed host storage is never closed here."""
+        if self._closed:
+            return
+        if self._owns_database:
+            self._database.close()
+            self._database_finalizer.detach()
+        self._closed = True
+
+    def __enter__(self):
+        if self._closed:
+            raise RuntimeError("Goal manager is closed")
+        return self
+
+    def __exit__(self, *_exc):
+        self.close()
+
+    def _refresh(self) -> None:
+        """Read from this manager's bound database, never a replacement profile."""
+        if self._closed:
+            raise RuntimeError("Goal manager is closed")
+        raw = self._database.get_meta(_meta_key(self.session_id))
+        state = GoalState.from_json(raw) if raw else None
+        self._expected_state = state.to_json() if state is not None else None
+        self._state = state if state is not None and state.status != "cleared" else None
+
+    def _persist(self, state: GoalState, *, expected_state: Optional[str] = None) -> None:
+        """Reject stale manager writes, including verdicts from an older judge."""
+        if self._closed:
+            raise RuntimeError("Goal manager is closed")
+        value = state.to_json()
+        expected = self._expected_state if expected_state is None else expected_state
+
+        def update(raw):
+            current = GoalState.from_json(raw).to_json() if raw else None
+            if current != expected:
+                raise RuntimeError("Goal changed while this operation was running; retry against the current goal.")
+            return value
+
+        try:
+            self._database.mutate_meta(_meta_key(self.session_id), update)
+        except Exception:
+            try:
+                self._refresh()
+            except Exception:
+                self._state = None
+                self._expected_state = None
+            raise
+        self._state = state
+        self._expected_state = value
+
 
     # --- introspection ------------------------------------------------
 
     @property
     def state(self) -> Optional[GoalState]:
+        self._refresh()
         return self._state
 
     def is_active(self) -> bool:
+        self._refresh()
         return self._state is not None and self._state.status == "active"
 
     def has_goal(self) -> bool:
+        self._refresh()
         return self._state is not None and self._state.status in {"active", "paused"}
 
     def status_line(self) -> str:
+        self._refresh()
         s = self._state
         if s is None or s.status in {"cleared",}:
             return "No active goal. Set one with /goal <text>."
@@ -521,6 +578,7 @@ class GoalManager:
     # --- mutation -----------------------------------------------------
 
     def set(self, goal: str, *, max_turns: Optional[int] = None) -> GoalState:
+        self._refresh()
         goal = (goal or "").strip()
         if not goal:
             raise ValueError("goal text is empty")
@@ -533,41 +591,45 @@ class GoalManager:
             last_turn_at=0.0,
         )
         self._state = state
-        save_goal(self.session_id, state)
+        self._persist(state)
         return state
 
     def pause(self, reason: str = "user-paused") -> Optional[GoalState]:
+        self._refresh()
         if not self._state:
             return None
         self._state.status = "paused"
         self._state.paused_reason = reason
-        save_goal(self.session_id, self._state)
+        self._persist(self._state)
         return self._state
 
     def resume(self, *, reset_budget: bool = True) -> Optional[GoalState]:
+        self._refresh()
         if not self._state:
             return None
         self._state.status = "active"
         self._state.paused_reason = None
         if reset_budget:
             self._state.turns_used = 0
-        save_goal(self.session_id, self._state)
+        self._persist(self._state)
         return self._state
 
     def clear(self) -> None:
+        self._refresh()
         if self._state is None:
             return
         self._state.status = "cleared"
-        save_goal(self.session_id, self._state)
+        self._persist(self._state)
         self._state = None
 
     def mark_done(self, reason: str) -> None:
+        self._refresh()
         if not self._state:
             return
         self._state.status = "done"
         self._state.last_verdict = "done"
         self._state.last_reason = reason
-        save_goal(self.session_id, self._state)
+        self._persist(self._state)
 
     # --- /subgoal user controls ---------------------------------------
 
@@ -577,18 +639,20 @@ class GoalManager:
 
         Returns the cleaned text so the caller can show it back to the user.
         """
-        if self._state is None or not self.has_goal():
+        self._refresh()
+        if self._state is None or self._state.status not in {"active", "paused"}:
             raise RuntimeError("no active goal")
         text = (text or "").strip()
         if not text:
             raise ValueError("subgoal text is empty")
         self._state.subgoals.append(text)
-        save_goal(self.session_id, self._state)
+        self._persist(self._state)
         return text
 
     def remove_subgoal(self, index_1based: int) -> str:
         """Remove a subgoal by 1-based index. Returns the removed text."""
-        if self._state is None or not self.has_goal():
+        self._refresh()
+        if self._state is None or self._state.status not in {"active", "paused"}:
             raise RuntimeError("no active goal")
         idx = int(index_1based) - 1
         if idx < 0 or idx >= len(self._state.subgoals):
@@ -596,20 +660,22 @@ class GoalManager:
                 f"index out of range (1..{len(self._state.subgoals)})"
             )
         removed = self._state.subgoals.pop(idx)
-        save_goal(self.session_id, self._state)
+        self._persist(self._state)
         return removed
 
     def clear_subgoals(self) -> int:
         """Wipe all subgoals. Returns the previous count."""
-        if self._state is None or not self.has_goal():
+        self._refresh()
+        if self._state is None or self._state.status not in {"active", "paused"}:
             raise RuntimeError("no active goal")
         prev = len(self._state.subgoals)
         self._state.subgoals = []
-        save_goal(self.session_id, self._state)
+        self._persist(self._state)
         return prev
 
     def render_subgoals(self) -> str:
         """Public helper for the /subgoal slash command."""
+        self._refresh()
         if self._state is None:
             return "(no active goal)"
         if not self._state.subgoals:
@@ -638,6 +704,7 @@ class GoalManager:
           - ``reason``: str
           - ``message``: user-visible one-liner to print/send
         """
+        self._refresh()
         state = self._state
         if state is None or state.status != "active":
             return {
@@ -648,6 +715,11 @@ class GoalManager:
                 "reason": "no active goal",
                 "message": "",
             }
+
+        # Judge an immutable snapshot. A concurrent command on this same manager
+        # must not change the criteria underneath the in-flight verdict.
+        expected = self._expected_state
+        state = GoalState.from_json(state.to_json())
 
         # Count the turn that just finished.
         state.turns_used += 1
@@ -669,7 +741,7 @@ class GoalManager:
 
         if verdict == "done":
             state.status = "done"
-            save_goal(self.session_id, state)
+            self._persist(state, expected_state=expected)
             return {
                 "status": "done",
                 "should_continue": False,
@@ -690,7 +762,7 @@ class GoalManager:
             state.paused_reason = (
                 f"judge model returned unparseable output {state.consecutive_parse_failures} turns in a row"
             )
-            save_goal(self.session_id, state)
+            self._persist(state, expected_state=expected)
             return {
                 "status": "paused",
                 "should_continue": False,
@@ -712,7 +784,7 @@ class GoalManager:
         if state.turns_used >= state.max_turns:
             state.status = "paused"
             state.paused_reason = f"turn budget exhausted ({state.turns_used}/{state.max_turns})"
-            save_goal(self.session_id, state)
+            self._persist(state, expected_state=expected)
             return {
                 "status": "paused",
                 "should_continue": False,
@@ -725,7 +797,7 @@ class GoalManager:
                 ),
             }
 
-        save_goal(self.session_id, state)
+        self._persist(state, expected_state=expected)
         return {
             "status": "active",
             "should_continue": True,
@@ -738,6 +810,7 @@ class GoalManager:
         }
 
     def next_continuation_prompt(self) -> Optional[str]:
+        self._refresh()
         if not self._state or self._state.status != "active":
             return None
         if self._state.subgoals:

@@ -519,3 +519,180 @@ def test_run_slash_board_override_does_not_change_boards_show_current(kanban_hom
     out = kc.run_slash("--board beta boards show")
 
     assert "Current board: alpha" in out
+
+
+def test_concurrent_commands_keep_board_selection_local(kanban_home, monkeypatch):
+    import argparse
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    kb.create_board("alpha")
+    kb.create_board("beta")
+    prior = {name: os.environ.get(name) for name in kb.KANBAN_BOARD_ENV_NAMES}
+    barrier = Barrier(2, timeout=5)
+    create = kc._cmd_create
+
+    def overlapping_create(args):
+        barrier.wait()
+        assert kb.get_current_board() == args.board
+        assert {name: os.environ.get(name) for name in kb.KANBAN_BOARD_ENV_NAMES} == prior
+        result = create(args)
+        barrier.wait()
+        assert kb.get_current_board() == args.board
+        return result
+
+    monkeypatch.setattr(kc, "_cmd_create", overlapping_create)
+
+    def run(board):
+        parser = argparse.ArgumentParser()
+        kc.build_parser(parser.add_subparsers())
+        args = parser.parse_args(["kanban", "--board", board, "create", f"task-{board}"])
+        result = kc.kanban_command(args)
+        assert kb._board_override.get() is None
+        return result
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert list(pool.map(run, ["alpha", "beta"])) == [0, 0]
+    for board in ("alpha", "beta"):
+        with kb.connection(board=board) as connection:
+            assert [task.title for task in kb.list_tasks(connection)] == [f"task-{board}"]
+    assert {name: os.environ.get(name) for name in kb.KANBAN_BOARD_ENV_NAMES} == prior
+
+
+def test_nested_board_scope_restores_selection_on_exception(kanban_home, monkeypatch):
+    kb.create_board("alpha")
+    kb.create_board("beta")
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_KANBAN_BOARD", "beta")
+    with kb.board_scope("alpha"):
+        assert kb.get_current_board() == "alpha"
+        with pytest.raises(RuntimeError, match="interrupted"):
+            with kb.board_scope("beta"):
+                assert kb.get_current_board() == "beta"
+                raise RuntimeError("interrupted")
+        assert kb.get_current_board() == "alpha"
+    assert kb.get_current_board() == "beta"
+    assert os.environ["SUPERFORECASTING_AGENT_KANBAN_BOARD"] == "beta"
+
+
+def test_concurrent_slash_outputs_do_not_replace_process_streams(kanban_home, monkeypatch, capsys):
+    import sys
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    kb.create_board("alpha")
+    kb.create_board("beta")
+    streams = sys.stdout, sys.stderr
+    barrier = Barrier(2, timeout=5)
+
+    def listing(args):
+        barrier.wait()
+        assert (sys.stdout, sys.stderr) == streams
+        kc._emit("output-" + kb.get_current_board())
+        kc._emit("error-" + kb.get_current_board(), file=sys.stderr)
+        barrier.wait()
+        return 0
+
+    monkeypatch.setattr(kc, "_cmd_list", listing)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda board: kc.run_slash(f"--board {board} list"), ["alpha", "beta"]))
+    assert results == ["output-alpha\nerror-alpha", "output-beta\nerror-beta"]
+    assert (sys.stdout, sys.stderr) == streams
+    assert capsys.readouterr().out == ""
+
+
+def test_nested_command_capture_restores_outer_on_failure():
+    import io
+    from superforecasting_agent.application.command_output import capture_output, emit
+
+    explicit = io.StringIO()
+    with capture_output() as (outer, _):
+        emit("outer-before")
+        with pytest.raises(RuntimeError):
+            with capture_output() as (inner, _):
+                emit("inner")
+                emit("explicit", file=explicit)
+                raise RuntimeError("interrupted")
+        emit("outer-after")
+    assert outer.getvalue() == "outer-before\nouter-after\n"
+    assert inner.getvalue() == "inner\n"
+    assert explicit.getvalue() == "explicit\n"
+
+
+@pytest.mark.parametrize("command", ["watch --interval 3600", "tail missing --interval 3600", "daemon --force --interval 3600"])
+def test_long_running_commands_stop_without_waiting_for_poll_interval(kanban_home, command):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    waiting = threading.Event()
+    class ObservedStop(threading.Event):
+        def wait(self, timeout=None):
+            waiting.set()
+            return super().wait(timeout)
+
+    stop = ObservedStop()
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(kc.run_slash, command, stop_event=stop)
+        try:
+            assert waiting.wait(3), "command never reached its interruptible wait"
+        finally:
+            stop.set()
+        assert "stopped" in future.result(timeout=3)
+    assert kb._board_override.get() is None
+
+
+def test_cancelled_command_does_not_initialize_database(kanban_home, monkeypatch):
+    import threading
+
+    stop = threading.Event()
+    stop.set()
+    monkeypatch.setattr(kb, "init_db", lambda: pytest.fail("cancelled command initialized storage"))
+    assert kc.run_slash("create unused", stop_event=stop) == "(stopped)"
+
+
+def test_daemon_releases_only_its_owned_signal_handlers(kanban_home, monkeypatch):
+    import signal
+
+    original_int, original_term, successor = object(), object(), object()
+    handlers = {signal.SIGINT: original_int, signal.SIGTERM: original_term}
+    def install(sig, handler):
+        previous = handlers[sig]
+        handlers[sig] = handler
+        return previous
+    monkeypatch.setattr(signal, "signal", install)
+    monkeypatch.setattr(signal, "getsignal", handlers.__getitem__)
+    monkeypatch.setattr(kb, "dispatch_once", lambda *args, **kwargs: None)
+    def tick(result):
+        handlers[signal.SIGINT](signal.SIGINT, None)
+        handlers[signal.SIGTERM] = successor
+    kb.run_daemon(interval=0, on_tick=tick)
+    assert handlers[signal.SIGINT] is original_int
+    assert handlers[signal.SIGTERM] is successor
+
+
+def test_embedded_daemon_does_not_claim_process_signals(kanban_home, monkeypatch):
+    import signal
+    import threading
+
+    stop = threading.Event()
+    stop.set()
+    monkeypatch.setattr(signal, "signal", lambda *args: pytest.fail("embedded daemon replaced process signals"))
+    kb.run_daemon(stop_event=stop)
+
+
+def test_daemon_restores_signals_after_interrupted_tick(kanban_home, monkeypatch):
+    import signal
+
+    originals = {signal.SIGINT: object(), signal.SIGTERM: object()}
+    handlers = dict(originals)
+    def install(sig, handler):
+        previous = handlers[sig]
+        handlers[sig] = handler
+        return previous
+    def interrupted():
+        raise KeyboardInterrupt()
+    monkeypatch.setattr(signal, "signal", install)
+    monkeypatch.setattr(signal, "getsignal", handlers.__getitem__)
+    monkeypatch.setattr(kb, "connect", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        kb.run_daemon()
+    assert handlers == originals

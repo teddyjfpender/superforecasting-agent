@@ -223,9 +223,9 @@ def emit_hello(
     ]
 
     def _default_poster(args: dict[str, Any]) -> dict[str, Any]:
-        from tools.slack_tool import slack_tool
+        from forecasting.transports.slack import execute_slack_action
 
-        return json.loads(slack_tool(args))
+        return execute_slack_action(args)
 
     post = poster or _default_poster
     return post(

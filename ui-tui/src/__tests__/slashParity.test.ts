@@ -12,6 +12,8 @@ type CommandRoute = 'fallback' | 'local' | 'native'
 interface CommandRegistryLoad {
   error?: string
   names: string[]
+  native: string[]
+  terminal: string[]
 }
 
 const NATIVE_MUTATING_COMMANDS = new Set(['browser', 'busy', 'fast', 'reload-mcp', 'rollback', 'stop'])
@@ -48,29 +50,30 @@ const loadCommandRegistryNames = (): CommandRegistryLoad => {
   const venvPython = resolve(root, '.venv/bin/python')
 
   try {
-    const names = JSON.parse(
+    const catalog = JSON.parse(
       execFileSync(
         process.env.PYTHON ?? (existsSync(venvPython) ? venvPython : 'python3'),
         [
           '-c',
-          'import json; from superforecasting_agent.runtime.commands import COMMAND_REGISTRY; print(json.dumps([c.name for c in COMMAND_REGISTRY]))'
+          'import json; from superforecasting_agent.application.command_catalog import COMMAND_REGISTRY; from tui_gateway.command_routes import NATIVE_COMMANDS, terminal_command_names; print(json.dumps({"names": [c.name for c in COMMAND_REGISTRY if not c.gateway_only], "native": sorted(NATIVE_COMMANDS), "terminal": sorted(terminal_command_names())}))'
         ],
         { cwd: root, encoding: 'utf8' }
       )
-    ) as string[]
+    ) as CommandRegistryLoad
 
-    return { names: [...new Set(names)] }
+    return catalog
   } catch (error) {
     return {
       error: error instanceof Error ? error.message : String(error),
-      names: []
+      names: [],
+      native: [],
+      terminal: []
     }
   }
 }
 
 const commandRegistry = loadCommandRegistryNames()
-const registryIt = commandRegistry.error ? it.skip : it
-const skipReason = commandRegistry.error ? commandRegistry.error.split('\n')[0] : ''
+const registryIt = it
 
 const LOCAL_COMMAND_NAMES = new Set(
   SLASH_COMMANDS.flatMap(command => [command.name, ...(command.aliases ?? [])].map(name => name.toLowerCase()))
@@ -87,13 +90,22 @@ const classifyRoute = (name: string): CommandRoute => {
     return 'local'
   }
 
-  return 'fallback'
+  return commandRegistry.native.includes(normalized) ? 'native' : 'fallback'
 }
 
 describe('slash parity matrix', () => {
-  if (commandRegistry.error) {
-    it.skip(`Python command registry unavailable: ${skipReason}`, () => {})
-  }
+  it('loads the shared ownership catalog and covers every terminal command', () => {
+    expect(commandRegistry.error).toBeUndefined()
+    expect(commandRegistry.names.length).toBeGreaterThan(0)
+
+    for (const name of commandRegistry.terminal) {
+      expect(LOCAL_COMMAND_NAMES.has(name), `terminal handler missing: /${name}`).toBe(true)
+    }
+
+    for (const name of commandRegistry.names) {
+      expect(classifyRoute(name), `command has no owner: /${name}`).not.toBe('fallback')
+    }
+  })
 
   registryIt('classifies each command registry command as local/native/fallback', () => {
     const routes = Object.fromEntries(commandRegistry.names.map(name => [name, classifyRoute(name)]))

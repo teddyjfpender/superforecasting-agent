@@ -6,7 +6,7 @@ from typing import Dict
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 
 SCHEMA_SQL = """
@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     handoff_state TEXT,
     handoff_platform TEXT,
     handoff_error TEXT,
+    handoff_attempt_id TEXT,
     FOREIGN KEY (parent_session_id) REFERENCES sessions(id)
 );
 
@@ -152,9 +153,7 @@ def _parse_schema_columns(schema_sql: str) -> Dict[str, Dict[str, str]]:
             "WHERE type='table' AND name NOT LIKE 'sqlite_%'"
         ).fetchall():
             cols: Dict[str, str] = {}
-            for row in ref.execute(
-                f'PRAGMA table_info("{tbl}")'
-            ).fetchall():
+            for row in ref.execute(f'PRAGMA table_info("{tbl}")').fetchall():
                 # row: (cid, name, type, notnull, dflt_value, pk)
                 col_name = row[1]
                 col_type = row[2] or ""
@@ -191,9 +190,7 @@ def _reconcile_columns(self, cursor: sqlite3.Cursor) -> None:
     for table_name, declared_cols in expected.items():
         # Get current columns from the live table
         try:
-            rows = cursor.execute(
-                f'PRAGMA table_info("{table_name}")'
-            ).fetchall()
+            rows = cursor.execute(f'PRAGMA table_info("{table_name}")').fetchall()
         except sqlite3.OperationalError:
             continue  # Table doesn't exist yet (shouldn't happen after executescript)
         live_cols = set()
@@ -215,7 +212,10 @@ def _reconcile_columns(self, cursor: sqlite3.Cursor) -> None:
                     # with default value NULL" from a schema mistake.
                     # Log at DEBUG so it's visible in agent.log.
                     logger.debug(
-                        "reconcile %s.%s: %s", table_name, col_name, exc,
+                        "reconcile %s.%s: %s",
+                        table_name,
+                        col_name,
+                        exc,
                     )
 
 
@@ -319,6 +319,11 @@ def _init_schema(self):
                 "COALESCE(tool_name, '') || ' ' || "
                 "COALESCE(tool_calls, '') "
                 "FROM messages"
+            )
+        if current_version < 12:
+            cursor.execute(
+                "UPDATE sessions SET handoff_attempt_id = lower(hex(randomblob(16))) "
+                "WHERE handoff_state IS NOT NULL AND handoff_attempt_id IS NULL"
             )
         if current_version < SCHEMA_VERSION:
             cursor.execute(

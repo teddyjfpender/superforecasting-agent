@@ -480,3 +480,19 @@ def test_parse_http_args_full():
 )
 def test_split_host_port(spec, expected):
     assert _split_host_port(spec, "127.0.0.1", 8765) == expected
+
+
+def test_remote_host_negotiation_matches_local_descriptor(http_factory):
+    from protocol.version import PROTOCOL_VERSION
+    from tui_gateway.host_rpc import descriptor
+
+    handle = http_factory()
+    request = {'jsonrpc': '2.0', 'id': 'negotiate', 'method': 'host.negotiate',
+               'params': {'protocol_version': PROTOCOL_VERSION, 'required_capabilities': ['forecast.operation']}}
+    status, body = _post_rpc(handle, request, handle.token)
+    assert status == 200
+    assert json.loads(body)['result'] == descriptor(server)
+    request['params']['required_capabilities'] = ['unsupported.operation']
+    status, body = _post_rpc(handle, request, handle.token)
+    assert status == 200
+    assert json.loads(body)['error']['code'] == 4004

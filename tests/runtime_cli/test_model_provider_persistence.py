@@ -83,10 +83,10 @@ class TestProviderPersistsAfterModelSave:
             assert data["model"]["provider"] == "nous"
             assert data["model"]["base_url"] == "https://inference.example.com/v1"
             assert data["model"]["default"] == "some-old-model"
-            assert kwargs["sort_keys"] is False
+            assert kwargs.get("sort_keys", False) is False
             raise OSError("simulated atomic write failure")
 
-        with patch("superforecasting_agent.runtime.auth.atomic_yaml_write", side_effect=_boom) as mock_write:
+        with patch("superforecasting_agent.storage.files.atomic_yaml_write", side_effect=_boom) as mock_write:
             with pytest.raises(OSError, match="simulated atomic write failure"):
                 _update_config_for_provider(
                     "nous",
@@ -100,7 +100,7 @@ class TestProviderPersistsAfterModelSave:
     def test_api_key_provider_saved_when_model_was_string(self, config_home, monkeypatch):
         """_model_flow_api_key_provider must persist the provider even when
         config.model started as a plain string."""
-        from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY
+        from superforecasting_agent.credentials.auth import PROVIDER_REGISTRY
 
         pconfig = PROVIDER_REGISTRY.get("kimi-coding")
         if not pconfig:
@@ -115,7 +115,7 @@ class TestProviderPersistsAfterModelSave:
         # Mock the model selection prompt to return "kimi-k2.5"
         # Also mock input() for the base URL prompt and builtins.input
         with patch("superforecasting_agent.runtime.auth._prompt_model_selection", return_value="kimi-k2.5"), \
-             patch("superforecasting_agent.runtime.auth.deactivate_provider"), \
+             patch("superforecasting_agent.credentials.auth.deactivate_provider"), \
              patch("builtins.input", return_value=""):
             _model_flow_api_key_provider(load_config(), "kimi-coding", "old-model")
 
@@ -134,7 +134,7 @@ class TestProviderPersistsAfterModelSave:
         from superforecasting_agent.runtime.config import load_config
 
         with patch(
-            "superforecasting_agent.runtime.auth.resolve_api_key_provider_credentials",
+            "superforecasting_agent.credentials.auth.resolve_api_key_provider_credentials",
             return_value={
                 "provider": "copilot",
                 "api_key": "gh-cli-token",
@@ -162,7 +162,7 @@ class TestProviderPersistsAfterModelSave:
             "superforecasting_agent.runtime.main._prompt_reasoning_effort_selection",
             return_value="high",
         ), patch(
-            "superforecasting_agent.runtime.auth.deactivate_provider",
+            "superforecasting_agent.credentials.auth.deactivate_provider",
         ):
             _model_flow_copilot(load_config(), "old-model")
 
@@ -198,7 +198,7 @@ class TestProviderPersistsAfterModelSave:
         fake_menu_module = MagicMock()
         fake_menu_module.TerminalMenu.side_effect = OSError("no tty in test")
         with patch("superforecasting_agent.runtime.auth._save_model_choice"), \
-             patch("superforecasting_agent.runtime.auth.deactivate_provider"), \
+             patch("superforecasting_agent.credentials.auth.deactivate_provider"), \
              patch("superforecasting_agent.runtime.models.fetch_api_models", return_value=["gpt-5.4"]), \
              patch.dict("sys.modules", {"simple_term_menu": fake_menu_module}), \
              patch("builtins.input", return_value="1"):
@@ -217,14 +217,14 @@ class TestProviderPersistsAfterModelSave:
         from superforecasting_agent.runtime.config import load_config
 
         with patch(
-            "superforecasting_agent.runtime.auth.get_external_process_provider_status",
+            "superforecasting_agent.credentials.auth.get_external_process_provider_status",
             return_value={
                 "resolved_command": "/usr/local/bin/copilot",
                 "command": "copilot",
                 "base_url": "acp://copilot",
             },
         ), patch(
-            "superforecasting_agent.runtime.auth.resolve_external_process_provider_credentials",
+            "superforecasting_agent.credentials.auth.resolve_external_process_provider_credentials",
             return_value={
                 "provider": "copilot-acp",
                 "api_key": "copilot-acp",
@@ -234,7 +234,7 @@ class TestProviderPersistsAfterModelSave:
                 "source": "process",
             },
         ), patch(
-            "superforecasting_agent.runtime.auth.resolve_api_key_provider_credentials",
+            "superforecasting_agent.credentials.auth.resolve_api_key_provider_credentials",
             return_value={
                 "provider": "copilot",
                 "api_key": "gh-cli-token",
@@ -259,7 +259,7 @@ class TestProviderPersistsAfterModelSave:
             "superforecasting_agent.runtime.auth._prompt_model_selection",
             return_value="gpt-5.4",
         ), patch(
-            "superforecasting_agent.runtime.auth.deactivate_provider",
+            "superforecasting_agent.credentials.auth.deactivate_provider",
         ):
             _model_flow_copilot_acp(load_config(), "old-model")
 
@@ -281,7 +281,7 @@ class TestProviderPersistsAfterModelSave:
 
         with patch("superforecasting_agent.runtime.models.fetch_api_models", return_value=["opencode-go/kimi-k2.5", "opencode-go/minimax-m2.7"]), \
              patch("superforecasting_agent.runtime.auth._prompt_model_selection", return_value="kimi-k2.5"), \
-             patch("superforecasting_agent.runtime.auth.deactivate_provider"), \
+             patch("superforecasting_agent.credentials.auth.deactivate_provider"), \
              patch("builtins.input", return_value=""):
             _model_flow_api_key_provider(load_config(), "opencode-go", "opencode-go/kimi-k2.5")
 
@@ -308,7 +308,7 @@ class TestProviderPersistsAfterModelSave:
 
         with patch("superforecasting_agent.runtime.models.fetch_api_models", return_value=["opencode-go/kimi-k2.5", "opencode-go/minimax-m2.5"]), \
              patch("superforecasting_agent.runtime.auth._prompt_model_selection", return_value="minimax-m2.5"), \
-             patch("superforecasting_agent.runtime.auth.deactivate_provider"), \
+             patch("superforecasting_agent.credentials.auth.deactivate_provider"), \
              patch("builtins.input", return_value=""):
             _model_flow_api_key_provider(load_config(), "opencode-go", "kimi-k2.5")
 
@@ -327,7 +327,7 @@ class TestBaseUrlValidation:
 
     def test_invalid_base_url_rejected(self, config_home, monkeypatch, capsys):
         """Typing a non-URL string should not be saved as the base URL."""
-        from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY
+        from superforecasting_agent.credentials.auth import PROVIDER_REGISTRY
 
         pconfig = PROVIDER_REGISTRY.get("zai")
         if not pconfig:
@@ -340,7 +340,7 @@ class TestBaseUrlValidation:
 
         # User types a shell command instead of a URL at the base URL prompt
         with patch("superforecasting_agent.runtime.auth._prompt_model_selection", return_value="glm-5"), \
-             patch("superforecasting_agent.runtime.auth.deactivate_provider"), \
+             patch("superforecasting_agent.credentials.auth.deactivate_provider"), \
              patch("builtins.input", return_value="nano ~/.hermes/.env"):
             _model_flow_api_key_provider(load_config(), "zai", "old-model")
 
@@ -353,7 +353,7 @@ class TestBaseUrlValidation:
 
     def test_valid_base_url_accepted(self, config_home, monkeypatch):
         """A proper URL should be saved normally."""
-        from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY
+        from superforecasting_agent.credentials.auth import PROVIDER_REGISTRY
 
         pconfig = PROVIDER_REGISTRY.get("zai")
         if not pconfig:
@@ -365,7 +365,7 @@ class TestBaseUrlValidation:
         from superforecasting_agent.runtime.config import load_config, get_env_value
 
         with patch("superforecasting_agent.runtime.auth._prompt_model_selection", return_value="glm-5"), \
-             patch("superforecasting_agent.runtime.auth.deactivate_provider"), \
+             patch("superforecasting_agent.credentials.auth.deactivate_provider"), \
              patch("builtins.input", return_value="https://custom.z.ai/api/paas/v4"):
             _model_flow_api_key_provider(load_config(), "zai", "old-model")
 
@@ -374,7 +374,7 @@ class TestBaseUrlValidation:
 
     def test_empty_base_url_keeps_default(self, config_home, monkeypatch):
         """Pressing Enter (empty) should not change the base URL."""
-        from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY
+        from superforecasting_agent.credentials.auth import PROVIDER_REGISTRY
 
         pconfig = PROVIDER_REGISTRY.get("zai")
         if not pconfig:
@@ -387,7 +387,7 @@ class TestBaseUrlValidation:
         from superforecasting_agent.runtime.config import load_config, get_env_value
 
         with patch("superforecasting_agent.runtime.auth._prompt_model_selection", return_value="glm-5"), \
-             patch("superforecasting_agent.runtime.auth.deactivate_provider"), \
+             patch("superforecasting_agent.credentials.auth.deactivate_provider"), \
              patch("builtins.input", return_value=""):
             _model_flow_api_key_provider(load_config(), "zai", "old-model")
 

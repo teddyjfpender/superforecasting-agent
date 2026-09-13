@@ -277,7 +277,6 @@ def test_forecast_cli_public_alias_is_exposed():
         root / "skills" / "software-development"
         / "debugging-hermes-tui-commands" / "SKILL.md"
     ).read_text(encoding="utf-8")
-    slash_worker = (root / "tui_gateway" / "slash_worker.py").read_text(encoding="utf-8")
 
     assert ForecastCLI is HermesCLI
     assert ForecastCLI.__name__ == "ForecastCLI"
@@ -289,10 +288,6 @@ def test_forecast_cli_public_alias_is_exposed():
     assert "ForecastCLI.process_command()" in skill_doc
     assert "from cli import HermesCLI" not in extension_doc
     assert "class MyCLI(HermesCLI)" not in extension_doc
-    assert "from cli import ForecastCLI" in slash_worker
-    assert "cli = ForecastCLI(" in slash_worker
-    assert "from cli import HermesCLI" not in slash_worker
-    assert "cli = HermesCLI(" not in slash_worker
 
 
 def test_web_locale_app_brand_is_forecast_native():
@@ -1229,7 +1224,9 @@ def test_tui_readme_uses_forecast_native_product_copy():
     assert "Assistant output is rendered" not in readme
     assert "start assistant streaming" not in readme
     assert "hermes --tui" not in readme
-    assert "persistent ForecastCLI subprocess for slash commands" in readme
+    assert "native command dispatch" in readme
+    assert "backend/terminal command ownership" in readme
+    assert "persistent ForecastCLI subprocess for slash commands" not in readme
     assert "persistent HermesCLI subprocess for slash commands" not in readme
     assert "Input history is stored in `~/.hermes" not in readme
 
@@ -1378,7 +1375,10 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     conversation_loop = (root / "agent" / "conversation_loop.py").read_text(
         encoding="utf-8"
     )
-    commands = (root / 'superforecasting_agent/runtime' / "commands.py").read_text(encoding="utf-8")
+    from superforecasting_agent.application.command_catalog import COMMAND_REGISTRY
+    commands = "\n".join(command.description for command in COMMAND_REGISTRY)
+    style = next(command for command in COMMAND_REGISTRY if command.name == "style")
+    assert style.aliases == ("personality",)
     discord = (root / "gateway" / "platforms" / "discord.py").read_text(
         encoding="utf-8"
     )
@@ -1387,6 +1387,7 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     main_py = (root / 'superforecasting_agent/runtime' / "main.py").read_text(encoding="utf-8")
     parser_py = (root / 'superforecasting_agent/runtime' / "_parser.py").read_text(encoding="utf-8")
     config_py = (root / 'superforecasting_agent/runtime' / "config.py").read_text(encoding="utf-8")
+    config_py += "\n" + (root / "superforecasting_agent/configuration/defaults.py").read_text(encoding="utf-8")
     setup_py = (root / 'superforecasting_agent/runtime' / "setup.py").read_text(encoding="utf-8")
 
     assert "Persistent session goals for Superforecasting Agent" in goals
@@ -1422,8 +1423,6 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     assert "could not enumerate active sessions" not in tui_gateway
     assert "cannot delete an active session" not in tui_gateway
     assert "no active session to retry" not in tui_commands
-    assert 'CommandDef("style"' in commands
-    assert 'aliases=("personality",)' in commands
     assert "Switch forecast style overlay" in commands
     assert "Start a new forecast session (fresh session ID + history)" in commands
     assert "Retry the last forecast note" in commands
@@ -1635,6 +1634,7 @@ def test_runtime_user_guidance_prefers_active_forecast_home():
     goals = (root / 'superforecasting_agent/runtime' / "goals.py").read_text(encoding="utf-8")
     main = (root / 'superforecasting_agent/runtime' / "main.py").read_text(encoding="utf-8")
     config = (root / 'superforecasting_agent/runtime' / "config.py").read_text(encoding="utf-8")
+    config += "\n" + (root / "superforecasting_agent/configuration/defaults.py").read_text(encoding="utf-8")
     plugins_cmd = (root / 'superforecasting_agent/runtime' / "plugins_cmd.py").read_text(
         encoding="utf-8"
     )
@@ -1848,6 +1848,7 @@ def test_skill_runtime_surfaces_use_active_home_guidance():
 def test_plugin_and_session_recap_guidance_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     plugins = (root / 'superforecasting_agent/runtime' / "plugins.py").read_text(encoding="utf-8")
+    plugins += (root / "superforecasting_agent/application/plugins.py").read_text(encoding="utf-8")
     recap = (root / 'superforecasting_agent/runtime' / "session_recap.py").read_text(
         encoding="utf-8"
     )
@@ -1882,6 +1883,7 @@ def test_command_registry_and_oneshot_docs_are_forecast_native():
     )
     main_help = (root / 'superforecasting_agent/runtime' / "main.py").read_text(encoding="utf-8")
     config_py = (root / 'superforecasting_agent/runtime' / "config.py").read_text(encoding="utf-8")
+    config_py += "\n" + (root / "superforecasting_agent/configuration/defaults.py").read_text(encoding="utf-8")
     classic_cli = (root / "cli.py").read_text(encoding="utf-8")
 
     combined = "\n".join(
@@ -2024,7 +2026,7 @@ def test_model_picker_guidance_is_forecast_native():
 def test_runtime_operator_guidance_uses_forecast_native_commands():
     root = Path(__file__).resolve().parents[1]
     checked_paths = [
-        "run_agent.py",
+        "agent/runtime.py",
         "agent/conversation_loop.py",
         "agent/auxiliary_client.py",
         "agent/azure_identity_adapter.py",
@@ -2658,6 +2660,7 @@ def test_setup_model_toolpicker_docs_are_forecast_native():
         "superforecasting_agent/runtime/tools_config.py",
         "superforecasting_agent/runtime/main.py",
         "superforecasting_agent/runtime/config.py",
+        "superforecasting_agent/configuration/defaults.py",
         "superforecasting_agent/runtime/plugins.py",
         "superforecasting_agent/runtime/model_catalog.py",
         "tools/web_tools.py",
@@ -2708,7 +2711,7 @@ def test_profile_runtime_exclusions_are_forecast_native():
 
 def test_xai_oauth_referrer_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
-    text = (root / 'superforecasting_agent/runtime' / "auth.py").read_text(encoding="utf-8")
+    text = (root / "superforecasting_agent/credentials/oauth" / "xai.py").read_text(encoding="utf-8")
 
     assert '"referrer": "superforecasting-agent"' in text
     assert "referrer=superforecasting-agent" in text
@@ -3235,6 +3238,7 @@ def test_tool_runtime_guidance_is_forecast_native():
         root / "tools" / "debug_helpers.py",
         root / "tools" / "openrouter_client.py",
         root / "tools" / "web_tools.py",
+        root / "superforecasting_agent" / "tooling" / "web_search.py",
         root / "agent" / "transports" / "hermes_tools_mcp_server.py",
     ]
     text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
@@ -4454,6 +4458,8 @@ def test_model_tool_and_proxy_guidance_are_forecast_native():
     tools_config = (root / 'superforecasting_agent/runtime' / "tools_config.py").read_text(encoding="utf-8")
     config = (root / 'superforecasting_agent/runtime' / "config.py").read_text(encoding="utf-8")
 
+    config += (root / "superforecasting_agent/configuration/environment_catalog.py").read_text(encoding="utf-8")
+
     assert "Hermes will still save" not in models
     assert "Hermes cannot verify the model name" not in models
     assert "Hermes routes X searches" not in tools_config
@@ -4494,6 +4500,7 @@ def test_runtime_credential_and_node_copy_is_forecast_native():
         root / "tools" / "env_passthrough.py",
         root / "tools" / "xai_http.py",
         root / "agent" / "azure_identity_adapter.py",
+        root / "superforecasting_agent/credentials" / "azure.py",
         root / "tools" / "browser_tool.py",
     ]
     text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
@@ -4679,6 +4686,7 @@ def test_update_docs_messaging_restart_copy_is_forecast_native():
 def test_model_catalog_default_url_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     config_py = (root / 'superforecasting_agent/runtime' / "config.py").read_text(encoding="utf-8")
+    config_py += "\n" + (root / "superforecasting_agent/configuration/defaults.py").read_text(encoding="utf-8")
     catalog_py = (root / 'superforecasting_agent/runtime' / "model_catalog.py").read_text(encoding="utf-8")
 
     expected = (
@@ -5012,8 +5020,8 @@ def test_diagnostic_env_aliases_are_forecast_native():
     runtime_helpers = (root / "agent" / "agent_runtime_helpers.py").read_text(
         encoding="utf-8"
     )
-    auth = (root / 'superforecasting_agent/runtime' / "auth.py").read_text(encoding="utf-8")
-    interrupt = (root / "tools" / "interrupt.py").read_text(encoding="utf-8")
+    auth = (root / "superforecasting_agent/credentials/oauth" / "common.py").read_text(encoding="utf-8")
+    interrupt = (root / "superforecasting_agent" / "tooling" / "interrupts.py").read_text(encoding="utf-8")
     env_base = (root / "tools" / "environments" / "base.py").read_text(
         encoding="utf-8"
     )
@@ -5048,7 +5056,7 @@ def test_prompt_guidance_env_aliases_are_forecast_native():
 
 def test_session_env_aliases_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
-    session_context = (root / "gateway" / "session_context.py").read_text(
+    session_context = (root / "superforecasting_agent" / "session_context.py").read_text(
         encoding="utf-8"
     )
     agent_init = (root / "agent" / "agent_init.py").read_text(encoding="utf-8")
@@ -5090,7 +5098,7 @@ def test_session_env_aliases_are_forecast_native():
 
 def test_oauth_file_env_aliases_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
-    anthropic_adapter = (root / "agent" / "anthropic_adapter.py").read_text(
+    anthropic_adapter = (root / "superforecasting_agent/credentials" / "anthropic.py").read_text(
         encoding="utf-8"
     )
     web_server = (root / 'superforecasting_agent/runtime' / "web_server.py").read_text(encoding="utf-8")
@@ -5109,7 +5117,7 @@ def test_oauth_file_env_aliases_are_forecast_native():
 
 def test_managed_install_env_aliases_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
-    config = (root / 'superforecasting_agent/runtime' / "config.py").read_text(encoding="utf-8")
+    config = (root / 'superforecasting_agent' / "installation.py").read_text(encoding="utf-8")
     conftest = (root / "tests" / "conftest.py").read_text(encoding="utf-8")
     run_tests = (root / "scripts" / "run_tests.sh").read_text(encoding="utf-8")
     nix_module = (root / "nix" / "nixosModules.nix").read_text(encoding="utf-8")
@@ -5290,8 +5298,8 @@ def test_software_development_tui_debug_skill_docs_prefer_tui_shorthand():
 
 def test_nous_runtime_env_aliases_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
-    nous_env = (root / 'superforecasting_agent/runtime' / "nous_env.py").read_text(encoding="utf-8")
-    auth = (root / 'superforecasting_agent/runtime' / "auth.py").read_text(encoding="utf-8")
+    nous_env = (root / "superforecasting_agent/configuration" / "nous_env.py").read_text(encoding="utf-8")
+    auth = (root / "superforecasting_agent/credentials/oauth" / "nous_runtime.py").read_text(encoding="utf-8")
     runtime_provider = (root / 'superforecasting_agent/runtime' / "runtime_provider.py").read_text(
         encoding="utf-8"
     )

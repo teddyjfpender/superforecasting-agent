@@ -51,6 +51,14 @@ def method(name: str):
 
 def register(server) -> None:
     """(Re-)register every carved completion handler into ``server._methods``."""
+    global _core, _details_completions, _err, _fuzzy_basename_rank, _list_repo_files, _normalize_completion_path, _ok
+    _core = server
+    _details_completions = server._details_completions
+    _err = server._err
+    _fuzzy_basename_rank = server._fuzzy_basename_rank
+    _list_repo_files = server._list_repo_files
+    _normalize_completion_path = server._normalize_completion_path
+    _ok = server._ok
     for kind, name, fn in _REGISTRARS:
         getattr(server, kind)(name)(fn)
 

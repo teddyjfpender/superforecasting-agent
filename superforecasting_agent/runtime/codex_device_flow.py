@@ -21,7 +21,7 @@ from typing import Any, Dict, Optional
 
 import httpx
 
-from superforecasting_agent.runtime.auth import (
+from superforecasting_agent.credentials.auth import (
     AuthError,
     CODEX_OAUTH_CLIENT_ID,
     CODEX_OAUTH_TOKEN_URL,

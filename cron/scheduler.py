@@ -87,7 +87,7 @@ def _resolve_cron_enabled_toolsets(job: dict, cfg: dict) -> list[str] | None:
     if per_job:
         return per_job
     try:
-        from superforecasting_agent.runtime.tools_config import _get_platform_tools  # lazy: avoid heavy import at cron module load
+        from superforecasting_agent.tooling.selection import _get_platform_tools
         return sorted(_get_platform_tools(cfg or {}, "cron"))
     except Exception as exc:
         logger.warning(
@@ -181,7 +181,7 @@ def _job_profile_context(job_id: str, profile: Optional[str]):
     prior_override = _hermes_home
     env_snapshot = os.environ.copy()
 
-    from superforecasting_agent.runtime.profiles import normalize_profile_name, resolve_profile_env
+    from superforecasting_agent.profile_paths import normalize_profile_name, resolve_profile_env
     from superforecasting_agent.constants import reset_agent_home_override, set_agent_home_override
 
     normalized_profile = normalize_profile_name(raw_profile)
@@ -253,7 +253,7 @@ def _plugin_cron_env_var(platform_name: str) -> str:
     try:
         from superforecasting_agent.runtime.plugins import discover_plugins
         discover_plugins()  # idempotent
-        from gateway.platform_registry import platform_registry
+        from superforecasting_agent.platform_registry import platform_registry
         entry = platform_registry.get(platform_name.lower())
         if entry and entry.cron_deliver_env_var:
             return entry.cron_deliver_env_var
@@ -337,7 +337,7 @@ def _iter_home_target_platforms():
     try:
         from superforecasting_agent.runtime.plugins import discover_plugins
         discover_plugins()  # idempotent
-        from gateway.platform_registry import platform_registry
+        from superforecasting_agent.platform_registry import platform_registry
         for entry in platform_registry.plugin_entries():
             if entry.cron_deliver_env_var and entry.name not in _HOME_TARGET_ENV_VARS:
                 yield entry.name
@@ -1342,7 +1342,7 @@ def _run_job_impl(job: dict) -> tuple[bool, str, str, Optional[str]]:
     # at module top keeps no_agent ticks from paying for AIAgent / SessionDB
     # construction costs.
     # ---------------------------------------------------------------
-    from run_agent import AIAgent
+    from agent.runtime import AIAgent
 
     # Initialize SQLite session store so cron job messages are persisted
     # and discoverable via session_search (same pattern as gateway/run.py).
@@ -1422,7 +1422,7 @@ def _run_job_impl(job: dict) -> tuple[bool, str, str, Optional[str]]:
 
     # Use ContextVars for per-job session/delivery state so parallel jobs
     # don't clobber each other's targets (os.environ is process-global).
-    from gateway.session_context import set_session_vars, clear_session_vars, _VAR_MAP
+    from superforecasting_agent.session_context import set_session_vars, clear_session_vars, _VAR_MAP
 
     # Cron execution is an internal scheduler context, not a live inbound
     # gateway message. Do not seed HERMES_SESSION_* contextvars from the
@@ -1566,7 +1566,7 @@ def _run_job_impl(job: dict) -> tuple[bool, str, str, Optional[str]]:
             resolve_runtime_provider,
             format_runtime_provider_error,
         )
-        from superforecasting_agent.runtime.auth import AuthError
+        from superforecasting_agent.credentials.auth import AuthError
         try:
             # Do not inject HERMES_INFERENCE_PROVIDER here. resolve_runtime_provider()
             # already prefers persisted config over stale shell/env overrides when

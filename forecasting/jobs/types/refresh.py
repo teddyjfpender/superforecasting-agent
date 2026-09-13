@@ -12,7 +12,7 @@ when the operator comes back to the Desk.
 
 :func:`execute` runs the SAME deterministic re-pool the CLI ``forecast refresh
 <id>`` invokes — :meth:`forecasting.ledger.ForecastLedger.refresh_forecast` with the
-injected :func:`tools.forecasting_tool.fetch_watched_source_payloads` fetcher — PER
+injected :func:`forecasting.sources.watched.fetch_watched_source_payloads` fetcher — PER
 QUESTION SEQUENTIALLY, fail-open per question (one bad question never kills the
 batch). It opens the ledger write gate exactly the way ``cmd_forecast`` does
 (``allow_ledger_writes(reason="forecast_cli")``), so ``create_snapshot``'s
@@ -92,11 +92,10 @@ def execute(spec: dict[str, Any], ctx: Any) -> dict[str, Any]:
     ``cancelled=True`` summary with the partial tally. A bad ``db`` raises out to the
     runtime (whole-job ``error``), matching the REFORECAST type's contract."""
 
-    # Lazily imported: the write gate + the fetcher live in the heavy ledger/tool
-    # layers, and keeping the import here avoids any import cycle.
+    # Lazy adapters inject acquisition into the ledger; fetching owns no writes.
     from forecasting.ledger import ForecastLedger, allow_ledger_writes
     from forecasting.jobs.policy import ActionClass
-    from tools.forecasting_tool import fetch_watched_source_payloads
+    from forecasting.sources.watched import fetch_watched_source_payloads
 
     question_ids = [
         str(q).strip() for q in (spec.get("question_ids") or []) if str(q).strip()

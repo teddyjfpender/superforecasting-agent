@@ -228,7 +228,7 @@ def test_nous_adapter_get_credential_raises_on_refresh_failure(tmp_path, monkeyp
 
 
 def test_nous_adapter_quarantines_terminal_refresh_failure(tmp_path, monkeypatch):
-    from superforecasting_agent.runtime.auth import AuthError
+    from superforecasting_agent.credentials.auth import AuthError
     from agent.credential_pool import load_pool
 
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
@@ -437,7 +437,7 @@ def test_xai_adapter_retry_refreshes_current_pool_entry(tmp_path, monkeypatch):
             "last_refresh": "2026-05-19T00:00:00Z",
         }
 
-    monkeypatch.setattr("superforecasting_agent.runtime.auth.refresh_xai_oauth_pure", fake_refresh)
+    monkeypatch.setattr("superforecasting_agent.credentials.auth.refresh_xai_oauth_pure", fake_refresh)
 
     adapter = XAIGrokAdapter()
     failed = adapter.get_credential()

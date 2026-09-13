@@ -1,6 +1,6 @@
 """Render ``docs/reference/cli-reference.md`` by walking the CLI argparse tree.
 
-Source of truth: ``forecasting/cli.py`` — ``register_cli(subparsers)`` builds the
+Source of truth: ``forecasting/cli/core.py`` — ``register_cli(subparsers)`` builds the
 whole ``forecast`` command tree. We introspect the live parser (the same one the
 CLI runs), so a new subcommand shows up here automatically.
 """
@@ -12,7 +12,7 @@ from typing import Any
 
 from scripts.docgen.common import header
 
-SOURCE = "forecasting/cli.py (register_cli argparse tree)"
+SOURCE = "forecasting/cli/core.py (register_cli argparse tree)"
 
 
 def _forecast_parser() -> argparse.ArgumentParser:

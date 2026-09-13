@@ -201,7 +201,7 @@ class TestRunJobProfileContext:
 
         fake_mod = type(sys)("run_agent")
         fake_mod.AIAgent = FakeAgent
-        monkeypatch.setitem(sys.modules, "run_agent", fake_mod)
+        monkeypatch.setitem(sys.modules, "agent.runtime", fake_mod)
 
         from superforecasting_agent.runtime import runtime_provider as runtime_provider
 

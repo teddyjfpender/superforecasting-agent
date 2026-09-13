@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# HEAVIER gate (bounded ~2-3min): targeted pytest for the changed python
-# domains, vitest --changed for the TUI, and the codegen staleness check again.
+# HEAVIER gate: the full Python suite required by AGENTS.md.
+# Also runs TUI vitest --changed and checks codegen staleness.
 # git feeds us "<local ref> <local sha> <remote ref> <remote sha>" on stdin.
 # See CONTRIBUTING.md -> "Commit provenance" and "Local Gates".
 set -o pipefail
@@ -13,9 +13,13 @@ if hook_honor_global_skip "pre-push"; then exit 0; fi
 Z40="0000000000000000000000000000000000000000"
 base=""
 head="HEAD"
+has_updates=0
+bases=()
 while read -r localref localsha remoteref remotesha; do
   [ -z "$localsha" ] && continue
   [ "$localsha" = "$Z40" ] && continue          # branch deletion, nothing to test
+  check_snapshot --ref "$localsha" || exit 1
+  has_updates=1
   head="$localsha"
   if [ "$remotesha" = "$Z40" ] || [ -z "$remotesha" ]; then
     base="$(git merge-base origin/main "$localsha" 2>/dev/null \
@@ -23,36 +27,31 @@ while read -r localref localsha remoteref remotesha; do
   else
     base="$remotesha"
   fi
-  break
+  bases+=("$base")
 done
-if [ -z "$base" ]; then
-  base="$(git merge-base origin/main HEAD 2>/dev/null || git rev-parse HEAD~1 2>/dev/null || echo HEAD)"
-  head="HEAD"
-fi
+[ "$has_updates" -eq 0 ] && exit 0
 
 rc=0
+for base in "${bases[@]}"; do
 
-# codegen staleness (cheap; catches a drift introduced mid-branch)
-hook_note "pre-push: protocol codegen staleness gate..."
-if ! check_protocol_stale; then
-  hook_fail "Generated wire types are stale" "The Laws -> Protocol-first" \
-    "Run: python -m protocol.codegen  &&  git add ui-tui/src/protocol/generated.ts"
+# Same blocking quality implementation as pre-commit and CI.
+quality_args=(--python-only)
+if git diff --name-only "$base" "$head" | grep -Eq '^ui-tui/'; then
+  quality_args=()
+fi
+if ! check_quality "${quality_args[@]}"; then
+  hook_fail "Quality checks failed" "Local Gates" "Run: python3 scripts/dev.py check"
   rc=1
 fi
 
-# targeted pytest for the changed python domains
-TARGETS=""
-while IFS= read -r t; do [ -n "$t" ] && TARGETS="$TARGETS $t"; done < <(py_test_targets "$base" "$head")
-if [ -n "$TARGETS" ]; then
-  hook_note "pre-push: pytest$TARGETS"
-  # shellcheck disable=SC2086
-  if ! "$HOOKS_REPO_ROOT/scripts/run_tests.sh" $TARGETS -q; then
-    hook_fail "Tests failed for a changed domain" "Commit provenance (tests green BEFORE you push)" \
-      "Reproduce: scripts/run_tests.sh$TARGETS"
-    rc=1
-  fi
-else
-  hook_note "pre-push: no python domain mapped to the changed files -- skipping targeted pytest."
+# Shared ownership changes can affect consumers outside their source directory.
+# AGENTS.md requires the full suite before every push; do not infer coverage
+# from a directory-to-test mapping.
+hook_note "pre-push: full Python suite..."
+if ! "$HOOKS_REPO_ROOT/scripts/run_tests.sh"; then
+  hook_fail "Full Python suite failed" "Commit provenance (tests green BEFORE you push)" \
+    "Reproduce: scripts/run_tests.sh"
+  rc=1
 fi
 
 # vitest --changed when ui-tui was touched
@@ -64,4 +63,6 @@ if git diff --name-only "$base" "$head" | grep -Eq '^ui-tui/'; then
   fi
 fi
 
+done
+if ! check_snapshot --ref "$head"; then rc=1; fi
 exit "$rc"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -208,11 +209,12 @@ def _estimate_first_enabled() -> bool:
     never injected unless the operator turned it on."""
 
     try:
-        from superforecasting_agent.runtime.config import cfg_get, load_config_readonly
+        from superforecasting_agent.configuration import cfg_get
+        from superforecasting_agent.storage.configuration import read_configuration
 
         return bool(
             cfg_get(
-                load_config_readonly(),
+                read_configuration(),
                 "forecasting",
                 "practice",
                 "estimate_first",

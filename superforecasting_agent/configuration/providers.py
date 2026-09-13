@@ -1,0 +1,141 @@
+"""Provider identity aliases independent of discovery, credentials and catalogs."""
+
+from __future__ import annotations
+
+from collections.abc import Collection, Mapping
+from typing import Any
+
+PROVIDER_ALIASES = {
+    "glm": "zai",
+    "z-ai": "zai",
+    "z.ai": "zai",
+    "zhipu": "zai",
+    "github": "copilot",
+    "github-copilot": "copilot",
+    "github-models": "copilot",
+    "github-model": "copilot",
+    "github-copilot-acp": "copilot-acp",
+    "copilot-acp-agent": "copilot-acp",
+    "google": "gemini",
+    "google-gemini": "gemini",
+    "google-ai-studio": "gemini",
+    "kimi": "kimi-coding",
+    "moonshot": "kimi-coding",
+    "kimi-cn": "kimi-coding-cn",
+    "moonshot-cn": "kimi-coding-cn",
+    "step": "stepfun",
+    "stepfun-coding-plan": "stepfun",
+    "arcee-ai": "arcee",
+    "arceeai": "arcee",
+    "gmi-cloud": "gmi",
+    "gmicloud": "gmi",
+    "minimax-china": "minimax-cn",
+    "minimax_cn": "minimax-cn",
+    "minimax-portal": "minimax-oauth",
+    "minimax-global": "minimax-oauth",
+    "minimax_oauth": "minimax-oauth",
+    "claude": "anthropic",
+    "claude-code": "anthropic",
+    "deep-seek": "deepseek",
+    "opencode": "opencode-zen",
+    "zen": "opencode-zen",
+    "go": "opencode-go",
+    "opencode-go-sub": "opencode-go",
+    "aigateway": "ai-gateway",
+    "vercel": "ai-gateway",
+    "vercel-ai-gateway": "ai-gateway",
+    "kilo": "kilocode",
+    "kilo-code": "kilocode",
+    "kilo-gateway": "kilocode",
+    "dashscope": "alibaba",
+    "aliyun": "alibaba",
+    "qwen": "alibaba",
+    "alibaba-cloud": "alibaba",
+    "qwen-portal": "qwen-oauth",
+    "gemini-cli": "google-gemini-cli",
+    "gemini-oauth": "google-gemini-cli",
+    "hf": "huggingface",
+    "hugging-face": "huggingface",
+    "huggingface-hub": "huggingface",
+    "novita-ai": "novita",
+    "novitaai": "novita",
+    "mimo": "xiaomi",
+    "xiaomi-mimo": "xiaomi",
+    "tencent": "tencent-tokenhub",
+    "tokenhub": "tencent-tokenhub",
+    "tencent-cloud": "tencent-tokenhub",
+    "tencentmaas": "tencent-tokenhub",
+    "aws": "bedrock",
+    "aws-bedrock": "bedrock",
+    "amazon-bedrock": "bedrock",
+    "amazon": "bedrock",
+    "grok": "xai",
+    "grok-oauth": "xai-oauth",
+    "xai-oauth": "xai-oauth",
+    "x-ai-oauth": "xai-oauth",
+    "xai-grok-oauth": "xai-oauth",
+    "x-ai": "xai",
+    "x.ai": "xai",
+    "nim": "nvidia",
+    "nvidia-nim": "nvidia",
+    "build-nvidia": "nvidia",
+    "nemotron": "nvidia",
+    "lmstudio": "lmstudio",
+    "lm-studio": "lmstudio",
+    "lm_studio": "lmstudio",
+    "ollama": "custom",  # bare "ollama" = local; use "ollama-cloud" for cloud
+    "ollama_cloud": "ollama-cloud",
+}
+
+
+def normalize_provider(provider: str | None) -> str:
+    """Normalize provider aliases to runtime-canonical provider ids.
+
+    ``"auto"`` passes through unchanged. Credential-aware resolution belongs
+    to the runtime that owns those credentials.
+    """
+    normalized = (provider or "openrouter").strip().lower()
+    return PROVIDER_ALIASES.get(normalized, normalized)
+
+
+def split_provider_model(
+    raw: str, known_providers: Collection[str]
+) -> tuple[str | None, str]:
+    """Interpret an explicit provider without discovering providers or credentials.
+
+    Unrecognized prefixes belong to the model identifier. Explicit ``custom``
+    triple syntax selects a named endpoint; aliases resolve to canonical IDs.
+    The caller supplies its current catalog and owns any implicit-provider policy.
+    """
+    model = raw.strip()
+    head, separator, rest = model.partition(":")
+    provider = head.strip().lower()
+    rest = rest.strip()
+    if not separator or not provider or not rest or provider not in known_providers:
+        return None, model
+    if provider == "custom":
+        name, separator, named_model = rest.partition(":")
+        if separator and name.strip() and named_model.strip():
+            return f"custom:{name.strip()}", named_model.strip()
+    return normalize_provider(provider), rest
+
+
+def configured_provider(
+    config: Mapping[str, Any], *, override: str = "", environment: str = ""
+) -> str:
+    """Report provider selection without resolving credentials or model routing.
+
+    A model's publisher prefix is not its serving provider. Automatic selection
+    remains ``auto`` until the runtime resolves it. Launch selection takes
+    precedence over config, which takes precedence over the environment fallback.
+    """
+    section = config.get("model")
+    configured = section.get("provider") if isinstance(section, Mapping) else None
+    for candidate in (override, configured, environment):
+        if candidate is None:
+            continue
+        if not isinstance(candidate, str):
+            raise ValueError("model.provider must be a string")
+        if candidate.strip():
+            return normalize_provider(candidate)
+    return "auto"

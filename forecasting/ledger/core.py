@@ -370,6 +370,7 @@ _PACKET_JSON_FIELDS = {
     },
 }
 _PACKET_BOOL_FIELDS = {
+    "forecast_snapshots": {"calibration_eligible"},
     "evidence_items": {"admissible_for_backtests"},
     "resolutions": {"criteria_satisfied", "scoreable"},
     "score_records": {"calibration_eligible"},
@@ -515,38 +516,42 @@ class ForecastLedger:
                 self._connection.close()
 
     def _new_connection(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON")
-        # Write-Ahead Logging lets a reader run concurrently with an in-flight
-        # writer (DELETE-mode journaling would block it), which is what the TUI
-        # gateway + cron reforecasts actually do. journal_mode=WAL persists at the
-        # DB-file level (a one-time flip); synchronous=NORMAL is the safe/fast
-        # pairing under WAL. On :memory: WAL is a silent no-op, and on a read-only
-        # filesystem the PRAGMA can raise — degrade quietly rather than break
-        # connectivity (the DB still works in its prior journal mode).
+        # The authorizer depends on the current commit context. SQLite only
+        # authorizes prepared statements once; caching would retain permission
+        # after that context ends (including within a borrowed transaction).
+        from forecasting.ledger.sqlite_runtime import LedgerConnection
+        conn = sqlite3.connect(self.db_path, cached_statements=0, factory=LedgerConnection)
         try:
-            conn.execute("PRAGMA journal_mode = WAL")
-            conn.execute("PRAGMA synchronous = NORMAL")
-        except Exception:  # pragma: no cover - read-only FS / stripped build
-            logger.debug("could not set WAL journal mode", exc_info=True)
-        # Connection-level write gate. This is the REAL chokepoint: the
-        # method-level _enforce_write_gate only sees create_question /
-        # create_snapshot / record_panel_run, but a script can grab THIS raw
-        # connection and run an INSERT directly. The authorizer checks the live
-        # commit-context contextvar at query time, so a raw forecast-producing
-        # write outside a recognised commit context is denied — even when the
-        # script is run by the agent via the terminal tool. Reads + DDL +
-        # transactions are always allowed (so initialize_schema / migrations,
-        # which run in __init__ outside any allow-context, keep working), and the
-        # whole thing is inert under warn/off mode. The set_authorizer call is
-        # cheap and defensive: if a stripped-down sqlite build lacked it, fall
-        # back to the method-level gate rather than break ledger connectivity.
-        try:
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA foreign_keys = ON")
+            # Write-Ahead Logging lets a reader run concurrently with an in-flight
+            # writer (DELETE-mode journaling would block it), which is what the TUI
+            # gateway + cron reforecasts actually do. journal_mode=WAL persists at the
+            # DB-file level (a one-time flip); synchronous=NORMAL is the safe/fast
+            # pairing under WAL. On :memory: WAL is a silent no-op, and on a read-only
+            # filesystem the PRAGMA can raise — degrade quietly rather than break
+            # connectivity (the DB still works in its prior journal mode).
+            try:
+                conn.execute("PRAGMA journal_mode = WAL")
+                conn.execute("PRAGMA synchronous = NORMAL")
+            except Exception:  # pragma: no cover - read-only FS / stripped build
+                logger.debug("could not set WAL journal mode", exc_info=True)
+            # Connection-level write gate. This is the REAL chokepoint: the
+            # method-level _enforce_write_gate only sees create_question /
+            # create_snapshot / record_panel_run, but a script can grab THIS raw
+            # connection and run an INSERT directly. The authorizer checks the live
+            # commit-context contextvar at query time, so a raw forecast-producing
+            # write outside a recognised commit context is denied — even when the
+            # script is run by the agent via the terminal tool. Reads + DDL +
+            # transactions are always allowed (so initialize_schema / migrations,
+            # which run in __init__ outside any allow-context, keep working), and the
+            # whole thing is inert under warn/off mode. The set_authorizer call is
+            # required: failure to install it must never expose an ungated connection.
             conn.set_authorizer(_ledger_write_authorizer)
-        except Exception:  # pragma: no cover - defensive only
-            logger.debug("could not install ledger write authorizer", exc_info=True)
-        return conn
+            return conn
+        except BaseException:
+            conn.close()
+            raise
 
     def _connect(self) -> sqlite3.Connection:
         active = self._transaction_connection.get()
@@ -558,14 +563,22 @@ class ForecastLedger:
     def transaction(self, *, immediate: bool = False):
         """Run public ledger methods in one atomic SQLite transaction.
 
-        Nested calls reuse the outer transaction. ``BEGIN IMMEDIATE`` is used
+        Nested calls reuse the connection with a rollback savepoint. ``BEGIN IMMEDIATE`` is used
         by changeset promotion to obtain SQLite's cross-process writer lock
         before checking the base revision.
         """
 
         active = self._transaction_connection.get()
         if active is not None:
-            yield active
+            savepoint = "sf_" + uuid.uuid4().hex
+            active.execute(f"SAVEPOINT {savepoint}")
+            try:
+                yield active
+                active.execute(f"RELEASE SAVEPOINT {savepoint}")
+            except BaseException:
+                active.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+                active.execute(f"RELEASE SAVEPOINT {savepoint}")
+                raise
             return
         conn = self._new_connection()
         token = self._transaction_connection.set(conn)
@@ -1837,6 +1850,8 @@ class ForecastLedger:
             initialize_settlement_reviews(conn)
             from forecasting.applicability_facts import initialize_schema as initialize_facts
             initialize_facts(conn)
+            from forecasting.source_transfer import initialize_schema as initialize_source_transfer
+            initialize_source_transfer(conn)
             from forecasting.learning_trials import initialize_schema as initialize_learning_trials
             initialize_learning_trials(conn)
 
@@ -5915,10 +5930,15 @@ class ForecastLedger:
         snapshot_dir.mkdir(parents=True, exist_ok=True)
         snapshot_path = snapshot_dir / f"{evidence_id}.html"
         metadata_path = snapshot_dir / f"{evidence_id}.snapshot.json"
-        request = Request(source_url, headers={"User-Agent": f"{PRODUCT_SLUG}/1"})
+        from forecasting.economic_bindings import authenticated_url
+        request_url = authenticated_url(source_url)
+        request = Request(request_url, headers={"User-Agent": f"{PRODUCT_SLUG}/1"})
         try:
             with urlopen(request, timeout=5) as response:
-                content = response.read(2_000_000)
+                content = response.read(2_000_001)
+                redirected = hasattr(response, "geturl") and response.geturl() != request_url
+                if len(content) > 2_000_000:
+                    return None
                 status = getattr(response, "status", None)
                 content_type = response.headers.get("Content-Type")
         except (OSError, URLError, TimeoutError):
@@ -5944,6 +5964,7 @@ class ForecastLedger:
             block_info = None
         metadata = {
             "url": source_url,
+            "redirected": redirected,
             "captured_at": utc_now_iso(),
             "status": status,
             "content_type": content_type,

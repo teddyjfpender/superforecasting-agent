@@ -10,34 +10,16 @@ self-repair within its budget.
 
 from __future__ import annotations
 
-import threading
 from typing import Any
 
 from forecasting import presentation as P
 from tools.registry import registry, tool_error, tool_result
 
-# Per-thread stash: each build runs in its own thread (gateway pool / async
-# delegation worker), so a thread-local can't collide across concurrent builds.
-_STASH = threading.local()
-
-
-def _items() -> list:
-    if not hasattr(_STASH, "items"):
-        _STASH.items = []
-    return _STASH.items
-
-
-def reset_emitted() -> None:
-    """Clear the stash before a build run (called by the orchestrator)."""
-    _items().clear()
-
-
-def take_emitted() -> dict | None:
-    """Return the last emitted {presentation, spec} and clear the stash."""
-    items = _items()
-    out = items[-1] if items else None
-    items.clear()
-    return out
+from forecasting.application.market_output import (
+    record_emitted,
+    reset_emitted as reset_emitted,
+    take_emitted as take_emitted,
+)
 
 
 EMIT_MARKET_PRESENTATION_SCHEMA = {
@@ -85,7 +67,7 @@ def emit_market_presentation_tool(args: dict[str, Any]) -> str:
     if not isinstance(pres, dict):
         return tool_error("presentation must be an object with a title and a blocks list")
     ok, errors = P.validate_presentation(pres)
-    _items().append({"presentation": pres, "spec": spec})
+    record_emitted(pres, spec)
     if not ok:
         return tool_result(
             accepted=True,

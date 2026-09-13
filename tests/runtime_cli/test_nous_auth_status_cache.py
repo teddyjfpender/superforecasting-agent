@@ -13,6 +13,8 @@ import json
 import os
 from unittest.mock import patch
 
+import pytest
+
 
 def _seed_auth_file(tmp_path):
     """Drop a placeholder auth.json into the test HERMES_HOME.
@@ -30,7 +32,7 @@ def test_get_nous_auth_status_caches_consecutive_calls(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     _seed_auth_file(tmp_path)
 
-    from superforecasting_agent.runtime import auth as auth_mod
+    from superforecasting_agent.credentials import auth as auth_mod
 
     auth_mod.invalidate_nous_auth_status_cache()
 
@@ -62,7 +64,7 @@ def test_get_nous_auth_status_invalidates_on_auth_file_mtime(tmp_path, monkeypat
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     auth_path = _seed_auth_file(tmp_path)
 
-    from superforecasting_agent.runtime import auth as auth_mod
+    from superforecasting_agent.credentials import auth as auth_mod
 
     auth_mod.invalidate_nous_auth_status_cache()
 
@@ -93,7 +95,7 @@ def test_invalidate_nous_auth_status_cache_forces_recompute(tmp_path, monkeypatc
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     _seed_auth_file(tmp_path)
 
-    from superforecasting_agent.runtime import auth as auth_mod
+    from superforecasting_agent.credentials import auth as auth_mod
 
     auth_mod.invalidate_nous_auth_status_cache()
 
@@ -123,7 +125,7 @@ def test_get_nous_auth_status_caches_failure_path(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     _seed_auth_file(tmp_path)
 
-    from superforecasting_agent.runtime import auth as auth_mod
+    from superforecasting_agent.credentials import auth as auth_mod
 
     auth_mod.invalidate_nous_auth_status_cache()
 
@@ -142,3 +144,22 @@ def test_get_nous_auth_status_caches_failure_path(tmp_path, monkeypatch):
     )
 
     auth_mod.invalidate_nous_auth_status_cache()
+
+
+@pytest.mark.parametrize("create_file", [True, False])
+def test_status_cache_does_not_cross_profiles_with_same_timestamp(tmp_path, monkeypatch, create_file):
+    from superforecasting_agent.credentials import auth as auth_mod
+
+    paths = [tmp_path / name / "auth.json" for name in ("one", "two")]
+    for path in paths:
+        path.parent.mkdir()
+        if create_file:
+            path.write_text('{}', encoding="utf-8")
+            os.utime(path, ns=(1_700_000_000_000_000_000, 1_700_000_000_000_000_000))
+    active = [paths[0]]
+    monkeypatch.setattr(auth_mod, "_auth_file_path", lambda: active[0])
+    monkeypatch.setattr(auth_mod, "_compute_nous_auth_status", lambda: {"profile": active[0].parent.name})
+    monkeypatch.setattr(auth_mod, "_nous_auth_status_cache", None)
+    assert auth_mod.get_nous_auth_status()["profile"] == "one"
+    active[0] = paths[1]
+    assert auth_mod.get_nous_auth_status()["profile"] == "two"

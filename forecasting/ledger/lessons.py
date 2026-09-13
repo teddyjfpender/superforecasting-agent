@@ -596,8 +596,13 @@ def _write_error_profile(
         "postmortem_count": len(postmortems),
         "error_counts": dict(sorted(error_counts.items())),
     }
+    from forecasting.score_review import uninformative_brier
+    excesses = [score.brier_score - baseline for score in scores
+                if score.brier_score is not None
+                and (baseline := uninformative_brier(ledger, score)) is not None]
+    summary['mean_brier_excess_over_uniform'] = sum(excesses) / len(excesses) if excesses else None
     recurring_errors: list[str] = []
-    if summary["mean_brier"] is not None and summary["mean_brier"] > 0.25:
+    if excesses and summary['mean_brier_excess_over_uniform'] > 0:
         recurring_errors.append("elevated_mean_brier")
     recurring_errors.extend(ledger._recurring_error_tags(error_counts))
     recurring_errors = list(dict.fromkeys(recurring_errors))
@@ -660,26 +665,24 @@ def _error_counts_for_profile(
     counts: Counter[str] = Counter()
     score_tags_by_id: dict[str, set[str]] = defaultdict(set)
     for score in scores:
-        if score.brier_score is not None and score.brier_score > 0.25:
-            counts["high_brier_miss"] += 1
-            score_tags_by_id[score.id].add("high_brier_miss")
-        if score.brier_score is not None and score.brier_score >= 0.36:
+        tags = ledger._auto_postmortem_error_tags(score)
+        for tag in tags:
+            counts[tag] += 1
+            score_tags_by_id[score.id].add(tag)
+        if tags:
             try:
                 snapshot = ledger.get_snapshot(score.forecast_id)
             except LedgerNotFoundError:
                 snapshot = None
             if snapshot is not None:
-                sharpness = ledger._sharpness(snapshot.probability_or_distribution)
-                if sharpness is not None and sharpness >= 0.6:
-                    counts["overconfidence"] += 1
-                    score_tags_by_id[score.id].add("overconfidence")
                 for model_run_ref in snapshot.model_run_refs:
                     try:
                         model_run = ledger.get_model_run(model_run_ref)
                     except LedgerNotFoundError:
                         continue
-                    if model_run["status"] == "failure":
-                        counts["model_family_failure"] += 1
+                    if model_run['status'] == 'failure':
+                        counts['model_family_failure'] += 1
+    scored_ids = {score.id for score in scores}
     field_tags = {
         "missed_evidence": "missed_evidence",
         "overweighted_evidence": "overweighted_evidence",
@@ -698,6 +701,10 @@ def _error_counts_for_profile(
                 if not isinstance(tag, str) or not tag.strip():
                     continue
                 normalized = tag.strip()
+                if score_id in scored_ids and normalized in {'high_brier_miss', 'overconfidence'}:
+                    # Recompute automatic tags using the current outcome-space
+                    # baseline; historical binary-cutoff tags must not reappear.
+                    continue
                 if normalized in score_tags_by_id.get(score_id, set()):
                     continue
                 counts[normalized] += 1

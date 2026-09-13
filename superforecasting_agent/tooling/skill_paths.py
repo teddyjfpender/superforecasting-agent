@@ -4,7 +4,9 @@ import re
 from pathlib import PurePosixPath
 
 
-def _normalize_bundle_path(path_value: str, *, field_name: str, allow_nested: bool) -> str:
+def _normalize_bundle_path(
+    path_value: str, *, field_name: str, allow_nested: bool
+) -> str:
     """Normalize and validate bundle-controlled paths before touching disk."""
     if not isinstance(path_value, str):
         raise ValueError(f"Unsafe {field_name}: expected a string")
@@ -38,4 +40,6 @@ def _validate_category_name(category: str) -> str:
 
 
 def _validate_bundle_rel_path(rel_path: str) -> str:
-    return _normalize_bundle_path(rel_path, field_name="bundle file path", allow_nested=True)
+    return _normalize_bundle_path(
+        rel_path, field_name="bundle file path", allow_nested=True
+    )

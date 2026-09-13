@@ -6,27 +6,29 @@ import re
 def _sanitize_fts5_query(query: str) -> str:
     """Sanitize user input for safe use in FTS5 MATCH queries.
 
-        FTS5 has its own query syntax where characters like ``"``, ``(``, ``)``,
-        ``+``, ``*``, ``{``, ``}`` and bare boolean operators (``AND``, ``OR``,
-        ``NOT``) have special meaning.  Passing raw user input directly to
-        MATCH can cause ``sqlite3.OperationalError``.
+    FTS5 has its own query syntax where characters like ``"``, ``(``, ``)``,
+    ``+``, ``*``, ``{``, ``}`` and bare boolean operators (``AND``, ``OR``,
+    ``NOT``) have special meaning.  Passing raw user input directly to
+    MATCH can cause ``sqlite3.OperationalError``.
 
-        Strategy:
-        - Preserve properly paired quoted phrases (``"exact phrase"``)
-        - Strip unmatched FTS5-special characters that would cause errors
-        - Wrap unquoted hyphenated and dotted terms in quotes so FTS5
-          matches them as exact phrases instead of splitting on the
-          hyphen/dot (e.g. ``chat-send``, ``P2.2``, ``my-app.config.ts``)
-        """
+    Strategy:
+    - Preserve properly paired quoted phrases (``"exact phrase"``)
+    - Strip unmatched FTS5-special characters that would cause errors
+    - Wrap unquoted hyphenated and dotted terms in quotes so FTS5
+      matches them as exact phrases instead of splitting on the
+      hyphen/dot (e.g. ``chat-send``, ``P2.2``, ``my-app.config.ts``)
+    """
     # Step 1: Extract balanced double-quoted phrases and protect them
     # from further processing via numbered placeholders.
     _quoted_parts: list = []
+
     def _preserve_quoted(m: re.Match) -> str:
         _quoted_parts.append(m.group(0))
         return f"\x00Q{len(_quoted_parts) - 1}\x00"
+
     sanitized = re.sub(r'"[^"]*"', _preserve_quoted, query)
     # Step 2: Strip remaining (unmatched) FTS5-special characters
-    sanitized = re.sub(r'[+{}()\"^]', " ", sanitized)
+    sanitized = re.sub(r"[+{}()\"^]", " ", sanitized)
     # Step 3: Collapse repeated * (e.g. "***") into a single one,
     # and remove leading * (prefix-only needs at least one char before *)
     sanitized = re.sub(r"\*+", "*", sanitized)
@@ -49,26 +51,30 @@ def _sanitize_fts5_query(query: str) -> str:
 
 
 def _is_cjk_codepoint(cp: int) -> bool:
-    return (0x4E00 <= cp <= 0x9FFF or    # CJK Unified Ideographs
-            0x3400 <= cp <= 0x4DBF or    # CJK Extension A
-            0x20000 <= cp <= 0x2A6DF or  # CJK Extension B
-            0x3000 <= cp <= 0x303F or    # CJK Symbols
-            0x3040 <= cp <= 0x309F or    # Hiragana
-            0x30A0 <= cp <= 0x30FF or    # Katakana
-            0xAC00 <= cp <= 0xD7AF)      # Hangul Syllables
+    return (
+        0x4E00 <= cp <= 0x9FFF  # CJK Unified Ideographs
+        or 0x3400 <= cp <= 0x4DBF  # CJK Extension A
+        or 0x20000 <= cp <= 0x2A6DF  # CJK Extension B
+        or 0x3000 <= cp <= 0x303F  # CJK Symbols
+        or 0x3040 <= cp <= 0x309F  # Hiragana
+        or 0x30A0 <= cp <= 0x30FF  # Katakana
+        or 0xAC00 <= cp <= 0xD7AF
+    )  # Hangul Syllables
 
 
 def _contains_cjk(text: str) -> bool:
     """Check if text contains CJK (Chinese, Japanese, Korean) characters."""
     for ch in text:
         cp = ord(ch)
-        if (0x4E00 <= cp <= 0x9FFF or    # CJK Unified Ideographs
-            0x3400 <= cp <= 0x4DBF or    # CJK Extension A
-            0x20000 <= cp <= 0x2A6DF or  # CJK Extension B
-            0x3000 <= cp <= 0x303F or    # CJK Symbols
-            0x3040 <= cp <= 0x309F or    # Hiragana
-            0x30A0 <= cp <= 0x30FF or    # Katakana
-            0xAC00 <= cp <= 0xD7AF):     # Hangul Syllables
+        if (
+            0x4E00 <= cp <= 0x9FFF  # CJK Unified Ideographs
+            or 0x3400 <= cp <= 0x4DBF  # CJK Extension A
+            or 0x20000 <= cp <= 0x2A6DF  # CJK Extension B
+            or 0x3000 <= cp <= 0x303F  # CJK Symbols
+            or 0x3040 <= cp <= 0x309F  # Hiragana
+            or 0x30A0 <= cp <= 0x30FF  # Katakana
+            or 0xAC00 <= cp <= 0xD7AF
+        ):  # Hangul Syllables
             return True
     return False
 

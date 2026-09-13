@@ -10,6 +10,7 @@
 // so the A4 grep-proof (no hand-written wire-shape INTERFACE outside
 // generated.ts) holds. The forecast value-enums re-export from ./types.js.
 import type { WireEvent } from './protocol/generated.js'
+import type { CommandFinished, CommandOutput, CommandStarted } from './protocol/generated.js'
 import type { BuildInfoPayload, GatewaySkin, SubagentEventPayload } from './protocol/generated.js'
 import type { SessionInfo, Usage } from './types.js'
 
@@ -94,7 +95,7 @@ export type {
   ThemeOption,
   ToolsConfigureResponse,
   VoiceRecordResponse,
-  VoiceToggleResponse,
+  VoiceToggleResponse
 } from './protocol/generated.js'
 
 // ── Arc A3: forecast.* / forecast.warnings.* wire shapes are GENERATED ─────────
@@ -206,7 +207,7 @@ export type {
   ForecastWorkspaceResolution,
   ForecastWorkspaceResponse,
   ForecastWorkspaceScores,
-  ForecastWorkspaceTrigger,
+  ForecastWorkspaceTrigger
 } from './protocol/generated.js'
 
 // ── TS-ONLY ALIAS #1: command.dispatch's 4-arm discriminated union ────────────
@@ -223,7 +224,7 @@ export type CommandDispatchResponse =
 export type {
   AutomodeCompletePayload as ForecastWarningsAutomodeComplete,
   AutomodeErrorPayload as ForecastWarningsAutomodeError,
-  AutomodeProgressPayload as ForecastWarningsAutomodeProgress,
+  AutomodeProgressPayload as ForecastWarningsAutomodeProgress
 } from './protocol/generated.js'
 // ── the forecast-desk value enums (moved to types.ts; re-exported here so the
 // historical `from '../gatewayTypes.js'` import sites keep resolving) ─────────
@@ -235,6 +236,9 @@ export type { ForecastTailClassification, ForecastTriageLabel } from './types.js
 // its own payload); the payloads reference generated shapes (GatewaySkin,
 // SubagentEventPayload, SessionInfo, Usage) where they are non-trivial.
 export type GatewayEvent =
+  | { payload: CommandStarted; session_id?: string; type: typeof WireEvent.COMMAND_STARTED }
+  | { payload: CommandOutput; session_id?: string; type: typeof WireEvent.COMMAND_OUTPUT }
+  | { payload: CommandFinished; session_id?: string; type: typeof WireEvent.COMMAND_FINISHED }
   | {
       payload?: { build?: BuildInfoPayload; protocol_version?: number; skin?: GatewaySkin }
       session_id?: string
@@ -245,8 +249,16 @@ export type GatewayEvent =
   | { payload?: { text?: string }; session_id?: string; type: typeof WireEvent.THINKING_DELTA }
   | { payload?: undefined; session_id?: string; type: typeof WireEvent.MESSAGE_START }
   | { payload?: { kind?: string; text?: string }; session_id?: string; type: typeof WireEvent.STATUS_UPDATE }
-  | { payload?: { state?: 'idle' | 'listening' | 'transcribing' }; session_id?: string; type: typeof WireEvent.VOICE_STATUS }
-  | { payload?: { no_speech_limit?: boolean; text?: string }; session_id?: string; type: typeof WireEvent.VOICE_TRANSCRIPT }
+  | {
+      payload?: { state?: 'idle' | 'listening' | 'transcribing' }
+      session_id?: string
+      type: typeof WireEvent.VOICE_STATUS
+    }
+  | {
+      payload?: { no_speech_limit?: boolean; text?: string }
+      session_id?: string
+      type: typeof WireEvent.VOICE_TRANSCRIPT
+    }
   | { payload: { line: string }; session_id?: string; type: typeof WireEvent.GATEWAY_STDERR }
   | {
       payload?: { level?: 'error' | 'info' | 'warn'; message?: string }
@@ -259,7 +271,11 @@ export type GatewayEvent =
       type: typeof WireEvent.GATEWAY_START_TIMEOUT
     }
   | { payload?: { preview?: string }; session_id?: string; type: typeof WireEvent.GATEWAY_PROTOCOL_ERROR }
-  | { payload?: { text?: string }; session_id?: string; type: typeof WireEvent.REASONING_DELTA | typeof WireEvent.REASONING_AVAILABLE }
+  | {
+      payload?: { text?: string }
+      session_id?: string
+      type: typeof WireEvent.REASONING_DELTA | typeof WireEvent.REASONING_AVAILABLE
+    }
   | { payload: { name?: string; preview?: string }; session_id?: string; type: typeof WireEvent.TOOL_PROGRESS }
   | { payload: { name?: string }; session_id?: string; type: typeof WireEvent.TOOL_GENERATING }
   | {
@@ -292,7 +308,11 @@ export type GatewayEvent =
     }
   | { payload: { command: string; description: string }; session_id?: string; type: typeof WireEvent.APPROVAL_REQUEST }
   | { payload: { request_id: string }; session_id?: string; type: typeof WireEvent.SUDO_REQUEST }
-  | { payload: { env_var: string; prompt: string; request_id: string }; session_id?: string; type: typeof WireEvent.SECRET_REQUEST }
+  | {
+      payload: { env_var: string; prompt: string; request_id: string }
+      session_id?: string
+      type: typeof WireEvent.SECRET_REQUEST
+    }
   | { payload: { task_id: string; text: string }; session_id?: string; type: typeof WireEvent.BACKGROUND_COMPLETE }
   | { payload?: { text?: string }; session_id?: string; type: typeof WireEvent.REVIEW_SUMMARY }
   | { payload?: { count?: number }; session_id?: string; type: typeof WireEvent.CRON_FIRED }
@@ -314,7 +334,15 @@ export type GatewayEvent =
   | { payload: SubagentEventPayload; session_id?: string; type: typeof WireEvent.SUBAGENT_COMPLETE }
   | { payload: { rendered?: string; text?: string }; session_id?: string; type: typeof WireEvent.MESSAGE_DELTA }
   | {
-      payload?: { reasoning?: string; rendered?: string; text?: string; usage?: Usage }
+      payload?: {
+        reasoning?: string
+        rendered?: string
+        text?: string
+        usage?: Usage
+        status?: string
+        durable_status?: string
+        turn_id?: string
+      }
       session_id?: string
       type: typeof WireEvent.MESSAGE_COMPLETE
     }
@@ -326,7 +354,13 @@ export type GatewayEvent =
       // into the book ladders in place. `estimate` is the server-side honest YES
       // probability (canonical honest_yes_mid rule) — the ONLY price a consumer
       // may fold; null when the tick carries no estimate-grade info. Sessionless.
-      payload: { estimate?: null | number; kind: string; market_id: string; payload?: Record<string, unknown>; venue: string }
+      payload: {
+        estimate?: null | number
+        kind: string
+        market_id: string
+        payload?: Record<string, unknown>
+        venue: string
+      }
       session_id?: string
       type: typeof WireEvent.PM_TICK
     }

@@ -10,6 +10,7 @@ import logging
 import os
 import shutil
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -171,7 +172,7 @@ _ONE_LINE_INSTALLER = (
 # A git checkout must REBUILD the bundle and reinstall it: a plain `git pull`
 # leaves the pipx-installed binary — and the TUI it froze into its own venv at
 # superforecasting_agent/runtime/tui_dist/entry.js — completely untouched.
-_REBUILD_AND_REINSTALL = "scripts/build-release.sh && pipx install --force dist/*.whl"
+_REBUILD_AND_REINSTALL = "scripts/build-release.sh && pipx install --force dist/superforecasting_agent-*.whl && pipx inject --force superforecasting-agent dist/superforecasting_agent_tui-*.whl"
 
 
 def _check_via_rev(local_rev: str) -> Optional[int]:
@@ -498,6 +499,29 @@ _update_check_lock = threading.Lock()
 _update_check_thread: Optional[threading.Thread] = None
 
 
+def _isolated_update_check():
+    """Contain native SSL crashes and enforce an outer wall-clock deadline."""
+    try:
+        result = subprocess.run(
+            [sys.executable, '-X', 'faulthandler', '-m', 'superforecasting_agent.runtime.update_probe'],
+            capture_output=True, text=True, timeout=20, check=False,
+        )
+        if result.returncode != 0:
+            logger.warning('Update probe failed: returncode=%s interpreter=%s; forecast session retained; diagnostic=%s', result.returncode, sys.executable, (getattr(result, 'stderr', '') or '')[-16000:])
+            return None
+        receipt = json.loads(result.stdout)
+        behind = receipt['behind']
+        if behind is not None and type(behind) is not int:
+            return None
+        latest = receipt.get('latest_version')
+        if isinstance(latest, str):
+            _record_latest_version(latest)
+        return behind
+    except (OSError, subprocess.TimeoutExpired, ValueError, KeyError, TypeError) as exc:
+        logger.debug("Update probe failed (%s); status remains unknown", type(exc).__name__)
+        return None
+
+
 def prefetch_update_check():
     """Share one in-flight update check across callers without blocking them."""
     global _update_check_thread
@@ -509,7 +533,7 @@ def prefetch_update_check():
         def _run():
             global _update_result
             try:
-                _update_result = check_for_updates()
+                _update_result = _isolated_update_check()
             except Exception:
                 _update_result = None
             finally:
@@ -521,7 +545,8 @@ def prefetch_update_check():
 
 def get_update_result(timeout: float = 0.5) -> Optional[int]:
     """Get result of prefetched check. Returns None if not ready."""
-    _update_check_done.wait(timeout=timeout)
+    if not _update_check_done.wait(timeout=timeout):
+        return None
     return _update_result
 
 
@@ -851,7 +876,7 @@ def build_welcome_banner(console: Console, model: str, cwd: str,
         pass
     # Show active profile name when not 'default'
     try:
-        from superforecasting_agent.runtime.profiles import get_active_profile_name
+        from superforecasting_agent.constants import get_active_profile_name
         _profile_name = get_active_profile_name()
         if _profile_name and _profile_name != "default":
             right_lines.append(f"[bold {accent}]Profile:[/] [{text}]{_profile_name}[/]")

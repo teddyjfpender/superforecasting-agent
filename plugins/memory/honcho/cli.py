@@ -601,7 +601,7 @@ def _active_profile_name() -> str:
     if _profile_override:
         return _profile_override
     try:
-        from superforecasting_agent.runtime.profiles import get_active_profile_name
+        from superforecasting_agent.constants import get_active_profile_name
         return get_active_profile_name()
     except Exception:
         return "default"

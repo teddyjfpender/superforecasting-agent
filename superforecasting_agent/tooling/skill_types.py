@@ -4,14 +4,16 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Union
 
+
 @dataclass
 class SkillMeta:
     """Minimal metadata returned by search results."""
+
     name: str
     description: str
-    source: str           # "official", "github", "clawhub", "claude-marketplace", "lobehub"
-    identifier: str       # source-specific ID (e.g. "openai/skills/skill-creator")
-    trust_level: str      # "builtin" | "trusted" | "community"
+    source: str  # "official", "github", "clawhub", "claude-marketplace", "lobehub"
+    identifier: str  # source-specific ID (e.g. "openai/skills/skill-creator")
+    trust_level: str  # "builtin" | "trusted" | "community"
     repo: Optional[str] = None
     path: Optional[str] = None
     tags: List[str] = field(default_factory=list)
@@ -21,8 +23,9 @@ class SkillMeta:
 @dataclass
 class SkillBundle:
     """A downloaded skill ready for quarantine/scanning/installation."""
+
     name: str
-    files: Dict[str, Union[str, bytes]]   # relative_path -> file content
+    files: Dict[str, Union[str, bytes]]  # relative_path -> file content
     source: str
     identifier: str
     trust_level: str

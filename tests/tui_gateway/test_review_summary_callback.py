@@ -18,6 +18,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
+from tests.runtime_session_cleanup import retire_test_sessions
+
+
 @pytest.fixture()
 def server():
     with patch.dict(
@@ -42,7 +45,7 @@ def server():
         # the real function.
         mod._start_notification_poller = lambda _sid, _session: threading.Event()
         yield mod
-        mod._sessions.clear()
+        retire_test_sessions(mod)
         mod._pending.clear()
         mod._answers.clear()
         mod._methods.clear()
@@ -54,7 +57,6 @@ def test_init_session_attaches_background_review_callback(server, monkeypatch):
     function that emits 'review.summary' for the session's sid."""
     # Neutralize side-effect calls inside _init_session so we're testing
     # just the callback wiring.
-    monkeypatch.setattr(server, "_SlashWorker", lambda *a, **kw: object())
     monkeypatch.setattr(server, "_wire_callbacks", lambda sid: None)
     monkeypatch.setattr(server, "_notify_session_boundary", lambda *a, **kw: None)
     monkeypatch.setattr(server, "_session_info", lambda agent: {"model": "m"})
@@ -106,7 +108,6 @@ def test_review_summary_callback_survives_agent_without_attribute(server, monkey
     """If the agent is a bare object that doesn't allow attribute
     assignment (e.g. some stubbed test double), _init_session must not
     raise — session startup stays robust."""
-    monkeypatch.setattr(server, "_SlashWorker", lambda *a, **kw: object())
     monkeypatch.setattr(server, "_wire_callbacks", lambda sid: None)
     monkeypatch.setattr(server, "_notify_session_boundary", lambda *a, **kw: None)
     monkeypatch.setattr(server, "_session_info", lambda agent: {"model": "m"})

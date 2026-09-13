@@ -371,15 +371,21 @@ def test_release_dry_run_produces_full_artifact_set(tmp_path):
     assert manifest["image"]["digest"] is None
     assert set(manifest["artifacts"]) >= set(rm.REQUIRED_ARTIFACT_ROLES)
     assert manifest["artifacts"]["windows_installer"]["name"] == "install.ps1"
+    terminal = manifest["artifacts"]["terminal_wheel"]
+    assert terminal["name"].startswith("superforecasting_agent_tui-")
+    assert (out / terminal["name"]).is_file()
+    import zipfile
+    with zipfile.ZipFile(out / manifest["artifacts"]["wheel"]["name"]) as archive:
+        assert not any("/tui_dist/" in name or "/web_dist/" in name for name in archive.namelist())
+
 
     # SHA256SUMS entries must match the manifest hashes.
     sums = {}
     for line in (out / "SHA256SUMS").read_text().splitlines():
         digest, name = line.split()
         sums[name] = digest
-    assert sums[manifest["artifacts"]["wheel"]["name"]] == (
-        manifest["artifacts"]["wheel"]["sha256"]
-    )
+    for artifact in (manifest["artifacts"]["wheel"], terminal):
+        assert sums[artifact["name"]] == artifact["sha256"]
 
 
 def test_release_script_rejects_publish_mode():

@@ -32,11 +32,7 @@ from superforecasting_agent.runtime.secret_prompt import masked_secret_prompt
 
 logger = logging.getLogger(__name__)
 _PRIMARY_CLI = "superforecasting-agent"
-_IGNORE_USER_CONFIG_ENV_NAMES = (
-    "SUPERFORECASTING_AGENT_IGNORE_USER_CONFIG",
-    "FORECAST_IGNORE_USER_CONFIG",
-    "HERMES_IGNORE_USER_CONFIG",
-)
+from superforecasting_agent.profile_paths import ignore_user_config_requested as _ignore_user_config_requested
 
 
 def _first_present_env(names: tuple[str, ...], default: str = "") -> tuple[str, str]:
@@ -51,9 +47,6 @@ def _env_flag_exact_one(names: tuple[str, ...]) -> bool:
     _name, value = _first_present_env(names)
     return value == "1"
 
-
-def _ignore_user_config_requested() -> bool:
-    return _env_flag_exact_one(_IGNORE_USER_CONFIG_ENV_NAMES)
 
 # Track which (config_path, mtime_ns, size) tuples we've already warned about
 # so concurrent CLI/gateway loads of a broken config.yaml don't spam stderr
@@ -183,18 +176,11 @@ def _reject_denylisted_env_var(key: str) -> None:
             "~/.superforecasting-agent/.env directly."
         )
 _LAST_EXPANDED_CONFIG_BY_PATH: Dict[str, Any] = {}
-# (path, mtime_ns, size) -> cached expanded config dict.
-# load_config() returns a deepcopy of the cached value when the file
-# hasn't changed since the last load, skipping yaml.safe_load +
-# _deep_merge + _normalize_* + _expand_env_vars (~13 ms/call).
-# save_config() + migrate_config() write via atomic_yaml_write which
-# produces a fresh inode, so stat() sees a new mtime_ns and the next
-# load repopulates automatically — no explicit invalidation hook.
-_LOAD_CONFIG_CACHE: Dict[str, Tuple[int, int, Dict[str, Any]]] = {}
-# (path, mtime_ns, size) -> cached raw yaml dict. Same pattern as
-# _LOAD_CONFIG_CACHE but for read_raw_config() — used when callers want
-# the user's on-disk values without defaults merged in.
-_RAW_CONFIG_CACHE: Dict[str, Tuple[int, int, Dict[str, Any]]] = {}
+# Cache by exact file bytes, not timestamps: editors may preserve mtime and size.
+# Parsing/merging stays cached, and writable snapshots cannot bless stale values
+# with a newer file revision.
+_LOAD_CONFIG_CACHE: Dict[str, Tuple[bytes, Dict[str, Any]]] = {}
+_RAW_CONFIG_CACHE: Dict[str, Tuple[bytes, Dict[str, Any]]] = {}
 # Serializes all config read/write paths. libyaml's C extension is not
 # thread-safe for concurrent safe_load() on the same file, and multiple
 # tool threads (approval.py, browser_tool.py, setup flows) hit
@@ -205,83 +191,7 @@ _RAW_CONFIG_CACHE: Dict[str, Tuple[int, int, Dict[str, Any]]] = {}
 _CONFIG_LOCK = threading.RLock()
 # Env var names written to .env that aren't in OPTIONAL_ENV_VARS
 # (managed by setup/provider flows directly).
-_EXTRA_ENV_KEYS = frozenset({
-    "OPENAI_API_KEY", "OPENAI_BASE_URL",
-    "ANTHROPIC_API_KEY", "ANTHROPIC_TOKEN",
-    "SUPERFORECASTING_AGENT_OPENROUTER_CACHE", "FORECAST_OPENROUTER_CACHE",
-    "HERMES_OPENROUTER_CACHE", "SUPERFORECASTING_AGENT_OPENROUTER_CACHE_TTL",
-    "FORECAST_OPENROUTER_CACHE_TTL", "HERMES_OPENROUTER_CACHE_TTL",
-    "SUPERFORECASTING_AGENT_LOCAL_STT_COMMAND", "FORECAST_LOCAL_STT_COMMAND",
-    "HERMES_LOCAL_STT_COMMAND", "SUPERFORECASTING_AGENT_LOCAL_STT_LANGUAGE",
-    "FORECAST_LOCAL_STT_LANGUAGE", "HERMES_LOCAL_STT_LANGUAGE",
-    "SUPERFORECASTING_AGENT_KANBAN_HOME", "FORECAST_KANBAN_HOME", "HERMES_KANBAN_HOME",
-    "SUPERFORECASTING_AGENT_KANBAN_BOARD", "FORECAST_KANBAN_BOARD", "HERMES_KANBAN_BOARD",
-    "SUPERFORECASTING_AGENT_KANBAN_DB", "FORECAST_KANBAN_DB", "HERMES_KANBAN_DB",
-    "SUPERFORECASTING_AGENT_KANBAN_WORKSPACES_ROOT", "FORECAST_KANBAN_WORKSPACES_ROOT",
-    "HERMES_KANBAN_WORKSPACES_ROOT", "SUPERFORECASTING_AGENT_KANBAN_CLAIM_TTL_SECONDS",
-    "FORECAST_KANBAN_CLAIM_TTL_SECONDS", "HERMES_KANBAN_CLAIM_TTL_SECONDS",
-    "SUPERFORECASTING_AGENT_KANBAN_DISPATCH_IN_GATEWAY",
-    "FORECAST_KANBAN_DISPATCH_IN_GATEWAY", "HERMES_KANBAN_DISPATCH_IN_GATEWAY",
-    "FORECAST_QWEN_BASE_URL", "HERMES_QWEN_BASE_URL",
-    "FORECAST_GEMINI_CLIENT_ID", "HERMES_GEMINI_CLIENT_ID",
-    "FORECAST_GEMINI_CLIENT_SECRET", "HERMES_GEMINI_CLIENT_SECRET",
-    "FORECAST_GEMINI_PROJECT_ID", "HERMES_GEMINI_PROJECT_ID",
-    "DISCORD_HOME_CHANNEL", "DISCORD_HOME_CHANNEL_NAME",
-    "TELEGRAM_HOME_CHANNEL", "TELEGRAM_HOME_CHANNEL_NAME",
-    "SLACK_HOME_CHANNEL", "SLACK_HOME_CHANNEL_NAME",
-    "SIGNAL_ACCOUNT", "SIGNAL_HTTP_URL",
-    "SIGNAL_ALLOWED_USERS", "SIGNAL_GROUP_ALLOWED_USERS",
-    "SIGNAL_HOME_CHANNEL", "SIGNAL_HOME_CHANNEL_NAME",
-    "SMS_HOME_CHANNEL", "SMS_HOME_CHANNEL_NAME",
-    "DINGTALK_CLIENT_ID", "DINGTALK_CLIENT_SECRET",
-    "DINGTALK_HOME_CHANNEL", "DINGTALK_HOME_CHANNEL_NAME",
-    "FEISHU_APP_ID", "FEISHU_APP_SECRET", "FEISHU_ENCRYPT_KEY", "FEISHU_VERIFICATION_TOKEN",
-    "FEISHU_HOME_CHANNEL", "FEISHU_HOME_CHANNEL_NAME",
-    "YUANBAO_HOME_CHANNEL", "YUANBAO_HOME_CHANNEL_NAME",
-    "WECOM_BOT_ID", "WECOM_SECRET",
-    "WECOM_CALLBACK_CORP_ID", "WECOM_CALLBACK_CORP_SECRET", "WECOM_CALLBACK_AGENT_ID",
-    "WECOM_CALLBACK_TOKEN", "WECOM_CALLBACK_ENCODING_AES_KEY",
-    "WECOM_CALLBACK_HOST", "WECOM_CALLBACK_PORT",
-    "WECOM_HOME_CHANNEL", "WECOM_HOME_CHANNEL_NAME",
-    "WEIXIN_ACCOUNT_ID", "WEIXIN_TOKEN", "WEIXIN_BASE_URL", "WEIXIN_CDN_BASE_URL",
-    "WEIXIN_HOME_CHANNEL", "WEIXIN_HOME_CHANNEL_NAME", "WEIXIN_DM_POLICY", "WEIXIN_GROUP_POLICY",
-    "WEIXIN_ALLOWED_USERS", "WEIXIN_GROUP_ALLOWED_USERS", "WEIXIN_ALLOW_ALL_USERS",
-    "BLUEBUBBLES_SERVER_URL", "BLUEBUBBLES_PASSWORD",
-    "BLUEBUBBLES_HOME_CHANNEL", "BLUEBUBBLES_HOME_CHANNEL_NAME",
-    "QQ_APP_ID", "QQ_CLIENT_SECRET", "QQBOT_HOME_CHANNEL", "QQBOT_HOME_CHANNEL_NAME",
-    "QQ_HOME_CHANNEL", "QQ_HOME_CHANNEL_NAME",  # legacy aliases (pre-rename, still read for back-compat)
-    "QQ_ALLOWED_USERS", "QQ_GROUP_ALLOWED_USERS", "QQ_ALLOW_ALL_USERS", "QQ_MARKDOWN_SUPPORT",
-    "QQ_STT_API_KEY", "QQ_STT_BASE_URL", "QQ_STT_MODEL",
-    "IRC_SERVER", "IRC_PORT", "IRC_NICKNAME", "IRC_CHANNEL",
-    "IRC_USE_TLS", "IRC_SERVER_PASSWORD", "IRC_NICKSERV_PASSWORD",
-    "TERMINAL_ENV", "TERMINAL_SSH_KEY", "TERMINAL_SSH_PORT",
-    "WHATSAPP_MODE", "WHATSAPP_ENABLED",
-    "MATTERMOST_HOME_CHANNEL", "MATTERMOST_HOME_CHANNEL_NAME", "MATTERMOST_REPLY_MODE",
-    "MATRIX_PASSWORD", "MATRIX_ENCRYPTION", "MATRIX_DEVICE_ID", "MATRIX_HOME_ROOM",
-    "MATRIX_REQUIRE_MENTION", "MATRIX_FREE_RESPONSE_ROOMS", "MATRIX_AUTO_THREAD", "MATRIX_DM_AUTO_THREAD",
-    "MATRIX_RECOVERY_KEY",
-    # Langfuse observability plugin — optional tuning keys + standard SDK vars.
-    # Activation is via plugins.enabled (opt-in through
-    # `superforecasting-agent plugins enable observability/langfuse`);
-    # credentials gate the plugin at runtime.
-    "FORECAST_LANGFUSE_PUBLIC_KEY", "HERMES_LANGFUSE_PUBLIC_KEY",
-    "FORECAST_LANGFUSE_SECRET_KEY", "HERMES_LANGFUSE_SECRET_KEY",
-    "FORECAST_LANGFUSE_BASE_URL", "HERMES_LANGFUSE_BASE_URL",
-    "SUPERFORECASTING_AGENT_LANGFUSE_ENV", "FORECAST_LANGFUSE_ENV", "HERMES_LANGFUSE_ENV",
-    "SUPERFORECASTING_AGENT_LANGFUSE_RELEASE", "FORECAST_LANGFUSE_RELEASE", "HERMES_LANGFUSE_RELEASE",
-    "SUPERFORECASTING_AGENT_LANGFUSE_SAMPLE_RATE", "FORECAST_LANGFUSE_SAMPLE_RATE", "HERMES_LANGFUSE_SAMPLE_RATE",
-    "SUPERFORECASTING_AGENT_LANGFUSE_MAX_CHARS", "FORECAST_LANGFUSE_MAX_CHARS", "HERMES_LANGFUSE_MAX_CHARS",
-    "SUPERFORECASTING_AGENT_LANGFUSE_DEBUG", "FORECAST_LANGFUSE_DEBUG", "HERMES_LANGFUSE_DEBUG",
-    "LANGFUSE_PUBLIC_KEY",
-    "LANGFUSE_SECRET_KEY",
-    "LANGFUSE_BASE_URL",
-    "LANGFUSE_ENV",
-    "LANGFUSE_RELEASE",
-    "FORECAST_PREFILL_MESSAGES_FILE",
-    "HERMES_PREFILL_MESSAGES_FILE",
-    "FORECAST_EPHEMERAL_SYSTEM_PROMPT",
-    "HERMES_EPHEMERAL_SYSTEM_PROMPT",
-})
+from superforecasting_agent.configuration.environment_catalog import _EXTRA_ENV_KEYS as _EXTRA_ENV_KEYS
 import yaml
 
 from superforecasting_agent.runtime.colors import Colors, color
@@ -292,42 +202,17 @@ from superforecasting_agent.runtime.default_soul import DEFAULT_SOUL_MD
 # Managed mode (NixOS declarative config)
 # =============================================================================
 
-_MANAGED_TRUE_VALUES = ("true", "1", "yes")
-_MANAGED_SYSTEM_NAMES = {
-    "brew": "Homebrew",
-    "homebrew": "Homebrew",
-    "nix": "NixOS",
-    "nixos": "NixOS",
-}
-_MANAGED_ENV_NAMES = (
-    "SUPERFORECASTING_AGENT_MANAGED",
-    "FORECAST_MANAGED",
-    "HERMES_MANAGED",
-)
-
 
 def _managed_env_setting() -> tuple[str, str]:
-    """Return the first non-empty managed-install env setting."""
-    for name in _MANAGED_ENV_NAMES:
-        raw = os.getenv(name, "").strip()
-        if raw:
-            return name, raw
-    return "HERMES_MANAGED", ""
+    from superforecasting_agent.installation import _managed_env_setting as setting
+
+    return setting()
 
 
 def get_managed_system() -> Optional[str]:
-    """Return the package manager owning this install, if any."""
-    _env_name, raw = _managed_env_setting()
-    if raw:
-        normalized = raw.lower()
-        if normalized in _MANAGED_TRUE_VALUES:
-            return "NixOS"
-        return _MANAGED_SYSTEM_NAMES.get(normalized, raw)
+    from superforecasting_agent.installation import get_managed_system as detect
 
-    managed_marker = get_agent_home() / ".managed"
-    if managed_marker.exists():
-        return "NixOS"
-    return None
+    return detect(get_agent_home())
 
 
 def is_managed() -> bool:
@@ -425,33 +310,10 @@ def recommended_update_command() -> str:
 
 
 def format_managed_message(action: str = "modify this Superforecasting Agent installation") -> str:
-    """Build a user-facing error for managed installs."""
-    managed_system = get_managed_system() or "a package manager"
-    env_name, raw_value = _managed_env_setting()
-    raw = raw_value.lower()
+    from superforecasting_agent.installation import format_managed_message as format_message
 
-    if managed_system == "NixOS":
-        env_hint = "true" if raw in _MANAGED_TRUE_VALUES else raw or "true"
-        return (
-            f"Cannot {action}: this Superforecasting Agent installation is managed by NixOS "
-            f"({env_name}={env_hint}).\n"
-            "Edit services.superforecasting-agent.settings in your configuration.nix and run:\n"
-            "  sudo nixos-rebuild switch"
-        )
+    return format_message(action, system=get_managed_system(), setting=_managed_env_setting())
 
-    if managed_system == "Homebrew":
-        env_hint = raw or "homebrew"
-        return (
-            f"Cannot {action}: this Superforecasting Agent installation is managed by Homebrew "
-            f"({env_name}={env_hint}).\n"
-            "Use:\n"
-            "  brew upgrade superforecasting-agent"
-        )
-
-    return (
-        f"Cannot {action}: this Superforecasting Agent installation is managed by {managed_system}.\n"
-        "Use your package manager to upgrade or reinstall Superforecasting Agent."
-    )
 
 def managed_error(action: str = "modify configuration"):
     """Print user-friendly error for managed mode."""
@@ -513,7 +375,7 @@ def get_container_exec_info() -> Optional[dict]:
 
 # Re-export from superforecasting_agent.constants — canonical definition lives there.
 from superforecasting_agent.constants import get_agent_home, display_agent_home  # noqa: F811,E402
-from superforecasting_agent.storage.files import atomic_replace
+from superforecasting_agent.storage.files import atomic_replace, owned_text_descriptor
 
 def get_config_path() -> Path:
     """Get the main config file path."""
@@ -658,1617 +520,16 @@ def _ensure_hermes_home_managed(home: Path):
 # Config loading/saving
 # =============================================================================
 
-DEFAULT_CONFIG = {
-    "model": "",
-    "providers": {},
-    "fallback_providers": [],
-    "credential_pool_strategies": {},
-    "toolsets": ["forecast-desk"],
-    # Quorum — model-diverse forecast panel ("Fusion" analogue). When
-    # default_enabled is on, a quorum AUTO-RUNS (detached background job) at the
-    # update stage wherever a deliberative panel is already indicated (see
-    # default_scope), attaching to the just-committed snapshot — so a lazy prompter
-    # gets multi-model fusion without passing flags every time. Bounded by
-    # default_scope (which updates qualify) and max_calls (the per-run cost cap);
-    # an auto-run failure is fail-open (the commit already happened). See
-    # forecasting/quorum.py.
-    "quorum": {
-        # Auto-run a quorum panel when a panel is indicated. ENABLED by default:
-        # the north-star is superforecaster-grade process per keystroke, bounded
-        # by default_scope + max_calls below.
-        "default_enabled": True,
-        # Which indicated panels get an auto-run quorum when default_enabled:
-        #   "high_impact" — only high-impact / first-forecast (the existing
-        #                   panel trigger). Keeps the multi-model spend bounded.
-        #   "always"      — every probability-bearing update (expensive).
-        #   "first_only"  — only the first forecast for a question.
-        "default_scope": "high_impact",
-        # Per-run model-call CAP. A resolved preset whose pre-run call estimate
-        # ((models+1 judge) × delphi multiplier) exceeds this is DOWNGRADED to the
-        # largest fitting preset (dropping the Delphi round first). Applies to the
-        # auto-run path AND manual runs that pass no explicit --preset.
-        "max_calls": 12,
-        # Default panel preset when none is passed: frontier | budget | self.
-        "preset": "frontier",
-        # Optional explicit model list (OpenRouter ids); overrides the preset.
-        "models": [],
-        # Judge model for the synthesis pass. Empty = preset default.
-        "judge": "",
-        # Pooling: trimmed_geomean_odds | log_odds_pool | median.
-        "pool_method": "trimmed_geomean_odds",
-        "trim": 1,
-        # Per-panelist runtime ceiling (seconds) and tool-iteration cap.
-        "model_timeout": 300,
-        "max_iterations": 30,
-        # GATE 2 (AIA P1.1, live) — agentic-supervisor fresh-search loop. When ON
-        # and the judge flags an unresolved crux (information_gap +
-        # clarifying_queries), the supervisor runs a bounded real web/news search
-        # and re-synthesises once on the fresh evidence — the only path to BEATING
-        # the market (the closed-book LLM has no intrinsic edge). DEFAULT ON for LIVE
-        # quorum runs (the audit's finding #1: it had fired 0/223 times while OFF).
-        # It is BOUNDED (max_research_rounds clamped to 3, per-round query/result
-        # caps) and LEAK-SAFE: the run_quorum/quorum-jobs path gates it OFF
-        # AUTOMATICALLY for a historical evidence_cutoff (backtest/replay), so fresh
-        # present-day search can never leak into a past-pinned forecast. Set to False
-        # here to disable it fleet-wide, or per-run with
-        # `forecast quorum --supervisor-search`/`--no-supervisor-search`.
-        "supervisor_search": True,
-        # TRACK-RECORD PANELIST WEIGHTING (S7). Weight each panelist by its measured
-        # Brier edge over past resolved binaries (shrunk toward 1.0, clipped). DEFAULT
-        # ON but HARMLESS-BY-CONSTRUCTION on cold start: a model must clear the
-        # resolved-sample gate (track_record_min_sample) before its weight moves off
-        # 1.0, so with no history every panelist is equal-weighted and the committed
-        # number is byte-identical to the unweighted pool. The applied weights are
-        # echoed in the quorum result so the operator sees why. Set False to force
-        # equal weights always.
-        "track_record_weights": True,
-        # Resolved-binary sample a model must clear before its measured weight is
-        # trusted (below it: weight 1.0). No model dominates early.
-        "track_record_min_sample": 10,
-    },
-    "forecasting": {
-        # Terminal-calibration derivation. EVIDENCE-GATED EXTREMIZATION (item 6):
-        # when derive_alpha is ON and a question carries NO explicit per-question
-        # alpha_extremize override, the quorum derives its terminal Platt slope from
-        # the domain's RESOLVED calibration via the validated extremization gate
-        # (sqrt(3) permitted only where the scope is measurably under-confident;
-        # 1.0 otherwise). DEFAULT OFF (fail-safe cold start): until a desk has enough
-        # resolved binaries per domain, the derived value is 1.0 anyway, and leaving
-        # it off keeps every committed number byte-identical to the hand-set/identity
-        # slope. An explicit metadata alpha_extremize ALWAYS wins over derivation.
-        "calibration": {
-            "derive_alpha": False,
-        },
-        # Forecast saturation + style HOOKS: commit-time checks that block or warn
-        # when a forecast is under-saturated (no decomposition, stale evidence, no
-        # panel, missing citations, unjustified tail mass) or violates house style.
-        # See `forecast hooks ...` to inspect / tune / author rules.
-        "hooks": {
-            # Master switch. False -> every rule is advisory (nothing blocks).
-            "enabled": True,
-            # Baseline profile: exploratory-lenient | standard | strict | superforecaster.
-            # "standard" is the default enforcement tier; "superforecaster" is the
-            # opt-in "10/10 or blocked" tier (every gate ERROR).
-            "profile": "standard",
-            # Bump a question up/down the strictness ladder by its impact, with no
-            # per-question config (ladder: exploratory-lenient < standard < strict).
-            # Default 0 = no auto-bump (high-impact already hard-requires a panel via
-            # the panel gate). Set high.delta=1 to opt a desk into FULL strictness on
-            # high-impact forecasts (also require citations, decision card, tail paths).
-            "impact_scaling": {"high": {"delta": 0}, "medium": {"delta": 0}, "low": {"delta": 0}},
-            # Non-live origins never block (advisory only); "inherit" keeps the profile.
-            "origin_scaling": {"exploratory": "off", "backtest": "off", "imported_baseline": "off", "live": "inherit"},
-            # Per-rule severity overrides (off | warn | error), applied after the
-            # profile. Keys are built-in rule ids or user-rule ids.
-            "overrides": {},
-            # User-defined rules: a workspace file of declarative rule specs (Phase 5).
-            "rules_file": "hooks/rules.yaml",
-            "rules": [],
-        },
-        # Recurrence-by-default: committing the first forecast idempotently installs
-        # a nightly no-agent self-check cron (auto-score + auto-postmortem + thesis
-        # aggregate + lesson synthesis + deterministic refresh) so forecasts stay
-        # fresh without the operator remembering to schedule anything. Cheap + silent
-        # when the cron is already installed.
-        "cron": {
-            # False -> never auto-install the nightly cron at commit time (explicit
-            # `forecast freshen` / `keep_fresh` still install it on demand).
-            "auto_install": True,
-            # Install the bounded warning worker with the nightly routine. It owns
-            # high-severity alert liveness and uses transactional spend leases.
-            "warning_automode_auto_install": True,
-        },
-        # Gateway DUE-SWEEPER: the Desk shows a review as "due now" the instant its
-        # next_run_at passes, but historically only the NIGHTLY self-check cron
-        # ACTED on due-ness — a review due at 09:00 sat idle until the next 08:00
-        # tick. While the gateway runs, its cron ticker also checks (on this cadence)
-        # whether any scheduled review is due and, if so, runs the SAME deterministic
-        # sweep the nightly does (refresh + self-check + saturation + free-tier drain;
-        # NO agent/LLM). Guarded against concurrent sweeps and against doubling the
-        # nightly cron's work.
-        "reviews": {
-            # Minutes between gateway due-sweeps (0 disables — the nightly cron stays
-            # the only executor). Cheap when nothing is due (one indexed COUNT).
-            "sweep_interval_minutes": 10,
-        },
-        # VOI-directed research + the research-adequacy judge (research_audit.py):
-        # the research stage plans against the question's OWN levers (update
-        # triggers, change_my_mind, outcome paths) and, before finishing, audits
-        # whether the evidence set is adequate (reference class present, evidence
-        # floor, source independence, disconfirming evidence, recency, trigger
-        # coverage). The chain loop re-runs research when the deterministic audit
-        # says inadequate, up to `max_audit_rounds` EXTRA passes.
-        "research": {
-            # A forecast is "research-adequate" when it clears the ERROR-weight
-            # checks (reference class + evidence floor) AND scores >= this out of
-            # 100. Also the WARN/ERROR threshold for the `research_adequate` hook.
-            "adequacy_threshold": 70,
-            # Max EXTRA research passes the chain loop runs when the post-research
-            # audit reports the evidence set is inadequate (0 = never re-run).
-            "max_audit_rounds": 2,
-        },
-        # Operator practice loop (R2): the desk's goal is to make the OPERATOR a
-        # superforecaster, not only to score itself. When estimate_first is ON,
-        # the agent ASKS the user for THEIR probability BEFORE revealing its own
-        # number on a new-question / update conversation, records it (context
-        # 'practice'), then proceeds — so the human builds a scored track record.
-        # DEFAULT OFF: strictly opt-in; with it off the chat/update prompts are
-        # byte-identical to before (no elicitation sentence is injected).
-        "practice": {
-            "estimate_first": False,
-        },
-        # R4 Living Models: Market Models are scored at resolution (Brier for a
-        # binary projection; interval coverage + absolute error for a numeric one),
-        # a per-model SKILL accrues on-read from those scores, and the deterministic
-        # forecast refresh scales each model-sourced ensemble component's weight by
-        # its model's skill multiplier before re-pooling.
-        "models": {
-            # Weight model-sourced components by measured skill in the deterministic
-            # re-pool. DEFAULT ON but HARMLESS-BY-CONSTRUCTION on cold start: a model
-            # must clear the resolved-binary sample gate before its multiplier moves
-            # off 1.0, so with no history the pooled number is byte-identical to the
-            # unweighted re-pool. Applied multipliers are echoed in the snapshot
-            # metadata (refresh.skill_multipliers). Set False to force identity.
-            "skill_weights": True,
-        },
-        # Free-tier warning DRAIN by default: the nightly self-check ends with a
-        # zero-token-spend sweep that RESOLVES the free-tier open-alert backlog
-        # through REAL gated work (score / postmortem / watched-source re-check /
-        # bookkeeping close-out) — never the paid (LLM reforecast/evidence) or manual
-        # (operator-judgment, incl. contested_label) kinds. Free warnings that merely
-        # capture changed source data + write it to the ledger drain themselves
-        # instead of piling up as operator to-dos. See docs/scheduled-routines.md.
-        "warnings": {
-            # False -> the nightly free-tier drain never runs (the standalone
-            # `forecast warnings automode` command still drains on demand).
-            "auto_free_tier": True,
-            # Max free-tier alerts drained per nightly sweep. A large backlog drains
-            # over a few nights (1,250 at 500/sweep ~= 3 nights), or immediately via
-            # `forecast warnings automode`. 0 disables the drain.
-            "free_tier_sweep_cap": 500,
-        },
-        # MarketNightly A/B research arm (forecasting/market_nightly.py): the
-        # foreknowledge-proof live benchmark can forecast each OPEN market with the
-        # PLAIN agent-protocol packet or the VOI research-disciplined packet (VOI
-        # research plan + adequacy source-coverage floor) so the Arc-2 research lift
-        # becomes ATTRIBUTABLE on the only scoreboard that can prove it.
-        "market_nightly": {
-            # Default arm for `forecast market-nightly run` (override per-run with
-            # --research-arm):
-            #   plain -> the plain packet (the existing accrued record),
-            #   voi   -> the research-disciplined packet,
-            #   both  -> forecast each market with BOTH arms (2x LLM calls),
-            #            recording two pendings so `report` shows the PAIRED
-            #            voi-vs-plain Brier delta.
-            # DEFAULT 'plain' so the accrued record stays comparable going forward.
-            "research_arm": "plain",
-        },
-    },
-    "agent": {
-        "max_turns": 90,
-        # Inactivity timeout for gateway agent execution (seconds).
-        # The agent can run indefinitely as long as it's actively calling
-        # tools or receiving API responses.  Only fires when the agent has
-        # been completely idle for this duration.  0 = unlimited.
-        "gateway_timeout": 1800,
-        # Graceful drain timeout for gateway stop/restart (seconds).
-        # The gateway stops accepting new work, waits for running agents
-        # to finish, then interrupts any remaining runs after the timeout.
-        # 0 = no drain, interrupt immediately.
-        #
-        # 180s is calibrated for realistic in-flight agent turns: a typical
-        # coding conversation mid-reasoning runs 60–150s per call, so a 60s
-        # budget routinely interrupted legitimate work on /restart. Raise
-        # further in config.yaml if you run very-long-reasoning models.
-        "restart_drain_timeout": 180,
-        # Max app-level retry attempts for API errors (connection drops,
-        # provider timeouts, 5xx, etc.) before the agent surfaces the
-        # failure.  The OpenAI SDK already does its own low-level retries
-        # (max_retries=2 default) for transient network errors; this is
-        # the Hermes-level retry loop that wraps the whole call.  Lower
-        # this to 1 if you use fallback providers and want fast failover
-        # on flaky primaries; raise it if you prefer to tolerate longer
-        # provider hiccups on a single provider.
-        "api_max_retries": 3,
-        "service_tier": "",
-        # Codex/OpenAI reasoning summary verbosity for the visible reasoning
-        # display (Responses API ``reasoning.summary``). "detailed" (default)
-        # returns the FULLER, readable prose summary; "concise" is shorter;
-        # "auto" returns the compressed, note-form ("caveman") summary OpenAI
-        # picks on its own. Tradeoff: "detailed" summaries are longer, so they
-        # consume more reasoning tokens. Only affects codex_responses models
-        # (gpt-5.x / ChatGPT-OAuth); grok and other backends ignore it.
-        "reasoning_summary": "detailed",
-        # Tool-use enforcement: injects system prompt guidance that tells the
-        # model to actually call tools instead of describing intended actions.
-        # Values: "auto" (default — applies to gpt/codex models), true/false
-        # (force on/off for all models), or a list of model-name substrings
-        # to match (e.g. ["gpt", "codex", "gemini", "qwen"]).
-        "tool_use_enforcement": "auto",
-        # Staged inactivity warning: send a warning to the user at this
-        # threshold before escalating to a full timeout.  The warning fires
-        # once per run and does not interrupt the agent.  0 = disable warning.
-        "gateway_timeout_warning": 900,
-        # Maximum time (seconds) the gateway will block an agent waiting for
-        # a clarify-tool response from the user.  Hit this and the agent
-        # unblocks with "[user did not respond within Xm]" so it can adapt
-        # rather than pinning the running-agent guard forever.  CLI clarify
-        # blocks indefinitely (input() is synchronous) and ignores this.
-        "clarify_timeout": 600,
-        # Periodic "still working" notification interval (seconds).
-        # Sends a status message every N seconds so the user knows the
-        # agent hasn't died during long tasks.  0 = disable notifications.
-        # Lower values mean faster feedback on slow tasks but more chat
-        # noise; 180s is a compromise that catches spinning weak-model runs
-        # (60+ tool iterations with tiny output) before users assume the
-        # bot is dead and /restart.
-        "gateway_notify_interval": 180,
-        # Freshness window for the gateway auto-continue note (seconds).
-        # After a gateway crash/restart/SIGTERM mid-run, the next user
-        # message gets a "[System note: your previous turn was
-        # interrupted — process the unfinished tool result(s) first]"
-        # prepended so the model picks up where it left off.  That's the
-        # right behaviour while the interruption is fresh, but stale
-        # markers (transcript last touched hours or days ago) can revive
-        # an unrelated old task when the user's next message starts new
-        # work.  This window is the max age of the last persisted
-        # transcript row for which we still inject the continue note.
-        # Default 3600s comfortably covers a long turn (gateway_timeout
-        # default is 1800s) plus runtime slack.  Set to 0 to disable the
-        # gate and restore pre-fix behaviour (always inject).
-        "gateway_auto_continue_freshness": 3600,
-        # How user-attached images are presented to the main model on each turn.
-        #   "auto"   — attach natively when the active model reports
-        #              supports_vision=True AND the user hasn't explicitly
-        #              configured auxiliary.vision.provider.  Otherwise fall
-        #              back to text (vision_analyze pre-analysis).
-        #   "native" — always attach natively; non-vision models will either
-        #              error at the provider or get a last-chance text fallback
-        #              (see run_agent._prepare_messages_for_api).
-        #   "text"   — always pre-analyze with vision_analyze and prepend the
-        #              description as text; the main model never sees pixels.
-        # Affects gateway platforms, the TUI, and CLI /attach.  vision_analyze
-        # remains available as a tool regardless of this setting — the routing
-        # only controls how inbound user images are presented.
-        "image_input_mode": "auto",
-        "disabled_toolsets": [],
-    },
-    
-    "terminal": {
-        "backend": "local",
-        "modal_mode": "auto",
-        "cwd": ".",  # Use current directory
-        "timeout": 180,
-        # Environment variables to pass through to sandboxed execution
-        # (terminal and execute_code).  Skill-declared required_environment_variables
-        # are passed through automatically; this list is for non-skill use cases.
-        "env_passthrough": [],
-        # Extra files to source in the login shell when building the
-        # per-session environment snapshot.  Use this when tools like nvm,
-        # pyenv, asdf, or custom PATH entries are registered by files that
-        # a bash login shell would skip — most commonly ``~/.bashrc``
-        # (bash doesn't source bashrc in non-interactive login mode) or
-        # zsh-specific files like ``~/.zshrc`` / ``~/.zprofile``.
-        # Paths support ``~`` / ``${VAR}``. Missing files are silently
-        # skipped. When empty, Superforecasting Agent auto-sources ``~/.profile``,
-        # ``~/.bash_profile``, and ``~/.bashrc`` (in that order) if the
-        # snapshot shell is bash (this is the ``auto_source_bashrc``
-        # behaviour — disable with that key if you want strict login-only
-        # semantics).
-        "shell_init_files": [],
-        # When true (default), Superforecasting Agent sources the user's shell rc files
-        # (``~/.profile``, ``~/.bash_profile``, ``~/.bashrc``) in the
-        # login shell used to build the environment snapshot. This
-        # captures PATH additions, shell functions, and aliases — which a
-        # plain ``bash -l -c`` would otherwise miss because bash skips
-        # bashrc in non-interactive login mode, and because a default
-        # Debian/Ubuntu ``~/.bashrc`` short-circuits on non-interactive
-        # sources. ``~/.profile`` and ``~/.bash_profile`` are tried first
-        # because ``n`` / ``nvm`` / ``asdf`` installers typically write
-        # their PATH exports there without an interactivity guard. Turn
-        # this off if your rc files misbehave when sourced
-        # non-interactively (e.g. one that hard-exits on TTY checks).
-        "auto_source_bashrc": True,
-        "docker_image": "nikolaik/python-nodejs:python3.11-nodejs20",
-        "docker_forward_env": [],
-        # Explicit environment variables to set inside Docker containers.
-        # Unlike docker_forward_env (which reads values from the host process),
-        # docker_env lets you specify exact key-value pairs — useful when the
-        # agent runs as a systemd service without access to the user's shell
-        # environment.
-        # Example: {"SSH_AUTH_SOCK": "/run/user/1000/ssh-agent.sock"}
-        "docker_env": {},
-        "singularity_image": "docker://nikolaik/python-nodejs:python3.11-nodejs20",
-        "modal_image": "nikolaik/python-nodejs:python3.11-nodejs20",
-        "daytona_image": "nikolaik/python-nodejs:python3.11-nodejs20",
-        "vercel_runtime": "node24",
-        # Container resource limits (docker, singularity, modal, daytona, vercel_sandbox — ignored for local/ssh)
-        "container_cpu": 1,
-        "container_memory": 5120,       # MB (default 5GB)
-        "container_disk": 51200,        # MB (default 50GB)
-        "container_persistent": True,   # Persist filesystem across sessions
-        # Docker volume mounts — share host directories with the container.
-        # Each entry is "host_path:container_path" (standard Docker -v syntax).
-        # Example:
-        # ["/home/user/projects:/workspace/projects",
-        #  "/home/user/.hermes/cache/documents:/output"]
-        # For gateway MEDIA delivery, write inside Docker to /output/... and emit
-        # the host-visible path in MEDIA:, not the container path.
-        "docker_volumes": [],
-        # Explicit opt-in: mount the host cwd into /workspace for Docker sessions.
-        # Default off because passing host directories into a sandbox weakens isolation.
-        "docker_mount_cwd_to_workspace": False,
-        "docker_extra_args": [],        # Extra flags passed verbatim to docker run
-        # Explicit opt-in: run the Docker container as the host user's uid:gid
-        # (via `--user`).  When enabled, files written into bind-mounted dirs
-        # (docker_volumes, the persistent workspace, or the auto-mounted cwd)
-        # are owned by your host user instead of root, which avoids needing
-        # `sudo chown` after container runs. Default off to preserve behavior
-        # for images whose entrypoints expect to start as root (e.g. the
-        # bundled Hermes image, which drops to the `hermes` user via gosu).
-        # When on, SETUID/SETGID caps are omitted from the container since
-        # no privilege drop is needed.
-        "docker_run_as_host_user": False,
-        # Persistent shell — keep a long-lived bash shell across execute() calls
-        # so cwd/env vars/shell variables survive between commands.
-        # Enabled by default for non-local backends (SSH); local is always opt-in
-        # via TERMINAL_LOCAL_PERSISTENT env var.
-        "persistent_shell": True,
-    },
-
-    "web": {
-        "backend": "",           # shared fallback — applies to both search and extract
-        "search_backend": "",    # per-capability override for web_search (e.g. "searxng")
-        "extract_backend": "",   # per-capability override for web_extract (e.g. "native")
-        "extract_char_limit": 15000,  # per-page char budget for web_extract; larger pages truncate + store full text in cache/web
-    },
-
-    "browser": {
-        "inactivity_timeout": 120,
-        "command_timeout": 30,  # Timeout for browser commands in seconds (screenshot, navigate, etc.)
-        "record_sessions": False,  # Auto-record browser sessions as WebM videos
-        "allow_private_urls": False,  # Allow navigating to private/internal IPs (localhost, 192.168.x.x, etc.)
-        # Browser engine for local mode.  Passed as ``--engine <value>`` to
-        # agent-browser v0.25.3+.
-        # "auto"       — use Chrome (default, don't pass --engine at all)
-        # "lightpanda" — use Lightpanda (1.3-5.8x faster navigation, no screenshots)
-        # "chrome"     — explicitly request Chrome
-        # Also settable via AGENT_BROWSER_ENGINE env var.
-        "engine": "auto",
-        "auto_local_for_private_urls": True,  # When a cloud provider is set, auto-spawn local Chromium for LAN/localhost URLs instead of sending them to the cloud
-        "cdp_url": "",  # Optional persistent CDP endpoint for attaching to an existing Chromium/Chrome
-        # CDP supervisor — dialog + frame detection via a persistent WebSocket.
-        # Active only when a CDP-capable backend is attached (Browserbase or
-        # local Chrome via /browser connect). See
-        # website/docs/developer-guide/browser-supervisor.md.
-        "dialog_policy": "must_respond",  # must_respond | auto_dismiss | auto_accept
-        "dialog_timeout_s": 300,  # Safety auto-dismiss after N seconds under must_respond
-        "camofox": {
-            # When true, the agent sends a stable profile-scoped userId to Camofox
-            # so the server maps it to a persistent Firefox profile automatically.
-            # When false (default), each session gets a random userId (ephemeral).
-            "managed_persistence": False,
-            # Optional externally managed Camofox identity. Useful when another
-            # app owns the visible browser and Superforecasting Agent should operate in it.
-            "user_id": "",
-            "session_key": "",
-            # Rehydrate tab_id from Camofox before creating a new tab.
-            "adopt_existing_tab": False,
-        },
-    },
-
-    # Filesystem checkpoints — automatic snapshots before destructive file ops.
-    # When enabled, the agent takes a snapshot of the working directory once
-    # per forecast-support turn (on first write_file/patch call).  Use /rollback
-    # to restore.
-    #
-    # Defaults changed in v2 (single shared shadow store, real pruning):
-    #   - enabled: True -> False   (opt-in; most users never use /rollback)
-    #   - max_snapshots: 50 -> 20  (now actually enforced via ref rewrite)
-    #   - auto_prune:   False -> True (orphans/stale pruned automatically)
-    # Opt in via ``superforecasting-agent desk --checkpoints`` or set enabled=True here.
-    "checkpoints": {
-        "enabled": False,
-        # Max checkpoints to keep per working directory.  Pre-v2 this only
-        # limited the `/rollback` listing; v2 actually rewrites the ref and
-        # garbage-collects older commits.
-        "max_snapshots": 20,
-        # Hard ceiling on total active agent-home ``checkpoints/`` size (MB). When
-        # exceeded, the oldest checkpoint per project is dropped in a
-        # round-robin pass until total size falls under the cap.
-        # 0 disables the size cap.
-        "max_total_size_mb": 500,
-        # Skip any single file larger than this when staging a checkpoint.
-        # Prevents accidental snapshotting of datasets, model weights, and
-        # other large generated assets.  0 disables the filter.
-        "max_file_size_mb": 10,
-        # Auto-maintenance: hermes sweeps the checkpoint base at startup
-        # (at most once per ``min_interval_hours``) and:
-        #   * deletes project entries whose workdir no longer exists (orphan)
-        #   * deletes project entries whose last_touch is older than
-        #     ``retention_days``
-        #   * GCs the single shared store to reclaim unreachable objects
-        #   * enforces ``max_total_size_mb`` across remaining projects
-        #   * deletes ``legacy-*`` archives older than ``retention_days``
-        "auto_prune": True,
-        "retention_days": 7,
-        "delete_orphans": True,
-        "min_interval_hours": 24,
-    },
-
-    # Maximum characters returned by a single read_file call.  Reads that
-    # exceed this are rejected with guidance to use offset+limit.
-    # 100K chars ≈ 25–35K tokens across typical tokenisers.
-    "file_read_max_chars": 100_000,
-
-    # Tool-output truncation thresholds. When terminal output or a
-    # single read_file page exceeds these limits, Hermes truncates the
-    # payload sent to the model (keeping head + tail for terminal,
-    # enforcing pagination for read_file). Tuning these trades context
-    # footprint against how much raw output the model can see in one
-    # shot. Ported from anomalyco/opencode PR #23770.
-    #
-    # - max_bytes:       terminal_tool output cap, in chars
-    #                    (default 50_000 ≈ 12-15K tokens).
-    # - max_lines:       read_file pagination cap — the maximum `limit`
-    #                    a single read_file call can request before
-    #                    being clamped (default 2000).
-    # - max_line_length: per-line cap applied when read_file emits a
-    #                    line-numbered view (default 2000 chars).
-    "tool_output": {
-        "max_bytes": 50_000,
-        "max_lines": 2000,
-        "max_line_length": 2000,
-    },
-
-    # Tool loop guardrails nudge models when they repeat failed or
-    # non-progressing tool calls. Soft warnings are always-on by default;
-    # hard stops are opt-in so interactive CLI/TUI sessions keep flowing.
-    "tool_loop_guardrails": {
-        "warnings_enabled": True,
-        "hard_stop_enabled": False,
-        "warn_after": {
-            "exact_failure": 2,
-            "same_tool_failure": 3,
-            "idempotent_no_progress": 2,
-        },
-        "hard_stop_after": {
-            "exact_failure": 5,
-            "same_tool_failure": 8,
-            "idempotent_no_progress": 5,
-        },
-    },
-
-    "compression": {
-        "enabled": True,
-        "threshold": 0.50,            # compress when context usage exceeds this ratio
-        "target_ratio": 0.20,         # fraction of threshold to preserve as recent tail
-        "protect_last_n": 20,         # minimum recent messages to keep uncompressed
-        "hygiene_hard_message_limit": 400,  # gateway session-hygiene force-compress threshold by message count
-        "protect_first_n": 3,         # non-system head messages always preserved
-                                      # verbatim, in ADDITION to the system prompt
-                                      # (which is always implicitly protected). Set to
-                                      # 0 for long-running rolling-compaction sessions
-                                      # where you want nothing pinned except the
-                                      # system prompt + rolling summary + recent tail.
-        "abort_on_summary_failure": False,  # When True, auto-compression that fails
-                                      # to generate a summary (aux LLM errored / returned
-                                      # non-JSON / timed out) aborts entirely instead of
-                                      # dropping the middle window with a static
-                                      # "summary unavailable" placeholder.  Messages are
-                                      # preserved unchanged and the session "freezes" at
-                                      # its current size until the user runs /compress
-                                      # (which bypasses the failure cooldown) or /new.
-                                      # Default False matches historical behavior; set to
-                                      # True if you'd rather pause than silently lose
-                                      # context turns when your aux model is flaky.
-    },
-
-    # Anthropic prompt caching (Claude via OpenRouter or native Anthropic API).
-    # cache_ttl must be "5m" or "1h" (Anthropic-supported tiers); other values are ignored.
-    "prompt_caching": {
-        "cache_ttl": "5m",
-    },
-
-    # OpenRouter-specific settings.
-    # response_cache: enable OpenRouter response caching (X-OpenRouter-Cache header).
-    #   When enabled, identical requests return cached responses for free (zero billing).
-    #   This is separate from Anthropic prompt caching and works alongside it.
-    #   See: https://openrouter.ai/docs/guides/features/response-caching
-    # response_cache_ttl: how long cached responses remain valid, in seconds (1-86400).
-    #   Default 300 (5 minutes). Only used when response_cache is enabled.
-    # min_coding_score: knob for the openrouter/pareto-code router (0.0-1.0).
-    #   Only applied when model.model is "openrouter/pareto-code". Higher
-    #   values route to stronger (more expensive) coders; lower values open
-    #   up cheaper, faster options. Default 0.65 lands on the mid-tier
-    #   coder on the current Pareto frontier. Empty string = let OpenRouter
-    #   pick the strongest available coder (router's documented default
-    #   when the plugins block is omitted).
-    #   See: https://openrouter.ai/docs/guides/routing/routers/pareto-router
-    "openrouter": {
-        "response_cache": True,
-        "response_cache_ttl": 300,
-        "min_coding_score": 0.65,
-    },
-
-    # AWS Bedrock provider configuration.
-    # Only used when model.provider is "bedrock".
-    "bedrock": {
-        "region": "",  # AWS region for Bedrock API calls (empty = AWS_REGION env var → us-east-1)
-        "discovery": {
-            "enabled": True,           # Auto-discover models via ListFoundationModels
-            "provider_filter": [],     # Only show models from these providers (e.g. ["anthropic", "amazon"])
-            "refresh_interval": 3600,  # Cache discovery results for this many seconds
-        },
-        "guardrail": {
-            # Amazon Bedrock Guardrails — content filtering and safety policies.
-            # Create a guardrail in the Bedrock console, then set the ID and version here.
-            # See: https://docs.aws.amazon.com/bedrock/latest/userguide/guardrails.html
-            "guardrail_identifier": "",  # e.g. "abc123def456"
-            "guardrail_version": "",     # e.g. "1" or "DRAFT"
-            "stream_processing_mode": "async",  # "sync" or "async"
-            "trace": "disabled",         # "enabled", "disabled", or "enabled_full"
-        },
-    },
-
-    # Auxiliary model config — provider:model for each side task.
-    # Format: provider is the provider name, model is the model slug.
-    # "auto" for provider = auto-detect best available provider.
-    # Empty model = use provider's default auxiliary model.
-    # All tasks fall back to openrouter:google/gemini-3-flash-preview if
-    # the configured provider is unavailable.
-    #
-    # extra_body: forwarded verbatim as request body fields on every aux call
-    # for that task. Use this to set provider-specific knobs (independent of
-    # main-agent settings). On OpenRouter you can set provider routing prefs
-    # and the Pareto Code coding-score floor here. Example:
-    #
-    #   auxiliary:
-    #     compression:
-    #       provider: openrouter
-    #       model: openrouter/pareto-code
-    #       extra_body:
-    #         provider:           # OpenRouter provider routing
-    #           order: [anthropic, google]
-    #           sort: throughput  # or price | latency
-    #         plugins:            # OpenRouter Pareto Code router
-    #           - id: pareto-router
-    #             min_coding_score: 0.5
-    #
-    # Each aux task is independent — main-agent provider_routing and
-    # openrouter.min_coding_score do NOT propagate to aux calls by design.
-    "auxiliary": {
-        "vision": {
-            "provider": "auto",    # auto | openrouter | nous | codex | custom
-            "model": "",           # e.g. "google/gemini-2.5-flash", "gpt-4o"
-            "base_url": "",        # direct OpenAI-compatible endpoint (takes precedence over provider)
-            "api_key": "",         # API key for base_url (falls back to OPENAI_API_KEY)
-            "timeout": 120,        # seconds — LLM API call timeout; vision payloads need generous timeout
-            "extra_body": {},      # OpenAI-compatible provider-specific request fields
-            "download_timeout": 30,  # seconds — image HTTP download timeout; increase for slow connections
-        },
-        "web_extract": {
-            "provider": "auto",
-            "model": "",
-            "base_url": "",
-            "api_key": "",
-            "timeout": 360,        # seconds (6min) — per-attempt LLM summarization timeout; increase for slow local models
-            "extra_body": {},
-        },
-        "compression": {
-            "provider": "auto",
-            "model": "",
-            "base_url": "",
-            "api_key": "",
-            "timeout": 120,        # seconds — compression summarises large contexts; increase for local models
-            "extra_body": {},
-        },
-        # Note: session_search no longer uses an auxiliary LLM (PR #27590 —
-        # single-shape tool returns DB content directly). The old
-        # ``auxiliary.session_search.*`` block was removed here. Existing
-        # values in user config.yaml files are harmless leftovers and ignored.
-        "skills_hub": {
-            "provider": "auto",
-            "model": "",
-            "base_url": "",
-            "api_key": "",
-            "timeout": 30,
-            "extra_body": {},
-        },
-        "approval": {
-            "provider": "auto",
-            "model": "",           # fast/cheap model recommended (e.g. gemini-flash, haiku)
-            "base_url": "",
-            "api_key": "",
-            "timeout": 30,
-            "extra_body": {},
-        },
-        "mcp": {
-            "provider": "auto",
-            "model": "",
-            "base_url": "",
-            "api_key": "",
-            "timeout": 30,
-            "extra_body": {},
-        },
-        "title_generation": {
-            "provider": "auto",
-            "model": "",
-            "base_url": "",
-            "api_key": "",
-            "timeout": 30,
-            "extra_body": {},
-        },
-        # Gemini TTS expressive audio-tag rewrite (tts.gemini.audio_tags). Picks the
-        # model that inserts [whispers]/[excitedly]/... into the spoken script. "auto"
-        # uses the detected default; set a cheap capable model. Absent block => "auto".
-        "tts_audio_tags": {
-            "provider": "auto",
-            "model": "",
-            "base_url": "",
-            "api_key": "",
-            "timeout": 30,
-            "extra_body": {},
-        },
-        # Triage specifier — flesh out a rough one-liner in the Kanban
-        # Triage column into a concrete spec, then promote it to ``todo``.
-        # Invoked by ``superforecasting-agent kanban specify`` (single id or --all). Set a
-        # cheap, capable model here (gemini-flash works well); the main
-        # model is overkill for short spec expansion.
-        "triage_specifier": {
-            "provider": "auto",
-            "model": "",
-            "base_url": "",
-            "api_key": "",
-            "timeout": 120,
-            "extra_body": {},
-        },
-        # Kanban decomposer — decomposes a triage task into a graph of
-        # child tasks routed to specialist profiles by description.
-        # Invoked by ``superforecasting-agent kanban decompose`` and the kanban
-        # auto-decompose dispatcher tick. Returns a JSON task graph;
-        # uses more tokens than the specifier so allow more headroom.
-        "kanban_decomposer": {
-            "provider": "auto",
-            "model": "",
-            "base_url": "",
-            "api_key": "",
-            "timeout": 180,
-            "extra_body": {},
-        },
-        # Profile describer — auto-generates a 1-2 sentence description
-        # of what a profile is good at. Invoked by
-        # ``hermes profile describe <name> --auto`` and the dashboard's
-        # auto-generate button. Short, cheap call.
-        "profile_describer": {
-            "provider": "auto",
-            "model": "",
-            "base_url": "",
-            "api_key": "",
-            "timeout": 60,
-            "extra_body": {},
-        },
-        # Curator — skill-usage review fork. Timeout is generous because the
-        # review pass can take several minutes on reasoning models (umbrella
-        # building over hundreds of candidate skills). "auto" = use main chat
-        # model; override via `superforecasting-agent model` → auxiliary →
-        # Curator to route to a cheaper aux model (e.g. openrouter
-        # google/gemini-3-flash-preview).
-        "curator": {
-            "provider": "auto",
-            "model": "",
-            "base_url": "",
-            "api_key": "",
-            "timeout": 600,
-            "extra_body": {},
-        },
-    },
-    
-    "display": {
-        "compact": False,
-        "personality": "neutral",
-        "resume_display": "full",
-        "busy_input_mode": "interrupt",  # interrupt | queue | steer
-        # When true, the TUI auto-resumes the most recent human-facing
-        # forecast session on launch instead of forging a fresh one.
-        # Mirrors `superforecasting-agent -c` muscle memory.  Default off
-        # so existing users aren't surprised. TUI_RESUME env aliases win.
-        "tui_auto_resume_recent": False,
-        "bell_on_complete": False,
-        "show_reasoning": False,
-        "streaming": False,
-        "timestamps": False,      # Show [HH:MM] on user and assistant labels
-        "final_response_markdown": "strip",  # render | strip | raw
-        # Preserve recent classic CLI output across Ctrl+L, /redraw, and
-        # terminal resize full-screen clears. Disable if a terminal emulator
-        # behaves badly with replayed scrollback.
-        "persistent_output": True,
-        "persistent_output_max_lines": 200,
-        "inline_diffs": True,     # Show inline diff previews for write actions (write_file, patch, skill_manage)
-        # File-mutation verifier footer.  When true (default), the agent
-        # appends a one-line advisory to its final response whenever a
-        # write_file / patch call failed during the turn and was never
-        # superseded by a successful write to the same path.  This catches
-        # the "batch of parallel patches, half fail, model claims success"
-        # class of over-claim that otherwise forces users to run
-        # `git status` to verify edits landed.  Set false to suppress.
-        "file_mutation_verifier": True,
-        "show_cost": False,       # Show $ cost in the status bar (off by default)
-        "skin": "forecast",
-        # UI language for static user-facing messages (approval prompts, a
-        # handful of gateway slash-command replies).  Does NOT affect agent
-        # responses, log lines, tool outputs, or slash-command descriptions.
-        # Supported: en, zh, ja, de, es, fr, tr, uk.  Unknown values fall back to en.
-        "language": "en",
-        # TUI busy indicator style: unicode (default), markers, emoji, or
-        # ascii. Live-swappable via `/indicator <style>`.
-        "tui_status_indicator": "unicode",
-        "user_message_preview": {  # CLI: how many submitted user-message lines to echo back in scrollback
-            "first_lines": 2,
-            "last_lines": 2,
-        },
-        "interim_assistant_messages": True,  # Gateway: show natural mid-turn assistant status messages
-        "tool_progress_command": False,  # Enable /verbose command in messaging gateway
-        "tool_progress_overrides": {},  # DEPRECATED — use display.platforms instead
-        "tool_preview_length": 0,  # Max chars for tool call previews (0 = no limit, show full paths/commands)
-        # Auto-delete system-notice replies (e.g. "New forecast session started!",
-        # "♻ Restarting gateway…", "⚡ Stopped…") after N seconds on platforms
-        # that support message deletion (currently Telegram; other platforms
-        # ignore and leave the message in place).  Only affects slash-command
-        # replies wrapped with gateway.platforms.base.EphemeralReply — agent
-        # responses and content messages are never touched.  Default 0
-        # (disabled) preserves prior behavior.
-        "ephemeral_system_ttl": 0,
-        "platforms": {},  # Per-platform display overrides: {"telegram": {"tool_progress": "all"}, "slack": {"tool_progress": "off"}}
-        # Gateway runtime-metadata footer appended to the FINAL message of a turn
-        # (disabled by default to keep replies minimal). When enabled, renders
-        # e.g. `model · 68% · ~/projects/hermes`. Per-platform overrides go under
-        # display.platforms.<platform>.runtime_footer.
-        "runtime_footer": {
-            "enabled": False,
-            "fields": ["model", "context_pct", "cwd"],  # Order shown; drop any to hide
-        },
-        "copy_shortcut": "auto",  # "auto" (platform default) | "ctrl_c" | "ctrl_shift_c" | "disabled"
-    },
-
-    # Web dashboard settings
-    "dashboard": {
-        "theme": "default",  # Dashboard visual theme: "default", "midnight", "ember", "mono", "cyberpunk", "rose"
-        # Hide the token/cost analytics surfaces (Analytics page, token bars and
-        # cost figures on the Models page) by default.  The numbers shown there
-        # are a local debug estimate: they only count successful main-agent
-        # responses with a usable ``response.usage``, and silently exclude every
-        # auxiliary call (context compression, title generation, vision,
-        # session search, web extract, smart approval, MCP routing, plugin LLM
-        # access) plus provider-side retries, fallback attempts, and any call
-        # whose usage block didn't come back.  Cache writes are also missing
-        # from the API response.  On models with heavy auxiliary traffic
-        # (Kimi K2.6, MiniMax M2.7) the local total can be 10x-100x lower than
-        # the provider bill, which is worse than hiding the numbers entirely
-        # because they look precise enough to compare against the provider.
-        # Set this to True to re-enable the surfaces with the understanding
-        # that the numbers are a local lower-bound estimate, not billing.
-        "show_token_analytics": False,
-    },
-
-    # Privacy settings
-    "privacy": {
-        "redact_pii": False,  # When True, hash user IDs and strip phone numbers from LLM context
-    },
-    
-    # Text-to-speech configuration
-    # Each provider supports an optional `max_text_length:` override for the
-    # per-request input-character cap. Omit it to use the provider's documented
-    # limit (OpenAI 4096, xAI 15000, MiniMax 10000, ElevenLabs 5k-40k model-aware,
-    # Gemini 5000, Edge 5000, Mistral 4000, NeuTTS/KittenTTS 2000).
-    "tts": {
-        "provider": "kokoro",  # local-first default; falls back to Edge until kokoro-onnx is installed. Options: "edge" (free cloud) | "elevenlabs" | "openai" | "xai" | "minimax" | "mistral" | "gemini" | "kokoro" (local, recommended) | "neutts" (local) | "kittentts" (local) | "piper" (local)
-        "edge": {
-            "voice": "en-US-AriaNeural",
-            # Popular: AriaNeural, JennyNeural, AndrewNeural, BrianNeural, SoniaNeural
-        },
-        "elevenlabs": {
-            "voice_id": "pNInz6obpgDQGcFmaJgB",  # Adam
-            "model_id": "eleven_multilingual_v2",
-        },
-        "openai": {
-            "model": "gpt-4o-mini-tts",
-            "voice": "alloy",
-            # Voices: alloy, echo, fable, onyx, nova, shimmer
-        },
-        "xai": {
-            "voice_id": "eve",  # or custom voice ID — see https://docs.x.ai/developers/model-capabilities/audio/custom-voices
-            "language": "en",
-            "sample_rate": 24000,
-            "bit_rate": 128000,
-        },
-        "mistral": {
-            "model": "voxtral-mini-tts-2603",
-            "voice_id": "c69964a6-ab8b-4f8a-9465-ec0925096ec8",  # Paul - Neutral
-        },
-        "neutts": {
-            "ref_audio": "",  # Path to reference voice audio (empty = bundled default)
-            "ref_text": "",   # Path to reference voice transcript (empty = bundled default)
-            "model": "neuphonic/neutts-air-q4-gguf",  # HuggingFace model repo
-            "device": "cpu",  # cpu, cuda, or mps
-        },
-        "piper": {
-            # Voice name (e.g. "en_US-lessac-medium") downloaded on first
-            # use, OR an absolute path to a pre-downloaded .onnx file.
-            # Full voice list: https://github.com/OHF-Voice/piper1-gpl/blob/main/docs/VOICES.md
-            "voice": "en_US-lessac-medium",
-            # "voices_dir": "",        # Override voice cache dir; default = active agent-home cache/piper-voices/
-            # "use_cuda": False,       # Requires onnxruntime-gpu
-            # "length_scale": 1.0,     # 2.0 = twice as slow
-            # "noise_scale": 0.667,
-            # "noise_w_scale": 0.8,
-            # "volume": 1.0,
-            # "normalize_audio": True,
-        },
-        "gemini": {
-            "model": "gemini-2.5-flash-preview-tts",
-            "voice": "Kore",  # 30 prebuilt voices; e.g. Kore, Puck, Charon, Aoede
-            # Optional local markdown file of performance direction (AUDIO PROFILE /
-            # SCENE / DIRECTOR'S NOTES) that shapes how the voice performs. A
-            # {transcript} placeholder is substituted; otherwise it's appended under a
-            # heading. Empty = plain transcript (default, no-op). Needs GEMINI_API_KEY.
-            "persona_prompt_file": "",
-            # Expressive audio-tag rewrite ([whispers] / [excitedly] / ...). Only effective
-            # on gemini-3.1*-tts models and needs an auxiliary model (auxiliary.tts_audio_tags).
-            # False = off (default); the visible chat text is never changed.
-            "audio_tags": False,
-        },
-        "kokoro": {
-            # Kokoro-82M — high-quality LOCAL/offline TTS (Apache-2.0), far more natural
-            # than Piper, CPU-only, no torch + no system espeak-ng. The model + voices
-            # auto-download on first use to <agent home>/cache/kokoro/.
-            # Install once: pip install kokoro-onnx
-            "model": "kokoro-v1.0.int8.onnx",  # ~92MB; "kokoro-v1.0.onnx" (~325MB) = max fidelity
-            "voice": "af_heart",  # see hexgrad/Kokoro-82M VOICES.md (af_bella, am_michael, bf_emma, ...)
-            "speed": 1.0,
-            "lang": "en-us",
-            # "model_dir": "",  # override the cache dir for the .onnx + voices.bin
-        },
-    },
-
-    "stt": {
-        "enabled": True,
-        "provider": "local",  # "local" (free, faster-whisper) | "groq" | "openai" (Whisper API) | "mistral" (Voxtral Transcribe)
-        "local": {
-            "model": "base",  # tiny, base, small, medium, large-v3
-            "language": "",  # auto-detect by default; set to "en", "es", "fr", etc. to force
-        },
-        "openai": {
-            "model": "whisper-1",  # whisper-1, gpt-4o-mini-transcribe, gpt-4o-transcribe
-        },
-        "mistral": {
-            "model": "voxtral-mini-latest",  # voxtral-mini-latest, voxtral-mini-2602
-        },
-    },
-
-    "voice": {
-        "record_key": "ctrl+b",
-        "max_recording_seconds": 120,
-        "auto_tts": False,
-        "beep_enabled": True,         # Play record start/stop beeps in CLI voice mode
-        "silence_threshold": 200,     # RMS below this = silence (0-32767)
-        "silence_duration": 3.0,      # Seconds of silence before auto-stop
-    },
-    
-    "human_delay": {
-        "mode": "off",
-        "min_ms": 800,
-        "max_ms": 2500,
-    },
-    
-    # Context engine -- controls how the context window is managed when
-    # approaching the model's token limit.
-    # "compressor" = built-in lossy summarization (default).
-    # Set to a plugin name to activate an alternative engine (e.g. "lcm"
-    # for Lossless Context Management).  The engine must be installed as
-    # a plugin in plugins/context_engine/<name>/ or the active agent-home
-    # plugins/ directory.
-    "context": {
-        "engine": "compressor",
-    },
-
-    # Generic assistant memory -- bounded curated memory injected into the
-    # system prompt. The forecasting fork learns through the forecast ledger,
-    # score records, postmortems, calibration lessons, and domain error
-    # profiles by default; enable this only for profiles that need inherited
-    # free-form chat recall outside the ledger.
-    "memory": {
-        "memory_enabled": False,
-        "user_profile_enabled": False,
-        "memory_char_limit": 2200,   # ~800 tokens at 2.75 chars/token
-        "user_char_limit": 1375,     # ~500 tokens at 2.75 chars/token
-        # External memory provider plugin (empty = built-in only).
-        # Set to a provider name to activate: "openviking", "mem0",
-        # "hindsight", "holographic", "retaindb", "byterover".
-        # Only ONE external provider is allowed at a time.
-        "provider": "",
-    },
-
-    # Subagent delegation — override the provider:model used by delegate_task
-    # so child agents can run on a different (cheaper/faster) provider and model.
-    # Uses the same runtime provider resolution as CLI/gateway startup, so all
-    # configured providers (OpenRouter, Nous, Z.ai, Kimi, etc.) are supported.
-    "delegation": {
-        "model": "",       # e.g. "google/gemini-3-flash-preview" (empty = inherit parent model)
-        "provider": "",    # e.g. "openrouter" (empty = inherit parent provider + credentials)
-        "base_url": "",    # direct OpenAI-compatible endpoint for subagents
-        "api_key": "",     # API key for delegation.base_url (falls back to OPENAI_API_KEY)
-        "api_mode": "",    # wire protocol for delegation.base_url: "chat_completions",
-                           # "codex_responses", or "anthropic_messages". Empty = auto-detect
-                           # from URL (e.g. /anthropic suffix → anthropic_messages). Set this
-                           # explicitly for non-standard endpoints the heuristic can't detect.
-        # When delegate_task narrows child toolsets explicitly, preserve any
-        # MCP toolsets the parent already has enabled. On by default so
-        # narrowing (e.g. toolsets=["web","browser"]) expresses "I want these
-        # extras" without silently stripping MCP tools the parent already has.
-        # Set to false for strict intersection.
-        "inherit_mcp_toolsets": True,
-        "max_iterations": 50,  # per-subagent iteration cap (each subagent gets its own budget,
-                               # independent of the parent's max_iterations)
-        # Subagent summaries return to the parent's context verbatim. A batch
-        # fan-out (N children) returns N summaries at once, which can exceed
-        # the parent's context window and trigger a compression/429 death
-        # spiral. delegate_task sizes each summary against the parent's
-        # remaining context headroom (split across the batch); when it must
-        # trim, the full text is spilled to the agent home's cache/delegation/
-        # (mounted into remote backends) and the in-context summary becomes a
-        # head+tail window plus a footer with the exact read_file offset to
-        # page the omitted middle — the same convention web_extract uses for
-        # large pages. Nothing is lost. The SAME trim is applied to async
-        # (background=true) delegations when their result re-enters the
-        # conversation. max_summary_chars is a hard per-summary character
-        # ceiling layered on top of that dynamic budget (belt-and-suspenders
-        # for models that ignore the "be concise" instruction). 0 disables the
-        # hard ceiling; the dynamic headroom budget still applies.
-        "max_summary_chars": 24000,
-        "child_timeout_seconds": 600,  # wall-clock timeout for each child agent (floor 30s,
-                                       # no ceiling). High-reasoning models on large tasks
-                                       # (e.g. gpt-5.5 xhigh, opus-4.6) need generous budgets;
-                                       # raise if children time out before producing output.
-        "reasoning_effort": "",  # reasoning effort for subagents: "xhigh", "high", "medium",
-                                 # "low", "minimal", "none" (empty = inherit parent's level)
-        "max_concurrent_children": 3,  # max parallel children per batch; floor of 1 enforced, no ceiling
-        "max_async_children": 3,  # max concurrent delegate_task(background=true) subagents; new
-                                  # dispatches are REJECTED at capacity (not queued). Floor of 1,
-                                  # no ceiling. Env override: DELEGATION_MAX_ASYNC_CHILDREN.
-        # Orchestrator role controls (see tools/delegate_tool.py:_get_max_spawn_depth
-        # and _get_orchestrator_enabled).  Values are clamped to [1, 3] with a
-        # warning log if out of range.
-        "max_spawn_depth": 1,        # depth cap (1 = flat [default], 2 = orchestrator→leaf, 3 = three-level)
-        "orchestrator_enabled": True,  # kill switch for role="orchestrator"
-        # When a subagent hits a dangerous-command approval prompt, the parent's
-        # prompt_toolkit TUI owns stdin — a thread-local input() call from the
-        # subagent worker would deadlock the parent UI. To avoid the deadlock,
-        # subagent threads ALWAYS resolve approvals non-interactively:
-        #   false (default) → auto-deny with a logger.warning audit line (safe)
-        #   true             → auto-approve "once" with a logger.warning audit line
-        # Flip to true only if you trust delegated work to run dangerous cmds
-        # without human review (cron pipelines, batch automation, etc.).
-        "subagent_auto_approve": False,
-    },
-
-    # Ephemeral prefill messages file — JSON list of {role, content} dicts
-    # injected at the start of every API call for few-shot priming.
-    # Never saved to sessions, logs, or trajectories.
-    "prefill_messages_file": "",
-
-    # Goals — persistent cross-turn goals (Ralph-style loop).
-    # After every turn, a lightweight judge call asks the auxiliary model
-    # whether the active /goal is satisfied by the assistant's last
-    # response. If not, Superforecasting Agent feeds a continuation prompt back into the
-    # same session and keeps working until the goal is done, the turn
-    # budget is exhausted, or the user pauses/clears it. Judge failures
-    # fail OPEN (continue) so a flaky judge never wedges progress — the
-    # turn budget is the real backstop.
-    "goals": {
-        # Max continuation turns before Superforecasting Agent auto-pauses the goal and
-        # asks the user to /goal resume. Protects against judge false
-        # negatives (goal actually done but judge says continue) and
-        # unbounded model spend on fuzzy / unachievable goals.
-        "max_turns": 20,
-    },
-
-    # Skills — external skill directories for sharing skills across tools/agents.
-    # Each path is expanded (~, ${VAR}) and resolved.  Read-only — skill creation
-    # always goes to the active forecast home's skills/ directory.
-    "skills": {
-        "external_dirs": [],   # e.g. ["~/.agents/skills", "/shared/team-skills"]
-        # Substitute ${HERMES_SKILL_DIR} and ${HERMES_SESSION_ID} in SKILL.md
-        # content with the absolute skill directory and the active session id
-        # before the agent sees it.  Lets skill authors reference bundled
-        # scripts without the agent having to join paths.
-        "template_vars": True,
-        # Pre-execute inline shell snippets written as !`cmd` in SKILL.md
-        # body.  Their stdout is inlined into the skill message before the
-        # agent reads it, so skills can inject dynamic context (dates, git
-        # state, detected tool versions, …).  Off by default because any
-        # content from the skill author runs on the host without approval;
-        # only enable for skill sources you trust.
-        "inline_shell": False,
-        # Timeout (seconds) for each !`cmd` snippet when inline_shell is on.
-        "inline_shell_timeout": 10,
-        # Run the keyword/pattern security scanner on skills the agent
-        # writes via skill_manage (create/edit/patch).  Off by default
-        # because the agent can already execute the same code paths via
-        # terminal() with no gate, so the scan adds friction (blocks
-        # skills that mention risky keywords in prose) without meaningful
-        # security.  Turn on if you want the belt-and-suspenders — a
-        # dangerous verdict will then surface as a tool error to the
-        # agent, which can retry with the flagged content removed.
-        # External hub installs (trusted/community sources) are always
-        # scanned regardless of this setting.
-        "guard_agent_created": False,
-    },
-
-    # Ordered, revision-locked organization extensions. Each source may expose
-    # plugins/, workflows/, skills/, and prompts/ without forking core.
-    "extensions": {
-        "sources": [],  # [{"repo": "owner/repo", "ref": "<commit-sha>"}]
-    },
-
-    # Multiplayer ledger collaboration. Disabled until a canonical GitHub
-    # workspace is linked; all credentials stay in .env / the credential store.
-    "collaboration": {
-        "enabled": False,
-        "github": {
-            "enabled": False,
-            "api_url": "https://api.github.com",
-            "upload_url": "https://uploads.github.com",
-            "app_id": "",
-            "app_slug": "",
-            "client_id": "",
-            "public_base_url": "",
-            "installation_begin_path": "/api/install/github/begin",
-            "installation_callback_path": "/api/install/github/callback",
-            "installation_state_ttl_seconds": 600,
-            "oauth_callback_path": "/api/oauth/github/callback",
-            "oauth_state_ttl_seconds": 600,
-            "api_version": "2026-03-10",
-            "webhook_path": "/api/webhooks/github",
-        },
-        "repository": {
-            "slug": "",  # owner/repository
-            "workspace_id": "",
-            "default_branch": "main",
-        },
-        "review": {
-            "materiality_threshold": 0.10,
-            "medium_required_humans": 1,
-            "high_required_humans": 2,
-            "high_requires_owner_or_steward": True,
-            "risk_overrides": {},  # {"operation.kind": "low|medium|high"}
-        },
-        "discussion": {
-            "max_comments": 12,
-            "max_rounds": 6,
-            "max_tokens": 16000,
-            "max_elapsed_seconds": 1800,
-            "max_concurrent_tasks": 2,
-            "agent_loop_threshold": 4,
-            "max_comment_bytes": 32768,
-        },
-        "transcripts": {
-            "raw_retention_days": 90,
-            "require_publish_consent": True,
-            "max_publish_bytes": 262144,
-        },
-    },
-
-    # Curator — background skill maintenance.
-    #
-    # Periodically reviews AGENT-CREATED skills (never bundled or
-    # hub-installed) and keeps the collection tidy: marks long-unused skills
-    # as stale, archives genuinely obsolete ones (archive only, never
-    # deletes), and spawns a forked aux-model agent to consolidate overlaps
-    # and patch drift. Runs inactivity-triggered from session start — no
-    # cron daemon.
-    #
-    # See `superforecasting-agent curator status` for the last run summary.
-    "curator": {
-        "enabled": True,
-        # How long to wait between curator runs (hours).  Default: 7 days.
-        "interval_hours": 24 * 7,
-        # Only run when the agent has been idle at least this long (hours).
-        "min_idle_hours": 2,
-        # Mark a skill as "stale" after this many days without use.
-        "stale_after_days": 30,
-        # Archive a skill (move to skills/.archive/) after this many days
-        # without use. Archived skills are recoverable — no auto-deletion.
-        "archive_after_days": 90,
-        # Pre-run backup: before every real curator pass (dry-run is
-        # skipped), snapshot active agent-home skills/ into
-        # skills/.curator_backups/<utc-iso>/skills.tar.gz so the user can roll
-        # back with `superforecasting-agent curator rollback`.
-        "backup": {
-            "enabled": True,
-            "keep": 5,  # retain last N regular snapshots
-        },
-    },
-
-    # Honcho AI-native memory -- reads ~/.honcho/config.json as single source of truth.
-    # This section is only needed for hermes-specific overrides; everything else
-    # (apiKey, workspace, peerName, sessions, enabled) comes from the global config.
-    "honcho": {},
-
-    # IANA timezone (e.g. "Asia/Kolkata", "America/New_York").
-    # Empty string means use server-local time.
-    "timezone": "",
-
-    # Slack platform settings (gateway mode)
-    "slack": {
-        "transport": "socket",          # socket | webhook (one ingress per workspace)
-        "require_mention": True,       # Require @mention to respond in channels
-        "free_response_channels": "",  # Comma-separated channel IDs where bot responds without mention
-        "allowed_channels": "",        # If set, bot ONLY responds in these channel IDs (whitelist)
-        "channel_prompts": {},         # Per-channel ephemeral system prompts
-    },
-
-    # Hosted execution. The gateway/API remains the durable control plane;
-    # Kubernetes pods are disposable, conversation-scoped workers.
-    "hosted_execution": {
-        "runtime": "local",  # local | kubernetes
-        "run_store_path": "",  # empty = active forecast home / execution_store.db
-        "kubernetes": {
-            "namespace": "superforecasting-agent",
-            "image": "",  # use a pinned tag or digest in hosted deployments
-            "service_account": "superforecasting-agent-sandbox",
-            "idle_ttl_seconds": 1800,
-            "workspace_size": "8Gi",
-            "cpu_request": "250m",
-            "cpu_limit": "2",
-            "memory_request": "512Mi",
-            "memory_limit": "4Gi",
-        },
-    },
-
-    # Discord platform settings (gateway mode)
-    "discord": {
-        "require_mention": True,       # Require @mention to respond in server channels
-        "free_response_channels": "",  # Comma-separated channel IDs where bot responds without mention
-        "allowed_channels": "",        # If set, bot ONLY responds in these channel IDs (whitelist)
-        "auto_thread": True,           # Auto-create threads on @mention in channels (like Slack)
-        "thread_require_mention": False,  # If True, require @mention in threads too (multi-bot threads)
-        "history_backfill": True,         # If True, prepend recent channel scrollback when bot is triggered (recovers messages missed while require_mention gated them out)
-        "history_backfill_limit": 50,     # Max number of recent messages to scan when assembling the backfill block
-        "reactions": True,             # Add 👀/✅/❌ reactions to messages during processing
-        "channel_prompts": {},         # Per-channel ephemeral system prompts (forum parents apply to child threads)
-        # Opt-in DM role-based auth (#12136). By default, DISCORD_ALLOWED_ROLES
-        # authorizes only guild messages in the role's own guild — DMs require
-        # DISCORD_ALLOWED_USERS. Set dm_role_auth_guild to a guild ID to also
-        # authorize DMs from members of that one trusted guild holding the
-        # allowed role. Unset / empty / 0 = secure default (DM role-auth off).
-        "dm_role_auth_guild": "",
-        # discord / discord_admin tools: restrict which actions the agent may call.
-        # Default (empty) = all actions allowed (subject to bot privileged intents).
-        # Accepts comma-separated string ("list_guilds,list_channels,fetch_messages")
-        # or YAML list. Unknown names are dropped with a warning at load time.
-        # Actions: list_guilds, server_info, list_channels, channel_info,
-        # list_roles, member_info, search_members, fetch_messages, list_pins,
-        # pin_message, unpin_message, create_thread, add_role, remove_role.
-        "server_actions": "",
-        # Accept arbitrary attachment file types (not just SUPPORTED_DOCUMENT_TYPES).
-        # When True, any uploaded file is cached to disk with mime
-        # application/octet-stream and the path is surfaced to the agent so it
-        # can use terminal/read_file/etc. against it. Default False preserves
-        # the historical allowlist behaviour.
-        # Env override: DISCORD_ALLOW_ANY_ATTACHMENT.
-        "allow_any_attachment": False,
-        # Maximum bytes per attachment the gateway will cache. The whole file
-        # is held in memory while being written, so unlimited uploads carry a
-        # real memory cost. Default 32 MiB matches the historical hardcoded
-        # cap. Set to 0 for no cap. Env override: DISCORD_MAX_ATTACHMENT_BYTES.
-        "max_attachment_bytes": 33554432,
-    },
-
-    # WhatsApp platform settings (gateway mode)
-    "whatsapp": {
-        # Reply prefix prepended to every outgoing WhatsApp message.
-        # Default (None) uses the built-in Superforecasting Agent header.
-        # Set to "" (empty string) to disable the header entirely.
-        # Supports \n for newlines, e.g. "🤖 *My Bot*\n──────\n"
-    },
-
-    # Telegram platform settings (gateway mode)
-    "telegram": {
-        "reactions": False,            # Add 👀/✅/❌ reactions to messages during processing
-        "channel_prompts": {},         # Per-chat/topic ephemeral system prompts (topics inherit from parent group)
-        "allowed_chats": "",           # If set, bot ONLY responds in these group/supergroup chat IDs (whitelist)
-    },
-
-    # Mattermost platform settings (gateway mode)
-    "mattermost": {
-        "require_mention": True,       # Require @mention to respond in channels
-        "free_response_channels": "",  # Comma-separated channel IDs where bot responds without mention
-        "allowed_channels": "",        # If set, bot ONLY responds in these channel IDs (whitelist)
-        "channel_prompts": {},         # Per-channel ephemeral system prompts
-    },
-
-    # Matrix platform settings (gateway mode)
-    "matrix": {
-        "require_mention": True,       # Require @mention to respond in rooms
-        "free_response_rooms": "",     # Comma-separated room IDs where bot responds without mention
-        "allowed_rooms": "",           # If set, bot ONLY responds in these room IDs (whitelist)
-    },
-
-    # Approval mode for dangerous commands:
-    #   manual — always prompt the user (default)
-    #   smart  — use auxiliary LLM to auto-approve low-risk commands, prompt for high-risk
-    #   off    — skip all approval prompts (equivalent to --yolo)
-    #
-    # cron_mode — what to do when a cron job hits a dangerous command:
-    #   deny    — block the command and let the agent find another way (default, safe)
-    #   approve — auto-approve all dangerous commands in cron jobs
-    "approvals": {
-        "mode": "manual",
-        "timeout": 60,
-        "cron_mode": "deny",
-        # When true, /reload-mcp asks the user to confirm before rebuilding
-        # the MCP tool set for the active session.  Reloading invalidates
-        # the provider prompt cache (tool schemas are baked into the system
-        # prompt), so the next message re-sends full input tokens — this can
-        # be expensive on long-context or high-reasoning models.  Users click
-        # "Always Approve" to silence the prompt permanently; that flips
-        # this key to false.
-        "mcp_reload_confirm": True,
-        # When true, destructive session slash commands (/clear, /new, /reset,
-        # /undo) ask the user to confirm before discarding forecast-session state.
-        # Three-option prompt (Approve Once / Always Approve / Cancel) routed
-        # through tools.slash_confirm — native yes/no buttons on Telegram,
-        # Discord, and Slack; text fallback elsewhere.  Users click "Always
-        # Approve" to silence the prompt permanently; that flips this key to
-        # false.  TUI has its own modal overlay (HERMES_TUI_NO_CONFIRM=1 to
-        # opt out there).
-        "destructive_slash_confirm": True,
-    },
-
-    # Permanently allowed dangerous command patterns (added via "always" approval)
-    "command_allowlist": [],
-    # User-defined quick commands that bypass the agent loop (type: exec only)
-    "quick_commands": {},
-
-    # Shell-script hooks — declarative bridge that invokes shell scripts
-    # on plugin-hook events (pre_tool_call, post_tool_call, pre_llm_call,
-    # subagent_stop, etc.).  Each entry maps an event name to a list of
-    # {matcher, command, timeout} dicts.  First registration of a new
-    # command prompts the user for consent; subsequent runs reuse the
-    # stored approval from active agent-home shell-hooks-allowlist.json.
-    # See `website/docs/user-guide/features/hooks.md` for schema + examples.
-    "hooks": {},
-
-    # Auto-accept shell-hook registrations without a TTY prompt.  Also
-    # toggleable per-invocation via --accept-hooks or SUPERFORECASTING_AGENT_ACCEPT_HOOKS=1.
-    # Gateway / cron / non-interactive runs need this (or one of the other
-    # channels) to pick up newly-added hooks.
-    "hooks_auto_accept": False,
-    # Custom personalities — add your own entries here
-    # Supports string format: {"name": "system prompt"}
-    # Or dict format: {"name": {"description": "...", "system_prompt": "...", "tone": "...", "style": "..."}}
-    "personalities": {},
-
-    # Pre-exec security scanning via tirith
-    "security": {
-        "allow_private_urls": False,  # Allow requests to private/internal IPs (for OpenWrt, proxies, VPNs)
-        "redact_secrets": True,
-        "tirith_enabled": True,
-        "tirith_path": "tirith",
-        "tirith_timeout": 5,
-        "tirith_fail_open": True,
-        "website_blocklist": {
-            "enabled": False,
-            "domains": [],
-            "shared_files": [],
-        },
-        # Acknowledged supply-chain security advisories. Each entry is the
-        # ID of an advisory the user has read and acted on (uninstalled the
-        # compromised package, rotated credentials). Acked advisories no
-        # longer trigger the startup banner. Add via
-        # `superforecasting-agent doctor --ack <id>`; remove by editing the
-        # list directly. See
-        # ``superforecasting_agent/runtime/security_advisories.py`` for the catalog.
-        "acked_advisories": [],
-        # Allow Hermes to lazy-install opt-in backend packages from PyPI
-        # the first time the user enables a backend that needs them
-        # (e.g. installing ``elevenlabs`` when the user picks ElevenLabs as
-        # their TTS provider). Set to false to require explicit
-        # ``pip install`` for everything beyond the base set — appropriate
-        # for restricted networks, audited environments, or air-gapped
-        # systems where any runtime install is unacceptable.
-        "allow_lazy_installs": True,
-    },
-
-    "cron": {
-        # Wrap delivered cron responses with a header (task name) and footer
-        # ("The agent cannot see this message").  Set to false for clean output.
-        "wrap_response": True,
-        # Maximum number of due jobs to run in parallel per tick.
-        # null/0 = unbounded (limited only by thread count).
-        # 1 = serial (pre-v0.9 behaviour).
-        # Also overridable via SUPERFORECASTING_AGENT_CRON_MAX_PARALLEL
-        # / FORECAST_CRON_MAX_PARALLEL / HERMES_CRON_MAX_PARALLEL env vars.
-        "max_parallel_jobs": None,
-        # Forecast maintenance scripts can contain several bounded agent calls.
-        # Two minutes was short enough to kill healthy estimator batches midway.
-        "script_timeout_seconds": 900,
-        "warning_automode": {
-            # One action every half-hour gives 48/day of throughput while keeping
-            # each no-agent cron tick comfortably inside its wall-clock limit.
-            "paid_budget": 1,
-            "paid_min_interval_hours": 0.5,
-            "learned_error_review_budget": 1,
-            "learned_error_review_min_interval_hours": 0.5,
-        },
-        "source_estimator": {
-            # A dedicated worker may burst when arrivals outrun completions, but
-            # its daily model-task ceiling makes the spend boundary explicit.
-            "enabled": True,
-            "interval_minutes": 15,
-            "max_tasks_per_cycle": 8,
-            "daily_task_budget": 48,
-            "max_iterations": 12,
-            "target_oldest_hours": 2,
-            "target_p90_hours": 4,
-            "alert_after_bad_cycles": 2,
-        },
-    },
-
-    # Kanban multi-agent coordination — controls the dispatcher loop that
-    # spawns workers for ready tasks. The dispatcher ticks every N seconds
-    # (default 60), reclaims stale claims, promotes dependency-satisfied
-    # todos to ready, and fires `superforecasting-agent -p <assignee> desk -q ...` for
-    # each claimable ready task. One dispatcher per profile is sufficient;
-    # running more than one on the same kanban.db will race for claims.
-    "kanban": {
-        # Run the dispatcher inside the gateway process. On by default —
-        # the cost is ~300µs every `dispatch_interval_seconds` when idle,
-        # and gateway is the supervisor users already have. Set to false
-        # only if you run the dispatcher as a separate systemd unit or
-        # don't want the gateway to spawn workers.
-        "dispatch_in_gateway": True,
-        # Seconds between dispatcher ticks (idle or not). Lower = snappier
-        # pickup of newly-ready tasks; higher = less SQL pressure.
-        "dispatch_interval_seconds": 60,
-        # Auto-block after this many consecutive non-success attempts for the
-        # same task/profile (spawn_failed, timed_out, or crashed). Reassignment
-        # resets the streak for the new profile.
-        "failure_limit": 2,
-        # Worker stdout/stderr logs rotate at spawn time. Defaults preserve
-        # the historical 2 MiB + one-backup behavior; long-running workers can
-        # raise these to keep more early failure evidence.
-        "worker_log_rotate_bytes": 2 * 1024 * 1024,
-        "worker_log_backup_count": 1,
-        # Profile that decomposes tasks in the Triage column. When unset,
-        # falls back to the default profile (the one `hermes` launches with
-        # no -p flag). Set this to a dedicated 'orchestrator' profile if you
-        # want decomposition to use a different model/skills from your main
-        # working profile.
-        "orchestrator_profile": "",
-        # Where a child task lands if the orchestrator can't match an
-        # assignee to any installed profile. When unset, falls back to the
-        # default profile. A task never ends up with assignee=None.
-        "default_assignee": "",
-        # When true, the kanban dispatcher auto-runs the decomposer on
-        # tasks that land in Triage (every dispatcher tick). When false,
-        # decomposition is manual via `superforecasting-agent kanban decompose <id>` or
-        # the dashboard's Decompose button.
-        "auto_decompose": True,
-        # Max triage tasks to decompose per dispatcher tick. Prevents a
-        # large bulk-load of triage tasks from spending a burst of aux
-        # LLM calls in one tick. Excess tasks defer to the next tick.
-        "auto_decompose_per_tick": 3,
-        # Stale detection: running tasks that have exceeded this many
-        # seconds without a heartbeat (since ``last_heartbeat_at``) are
-        # auto-reclaimed to ``ready`` on the next dispatcher tick. The
-        # worker process (if still running host-locally) is terminated
-        # before the reclaim.  0 disables stale detection entirely.
-        "dispatch_stale_timeout_seconds": 14400,
-    },
-
-    # execute_code settings — controls the tool used for programmatic tool calls.
-    "code_execution": {
-        # Execution mode:
-        #   project (default) — scripts run in the session's working directory
-        #     with the active virtualenv/conda env's python, so project deps
-        #     (pandas, torch, project packages) and relative paths resolve.
-        #   strict            — scripts run in an isolated temp directory with
-        #     hermes-agent's own python (sys.executable). Maximum isolation
-        #     and reproducibility; project deps and relative paths won't work.
-        # Env scrubbing (strips *_API_KEY, *_TOKEN, *_SECRET, ...) and the
-        # tool whitelist apply identically in both modes.
-        "mode": "project",
-    },
-
-    # Logging — controls file logging to active agent-home logs/.
-    # agent.log captures INFO+ (all agent activity); errors.log captures WARNING+.
-    "logging": {
-        "level": "INFO",       # Minimum level for agent.log: DEBUG, INFO, WARNING
-        "max_size_mb": 5,      # Max size per log file before rotation
-        "backup_count": 3,     # Number of rotated backup files to keep
-        # Periodic process memory usage logging (gateway only). Emits a
-        # grep-friendly "[MEMORY] rss=...MB ..." line at the configured
-        # interval so slow leaks in the long-lived gateway are visible
-        # in agent.log / gateway.log as a time series. Ported from
-        # cline/cline#10343.
-        "memory_monitor": {
-            "enabled": True,         # Flip to false to silence the periodic line
-            "interval_seconds": 300, # Default: every 5 minutes
-        },
-    },
-
-    # Remotely-hosted model catalog manifest.  When enabled, the CLI fetches
-    # curated model lists for OpenRouter and Nous Portal from this URL,
-    # falling back to the in-repo snapshot on network failure.  Lets us
-    # update model picker lists without shipping a Superforecasting Agent release.
-    # The default URL is served from the fork's raw GitHub catalog snapshot.
-    "model_catalog": {
-        "enabled": True,
-        "url": "https://raw.githubusercontent.com/teddyjfpender/superforecasting-agent/superforecasting-agent-snapshot/website/static/api/model-catalog.json",
-        # Disk cache TTL in hours.  Beyond this, the CLI refetches on the
-        # next /model or `superforecasting-agent model` invocation; network failures
-        # silently fall back to the stale cache.
-        "ttl_hours": 24,
-        # Optional per-provider override URLs for third parties that want
-        # to self-host their own curation list using the same schema.
-        # Example:
-        #   providers:
-        #     openrouter:
-        #       url: https://example.com/my-curation.json
-        "providers": {},
-    },
-
-    # Network settings — workarounds for connectivity issues.
-    "network": {
-        # Force IPv4 connections.  On servers with broken or unreachable IPv6,
-        # Python tries AAAA records first and hangs for the full TCP timeout
-        # before falling back to IPv4.  Set to true to skip IPv6 entirely.
-        "force_ipv4": False,
-    },
-
-    # Session storage — controls automatic cleanup of active agent-home state.db.
-    # state.db accumulates every session, message, tool call, and FTS5 index
-    # entry forever.  Without auto-pruning, a heavy user (gateway + cron)
-    # reports 384MB+ databases with 68K+ messages, which slows down FTS5
-    # inserts, /resume listing, and insights queries.
-    "sessions": {
-        # When true, prune ended sessions older than retention_days once
-        # per (roughly) min_interval_hours at CLI/gateway/cron startup.
-        # Only touches ended sessions — active sessions are always preserved.
-        # Default false: session history is valuable for search recall, and
-        # silently deleting it could surprise users.  Opt in explicitly.
-        "auto_prune": False,
-        # How many days of ended-session history to keep.  Matches the
-        # default of ``hermes sessions prune``.
-        "retention_days": 90,
-        # VACUUM after a prune that actually deleted rows.  SQLite does not
-        # reclaim disk space on DELETE — freed pages are just reused on
-        # subsequent INSERTs — so without VACUUM the file stays bloated
-        # even after pruning.  VACUUM blocks writes for a few seconds per
-        # 100MB, so it only runs at startup, and only when prune deleted
-        # ≥1 session.
-        "vacuum_after_prune": True,
-        # Minimum hours between auto-maintenance runs (avoids repeating
-        # the sweep on every CLI invocation).  Tracked via state_meta in
-        # state.db itself, so it's shared across all processes.
-        "min_interval_hours": 24,
-    },
-
-    # Contextual first-touch onboarding hints (see agent/onboarding.py).
-    # Each hint is shown once per install and then latched here so it
-    # never fires again.  Users can wipe the section to re-see all hints.
-    "onboarding": {
-        "seen": {},
-    },
-
-    # ``superforecasting-agent update`` behaviour.
-    "updates": {
-        # Run a full ``superforecasting-agent backup``-style zip of
-        # HERMES_HOME before every ``superforecasting-agent update``. Backups
-        # land in ``<HERMES_HOME>/backups/`` and can be restored with
-        # ``superforecasting-agent import <path>``. Off by default —
-        # on large HERMES_HOME directories the zip can add minutes to every
-        # update.  Set to true to re-enable, or pass ``--backup`` to opt in
-        # for a single update run.
-        "pre_update_backup": False,
-        # How many pre-update backup zips to retain.  Older ones are pruned
-        # automatically after each successful backup.  Values below 1 are
-        # floored to 1 — the backup just created is always preserved.  To
-        # disable backups entirely, set ``pre_update_backup: false`` above
-        # rather than ``backup_keep: 0``.
-        "backup_keep": 5,
-    },
-
-    # Language Server Protocol — semantic diagnostics from real
-    # language servers (pyright, gopls, rust-analyzer, etc.) wired
-    # into the post-write lint check used by ``write_file`` and
-    # ``patch``.
-    #
-    # LSP is gated on git-workspace detection: when the agent's
-    # cwd (or the file being edited) is inside a git worktree, LSP
-    # runs against that workspace.  When neither is in a git repo,
-    # LSP stays dormant and the in-process syntax check is the only
-    # tier — handy for Telegram/Discord chats where the cwd is the
-    # user's home directory.
-    "lsp": {
-        # Master toggle.  Setting this to false disables the entire
-        # subsystem — no servers spawn, no background event loop, no
-        # cost.
-        "enabled": True,
-
-        # Diagnostic-wait mode for the post-write check.
-        # ``"document"`` waits up to ``wait_timeout`` seconds for the
-        # current file's diagnostics; ``"full"`` additionally requests
-        # workspace-wide diagnostics (slower).
-        "wait_mode": "document",
-        "wait_timeout": 5.0,
-
-        # How to handle missing server binaries.
-        # ``"auto"`` — try to install via npm/go/pip into
-        #              ``<HERMES_HOME>/lsp/bin/`` on first use.
-        # ``"manual"`` — only use binaries already on PATH.
-        # ``"off"`` — alias for ``manual``.
-        "install_strategy": "auto",
-
-        # Per-server overrides.  Each key is a server_id from the
-        # registry (``pyright``, ``typescript``, ``gopls``,
-        # ``rust-analyzer``, etc.) and accepts:
-        #   disabled: true
-        #     — skip this server even when its extensions match
-        #   command: ["full/path/to/server", "--stdio"]
-        #     — pin a custom binary path; bypasses auto-install
-        #   env: {"KEY": "value"}
-        #     — extra env vars passed to the spawned process
-        #   initialization_options: {...}
-        #     — merged into the LSP ``initializationOptions``
-        # Empty by default; the registry defaults work for typical
-        # setups.
-        "servers": {},
-    },
-
-    # X (Twitter) Search via xAI's built-in x_search Responses tool.
-    # The tool registers when xAI credentials are available (SuperGrok
-    # OAuth or XAI_API_KEY) AND the x_search toolset is enabled in
-    # `superforecasting-agent tools`. These settings tune the backing Responses
-    # API call.
-    "x_search": {
-        # xAI model used for the Responses call. grok-4.20-reasoning is
-        # the recommended default; any Grok model with x_search tool
-        # access works.
-        "model": "grok-4.20-reasoning",
-        # Request timeout in seconds (minimum 30). x_search can take
-        # 60-120s for complex queries — the default is generous.
-        "timeout_seconds": 180,
-        # Number of automatic retries on 5xx / ReadTimeout / ConnectionError.
-        # Each retry backs off (1.5x attempt seconds, capped at 5s).
-        "retries": 2,
-    },
-
-    # Config schema version - bump this when adding new required fields
-    "_config_version": 23,
-}
+from superforecasting_agent.configuration import (
+    DEFAULT_CONFIG as DEFAULT_CONFIG,
+    _deep_merge as _deep_merge,
+    _expand_env_vars as _expand_env_vars,
+    _normalize_root_model_keys as _normalize_root_model_keys,
+    _normalize_max_turns_config as _normalize_max_turns_config,
+    cfg_get as cfg_get,
+    _merge_user_config as _merge_user_config,
+    resolve_config as resolve_config,
+)
 
 # =============================================================================
 # Config Migration System
@@ -2289,1134 +550,10 @@ ENV_VARS_BY_VERSION: Dict[int, List[str]] = {
 # LLM provider is required but handled in the setup wizard's provider
 # selection step (Nous Portal / OpenRouter / Custom endpoint), so this
 # dict is intentionally empty — no single env var is universally required.
-REQUIRED_ENV_VARS = {}
+from superforecasting_agent.configuration.environment_catalog import REQUIRED_ENV_VARS as REQUIRED_ENV_VARS
 
 # Optional environment variables that enhance functionality
-OPTIONAL_ENV_VARS = {
-    # ── Provider (handled in provider selection, not shown in checklists) ──
-    "NOUS_BASE_URL": {
-        "description": "Nous Portal base URL override",
-        "prompt": "Nous Portal base URL (leave empty for default)",
-        "url": None,
-        "password": False,
-        "category": "provider",
-        "advanced": True,
-    },
-    "OPENROUTER_API_KEY": {
-        "description": "OpenRouter API key (for vision, web scraping helpers, and MoA)",
-        "prompt": "OpenRouter API key",
-        "url": "https://openrouter.ai/keys",
-        "password": True,
-        "tools": ["vision_analyze", "mixture_of_agents"],
-        "category": "provider",
-        "advanced": True,
-    },
-    "GOOGLE_API_KEY": {
-        "description": "Google AI Studio API key (also recognized as GEMINI_API_KEY)",
-        "prompt": "Google AI Studio API key",
-        "url": "https://aistudio.google.com/app/apikey",
-        "password": True,
-        "category": "provider",
-        "advanced": True,
-    },
-    "GEMINI_API_KEY": {
-        "description": "Google AI Studio API key (alias for GOOGLE_API_KEY)",
-        "prompt": "Gemini API key",
-        "url": "https://aistudio.google.com/app/apikey",
-        "password": True,
-        "category": "provider",
-        "advanced": True,
-    },
-    "GEMINI_BASE_URL": {
-        "description": "Google AI Studio base URL override",
-        "prompt": "Gemini base URL (leave empty for default)",
-        "url": None,
-        "password": False,
-        "category": "provider",
-        "advanced": True,
-    },
-    "XAI_API_KEY": {
-        "description": "xAI API key",
-        "prompt": "xAI API key",
-        "url": "https://console.x.ai/",
-        "password": True,
-        "category": "provider",
-        "advanced": True,
-    },
-    "XAI_BASE_URL": {
-        "description": "xAI base URL override",
-        "prompt": "xAI base URL (leave empty for default)",
-        "url": None,
-        "password": False,
-        "category": "provider",
-        "advanced": True,
-    },
-    "NVIDIA_API_KEY": {
-        "description": "NVIDIA NIM API key (build.nvidia.com or local NIM endpoint)",
-        "prompt": "NVIDIA NIM API key",
-        "url": "https://build.nvidia.com/",
-        "password": True,
-        "category": "provider",
-        "advanced": True,
-    },
-    "NVIDIA_BASE_URL": {
-        "description": "NVIDIA NIM base URL override (e.g. http://localhost:8000/v1 for local NIM)",
-        "prompt": "NVIDIA NIM base URL (leave empty for default)",
-        "url": None,
-        "password": False,
-        "category": "provider",
-        "advanced": True,
-    },
-    "LM_API_KEY": {
-        "description": "LM Studio bearer token for auth-enabled local servers",
-        "prompt": "LM Studio API key / bearer token",
-        "url": None,
-        "password": True,
-        "category": "provider",
-        "advanced": True,
-    },
-    "LM_BASE_URL": {
-        "description": "LM Studio base URL override",
-        "prompt": "LM Studio base URL (leave empty for default)",
-        "url": None,
-        "password": False,
-        "category": "provider",
-        "advanced": True,
-    },
-    "GLM_API_KEY": {
-        "description": "Z.AI / GLM API key (also recognized as ZAI_API_KEY / Z_AI_API_KEY)",
-        "prompt": "Z.AI / GLM API key",
-        "url": "https://z.ai/",
-        "password": True,
-        "category": "provider",
-        "advanced": True,
-    },
-    "ZAI_API_KEY": {
-        "description": "Z.AI API key (alias for GLM_API_KEY)",
-        "prompt": "Z.AI API key",
-        "url": "https://z.ai/",
-        "password": True,
-        "category": "provider",
-        "advanced": True,
-    },
-    "Z_AI_API_KEY": {
-        "description": "Z.AI API key (alias for GLM_API_KEY)",
-        "prompt": "Z.AI API key",
-        "url": "https://z.ai/",
-        "password": True,
-        "category": "provider",
-        "advanced": True,
-    },
-    "GLM_BASE_URL": {
-        "description": "Z.AI / GLM base URL override",
-        "prompt": "Z.AI / GLM base URL (leave empty for default)",
-        "url": None,
-        "password": False,
-        "category": "provider",
-        "advanced": True,
-    },
-    "KIMI_API_KEY": {
-        "description": "Kimi / Moonshot API key",
-        "prompt": "Kimi API key",
-        "url": "https://platform.moonshot.cn/",
-        "password": True,
-        "category": "provider",
-        "advanced": True,
-    },
-    "KIMI_BASE_URL": {
-        "description": "Kimi / Moonshot base URL override",
-        "prompt": "Kimi base URL (leave empty for default)",
-        "url": None,
-        "password": False,
-        "category": "provider",
-        "advanced": True,
-    },
-    "KIMI_CN_API_KEY": {
-        "description": "Kimi / Moonshot China API key",
-        "prompt": "Kimi (China) API key",
-        "url": "https://platform.moonshot.cn/",
-        "password": True,
-        "category": "provider",
-        "advanced": True,
-    },
-    "STEPFUN_API_KEY": {
-        "description": "StepFun Step Plan API key",
-        "prompt": "StepFun Step Plan API key",
-        "url": "https://platform.stepfun.com/",
-        "password": True,
-        "category": "provider",
-        "advanced": True,
-    },
-    "STEPFUN_BASE_URL": {
-        "description": "StepFun Step Plan base URL override",
-        "prompt": "StepFun Step Plan base URL (leave empty for default)",
-        "url": None,
-        "password": False,
-        "category": "provider",
-        "advanced": True,
-    },
-    "ARCEEAI_API_KEY": {
-        "description": "Arcee AI API key",
-        "prompt": "Arcee AI API key",
-        "url": "https://chat.arcee.ai/",
-        "password": True,
-        "category": "provider",
-        "advanced": True,
-    },
-    "ARCEE_BASE_URL": {
-        "description": "Arcee AI base URL override",
-        "prompt": "Arcee base URL (leave empty for default)",
-        "url": None,
-        "password": False,
-        "category": "provider",
-        "advanced": True,
-    },
-    "GMI_API_KEY": {
-        "description": "GMI Cloud API key",
-        "prompt": "GMI Cloud API key",
-        "url": "https://www.gmicloud.ai/",
-        "password": True,
-        "category": "provider",
-        "advanced": True,
-    },
-    "GMI_BASE_URL": {
-        "description": "GMI Cloud base URL override",
-        "prompt": "GMI Cloud base URL (leave empty for default)",
-        "url": None,
-        "password": False,
-        "category": "provider",
-        "advanced": True,
-    },
-    "MINIMAX_API_KEY": {
-        "description": "MiniMax API key (international)",
-        "prompt": "MiniMax API key",
-        "url": "https://www.minimax.io/",
-        "password": True,
-        "category": "provider",
-        "advanced": True,
-    },
-    "MINIMAX_BASE_URL": {
-        "description": "MiniMax base URL override",
-        "prompt": "MiniMax base URL (leave empty for default)",
-        "url": None,
-        "password": False,
-        "category": "provider",
-        "advanced": True,
-    },
-    "MINIMAX_CN_API_KEY": {
-        "description": "MiniMax API key (China endpoint)",
-        "prompt": "MiniMax (China) API key",
-        "url": "https://www.minimaxi.com/",
-        "password": True,
-        "category": "provider",
-        "advanced": True,
-    },
-    "MINIMAX_CN_BASE_URL": {
-        "description": "MiniMax (China) base URL override",
-        "prompt": "MiniMax (China) base URL (leave empty for default)",
-        "url": None,
-        "password": False,
-        "category": "provider",
-        "advanced": True,
-    },
-    "DEEPSEEK_API_KEY": {
-        "description": "DeepSeek API key for direct DeepSeek access",
-        "prompt": "DeepSeek API Key",
-        "url": "https://platform.deepseek.com/api_keys",
-        "password": True,
-        "category": "provider",
-    },
-    "DEEPSEEK_BASE_URL": {
-        "description": "Custom DeepSeek API base URL (advanced)",
-        "prompt": "DeepSeek Base URL",
-        "url": "",
-        "password": False,
-        "category": "provider",
-    },
-    "DASHSCOPE_API_KEY": {
-        "description": "Alibaba Cloud DashScope API key (Qwen + multi-provider models)",
-        "prompt": "DashScope API Key",
-        "url": "https://modelstudio.console.alibabacloud.com/",
-        "password": True,
-        "category": "provider",
-    },
-    "DASHSCOPE_BASE_URL": {
-        "description": "Custom DashScope base URL (default: coding-intl OpenAI-compat endpoint)",
-        "prompt": "DashScope Base URL",
-        "url": "",
-        "password": False,
-        "category": "provider",
-        "advanced": True,
-    },
-    "SUPERFORECASTING_AGENT_QWEN_BASE_URL": {
-        "description": "Qwen Portal base URL override (default: https://portal.qwen.ai/v1)",
-        "prompt": "Qwen Portal base URL (leave empty for default)",
-        "url": None,
-        "password": False,
-        "category": "provider",
-        "advanced": True,
-    },
-    "SUPERFORECASTING_AGENT_GEMINI_CLIENT_ID": {
-        "description": "Google OAuth client ID for google-gemini-cli (optional; defaults to Google's public gemini-cli client)",
-        "prompt": "Google OAuth client ID (optional — leave empty to use the public default)",
-        "url": "https://console.cloud.google.com/apis/credentials",
-        "password": False,
-        "category": "provider",
-        "advanced": True,
-    },
-    "SUPERFORECASTING_AGENT_GEMINI_CLIENT_SECRET": {
-        "description": "Google OAuth client secret for google-gemini-cli (optional)",
-        "prompt": "Google OAuth client secret (optional)",
-        "url": "https://console.cloud.google.com/apis/credentials",
-        "password": True,
-        "category": "provider",
-        "advanced": True,
-    },
-    "SUPERFORECASTING_AGENT_GEMINI_PROJECT_ID": {
-        "description": "GCP project ID for paid Gemini tiers (free tier auto-provisions)",
-        "prompt": "GCP project ID for Gemini OAuth (leave empty for free tier)",
-        "url": None,
-        "password": False,
-        "category": "provider",
-        "advanced": True,
-    },
-    "OPENCODE_ZEN_API_KEY": {
-        "description": "OpenCode Zen API key (pay-as-you-go access to curated models)",
-        "prompt": "OpenCode Zen API key",
-        "url": "https://opencode.ai/auth",
-        "password": True,
-        "category": "provider",
-        "advanced": True,
-    },
-    "OPENCODE_ZEN_BASE_URL": {
-        "description": "OpenCode Zen base URL override",
-        "prompt": "OpenCode Zen base URL (leave empty for default)",
-        "url": None,
-        "password": False,
-        "category": "provider",
-        "advanced": True,
-    },
-    "OPENCODE_GO_API_KEY": {
-        "description": "OpenCode Go API key ($10/month subscription for open models)",
-        "prompt": "OpenCode Go API key",
-        "url": "https://opencode.ai/auth",
-        "password": True,
-        "category": "provider",
-        "advanced": True,
-    },
-    "OPENCODE_GO_BASE_URL": {
-        "description": "OpenCode Go base URL override",
-        "prompt": "OpenCode Go base URL (leave empty for default)",
-        "url": None,
-        "password": False,
-        "category": "provider",
-        "advanced": True,
-    },
-    "HF_TOKEN": {
-        "description": "Hugging Face token for Inference Providers (20+ open models via router.huggingface.co)",
-        "prompt": "Hugging Face Token",
-        "url": "https://huggingface.co/settings/tokens",
-        "password": True,
-        "category": "provider",
-    },
-    "HF_BASE_URL": {
-        "description": "Hugging Face Inference Providers base URL override",
-        "prompt": "HF base URL (leave empty for default)",
-        "url": None,
-        "password": False,
-        "category": "provider",
-        "advanced": True,
-    },
-    "OLLAMA_API_KEY": {
-        "description": "Ollama Cloud API key (ollama.com — cloud-hosted open models)",
-        "prompt": "Ollama Cloud API key",
-        "url": "https://ollama.com/settings",
-        "password": True,
-        "category": "provider",
-        "advanced": True,
-    },
-    "OLLAMA_BASE_URL": {
-        "description": "Ollama Cloud base URL override (default: https://ollama.com/v1)",
-        "prompt": "Ollama base URL (leave empty for default)",
-        "url": None,
-        "password": False,
-        "category": "provider",
-        "advanced": True,
-    },
-    "XIAOMI_API_KEY": {
-        "description": "Xiaomi MiMo API key for MiMo models (mimo-v2.5-pro, mimo-v2.5, mimo-v2-pro, mimo-v2-omni, mimo-v2-flash)",
-        "prompt": "Xiaomi MiMo API Key",
-        "url": "https://platform.xiaomimimo.com",
-        "password": True,
-        "category": "provider",
-    },
-    "XIAOMI_BASE_URL": {
-        "description": "Xiaomi MiMo base URL override (default: https://api.xiaomimimo.com/v1)",
-        "prompt": "Xiaomi base URL (leave empty for default)",
-        "url": None,
-        "password": False,
-        "category": "provider",
-        "advanced": True,
-    },
-    "AWS_REGION": {
-        "description": "AWS region for Bedrock API calls (e.g. us-east-1, eu-central-1)",
-        "prompt": "AWS Region",
-        "url": "https://docs.aws.amazon.com/bedrock/latest/userguide/bedrock-regions.html",
-        "password": False,
-        "category": "provider",
-        "advanced": True,
-    },
-    "AWS_PROFILE": {
-        "description": "AWS named profile for Bedrock authentication (from ~/.aws/credentials)",
-        "prompt": "AWS Profile",
-        "url": None,
-        "password": False,
-        "category": "provider",
-        "advanced": True,
-    },
-    "AZURE_FOUNDRY_API_KEY": {
-        "description": "Azure Foundry API key for custom Azure endpoints",
-        "prompt": "Azure Foundry API Key",
-        "url": "https://ai.azure.com/",
-        "password": True,
-        "category": "provider",
-    },
-    "AZURE_FOUNDRY_BASE_URL": {
-        "description": (
-            "Azure Foundry base URL (set via 'superforecasting-agent model' "
-            "for endpoint-specific config)"
-        ),
-        "prompt": "Azure Foundry base URL",
-        "url": None,
-        "password": False,
-        "category": "provider",
-        "advanced": True,
-    },
-
-    # ── Tool API keys ──
-    "EXA_API_KEY": {
-        "description": "Exa API key for AI-native web search and contents",
-        "prompt": "Exa API key",
-        "url": "https://exa.ai/",
-        "tools": ["web_search", "web_extract"],
-        "password": True,
-        "category": "tool",
-    },
-    "PARALLEL_API_KEY": {
-        "description": "Parallel API key for AI-native web search and extract",
-        "prompt": "Parallel API key",
-        "url": "https://parallel.ai/",
-        "tools": ["web_search", "web_extract"],
-        "password": True,
-        "category": "tool",
-    },
-    "FIRECRAWL_API_KEY": {
-        "description": "Firecrawl API key for web search and scraping",
-        "prompt": "Firecrawl API key",
-        "url": "https://firecrawl.dev/",
-        "tools": ["web_search", "web_extract"],
-        "password": True,
-        "category": "tool",
-    },
-    "FIRECRAWL_API_URL": {
-        "description": "Firecrawl API URL for self-hosted instances (optional)",
-        "prompt": "Firecrawl API URL (leave empty for cloud)",
-        "url": None,
-        "password": False,
-        "category": "tool",
-        "advanced": True,
-    },
-    "FIRECRAWL_GATEWAY_URL": {
-        "description": "Exact Firecrawl tool-gateway origin override for Nous Subscribers only (optional)",
-        "prompt": "Firecrawl gateway URL (leave empty to derive from domain)",
-        "url": None,
-        "password": False,
-        "category": "tool",
-        "advanced": True,
-    },
-    "TOOL_GATEWAY_DOMAIN": {
-        "description": "Shared tool-gateway domain suffix for Nous Subscribers only, used to derive vendor hosts, e.g. nousresearch.com -> firecrawl-gateway.nousresearch.com",
-        "prompt": "Tool-gateway domain suffix",
-        "url": None,
-        "password": False,
-        "category": "tool",
-        "advanced": True,
-    },
-    "TOOL_GATEWAY_SCHEME": {
-        "description": "Shared tool-gateway URL scheme for Nous Subscribers only, used to derive vendor hosts (`https` by default, set `http` for local gateway testing)",
-        "prompt": "Tool-gateway URL scheme",
-        "url": None,
-        "password": False,
-        "category": "tool",
-        "advanced": True,
-    },
-    "TOOL_GATEWAY_USER_TOKEN": {
-        "description": "Explicit Nous Subscriber access token for tool-gateway requests (optional; otherwise read from the Superforecasting Agent auth store)",
-        "prompt": "Tool-gateway user token",
-        "url": None,
-        "password": True,
-        "category": "tool",
-        "advanced": True,
-    },
-    "TAVILY_API_KEY": {
-        "description": "Tavily API key for AI-native web search, extract, and crawl",
-        "prompt": "Tavily API key",
-        "url": "https://app.tavily.com/home",
-        "tools": ["web_search", "web_extract", "web_crawl"],
-        "password": True,
-        "category": "tool",
-    },
-    "CENSUS_API_KEY": {
-        "description": "U.S. Census API key for forecast evidence imports",
-        "prompt": "U.S. Census API key",
-        "url": "https://api.census.gov/data/key_signup.html",
-        "tools": ["forecast_ledger"],
-        "password": True,
-        "category": "tool",
-        "advanced": True,
-    },
-    "SEARXNG_URL": {
-        "description": "URL of your SearXNG instance for free self-hosted web search",
-        "prompt": "SearXNG URL (e.g. http://localhost:8080)",
-        "url": "https://searxng.github.io/searxng/",
-        "tools": ["web_search"],
-        "password": False,
-        "category": "tool",
-    },
-    "BRAVE_SEARCH_API_KEY": {
-        "description": "Brave Search API subscription token (free tier: 2,000 queries/mo)",
-        "prompt": "Brave Search subscription token",
-        "url": "https://brave.com/search/api/",
-        "tools": ["web_search"],
-        "password": True,
-        "category": "tool",
-    },
-    "BROWSERBASE_API_KEY": {
-        "description": "Browserbase API key for cloud browser (optional — local browser works without this)",
-        "prompt": "Browserbase API key",
-        "url": "https://browserbase.com/",
-        "tools": ["browser_navigate", "browser_click"],
-        "password": True,
-        "category": "tool",
-    },
-    "BROWSERBASE_PROJECT_ID": {
-        "description": "Browserbase project ID (optional — only needed for cloud browser)",
-        "prompt": "Browserbase project ID",
-        "url": "https://browserbase.com/",
-        "tools": ["browser_navigate", "browser_click"],
-        "password": False,
-        "category": "tool",
-    },
-    "BROWSER_USE_API_KEY": {
-        "description": "Browser Use API key for cloud browser (optional — local browser works without this)",
-        "prompt": "Browser Use API key",
-        "url": "https://browser-use.com/",
-        "tools": ["browser_navigate", "browser_click"],
-        "password": True,
-        "category": "tool",
-    },
-    "FIRECRAWL_BROWSER_TTL": {
-        "description": "Firecrawl browser session TTL in seconds (optional, default 300)",
-        "prompt": "Browser session TTL (seconds)",
-        "tools": ["browser_navigate", "browser_click"],
-        "password": False,
-        "category": "tool",
-    },
-    "AGENT_BROWSER_ENGINE": {
-        "description": "Browser engine for local mode: auto (default Chrome), lightpanda (faster, no screenshots), chrome",
-        "prompt": "Browser engine (auto/lightpanda/chrome)",
-        "url": "https://github.com/vercel-labs/agent-browser",
-        "tools": ["browser_navigate", "browser_snapshot", "browser_click", "browser_vision"],
-        "password": False,
-        "category": "tool",
-        "advanced": True,
-    },
-    "CAMOFOX_URL": {
-        "description": "Camofox browser server URL for local anti-detection browsing (e.g. http://localhost:9377)",
-        "prompt": "Camofox server URL",
-        "url": "https://github.com/jo-inc/camofox-browser",
-        "tools": ["browser_navigate", "browser_click"],
-        "password": False,
-        "category": "tool",
-    },
-    "FAL_KEY": {
-        "description": "FAL API key for image and video generation",
-        "prompt": "FAL API key",
-        "url": "https://fal.ai/",
-        "tools": ["image_generate", "video_generate"],
-        "password": True,
-        "category": "tool",
-    },
-    "VOICE_TOOLS_OPENAI_KEY": {
-        "description": "OpenAI API key for voice transcription (Whisper) and OpenAI TTS",
-        "prompt": "OpenAI API Key (for Whisper STT + TTS)",
-        "url": "https://platform.openai.com/api-keys",
-        "tools": ["voice_transcription", "openai_tts"],
-        "password": True,
-        "category": "tool",
-    },
-    "ELEVENLABS_API_KEY": {
-        "description": "ElevenLabs API key for premium text-to-speech voices",
-        "prompt": "ElevenLabs API key",
-        "url": "https://elevenlabs.io/",
-        "password": True,
-        "category": "tool",
-    },
-    "MISTRAL_API_KEY": {
-        "description": "Mistral API key for Voxtral TTS and transcription (STT)",
-        "prompt": "Mistral API key",
-        "url": "https://console.mistral.ai/",
-        "password": True,
-        "category": "tool",
-    },
-    "GITHUB_TOKEN": {
-        "description": "GitHub token for Skills Hub (higher API rate limits, skill publish)",
-        "prompt": "GitHub Token",
-        "url": "https://github.com/settings/tokens",
-        "password": True,
-        "category": "tool",
-    },
-    "GITHUB_APP_PRIVATE_KEY": {
-        "description": "Private key for the forecast workspace GitHub App",
-        "prompt": "GitHub App private key",
-        "url": "https://github.com/settings/apps",
-        "password": True,
-        "category": "messaging",
-        "advanced": True,
-    },
-    "GITHUB_APP_CLIENT_SECRET": {
-        "description": "OAuth client secret for delegated GitHub user access",
-        "prompt": "GitHub App client secret",
-        "url": "https://github.com/settings/apps",
-        "password": True,
-        "category": "messaging",
-        "advanced": True,
-    },
-    "GITHUB_WEBHOOK_SECRET": {
-        "description": "Signing secret for forecast workspace GitHub webhooks",
-        "prompt": "GitHub webhook secret",
-        "url": "https://github.com/settings/apps",
-        "password": True,
-        "category": "messaging",
-        "advanced": True,
-    },
-    "GITHUB_TOKEN_ENCRYPTION_KEY": {
-        "description": "Encryption key for delegated GitHub user tokens",
-        "prompt": "GitHub token encryption key",
-        "password": True,
-        "category": "messaging",
-        "advanced": True,
-    },
-    "GITHUB_CAPABILITY_SIGNING_KEY": {
-        "description": "Signing key for repository-bound GitHub capabilities",
-        "prompt": "GitHub capability signing key",
-        "password": True,
-        "category": "messaging",
-        "advanced": True,
-    },
-    "SLACK_CHANGESET_ACTION_SIGNING_KEY": {
-        "description": "Signing key for expiring Slack changeset actions",
-        "prompt": "Slack changeset action signing key",
-        "password": True,
-        "category": "messaging",
-        "advanced": True,
-    },
-    "FORECAST_TRACE_ENCRYPTION_KEY": {
-        "description": "Encryption key for private forecast execution traces",
-        "prompt": "Forecast trace encryption key",
-        "password": True,
-        "category": "messaging",
-        "advanced": True,
-    },
-
-    # ── Bundled skills (opt-in: only needed if the user uses that skill) ──
-    # These use category="skill" (distinct from "tool") so the sandbox
-    # env blocklist in tools/environments/local.py does NOT rewrite them —
-    # skills legitimately need these passed through to curl via
-    # tools/env_passthrough.py when the user's skill calls out.
-    "NOTION_API_KEY": {
-        "description": "Notion integration token (used by the `notion` skill)",
-        "prompt": "Notion API key",
-        "url": "https://www.notion.so/my-integrations",
-        "password": True,
-        "category": "skill",
-        "advanced": True,
-    },
-    "LINEAR_API_KEY": {
-        "description": "Linear personal API key (used by the `linear` skill)",
-        "prompt": "Linear API key",
-        "url": "https://linear.app/settings/account/security",
-        "password": True,
-        "category": "skill",
-        "advanced": True,
-    },
-    "AIRTABLE_API_KEY": {
-        "description": "Airtable personal access token (used by the `airtable` skill)",
-        "prompt": "Airtable API key",
-        "url": "https://airtable.com/create/tokens",
-        "password": True,
-        "category": "skill",
-        "advanced": True,
-    },
-    "TENOR_API_KEY": {
-        "description": "Tenor API key for GIF search (used by the `gif-search` skill)",
-        "prompt": "Tenor API key",
-        "url": "https://developers.google.com/tenor/guides/quickstart",
-        "password": True,
-        "category": "skill",
-        "advanced": True,
-    },
-
-    # ── Honcho ──
-    "HONCHO_API_KEY": {
-        "description": "Honcho API key for AI-native persistent memory",
-        "prompt": "Honcho API key",
-        "url": "https://app.honcho.dev",
-        "tools": ["honcho_context"],
-        "password": True,
-        "category": "tool",
-    },
-    "HONCHO_BASE_URL": {
-        "description": "Base URL for self-hosted Honcho instances (no API key needed)",
-        "prompt": "Honcho base URL (e.g. http://localhost:8000)",
-        "category": "tool",
-    },
-
-    # ── Langfuse observability ──
-    "SUPERFORECASTING_AGENT_LANGFUSE_PUBLIC_KEY": {
-        "description": "Langfuse project public key (pk-lf-...)",
-        "prompt": "Langfuse public key",
-        "url": "https://cloud.langfuse.com",
-        "password": False,
-        "category": "tool",
-    },
-    "SUPERFORECASTING_AGENT_LANGFUSE_SECRET_KEY": {
-        "description": "Langfuse project secret key (sk-lf-...)",
-        "prompt": "Langfuse secret key",
-        "url": "https://cloud.langfuse.com",
-        "password": True,
-        "category": "tool",
-    },
-    "SUPERFORECASTING_AGENT_LANGFUSE_BASE_URL": {
-        "description": "Langfuse server URL (default: https://cloud.langfuse.com)",
-        "prompt": "Langfuse server URL (leave empty for cloud.langfuse.com)",
-        "url": None,
-        "password": False,
-        "category": "tool",
-        "advanced": True,
-    },
-
-    # ── Messaging platforms ──
-    "TELEGRAM_BOT_TOKEN": {
-        "description": "Telegram bot token from @BotFather",
-        "prompt": "Telegram bot token",
-        "url": "https://t.me/BotFather",
-        "password": True,
-        "category": "messaging",
-    },
-    "TELEGRAM_ALLOWED_USERS": {
-        "description": "Comma-separated Telegram user IDs allowed to use the bot (get ID from @userinfobot)",
-        "prompt": "Allowed Telegram user IDs (comma-separated)",
-        "url": "https://t.me/userinfobot",
-        "password": False,
-        "category": "messaging",
-    },
-    "TELEGRAM_PROXY": {
-        "description": "Proxy URL for Telegram connections (overrides HTTPS_PROXY). Supports http://, https://, socks5://",
-        "prompt": "Telegram proxy URL (optional)",
-        "password": False,
-        "category": "messaging",
-    },
-    "DISCORD_BOT_TOKEN": {
-        "description": "Discord bot token from Developer Portal",
-        "prompt": "Discord bot token",
-        "url": "https://discord.com/developers/applications",
-        "password": True,
-        "category": "messaging",
-    },
-    "DISCORD_ALLOWED_USERS": {
-        "description": "Comma-separated Discord user IDs allowed to use the bot",
-        "prompt": "Allowed Discord user IDs (comma-separated)",
-        "url": None,
-        "password": False,
-        "category": "messaging",
-    },
-    "DISCORD_REPLY_TO_MODE": {
-        "description": "Discord reply threading mode: 'off' (no reply references), 'first' (reply on first message only, default), 'all' (reply on every chunk)",
-        "prompt": "Discord reply mode (off/first/all)",
-        "url": None,
-        "password": False,
-        "category": "messaging",
-    },
-    "SLACK_BOT_TOKEN": {
-        "description": "Slack bot token (xoxb-). Get from OAuth & Permissions after installing your app. "
-                       "Required scopes: chat:write, app_mentions:read, channels:history, groups:history, "
-                       "im:history, im:read, im:write, users:read, files:read, files:write",
-        "prompt": "Slack Bot Token (xoxb-...)",
-        "url": "https://api.slack.com/apps",
-        "password": True,
-        "category": "messaging",
-    },
-    "SLACK_APP_TOKEN": {
-        "description": "Slack app-level token (xapp-) for Socket Mode. Get from Basic Information → "
-                       "App-Level Tokens. Also ensure Event Subscriptions include: message.im, "
-                       "message.channels, message.groups, app_mention",
-        "prompt": "Slack App Token (xapp-...)",
-        "url": "https://api.slack.com/apps",
-        "password": True,
-        "category": "messaging",
-    },
-    "MATTERMOST_URL": {
-        "description": "Mattermost server URL (e.g. https://mm.example.com)",
-        "prompt": "Mattermost server URL",
-        "url": "https://mattermost.com/deploy/",
-        "password": False,
-        "category": "messaging",
-    },
-    "MATTERMOST_TOKEN": {
-        "description": "Mattermost bot token or personal access token",
-        "prompt": "Mattermost bot token",
-        "url": None,
-        "password": True,
-        "category": "messaging",
-    },
-    "MATTERMOST_ALLOWED_USERS": {
-        "description": "Comma-separated Mattermost user IDs allowed to use the bot",
-        "prompt": "Allowed Mattermost user IDs (comma-separated)",
-        "url": None,
-        "password": False,
-        "category": "messaging",
-    },
-    "MATTERMOST_REQUIRE_MENTION": {
-        "description": "Require @mention in Mattermost channels (default: true). Set to false to respond to all messages.",
-        "prompt": "Require @mention in channels",
-        "url": None,
-        "password": False,
-        "category": "messaging",
-    },
-    "MATTERMOST_FREE_RESPONSE_CHANNELS": {
-        "description": "Comma-separated Mattermost channel IDs where bot responds without @mention",
-        "prompt": "Free-response channel IDs (comma-separated)",
-        "url": None,
-        "password": False,
-        "category": "messaging",
-    },
-    "MATRIX_HOMESERVER": {
-        "description": "Matrix homeserver URL (e.g. https://matrix.example.org)",
-        "prompt": "Matrix homeserver URL",
-        "url": "https://matrix.org/ecosystem/servers/",
-        "password": False,
-        "category": "messaging",
-    },
-    "MATRIX_ACCESS_TOKEN": {
-        "description": "Matrix access token (preferred over password login)",
-        "prompt": "Matrix access token",
-        "url": None,
-        "password": True,
-        "category": "messaging",
-    },
-    "MATRIX_USER_ID": {
-        "description": "Matrix user ID (e.g. @hermes:example.org)",
-        "prompt": "Matrix user ID (@user:server)",
-        "url": None,
-        "password": False,
-        "category": "messaging",
-    },
-    "MATRIX_ALLOWED_USERS": {
-        "description": "Comma-separated Matrix user IDs allowed to use the bot (@user:server format)",
-        "prompt": "Allowed Matrix user IDs (comma-separated)",
-        "url": None,
-        "password": False,
-        "category": "messaging",
-    },
-    "MATRIX_REQUIRE_MENTION": {
-        "description": "Require @mention in Matrix rooms (default: true). Set to false to respond to all messages.",
-        "prompt": "Require @mention in rooms (true/false)",
-        "url": None,
-        "password": False,
-        "category": "messaging",
-        "advanced": True,
-    },
-    "MATRIX_FREE_RESPONSE_ROOMS": {
-        "description": "Comma-separated Matrix room IDs where bot responds without @mention",
-        "prompt": "Free-response room IDs (comma-separated)",
-        "url": None,
-        "password": False,
-        "category": "messaging",
-        "advanced": True,
-    },
-    "MATRIX_AUTO_THREAD": {
-        "description": "Auto-create threads for messages in Matrix rooms (default: true)",
-        "prompt": "Auto-create threads in rooms (true/false)",
-        "url": None,
-        "password": False,
-        "category": "messaging",
-        "advanced": True,
-    },
-    "MATRIX_DM_AUTO_THREAD": {
-        "description": "Auto-create threads for DM messages in Matrix (default: false)",
-        "prompt": "Auto-create threads in DMs (true/false)",
-        "url": None,
-        "password": False,
-        "category": "messaging",
-        "advanced": True,
-    },
-    "MATRIX_DEVICE_ID": {
-        "description": "Stable Matrix device ID for E2EE persistence across restarts (e.g. HERMES_BOT)",
-        "prompt": "Matrix device ID (stable across restarts)",
-        "url": None,
-        "password": False,
-        "category": "messaging",
-        "advanced": True,
-    },
-    "MATRIX_RECOVERY_KEY": {
-        "description": "Matrix recovery key for cross-signing verification after device key rotation (from Element: Settings → Security → Recovery Key)",
-        "prompt": "Matrix recovery key",
-        "url": None,
-        "password": True,
-        "category": "messaging",
-        "advanced": True,
-    },
-    "BLUEBUBBLES_SERVER_URL": {
-        "description": "BlueBubbles server URL for iMessage integration (e.g. http://192.168.1.10:1234)",
-        "prompt": "BlueBubbles server URL",
-        "url": "https://bluebubbles.app/",
-        "password": False,
-        "category": "messaging",
-    },
-    "BLUEBUBBLES_PASSWORD": {
-        "description": "BlueBubbles server password (from BlueBubbles Server → Settings → API)",
-        "prompt": "BlueBubbles server password",
-        "url": None,
-        "password": True,
-        "category": "messaging",
-    },
-    "BLUEBUBBLES_ALLOWED_USERS": {
-        "description": "Comma-separated iMessage addresses (email or phone) allowed to use the bot",
-        "prompt": "Allowed iMessage addresses (comma-separated)",
-        "url": None,
-        "password": False,
-        "category": "messaging",
-    },
-    "BLUEBUBBLES_ALLOW_ALL_USERS": {
-        "description": "Allow all BlueBubbles users without allowlist",
-        "prompt": "Allow All BlueBubbles Users",
-        "category": "messaging",
-    },
-    "QQ_APP_ID": {
-        "description": "QQ Bot App ID from QQ Open Platform (q.qq.com)",
-        "prompt": "QQ App ID",
-        "url": "https://q.qq.com",
-        "category": "messaging",
-    },
-    "QQ_CLIENT_SECRET": {
-        "description": "QQ Bot Client Secret from QQ Open Platform",
-        "prompt": "QQ Client Secret",
-        "password": True,
-        "category": "messaging",
-    },
-    "QQ_ALLOWED_USERS": {
-        "description": "Comma-separated QQ user IDs allowed to use the bot",
-        "prompt": "QQ Allowed Users",
-        "category": "messaging",
-    },
-    "QQ_GROUP_ALLOWED_USERS": {
-        "description": "Comma-separated QQ group IDs allowed to interact with the bot",
-        "prompt": "QQ Group Allowed Users",
-        "category": "messaging",
-    },
-    "QQ_ALLOW_ALL_USERS": {
-        "description": "Allow all QQ users without an allowlist (true/false)",
-        "prompt": "Allow All QQ Users",
-        "category": "messaging",
-    },
-    "QQBOT_HOME_CHANNEL": {
-        "description": "Default QQ channel/group for cron delivery and notifications",
-        "prompt": "QQ Home Channel",
-        "category": "messaging",
-    },
-    "QQBOT_HOME_CHANNEL_NAME": {
-        "description": "Display name for the QQ home channel",
-        "prompt": "QQ Home Channel Name",
-        "category": "messaging",
-    },
-    "QQ_SANDBOX": {
-        "description": "Enable QQ sandbox mode for development testing (true/false)",
-        "prompt": "QQ Sandbox Mode",
-        "category": "messaging",
-    },
-    "IRC_SERVER": {
-        "description": "IRC server hostname (e.g. irc.libera.chat)",
-        "prompt": "IRC server",
-        "url": None,
-        "password": False,
-        "category": "messaging",
-    },
-    "IRC_CHANNEL": {
-        "description": "IRC channel to join (e.g. #hermes)",
-        "prompt": "IRC channel",
-        "url": None,
-        "password": False,
-        "category": "messaging",
-    },
-    "IRC_NICKNAME": {
-        "description": "Bot nickname on IRC (default: hermes-bot)",
-        "prompt": "IRC nickname",
-        "url": None,
-        "password": False,
-        "category": "messaging",
-    },
-    "IRC_SERVER_PASSWORD": {
-        "description": "IRC server password (if required)",
-        "prompt": "IRC server password",
-        "url": None,
-        "password": True,
-        "category": "messaging",
-        "advanced": True,
-    },
-    "IRC_NICKSERV_PASSWORD": {
-        "description": "NickServ password for nick identification",
-        "prompt": "NickServ password",
-        "url": None,
-        "password": True,
-        "category": "messaging",
-        "advanced": True,
-    },
-    "GATEWAY_ALLOW_ALL_USERS": {
-        "description": "Allow all users to interact with messaging bots (true/false). Default: false.",
-        "prompt": "Allow all users (true/false)",
-        "url": None,
-        "password": False,
-        "category": "messaging",
-        "advanced": True,
-    },
-    "API_SERVER_ENABLED": {
-        "description": "Enable the OpenAI-compatible API server (true/false). Allows frontends like Open WebUI, LobeChat, etc. to connect.",
-        "prompt": "Enable API server (true/false)",
-        "url": None,
-        "password": False,
-        "category": "messaging",
-        "advanced": True,
-    },
-    "API_SERVER_KEY": {
-        "description": "Bearer token for API server authentication. Required whenever the API server is enabled; server refuses to start without it.",
-        "prompt": "API server auth key",
-        "url": None,
-        "password": True,
-        "category": "messaging",
-        "advanced": True,
-    },
-    "API_SERVER_PORT": {
-        "description": "Port for the API server (default: 8642).",
-        "prompt": "API server port",
-        "url": None,
-        "password": False,
-        "category": "messaging",
-        "advanced": True,
-    },
-    "API_SERVER_HOST": {
-        "description": "Host/bind address for the API server (default: 127.0.0.1). API_SERVER_KEY is still required even on loopback binds.",
-        "prompt": "API server host",
-        "url": None,
-        "password": False,
-        "category": "messaging",
-        "advanced": True,
-    },
-    "API_SERVER_MODEL_NAME": {
-        "description": "Model name advertised on /v1/models. Defaults to the profile name (or 'superforecasting-agent' for the default profile). Useful for multi-user setups with OpenWebUI.",
-        "prompt": "API server model name",
-        "url": None,
-        "password": False,
-        "category": "messaging",
-        "advanced": True,
-    },
-    "GATEWAY_PROXY_URL": {
-        "description": "URL of a remote Superforecasting Agent API server to forward messages to (proxy mode). When set, the gateway handles platform I/O only — all agent work is delegated to the remote server. Use for Docker E2EE containers that relay to a host agent. Also configurable via gateway.proxy_url in config.yaml.",
-        "prompt": "Remote Superforecasting Agent API server URL (e.g. http://192.168.1.100:8642)",
-        "url": None,
-        "password": False,
-        "category": "messaging",
-        "advanced": True,
-    },
-    "GATEWAY_PROXY_KEY": {
-        "description": "Bearer token for authenticating with the remote Superforecasting Agent API server (proxy mode). Must match the API_SERVER_KEY on the remote host.",
-        "prompt": "Remote API server auth key",
-        "url": None,
-        "password": True,
-        "category": "messaging",
-        "advanced": True,
-    },
-    "WEBHOOK_ENABLED": {
-        "description": "Enable the webhook platform adapter for receiving events from GitHub, GitLab, etc.",
-        "prompt": "Enable webhooks (true/false)",
-        "url": None,
-        "password": False,
-        "category": "messaging",
-    },
-    "WEBHOOK_PORT": {
-        "description": "Port for the webhook HTTP server (default: 8644).",
-        "prompt": "Webhook port",
-        "url": None,
-        "password": False,
-        "category": "messaging",
-    },
-    "WEBHOOK_SECRET": {
-        "description": "Global HMAC secret for webhook signature validation (overridable per route in config.yaml).",
-        "prompt": "Webhook secret",
-        "url": None,
-        "password": True,
-        "category": "messaging",
-    },
-
-    # ── Agent settings ──
-    # NOTE: MESSAGING_CWD was removed here — use terminal.cwd in config.yaml
-    # instead.  The gateway reads TERMINAL_CWD (bridged from terminal.cwd).
-    "SUDO_PASSWORD": {
-        "description": "Sudo password for terminal commands requiring root access; set to an explicit empty string to try empty without prompting",
-        "prompt": "Sudo password",
-        "url": None,
-        "password": True,
-        "category": "setting",
-    },
-    "HERMES_MAX_ITERATIONS": {
-        "description": "Per-turn tool-call soft cap (default: 200; a breach checkpoints and continues, not a hard stop). Canonical key: FORECAST_AGENT_MAX_TOOL_ITERATIONS",
-        "prompt": "Max iterations",
-        "url": None,
-        "password": False,
-        "category": "setting",
-    },
-    # HERMES_TOOL_PROGRESS and HERMES_TOOL_PROGRESS_MODE are deprecated —
-    # now configured via display.tool_progress in config.yaml (off|new|all|verbose).
-    # Gateway falls back to these env vars for backward compatibility.
-    "HERMES_TOOL_PROGRESS": {
-        "description": "(deprecated) Use display.tool_progress in config.yaml instead",
-        "prompt": "Tool progress (deprecated — use config.yaml)",
-        "url": None,
-        "password": False,
-        "category": "setting",
-    },
-    "HERMES_TOOL_PROGRESS_MODE": {
-        "description": "(deprecated) Use display.tool_progress in config.yaml instead",
-        "prompt": "Progress mode (deprecated — use config.yaml)",
-        "url": None,
-        "password": False,
-        "category": "setting",
-    },
-    "SUPERFORECASTING_AGENT_PREFILL_MESSAGES_FILE": {
-        "description": "Path to JSON file with ephemeral prefill messages for few-shot priming",
-        "prompt": "Prefill messages file path",
-        "url": None,
-        "password": False,
-        "category": "setting",
-    },
-    "SUPERFORECASTING_AGENT_EPHEMERAL_SYSTEM_PROMPT": {
-        "description": "Ephemeral system prompt injected at API-call time (never persisted to sessions)",
-        "prompt": "Ephemeral system prompt",
-        "url": None,
-        "password": False,
-        "category": "setting",
-    },
-}
+from superforecasting_agent.configuration.environment_catalog import OPTIONAL_ENV_VARS as OPTIONAL_ENV_VARS
 
 # Tool Gateway env vars are always visible — they're useful for
 # self-hosted / custom gateway setups regardless of subscription state.
@@ -3445,54 +582,8 @@ def get_missing_env_vars(required_only: bool = False) -> List[Dict[str, Any]]:
 
 
 def _set_nested(config, dotted_key: str, value):
-    """Set a value at an arbitrarily nested dotted key path.
-
-    Supports both dict and list navigation:
-      _set_nested(c, "a.b.c", 1)     → c["a"]["b"]["c"] = 1
-      _set_nested(c, "a.0.b", 1)     → c["a"][0]["b"] = 1
-      _set_nested(c, "providers.1", "x") → c["providers"][1] = "x"
-
-    Intermediate dicts are created on demand.  List indices are parsed
-    from numeric path segments; the referenced index must already exist
-    (we do not grow lists — the user is navigating into structure they
-    wrote themselves).  If a segment targets a non-container leaf
-    (scalar), the leaf is replaced with a fresh dict so the write can
-    proceed — this preserves the pre-existing behavior for bare scalar
-    overrides (e.g. setting ``a.b.c`` where ``a.b`` was previously a
-    string).
-
-    Guards against #17876: before this fix the code unconditionally
-    replaced any non-dict value (including lists) with ``{}``, silently
-    destroying list-typed config like ``custom_providers`` whenever a
-    caller used an indexed path.
-    """
-    parts = dotted_key.split(".")
-    current = config
-    for part in parts[:-1]:
-        if isinstance(current, list):
-            try:
-                idx = int(part)
-            except (TypeError, ValueError):
-                raise TypeError(
-                    f"Cannot navigate into list at key {dotted_key!r}: "
-                    f"segment {part!r} is not a numeric index"
-                )
-            current = current[idx]
-        elif isinstance(current, dict):
-            existing = current.get(part)
-            # Preserve dicts and lists; replace missing/scalar with a fresh dict.
-            if part not in current or not isinstance(existing, (dict, list)):
-                current[part] = {}
-            current = current[part]
-        else:
-            raise TypeError(
-                f"Cannot navigate into {type(current).__name__} at key {dotted_key!r}"
-            )
-    last = parts[-1]
-    if isinstance(current, list):
-        current[int(last)] = value
-    else:
-        current[last] = value
+    from superforecasting_agent.storage.files import set_nested
+    return set_nested(config, dotted_key, value)
 
 
 def get_missing_config_fields() -> List[Dict[str, Any]]:
@@ -3570,196 +661,15 @@ def get_missing_skill_config_vars() -> List[Dict[str, Any]]:
     return missing
 
 
-def _normalize_custom_provider_entry(
-    entry: Any,
-    *,
-    provider_key: str = "",
-) -> Optional[Dict[str, Any]]:
-    """Return a runtime-compatible custom provider entry or ``None``."""
-    if not isinstance(entry, dict):
-        return None
-
-    # Accept camelCase aliases commonly used in hand-written configs.
-    _CAMEL_ALIASES: Dict[str, str] = {
-        "apiKey": "api_key",
-        "baseUrl": "base_url",
-        "apiMode": "api_mode",
-        "keyEnv": "key_env",
-        "apiKeyEnv": "key_env",  # alias — OpenClaw-compatible + docs variant
-        "defaultModel": "default_model",
-        "contextLength": "context_length",
-        "rateLimitDelay": "rate_limit_delay",
-    }
-    # api_key_env is a documented snake_case alias for key_env (see
-    # website/docs/guides/azure-foundry.md).  Normalize it up front so the
-    # rest of the normalizer treats it as the canonical field.
-    if "api_key_env" in entry and "key_env" not in entry:
-        entry["key_env"] = entry["api_key_env"]
-    _KNOWN_KEYS = {
-        "name", "api", "url", "base_url", "api_key", "key_env", "api_key_env",
-        "api_mode", "transport", "model", "default_model", "models",
-        "context_length", "rate_limit_delay",
-        "request_timeout_seconds", "stale_timeout_seconds",
-        "discover_models",
-    }
-    for camel, snake in _CAMEL_ALIASES.items():
-        if camel in entry and snake not in entry:
-            logger.warning(
-                "providers.%s: camelCase key '%s' auto-mapped to '%s' "
-                "(use snake_case to avoid this warning)",
-                provider_key or "?", camel, snake,
-            )
-            entry[snake] = entry[camel]
-    unknown = set(entry.keys()) - _KNOWN_KEYS - set(_CAMEL_ALIASES.keys())
-    if unknown:
-        logger.warning(
-            "providers.%s: unknown config keys ignored: %s",
-            provider_key or "?", ", ".join(sorted(unknown)),
-        )
-
-    from urllib.parse import urlparse
-
-    base_url = ""
-    for url_key in ("base_url", "url", "api"):
-        raw_url = entry.get(url_key)
-        if isinstance(raw_url, str) and raw_url.strip():
-            candidate = raw_url.strip()
-            parsed = urlparse(candidate)
-            if parsed.scheme and parsed.netloc:
-                base_url = candidate
-                break
-            else:
-                logger.warning(
-                    "providers.%s: '%s' value '%s' is not a valid URL "
-                    "(no scheme or host) — skipped",
-                    provider_key or "?", url_key, candidate,
-                )
-    if not base_url:
-        return None
-
-    name = ""
-    raw_name = entry.get("name")
-    if isinstance(raw_name, str) and raw_name.strip():
-        name = raw_name.strip()
-    elif provider_key.strip():
-        name = provider_key.strip()
-    if not name:
-        return None
-
-    normalized: Dict[str, Any] = {
-        "name": name,
-        "base_url": base_url,
-    }
-
-    provider_key = provider_key.strip()
-    if provider_key:
-        normalized["provider_key"] = provider_key
-
-    api_key = entry.get("api_key")
-    if isinstance(api_key, str) and api_key.strip():
-        normalized["api_key"] = api_key.strip()
-
-    key_env = entry.get("key_env")
-    if isinstance(key_env, str) and key_env.strip():
-        normalized["key_env"] = key_env.strip()
-
-    api_mode = entry.get("api_mode") or entry.get("transport")
-    if isinstance(api_mode, str) and api_mode.strip():
-        normalized["api_mode"] = api_mode.strip()
-
-    model_name = entry.get("model") or entry.get("default_model")
-    if isinstance(model_name, str) and model_name.strip():
-        normalized["model"] = model_name.strip()
-
-    models = entry.get("models")
-    if isinstance(models, dict) and models:
-        normalized["models"] = models
-    elif isinstance(models, list) and models:
-        # Hand-edited configs (and older Hermes versions) write ``models`` as
-        # a plain list of model ids. Preserve them by converting to the dict
-        # shape downstream code expects; otherwise normalize silently drops
-        # the list and /model shows the provider with (0) models.
-        normalized["models"] = {
-            str(m): {} for m in models if isinstance(m, str) and m.strip()
-        }
-
-    context_length = entry.get("context_length")
-    if isinstance(context_length, int) and context_length > 0:
-        normalized["context_length"] = context_length
-
-    rate_limit_delay = entry.get("rate_limit_delay")
-    if isinstance(rate_limit_delay, (int, float)) and rate_limit_delay >= 0:
-        normalized["rate_limit_delay"] = rate_limit_delay
-
-    discover_models = entry.get("discover_models")
-    if isinstance(discover_models, bool):
-        normalized["discover_models"] = discover_models
-
-    return normalized
+from superforecasting_agent.configuration.provider_validation import _normalize_custom_provider_entry as _normalize_custom_provider_entry
 
 
-def providers_dict_to_custom_providers(providers_dict: Any) -> List[Dict[str, Any]]:
-    """Normalize ``providers`` config entries into the legacy custom-provider shape."""
-    if not isinstance(providers_dict, dict):
-        return []
-
-    custom_providers: List[Dict[str, Any]] = []
-    for key, entry in providers_dict.items():
-        normalized = _normalize_custom_provider_entry(entry, provider_key=str(key))
-        if normalized is not None:
-            custom_providers.append(normalized)
-
-    return custom_providers
+from superforecasting_agent.configuration.provider_validation import providers_dict_to_custom_providers as providers_dict_to_custom_providers
 
 
-def get_compatible_custom_providers(
-    config: Optional[Dict[str, Any]] = None,
-) -> List[Dict[str, Any]]:
-    """Return a deduplicated custom-provider view across legacy and v12+ config.
-
-    ``custom_providers`` remains the on-disk legacy format, while ``providers``
-    is the newer keyed schema.  Runtime and picker flows still need a single
-    list-shaped view, but we should not materialise that compatibility layer
-    back into config.yaml because it duplicates entries in UIs.
-    """
-    if config is None:
-        config = load_config()
-
-    compatible: List[Dict[str, Any]] = []
-    seen_provider_keys: set = set()
-    seen_name_url_pairs: set = set()
-
-    def _append_if_new(entry: Optional[Dict[str, Any]]) -> None:
-        if entry is None:
-            return
-        provider_key = str(entry.get("provider_key", "") or "").strip().lower()
-        name = str(entry.get("name", "") or "").strip().lower()
-        base_url = str(entry.get("base_url", "") or "").strip().rstrip("/").lower()
-        model = str(entry.get("model", "") or "").strip().lower()
-        pair = (name, base_url, model)
-
-        if provider_key and provider_key in seen_provider_keys:
-            return
-        if name and base_url and pair in seen_name_url_pairs:
-            return
-
-        compatible.append(entry)
-        if provider_key:
-            seen_provider_keys.add(provider_key)
-        if name and base_url:
-            seen_name_url_pairs.add(pair)
-
-    custom_providers = config.get("custom_providers")
-    if custom_providers is not None:
-        if not isinstance(custom_providers, list):
-            return []
-        for entry in custom_providers:
-            _append_if_new(_normalize_custom_provider_entry(entry))
-
-    for entry in providers_dict_to_custom_providers(config.get("providers")):
-        _append_if_new(entry)
-
-    return compatible
+def get_compatible_custom_providers(config=None):
+    from superforecasting_agent.configuration.provider_validation import get_compatible_custom_providers as compatible
+    return compatible(load_config() if config is None else config)
 
 
 def get_custom_provider_context_length(
@@ -3844,34 +754,16 @@ def check_config_version() -> Tuple[int, int]:
 # =============================================================================
 
 # Fields that are valid at root level of config.yaml
-_KNOWN_ROOT_KEYS = {
-    "_config_version", "model", "providers", "fallback_model",
-    "fallback_providers", "credential_pool_strategies", "toolsets",
-    "agent", "terminal", "display", "compression", "delegation",
-    "auxiliary", "custom_providers", "context", "memory", "gateway",
-    "sessions",
-}
+from superforecasting_agent.configuration.provider_validation import _KNOWN_ROOT_KEYS as _KNOWN_ROOT_KEYS
 
 # Valid fields inside a custom_providers list entry
-_VALID_CUSTOM_PROVIDER_FIELDS = {
-    "name", "base_url", "api_key", "api_mode", "model", "models",
-    "context_length", "rate_limit_delay",
-    # key_env is read at runtime by runtime_provider.py and auxiliary_client.py
-    # — include it here so the set accurately describes the supported schema.
-    "key_env",
-}
+from superforecasting_agent.configuration.provider_validation import _VALID_CUSTOM_PROVIDER_FIELDS as _VALID_CUSTOM_PROVIDER_FIELDS
 
 # Fields that look like they should be inside custom_providers, not at root
-_CUSTOM_PROVIDER_LIKE_FIELDS = {"base_url", "api_key", "rate_limit_delay", "api_mode"}
+from superforecasting_agent.configuration.provider_validation import _CUSTOM_PROVIDER_LIKE_FIELDS as _CUSTOM_PROVIDER_LIKE_FIELDS
 
 
-@dataclass
-class ConfigIssue:
-    """A detected config structure problem."""
-
-    severity: str  # "error", "warning"
-    message: str
-    hint: str
+from superforecasting_agent.configuration.provider_validation import ConfigIssue as ConfigIssue
 
 
 def validate_config_structure(config: Optional[Dict[str, Any]] = None) -> List["ConfigIssue"]:
@@ -3894,283 +786,8 @@ def validate_config_structure(config: Optional[Dict[str, Any]] = None) -> List["
                 )
             ]
 
-    issues: List[ConfigIssue] = []
-
-    # ── multiplayer ledger collaboration ────────────────────────────────
-    collaboration = config.get("collaboration")
-    if collaboration is not None and not isinstance(collaboration, dict):
-        issues.append(ConfigIssue(
-            "error",
-            "collaboration must be a YAML mapping",
-            "Use collaboration: {enabled: false, github: ..., repository: ...}",
-        ))
-    elif isinstance(collaboration, dict):
-        from urllib.parse import urlparse
-
-        github = collaboration.get("github") or {}
-        repository = collaboration.get("repository") or {}
-        review = collaboration.get("review") or {}
-        discussion = collaboration.get("discussion") or {}
-        transcripts = collaboration.get("transcripts") or {}
-        for section_name, section in (
-            ("github", github),
-            ("repository", repository),
-            ("review", review),
-            ("discussion", discussion),
-            ("transcripts", transcripts),
-        ):
-            if not isinstance(section, dict):
-                issues.append(ConfigIssue(
-                    "error",
-                    f"collaboration.{section_name} must be a YAML mapping",
-                    f"Replace collaboration.{section_name} with a mapping of named settings",
-                ))
-        if isinstance(github, dict):
-            for key in ("api_url", "upload_url"):
-                value = str(github.get(key) or "")
-                parsed = urlparse(value)
-                if parsed.scheme != "https" or not parsed.hostname:
-                    issues.append(ConfigIssue(
-                        "error",
-                        f"collaboration.github.{key} must be an absolute HTTPS URL",
-                        f"Set collaboration.github.{key} to an https:// endpoint",
-                    ))
-            public_base = str(github.get("public_base_url") or "")
-            if public_base:
-                parsed = urlparse(public_base)
-                if parsed.scheme != "https" or not parsed.hostname or parsed.query or parsed.fragment:
-                    issues.append(ConfigIssue(
-                        "error",
-                        "collaboration.github.public_base_url must be an absolute HTTPS URL",
-                        "Example: https://forecast.example.com",
-                    ))
-            for key in ("oauth_state_ttl_seconds", "installation_state_ttl_seconds"):
-                ttl = github.get(key, 600)
-                if isinstance(ttl, bool) or not isinstance(ttl, int) or ttl < 60:
-                    issues.append(ConfigIssue(
-                        "error",
-                        f"collaboration.github.{key} must be at least 60",
-                        "Use 600 for the default ten-minute authorization window",
-                    ))
-            app_slug = str(github.get("app_slug") or "")
-            if app_slug and not re.fullmatch(r"[A-Za-z0-9-]+", app_slug):
-                issues.append(ConfigIssue(
-                    "error",
-                    "collaboration.github.app_slug is invalid",
-                    "Use the slug from https://github.com/apps/<app-slug>",
-                ))
-            for key in (
-                "oauth_callback_path",
-                "installation_begin_path",
-                "installation_callback_path",
-                "webhook_path",
-            ):
-                path = str(github.get(key) or "")
-                if not path.startswith("/") or ".." in path or "\\" in path:
-                    issues.append(ConfigIssue(
-                        "error",
-                        f"collaboration.github.{key} must be a safe absolute path",
-                        "Use a fixed absolute /api/... path without traversal",
-                    ))
-        if isinstance(repository, dict):
-            slug = str(repository.get("slug") or "").strip()
-            if slug and not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", slug):
-                issues.append(ConfigIssue(
-                    "error",
-                    "collaboration.repository.slug must use owner/repository form",
-                    "Example: forecasting-team/forecast-ledger",
-                ))
-            branch = str(repository.get("default_branch") or "").strip()
-            if not branch or branch.startswith(("-", ".")) or any(
-                marker in branch for marker in ("..", "~", "^", ":", "\\", " ")
-            ):
-                issues.append(ConfigIssue(
-                    "error",
-                    "collaboration.repository.default_branch is not a safe Git ref",
-                    "Use a simple branch name such as main",
-                ))
-        if isinstance(review, dict):
-            threshold = review.get("materiality_threshold", 0.10)
-            if isinstance(threshold, bool) or not isinstance(threshold, (int, float)) \
-                    or not 0 <= float(threshold) <= 1:
-                issues.append(ConfigIssue(
-                    "error",
-                    "collaboration.review.materiality_threshold must be between 0 and 1",
-                    "Use 0.10 for the default ten-percentage-point boundary",
-                ))
-            for key in ("medium_required_humans", "high_required_humans"):
-                value = review.get(key)
-                if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-                    issues.append(ConfigIssue(
-                        "error",
-                        f"collaboration.review.{key} must be a non-negative integer",
-                        "Use 1 for medium risk and 2 for high risk",
-                    ))
-            overrides = review.get("risk_overrides") or {}
-            if not isinstance(overrides, dict):
-                issues.append(ConfigIssue(
-                    "error",
-                    "collaboration.review.risk_overrides must be a mapping",
-                    "Map operation kinds to low, medium, or high",
-                ))
-            elif any(value not in {"low", "medium", "high"} for value in overrides.values()):
-                issues.append(ConfigIssue(
-                    "error",
-                    "collaboration.review.risk_overrides contains an unknown risk tier",
-                    "Risk override values must be low, medium, or high",
-                ))
-        if isinstance(transcripts, dict):
-            retention = transcripts.get("raw_retention_days", 90)
-            if isinstance(retention, bool) or not isinstance(retention, int) or retention < 0:
-                issues.append(ConfigIssue(
-                    "error",
-                    "collaboration.transcripts.raw_retention_days must be non-negative",
-                    "Use 90 for the default retention period",
-                ))
-        if isinstance(discussion, dict):
-            for key in (
-                "max_comments",
-                "max_rounds",
-                "max_tokens",
-                "max_elapsed_seconds",
-                "max_concurrent_tasks",
-                "agent_loop_threshold",
-                "max_comment_bytes",
-            ):
-                value = discussion.get(key)
-                if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-                    issues.append(ConfigIssue(
-                        "error",
-                        f"collaboration.discussion.{key} must be a positive integer",
-                        "Use the documented default or another value greater than zero",
-                    ))
-
-    # ── custom_providers must be a list, not a dict ──────────────────────
-    cp = config.get("custom_providers")
-    if cp is not None:
-        if isinstance(cp, dict):
-            issues.append(ConfigIssue(
-                "error",
-                "custom_providers is a dict — it must be a YAML list (items prefixed with '-')",
-                "Change to:\n"
-                "  custom_providers:\n"
-                "    - name: my-provider\n"
-                "      base_url: https://...\n"
-                "      api_key: ...",
-            ))
-            # Check if dict keys look like they should be list-entry fields
-            cp_keys = set(cp.keys()) if isinstance(cp, dict) else set()
-            suspicious = cp_keys & _CUSTOM_PROVIDER_LIKE_FIELDS
-            if suspicious:
-                issues.append(ConfigIssue(
-                    "warning",
-                    f"Root-level keys {sorted(suspicious)} look like custom_providers entry fields",
-                    "These should be indented under a '- name: ...' list entry, not at root level",
-                ))
-        elif isinstance(cp, list):
-            # Validate each entry in the list
-            for i, entry in enumerate(cp):
-                if not isinstance(entry, dict):
-                    issues.append(ConfigIssue(
-                        "warning",
-                        f"custom_providers[{i}] is not a dict (got {type(entry).__name__})",
-                        "Each entry should have at minimum: name, base_url",
-                    ))
-                    continue
-                if not entry.get("name"):
-                    issues.append(ConfigIssue(
-                        "warning",
-                        f"custom_providers[{i}] is missing 'name' field",
-                        "Add a name, e.g.: name: my-provider",
-                    ))
-                if not entry.get("base_url"):
-                    issues.append(ConfigIssue(
-                        "warning",
-                        f"custom_providers[{i}] is missing 'base_url' field",
-                        "Add the API endpoint URL, e.g.: base_url: https://api.example.com/v1",
-                    ))
-
-    # ── fallback_model: single dict OR list of dicts (chain) ─────────────
-    fb = config.get("fallback_model")
-    if fb is not None:
-        if isinstance(fb, list):
-            # Chain fallback — validate each entry
-            for i, entry in enumerate(fb):
-                if not isinstance(entry, dict):
-                    issues.append(ConfigIssue(
-                        "error",
-                        f"fallback_model[{i}] should be a dict, got {type(entry).__name__}",
-                        "Each entry needs provider + model",
-                    ))
-                else:
-                    if not entry.get("provider"):
-                        issues.append(ConfigIssue(
-                            "warning",
-                            f"fallback_model[{i}] is missing 'provider' field",
-                            "Add: provider: openrouter (or another provider)",
-                        ))
-                    if not entry.get("model"):
-                        issues.append(ConfigIssue(
-                            "warning",
-                            f"fallback_model[{i}] is missing 'model' field",
-                            "Add: model: <model-name>",
-                        ))
-        elif not isinstance(fb, dict):
-            issues.append(ConfigIssue(
-                "error",
-                f"fallback_model should be a dict with 'provider' and 'model', got {type(fb).__name__}",
-                "Change to:\n"
-                "  fallback_model:\n"
-                "    provider: openrouter\n"
-                "    model: anthropic/claude-sonnet-4",
-            ))
-        elif fb:
-            if not fb.get("provider"):
-                issues.append(ConfigIssue(
-                    "warning",
-                    "fallback_model is missing 'provider' field — fallback will be disabled",
-                    "Add: provider: openrouter (or another provider)",
-                ))
-            if not fb.get("model"):
-                issues.append(ConfigIssue(
-                    "warning",
-                    "fallback_model is missing 'model' field — fallback will be disabled",
-                    "Add: model: anthropic/claude-sonnet-4 (or another model)",
-                ))
-
-    # ── Check for fallback_model accidentally nested inside custom_providers ──
-    if isinstance(cp, dict) and "fallback_model" not in config and "fallback_model" in (cp or {}):
-        issues.append(ConfigIssue(
-            "error",
-            "fallback_model appears inside custom_providers instead of at root level",
-            "Move fallback_model to the top level of config.yaml (no indentation)",
-        ))
-
-    # ── model section: should exist when custom_providers is configured ──
-    model_cfg = config.get("model")
-    if cp and not model_cfg:
-        issues.append(ConfigIssue(
-            "warning",
-            "custom_providers defined but no 'model' section — Superforecasting Agent won't know which provider to use",
-            "Add a model section:\n"
-            "  model:\n"
-            "    provider: custom\n"
-            "    default: your-model-name\n"
-            "    base_url: https://...",
-        ))
-
-    # ── Root-level keys that look misplaced ──────────────────────────────
-    for key in config:
-        if key.startswith("_"):
-            continue
-        if key not in _KNOWN_ROOT_KEYS and key in _CUSTOM_PROVIDER_LIKE_FIELDS:
-            issues.append(ConfigIssue(
-                "warning",
-                f"Root-level key '{key}' looks misplaced — should it be under 'model:' or inside a 'custom_providers' entry?",
-                f"Move '{key}' under the appropriate section",
-            ))
-
-    return issues
+    from superforecasting_agent.configuration.provider_validation import validate_config_structure as validate
+    return validate(config)
 
 
 def print_config_warnings(config: Optional[Dict[str, Any]] = None) -> None:
@@ -4824,44 +1441,8 @@ def migrate_config(interactive: bool = True, quiet: bool = False) -> Dict[str, A
     return results
 
 
-def _deep_merge(base: dict, override: dict) -> dict:
-    """Recursively merge *override* into *base*, preserving nested defaults.
-
-    Keys in *override* take precedence. If both values are dicts the merge
-    recurses, so a user who overrides only ``tts.elevenlabs.voice_id`` will
-    keep the default ``tts.elevenlabs.model_id`` intact.
-    """
-    result = base.copy()
-    for key, value in override.items():
-        if (
-            key in result
-            and isinstance(result[key], dict)
-            and isinstance(value, dict)
-        ):
-            result[key] = _deep_merge(result[key], value)
-        else:
-            result[key] = value
-    return result
 
 
-def _expand_env_vars(obj):
-    """Recursively expand ``${VAR}`` references in config values.
-
-    Only string values are processed; dict keys, numbers, booleans, and
-    None are left untouched.  Unresolved references (variable not in
-    ``os.environ``) are kept verbatim so callers can detect them.
-    """
-    if isinstance(obj, str):
-        return re.sub(
-            r"\${([^}]+)}",
-            lambda m: os.environ.get(m.group(1), m.group(0)),
-            obj,
-        )
-    if isinstance(obj, dict):
-        return {k: _expand_env_vars(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [_expand_env_vars(item) for item in obj]
-    return obj
 
 
 def _items_by_unique_name(items):
@@ -4943,100 +1524,24 @@ def _preserve_env_ref_templates(current, raw, loaded_expanded=None):
     return current
 
 
-def _normalize_root_model_keys(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Move stale root-level provider/base_url/context_length into model section.
-
-    Some users (or older code) placed ``provider:``, ``base_url:``, or
-    ``context_length:`` at the config root instead of inside ``model:``.
-    These root-level keys are only used as a fallback when the corresponding
-    ``model.*`` key is empty — they never override an existing value.
-    After migration the root-level keys are removed so they can't cause
-    confusion on subsequent loads.
-    """
-    # Only act if there are root-level keys to migrate
-    has_root = any(config.get(k) for k in ("provider", "base_url", "context_length"))
-    if not has_root:
-        return config
-
-    config = dict(config)
-    model = config.get("model")
-    if not isinstance(model, dict):
-        model = {"default": model} if model else {}
-        config["model"] = model
-
-    for key in ("provider", "base_url", "context_length"):
-        root_val = config.get(key)
-        if root_val and not model.get(key):
-            model[key] = root_val
-        config.pop(key, None)
-
-    return config
 
 
-def _normalize_max_turns_config(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Normalize legacy root-level max_turns into agent.max_turns."""
-    config = dict(config)
-    agent_config = dict(config.get("agent") or {})
-
-    if "max_turns" in config and "max_turns" not in agent_config:
-        agent_config["max_turns"] = config["max_turns"]
-
-    if "max_turns" not in agent_config:
-        agent_config["max_turns"] = DEFAULT_CONFIG["agent"]["max_turns"]
-
-    config["agent"] = agent_config
-    config.pop("max_turns", None)
-    return config
 
 
-def cfg_get(cfg: Optional[Dict[str, Any]], *keys: str, default: Any = None) -> Any:
-    """Traverse nested dict keys safely, returning ``default`` on any miss.
-
-    Canonical helper for the ``cfg.get("X", {}).get("Y", default)`` pattern
-    that appears 50+ times across the codebase. Handles three common gotchas
-    in one place:
-
-      1. Missing intermediate keys (returns ``default``, no KeyError).
-      2. An intermediate value that's not a dict (e.g. a user wrote a string
-         where a section was expected). Returns ``default`` instead of
-         AttributeError on ``.get()``.
-      3. ``cfg is None`` (callers sometimes pass ``load_config() or None``).
-
-    Named ``cfg_get`` rather than ``cfg_path`` to avoid shadowing the
-    ubiquitous ``cfg_path = _hermes_home / "config.yaml"`` local variable
-    that appears in gateway/run.py, cron/scheduler.py, main.py, etc.
-
-    Explicit ``None`` values are returned as-is (matches ``dict.get(key,
-    default)`` semantics — ``default`` is only returned when the key is
-    *absent*, not when it's present but set to ``None``).
-
-    Examples:
-        >>> cfg_get({"agent": {"reasoning_effort": "high"}}, "agent", "reasoning_effort")
-        'high'
-        >>> cfg_get({}, "agent", "reasoning_effort", default="medium")
-        'medium'
-        >>> cfg_get({"agent": "oops_a_string"}, "agent", "reasoning_effort", default="low")
-        'low'
-        >>> cfg_get(None, "anything", default=42)
-        42
-        >>> cfg_get({"a": {"b": None}}, "a", "b", default="def")  # explicit None preserved
-        >>> cfg_get({"a": {"b": False}}, "a", "b", default=True)  # falsy values preserved
-        False
-    """
-    if not isinstance(cfg, dict):
-        return default
-    node: Any = cfg
-    for key in keys:
-        if not isinstance(node, dict):
-            return default
-        if key not in node:
-            return default
-        node = node[key]
-    return node
 
 
 
 def read_raw_config() -> Dict[str, Any]:
+    """Read a revision-bearing raw snapshot suitable for a checked save."""
+    with _CONFIG_LOCK:
+        path = get_config_path()
+        revision = _config_revision(path)
+        result = _ConfigSnapshot(_read_raw_config())
+        result._path, result._revision = path.resolve(), revision
+        return result
+
+
+def _read_raw_config() -> Dict[str, Any]:
     """Read active agent-home config.yaml as-is, without merging defaults or migrating.
 
     Returns the raw YAML dict, or ``{}`` if the file doesn't exist or can't
@@ -5044,7 +1549,7 @@ def read_raw_config() -> Dict[str, Any]:
     single value and don't want the overhead of ``load_config()``'s deep-merge
     + migration pipeline.
 
-    Cached on the config file's (mtime_ns, size) — same strategy as
+    Cached on the config file's contents — same strategy as
     ``load_config()``. Returns a deepcopy on every call since some callers
     mutate the result before passing to ``save_config()``.
     """
@@ -5054,33 +1559,44 @@ def read_raw_config() -> Dict[str, Any]:
 
         try:
             config_path = get_config_path()
-            st = config_path.stat()
-            cache_key = (st.st_mtime_ns, st.st_size)
+            cache_key = config_path.read_bytes()
         except (FileNotFoundError, OSError):
             return {}
 
         path_key = str(config_path)
         cached = _RAW_CONFIG_CACHE.get(path_key)
-        if cached is not None and cached[:2] == cache_key:
-            return copy.deepcopy(cached[2])
+        if cached is not None and cached[0] == cache_key:
+            return copy.deepcopy(cached[1])
 
         try:
-            with open(config_path, encoding="utf-8") as f:
-                data = yaml.safe_load(f) or {}
+            data = yaml.safe_load(cache_key.decode("utf-8")) or {}
         except Exception as e:
             _warn_config_parse_failure(config_path, e)
             return {}
 
         if not isinstance(data, dict):
             data = {}
-        _RAW_CONFIG_CACHE[path_key] = (cache_key[0], cache_key[1], copy.deepcopy(data))
+        _RAW_CONFIG_CACHE[path_key] = (cache_key, copy.deepcopy(data))
         return data
+
+
+# Stable across runtime module reloads and compatibility import paths. Keeping
+# this type in storage prevents an old snapshot from losing revision validation.
+from superforecasting_agent.storage.files import ConfigSnapshot as _ConfigSnapshot
+
+
+from superforecasting_agent.storage.files import config_revision as _config_revision
+
+
+# Preserve compatibility for callers that serialize a loaded mapping directly.
+yaml.SafeDumper.add_representer(_ConfigSnapshot, yaml.representer.SafeRepresenter.represent_dict)
+yaml.Dumper.add_representer(_ConfigSnapshot, yaml.representer.SafeRepresenter.represent_dict)
 
 
 def load_config() -> Dict[str, Any]:
     """Load configuration from ~/.superforecasting-agent/config.yaml.
 
-    Cached on the config file's (mtime_ns, size). Returns a deepcopy of
+    Cached on the config file's contents. Returns a deepcopy of
     the cached value when unchanged, since most call sites mutate the
     result (e.g. ``cfg["model"]["default"] = ...`` before ``save_config``).
     The cache is keyed on ``str(config_path)`` so profile switches
@@ -5095,7 +1611,26 @@ def load_config() -> Dict[str, Any]:
     entirely, with ``FORECAST_IGNORE_USER_CONFIG`` and
     ``HERMES_IGNORE_USER_CONFIG`` retained as compatibility aliases.
     """
-    return _load_config_impl(want_deepcopy=True)
+    with _CONFIG_LOCK:
+        path = get_config_path().resolve()
+        revision = _config_revision(path)
+        config = _ConfigSnapshot(_load_config_impl(want_deepcopy=True))
+        config._path = path
+        # A concurrent replacement during the read conservatively forces reload
+        # before saving. Reading a managed/read-only config requires no lock file.
+        config._revision = revision
+        return config
+
+
+def reload_config_in_place(config):
+    """Replace a wizard's mapping with a fresh snapshot, including its revision."""
+    refreshed = load_config()
+    config.clear()
+    config.update(refreshed)
+    if isinstance(config, _ConfigSnapshot):
+        config._path = refreshed._path
+        config._revision = refreshed._revision
+    return config
 
 
 def load_config_readonly() -> Dict[str, Any]:
@@ -5121,6 +1656,10 @@ def load_config_readonly() -> Dict[str, Any]:
     return _load_config_impl(want_deepcopy=False)
 
 
+
+
+
+
 def _load_config_impl(*, want_deepcopy: bool) -> Dict[str, Any]:
     with _CONFIG_LOCK:
         ensure_hermes_home()
@@ -5129,8 +1668,7 @@ def _load_config_impl(*, want_deepcopy: bool) -> Dict[str, Any]:
         ignore_user_config = _ignore_user_config_requested()
 
         try:
-            st = config_path.stat()
-            cache_key: Optional[Tuple[int, int]] = (st.st_mtime_ns, st.st_size)
+            cache_key: Optional[bytes] = config_path.read_bytes()
         except FileNotFoundError:
             cache_key = None
 
@@ -5139,29 +1677,17 @@ def _load_config_impl(*, want_deepcopy: bool) -> Dict[str, Any]:
             not ignore_user_config
             and cached is not None
             and cache_key is not None
-            and cached[:2] == cache_key
+            and cached[0] == cache_key
         ):
-            return copy.deepcopy(cached[2]) if want_deepcopy else cached[2]
+            return copy.deepcopy(cached[1]) if want_deepcopy else cached[1]
 
         config = copy.deepcopy(DEFAULT_CONFIG)
 
         if cache_key is not None and not ignore_user_config:
             try:
-                with open(config_path, encoding="utf-8") as f:
-                    user_config = yaml.safe_load(f) or {}
+                user_config = yaml.safe_load(cache_key.decode("utf-8")) or {}
 
-                if "max_turns" in user_config:
-                    agent_user_config = dict(user_config.get("agent") or {})
-                    if agent_user_config.get("max_turns") is None:
-                        agent_user_config["max_turns"] = user_config["max_turns"]
-                    user_config["agent"] = agent_user_config
-                    user_config.pop("max_turns", None)
-
-                # Promote explicit model.model before defaults can shadow it.
-                if isinstance(user_config.get('model'), dict):
-                    from superforecasting_agent.runtime.model_configuration import model_section
-                    user_config['model'] = model_section(user_config)
-                config = _deep_merge(config, user_config)
+                config = _merge_user_config(user_config)
             except Exception as e:
                 _warn_config_parse_failure(config_path, e)
 
@@ -5174,7 +1700,7 @@ def _load_config_impl(*, want_deepcopy: bool) -> Dict[str, Any]:
             # cached value, and ``load_config_readonly()`` (deepcopy=False)
             # callers all see the same stable cached object.
             cached_copy = copy.deepcopy(expanded)
-            _LOAD_CONFIG_CACHE[path_key] = (cache_key[0], cache_key[1], cached_copy)
+            _LOAD_CONFIG_CACHE[path_key] = (cache_key, cached_copy)
             # On the readonly path return the same cached object subsequent
             # calls will see — keeps "two readonly calls return the same
             # object" invariant that callers may rely on for identity checks.
@@ -5266,15 +1792,24 @@ _COMMENTED_SECTIONS = """
 
 
 def save_config(config: Dict[str, Any]):
-    """Save configuration to the active agent-home config.yaml."""
-    with _CONFIG_LOCK:
-        if is_managed():
-            managed_error("save configuration")
-            return
+    """Save configuration, refusing stale loaded snapshots and malformed files."""
+    if is_managed():
+        managed_error("save configuration")
+        return
+    from superforecasting_agent.storage.files import yaml_update_lock
+    with _CONFIG_LOCK, yaml_update_lock(get_config_path()):
         from superforecasting_agent.storage.files import atomic_yaml_write
 
         ensure_hermes_home()
         config_path = get_config_path()
+        if isinstance(config, _ConfigSnapshot) and (
+            config._path != config_path.resolve() or config._revision != _config_revision(config_path)
+        ):
+            raise ValueError("Configuration changed since it was loaded; reload before saving to preserve concurrent edits")
+        if config_path.exists():
+            raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+            if raw is not None and not isinstance(raw, dict):
+                raise ValueError("Configuration root must be a mapping; refusing to overwrite it")
         current_normalized = _normalize_root_model_keys(_normalize_max_turns_config(config))
         normalized = current_normalized
         raw_existing = _normalize_root_model_keys(_normalize_max_turns_config(read_raw_config()))
@@ -5306,190 +1841,78 @@ def save_config(config: Dict[str, Any]):
             extra_content="".join(parts) if parts else None,
         )
         _secure_file(config_path)
+        if isinstance(config, _ConfigSnapshot):
+            config._revision = _config_revision(config_path)
         _LAST_EXPANDED_CONFIG_BY_PATH[str(config_path)] = copy.deepcopy(current_normalized)
 
 
 def load_env() -> Dict[str, str]:
-    """Load environment variables from the active agent-home .env.
+    """Read the active credential file through shared, content-keyed storage."""
+    from superforecasting_agent.storage.environment import read_environment
 
-    Sanitizes lines before parsing so that corrupted files (e.g.
-    concatenated KEY=VALUE pairs on a single line) are handled
-    gracefully instead of producing mangled values such as duplicated
-    bot tokens.  See #8908.
-
-    The parsed dict is memoised keyed on the .env file mtime, because
-    ``get_env_value()`` is called dozens-to-hundreds of times per
-    interactive menu render (`superforecasting-agent tools`, setup, status
-    panels). Sanitisation is O(lines × known-keys), so re-parsing the
-    same file on every call was burning ~300ms of CPU per `superforecasting-agent tools`
-    menu paint on top of the OAuth-refresh slowness. The mtime check
-    invalidates the cache when the user edits .env mid-process.
-    """
-    global _env_cache
-    env_path = get_env_path()
-
-    try:
-        mtime = env_path.stat().st_mtime
-        size = env_path.stat().st_size
-        cache_key = (str(env_path), mtime, size)
-    except FileNotFoundError:
-        cache_key = (str(env_path), None, None)
-    except Exception:
-        cache_key = None
-
-    if cache_key is not None and _env_cache is not None:
-        cached_key, cached_vars = _env_cache
-        if cached_key == cache_key:
-            return dict(cached_vars)
-
-    env_vars: Dict[str, str] = {}
-
-    if env_path.exists():
-        # On Windows, open() defaults to the system locale (cp1252) which can
-        # fail on UTF-8 .env files. Always use explicit UTF-8; tolerate BOM
-        # via utf-8-sig since users may edit .env in Notepad which adds one.
-        open_kw = {"encoding": "utf-8-sig", "errors": "replace"}
-        with open(env_path, **open_kw) as f:
-            raw_lines = f.readlines()
-        # Sanitize before parsing: split concatenated lines & drop stale
-        # placeholders so corrupted .env files don't produce invalid tokens.
-        lines = _sanitize_env_lines(raw_lines)
-        for line in lines:
-            line = line.strip()
-            if line and not line.startswith('#') and '=' in line:
-                key, _, value = line.partition('=')
-                env_vars[key.strip()] = value.strip().strip('"\'')
-
-    if cache_key is not None:
-        _env_cache = (cache_key, dict(env_vars))
-
-    return env_vars
-
-
-# Module-level memo for load_env(), keyed on (path, mtime, size).
-# Editing .env bumps mtime → next load_env() rebuilds. invalidate_env_cache()
-# is the explicit knob for writers that update .env via this module
-# (set_env_value, save_env, etc.) without relying on filesystem mtime
-# resolution.
-_env_cache: Optional[Tuple[Tuple[str, Optional[float], Optional[int]], Dict[str, str]]] = None
+    return read_environment(
+        get_env_path(), known_keys=set(OPTIONAL_ENV_VARS) | _EXTRA_ENV_KEYS,
+    )
 
 
 def invalidate_env_cache() -> None:
-    """Clear the load_env() process-level memo.
+    """Discard cached credential parsing after an owned mutation."""
+    from superforecasting_agent.storage.environment import clear_environment_cache
 
-    Writers that mutate .env (set_env_value, save_env, etc.) call this
-    to guarantee the next load_env() sees their change even on
-    filesystems with coarse mtime resolution. Reads invalidate naturally
-    via the mtime/size check.
-    """
-    global _env_cache
-    _env_cache = None
+    clear_environment_cache()
 
 
 def _sanitize_env_lines(lines: list) -> list:
-    """Fix corrupted .env lines before reading or writing.
-
-    Handles two known corruption patterns:
-    1. Concatenated KEY=VALUE pairs on a single line (missing newline between
-       entries, e.g. ``ANTHROPIC_API_KEY=sk-...OPENAI_BASE_URL=https://...``).
-    2. Stale ``KEY=***`` placeholder entries left by incomplete setup runs.
-
-    Uses a known-keys set (OPTIONAL_ENV_VARS + _EXTRA_ENV_KEYS) so we only
-    split on real agent env var names, avoiding false positives from values
-    that happen to contain uppercase text with ``=``.
-    """
-    # Build the known keys set lazily from OPTIONAL_ENV_VARS + extras.
-    # Done inside the function so OPTIONAL_ENV_VARS is guaranteed to be defined.
-    known_keys = set(OPTIONAL_ENV_VARS.keys()) | _EXTRA_ENV_KEYS
-
-    sanitized: list[str] = []
-    for line in lines:
-        raw = line.rstrip("\r\n")
-        stripped = raw.strip()
-
-        # Preserve blank lines and comments
-        if not stripped or stripped.startswith("#"):
-            sanitized.append(raw + "\n")
-            continue
-
-        # Detect concatenated KEY=VALUE pairs on one line.
-        # Search for known KEY= patterns at any position in the line.
-        # We collect full needle ranges so we can drop matches that are
-        # fully contained within a longer overlapping needle. Without this,
-        # suffix collisions corrupt the file: e.g. LM_API_KEY= inside
-        # GLM_API_KEY= would otherwise split the line into "G\nLM_API_KEY=...".
-        match_ranges: list[tuple[int, int]] = []
-        for key_name in known_keys:
-            needle = key_name + "="
-            idx = stripped.find(needle)
-            while idx >= 0:
-                match_ranges.append((idx, idx + len(needle)))
-                idx = stripped.find(needle, idx + len(needle))
-
-        split_positions = sorted({
-            s for s, e in match_ranges
-            if not any(
-                s2 <= s and e2 >= e and (s2, e2) != (s, e)
-                for s2, e2 in match_ranges
-            )
-        })
-
-        if len(split_positions) > 1:
-            for i, pos in enumerate(split_positions):
-                end = split_positions[i + 1] if i + 1 < len(split_positions) else len(stripped)
-                part = stripped[pos:end].strip()
-                if part:
-                    sanitized.append(part + "\n")
-        else:
-            sanitized.append(stripped + "\n")
-
-    return sanitized
+    """Repair environment lines against the current credential catalog."""
+    from superforecasting_agent.configuration.env_lines import sanitize_env_lines
+    return sanitize_env_lines(lines, set(OPTIONAL_ENV_VARS) | _EXTRA_ENV_KEYS)
 
 
 def sanitize_env_file() -> int:
     """Read, sanitize, and rewrite active agent-home .env in place.
 
-    Returns the number of lines that were fixed (concatenation splits +
-    placeholder removals).  Returns 0 when no changes are needed.
+    Returns the number of lines changed by concatenation repair or whitespace
+    normalization. Credential usability is validated separately.  Returns 0 when no changes are needed.
     """
     env_path = get_env_path()
     if not env_path.exists():
         return 0
 
-    read_kw = {"encoding": "utf-8-sig", "errors": "replace"}
-    write_kw = {"encoding": "utf-8"}
+    from superforecasting_agent.storage.files import yaml_update_lock
+    with yaml_update_lock(env_path):
+        read_kw = {"encoding": "utf-8-sig", "errors": "replace"}
 
-    with open(env_path, **read_kw) as f:
-        original_lines = f.readlines()
+        with open(env_path, **read_kw) as f:
+            original_lines = f.readlines()
 
-    sanitized = _sanitize_env_lines(original_lines)
+        sanitized = _sanitize_env_lines(original_lines)
 
-    if sanitized == original_lines:
-        return 0
+        if sanitized == original_lines:
+            return 0
 
-    # Count fixes: difference in line count (from splits) + removed lines
-    fixes = abs(len(sanitized) - len(original_lines))
-    if fixes == 0:
-        # Lines changed content (e.g. *** removal) even if count is same
-        fixes = sum(1 for a, b in zip(original_lines, sanitized) if a != b)
-        fixes += abs(len(sanitized) - len(original_lines))
+        # Count fixes: line count changes from splits and normalized content
+        fixes = abs(len(sanitized) - len(original_lines))
+        if fixes == 0:
+            # Lines changed content even if their count is the same
+            fixes = sum(1 for a, b in zip(original_lines, sanitized) if a != b)
+            fixes += abs(len(sanitized) - len(original_lines))
 
-    fd, tmp_path = tempfile.mkstemp(dir=str(env_path.parent), suffix=".tmp", prefix=".env_")
-    try:
-        with os.fdopen(fd, "w", **write_kw) as f:
-            f.writelines(sanitized)
-            f.flush()
-            os.fsync(f.fileno())
-        atomic_replace(tmp_path, env_path)
-    except BaseException:
+        fd, tmp_path = tempfile.mkstemp(dir=str(env_path.parent), suffix=".tmp", prefix=".env_")
         try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
-        raise
-    _secure_file(env_path)
-    invalidate_env_cache()
-    return fixes
+            with owned_text_descriptor(fd) as f:
+                f.writelines(sanitized)
+                f.flush()
+                os.fsync(f.fileno())
+            atomic_replace(tmp_path, env_path)
+        except BaseException:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+        _secure_file(env_path)
+        invalidate_env_cache()
+        return fixes
 
 
 def _check_non_ascii_credential(key: str, value: str) -> str:
@@ -5545,63 +1968,64 @@ def save_env_value(key: str, value: str):
     value = _check_non_ascii_credential(key, value)
     ensure_hermes_home()
     env_path = get_env_path()
+    from superforecasting_agent.storage.files import yaml_update_lock
+    with yaml_update_lock(env_path):
 
-    # On Windows, open() defaults to the system locale (cp1252) which can
-    # cause OSError errno 22 on UTF-8 .env files.
-    read_kw = {"encoding": "utf-8-sig", "errors": "replace"}
-    write_kw = {"encoding": "utf-8"}
+        # On Windows, open() defaults to the system locale (cp1252) which can
+        # cause OSError errno 22 on UTF-8 .env files.
+        read_kw = {"encoding": "utf-8-sig", "errors": "replace"}
 
-    lines = []
-    if env_path.exists():
-        with open(env_path, **read_kw) as f:
-            lines = f.readlines()
-        # Sanitize on every read: split concatenated keys, drop stale placeholders
-        lines = _sanitize_env_lines(lines)
+        lines = []
+        if env_path.exists():
+            with open(env_path, **read_kw) as f:
+                lines = f.readlines()
+            # Repair concatenated keys and normalize surrounding whitespace
+            lines = _sanitize_env_lines(lines)
 
-    # Find and update or append
-    found = False
-    for i, line in enumerate(lines):
-        if line.strip().startswith(f"{key}="):
-            lines[i] = f"{key}={value}\n"
-            found = True
-            break
+        # Find and update or append
+        found = False
+        for i, line in enumerate(lines):
+            if line.strip().startswith(f"{key}="):
+                lines[i] = f"{key}={value}\n"
+                found = True
+                break
 
-    if not found:
-        # Ensure there's a newline at the end of the file before appending
-        if lines and not lines[-1].endswith("\n"):
-            lines[-1] += "\n"
-        lines.append(f"{key}={value}\n")
+        if not found:
+            # Ensure there's a newline at the end of the file before appending
+            if lines and not lines[-1].endswith("\n"):
+                lines[-1] += "\n"
+            lines.append(f"{key}={value}\n")
     
-    fd, tmp_path = tempfile.mkstemp(dir=str(env_path.parent), suffix='.tmp', prefix='.env_')
-    # Preserve original permissions so Docker volume mounts aren't clobbered.
-    original_mode = None
-    if env_path.exists():
-        try:
-            original_mode = stat.S_IMODE(env_path.stat().st_mode)
-        except OSError:
-            pass
-    try:
-        with os.fdopen(fd, 'w', **write_kw) as f:
-            f.writelines(lines)
-            f.flush()
-            os.fsync(f.fileno())
-        atomic_replace(tmp_path, env_path)
-        # Restore original permissions before _secure_file may tighten them.
-        if original_mode is not None:
+        fd, tmp_path = tempfile.mkstemp(dir=str(env_path.parent), suffix='.tmp', prefix='.env_')
+        # Preserve original permissions so Docker volume mounts aren't clobbered.
+        original_mode = None
+        if env_path.exists():
             try:
-                os.chmod(env_path, original_mode)
+                original_mode = stat.S_IMODE(env_path.stat().st_mode)
             except OSError:
                 pass
-    except BaseException:
         try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
-        raise
-    _secure_file(env_path)
+            with owned_text_descriptor(fd) as f:
+                f.writelines(lines)
+                f.flush()
+                os.fsync(f.fileno())
+            atomic_replace(tmp_path, env_path)
+            # Restore original permissions before _secure_file may tighten them.
+            if original_mode is not None:
+                try:
+                    os.chmod(env_path, original_mode)
+                except OSError:
+                    pass
+        except BaseException:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+        _secure_file(env_path)
 
-    os.environ[key] = value
-    invalidate_env_cache()
+        os.environ[key] = value
+        invalidate_env_cache()
 
 
 def remove_env_value(key: str) -> bool:
@@ -5619,46 +2043,47 @@ def remove_env_value(key: str) -> bool:
         os.environ.pop(key, None)
         return False
 
-    read_kw = {"encoding": "utf-8-sig", "errors": "replace"}
-    write_kw = {"encoding": "utf-8"}
+    from superforecasting_agent.storage.files import yaml_update_lock
+    with yaml_update_lock(env_path):
+        read_kw = {"encoding": "utf-8-sig", "errors": "replace"}
 
-    with open(env_path, **read_kw) as f:
-        lines = f.readlines()
-    lines = _sanitize_env_lines(lines)
+        with open(env_path, **read_kw) as f:
+            lines = f.readlines()
+        lines = _sanitize_env_lines(lines)
 
-    new_lines = [line for line in lines if not line.strip().startswith(f"{key}=")]
-    found = len(new_lines) < len(lines)
+        new_lines = [line for line in lines if not line.strip().startswith(f"{key}=")]
+        found = len(new_lines) < len(lines)
 
-    if found:
-        fd, tmp_path = tempfile.mkstemp(dir=str(env_path.parent), suffix='.tmp', prefix='.env_')
-        # Preserve original permissions so Docker volume mounts aren't clobbered.
-        original_mode = None
-        try:
-            original_mode = stat.S_IMODE(env_path.stat().st_mode)
-        except OSError:
-            pass
-        try:
-            with os.fdopen(fd, 'w', **write_kw) as f:
-                f.writelines(new_lines)
-                f.flush()
-                os.fsync(f.fileno())
-            atomic_replace(tmp_path, env_path)
-            if original_mode is not None:
-                try:
-                    os.chmod(env_path, original_mode)
-                except OSError:
-                    pass
-        except BaseException:
+        if found:
+            fd, tmp_path = tempfile.mkstemp(dir=str(env_path.parent), suffix='.tmp', prefix='.env_')
+            # Preserve original permissions so Docker volume mounts aren't clobbered.
+            original_mode = None
             try:
-                os.unlink(tmp_path)
+                original_mode = stat.S_IMODE(env_path.stat().st_mode)
             except OSError:
                 pass
-            raise
-        _secure_file(env_path)
+            try:
+                with owned_text_descriptor(fd) as f:
+                    f.writelines(new_lines)
+                    f.flush()
+                    os.fsync(f.fileno())
+                atomic_replace(tmp_path, env_path)
+                if original_mode is not None:
+                    try:
+                        os.chmod(env_path, original_mode)
+                    except OSError:
+                        pass
+            except BaseException:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
+            _secure_file(env_path)
 
-    os.environ.pop(key, None)
-    invalidate_env_cache()
-    return found
+        os.environ.pop(key, None)
+        invalidate_env_cache()
+        return found
 
 
 def save_anthropic_oauth_token(value: str, save_fn=None):
@@ -5774,7 +2199,7 @@ def show_config():
     for env_key, name in keys:
         value = get_env_value(env_key)
         print(f"  {name:<14} {redact_key(value)}")
-    from superforecasting_agent.runtime.auth import get_anthropic_key
+    from superforecasting_agent.credentials.auth import get_anthropic_key
     anthropic_value = get_anthropic_key()
     print(f"  {'Anthropic':<14} {redact_key(anthropic_value)}")
     
@@ -5976,36 +2401,18 @@ def set_config_value(key: str, value: str):
     # Read the raw user config (not merged with defaults) to avoid
     # dumping all default values back to the file
     config_path = get_config_path()
-    user_config = {}
-    if config_path.exists():
-        try:
-            with open(config_path, encoding="utf-8") as f:
-                user_config = yaml.safe_load(f) or {}
-        except Exception:
-            user_config = {}
-    
     # Handle nested keys (e.g., "tts.provider") including numeric list
     # indices (e.g., "custom_providers.0.api_key").  Delegates to
     # _set_nested which preserves list-typed nodes; before #17876 the
     # inline navigation here silently overwrote lists with dicts.
 
-    # Convert value to appropriate type
-    if value.lower() in {'true', 'yes', 'on'}:
-        value = True
-    elif value.lower() in {'false', 'no', 'off'}:
-        value = False
-    elif value.isdigit():
-        value = int(value)
-    elif value.replace('.', '', 1).isdigit():
-        value = float(value)
+    from superforecasting_agent.configuration import parse_setting_value
+    value = parse_setting_value(value)
 
-    _set_nested(user_config, key, value)
-    
-    # Write only user config back (not the full merged defaults)
-    ensure_hermes_home()
-    from superforecasting_agent.storage.files import atomic_yaml_write
-    atomic_yaml_write(config_path, user_config, sort_keys=False)
-    
+    from superforecasting_agent.storage.files import atomic_roundtrip_yaml_update
+    with _CONFIG_LOCK:
+        atomic_roundtrip_yaml_update(config_path, key, value)
+
     # Keep .env in sync for keys that terminal_tool reads directly from env vars.
     # config.yaml is authoritative, but terminal_tool only reads TERMINAL_ENV etc.
     _config_to_env_sync = {
@@ -6253,62 +2660,11 @@ def _inject_platform_plugin_env_vars() -> None:
         return
     _platform_plugin_env_vars_injected = True
     try:
-        import yaml  # type: ignore
-
-        # Resolve the bundled plugins dir from this file's location so the
-        # injector works regardless of CWD.
-        repo_root = get_install_root()
-        platforms_dir = repo_root / "plugins" / "platforms"
-        if not platforms_dir.is_dir():
-            return
-        for child in platforms_dir.iterdir():
-            if not child.is_dir():
-                continue
-            manifest_path = child / "plugin.yaml"
-            if not manifest_path.exists():
-                manifest_path = child / "plugin.yml"
-            if not manifest_path.exists():
-                continue
-            try:
-                with open(manifest_path, "r", encoding="utf-8") as f:
-                    manifest = yaml.safe_load(f) or {}
-            except Exception:
-                continue
-            label = manifest.get("label") or manifest.get("name") or child.name
-            # Merge required + optional env var declarations.
-            entries = list(manifest.get("requires_env") or [])
-            entries.extend(manifest.get("optional_env") or [])
-            for entry in entries:
-                if isinstance(entry, str):
-                    name = entry
-                    meta: dict = {}
-                elif isinstance(entry, dict) and entry.get("name"):
-                    name = entry["name"]
-                    meta = entry
-                else:
-                    continue
-                if name in OPTIONAL_ENV_VARS:
-                    continue  # hardcoded entry wins (back-compat)
-                # Heuristic: anything named *TOKEN, *SECRET, *KEY, *PASSWORD
-                # is a password field unless explicitly overridden.
-                name_upper = name.upper()
-                is_secret = bool(meta.get("password") or meta.get("secret"))
-                if not is_secret and not meta.get("password") is False:
-                    is_secret = any(
-                        name_upper.endswith(suf)
-                        for suf in ("_TOKEN", "_SECRET", "_KEY", "_PASSWORD", "_JSON")
-                    )
-                OPTIONAL_ENV_VARS[name] = {
-                    "description": (
-                        meta.get("description")
-                        or f"{label} configuration"
-                    ),
-                    "prompt": meta.get("prompt") or name,
-                    "url": meta.get("url") or None,
-                    "password": is_secret,
-                    "category": meta.get("category") or "messaging",
-                }
-    except Exception:
+        from superforecasting_agent.storage.plugin_environment import read_platform_environment
+        entries = read_platform_environment(get_install_root() / "plugins" / "platforms")
+        for name, metadata in entries.items():
+            OPTIONAL_ENV_VARS.setdefault(name, metadata)
+    except OSError:
         pass
 
 

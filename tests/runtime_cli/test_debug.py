@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch, call
 
 import pytest
+from superforecasting_agent.application.command_output import emit
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -386,7 +387,7 @@ class TestCollectDebugReport:
         from superforecasting_agent.runtime.debug import collect_debug_report
 
         with patch("superforecasting_agent.runtime.dump.run_dump") as mock_dump:
-            mock_dump.side_effect = lambda args: print(
+            mock_dump.side_effect = lambda args: emit(
                 "--- superforecasting-agent dump ---\nversion: 0.8.0\n--- end dump ---"
             )
             report = collect_debug_report(log_lines=50)
@@ -514,7 +515,7 @@ class TestRunDebugShare:
         with patch("superforecasting_agent.runtime.dump.run_dump") as mock_dump, \
              patch("superforecasting_agent.runtime.debug.upload_to_pastebin",
                     side_effect=_mock_upload):
-            mock_dump.side_effect = lambda a: print(
+            mock_dump.side_effect = lambda a: emit(
                 "--- superforecasting-agent dump ---\nversion: test\n--- end dump ---"
             )
             run_debug_share(args)
@@ -1227,3 +1228,37 @@ class TestShareIncludesAutoDelete:
 
         out = capsys.readouterr().out
         assert "public paste service" not in out
+
+
+def test_dump_capture_is_request_local(monkeypatch, capsys):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from superforecasting_agent.runtime import debug, dump
+
+    barrier = Barrier(2)
+    original_stdout = sys.stdout
+
+    def fake_dump(args):
+        assert sys.stdout is original_stdout
+        dump.print('fixture dump')
+        barrier.wait(timeout=5)
+        assert sys.stdout is original_stdout
+
+    monkeypatch.setattr(dump, 'run_dump', fake_dump)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        captures = list(pool.map(lambda _: debug._capture_dump(), range(2)))
+    assert captures == ['fixture dump\n', 'fixture dump\n']
+    assert capsys.readouterr().out == ''
+
+
+def test_debug_capture_restores_enclosing_output(monkeypatch, capsys):
+    from superforecasting_agent.application.command_output import capture_output
+    from superforecasting_agent.runtime import debug, dump
+
+    monkeypatch.setattr(dump, 'run_dump', lambda args: dump.print('inner dump'))
+    with capture_output() as (outer, _):
+        debug.print('before')
+        assert debug._capture_dump() == 'inner dump\n'
+        debug.print('after')
+    assert outer.getvalue() == 'before\nafter\n'
+    assert capsys.readouterr().out == ''

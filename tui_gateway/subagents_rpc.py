@@ -10,7 +10,8 @@ into ``_REGISTRARS``; ``server.py`` calls :func:`register` (at load AND on
 through the REAL ``server.rpc_validated`` / ``server.method`` so registration
 lands in the same ``tui_gateway.server._methods`` dispatch dict — byte-identical.
 
-No monkeypatched names are referenced. The spawn-tree disk helpers
+Session lookup uses the server bound at registration, so replacing a package
+attribute cannot redirect a request into another host registry. The spawn-tree disk helpers
 (``_spawn_trees_root`` / ``_spawn_tree_session_dir`` / ``_append_spawn_tree_index``
 / ``_read_spawn_tree_index`` + ``_SPAWN_TREE_INDEX``) stay in core and are
 imported bare (no ``_core.`` hop).
@@ -20,6 +21,8 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
+
+import tui_gateway.server as _core
 
 from tui_gateway.server import (
     _SPAWN_TREE_INDEX,
@@ -52,16 +55,38 @@ def method(name: str):
 
 def register(server) -> None:
     """(Re-)register every carved subagent/spawn-tree handler into ``_methods``."""
+    global _core, _SPAWN_TREE_INDEX, _append_spawn_tree_index, _err, _ok, _read_spawn_tree_index, _spawn_tree_session_dir, _spawn_trees_root
+    _core = server
+    _SPAWN_TREE_INDEX = server._SPAWN_TREE_INDEX
+    _append_spawn_tree_index = server._append_spawn_tree_index
+    _err = server._err
+    _ok = server._ok
+    _read_spawn_tree_index = server._read_spawn_tree_index
+    _spawn_tree_session_dir = server._spawn_tree_session_dir
+    _spawn_trees_root = server._spawn_trees_root
     for kind, name, fn in _REGISTRARS:
         getattr(server, kind)(name)(fn)
+
+
+def _session_owner(rid, params):
+    session, error = _core._sess_nowait(params, rid)
+    if error:
+        return None, error
+    key = session.get("session_key")
+    if not key:
+        return None, _err(rid, 4004, "session has no delegation owner")
+    return key, None
 
 
 __all__ = ["register"]
 @rpc_validated("delegation.status")
 def _(rid, params: dict) -> dict:
+    session_key, error = _session_owner(rid, params)
+    if error:
+        return error
+
+    from superforecasting_agent.hosting.delegations import is_spawn_paused, list_active_subagents
     from tools.delegate_tool import (
-        is_spawn_paused,
-        list_active_subagents,
         _get_max_async_children,
         _get_max_concurrent_children,
         _get_max_spawn_depth,
@@ -72,16 +97,16 @@ def _(rid, params: dict) -> dict:
     try:
         from tools.async_delegation import list_async_delegations
 
-        async_delegations = list_async_delegations()
+        async_delegations = list_async_delegations(session_key=session_key)
     except Exception:
         async_delegations = []
 
     return _ok(
         rid,
         {
-            "active": list_active_subagents(),
+            "active": list_active_subagents(session_key=session_key),
             "async": async_delegations,
-            "paused": is_spawn_paused(),
+            "paused": is_spawn_paused(session_key=session_key),
             "max_spawn_depth": _get_max_spawn_depth(),
             "max_concurrent_children": _get_max_concurrent_children(),
             "max_async_children": _get_max_async_children(),
@@ -91,20 +116,30 @@ def _(rid, params: dict) -> dict:
 
 @rpc_validated("delegation.pause")
 def _(rid, params: dict) -> dict:
-    from tools.delegate_tool import set_spawn_paused
+    session_key, error = _session_owner(rid, params)
+    if error:
+        return error
 
-    paused = bool(params.get("paused", True))
-    return _ok(rid, {"paused": set_spawn_paused(paused)})
+    from superforecasting_agent.hosting.delegations import set_spawn_paused
+
+    paused = params.get("paused", True)
+    if not isinstance(paused, bool):
+        return _err(rid, 4004, "paused must be a boolean")
+    return _ok(rid, {"paused": set_spawn_paused(paused, session_key=session_key)})
 
 
 @rpc_validated("subagent.interrupt")
 def _(rid, params: dict) -> dict:
-    from tools.delegate_tool import interrupt_subagent
+    session_key, error = _session_owner(rid, params)
+    if error:
+        return error
+
+    from superforecasting_agent.hosting.delegations import interrupt_subagent
 
     subagent_id = str(params.get("subagent_id") or "").strip()
     if not subagent_id:
         return _err(rid, 4000, "subagent_id required")
-    ok = interrupt_subagent(subagent_id)
+    ok = interrupt_subagent(subagent_id, session_key=session_key)
     return _ok(rid, {"found": ok, "subagent_id": subagent_id})
 
 

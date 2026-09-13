@@ -1,5 +1,6 @@
 """Strict JSON at forecasting trust boundaries; ambiguity is not evidence."""
 import json
+import math
 from forecasting.models import ValidationError
 
 
@@ -15,4 +16,11 @@ def strict_json_loads(value, *, object_name='JSON'):
     def reject_constant(constant):
         raise ValidationError(f'{object_name} cannot contain nonfinite number {constant}')
 
-    return json.loads(value, object_pairs_hook=unique_object, parse_constant=reject_constant)
+    def finite_float(token):
+        number = float(token)
+        if not math.isfinite(number):
+            raise ValidationError(f'{object_name} number is out of finite range')
+        return number
+
+    return json.loads(value, object_pairs_hook=unique_object, parse_constant=reject_constant,
+                      parse_float=finite_float)

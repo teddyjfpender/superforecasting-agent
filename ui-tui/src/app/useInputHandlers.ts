@@ -19,6 +19,7 @@ import { dismissFirstRunHint } from '../lib/uiFlagsStore.js'
 import { computeWheelStep, initWheelAccelForHost } from '../lib/wheelAccel.js'
 
 import { $chordPending, armChord, clearChord } from './chordStore.js'
+import { $commands, markCommandsCancelling } from './commandStore.js'
 import { getHomeFocus, type HomePane, setHomePane } from './homeFocusStore.js'
 import { getInputSelection } from './inputSelectionStore.js'
 import type { InputHandlerContext, InputHandlerResult } from './interfaces.js'
@@ -125,7 +126,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
 
   const overlay = useStore($overlayState)
   const isBlocked = useStore($isBlocked)
-  const pagerPageSize = Math.max(1, (terminal.stdout?.rows ?? 24) - 12)
+  const pagerPageSize = Math.max(1, (terminal.stdout?.rows ?? 24) - 13)
   const scrollIdleTimer = useRef<null | ReturnType<typeof setTimeout>>(null)
 
   // Wheel accel ported from claude-code: inter-event timing drives step size,
@@ -704,6 +705,17 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     }
 
     if (key.ctrl && ch.toLowerCase() === 'c') {
+      if (live.sid && $commands.get().some(command => command.sessionId === live.sid)) {
+        const sid = live.sid
+        markCommandsCancelling(sid, true)
+        void gateway.gw.request('session.interrupt', { session_id: sid }).catch((error: unknown) => {
+          markCommandsCancelling(sid, false)
+          actions.sys(`Command cancellation failed: ${String(error)}`)
+        })
+
+        return
+      }
+
       if (live.busy && live.sid) {
         return turnController.interruptTurn({
           appendMessage: actions.appendMessage,

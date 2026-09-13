@@ -211,6 +211,7 @@ full-test = ["numpy==2.4.3"]
 forecast = "superforecasting_agent.cli:main"
 superforecast = "superforecasting_agent.cli:main"
 superforecasting-agent = "superforecasting_agent.cli:main"
+superforecasting-agent-host = "superforecasting_agent.hosting.__main__:main"
 superforecasting-agent-acp = "acp_adapter.entry:main"
 superforecast-acp = "acp_adapter.entry:main"
 hermes = "superforecasting_agent.cli:main"
@@ -221,7 +222,7 @@ hermes-acp = "acp_adapter.entry:main"
 py-modules = ["run_agent", "cli"]
 
 [tool.setuptools.package-data]
-"superforecasting_agent.runtime" = ["web_dist/**/*", "tui_dist/**/*", "scripts/install.sh", "scripts/install.ps1"]
+"superforecasting_agent.runtime" = ["scripts/install.sh", "scripts/install.ps1"]
 gateway = ["assets/**/*"]
 forecasting = [
   "trial_compatibility.json",
@@ -240,7 +241,11 @@ plugins = [
   "*/dashboard/dist/**/*",
 ]
 
+[tool.setuptools.exclude-package-data]
+"superforecasting_agent.runtime" = ["web_dist/*", "web_dist/**/*", "tui_dist/*", "tui_dist/**/*"]
+
 [tool.setuptools.packages.find]
+exclude = ["*.tui_dist", "*.tui_dist.*", "*.web_dist", "*.web_dist.*"]
 include = ["protocol", "protocol.*", "agent", "agent.*", "tools", "tools.*", "gateway", "gateway.*", "tui_gateway", "tui_gateway.*", "cron", "acp_adapter", "plugins", "plugins.*", "providers", "providers.*", "forecasting", "forecasting.*", "superforecasting_agent", "superforecasting_agent.*"]
 
 [tool.pytest.ini_options]
@@ -322,6 +327,8 @@ select = ["PLW1514"]
 root_packages = [
     "forecasting",
     "protocol",
+    "cron",
+    "acp_adapter",
     "tui_gateway",
     "tools",
     "agent",
@@ -338,7 +345,7 @@ name = "protocol is a pure kernel (imports nothing app-side)"
 type = "forbidden"
 source_modules = ["protocol"]
 forbidden_modules = ["forecasting", "tools", "agent", "gateway", "tui_gateway", "superforecasting_agent", "run_agent", "cli"]
-allow_indirect_imports = "true"
+allow_indirect_imports = false
 
 [[tool.importlinter.contracts]]
 name = "forecasting.ledger never imports forecasting.cli"
@@ -356,33 +363,12 @@ allow_indirect_imports = "true"
 
 # ── Tier 2: ratchets (frozen lists — shrink only) ────────────────────────────
 [[tool.importlinter.contracts]]
-name = "nothing imports the run_agent entry script (inverted edge; burn down)"
+name = "products and services never import the run_agent entry script"
 type = "forbidden"
-source_modules = ["forecasting", "tools", "agent", "gateway", "tui_gateway", "superforecasting_agent", "cli"]
+source_modules = ["forecasting", "tools", "agent", "gateway", "tui_gateway", "superforecasting_agent", "cli", "cron", "acp_adapter"]
 forbidden_modules = ["run_agent"]
 allow_indirect_imports = "true"
-ignore_imports = [
-    "agent.agent_factory -> run_agent",
-    "agent.agent_init -> run_agent",
-    "agent.agent_runtime_helpers -> run_agent",
-    "agent.background_review -> run_agent",
-    "agent.chat_completion_helpers -> run_agent",
-    "agent.codex_runtime -> run_agent",
-    "agent.conversation_loop -> run_agent",
-    "agent.curator -> run_agent",
-    "agent.system_prompt -> run_agent",
-    "agent.tool_executor -> run_agent",
-    "agent.transports.codex -> run_agent",
-    "forecasting.cli.benchmarks -> run_agent",
-    "forecasting.cli.core -> run_agent",
-    "forecasting.jobs.types.task -> run_agent",
-    "forecasting.market_model -> run_agent",
-    "gateway.platforms.api_server -> run_agent",
-    "gateway.platforms.feishu_comment -> run_agent",
-    "gateway.run -> run_agent",
-    "tools.delegate_tool -> run_agent",
-    "tui_gateway.server -> run_agent",
-]
+
 
 [[tool.importlinter.contracts]]
 name = "forecasting↛superforecasting_agent.runtime (kernel seam; ratchet)"
@@ -391,31 +377,6 @@ source_modules = ["forecasting"]
 forbidden_modules = ["superforecasting_agent.runtime"]
 allow_indirect_imports = "true"
 ignore_imports = [
-    "forecasting.api_keys -> superforecasting_agent.runtime.env_loader",
-    "forecasting.appconfig -> superforecasting_agent.runtime.config",
-    "forecasting.cli.collaboration_admin -> superforecasting_agent.runtime.config",
-    "forecasting.cli.core -> superforecasting_agent.runtime.config",
-    "forecasting.cli.core -> superforecasting_agent.runtime.env_loader",
-    "forecasting.cli.markets_pm -> superforecasting_agent.runtime.config",
-    "forecasting.cli.quorum_panel -> superforecasting_agent.runtime.config",
-    "forecasting.cli.refresh_cycle -> superforecasting_agent.runtime.config",
-    "forecasting.cron_runner -> superforecasting_agent.runtime.config",
-    "forecasting.estimator_worker -> superforecasting_agent.runtime.config",
-    "forecasting.hooks.engine -> superforecasting_agent.runtime.config",
-    "forecasting.hooks.loader -> superforecasting_agent.runtime.config",
-    "forecasting.hooks.store -> superforecasting_agent.runtime.config",
-    "forecasting.jobs.__main__ -> superforecasting_agent.runtime.plugins",
-    "forecasting.jobs.types.quorum -> superforecasting_agent.runtime.config",
-    "forecasting.learned_error_worker -> superforecasting_agent.runtime.config",
-    "forecasting.ledger.model_scoring -> superforecasting_agent.runtime.config",
-    "forecasting.ledger.snapshots -> superforecasting_agent.runtime.config",
-    "forecasting.market_nightly_forecaster -> superforecasting_agent.runtime.config",
-    "forecasting.market_nightly_forecaster -> superforecasting_agent.runtime.plugins",
-    "forecasting.protocol -> superforecasting_agent.runtime.config",
-    "forecasting.quorum.panels -> superforecasting_agent.runtime.models",
-    "forecasting.quorum_autorun -> superforecasting_agent.runtime.config",
-    "forecasting.research_audit -> superforecasting_agent.runtime.config",
-    "forecasting.scheduler -> superforecasting_agent.runtime.config",
 ]
 
 [[tool.importlinter.contracts]]
@@ -424,22 +385,485 @@ type = "forbidden"
 source_modules = ["forecasting"]
 forbidden_modules = ["tools"]
 allow_indirect_imports = "true"
-ignore_imports = [
-    "forecasting.bayes_toolkit -> tools.lazy_deps",
-    "forecasting.cli.connect_admin -> tools.slack_tool",
-    "forecasting.cli.core -> tools.forecasting_tool",
-    "forecasting.cli.questions_admin -> tools.forecasting_tool",
-    "forecasting.cli.refresh_cycle -> tools.forecasting_tool",
-    "forecasting.cli.slack_admin -> tools.forecast_actions.share",
-    "forecasting.cli.slack_admin -> tools.slack_tool",
-    "forecasting.cli.triage_calibration -> tools.forecasting_tool",
-    "forecasting.collab.directory -> tools.slack_tool",
-    "forecasting.cron_runner -> tools.forecasting_tool",
-    "forecasting.jobs.types.refresh -> tools.forecasting_tool",
-    "forecasting.market_compute -> tools.lazy_deps",
-    "forecasting.market_model -> tools.forecasting_tool",
-    "forecasting.market_model -> tools.market_presentation_tool",
-    "forecasting.market_model -> tools.terminal_tool",
-    "forecasting.notify -> tools.slack_tool",
-    "forecasting.supervisor_search -> tools.web_tools",
-]
+ignore_imports = []
+
+
+[[tool.importlinter.contracts]]
+name = "forecast application operations do not import product entrypoints"
+type = "forbidden"
+source_modules = ["forecasting.application"]
+forbidden_modules = ["forecasting.cli", "forecasting.interfaces", "forecasting.dashboard", "tui_gateway", "gateway", "cli", "superforecasting_agent.runtime.main"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "TUI host never imports classic CLI presentation"
+type = "forbidden"
+source_modules = ["tui_gateway"]
+forbidden_modules = ["cli"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "session application services do not import presentation or transport"
+type = "forbidden"
+source_modules = ["superforecasting_agent.application"]
+forbidden_modules = ["cli", "run_agent", "tui_gateway", "gateway", "superforecasting_agent.runtime.main", "superforecasting_agent.runtime.session_browser"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "forecast execution consumers do not import CLI orchestration"
+type = "forbidden"
+source_modules = ["forecasting.jobs.types.reforecast", "tools.forecast_actions.forecast_update", "agent.forecast_stage", "forecasting.cron_runner", "tools.delegate_tool", "tools.forecast_actions.diagnostics"]
+forbidden_modules = ["forecasting.cli", "cli"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "distribution interpretation is independent of storage and presentation"
+type = "forbidden"
+source_modules = ["forecasting.distribution_summary"]
+forbidden_modules = ["forecasting.ledger", "forecasting.dashboard", "forecasting.cli", "agent", "tools", "gateway", "tui_gateway", "superforecasting_agent", "cli", "run_agent"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "ledger and distribution checks never import the dashboard"
+type = "forbidden"
+source_modules = ["forecasting.ledger", "forecasting.distribution", "forecasting.hooks.distribution"]
+forbidden_modules = ["forecasting.dashboard"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "subscription eligibility does not own interactive setup"
+type = "forbidden"
+source_modules = ["superforecasting_agent.runtime.nous_subscription"]
+forbidden_modules = ["superforecasting_agent.runtime.setup", "superforecasting_agent.runtime.oauth_setup", "cli"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "profile identity is independent of runtime management and presentation"
+type = "forbidden"
+source_modules = ["superforecasting_agent.constants"]
+forbidden_modules = ["superforecasting_agent.runtime", "gateway", "tui_gateway", "cli"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "profile admission is independent of runtime administration"
+type = "forbidden"
+source_modules = ["superforecasting_agent.profile_paths"]
+forbidden_modules = ["superforecasting_agent.runtime", "gateway", "tui_gateway", "cli"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "cron profile selection does not import profile administration"
+type = "forbidden"
+source_modules = ["cron.jobs", "cron.scheduler"]
+forbidden_modules = ["superforecasting_agent.runtime.profiles"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "tool selection does not import interactive configuration"
+type = "forbidden"
+source_modules = ["superforecasting_agent.tooling.selection", "tui_gateway.tools_rpc", "gateway.session"]
+forbidden_modules = ["superforecasting_agent.runtime.tools_config", "superforecasting_agent.runtime.setup", "cli"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "shared session context is independent of runtime hosting and presentation"
+type = "forbidden"
+source_modules = ["superforecasting_agent.session_context"]
+forbidden_modules = ["superforecasting_agent.runtime", "gateway", "tui_gateway", "cli", "agent", "tools"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "platform registration is independent of messaging transports"
+type = "forbidden"
+source_modules = ["superforecasting_agent.platform_registry"]
+forbidden_modules = ["superforecasting_agent.runtime", "gateway", "tui_gateway", "cli", "agent", "tools"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "shared process and media infrastructure never imports presentation"
+type = "forbidden"
+source_modules = ["superforecasting_agent.processes", "superforecasting_agent.storage.media"]
+forbidden_modules = ["gateway", "tui_gateway", "cli", "superforecasting_agent.runtime"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "runtime worker ownership is independent of presentation"
+type = "forbidden"
+source_modules = ["superforecasting_agent.hosting.workers"]
+forbidden_modules = ["gateway", "tui_gateway", "cli", "superforecasting_agent.runtime", "agent", "tools"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "session admission is independent of presentation"
+type = "forbidden"
+source_modules = ["superforecasting_agent.hosting.sessions"]
+forbidden_modules = ["gateway", "tui_gateway", "cli", "superforecasting_agent.runtime", "agent", "tools"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "host session storage never imports presentation"
+type = "forbidden"
+source_modules = ["superforecasting_agent.hosting.storage"]
+forbidden_modules = ["gateway", "tui_gateway", "cli", "superforecasting_agent.runtime"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "host configuration never imports presentation"
+type = "forbidden"
+source_modules = ["superforecasting_agent.hosting.configuration"]
+forbidden_modules = ["gateway", "tui_gateway", "cli", "superforecasting_agent.runtime"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "host session registry never imports presentation"
+type = "forbidden"
+source_modules = ["superforecasting_agent.hosting.registry"]
+forbidden_modules = ["gateway", "tui_gateway", "cli", "superforecasting_agent.runtime", "agent", "tools"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "host credential application never imports presentation or provider storage"
+type = "forbidden"
+source_modules = ["superforecasting_agent.hosting.credentials"]
+forbidden_modules = ["gateway", "tui_gateway", "cli", "superforecasting_agent.runtime", "agent", "tools"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "host lifecycle never imports presentation or runtime configuration"
+type = "forbidden"
+source_modules = ["superforecasting_agent.hosting.runtime"]
+forbidden_modules = ["gateway", "tui_gateway", "cli", "superforecasting_agent.runtime"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "device sign-in ownership never imports presentation or credential storage"
+type = "forbidden"
+source_modules = ["superforecasting_agent.hosting.device_auth"]
+forbidden_modules = ["gateway", "tui_gateway", "cli", "superforecasting_agent.runtime", "agent", "tools"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "command catalog never imports presentation or runtime adapters"
+type = "forbidden"
+source_modules = ["superforecasting_agent.application.command_catalog"]
+forbidden_modules = ["gateway", "tui_gateway", "cli", "superforecasting_agent.runtime", "agent", "tools"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "configured process ownership never imports presentation or policy adapters"
+type = "forbidden"
+source_modules = ["superforecasting_agent.hosting.commands"]
+forbidden_modules = ["gateway", "tui_gateway", "cli", "superforecasting_agent.runtime", "agent", "tools"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "deferred build ownership never imports presentation or agent construction"
+type = "forbidden"
+source_modules = ["superforecasting_agent.hosting.builds"]
+forbidden_modules = ["gateway", "tui_gateway", "cli", "superforecasting_agent.runtime", "agent", "tools"]
+allow_indirect_imports = false
+
+
+[[tool.importlinter.contracts]]
+name = "toolset inventory never imports presentation"
+type = "forbidden"
+source_modules = ["superforecasting_agent.tooling.inventory"]
+forbidden_modules = ["gateway", "tui_gateway", "cli"]
+allow_indirect_imports = false
+
+
+[[tool.importlinter.contracts]]
+name = "shared configuration storage never imports runtime or presentation"
+type = "forbidden"
+source_modules = ["superforecasting_agent.storage.configuration"]
+forbidden_modules = ["superforecasting_agent.runtime", "gateway", "tui_gateway", "cli"]
+allow_indirect_imports = false
+
+
+[[tool.importlinter.contracts]]
+name = "forecast setting registry is independent of loading and runtime"
+type = "forbidden"
+source_modules = ["forecasting.configuration"]
+forbidden_modules = ["forecasting.appconfig", "superforecasting_agent", "tools", "agent", "gateway", "tui_gateway", "cli"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "notification ownership never imports presentation or tool implementations"
+type = "forbidden"
+source_modules = ["superforecasting_agent.hosting.notifications"]
+forbidden_modules = ["gateway", "tui_gateway", "cli", "superforecasting_agent.runtime", "agent", "tools"]
+
+[[tool.importlinter.contracts]]
+name = "Bayesian numerical domain never imports runtime or presentation"
+type = "forbidden"
+source_modules = ["forecasting.bayes_toolkit"]
+forbidden_modules = ["tools", "agent", "gateway", "tui_gateway", "cli", "superforecasting_agent.runtime"]
+
+[[tool.importlinter.contracts]]
+name = "market numerical domain never imports runtime or presentation"
+type = "forbidden"
+source_modules = ["forecasting.market_compute"]
+forbidden_modules = ["tools", "agent", "gateway", "tui_gateway", "cli", "superforecasting_agent.runtime"]
+
+[[tool.importlinter.contracts]]
+name = "background agent policy never imports runtime or presentation"
+type = "forbidden"
+source_modules = ["agent.background_options"]
+forbidden_modules = ["agent.runtime", "agent.agent_factory", "tools", "gateway", "tui_gateway", "cli", "superforecasting_agent.runtime"]
+
+[[tool.importlinter.contracts]]
+name = "sandbox configuration does not depend on its consumers"
+type = "forbidden"
+source_modules = ["tools.environments.configuration"]
+forbidden_modules = ["tools.terminal_tool", "tools.file_tools", "agent", "gateway", "tui_gateway", "cli", "superforecasting_agent.runtime"]
+
+[[tool.importlinter.contracts]]
+name = "startup tool selection does not depend on terminal presentation"
+type = "forbidden"
+source_modules = ["superforecasting_agent.tooling.startup_selection"]
+forbidden_modules = ["cli", "tui_gateway"]
+
+[[tool.importlinter.contracts]]
+name = "curator operations do not depend on terminal presentation"
+type = "forbidden"
+source_modules = ["superforecasting_agent.runtime.curator"]
+forbidden_modules = ["cli", "tui_gateway"]
+
+[[tool.importlinter.contracts]]
+name = "transcript exports do not depend on consumers"
+type = "forbidden"
+source_modules = ["superforecasting_agent.storage.transcripts"]
+forbidden_modules = ["cli", "tui_gateway", "gateway", "agent", "superforecasting_agent.runtime"]
+
+[[tool.importlinter.contracts]]
+name = "configuration values never initialize runtime or consumers"
+type = "forbidden"
+source_modules = ["superforecasting_agent.configuration"]
+forbidden_modules = ["superforecasting_agent.runtime", "superforecasting_agent.storage", "agent", "tools", "gateway", "tui_gateway", "cli", "forecasting"]
+
+[[tool.importlinter.contracts]]
+name = "snapshot storage never imports CLI management or consumers"
+type = "forbidden"
+source_modules = ["superforecasting_agent.storage.snapshots"]
+forbidden_modules = ["superforecasting_agent.runtime", "cli", "gateway", "tui_gateway", "agent"]
+
+[[tool.importlinter.contracts]]
+name = "command output owns no application state or product runtime"
+type = "forbidden"
+source_modules = ["superforecasting_agent.application.command_output"]
+forbidden_modules = ["superforecasting_agent.runtime", "superforecasting_agent.storage", "forecasting", "agent", "tools", "cli", "gateway", "tui_gateway"]
+
+[[tool.importlinter.contracts]]
+name = "review lifetime owns handles without constructing agents or presentation"
+type = "forbidden"
+source_modules = ["agent.review_lifecycle"]
+forbidden_modules = ["agent.runtime", "agent.background_review", "tools", "cli", "gateway", "tui_gateway", "superforecasting_agent.runtime"]
+
+[[tool.importlinter.contracts]]
+name = "installation policy never initializes runtime or consumers"
+type = "forbidden"
+source_modules = ["superforecasting_agent.installation"]
+forbidden_modules = ["superforecasting_agent.runtime", "agent", "tools", "gateway", "tui_gateway", "cli", "forecasting"]
+
+[[tool.importlinter.contracts]]
+name = "curator state persistence never imports orchestration or consumers"
+type = "forbidden"
+source_modules = ["superforecasting_agent.storage.curator_state"]
+forbidden_modules = ["agent", "tools", "superforecasting_agent.runtime", "cli", "gateway", "tui_gateway"]
+
+[[tool.importlinter.contracts]]
+name = "platform environment metadata never loads runtime or plugin implementations"
+type = "forbidden"
+source_modules = ["superforecasting_agent.storage.plugin_environment", "superforecasting_agent.storage.plugin_manifests"]
+forbidden_modules = ["superforecasting_agent.runtime", "agent", "tools", "gateway", "tui_gateway", "cli"]
+
+[[tool.importlinter.contracts]]
+name = "startup environment loading never imports runtime or consumers"
+type = "forbidden"
+source_modules = ["superforecasting_agent.startup_environment"]
+forbidden_modules = ["superforecasting_agent.runtime", "agent", "tools", "forecasting", "cli", "gateway", "tui_gateway"]
+
+[[tool.importlinter.contracts]]
+name = "goal command operations depend on ports rather than runtime implementations"
+type = "forbidden"
+source_modules = ["superforecasting_agent.application.goals"]
+forbidden_modules = ["superforecasting_agent.runtime", "superforecasting_agent.storage", "agent", "tools", "forecasting"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "durable turn receipts never depend on runtime or presentation"
+type = "forbidden"
+source_modules = ["superforecasting_agent.storage.turns"]
+forbidden_modules = ["superforecasting_agent.hosting", "superforecasting_agent.runtime", "agent", "tools", "forecasting", "cli", "gateway", "tui_gateway"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "conversation ownership never constructs runtime or presentation"
+type = "forbidden"
+source_modules = ["agent.conversation_lifecycle"]
+forbidden_modules = ["superforecasting_agent.runtime", "forecasting", "tools", "cli", "gateway", "tui_gateway"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "history edit preparation never mutates storage or imports runtime consumers"
+type = "forbidden"
+source_modules = ["superforecasting_agent.application.retry", "superforecasting_agent.application.history"]
+forbidden_modules = ["superforecasting_agent.storage", "superforecasting_agent.runtime", "agent", "tools", "forecasting", "cli", "gateway", "tui_gateway"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "panel selection owns rules without runtime discovery or presentation"
+type = "forbidden"
+source_modules = ["forecasting.panel_selection"]
+forbidden_modules = ["superforecasting_agent.runtime", "tui_gateway", "cli", "gateway", "agent", "tools", "forecasting.quorum"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "background operations do not depend on presentation or classic runtime"
+type = "forbidden"
+source_modules = ["superforecasting_agent.tooling.background"]
+forbidden_modules = ["superforecasting_agent.runtime", "tui_gateway", "cli", "gateway"]
+allow_indirect_imports = "true"
+
+[[tool.importlinter.contracts]]
+name = "delegation control state is independent of tools and presentation"
+type = "forbidden"
+source_modules = ["superforecasting_agent.hosting.delegations"]
+forbidden_modules = ["tools", "agent", "superforecasting_agent.runtime", "tui_gateway", "gateway", "cli"]
+
+[[tool.importlinter.contracts]]
+name = "shared agent construction never directly imports presentation"
+type = "forbidden"
+source_modules = ["agent.agent_factory", "agent.startup_prompt"]
+forbidden_modules = ["gateway", "tui_gateway", "cli"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "hosted desk construction never directly imports presentation"
+type = "forbidden"
+source_modules = ["superforecasting_agent.hosting.desk_agent"]
+forbidden_modules = ["gateway", "tui_gateway", "cli"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "background conversation ownership never directly imports presentation"
+type = "forbidden"
+source_modules = ["superforecasting_agent.hosting.background"]
+forbidden_modules = ["gateway", "tui_gateway", "cli"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "structured source dispatch never imports agent execution or presentation"
+type = "forbidden"
+source_modules = ["forecasting.sources.dispatch"]
+forbidden_modules = ["tools", "agent", "cli", "tui_gateway", "gateway", "forecasting.cli", "forecasting.application"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "watched source acquisition never imports execution or presentation"
+type = "forbidden"
+source_modules = ["forecasting.sources.watched"]
+forbidden_modules = ["tools", "agent", "cli", "gateway", "tui_gateway", "forecasting.application", "forecasting.ledger"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "source evidence formatting is independent of acquisition and persistence"
+type = "forbidden"
+source_modules = ["forecasting.sources.evidence"]
+forbidden_modules = ["tools", "agent", "cli", "gateway", "tui_gateway", "forecasting.source_adapters", "forecasting.sources.dispatch", "forecasting.sources.watched", "forecasting.ledger"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "prompt callback ownership never imports consumers"
+type = "forbidden"
+source_modules = ["superforecasting_agent.tooling.prompt_callbacks"]
+forbidden_modules = ["tools", "agent", "cli", "gateway", "tui_gateway", "superforecasting_agent.runtime"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "market artifact transfer never imports consumers"
+type = "forbidden"
+source_modules = ["forecasting.application.market_output"]
+forbidden_modules = ["tools", "agent", "cli", "gateway", "tui_gateway", "superforecasting_agent.runtime"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "Slack transport never imports agent execution or presentation"
+type = "forbidden"
+source_modules = ["forecasting.transports.slack"]
+forbidden_modules = ["tools", "agent", "cli", "gateway", "tui_gateway", "forecasting.cli", "forecasting.application"]
+allow_indirect_imports = false
+
+
+[[tool.importlinter.contracts]]
+name = "cancellation signaling never imports consumers"
+type = "forbidden"
+source_modules = ["superforecasting_agent.tooling.interrupts"]
+forbidden_modules = ["tools", "agent", "cli", "gateway", "tui_gateway", "superforecasting_agent.runtime"]
+allow_indirect_imports = false
+
+
+[[tool.importlinter.contracts]]
+name = "shared web search never imports tool or product adapters"
+type = "forbidden"
+source_modules = ["superforecasting_agent.tooling.web_search"]
+forbidden_modules = ["tools", "cli", "gateway", "tui_gateway", "forecasting.cli", "superforecasting_agent.runtime"]
+allow_indirect_imports = false
+
+
+[[tool.importlinter.contracts]]
+name = "provider identity catalog never imports runtime or presentation"
+type = "forbidden"
+source_modules = ["superforecasting_agent.configuration.provider_catalog"]
+forbidden_modules = ["tools", "agent", "cli", "gateway", "tui_gateway", "superforecasting_agent.runtime"]
+allow_indirect_imports = false
+
+
+[[tool.importlinter.contracts]]
+name = "offline model catalogs never import runtime or presentation"
+type = "forbidden"
+source_modules = ["agent.model_catalog"]
+forbidden_modules = ["tools", "cli", "gateway", "tui_gateway", "superforecasting_agent.runtime"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "Codex catalog rules never import runtime or execution"
+type = "forbidden"
+source_modules = ["superforecasting_agent.configuration.codex_catalog"]
+forbidden_modules = ["tools", "agent", "cli", "gateway", "tui_gateway", "superforecasting_agent.runtime"]
+allow_indirect_imports = false
+
+
+[[tool.importlinter.contracts]]
+name = "auth persistence never imports credential execution or presentation"
+type = "forbidden"
+source_modules = ["superforecasting_agent.storage.auth"]
+forbidden_modules = ["tools", "agent", "cli", "gateway", "tui_gateway", "superforecasting_agent.runtime"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "authentication metadata and policy never import runtime or execution"
+type = "forbidden"
+source_modules = ["superforecasting_agent.configuration.authentication"]
+forbidden_modules = ["tools", "agent", "cli", "gateway", "tui_gateway", "superforecasting_agent.runtime"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "credential file reading never imports execution or presentation"
+type = "forbidden"
+source_modules = ["superforecasting_agent.storage.environment"]
+forbidden_modules = ["tools", "agent", "cli", "gateway", "tui_gateway", "superforecasting_agent.runtime"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "AWS discovery never imports execution or presentation"
+type = "forbidden"
+source_modules = ["superforecasting_agent.hosting.aws_credentials"]
+forbidden_modules = ["agent", "tools", "superforecasting_agent.runtime", "cli", "gateway", "tui_gateway"]
+
+
+[[tool.importlinter.contracts]]
+name = "credential services never import runtime or presentation"
+type = "forbidden"
+source_modules = ["superforecasting_agent.credentials"]
+forbidden_modules = ["superforecasting_agent.runtime", "cli", "tui_gateway", "gateway", "forecasting.cli"]

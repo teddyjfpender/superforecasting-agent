@@ -4,24 +4,15 @@ import argparse
 
 def _model_flow_nous(config, current_model="", args=None):
     """Nous Portal provider: ensure logged in, then pick model."""
-    from superforecasting_agent.runtime.auth import (
-        get_provider_auth_state,
-        _prompt_model_selection,
-        _save_model_choice,
-        _update_config_for_provider,
-        resolve_nous_runtime_credentials,
-        AuthError,
-        format_auth_error,
-        _login_nous,
-        PROVIDER_REGISTRY,
-    )
+    from superforecasting_agent.configuration.authentication import PROVIDER_REGISTRY
+    from superforecasting_agent.credentials.auth import get_provider_auth_state, resolve_nous_runtime_credentials, AuthError, format_auth_error
+    from superforecasting_agent.runtime.auth import _prompt_model_selection, _save_model_choice, _update_config_for_provider, _login_nous
     from superforecasting_agent.runtime.config import (
         get_env_value,
         load_config,
         save_config,
         save_env_value,
     )
-    from superforecasting_agent.runtime.nous_subscription import prompt_enable_tool_gateway
 
     state = get_provider_auth_state("nous")
     if not state or not state.get("access_token"):
@@ -143,7 +134,7 @@ def _model_flow_nous(config, current_model="", args=None):
     if free_tier and not model_ids:
         print("No free models currently available.")
         if unavailable_models:
-            from superforecasting_agent.runtime.auth import DEFAULT_NOUS_PORTAL_URL
+            from superforecasting_agent.credentials.auth import DEFAULT_NOUS_PORTAL_URL
 
             _url = (_nous_portal_url or DEFAULT_NOUS_PORTAL_URL).rstrip("/")
             print(f"Upgrade at {_url} to access paid models.")
@@ -193,15 +184,9 @@ def _model_flow_nous(config, current_model="", args=None):
 
 def _model_flow_openai_codex(config, current_model=""):
     """OpenAI Codex provider: ensure logged in, then pick model."""
-    from superforecasting_agent.runtime.auth import (
-        get_codex_auth_status,
-        _prompt_model_selection,
-        _save_model_choice,
-        _update_config_for_provider,
-        _login_openai_codex,
-        PROVIDER_REGISTRY,
-        DEFAULT_CODEX_BASE_URL,
-    )
+    from superforecasting_agent.configuration.authentication import PROVIDER_REGISTRY
+    from superforecasting_agent.credentials.auth import get_codex_auth_status, DEFAULT_CODEX_BASE_URL
+    from superforecasting_agent.runtime.auth import _prompt_model_selection, _save_model_choice, _update_config_for_provider, _login_openai_codex
     from superforecasting_agent.runtime.codex_models import get_codex_model_ids
 
     status = get_codex_auth_status()
@@ -263,7 +248,7 @@ def _model_flow_openai_codex(config, current_model=""):
         pass
     if not _codex_token:
         try:
-            from superforecasting_agent.runtime.auth import resolve_codex_runtime_credentials
+            from superforecasting_agent.credentials.auth import resolve_codex_runtime_credentials
 
             _codex_creds = resolve_codex_runtime_credentials()
             _codex_token = _codex_creds.get("api_key")
@@ -283,16 +268,9 @@ def _model_flow_openai_codex(config, current_model=""):
 
 def _model_flow_xai_oauth(_config, current_model="", *, args=None):
     """xAI Grok OAuth (SuperGrok Subscription) provider: ensure logged in, then pick model."""
-    from superforecasting_agent.runtime.auth import (
-        get_xai_oauth_auth_status,
-        _prompt_model_selection,
-        _save_model_choice,
-        _update_config_for_provider,
-        resolve_xai_oauth_runtime_credentials,
-        _login_xai_oauth,
-        DEFAULT_XAI_OAUTH_BASE_URL,
-        PROVIDER_REGISTRY,
-    )
+    from superforecasting_agent.configuration.authentication import PROVIDER_REGISTRY
+    from superforecasting_agent.credentials.auth import get_xai_oauth_auth_status, resolve_xai_oauth_runtime_credentials, DEFAULT_XAI_OAUTH_BASE_URL
+    from superforecasting_agent.runtime.auth import _prompt_model_selection, _save_model_choice, _update_config_for_provider, _login_xai_oauth
     from superforecasting_agent.runtime.models import _PROVIDER_MODELS
 
     status = get_xai_oauth_auth_status()
@@ -373,3 +351,127 @@ def _model_flow_xai_oauth(_config, current_model="", *, args=None):
         print(f"Default model set to: {selected} (via xAI Grok OAuth — SuperGrok Subscription)")
     else:
         print("No change.")
+
+
+_GATEWAY_TOOL_LABELS = {
+    "web": "Web search & extract (Firecrawl)",
+    "image_gen": "Image generation (FAL)",
+    "tts": "Text-to-speech (OpenAI TTS)",
+    "browser": "Browser automation (Browser Use)",
+}
+
+_GATEWAY_DIRECT_LABELS = {
+    "web": "Firecrawl/Exa/Parallel/Tavily key",
+    "image_gen": "FAL key",
+    "tts": "OpenAI/ElevenLabs key",
+    "browser": "Browser Use/Browserbase key",
+}
+
+def prompt_enable_tool_gateway(config: dict[str, object]) -> set[str]:
+    """If eligible tools exist, prompt the user to enable the Tool Gateway.
+
+    Uses prompt_choice() with a description parameter so the curses TUI
+    shows the tool context alongside the choices.
+
+    Returns the set of tools that were enabled, or empty set if the user
+    declined or no tools were eligible.
+    """
+    from superforecasting_agent.runtime.nous_subscription import (
+        _ALL_GATEWAY_KEYS,
+        apply_gateway_defaults,
+        get_gateway_eligible_tools,
+    )
+
+    unconfigured, has_direct, already_managed = get_gateway_eligible_tools(config)
+    if not unconfigured and not has_direct:
+        return set()
+
+    try:
+        from superforecasting_agent.runtime.setup import prompt_choice
+    except Exception:
+        return set()
+
+    # Build description lines showing full status of all gateway tools
+    desc_parts: list[str] = [
+        "",
+        "  The Tool Gateway gives you access to web search, image generation,",
+        "  text-to-speech, and browser automation through your Nous subscription.",
+        "  No need to sign up for separate API keys — just pick the tools you want.",
+        "",
+    ]
+    if already_managed:
+        for k in already_managed:
+            desc_parts.append(f"  ✓ {_GATEWAY_TOOL_LABELS[k]} — using Tool Gateway")
+    if unconfigured:
+        for k in unconfigured:
+            desc_parts.append(f"  ○ {_GATEWAY_TOOL_LABELS[k]} — not configured")
+    if has_direct:
+        for k in has_direct:
+            desc_parts.append(f"  ○ {_GATEWAY_TOOL_LABELS[k]} — using {_GATEWAY_DIRECT_LABELS[k]}")
+
+    # Build short choice labels — detail is in the description above
+    choices: list[str] = []
+    choice_keys: list[str] = []  # maps choice index -> action
+
+    if unconfigured and has_direct:
+        choices.append("Enable for all tools (existing keys kept, not used)")
+        choice_keys.append("all")
+
+        choices.append("Enable only for tools without existing keys")
+        choice_keys.append("unconfigured")
+
+        choices.append("Skip")
+        choice_keys.append("skip")
+
+    elif unconfigured:
+        choices.append("Enable Tool Gateway")
+        choice_keys.append("unconfigured")
+
+        choices.append("Skip")
+        choice_keys.append("skip")
+
+    else:
+        choices.append("Enable Tool Gateway (existing keys kept, not used)")
+        choice_keys.append("all")
+
+        choices.append("Skip")
+        choice_keys.append("skip")
+
+    description = "\n".join(desc_parts) if desc_parts else None
+    # Default to "Enable" when user has no direct keys (new user),
+    # default to "Skip" when they have existing keys to preserve.
+    default_idx = 0 if not has_direct else len(choices) - 1
+
+    try:
+        idx = prompt_choice(
+            "Your Nous subscription includes the Tool Gateway.",
+            choices,
+            default_idx,
+            description=description,
+        )
+    except (KeyboardInterrupt, EOFError, OSError, SystemExit):
+        return set()
+
+    action = choice_keys[idx]
+    if action == "skip":
+        return set()
+
+    if action == "all":
+        # Apply to switchable tools + ensure already-managed tools also
+        # have use_gateway persisted in config for consistency.
+        to_apply = list(_ALL_GATEWAY_KEYS)
+    else:
+        to_apply = unconfigured
+
+    changed = apply_gateway_defaults(config, to_apply)
+    if changed:
+        from superforecasting_agent.runtime.config import save_config
+        save_config(config)
+        # Only report the tools that actually switched (not already-managed ones)
+        newly_switched = changed - set(already_managed)
+        for key in sorted(newly_switched):
+            label = _GATEWAY_TOOL_LABELS.get(key, key)
+            print(f"  ✓ {label}: enabled via Nous subscription")
+        if already_managed and not newly_switched:
+            print("  (all tools already using Tool Gateway)")
+    return changed

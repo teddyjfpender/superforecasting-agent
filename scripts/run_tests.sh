@@ -179,6 +179,12 @@ WORKERS="${HERMES_TEST_WORKERS:-4}"
 # ── Run pytest ──────────────────────────────────────────────────────────────
 cd "$REPO_ROOT"
 
+# PTY tests must exercise current source, not a stale release artifact left by
+# packaging. Backend-only installations keep their no-Node test path.
+if command -v npm >/dev/null 2>&1 && [ -x "$REPO_ROOT/ui-tui/node_modules/.bin/esbuild" ]; then
+  npm run build --prefix "$REPO_ROOT/ui-tui"
+fi
+
 # Preserve partial progress and failures even when an outer command runner kills
 # this script before pytest can print its final traceback. CI may override the
 # directory while local runs default to an ignored repo-local artifact folder.

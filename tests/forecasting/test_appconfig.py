@@ -264,3 +264,34 @@ def test_doctor_knows_quorum_panel_keys():
     known_unset = {r["name"] for r in report["known_unset"]}
     assert "QUORUM_PANEL_MODELS" in known_set  # set via config env: section
     assert "QUORUM_JUDGE_MODEL" in known_unset  # registered but unset
+
+
+def test_live_config_follows_profile_and_content_without_reload(tmp_path, monkeypatch):
+    import os
+
+    for name in ("SUPERFORECASTING_AGENT_IGNORE_USER_CONFIG", "FORECAST_IGNORE_USER_CONFIG", "HERMES_IGNORE_USER_CONFIG"):
+        monkeypatch.delenv(name, raising=False)
+    first, second = tmp_path / "first", tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    path = first / "config.yaml"
+    path.write_text("env:\n  FORECAST_TRIAGE_TRUST_MIN_SAMPLE: 31\n", encoding="utf-8")
+    (second / "config.yaml").write_text("env:\n  FORECAST_TRIAGE_TRUST_MIN_SAMPLE: 45\n", encoding="utf-8")
+    for name in ("SUPERFORECASTING_AGENT_HOME", "HERMES_HOME"):
+        monkeypatch.setenv(name, str(first))
+    config = AppConfig(environ={})
+    assert config.get_int("FORECAST_TRIAGE_TRUST_MIN_SAMPLE") == 31
+    stamp = path.stat()
+    path.write_text("env:\n  FORECAST_TRIAGE_TRUST_MIN_SAMPLE: 32\n", encoding="utf-8")
+    os.utime(path, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+    assert config.get_int("FORECAST_TRIAGE_TRUST_MIN_SAMPLE") == 32
+    for name in ("SUPERFORECASTING_AGENT_HOME", "HERMES_HOME"):
+        monkeypatch.setenv(name, str(second))
+    assert config.get_int("FORECAST_TRIAGE_TRUST_MIN_SAMPLE") == 45
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_IGNORE_USER_CONFIG", "1")
+    assert config.get_int("FORECAST_TRIAGE_TRUST_MIN_SAMPLE") == 20
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_IGNORE_USER_CONFIG", "0")
+    monkeypatch.setenv("HERMES_IGNORE_USER_CONFIG", "1")
+    assert config.get_int("FORECAST_TRIAGE_TRUST_MIN_SAMPLE") == 45
+    (second / "config.yaml").unlink()
+    assert config.get_int("FORECAST_TRIAGE_TRUST_MIN_SAMPLE") == 20

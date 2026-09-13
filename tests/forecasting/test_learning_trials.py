@@ -318,3 +318,63 @@ def test_cluster_whitespace_does_not_inflate_independence(trial_setup):
                           model='fixture', provider='fixture')
     assert report['assigned_questions'] == 2
     assert report['assigned_clusters'] == 1
+
+
+def test_new_trial_and_readiness_exclude_invalidated_evidence(trial_setup):
+    from forecasting.trial_readiness import candidate_report
+    ledger, questions, _, _, _ = trial_setup
+    with ledger._connect() as conn:
+        conn.execute("UPDATE evidence_items SET metadata=? WHERE question_id=?", ('{"invalidated":true}', questions[0].id))
+    candidate = next(c for c in candidate_report(ledger)['candidates'] if c['question_id'] == questions[0].id)
+    assert 'missing_pre_cutoff_evidence' in candidate['readiness_gaps']
+    with pytest.raises(ValidationError, match='pre-cutoff evidence'):
+        create_trial(ledger, assignments={questions[0].id:'new-event'}, model='fixture', provider='fixture')
+
+
+def test_synthetic_score_cannot_support_new_trial_learning(trial_setup):
+    from forecasting.trial_inputs import score_support_problem
+    from types import SimpleNamespace
+    source = SimpleNamespace(calibration_eligible=False, calibration_weight=1,
+        invalidated_by_correction_id=None, audit_quarantine_reason=None,
+        question_id='historical', scored_at='2026-08-01T00:00:00Z')
+    assert score_support_problem(source, '2026-09-01T00:00:00Z') == 'ineligible_source_score'
+    source.calibration_eligible = True
+    assert score_support_problem(source, '2026-09-01T00:00:00Z') is None
+    assert score_support_problem(source, '2026-09-01T00:00:00Z', ['historical']) == 'overlapping_source_outcome'
+
+
+def test_settlement_ready_question_is_not_prospective_despite_future_close(trial_setup):
+    from forecasting.settlement_reviews import record_review
+    from forecasting.trial_readiness import candidate_report
+    ledger, questions, _, _, _ = trial_setup
+    q = questions[0]
+    record_review(ledger, question_id=q.id, state='ready', reason='Official outcome already published.',
+        source='https://example.org/official-result', next_action='Settle after source review.', owner='operator')
+    candidate = next(c for c in candidate_report(ledger)['candidates'] if c['question_id'] == q.id)
+    assert 'resolution_already_known' in candidate['readiness_gaps']
+    with pytest.raises(ValidationError, match='resolution information'):
+        create_trial(ledger, assignments={q.id:'new-event'}, model='fixture', provider='fixture')
+
+
+def test_extracted_scoring_source_changes_invalidate_frozen_evaluation(trial_setup, monkeypatch):
+    """Moving a scoring helper must not make later edits invisible to provenance."""
+    from pathlib import Path
+    from forecasting import trial_contracts
+
+    ledger, questions, _, tid, now = trial_setup
+    run_trial(ledger, tid, runner=fixture_runner)
+    now[0] = '2026-10-02T00:00:00Z'
+    for question in questions:
+        ledger.resolve_question(question_id=question.id, outcome='yes')
+    assert len(trial_report(ledger, tid)['comparisons']) == 2
+    before = trial_records(ledger, tid)
+    source = Path(trial_contracts.__file__).with_name('distribution_parameters.py')
+    read_bytes = Path.read_bytes
+
+    def changed_source(path):
+        data = read_bytes(path)
+        return data + b'\n# unreviewed scoring implementation\n' if path == source else data
+
+    monkeypatch.setattr(Path, 'read_bytes', changed_source)
+    assert trial_report(ledger, tid)['exclusions'] == {'scoring_version_changed': 2}
+    assert trial_records(ledger, tid) == before

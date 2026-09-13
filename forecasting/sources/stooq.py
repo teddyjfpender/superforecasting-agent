@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.parse import parse_qsl, quote, unquote, urlencode, urlparse
 from forecasting.models import ValidationError
 from .economic_records import StooqPriceObservation
-from .dates import _fred_date, _fred_date_to_iso
+from .dates import _fred_date
 from .values import _optional_float
 
 def load_stooq_prices(
@@ -35,9 +35,17 @@ def load_stooq_prices(
         api_base_url=api_base_url,
     )
     text = _read_text_endpoint(endpoint, "stooq prices")
+    return _stooq_prices_from_text(text, symbol=symbol, interval=effective_interval,
+                                   endpoint=endpoint, since_date=since_date, limit=limit)
+
+
+def _stooq_prices_from_text(text, *, symbol, interval, endpoint, since_date=None, limit=10):
+    """Parse price rows without fetching or assigning publication provenance."""
     reader = csv.DictReader(text.splitlines())
     if not reader.fieldnames:
         raise ValidationError("stooq prices CSV has no header row")
+    if len({name.strip().lower() for name in reader.fieldnames}) != len(reader.fieldnames):
+        raise ValidationError("stooq prices CSV has duplicate columns")
     date_key = _stooq_column(reader.fieldnames, "date")
     close_key = _stooq_column(reader.fieldnames, "close")
     open_key = _stooq_column(reader.fieldnames, "open", required=False)
@@ -47,6 +55,8 @@ def load_stooq_prices(
 
     observations: list[StooqPriceObservation] = []
     for index, row in enumerate(reader):
+        if None in row or any(value is None for value in row.values()):
+            raise ValidationError("stooq prices CSV row does not match its columns")
         raw_date = str(row.get(date_key) or "").strip()
         observation_date = _fred_date(raw_date, field_name="stooq observation date")
         if observation_date is None:
@@ -56,21 +66,20 @@ def load_stooq_prices(
         close_price = _stooq_optional_number(row.get(close_key))
         if close_price is None:
             continue
-        observation_iso = _fred_date_to_iso(observation_date)
         observations.append(
             StooqPriceObservation(
                 symbol=symbol,
-                interval=effective_interval,
+                interval=interval,
                 observation_date=observation_date.isoformat(),
                 open_price=_stooq_optional_number(row.get(open_key)) if open_key else None,
                 high_price=_stooq_optional_number(row.get(high_key)) if high_key else None,
                 low_price=_stooq_optional_number(row.get(low_key)) if low_key else None,
                 close_price=close_price,
                 volume=_stooq_optional_number(row.get(volume_key)) if volume_key else None,
-                published_at=observation_iso,
+                published_at=None,
                 source_url=endpoint,
                 source_name="Stooq",
-                entry_id=f"{symbol}:{effective_interval}:{observation_date.isoformat()}",
+                entry_id=f"{symbol}:{interval}:{observation_date.isoformat()}",
                 raw={"row_index": index, **dict(row)},
             )
         )
@@ -125,7 +134,7 @@ def _stooq_optional_number(value: object) -> float | int | str | None:
         return None
     number = _optional_float(raw)
     if number is None:
-        return raw
+        raise ValidationError("stooq price must be finite numeric data")
     if number.is_integer():
         return int(number)
     return number

@@ -12,19 +12,31 @@ import json
 import logging
 import os
 import shutil
-import sqlite3
 import stat
 import sys
 import tempfile
 import time
 import zipfile
-from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from superforecasting_agent.constants import get_default_agent_root, get_agent_home, display_agent_home
 from superforecasting_agent.storage.files import atomic_replace
+from superforecasting_agent.storage.snapshots import (
+    _safe_copy_db as _safe_copy_db,
+    _QUICK_STATE_FILES as _QUICK_STATE_FILES,
+    _QUICK_SNAPSHOTS_DIR as _QUICK_SNAPSHOTS_DIR,
+    _QUICK_DEFAULT_KEEP as _QUICK_DEFAULT_KEEP,
+    _quick_snapshot_root as _quick_snapshot_root,
+    _snapshot_name as _snapshot_name,
+    _snapshot_member as _snapshot_member,
+    create_quick_snapshot as create_quick_snapshot,
+    list_quick_snapshots as list_quick_snapshots,
+    restore_quick_snapshot as restore_quick_snapshot,
+    _prune_quick_snapshots as _prune_quick_snapshots,
+    prune_quick_snapshots as prune_quick_snapshots,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -67,11 +79,21 @@ _EXCLUDED_SUFFIXES = (
 
 # File names to skip (runtime state that's meaningless on another machine)
 _EXCLUDED_NAMES = {
+    ".profile-use.lock",
+    ".snapshot-restore.json",
+    "state.db-wal",
+    "state.db-shm",
+    "state.db-journal",
     "gateway.pid",
     "cron.pid",
 }
 
 _IMPORT_SKIP_NAMES = {
+    ".profile-use.lock",
+    ".snapshot-restore.json",
+    "state.db-wal",
+    "state.db-shm",
+    "state.db-journal",
     "gateway_state.json",
     "gateway.pid",
     "cron.pid",
@@ -122,25 +144,6 @@ def _has_codebase_checkout(hermes_root: Path) -> bool:
 # SQLite safe copy
 # ---------------------------------------------------------------------------
 
-def _safe_copy_db(src: Path, dst: Path) -> bool:
-    """Copy a SQLite database safely using the backup() API.
-
-    Handles WAL mode — produces a consistent snapshot even while
-    the DB is being written to.  Falls back to raw copy on failure.
-    """
-    try:
-        with closing(sqlite3.connect(f"file:{src}?mode=ro", uri=True)) as conn:
-            with closing(sqlite3.connect(str(dst))) as backup_conn:
-                conn.backup(backup_conn)
-        return True
-    except Exception as exc:
-        logger.warning("SQLite safe copy failed for %s: %s", src, exc)
-        try:
-            shutil.copy2(src, dst)
-            return True
-        except Exception as exc2:
-            logger.error("Raw copy also failed for %s: %s", src, exc2)
-            return False
 
 
 # ---------------------------------------------------------------------------
@@ -389,7 +392,28 @@ def _extract_member_atomically(
         raise
 
 
+def configure_import_parser(parser) -> None:
+    """Shared backup import arguments for standalone and inherited entrypoints."""
+    parser.add_argument("zipfile", help="Path to the backup zip file")
+    parser.add_argument(
+        "--force", "-f", action="store_true",
+        help="Overwrite existing files without confirmation",
+    )
+
+
 def run_import(args) -> None:
+    """Require exclusive profile ownership before importing any files."""
+    from superforecasting_agent.storage.profile_lease import ProfileLease
+
+    home = get_default_agent_root()
+    with ProfileLease(home, exclusive=True):
+        journal = home / ".snapshot-restore.json"
+        if journal.exists() or journal.is_symlink():
+            raise OSError("Snapshot restoration is pending; recover it before importing")
+        _run_import(args)
+
+
+def _run_import(args) -> None:
     """Restore a Superforecasting Agent backup from a zip file."""
     zip_path = Path(args.zipfile).expanduser().resolve()
 
@@ -473,6 +497,10 @@ def run_import(args) -> None:
 
             try:
                 target.parent.mkdir(parents=True, exist_ok=True)
+                if target.name == "state.db":
+                    from superforecasting_agent.storage.snapshots import _prepare_session_database_replace
+
+                    _prepare_session_database_replace(target)
                 _extract_member_atomically(zf, member, target, new_file_mode)
                 if target.name in _SECRET_FILE_NAMES:
                     os.chmod(target, 0o600)
@@ -573,217 +601,6 @@ def run_import(args) -> None:
 # platform-specific JSON blobs outside state.db, so it's listed here explicitly
 # — `superforecasting-agent update` snapshots this set before pulling so
 # approved-user lists are recoverable if anything goes wrong (issue #15733).
-_QUICK_STATE_FILES = (
-    "state.db",
-    "config.yaml",
-    ".env",
-    "auth.json",
-    "cron/jobs.json",
-    "gateway_state.json",
-    "channel_directory.json",
-    "processes.json",
-    # Pairing stores (generic + per-platform JSONs outside state.db)
-    "pairing",                          # legacy location (gateway/pairing.py)
-    "platforms/pairing",                # new location (gateway/pairing.py)
-    "feishu_comment_pairing.json",      # Feishu comment subscription pairings
-)
-
-_QUICK_SNAPSHOTS_DIR = "state-snapshots"
-_QUICK_DEFAULT_KEEP = 20
-
-
-def _quick_snapshot_root(hermes_home: Optional[Path] = None) -> Path:
-    home = hermes_home or get_agent_home()
-    return home / _QUICK_SNAPSHOTS_DIR
-
-
-def create_quick_snapshot(
-    label: Optional[str] = None,
-    hermes_home: Optional[Path] = None,
-) -> Optional[str]:
-    """Create a quick state snapshot of critical files.
-
-    Copies STATE_FILES to a timestamped directory under state-snapshots/.
-    Auto-prunes old snapshots beyond the keep limit.
-
-    Returns:
-        Snapshot ID (timestamp-based), or None if no files found.
-    """
-    home = hermes_home or get_agent_home()
-    root = _quick_snapshot_root(home)
-
-    ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-    snap_id = f"{ts}-{label}" if label else ts
-    snap_dir = root / snap_id
-    snap_dir.mkdir(parents=True, exist_ok=True)
-
-    manifest: Dict[str, int] = {}  # rel_path -> file size
-
-    for rel in _QUICK_STATE_FILES:
-        src = home / rel
-        if not src.exists():
-            continue
-
-        if src.is_dir():
-            # Walk the directory and record each file individually in the
-            # manifest so restore can treat them uniformly.  Empty dirs are
-            # skipped (nothing to snapshot).
-            for sub in src.rglob("*"):
-                if not sub.is_file():
-                    continue
-                sub_rel = sub.relative_to(home).as_posix()
-                dst = snap_dir / sub_rel
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                try:
-                    shutil.copy2(sub, dst)
-                    manifest[sub_rel] = dst.stat().st_size
-                except (OSError, PermissionError) as exc:
-                    logger.warning("Could not snapshot %s: %s", sub_rel, exc)
-            continue
-
-        if not src.is_file():
-            continue
-
-        dst = snap_dir / rel
-        dst.parent.mkdir(parents=True, exist_ok=True)
-
-        try:
-            if src.suffix == ".db":
-                if not _safe_copy_db(src, dst):
-                    continue
-            else:
-                shutil.copy2(src, dst)
-            manifest[rel] = dst.stat().st_size
-        except (OSError, PermissionError) as exc:
-            logger.warning("Could not snapshot %s: %s", rel, exc)
-
-    if not manifest:
-        shutil.rmtree(snap_dir, ignore_errors=True)
-        return None
-
-    # Write manifest
-    meta = {
-        "id": snap_id,
-        "timestamp": ts,
-        "label": label,
-        "file_count": len(manifest),
-        "total_size": sum(manifest.values()),
-        "files": manifest,
-    }
-    with open(snap_dir / "manifest.json", "w", encoding="utf-8") as f:
-        json.dump(meta, f, indent=2)
-
-    # Auto-prune
-    _prune_quick_snapshots(root, keep=_QUICK_DEFAULT_KEEP)
-
-    logger.info("State snapshot created: %s (%d files)", snap_id, len(manifest))
-    return snap_id
-
-
-def list_quick_snapshots(
-    limit: int = 20,
-    hermes_home: Optional[Path] = None,
-) -> List[Dict[str, Any]]:
-    """List existing quick state snapshots, most recent first."""
-    root = _quick_snapshot_root(hermes_home)
-    if not root.exists():
-        return []
-
-    results = []
-    for d in sorted(root.iterdir(), reverse=True):
-        if not d.is_dir():
-            continue
-        manifest_path = d / "manifest.json"
-        if manifest_path.exists():
-            try:
-                with open(manifest_path, encoding="utf-8") as f:
-                    results.append(json.load(f))
-            except (json.JSONDecodeError, OSError):
-                results.append({"id": d.name, "file_count": 0, "total_size": 0})
-        if len(results) >= limit:
-            break
-
-    return results
-
-
-def restore_quick_snapshot(
-    snapshot_id: str,
-    hermes_home: Optional[Path] = None,
-) -> bool:
-    """Restore state from a quick snapshot.
-
-    Overwrites current state files with the snapshot's copies.
-    Returns True if at least one file was restored.
-    """
-    home = hermes_home or get_agent_home()
-    root = _quick_snapshot_root(home)
-    snap_dir = root / snapshot_id
-
-    if not snap_dir.is_dir():
-        return False
-
-    manifest_path = snap_dir / "manifest.json"
-    if not manifest_path.exists():
-        return False
-
-    with open(manifest_path, encoding="utf-8") as f:
-        meta = json.load(f)
-
-    restored = 0
-    for rel in meta.get("files", {}):
-        src = snap_dir / rel
-        if not src.exists():
-            continue
-
-        dst = home / rel
-        dst.parent.mkdir(parents=True, exist_ok=True)
-
-        try:
-            if dst.suffix == ".db":
-                # Atomic-ish replace for databases
-                tmp = dst.parent / f".{dst.name}.snap_restore"
-                shutil.copy2(src, tmp)
-                dst.unlink(missing_ok=True)
-                shutil.move(str(tmp), str(dst))
-            else:
-                shutil.copy2(src, dst)
-            restored += 1
-        except (OSError, PermissionError) as exc:
-            logger.error("Failed to restore %s: %s", rel, exc)
-
-    logger.info("Restored %d files from snapshot %s", restored, snapshot_id)
-    return restored > 0
-
-
-def _prune_quick_snapshots(root: Path, keep: int = _QUICK_DEFAULT_KEEP) -> int:
-    """Remove oldest quick snapshots beyond the keep limit. Returns count deleted."""
-    if not root.exists():
-        return 0
-
-    dirs = sorted(
-        (d for d in root.iterdir() if d.is_dir()),
-        key=lambda d: d.name,
-        reverse=True,
-    )
-
-    deleted = 0
-    for d in dirs[keep:]:
-        try:
-            shutil.rmtree(d)
-            deleted += 1
-        except OSError as exc:
-            logger.warning("Failed to prune snapshot %s: %s", d.name, exc)
-
-    return deleted
-
-
-def prune_quick_snapshots(
-    keep: int = _QUICK_DEFAULT_KEEP,
-    hermes_home: Optional[Path] = None,
-) -> int:
-    """Manually prune quick snapshots. Returns count deleted."""
-    return _prune_quick_snapshots(_quick_snapshot_root(hermes_home), keep=keep)
-
 
 def run_quick_backup(args) -> None:
     """CLI entry point for superforecasting-agent backup --quick."""

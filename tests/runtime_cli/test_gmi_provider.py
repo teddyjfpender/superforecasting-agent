@@ -16,7 +16,7 @@ if "dotenv" not in sys.modules:
     fake_dotenv.load_dotenv = lambda *args, **kwargs: None
     sys.modules["dotenv"] = fake_dotenv
 
-from superforecasting_agent.runtime.auth import resolve_provider
+from superforecasting_agent.credentials.auth import resolve_provider
 from superforecasting_agent.runtime.config import load_config
 from superforecasting_agent.runtime.models import (
     CANONICAL_PROVIDERS,
@@ -94,7 +94,7 @@ class TestGmiModelCatalog:
 
     def test_provider_model_ids_prefers_live_api(self, monkeypatch):
         monkeypatch.setattr(
-            "superforecasting_agent.runtime.auth.resolve_api_key_provider_credentials",
+            "superforecasting_agent.credentials.auth.resolve_api_key_provider_credentials",
             lambda provider_id: {
                 "provider": provider_id,
                 "api_key": "gmi-live-key",
@@ -117,7 +117,7 @@ class TestGmiModelCatalog:
 
     def test_provider_model_ids_falls_back_to_static_models(self, monkeypatch):
         monkeypatch.setattr(
-            "superforecasting_agent.runtime.auth.resolve_api_key_provider_credentials",
+            "superforecasting_agent.credentials.auth.resolve_api_key_provider_credentials",
             lambda provider_id: {
                 "provider": provider_id,
                 "api_key": "gmi-live-key",
@@ -198,7 +198,7 @@ class TestGmiDoctor:
         monkeypatch.setitem(sys.modules, "superforecasting_agent.tooling.runtime", fake_model_tools)
 
         try:
-            from superforecasting_agent.runtime import auth as _auth_mod
+            from superforecasting_agent.credentials import auth as _auth_mod
 
             monkeypatch.setattr(_auth_mod, "get_nous_auth_status", lambda: {})
             monkeypatch.setattr(_auth_mod, "get_codex_auth_status", lambda: {})
@@ -332,7 +332,7 @@ class TestGmiMainFlow:
     def test_select_provider_and_model_routes_gmi_to_generic_flow(self, monkeypatch):
         recorded: dict[str, str] = {}
 
-        monkeypatch.setattr("superforecasting_agent.runtime.auth.resolve_provider", lambda *args, **kwargs: None)
+        monkeypatch.setattr("superforecasting_agent.credentials.auth.resolve_provider", lambda *args, **kwargs: None)
 
         def fake_prompt_provider_choice(choices, default=0):
             return next(i for i, label in enumerate(choices) if label.startswith("GMI Cloud"))
@@ -359,7 +359,7 @@ class TestGmiMainFlow:
             "superforecasting_agent.runtime.auth._prompt_model_selection",
             return_value="openai/gpt-5.4-mini",
         ), patch(
-            "superforecasting_agent.runtime.auth.deactivate_provider",
+            "superforecasting_agent.credentials.auth.deactivate_provider",
         ), patch(
             "builtins.input",
             return_value="",

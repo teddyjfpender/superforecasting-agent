@@ -538,10 +538,13 @@ def _cmd_onboard(args: argparse.Namespace) -> None:
             raise SystemExit(1)
 
         # Duplicate routing: two lazy prompts of the same sentence must REFRESH the
-        # existing question, not fork a rival. Reuse the tool's duplicate ranker — a
+        # existing question, not fork a rival. Reuse the shared duplicate ranker — a
         # strong near-duplicate (score >= the warn threshold) routes the SAME stage
         # chain onto the existing id unless --force-new is set.
-        from tools.forecasting_tool import _DUPLICATE_WARN_SCORE, _find_possible_duplicates
+        from forecasting.application.question_reuse import (
+            DUPLICATE_WARN_SCORE as _DUPLICATE_WARN_SCORE,
+            find_possible_duplicates as _find_possible_duplicates,
+        )
 
         duplicates = _find_possible_duplicates(ledger, spec.title)
         top = duplicates[0] if duplicates else None

@@ -49,6 +49,8 @@ case "$url" in
   *SHA256SUMS)            [ -f "$FIXDIR/FAIL_SUMS_DOWNLOAD" ] && exit 22
                           src="$FIXDIR/SHA256SUMS" ;;
   *release-manifest.json) src="$FIXDIR/release-manifest.json" ;;
+  */install.sh)           src="$FIXDIR/install.sh" ;;
+  *superforecasting_agent_tui-*.whl) src="$FIXDIR/terminal.whl" ;;
   *.whl)                  src="$FIXDIR/wheel.whl" ;;
   *) exit 22 ;;
 esac
@@ -91,6 +93,7 @@ def _write_release_fixtures(
                     "version": "9.9.9",
                     "tag": "v9.9.9",
                     "min_migration_version": "0.17.0",
+                    "artifacts": {"wheel": {"name": WHEEL_NAME, "sha256": WHEEL_SHA}},
                 }
             ),
             encoding="utf-8",
@@ -143,7 +146,7 @@ def _run(script: Path, tmp_path: Path, fixdir: Path, extra_env=None):
         "FORECAST_HOME": str(fhome),
         "TAG": "v9.9.9",
     }
-    if script == HETZNER:
+    if script.name == HETZNER.name:
         env.update({"LANE": "pipx", "SUPERVISOR": "none", "SKIP_HARDENING": "1"})
     env.update(extra_env or {})
     return subprocess.run(
@@ -173,7 +176,7 @@ def test_upgrade_verified_download_upgrades(tmp_path):
     _write_release_fixtures(fixdir)
     result = _run(UPGRADE, tmp_path, fixdir)
     assert result.returncode == 0, result.stderr
-    assert "wheel sha256 verified (SHA256SUMS)" in result.stdout
+    assert "wheel sha256 verified (sha256sums)" in result.stdout.lower()
     assert "pipx install --force" in _sudo_log(fixdir)
 
 
@@ -343,4 +346,159 @@ def test_hetzner_local_wheel_with_bad_checksums_refuses(tmp_path):
     )
     assert result.returncode != 0
     assert "failed verification" in result.stderr
+    assert "pipx install" not in _sudo_log(fixdir)
+
+
+TUI_NAME = "superforecasting_agent_tui-0.1.0-py3-none-any.whl"
+
+
+def _add_terminal(fixdir):
+    payload = b"independent terminal"
+    (fixdir / "terminal.whl").write_bytes(payload)
+    digest = hashlib.sha256(payload).hexdigest()
+    path = fixdir / "release-manifest.json"
+    manifest = json.loads(path.read_text())
+    manifest["artifacts"]["terminal_wheel"] = {"name": TUI_NAME, "sha256": digest}
+    path.write_text(json.dumps(manifest))
+    path = fixdir / "api.json"
+    api = json.loads(path.read_text())
+    api["assets"].insert(0, {"browser_download_url": f"https://dl.example/{TUI_NAME}"})
+    path.write_text(json.dumps(api))
+    path = fixdir / "SHA256SUMS"
+    path.write_text(path.read_text() + f"{digest}  {TUI_NAME}\n")
+
+
+def test_upgrade_split_release_installs_backend_and_terminal(tmp_path):
+    fixdir = tmp_path / "fix"
+    _write_release_fixtures(fixdir)
+    _add_terminal(fixdir)
+    result = _run(UPGRADE, tmp_path, fixdir)
+    assert result.returncode == 0, result.stderr
+    log = _sudo_log(fixdir)
+    assert "pipx install --force" in log and WHEEL_NAME in log
+    assert "pipx inject --force superforecasting-agent" in log and TUI_NAME in log
+
+
+def test_upgrade_corrupt_terminal_never_installs_backend(tmp_path):
+    fixdir = tmp_path / "fix"
+    _write_release_fixtures(fixdir)
+    _add_terminal(fixdir)
+    (fixdir / "terminal.whl").write_bytes(b"corrupt")
+    result = _run(UPGRADE, tmp_path, fixdir)
+    assert result.returncode != 0
+    assert "MISMATCH" in result.stderr
+    assert "pipx install" not in _sudo_log(fixdir)
+
+
+def test_upgrade_backend_only_does_not_fetch_terminal(tmp_path):
+    fixdir = tmp_path / "fix"
+    _write_release_fixtures(fixdir)
+    _add_terminal(fixdir)
+    (fixdir / "terminal.whl").unlink()
+    result = _run(UPGRADE, tmp_path, fixdir, {"INSTALL_TUI": "0"})
+    assert result.returncode == 0, result.stderr
+    assert "pipx inject" not in _sudo_log(fixdir)
+
+
+def test_upgrade_local_terminal_checksum_failure_prevents_backend_install(tmp_path):
+    fixdir = tmp_path / "fix"
+    _write_release_fixtures(fixdir)
+    backend = tmp_path / WHEEL_NAME
+    backend.write_bytes(WHEEL_BYTES)
+    terminal = tmp_path / TUI_NAME
+    terminal.write_bytes(b"corrupt")
+    sums = tmp_path / "SHA256SUMS"
+    sums.write_text(f"{WHEEL_SHA}  {WHEEL_NAME}\n{'0' * 64}  {TUI_NAME}\n")
+    result = _run(UPGRADE, tmp_path, fixdir, {
+        "FORECAST_WHEEL": str(backend), "FORECAST_TUI_WHEEL": str(terminal),
+        "FORECAST_CHECKSUMS": str(sums),
+    })
+    assert result.returncode != 0
+    assert "terminal wheel failed verification" in result.stderr
+    assert "pipx install" not in _sudo_log(fixdir)
+
+
+def test_hetzner_split_download_verifies_then_installs_both(tmp_path):
+    fixdir = tmp_path / "fix"
+    _write_release_fixtures(fixdir)
+    _add_terminal(fixdir)
+    result = _run(HETZNER, tmp_path, fixdir)
+    assert "launcher not found" in result.stderr  # fake pipx intentionally creates no binary
+    assert "pipx inject --force superforecasting-agent" in _sudo_log(fixdir)
+    assert TUI_NAME in _sudo_log(fixdir)
+
+
+def test_hetzner_corrupt_terminal_refuses_backend_install(tmp_path):
+    fixdir = tmp_path / "fix"
+    _write_release_fixtures(fixdir)
+    _add_terminal(fixdir)
+    (fixdir / "terminal.whl").write_bytes(b"corrupt")
+    result = _run(HETZNER, tmp_path, fixdir)
+    assert "MISMATCH" in result.stderr
+    assert "pipx install" not in _sudo_log(fixdir)
+
+
+def _standalone_release(tmp_path, fixdir):
+    _write_release_fixtures(fixdir)
+    _add_terminal(fixdir)
+    installer = (ROOT / "scripts" / "install-release.sh").read_bytes()
+    (fixdir / "install.sh").write_bytes(installer)
+    path = fixdir / "SHA256SUMS"
+    path.write_text(path.read_text() + f"{hashlib.sha256(installer).hexdigest()}  install.sh\n")
+    path = fixdir / "api.json"
+    api = json.loads(path.read_text())
+    api["assets"].append({"browser_download_url": "https://dl.example/install.sh"})
+    path.write_text(json.dumps(api))
+    standalone = tmp_path / HETZNER.name
+    standalone.write_bytes(HETZNER.read_bytes())
+    return standalone
+
+
+def test_standalone_hetzner_uses_verified_release_installer(tmp_path):
+    fixdir = tmp_path / "fix"
+    standalone = _standalone_release(tmp_path, fixdir)
+    result = _run(standalone, tmp_path, fixdir)
+    assert "launcher not found" in result.stderr
+    assert "pipx inject --force superforecasting-agent" in _sudo_log(fixdir)
+
+
+def test_standalone_hetzner_rejects_modified_installer(tmp_path):
+    fixdir = tmp_path / "fix"
+    standalone = _standalone_release(tmp_path, fixdir)
+    (fixdir / "install.sh").write_text("echo should-never-run\n")
+    result = _run(standalone, tmp_path, fixdir)
+    assert "Installer sha256 MISMATCH" in result.stderr
+    assert "pipx install" not in _sudo_log(fixdir)
+
+
+def test_hetzner_local_companion_installs_after_backend(tmp_path):
+    fixdir = tmp_path / "fix"
+    _write_release_fixtures(fixdir)
+    _add_terminal(fixdir)
+    terminal = tmp_path / TUI_NAME
+    terminal.write_bytes((fixdir / "terminal.whl").read_bytes())
+    backend = tmp_path / WHEEL_NAME
+    backend.write_bytes(WHEEL_BYTES)
+    result = _run(HETZNER, tmp_path, fixdir, {
+        "FORECAST_WHEEL": str(backend), "FORECAST_TUI_WHEEL": str(terminal),
+        "FORECAST_CHECKSUMS": str(fixdir / "SHA256SUMS"),
+    })
+    assert "launcher not found" in result.stderr
+    calls = _sudo_log(fixdir)
+    assert calls.index("pipx install") < calls.index("pipx inject")
+
+
+def test_hetzner_local_companion_checksum_failure_prevents_install(tmp_path):
+    fixdir = tmp_path / "fix"
+    _write_release_fixtures(fixdir)
+    _add_terminal(fixdir)
+    terminal = tmp_path / TUI_NAME
+    terminal.write_bytes(b"corrupt")
+    backend = tmp_path / WHEEL_NAME
+    backend.write_bytes(WHEEL_BYTES)
+    result = _run(HETZNER, tmp_path, fixdir, {
+        "FORECAST_WHEEL": str(backend), "FORECAST_TUI_WHEEL": str(terminal),
+        "FORECAST_CHECKSUMS": str(fixdir / "SHA256SUMS"),
+    })
+    assert "terminal wheel failed verification" in result.stderr
     assert "pipx install" not in _sudo_log(fixdir)

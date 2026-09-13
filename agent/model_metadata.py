@@ -392,7 +392,8 @@ _URL_TO_PROVIDER: Dict[str, str] = {
     "api.stepfun.ai": "stepfun",
     "api.stepfun.com": "stepfun",
     "api.arcee.ai": "arcee",
-    "api.minimax": "minimax",
+    "api.minimax.io": "minimax",
+    "api.minimax.chat": "minimax",
     "dashscope.aliyuncs.com": "alibaba",
     "dashscope-intl.aliyuncs.com": "alibaba",
     "portal.qwen.ai": "qwen-oauth",
@@ -442,10 +443,8 @@ def _infer_provider_from_url(base_url: str) -> Optional[str]:
     normalized = _normalize_base_url(base_url)
     if not normalized:
         return None
-    parsed = urlparse(normalized if "://" in normalized else f"https://{normalized}")
-    host = parsed.netloc.lower() or parsed.path.lower()
-    for url_part, provider in _URL_TO_PROVIDER.items():
-        if url_part in host:
+    for domain, provider in _URL_TO_PROVIDER.items():
+        if base_url_host_matches(normalized, domain):
             return provider
     return None
 
@@ -1074,10 +1073,9 @@ def query_ollama_num_ctx(model: str, base_url: str, api_key: str = "") -> Option
 def _query_ollama_api_show(model: str, base_url: str, api_key: str = "") -> Optional[int]:
     """Query an Ollama server's native ``/api/show`` for context length.
 
-    Provider-agnostic: works against ANY Ollama-compatible server regardless
-    of hostname — local Ollama, Ollama Cloud (``ollama.com``), custom Ollama
-    hosting behind a reverse proxy, etc.  For non-Ollama servers the POST
-    returns 404/405 quickly; the function handles errors gracefully.
+    Probe local/custom servers and recognized Ollama hosting. Recognized
+    non-Ollama providers are skipped before creating a client: even unsupported
+    requests can stall on DNS/TLS before a server returns an HTTP error.
 
     For hosted servers the GGUF ``model_info.*.context_length`` is the
     authoritative source: the user can't set their own ``num_ctx``, and the
@@ -1090,6 +1088,10 @@ def _query_ollama_api_show(model: str, base_url: str, api_key: str = "") -> Opti
     The order is flipped vs ``query_ollama_num_ctx()`` because local users
     control ``num_ctx`` themselves; hosted users can't.
     """
+    known_provider = _infer_provider_from_url(base_url)
+    if known_provider and known_provider != "ollama-cloud" and not is_local_endpoint(base_url):
+        return None
+
     import httpx
 
     server_url = base_url.rstrip("/")
@@ -1495,7 +1497,7 @@ def get_model_context_length(
           portal-derived values are persisted to disk.
        c. Codex OAuth /models probe
        d. GMI /models endpoint
-       e. Ollama native /api/show probe (any base_url, provider-agnostic)
+       e. Ollama native /api/show probe (local, custom or Ollama endpoints)
        f. models.dev registry lookup (with :cloud/-cloud suffix fallback)
     6. OpenRouter live API metadata (Kimi-family 32k guard)
     7. Hardcoded defaults (broad family patterns, longest-key-first)
@@ -1610,8 +1612,8 @@ def get_model_context_length(
             return context_length
         if not _is_known_provider_base_url(base_url):
             # 2b. Ollama native /api/show — any URL might be an Ollama server
-            # (local, cloud, or custom hosting).  Non-Ollama servers return
-            # 404/405 quickly.  Fall through on failure.
+            # (local, cloud, or custom hosting). Fall through on failure;
+            # an unsupported endpoint is not assumed to fail quickly.
             ctx = _query_ollama_api_show(model, base_url, api_key=api_key)
             if ctx is not None:
                 save_context_length(model, base_url, ctx)
@@ -1695,15 +1697,8 @@ def get_model_context_length(
         ctx = _resolve_endpoint_context_length(model, base_url, api_key=api_key)
         if ctx is not None:
             return ctx
-    # 5e. Ollama native /api/show probe — runs for ANY provider with a
-    # base_url, not just ollama-cloud.  Ollama-compatible servers expose
-    # this endpoint regardless of hostname (local Ollama, Ollama Cloud,
-    # custom Ollama hosting).  The OpenAI-compat /v1/models endpoint
-    # correctly omits context_length per the OpenAI schema, but /api/show
-    # returns the authoritative GGUF model_info.context_length.
-    # For non-Ollama servers (OpenAI, Anthropic, etc.), the POST returns
-    # 404/405 quickly.  Results are cached, so the hit is per-model+URL,
-    # once per hour.
+    # 5e. Native Ollama metadata. The probe itself rejects recognized
+    # non-Ollama endpoints; unknown/local hosting keeps discovery support.
     if base_url:
         ctx = _query_ollama_api_show(model, base_url, api_key=api_key)
         if ctx is not None:

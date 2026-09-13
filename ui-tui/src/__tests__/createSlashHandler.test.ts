@@ -4,6 +4,7 @@ import { createSlashHandler } from '../app/createSlashHandler.js'
 import { getOverlayState, resetOverlayState } from '../app/overlayStore.js'
 import { getUiState, patchUiState, resetUiState } from '../app/uiStore.js'
 import { TUI_SESSION_MODEL_FLAG } from '../domain/slash.js'
+import { GatewayRpcError } from '../lib/rpc.js'
 
 describe('createSlashHandler', () => {
   beforeEach(() => {
@@ -136,9 +137,7 @@ describe('createSlashHandler', () => {
     await vi.waitFor(
       () => {
         expect(rpc).toHaveBeenCalledWith('auth.poll', {})
-        expect(ctx.transcript.sys).toHaveBeenCalledWith(
-          'signed in to OpenAI Codex — this session is ready, keep going'
-        )
+        expect(ctx.transcript.sys).toHaveBeenCalledWith('signed in to OpenAI Codex — this session is ready, keep going')
       },
       { timeout: 5000 }
     )
@@ -245,11 +244,7 @@ describe('createSlashHandler', () => {
         expect.arrayContaining([
           expect.objectContaining({
             rows: expect.arrayContaining([
-              [
-                '1. 61% ↑8pt',
-                expect.stringContaining('Will the CPI release exceed consensus?'),
-                '/questions 1'
-              ]
+              ['1. 61% ↑8pt', expect.stringContaining('Will the CPI release exceed consensus?'), '/questions 1']
             ]),
             title: 'Forecast Questions'
           }),
@@ -349,9 +344,7 @@ describe('createSlashHandler', () => {
         expect.arrayContaining([
           expect.objectContaining({ title: 'Forecast Search' }),
           expect.objectContaining({
-            rows: expect.arrayContaining([
-              expect.arrayContaining(['/questions fq_cpi'])
-            ]),
+            rows: expect.arrayContaining([expect.arrayContaining(['/questions fq_cpi'])]),
             title: 'Matches'
           })
         ])
@@ -428,7 +421,9 @@ describe('createSlashHandler', () => {
     })
 
     expect(
-      handler("/update inflation -- --probability 0.66 --rationale May CPI (all-items) and BLS's release shifted higher")
+      handler(
+        "/update inflation -- --probability 0.66 --rationale May CPI (all-items) and BLS's release shifted higher"
+      )
     ).toBe(true)
     await vi.waitFor(() => {
       expect(rpc).toHaveBeenCalledWith('forecast.command', {
@@ -585,7 +580,9 @@ describe('createSlashHandler', () => {
 
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
-    expect(createSlashHandler(ctx)('/forecast new "Will X happen?" --resolution-criteria "Resolved by source"')).toBe(true)
+    expect(createSlashHandler(ctx)('/forecast new "Will X happen?" --resolution-criteria "Resolved by source"')).toBe(
+      true
+    )
     expect(rpc).toHaveBeenCalledWith('forecast.command', {
       arg: 'new "Will X happen?" --resolution-criteria "Resolved by source"'
     })
@@ -595,6 +592,23 @@ describe('createSlashHandler', () => {
       expect(rpc).toHaveBeenCalledWith('forecast.dashboard', { limit: 8 })
       expect(getUiState().forecastDeskStatus).toBe('2 forecasts  ·  1 to review  ·  1 alert')
     })
+  })
+
+  it.each([
+    ['/review', 'review', '--stale'],
+    ['/score fq_example --baselines', 'score', 'fq_example --baselines'],
+    ['/forecast score fq_example', 'score', 'fq_example'],
+    ['/review --domain politics', 'review', '--domain politics'],
+    ['/resolve fq_example --outcome true', 'resolve', 'fq_example --outcome true'],
+    ['/forecast resolve fq_example --outcome false', 'resolve', 'fq_example --outcome false']
+  ])('routes %s through the shared application operation', async (command, operation, arg) => {
+    const rpc = vi.fn(() => Promise.resolve({ code: 0, output: 'operation complete' }))
+    const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
+
+    expect(createSlashHandler(ctx)(command)).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.operation', { arg, operation })
+    expect(rpc).not.toHaveBeenCalledWith('forecast.command', expect.anything())
+    await vi.waitFor(() => expect(ctx.transcript.sys).toHaveBeenCalledWith('operation complete'))
   })
 
   it('routes a natural-language /forecast new to the agent instead of the argparse CLI', () => {
@@ -636,9 +650,7 @@ describe('createSlashHandler', () => {
 
     expect(createSlashHandler(ctx)('/forecast new')).toBe(true)
     expect(ctx.transcript.send).not.toHaveBeenCalled()
-    expect(ctx.transcript.sys).toHaveBeenCalledWith(
-      expect.stringContaining('usage: /forecast new')
-    )
+    expect(ctx.transcript.sys).toHaveBeenCalledWith(expect.stringContaining('usage: /forecast new'))
   })
 
   it('routes /api-key (bare, list, set, unset) to the api-key CLI subcommand', () => {
@@ -659,9 +671,9 @@ describe('createSlashHandler', () => {
     expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'api-key list' })
   })
 
-  it('routes forecast-native review shortcuts to the forecast command RPC', async () => {
+  it('routes forecast-native review shortcuts to the shared operation RPC', async () => {
     const rpc = vi.fn((method: string) => {
-      if (method === 'forecast.command') {
+      if (method === 'forecast.operation') {
         return Promise.resolve({ code: 0, output: 'No forecasts need review.' })
       }
 
@@ -671,7 +683,7 @@ describe('createSlashHandler', () => {
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/review')).toBe(true)
-    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'review --stale' })
+    expect(rpc).toHaveBeenCalledWith('forecast.operation', { operation: 'review', arg: '--stale' })
     expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
     await vi.waitFor(() => {
       expect(ctx.transcript.sys).toHaveBeenCalledWith('No forecasts need review.')
@@ -703,7 +715,7 @@ describe('createSlashHandler', () => {
     expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'model fq_123 --type bayesian_update' })
     expect(handler('/forecast-model fq_123 --type time_series')).toBe(true)
     expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'model fq_123 --type time_series' })
-    expect(handler('/trend-model fq_123 --series-json \'[[0,10],[1,12]]\' --target-x 2')).toBe(true)
+    expect(handler("/trend-model fq_123 --series-json '[[0,10],[1,12]]' --target-x 2")).toBe(true)
     expect(rpc).toHaveBeenCalledWith('forecast.command', {
       arg: "model fq_123 --series-json '[[0,10],[1,12]]' --target-x 2 --type trend_projection"
     })
@@ -712,9 +724,12 @@ describe('createSlashHandler', () => {
       arg: 'update fq_123 --probability 0.62 --rationale "new evidence"'
     })
     expect(handler('/resolve fq_123 --outcome yes --confirmed')).toBe(true)
-    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'resolve fq_123 --outcome yes --confirmed' })
+    expect(rpc).toHaveBeenCalledWith('forecast.operation', {
+      operation: 'resolve',
+      arg: 'fq_123 --outcome yes --confirmed'
+    })
     expect(handler('/score fq_123')).toBe(true)
-    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'score fq_123' })
+    expect(rpc).toHaveBeenCalledWith('forecast.operation', { operation: 'score', arg: 'fq_123' })
     expect(handler('/postmortem fq_123 --lesson "discount noisy signals"')).toBe(true)
     expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'postmortem fq_123 --lesson "discount noisy signals"' })
     expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
@@ -1118,7 +1133,7 @@ describe('createSlashHandler', () => {
     ['/browser connect', 'browser.manage', { action: 'connect', session_id: null, url: 'http://127.0.0.1:9222' }],
     ['/reload-mcp', 'reload.mcp', { session_id: null }],
     ['/reload', 'reload.env', {}],
-    ['/stop', 'process.stop', {}],
+    ['/stop', 'slash.exec', { command: 'stop', session_id: null }],
     ['/fast status', 'config.get', { key: 'fast', session_id: null }],
     ['/busy status', 'config.get', { key: 'busy' }],
     ['/indicator', 'config.get', { key: 'indicator' }]
@@ -1146,7 +1161,9 @@ describe('createSlashHandler', () => {
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/browser connect')).toBe(true)
-    expect(ctx.transcript.sys).toHaveBeenCalledWith('checking Chromium-family browser remote debugging at http://127.0.0.1:9222...')
+    expect(ctx.transcript.sys).toHaveBeenCalledWith(
+      'checking Chromium-family browser remote debugging at http://127.0.0.1:9222...'
+    )
 
     await vi.waitFor(() => {
       expect(ctx.transcript.sys).toHaveBeenCalledWith(
@@ -1196,7 +1213,7 @@ describe('createSlashHandler', () => {
     expect(ctx.transcript.sys).toHaveBeenCalledWith('usage: /indicator [ascii|emoji|markers|unicode]')
   })
 
-  it('drops stale slash.exec output after a newer slash', async () => {
+  it('drops stale native command output after a newer slash', async () => {
     let resolveLate: (v: { output?: string }) => void
     let slashExecCalls = 0
 
@@ -1205,7 +1222,7 @@ describe('createSlashHandler', () => {
         gw: {
           getLogTail: vi.fn(() => ''),
           request: vi.fn((method: string) => {
-            if (method === 'slash.exec') {
+            if (method === 'command.dispatch') {
               slashExecCalls += 1
 
               if (slashExecCalls === 1) {
@@ -1214,7 +1231,7 @@ describe('createSlashHandler', () => {
                 })
               }
 
-              return Promise.resolve({ output: 'fresh' })
+              return Promise.resolve({ type: 'exec', output: 'fresh' })
             }
 
             return Promise.resolve({})
@@ -1235,6 +1252,67 @@ describe('createSlashHandler', () => {
     expect(ctx.transcript.sys).not.toHaveBeenCalledWith('too late')
   })
 
+  it.each([
+    new Error('timeout: command.dispatch'),
+    new GatewayRpcError('worker failed after execution', 5030),
+    new GatewayRpcError('invalid configured command', 4018)
+  ])('does not retry an execution failure through another dispatcher: %s', async error => {
+    const ctx = buildCtx()
+    ctx.gateway.gw.request.mockRejectedValue(error)
+    createSlashHandler(ctx)('/fixture-command')
+    await vi.waitFor(() => expect(ctx.transcript.sys).toHaveBeenCalledWith(`error: ${error.message}`))
+    expect(ctx.gateway.gw.request).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not dispatch an old handoff after switching sessions', async () => {
+    patchUiState({ sid: 'old-session' })
+    const ctx = buildCtx()
+    let reject!: (error: Error) => void
+    ctx.gateway.gw.request.mockReturnValue(
+      new Promise((_resolve, fail) => {
+        reject = fail
+      })
+    )
+    createSlashHandler(ctx)('/fixture-command')
+    patchUiState({ sid: 'new-session' })
+    reject(new GatewayRpcError('handoff', 4018, { dispatch: 'slash.exec', execution_started: false }))
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(ctx.gateway.gw.request).toHaveBeenCalledTimes(1)
+    expect(ctx.transcript.sys).not.toHaveBeenCalled()
+  })
+
+  it('runs a native command without contacting the legacy dispatcher', async () => {
+    const ctx = buildCtx()
+    ctx.gateway.gw.request.mockResolvedValue({ type: 'exec', output: 'native result' })
+    createSlashHandler(ctx)('/fixture-command')
+    await vi.waitFor(() => expect(ctx.transcript.sys).toHaveBeenCalledWith('native result'))
+    expect(ctx.gateway.gw.request).toHaveBeenCalledTimes(1)
+    expect(ctx.gateway.gw.request).toHaveBeenCalledWith('command.dispatch', expect.objectContaining({ name: 'fixture-command' }))
+  })
+
+  it('uses the legacy worker once after an explicit native handoff', async () => {
+    const ctx = buildCtx()
+    ctx.gateway.gw.request
+      .mockRejectedValueOnce(new GatewayRpcError('handoff', 4018, { dispatch: 'slash.exec', execution_started: false }))
+      .mockResolvedValueOnce({ output: 'legacy result' })
+    createSlashHandler(ctx)('/fixture-legacy')
+    await vi.waitFor(() => expect(ctx.transcript.sys).toHaveBeenCalledWith('legacy result'))
+    expect(ctx.gateway.gw.request.mock.calls.map(call => call[0])).toEqual(['command.dispatch', 'slash.exec'])
+  })
+
+  it('rejects a terminal handoff unsupported by this client without redispatching', async () => {
+    const ctx = buildCtx()
+    vi.mocked(ctx.gateway.gw.request).mockResolvedValue({ type: 'alias', target: 'future-command' })
+    createSlashHandler(ctx)('/future-command')
+    await Promise.resolve()
+    expect(ctx.gateway.gw.request).toHaveBeenCalledTimes(1)
+    expect(ctx.transcript.sys).toHaveBeenCalledWith(
+      '/future-command requires a terminal command handler unavailable in this client'
+    )
+  })
+
   it('dispatches command.dispatch with typed alias', async () => {
     const ctx = buildCtx({
       gateway: {
@@ -1242,7 +1320,7 @@ describe('createSlashHandler', () => {
           getLogTail: vi.fn(() => ''),
           request: vi.fn((method: string) => {
             if (method === 'slash.exec') {
-              return Promise.reject(new Error('no'))
+              return Promise.reject(new GatewayRpcError('configured command: use command.dispatch', 4018))
             }
 
             if (method === 'command.dispatch') {
@@ -1293,8 +1371,9 @@ describe('createSlashHandler', () => {
 
     expect(createSlashHandler(ctx)('/profile')).toBe(true)
     await vi.waitFor(() => {
-      expect(ctx.gateway.gw.request).toHaveBeenCalledWith('slash.exec', {
-        command: 'profile',
+      expect(ctx.gateway.gw.request).toHaveBeenCalledWith('command.dispatch', {
+        name: 'profile',
+        arg: '',
         session_id: null
       })
     })
@@ -1327,7 +1406,7 @@ describe('createSlashHandler', () => {
           getLogTail: vi.fn(() => ''),
           request: vi.fn((method: string) => {
             if (method === 'slash.exec') {
-              return Promise.reject(new Error('skill command: use command.dispatch'))
+              return Promise.reject(new GatewayRpcError('skill command: use command.dispatch', 4018))
             }
 
             if (method === 'command.dispatch') {
@@ -1408,7 +1487,9 @@ describe('createSlashHandler', () => {
     expect(rpc).toHaveBeenCalledWith('session.save', { session_id: 'sid-abc' })
 
     await vi.waitFor(() => {
-      expect(ctx.transcript.sys).toHaveBeenCalledWith('forecast transcript saved to: /tmp/forecast_transcript_test.json')
+      expect(ctx.transcript.sys).toHaveBeenCalledWith(
+        'forecast transcript saved to: /tmp/forecast_transcript_test.json'
+      )
     })
   })
 
@@ -1551,3 +1632,11 @@ interface Ctx {
   transcript: ReturnType<typeof buildTranscript>
   voice: ReturnType<typeof buildVoice>
 }
+
+
+it('sends the current session owner with delegation pause', () => {
+  patchUiState({ sid: 'desk' })
+  const ctx = buildCtx()
+  expect(createSlashHandler(ctx)('/agents pause')).toBe(true)
+  expect(ctx.gateway.gw.request).toHaveBeenCalledWith('delegation.pause', { paused: true, session_id: 'desk' })
+})

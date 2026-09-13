@@ -94,7 +94,7 @@ def _extract_fallback_from_model_cfg(model_cfg: Any) -> Optional[Dict[str, Any]]
 def _snapshot_auth_active_provider() -> Any:
     """Return the current ``active_provider`` in auth.json, or a sentinel if unavailable."""
     try:
-        from superforecasting_agent.runtime.auth import _load_auth_store
+        from superforecasting_agent.credentials.auth import _load_auth_store
         store = _load_auth_store()
         return store.get("active_provider")
     except Exception:
@@ -104,7 +104,7 @@ def _snapshot_auth_active_provider() -> Any:
 def _restore_auth_active_provider(value: Any) -> None:
     """Write back a previously snapshotted ``active_provider`` value."""
     try:
-        from superforecasting_agent.runtime.auth import _auth_store_lock, _load_auth_store, _save_auth_store
+        from superforecasting_agent.credentials.auth import _auth_store_lock, _load_auth_store, _save_auth_store
         with _auth_store_lock():
             store = _load_auth_store()
             store["active_provider"] = value

@@ -259,7 +259,7 @@ def test_init_feasibility_check_uses_aux_context_override_from_config():
         patch("run_agent.get_tool_definitions", return_value=[]),
         patch("run_agent.check_toolset_requirements", return_value={}),
         patch("run_agent.OpenAI"),
-        patch("run_agent.ContextCompressor", new=_StubCompressor),
+        patch("agent.agent_init.ContextCompressor", new=_StubCompressor),
         patch("agent.auxiliary_client.get_text_auxiliary_client", return_value=(mock_client, "custom/big-model")),
         patch("agent.model_metadata.get_model_context_length", return_value=1_000_000) as mock_ctx_len,
     ):
@@ -270,6 +270,8 @@ def test_init_feasibility_check_uses_aux_context_override_from_config():
             skip_context_files=True,
             skip_memory=True,
         )
+
+        assert isinstance(agent.context_compressor, _StubCompressor)
 
         # Config override is captured eagerly in __init__ (still needed
         # because the threshold-derivation logic at construction time

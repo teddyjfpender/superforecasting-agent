@@ -243,12 +243,13 @@ def _cmd_rerun(args: argparse.Namespace) -> None:
         start_job,
         validate_reforecast_ids,
     )
-    from superforecasting_agent.runtime.config import cfg_get, load_config_readonly
+    from superforecasting_agent.configuration import cfg_get
+    from superforecasting_agent.storage.configuration import read_configuration
 
     ledger = _ledger(args)
     try:
         max_batch = int(
-            cfg_get(load_config_readonly(), "forecasting", "reforecast", "max_batch", default=DEFAULT_MAX_BATCH)
+            cfg_get(read_configuration(), "forecasting", "reforecast", "max_batch", default=DEFAULT_MAX_BATCH)
             or DEFAULT_MAX_BATCH
         )
     except (TypeError, ValueError):
@@ -363,7 +364,7 @@ def _run_one(ledger: "ForecastLedger", question_id: str, args: argparse.Namespac
     failure so a batch run keeps going.
     """
 
-    from tools.forecasting_tool import fetch_watched_source_payloads
+    from forecasting.sources.watched import fetch_watched_source_payloads
 
     try:
         result = ledger.refresh_forecast(
@@ -545,7 +546,7 @@ def _cmd_refresh(args: argparse.Namespace) -> None:
         args.commit_policy = "commit_material"
         _cmd_agent(args)
         return
-    from tools.forecasting_tool import fetch_watched_source_payloads
+    from forecasting.sources.watched import fetch_watched_source_payloads
 
     concurrency = args.concurrency
     result = ledger.refresh_forecast(

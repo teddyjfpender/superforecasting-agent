@@ -6,6 +6,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 from tools.registry import registry
+
 from . import definitions
 from .arguments import coerce_tool_args
 from .errors import _sanitize_tool_error
@@ -60,7 +61,9 @@ def handle_function_call(
 
     try:
         if function_name in _AGENT_LOOP_TOOLS:
-            return json.dumps({"error": f"{function_name} must be handled by the agent loop"})
+            return json.dumps({
+                "error": f"{function_name} must be handled by the agent loop"
+            })
 
         # Check plugin hooks for a block directive (unless caller already
         # checked — e.g. run_agent._invoke_tool passes skip=True to
@@ -75,7 +78,10 @@ def handle_function_call(
         if not skip_pre_tool_call_hook:
             block_message: Optional[str] = None
             try:
-                from superforecasting_agent.runtime.plugins import get_pre_tool_call_block_message
+                from superforecasting_agent.runtime.plugins import (
+                    get_pre_tool_call_block_message,
+                )
+
                 block_message = get_pre_tool_call_block_message(
                     function_name,
                     function_args,
@@ -95,19 +101,25 @@ def handle_function_call(
         try:
             from acp_adapter.edit_approval import maybe_require_edit_approval
 
-            edit_block_message = maybe_require_edit_approval(function_name, function_args)
+            edit_block_message = maybe_require_edit_approval(
+                function_name, function_args
+            )
             if edit_block_message is not None:
                 return edit_block_message
         except Exception as _edit_approval_err:
             logger.debug("ACP edit approval guard error: %s", _edit_approval_err)
             if function_name in {"write_file", "patch"}:
-                return json.dumps({"error": "Edit approval denied: approval guard failed"}, ensure_ascii=False)
+                return json.dumps(
+                    {"error": "Edit approval denied: approval guard failed"},
+                    ensure_ascii=False,
+                )
 
         # Notify the read-loop tracker when a non-read/search tool runs,
         # so the *consecutive* counter resets (reads after other work are fine).
         if function_name not in _READ_SEARCH_TOOLS:
             try:
                 from tools.file_tools import notify_other_tool_call
+
                 notify_other_tool_call(task_id or "default")
             except Exception:
                 pass  # file_tools may not be loaded yet
@@ -123,16 +135,22 @@ def handle_function_call(
         if function_name == "execute_code":
             # Prefer the caller-provided list so subagents can't overwrite
             # the parent's tool set via the process-global.
-            sandbox_enabled = enabled_tools if enabled_tools is not None else definitions._last_resolved_tool_names
+            sandbox_enabled = (
+                enabled_tools
+                if enabled_tools is not None
+                else definitions._last_resolved_tool_names
+            )
             result = registry.dispatch(
-                function_name, function_args,
+                function_name,
+                function_args,
                 task_id=task_id,
                 enabled_tools=sandbox_enabled,
                 main_runtime=main_runtime,
             )
         else:
             result = registry.dispatch(
-                function_name, function_args,
+                function_name,
+                function_args,
                 task_id=task_id,
                 user_task=user_task,
                 main_runtime=main_runtime,
@@ -141,6 +159,7 @@ def handle_function_call(
 
         try:
             from superforecasting_agent.runtime.plugins import invoke_hook
+
             invoke_hook(
                 "post_tool_call",
                 tool_name=function_name,
@@ -162,6 +181,7 @@ def handle_function_call(
         # valid string return wins; non-string returns are ignored.
         try:
             from superforecasting_agent.runtime.plugins import invoke_hook
+
             hook_results = invoke_hook(
                 "transform_tool_result",
                 tool_name=function_name,
@@ -184,4 +204,6 @@ def handle_function_call(
     except Exception as e:
         error_msg = f"Error executing {function_name}: {str(e)}"
         logger.exception(error_msg)
-        return json.dumps({"error": _sanitize_tool_error(error_msg)}, ensure_ascii=False)
+        return json.dumps(
+            {"error": _sanitize_tool_error(error_msg)}, ensure_ascii=False
+        )

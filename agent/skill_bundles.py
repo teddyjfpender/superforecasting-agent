@@ -60,7 +60,7 @@ _BUNDLE_INVALID_CHARS = re.compile(r"[^a-z0-9-]")
 _BUNDLE_MULTI_HYPHEN = re.compile(r"-{2,}")
 
 _bundles_cache: Dict[str, Dict[str, Any]] = {}
-_bundles_cache_mtime: Optional[float] = None
+_bundles_cache_root: Path | None = None
 
 
 def _bundles_dir() -> Path:
@@ -82,35 +82,13 @@ def _slugify(name: str) -> str:
     return cmd
 
 
-def _iter_bundle_files() -> List[Path]:
-    base = _bundles_dir()
+def _iter_bundle_files(base: Path) -> List[Path]:
     if not base.exists():
         return []
     files: List[Path] = []
     for ext in ("*.yaml", "*.yml"):
         files.extend(sorted(base.glob(ext)))
     return files
-
-
-def _max_mtime(files: List[Path]) -> float:
-    """Highest mtime across the bundle files plus the dir itself.
-
-    Watching the directory mtime catches deletions; watching individual
-    files catches edits. Together they're a cheap freshness check.
-    """
-    base = _bundles_dir()
-    mtimes = []
-    if base.exists():
-        try:
-            mtimes.append(base.stat().st_mtime)
-        except OSError:
-            pass
-    for f in files:
-        try:
-            mtimes.append(f.stat().st_mtime)
-        except OSError:
-            continue
-    return max(mtimes) if mtimes else 0.0
 
 
 def _load_bundle_file(path: Path) -> Optional[Dict[str, Any]]:
@@ -172,8 +150,9 @@ def scan_bundles() -> Dict[str, Dict[str, Any]]:
     bundle info dict. Later bundles with a duplicate slug are skipped with
     a warning (first wins, alphabetical order).
     """
-    global _bundles_cache, _bundles_cache_mtime
-    files = _iter_bundle_files()
+    global _bundles_cache, _bundles_cache_root
+    base = _bundles_dir().resolve()
+    files = _iter_bundle_files(base)
     out: Dict[str, Dict[str, Any]] = {}
     for f in files:
         info = _load_bundle_file(f)
@@ -188,21 +167,17 @@ def scan_bundles() -> Dict[str, Dict[str, Any]]:
             continue
         out[key] = info
     _bundles_cache = out
-    _bundles_cache_mtime = _max_mtime(files)
+    _bundles_cache_root = base
     return out
 
 
 def get_skill_bundles() -> Dict[str, Dict[str, Any]]:
-    """Return the current bundle mapping, rescanning when disk changed.
+    """Read current bundles from the active profile.
 
-    Cheap to call repeatedly: only rescans when the bundles directory or
-    any bundle file's mtime is newer than the cached snapshot.
+    Timestamps cannot establish freshness across edits, restores or profiles.
+    The last scan is retained only as the explicit reload diff's baseline.
     """
-    files = _iter_bundle_files()
-    current_mtime = _max_mtime(files)
-    if not _bundles_cache or _bundles_cache_mtime != current_mtime:
-        scan_bundles()
-    return _bundles_cache
+    return scan_bundles()
 
 
 def resolve_bundle_command_key(command: str) -> Optional[str]:
@@ -228,7 +203,7 @@ def reload_bundles() -> Dict[str, Any]:
     def _snapshot(cmds: Dict[str, Dict[str, Any]]) -> Dict[str, str]:
         return {k.lstrip("/"): (v or {}).get("description", "") for k, v in cmds.items()}
 
-    before = _snapshot(_bundles_cache)
+    before = _snapshot(_bundles_cache) if _bundles_cache_root == _bundles_dir().resolve() else {}
     new = scan_bundles()
     after = _snapshot(new)
 

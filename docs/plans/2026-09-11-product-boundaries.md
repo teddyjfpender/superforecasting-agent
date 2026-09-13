@@ -1,0 +1,5163 @@
+# Product boundaries and repository hygiene delivery
+
+Scope: all five deliverables in the user's attached objective. This is an active
+implementation plan, not a claim that the existing layout satisfies them.
+
+## Acceptance and authoritative evidence
+
+- [ ] Domain, application, infrastructure, transport and product ownership is
+  documented and enforced by import checks, including tests that introduce a
+  forbidden edge and verify rejection.
+- [ ] The real TUI and CLI consume shared review/resolution services, with typed
+  inputs, consistent validation/defaults/errors and durable lifecycle behavior.
+- [ ] Configuration and session operations have shared owners; TUI behavior does
+  not depend on importing the classic CLI or constructing through run_agent.py.
+- [ ] One documented fresh-checkout bootstrap/check workflow installs hooks and
+  runs the same pinned quality gates locally and in CI. Gates include Python
+  linting/formatting, scoped type checks, TypeScript checks, import boundaries and
+  generated-contract checks. Legacy exceptions are explicit and may only shrink.
+- [ ] Hosting owns profile configuration, credentials, sessions, workers and
+  shutdown independently of presentation. Local and headless serving use the same
+  operations with version/capability negotiation and tested incompatibility errors.
+- [ ] Backend/CLI, TUI and optional integration distributions have explicit
+  dependencies, clean-environment installation tests and compatibility checks.
+  A minimal backend install needs no Node/TUI dependencies or bundled UI assets.
+- [ ] Full behavior/regression qualification and end-to-end product checks pass;
+  ownership docs and TODO are reconciled with actual current evidence.
+
+## Implementation order
+
+1. Extract the complete review/resolution workflow into `forecasting/application`;
+   keep terminal output and argument parsing in product adapters, and consume the
+   shared operations directly from structured TUI RPC.
+2. Move configuration/session/agent construction ownership out of entrypoints and
+   bind hosting to explicit shared services. Tighten import contracts as consumers
+   migrate; compatibility facades must not own behavior.
+3. Establish one quality command and bootstrap, reuse it from hooks and CI, and
+   verify failure behavior. Enable useful lint/type/format coverage incrementally
+   without silently treating tool failures as successful reports.
+4. Version the host/client boundary and negotiate required capabilities for local
+   and remote transports. Exercise isolation, reconnect and shutdown.
+5. Separate distribution profiles and prove installation/use outside the checkout.
+
+The monorepo is retained. Directory moves follow ownership changes. Existing
+forecast settlement/scoring safety, ledger provenance, profile compatibility and
+TUI-first presentation remain required throughout. Live forecasting, release
+publication and historical SSL attribution are separate workstreams.
+
+## Progress
+
+Baseline: `c3c352325`. Existing six import contracts include legacy exceptions;
+Ruff enforces only encoding; tracked hooks are not installed in this checkout.
+No work in this plan is marked complete until its acceptance evidence exists.
+
+First extraction in progress:
+
+- `forecasting/application/reviews.py` owns selection and learned-error merging;
+  the CLI calls it and retains only presentation.
+- `forecasting/application/resolution.py` owns typed request admission and
+  resolution/score/optional retrospective orchestration; the ledger remains the
+  authority for settlement semantics, writes and durable finalization.
+- Direct `forecast.review` / `forecast.resolve` RPCs return structured results
+  without calling the classic CLI or redirecting process-wide stdout. The actual
+  Ink command routing still needs migration to these endpoints.
+- Cross-interface testing exposed binary retry identity differences (`"true"`
+  versus `true`). The ledger now compares their meaning without rewriting the
+  original stored outcome/provenance.
+- Seven import contracts pass. Broader Ruff rules, formatting and ty pass on the
+  application package. Those extra checks still need wiring into unified gates.
+- Existing tracked hooks are installed (`core.hooksPath=.githooks`).
+- Verification: 257 existing review/CLI tests passed after the first extraction;
+  15 application/settlement/lifecycle tests passed after the retry fix. Full
+  qualification is pending further integration, not claimed by these checks.
+
+Hygiene audit finding: `ui-tui/eslint.config.mjs` defines five custom rules as
+no-ops. Determine their intended enforcement and replace or remove misleading
+rule declarations as part of the gate work; do not describe them as protection.
+
+Shared quality workflow (`d5469e48c`):
+
+- `python3 scripts/dev.py bootstrap` completed with exit 0 in a fresh local clone
+  at `/tmp/forecast-product-bootstrap-20260911`, using its own `.venv` and
+  `ui-tui/node_modules`. It built Ink, installed hooks, and passed all quality
+  commands. The verification clone is clean afterward.
+- Pre-commit/pre-push and `.github/workflows/product-quality.yml` call the same
+  implementation. CI execution and native Windows bootstrap remain to verify.
+- Missing-tool and failed-linter subprocess regressions pass; the pipeline fails
+  closed. Six tests passed across those checks and application RPC parity.
+- Injecting `import forecasting.cli` into the actual application package in the
+  verification clone made the new import contract fail. The probe was restored.
+- TUI lint passes after six existing gateway-client formatting findings were
+  fixed. Five unused no-op custom rule declarations were removed; they were not
+  active protections and should not have been advertised as such.
+
+Still outstanding: actual Ink command migration, shared config/session and agent
+construction ownership, fuller dependency-boundary cleanup, host/capability
+negotiation, minimal independent package profiles, and full final qualification.
+The two implementation commits are local pending the required full-suite push
+qualification; this does not mark any of the five deliverables complete.
+
+
+Ink workflow migration:
+
+- `/review`, `/resolve` and their `/forecast` forms now call `forecast.operation`.
+  Shared argument definitions and output formatting live in
+  `forecasting/interfaces/commands.py`; business behavior remains in application
+  services. These paths do not invoke the classic CLI or redirect stdout.
+- The application request rejects negative review windows, including structured
+  RPC callers that bypass argparse. CLI/RPC resolution retries preserve identity.
+- A compiled Ink test runs review, resolution, scoring and retry through the real
+  dashboard WebSocket, PTY and gateway against an isolated ledger. It passes; the
+  test explicitly dismisses result pagers before submitting the next command.
+- Verification: 264 focused Python tests passed; all 87 slash-handler tests
+  passed; eight application/admission/config-owner tests passed; the real-desk
+  workflow passed. The shared quality command passed, including TypeScript types,
+  lint, generated contracts, Python scoped checks and import boundaries.
+- MCP reload persistence uses the gateway's atomic profile writer directly,
+  preserving unrelated settings and avoiding the classic CLI import.
+
+Shared configuration/session and agent construction ownership, full hosting and
+capability negotiation, distribution separation and broad qualification remain
+open. The personality lookup still imports classic CLI configuration; its loader
+also bridges environment settings, so removing that edge requires preserving
+configuration semantics rather than merely changing the import target.
+
+
+Runtime ownership migration:
+
+- `agent/runtime.py` now owns `AIAgent`; `run_agent.py` is a compatibility
+  executable and module alias. CLI, TUI, gateway, tools, forecasting workers,
+  cron and ACP import the library owner. Legacy patches address the same module
+  state. Repository-relative environment loading retains its original root.
+- Removed every exception from the forbidden entrypoint-import contract and
+  extended coverage to cron/ACP. Added a direct classic-CLI import prohibition
+  for the TUI host. The isolated slash worker remains a legacy adapter.
+- Separated read-only interactive configuration from explicit environment
+  bridging. Personality lookup uses shared defaults and profile precedence
+  without importing CLI or changing terminal/provider environment settings.
+- Verification: 3,529 runtime/agent/bootstrap/provider tests passed, six skipped;
+  41 configuration and provider tests passed. Python quality and all eight import
+  contracts pass. Broader final qualification and push remain pending.
+
+This removes specific ownership inversions, not all presentation/runtime coupling.
+Agent library initialization still loads process environment and the historical
+standalone diagnostic main remains exported by the runtime. Explicit host startup,
+shared session ownership, remaining slash dispatch, protocol negotiation and
+independent distributions still need implementation/qualification.
+
+Gateway qualification after the runtime move: 184 tests passed, including all
+local real-desk lifecycle cases and legacy/factory shared-state compatibility.
+The six warnings report Python forkpty use from the dashboard test host.
+
+
+Host compatibility admission:
+
+- Shared descriptors advertise the supported wire-version range and actual RPC
+  operations across stdio, WebSocket and HTTP. `host.negotiate` validates required
+  capabilities and rejects malformed inputs or incompatible versions without
+  opening a session, ledger or provider connection.
+- Ink checks the descriptor before delivering gateway.ready to session bootstrap.
+  Missing required methods or unsupported versions terminate that connection with
+  an actionable reason. Explicit restart can admit a newly compatible backend.
+- Verification: 102 Python protocol/real HTTP tests passed, 39 client/recovery
+  tests passed, six compiled-desk lifecycle tests passed. Shared quality checks
+  pass. Remote negotiation uses the existing authenticated HTTP endpoint.
+- This is an operation compatibility contract, not a provider-health claim.
+  Existing legacy clients can continue calling their supported RPCs directly.
+
+Explicit host resource ownership, remaining shared session/command services and
+independent distribution/install qualification remain required. These acceptance
+items are not closed by implementing the host compatibility contract.
+
+
+Independent distribution implementation:
+
+- The backend wheel excludes TUI/web package data and namespace discovery.
+  Building from an sdist avoids contamination from stale checkout build trees;
+  artifact checks caught old compatibility UI files in the first direct build.
+- `products/tui` owns a separate terminal wheel with its compiled Ink bundle and
+  a small launcher. It has no backend dependencies. The backend launcher discovers
+  that companion in installed environments; source checkout and explicit bundle
+  overrides retain their existing behavior.
+- Build and clean-environment verification commands are documented in
+  `products/README.md` and wired into the product-quality workflow. New product
+  and verification code participates in strict lint, formatting and type gates.
+- Verified locally on Python 3.13: backend create/update/resolve/score with Node
+  absent from PATH; terminal-only remote prerequisites; combined companion
+  discovery. Thirty-four launcher/workflow regression tests passed.
+
+Not complete: cross-platform execution of these new profile checks, actual
+installed-terminal transport/lifecycle qualification, legacy release/installer
+wiring, and final full-suite qualification. Shared host/session ownership and
+remaining command migration also remain open.
+
+Additional distribution evidence: the backend-only build succeeded with only uv
+on PATH (no Node/npm). Optional web dependencies passed `uv pip check`, and the
+installed HTTP host constructed and released its local socket successfully.
+
+
+Shared session selection:
+
+- Moved resumable-session policy into `superforecasting_agent.application` and
+  routed Ink list/auto-resume, classic CLI history and CLI list/browse through it.
+  Human-facing sources are accepted across interfaces; explicit source filters
+  still allow administrative access to internal sessions.
+- Fixed fixed-window lookup: a user conversation behind more than 200 internal
+  sessions is still discoverable, and filtering the active conversation does not
+  consume the requested result limit. Limits are validated before storage access.
+- Verification: 332 focused session/gateway/CLI tests passed, then 99 adapter
+  tests passed after CLI error handling was aligned. New application code is
+  included in strict lint/format/type gates and an enforced import boundary.
+- This is selection ownership, not complete host/session ownership. Session
+  construction/finalization, worker draining, database lifetime and legacy
+  command adapters still need consolidation. Most-recent RPC's legacy error-to-
+  empty-result behavior also remains a recovery transparency follow-up.
+
+
+Recovery transparency follow-up:
+
+- `session.most_recent` returns an error for storage failure; only a successful
+  empty query returns a null session ID. Startup config/history failures no longer
+  create replacement sessions automatically. The terminal gives explicit retry
+  (`/resume`) and new-session (`/new`) actions.
+- Compiled testing exposed a second layer of ambiguity: the common TUI RPC
+  wrapper converts exceptions into null responses. Startup now validates those
+  responses separately from a valid empty-history result. Unit cases cover both
+  rejection and null, and late responses from older startup generations are ignored.
+- Serialized lazy database construction so concurrent RPC startup cannot open
+  multiple session-store handles. Six concurrent callers share one handle in the
+  regression test. Complete database lifetime/drain ownership remains separate.
+- Verification: 227 backend/concurrency tests, 64 UI event tests, and all seven
+  compiled-desk lifecycle tests passed. The injected database-unavailable case
+  proves a visible failure and zero replacement session rows. Shared quality gates
+  pass. The original compiled test failed before the null-response fix.
+
+Full host resource/lifecycle ownership, remaining application command migration,
+installed-product/cross-platform qualification and release assembly integration
+remain open; these recovery fixes do not complete the overall architecture goal.
+
+Agent resource ownership follow-up:
+
+- The shared agent lifecycle now serializes client eviction and full shutdown
+  with a per-agent reentrant lock. Full teardown claims ownership once before
+  invoking callbacks; repeated close cannot clean a replacement agent's resources
+  merely because it reuses the durable session ID.
+- New regressions failed before the fix: repeated close removed a replacement
+  terminal environment, and concurrent close invoked task cleanup twice. Tests
+  also cover eviction overlapping shutdown and a reentrant cleanup callback.
+- Verification: 18 resource ownership, zombie cleanup and OpenAI client lifecycle
+  tests passed; the shared Python quality gate passed. These checks establish
+  teardown idempotence, not host-wide draining or session handover safety before
+  the first close. Those broader runtime responsibilities remain open.
+
+Abandoned startup ownership:
+
+- Lazy agent construction now disposes a completed agent if its session was
+  closed during construction, skips worker allocation when already detached,
+  stops any orphan notification poller, and releases waiters with an explicit
+  initialization error. Previously orphan cleanup covered the slash subprocess
+  and approval registration but left the constructed agent's clients open.
+- The deterministic close-during-build regression waits for agent disposal and
+  verifies that initialization waiters receive the closed-session error. This
+  is startup cleanup; active-turn draining and complete host ownership remain open.
+
+Commit-content hygiene:
+
+- Shared snapshot admission checks require in-place quality tools to inspect
+  the staged tree for commits and each submitted tree for pushes. Unstaged or
+  untracked non-ignored files fail closed; ignored toolchains remain supported.
+  Hooks repeat admission after checks and never stash or rewrite user changes.
+- Pre-push no longer ignores all refs after the first: every submitted tree is
+  admitted, and every remote baseline participates in changed-domain checks.
+- Six workflow tests pass, including real Git fixtures for a staged bug hidden
+  by an unstaged fix, a different pushed tree, untracked import shadowing, and
+  actual pre-push rejection of a mismatching second ref before quality execution.
+- This intentionally requires matching in-place contents; automatic isolated
+  snapshot validation is not claimed. CONTRIBUTING documents the partial-staging
+  constraint. Shared Python quality and shell syntax checks pass.
+
+Shared scoring operation:
+
+- Added a typed scoring use case owning current-score and optional baseline
+  orchestration. Ledger settlement semantics and score lineage remain unchanged.
+  Classic CLI and Ink `/score` / `/forecast score` now share argument definitions,
+  formatting and application execution through `forecast.operation`.
+- Tests cover invalid structured booleans before writes, matching CLI/RPC output,
+  baseline opt-in versus absence, preserved score identity, no presentation import,
+  and real compiled Ink resolution followed by scoring against durable storage.
+- Verification: 265 application/CLI tests and 89 slash-handler tests passed;
+  shared Python/TypeScript quality gates and the Ink build passed. Six existing
+  desk cases passed in the initial integration run; the extended scoring case
+  timed out at the default viewport, then passed at an explicit 160x45 viewport
+  while observing the final baseline output. Full-suite qualification remains open.
+
+Installed terminal qualification and output ownership:
+
+- Extended the product-wheel verifier to launch the terminal-only installation
+  against a separately installed backend outside the checkout, wait for the
+  credential-free startup state, display a durable score with baseline status,
+  close the viewer and exit cleanly. The fixture drains PTY output during exit
+  and allows the viewer-close redraw to release keyboard focus before `/quit`.
+- The new test exposed a real presentation failure: tracing the installed host
+  proved that scoring returned a valid result, but its composer-relative floating
+  viewer did not visibly paint over the setup screen. Output paging now belongs
+  to the viewport and uses the existing explicitly bounded modal primitive.
+  Navigation and rendering share wrapping widths and the adjusted page height.
+- Fresh clean-environment verification passed for the backend without Node,
+  separate terminal/backend execution, companion discovery and optional web host.
+  Seven real desk cases passed; 97 existing slash/completion/pager tests passed,
+  followed by six focused paging/render tests covering 80x24 and 160x45 and the
+  final page of long reports. Shared quality gates pass.
+- Native Windows PTY execution remains explicitly skipped by this verifier;
+  remote-network lifecycle qualification, release/installer assembly and full
+  regression qualification remain open. No live model/provider was needed.
+
+Headless transport ownership:
+
+- Default event-sink registration now has one shared owner. Registrations can
+  detach in any order, retaining every surviving tee/replacement sink and the
+  original fallback. Stale cleanup cannot overwrite an externally replaced sink.
+- HTTP hosts bind their socket before publishing the sink. `server_close()`
+  releases their registration and event hub automatically; the legacy explicit
+  restore call remains idempotent. Closing a host does not close its predecessor.
+- Focused HTTP/event-log/ownership verification passed 45 tests. Additional
+  concurrent registration coverage verifies that all eight live sinks receive
+  an event and concurrent detach restores the baseline without closing it.
+- This centralizes event-sink lifetime, not all runtime resources. Session-store
+  lifetime, active-turn draining, agent/session construction ownership and the
+  remaining presentation adapters still require consolidation.
+
+Full `tests/tui_gateway/` qualification after that change: 183 tests passed,
+including concurrent transport registration. Shared Python quality gates pass.
+
+WebSocket send ownership:
+
+- Each connection tracks its loop-owned sends, serializes writes, rejects new
+  work after close, and cancels/drains active and queued sends during async close.
+  Worker timeouts cancel their scheduled future instead of leaving a send alive.
+- The handshake now lives inside the same cleanup boundary as request handling;
+  failed or cancelled greetings close the socket without entering the receive loop.
+  Async write/drain calls explicitly reject use from a different event loop.
+- All 189 gateway tests passed. New cases cover close before a queued send runs,
+  cancellation of an active send and its queued successor, worker timeout,
+  failed/cancelled handshakes, repeated cleanup and wrong-loop admission.
+  Shared Python quality gates pass. This does not establish remote installed-TUI
+  lifecycle behavior; that remains a separate distribution verification item.
+
+Frozen-commit regression qualification (`386f83ced`):
+
+- Full Python runner completed: 30,456 passed, 60 failed, 148 skipped. The
+  complete Ink suite passed 2,039 tests, with one skipped. These are scoped
+  results, not a successful full Python qualification.
+- Most Python failures replaced the old `run_agent` module and therefore missed
+  construction through `agent.runtime`. Updated those fake-runtime boundaries;
+  no production entrypoint dependency was restored. ACP/cron/gateway behavior
+  assertions remain intact.
+- Updated distribution ownership assertions for the independent terminal wheel,
+  checked runtime guidance at its library owner, and replaced obsolete session
+  over-fetch assertions with returned-limit/order checks across multiple pages.
+  Interactive config tests now explicitly cover CLI and gateway process contexts;
+  importing the messaging gateway sets a process marker and exposed test-order
+  dependence in the prior fixture.
+- All affected test files passed together: 340 passed, one skipped. A fresh full
+  Python qualification is still required after the remaining architecture work.
+- Read-only strict import audit: protocol and session application contracts pass
+  with indirect imports forbidden. Forecast application operations still reach
+  presentation through research model lookup, scheduled/reforecast runner
+  construction, ledger distribution rendering and runtime setup dependencies.
+  These paths need owner corrections rather than additional ignore lists.
+
+Indirect boundary enforcement:
+
+- Protocol and session application contracts now reject indirect forbidden
+  imports. Two isolated package fixtures load the actual shipped contract
+  definitions, pass with an allowed intermediate module, then insert that
+  module's CLI dependency and verify a nonzero lint command exit with the exact
+  transitive path. No production files are modified by these probes.
+- Research adequacy and nightly forecast model lookup use the existing shared
+  resolver directly instead of importing the CLI alias. Regression checks block
+  presentation imports and verify configured model identity reaches both runners
+  for bare-string, current mapping and legacy mapping configuration.
+- The 36 existing research/nightly tests and three new model-lookup cases pass;
+  both negative import probes pass. Shared Python quality and all nine contracts
+  pass. The other seven contracts still permit indirect imports; the strict
+  forecast application audit is not claimed complete.
+
+Shared forecast production workflow:
+
+- `forecasting.application.pipeline` now owns stage ordering, per-stage outcome
+  tracking, bounded research adequacy retries and final ledger-derived status.
+  The CLI retains compatibility adapters, while detached reforecast jobs (used
+  by the desk's batch action) and the `full_forecast` tool call the service
+  directly. They no longer import CLI orchestration.
+- `agent.forecast_stage` owns execution through the common agent factory, stage
+  toolsets and the existing research retry setting. Each stage closes its agent
+  after success, provider failure or interruption. Cleanup failures are logged
+  without overwriting the returned result or original exception.
+- Existing explicit commit/proposal policies, protocol prompts, ledger gates,
+  retry no-progress behavior, stage callbacks and durable result derivation are
+  retained. CLI private runner injection remains supported by its adapter.
+- Ninety focused tests passed, including CLI/tool production, desk job RPC and
+  execution, proposal-only/material-update behavior, research audit bounds,
+  interruption and cleanup failure. The new execution adapter is included in
+  the blocking Ruff/format/type scope. Shared Python quality and all ten import
+  contracts pass; an added contract prohibits direct CLI imports from these
+  execution consumers.
+- Scheduled warning-runner construction still resides in the CLI. The ledger's
+  dashboard-helper dependency and indirect runtime/presentation paths remain
+  open, as do full runtime hosting and remote installed-terminal qualification.
+
+Shared warning execution:
+
+- `forecasting.application.warning_runners` owns bounded candidate execution,
+  prerequisite bootstrap, material/marginal/proposal result classification,
+  scheduled runner construction and explicit operator runner composition. CLI
+  functions now adapt options and preserve existing private execution injection.
+  The scheduled entrypoint imports the application owner directly.
+- The runtime adapter owns triage-runner construction. Warning operations retain
+  the existing durable evidence-row and postmortem/autopilot acknowledgment gates.
+  Invalid iteration/count limits, non-boolean force and unsupported cycle commit
+  policies fail before storage access or model execution.
+- Fixed an uncovered scheduled-policy inconsistency: reforecast work already
+  requested `proposal_only`, but scheduled evidence research had omitted the
+  policy. Both scheduled paths now pass it to the shared stage agent. Explicit
+  operator research retains its existing policy behavior.
+- Sixty-three tests passed across cycle/commit policy, scheduled/operator warnings,
+  evidence collection and material-change drains. New cases verify a pending
+  proposal with unchanged current snapshot, acknowledgment only after new evidence,
+  rejection of success-without-new-evidence, and malformed option admission.
+  Shared Python quality passes; all ten import contracts pass, with the execution
+  contract extended to prohibit scheduled entrypoint imports of CLI orchestration.
+- Full forecast-service transitive isolation is still incomplete: ledger
+  distribution interpretation still reaches dashboard helpers, and indirect
+  runtime startup/setup dependencies remain to extract.
+
+Distribution interpretation ownership:
+
+- `forecasting.distribution_summary` now owns the pure moment/quantile/PMF
+  interpreter previously hosted in the dashboard. Ledger thesis/factor math,
+  distribution assessment and explicit recentering import it directly. Headline
+  formatting stays in the dashboard with compatibility aliases for old callers.
+  A missing core interpreter no longer silently disables distribution checks.
+- The forecast package lazily exposes its public ledger/model classes. Importing
+  a pure submodule no longer initializes the whole ledger graph; type-checking
+  imports and runtime class identities remain compatible. A fresh subprocess
+  blocks storage/models/presentation/agent imports and successfully evaluates
+  a distribution summary.
+- Finite-number admission now rejects integers too large for a float instead of
+  raising OverflowError. Headline numeric conversion uses that same admission.
+  Existing explicit intervals, quantile and normal-equivalent calculations are
+  preserved; descriptive summaries do not replace authoritative scoring or
+  explicit tail probabilities.
+- 222 interpretation/ledger/thesis/factor/dashboard tests passed; 12 ownership
+  and negative-import probes passed; 32 censoring and ownership tests passed.
+  The new interpreter and lazy public facade are in the blocking lint/format/type
+  scope. All twelve import contracts pass, including strict transitive isolation
+  for the interpreter and direct dashboard exclusion for ledger/distribution
+  checks. Broader indirect application/runtime dependencies remain open.
+
+Full qualification and hook isolation:
+
+- At frozen source commit `6cc777605`, the full Python runner passed 30,546 tests
+  with 148 skipped and 58 warnings. JUnit:
+  `.test-results/pytest-20260911T192733Z-99681.xml`. No excluded integration suite
+  or native Windows PTY claim is implied by that run.
+- A fresh backend wheel built from that commit passed the independent profile
+  verifier alongside the unchanged terminal wheel: backend create/update/resolve/
+  score without Node, actual installed terminal negotiation/scoring/exit, companion
+  discovery and optional web-host construction. Logs and wheels are retained at
+  `/tmp/forecast-profiles-6cc777605*`; remote-network lifecycle remains open.
+- The first push was rejected by its Python hook subset (9 failures, 4 collection
+  errors). The target mapper explicitly passed a standalone local-gateway fixture
+  to pytest. Importing it modified sockets and gateway handlers before failing on
+  its required subprocess environment, contaminating later tests. The ordinary
+  full runner had correctly never collected that non-test executable.
+- Hook selection now maps runtime fixture changes to the real lifecycle tests;
+  general test helpers use normal directory discovery. The gateway fixture's
+  modifications and execution are guarded by `main`, so accidental imports cannot
+  mutate the host. Regression tests exercise both actual Git target selection and
+  fixture import isolation. Two doctor mocks now address the imported plugin class
+  directly instead of relying on cached parent-package attributes.
+- The affected subset, including explicit fixture collection and all local real
+  desk cases, passed 309 tests. Shared Python quality and shell syntax pass. The
+  first push's 558 changed-TUI tests also passed; the rejected push did not update
+  the remote branch. Push qualification must be retried with the corrected hook.
+
+Shared delegation configuration and gateway persistence:
+
+- Verified remote branch `codex/learning-settlement-runtime` at `571414d23` after
+  the corrected hooks passed 19,435 Python tests (74 skipped) and 558 TUI tests.
+- Delegation reads detached current settings from the runtime configuration owner
+  instead of importing cached classic-CLI settings. Interactive defaults now copy
+  the canonical delegation defaults; explicitly configured limits remain intact.
+- Gateway confirmation preferences use the existing profile-aware atomic updater
+  directly. Failed persistence no longer produces a success note claiming that
+  subsequent confirmations are disabled; the currently authorized action still runs.
+- 160 focused delegation/configuration/confirmation tests passed, including real
+  profile writes preserving unrelated settings and injected failures for both
+  destructive-command and MCP-reload preferences. Shared Python quality and all
+  twelve import contracts pass; delegation now joins the no-CLI consumer contract.
+- Complete runtime hosting, transitive application isolation, broader command
+  migration and remote installed-product qualification remain open.
+
+Noninteractive runtime identity and subscription ownership:
+
+- Moved the Tool Gateway offer, labels and prompting into the existing OAuth
+  setup owner. Subscription eligibility and settings application remain available
+  without importing the interactive setup module. Selection defaults, opt-in
+  scope, persistence and cancellation behavior are retained.
+- Moved active-profile identity lookup into the existing dependency-free home/path
+  owner. Agent construction, TUI, gateway, CLI and plugin readers use that owner;
+  profile management retains its compatibility export and administrative operations.
+  Reading a profile name no longer imports service-management code.
+- 429 focused profile, subscription, OAuth, API and plugin tests passed (four
+  skipped). Thirteen focused ownership tests passed, including a fresh process
+  rejecting runtime/presentation imports during identity lookup and actual import
+  checker rejection of an injected indirect presentation dependency.
+- Shared Python quality passes with fourteen contracts. Profile identity has a
+  strict transitive boundary; subscription eligibility currently has a direct
+  setup exclusion. Complete transitive forecast-service isolation and independent
+  host/session lifetime ownership remain open.
+
+Shared benchmark execution:
+
+- Offline readiness benchmark execution and probability-source transformation now
+  belong to `forecasting.application.benchmarks`. CLI adapters retain their public
+  call signatures, command errors and progress output; the forecasting tool calls
+  the application service directly instead of importing CLI orchestration.
+- The service rejects non-offline sources before dataset access or writes. Unknown
+  transformation sources no longer silently fall through to baseline-ensemble.
+  Agent protocol failures retain per-case skipping and optional progress reporting;
+  forecast-engine, baseline weighting and run provenance semantics are preserved.
+- 264 CLI/application/readiness tests and 80 forecasting-tool tests passed. The
+  first new import-isolation test unnecessarily ran the full corpus and hit its
+  30-second timeout; it now persists one deterministic fixture. Existing full-corpus
+  coverage remains and passed. Shared Python lint/format/types and all fourteen
+  import contracts pass; diagnostic tools join the no-CLI execution contract.
+- A fresh strict transitive audit confirms the benchmark-to-CLI edge is removed.
+  Remaining paths include cron profile admission through administrative modules,
+  session tool selection through interactive tools configuration, and diagnostic
+  thesis summaries through dashboard code. These are incomplete boundaries, not
+  additional allowed exceptions. Independent host lifecycle work remains open.
+
+Shared profile admission:
+
+- `superforecasting_agent.profile_paths` now owns profile normalization, validation,
+  path selection and existing-profile admission. Cron jobs/scheduler and early CLI
+  profile selection call it directly. Administrative commands retain compatibility
+  exports and remain responsible for creation, deletion, cloning and service cleanup.
+- Direct path selection now validates identifiers before constructing paths, closing
+  the traversal/reserved-name bypass. Strict validation uses full matching and
+  rejects a trailing newline; user-facing normalization still accepts surrounding
+  whitespace and mixed-case display names before applying the shared validator.
+- 145 profile/export/dashboard/cron tests, 383 cron tests, thirteen admission/import
+  boundary tests and five isolated CLI startup tests passed. Shared Python quality
+  passes; the new owner is in strict lint/format/type scope. Sixteen import contracts
+  pass, including transitive administration exclusion for profile admission and a
+  direct no-profile-administration contract for cron selection.
+- The strict application audit no longer finds cron profile admission as a path to
+  presentation. Session tool selection and diagnostic summary ownership still lead
+  to presentation, and full independent runtime hosting remains unfinished.
+
+Shared tool selection and combined configuration updates:
+
+- `superforecasting_agent.tooling.selection` owns platform selection, configurable
+  catalog metadata, plugin/default/MCP policy and tool-setting mutations. Runtime
+  consumers, including the TUI, sessions, API and cron, no longer import the
+  interactive configuration wizard for selection. The wizard retains prompting,
+  installation and compatibility exports.
+- Combined TUI and CLI tool/MCP updates now apply both changes before saving once.
+  Previously toolset changes persisted before MCP mutation, allowing partial writes
+  on failure. Shared mutation operations reject unknown actions instead of treating
+  them as enable. Existing atomic configuration persistence remains authoritative.
+- 679 selection/CLI/cron/API/gateway tests passed; ninety focused configuration and
+  combined-write tests passed after the CLI single-save correction. Tests verify
+  one save containing both changes, zero writes on MCP mutation failure, retained
+  unrelated settings and no interactive configuration imports from the desk RPC.
+- Shared Python quality passes with eighteen import contracts. Selection is in the
+  blocking lint/format/type scope. A fresh strict audit finds no application paths
+  to CLI, runtime main, command interfaces or TUI gateway; their application contract
+  now rejects indirect imports, with an injected-edge regression proving enforcement.
+  Six shipped strict-contract negative probes pass.
+- Dashboard summaries and gateway dependencies still fail the broader transitive
+  audit and retain their existing direct exclusions. Complete host/session lifetime
+  ownership and remote installed-product qualification remain unfinished.
+
+Shared aggregate summaries:
+
+- Thesis/factor summary reads now belong to `forecasting.application.aggregate_summaries`.
+  The real TUI RPC, CLI thesis report and forecasting tool consume that owner;
+  dashboard exports remain compatible and workspace/chart rendering stays there.
+  Existing summary fields, event headline precedence, sensitivities and withheld
+  states are retained. Invalid summary limits fail before querying storage.
+- 125 thesis/event/tool tests passed, followed by 251 application/factor/CLI/RPC
+  and import-boundary tests. The new tool isolation fixture initially failed the
+  ledger's scoreability admission; giving it explicit aggregate resolution criteria
+  fixed the fixture without relaxing the validator.
+- Shared Python quality and eighteen import contracts pass. The application
+  contract now rejects indirect dashboard imports too. The broader strict audit
+  finds only gateway dependencies: shared session context, platform registry,
+  notification/status and scoped resource-lock helpers still have gateway owners.
+  Those need ownership correction, alongside independent host lifetime and remote
+  installed-product qualification; the overall architecture goal remains open.
+
+Shared session context ownership:
+
+- `superforecasting_agent.session_context` now owns task-local routing state for
+  agents, tools, cron, ACP, gateway and TUI. Production readers/writers import it
+  directly; the legacy gateway module aliases the same module object, preserving
+  ContextVar identity, private reset seams and compatibility monkeypatches.
+- Retained the explicit-clear behavior that suppresses stale environment fallback.
+  Corrected guidance: executor calls require explicit context propagation, while
+  `asyncio.to_thread` propagates context; clearing does not restore outer scopes.
+- 213 routing/approval/tool tests and 365 shared-context/cron/TUI/import tests passed.
+  New tests prove alias identity, pure import without gateway initialization and
+  cancellation isolation between tasks and executor work. Test isolation resets
+  the canonical owner rather than depending on an imported gateway facade.
+- Shared Python quality and nineteen import contracts pass. The context module is
+  in strict lint/format/type scope and has a transitive no-host/no-presentation
+  contract. Remaining application-to-gateway edges involve platform registration,
+  scoped locks/status and MCP progress callbacks; independent hosting remains open.
+
+Shared platform registration:
+
+- `superforecasting_agent.platform_registry` owns platform metadata, registration
+  and deferred factory callbacks. Prompt/tool policy, plugin discovery, cron and
+  gateway consumers import it directly; the legacy module aliases the same owner
+  so registrations and overrides cannot split into separate singleton registries.
+- 207 registry/plugin/tool-selection tests and 260 ownership/cron/messaging/import
+  tests passed. A fresh-process probe blocks gateway imports and factory/check
+  callbacks while registering, reading and removing metadata; compatibility tests
+  verify shared class/module/singleton identity.
+- Shared Python quality and twenty import contracts pass. Platform registration
+  participates in strict lint/format/types and a transitive no-transport contract.
+  The latest broader audit narrows remaining gateway dependencies to image caching,
+  a secret-entry hint constant, and host-PID liveness checks. These are shared
+  infrastructure concerns still awaiting extraction; host lifecycle remains open.
+
+Complete transitive presentation exclusion for forecast application services:
+
+- Shared PID liveness checks now live in `superforecasting_agent.processes`, used
+  by process tracking, browser cleanup, MCP cleanup and gateway status. The Windows
+  ctypes fallback now declares pointer-width arguments for wait/close calls as
+  well as the OpenProcess return type; tests exercise a handle above 32 bits and
+  verify exactly one close, no signal call and inaccessible/missing PID behavior.
+- Local image bytes are cached by `superforecasting_agent.storage.media`, using
+  the active profile on each call. Messaging retains its compatible cache wrapper;
+  MCP no longer imports messaging dependencies or silently drops images solely
+  because that package is unavailable. The remote secret-entry hint has a shared
+  constant owner as well.
+- 261 process/gateway/media tests passed (two skipped), followed by 23 native-call,
+  MCP image, isolated-import and boundary tests. An old MCP test compared against
+  a gateway cache path frozen under a previous test profile; it now checks the
+  actual current profile path. Cross-profile caching is verified in a fresh process.
+- The full application contract now rejects indirect imports of CLI, command
+  interfaces, dashboard, TUI gateway, messaging gateway and runtime main. The
+  broader audit passes without exclusions for those presentation packages.
+  Shared quality passes with twenty contracts; process/media owners are included
+  in strict lint/format/types. A full regression run is next before publishing
+  this batch. Host resource lifetime, remote serving, release/installer assembly
+  and cross-platform product qualification still require completion.
+
+Regression qualification follow-up:
+
+- The first full run at `3248b277c` completed with 30,608 passed, 148 skipped
+  and five failures. All five referenced former owners in test mocks or source
+  assertions: tool selection, session context and PID liveness. Production
+  consumers already used their extracted owners.
+- Updated those seams, including additional PID tests whose obsolete mocks had
+  allowed false-positive passes. Retained the original behavioral assertions.
+  The five affected test files now pass 436 tests with one skip. A new full run
+  is still required before this batch can be pushed.
+Host stream ownership (isolated follow-up):
+
+- Importing the RPC server no longer redirects process-wide stdout. The stdio
+  entrypoint reserves stdout for protocol frames only while it is serving the
+  command pipe and restores the prior streams on return or failure. HTTP-only
+  serving leaves the embedding process's streams unchanged; explicit HTTP/stdio
+  tee mode retains protocol stream ownership.
+- Thirty-four focused stream-ownership and HTTP host tests passed, including a
+  fresh server import and injected entrypoint failures. Real installed-terminal
+  qualification for this follow-up is still required. This change was developed
+  in an isolated worktree while the prior frozen commit's full suite ran.
+
+Headless WebSocket entrypoint (isolated follow-up):
+
+- Added `superforecasting-agent-host` / `python -m superforecasting_agent.hosting`,
+  using the existing WebSocket dispatcher and capability negotiation without the
+  dashboard application. Authentication comes from a required token file; bearer
+  headers take precedence over query tokens and browser origins require exact
+  opt-in. Access logging is disabled to keep query credentials out of URL logs.
+- Seventeen host/stdio tests passed, covering rejected credentials/origins before
+  runtime admission, successful existing-protocol negotiation, incompatible
+  versions, malformed JSON and stream ownership. Shared Python quality passes;
+  new hosting code participates in strict lint/format/type gates.
+- This is an independently invocable transport host, not complete host resource
+  ownership. Active-worker draining, database lifetime, installed remote-terminal
+  lifecycle tests and broader release wiring remain required.
+
+Installed headless host qualification:
+
+- Integrated the stdio ownership and authenticated headless WebSocket entrypoint
+  into the main work branch. The backend-only wheel accepts protocol negotiation
+  over a real localhost socket without importing the dashboard.
+- The first installed probe exposed a credential leak: Uvicorn's WebSocket
+  handshake records use its error logger even with HTTP access logging disabled.
+  Host logging now redacts URL query strings while retaining paths and diagnostics.
+  Both rejected authentication/origin requests and accepted requests are exercised.
+- Added `scripts/verify_headless_host.py` to the independent distribution verifier
+  and blocking Python lint/format/type scope. It runs the installed host outside
+  the checkout, checks authorization and capabilities, and verifies credential-free
+  logs plus completed shutdown. Uvicorn deliberately re-raises termination signals
+  after orderly shutdown; the verifier requires the shutdown completion marker as
+  well as an expected exit status. The native Windows signal branch remains
+  unqualified; the installed probe passed on macOS.
+- The candidate backend wheel built from `f507daf3e` passed the real installed
+  probe after correcting that shutdown expectation. Seventeen focused host tests
+  and shared Python quality with twenty import contracts pass. This is a host
+  transport/install check, not proof of full remote Ink or session lifetime safety.
+
+Explicit host worker lifetime:
+
+- Added presentation-independent `hosting.workers.RuntimeWorkers`: lazy executor
+  creation, tracked inline requests and dedicated background threads, closed
+  admission, queued-call cancellation and bounded draining with idempotent retries.
+  A strict transitive import contract and injected-edge test enforce its ownership.
+- Stdio and headless WebSocket serving explicitly start/stop the runtime. Shutdown
+  interrupts session agents and registered background agents, releases approvals,
+  stops pollers/cron/auth work and drains admitted tasks before closing agents or
+  the shared session database. A timeout retains resources and reports incomplete
+  shutdown; it does not authorize closing handles still used by workers.
+- Background prompt agents now close their own resources. After draining, unfinished
+  turn receipts become interrupted without overwriting terminal receipts; session
+  rows remain un-ended for resume, including a new host lifetime in the same process.
+- 242 gateway/lazy-session/import tests passed; four focused worker tests pass,
+  including real SQLite reopen after a final write during shutdown. Tests that
+  launch full hosts now isolate their runtime ownership instead of leaving stopped
+  global workers behind. The EOF deadline probe now reflects import-safe stdout.
+  Shared Python quality passes with twenty-one import contracts.
+- This does not complete host extraction: session/configuration state and close
+  orchestration still reside in the RPC server. Explicit session-close races,
+  complete ownership of external delegation/provider resources, installed remote
+  Ink lifecycle verification and cross-platform qualification remain open.
+- The backend-only wheel built from `f8a415a5d` also passed the installed localhost
+  authentication, negotiation, query-redaction and graceful shutdown probe outside
+  the checkout. Full regression and installed remote Ink qualification are pending.
+
+Session close admission:
+
+- `hosting.sessions` owns session-use leases and close admission independently of
+  presentation. RPC execution and post-auth credential refresh hold a lease while
+  using session resources. Close rejects active calls, model turns, agent builds
+  and background jobs, and marks the session closing under the same lock before
+  detaching it. Stale references cannot acquire new leases.
+- Replacement admission checks active work before reserving the old session.
+  Completed host drain has an explicit internal cleanup path; it does not rely
+  on a possibly stale `running` display flag. Notification consumers refuse to
+  start turns after close or host shutdown begins. Background-job ownership spans
+  construction as well as the model call and cleanup.
+- 248 gateway/lifecycle/import tests pass, including concurrent RPC-versus-close,
+  busy build/background cases, exactly-once close and stale-reference admission.
+  Shared Python quality passes with twenty-two import contracts; the session
+  admission contract includes a deliberately forbidden indirect-import test.
+- The TUI branch handoff remains two separate calls (create branch, close old
+  session); it needs a coordinated shared operation and explicit failure handling.
+  Further session/configuration host extraction, external-resource ownership and
+  installed remote Ink qualification remain unfinished. Full regression is next
+  for the accumulated batch before pushing.
+
+Coordinated branch handoff and complete transcript copying (isolated follow-up):
+
+- CLI, messaging and TUI now share `application.sessions.branch_session` and a
+  single storage transaction for branch identity, title, full transcript/counters
+  and optional parent ending. Failed message copies roll back instead of being
+  silently skipped. Tool-call identities and provider reasoning metadata survive
+  the TUI path, which previously copied only role and content.
+- Ink uses the new `session.branch_replace` capability. The host reserves the old
+  idle session, prepares its replacement, rolls back failed construction, and
+  closes the old runtime before releasing the new one for use. Newer clients
+  reject hosts missing this capability instead of assuming compatible semantics.
+  Client failures preserve the visible session/transcript and surface the error.
+- The isolated worktree now has its own frozen Python environment. Reusing the
+  primary environment exposed editable-install leakage in a subprocess test.
+  Fresh setup also exposed missing web dependencies for the newly added host
+  checks: bootstrap now installs the web extra for contributors and CI. Minimal
+  backend installs retain optional web dependencies. Reconciled the older setup
+  guide and added session/host ownership entries to the architecture map.
+- Verification: 258 CLI/TUI/lifecycle tests, 223 storage/gateway tests and eighteen
+  client handoff/transport tests pass. The exact documented bootstrap command,
+  including hooks and Python/TypeScript quality checks, passes in this isolated
+  environment. Primary full regression continues separately on `4f1532e81`;
+  these changes have not yet been included in that full run or pushed.
+
+Integrated qualification follow-up:
+
+- Full regression at `4f1532e81` finished with 30,628 passed, 148 skipped and
+  twelve failures in the larger gateway-server test module. Thread doubles still
+  rejected the new diagnostic name argument; the old close-race expectation
+  required immediate disposal during agent construction. Updated the tests to
+  verify retained ownership and successful retry. Test pollers/workers now have
+  explicit owners rather than relying on private Thread target/argument inspection.
+- The failure investigation also found a production accounting gap: thread
+  construction could raise before the cleanup guard, leaking an active admission.
+  Construction now falls inside the guard; an injected failure proves subsequent
+  draining succeeds. The repaired gateway-server/ownership selection passes 230 tests.
+- Integrated the committed branch-copy/handoff/bootstrap changes from the isolated
+  worktree. Full regression must be rerun on this combined tree before pushing;
+  neither earlier narrow passes nor the failed full run qualify this batch.
+- Combined focused qualification after integration passes 688 lifecycle, storage,
+  CLI and gateway tests. Branch rollback now asserts the specific SQLite integrity
+  error caused by an invalid transcript row rather than accepting any exception.
+
+Installed remote product consumption (isolated verifier follow-up):
+
+- Built independent backend and terminal wheels from `d77522b25`. Their fresh
+  installation checks pass: backend create/update/resolve/score with Node absent,
+  terminal-only environment without the forecasting package, companion discovery,
+  and actual installed Ink scoring against a separate local backend.
+- Extended the existing installed-terminal PTY probe to accept a remote host URL,
+  then wired it into the headless-host verifier. The same independently installed
+  Ink wheel now negotiates authenticated WebSocket hosting, scores the durable
+  forecast and exits cleanly. Host authorization/origin rejection, query-log
+  redaction and completed shutdown checks pass afterward. No checkout application
+  imports or live provider credentials are used by the installed products.
+- Artifact SHA256: backend `07fca6fa782f58eb8537408a88af76b2ecc0057d88a3f04318410243e60177a8`;
+  terminal `58f2943d24d74a7f16cdd570fabd23d95949c62f4f0ef0ae07ae955be5661b03`.
+  Shared Python quality passes for the extended verifier. This establishes basic
+  installed local/remote product operation on macOS, not interrupted model-stream
+  recovery, native Windows/Android PTY support or publication of these artifacts.
+- The primary full suite remains running on the frozen source commit; this
+  verifier-only follow-up is isolated until that qualification completes.
+
+Independent release artifact assembly (isolated follow-up):
+
+- The local release builder delegates to `build_profiles.py`, which now retains
+  its backend source archive and supports reuse of a prebuilt Ink bundle. The
+  terminal is a separate wheel, not copied into the runtime package. Optional
+  dashboard output is a separate archive usable via the existing web-dist setting.
+- Local dry-run and production workflow assembly name, checksum, sign and upload
+  the independent artifacts. The workflow uses the shared installed local/remote
+  profile verifier before signing. No release or registry was published here.
+- Twenty-eight release/manifest tests and six workflow-contract tests pass, plus
+  shared Python quality. The dry-run test checks the terminal manifest/checksum
+  entry and verifies that the backend contains no TUI/dashboard asset directories.
+  A macOS Bash 3.2 empty-array expansion failure was fixed in the optional-artifact
+  path; both the empty path and actual dashboard archive path now complete.
+- An actual optional-dashboard dry-run completed. Every manifest hash and byte
+  size matched its output artifact; the archive contains its index and workflow
+  YAML parses. Installer selection/upgrade support for multiple wheels remains
+  incomplete and must be finished before publishing this artifact layout.
+
+POSIX companion installation follow-up:
+
+- The standalone installer selects backend and terminal assets by manifest role,
+  independent of GitHub asset ordering. Both selected wheels must pass checksum
+  and manifest verification before pipx installation begins. Ambiguous asset and
+  checksum entries fail closed. Historical single-wheel releases remain supported.
+- `INSTALL_TUI=0` selects backend-only installation; the default injects the
+  verified terminal companion into the backend pipx environment. The pip fallback
+  submits both wheels in one install command. Manifest pins remain binding even
+  when the historical missing-checksum override is explicitly selected.
+- Controlled shell tests cover separate artifact bytes, reversed asset ordering,
+  corrupt/missing/duplicate companions, manifest disagreement and backend-only
+  selection. Windows companion installation and other upgrade entrypoints remain
+  unfinished; this change does not qualify cross-platform distribution as complete.
+
+Windows companion installer parity:
+
+- PowerShell selects the backend and optional terminal by manifest role, verifies
+  every selected artifact before installation, rejects duplicate assets/checksums,
+  and installs the companion into the backend pipx environment. `-BackendOnly`
+  supports the minimal profile; legacy single-wheel releases stay supported.
+- Added a hermetic PowerShell verifier with ten scenarios, including actual
+  installer control flow with a fake Python/pipx executable, independent wheel
+  versions, reversed release ordering, backend-only selection and integrity
+  failures. The release workflow runs it on native Windows before its existing
+  published-artifact verification step.
+- Ten scenarios passed locally under a temporary PowerShell 7.6.6 macOS ARM64
+  runtime whose archive matched GitHub's published SHA256 digest. This proves
+  script behavior, not native Windows installation or PowerShell 5.1 execution.
+  The 33 focused Python release/installer tests and shared Python quality pass.
+- VPS upgrade/installation scripts still select the first release wheel and need
+  migration. Runtime release updating also needs review for companion ownership.
+
+VPS upgrade artifact ownership:
+
+- Added a verification-only staging mode to the standalone POSIX installer.
+  `RELEASE_DOWNLOAD_DIR` must name a new directory; a wheel inventory is written
+  only after selected artifacts pass verification and are copied successfully.
+  This mode does not install pipx, install packages or stamp a user profile.
+- `upgrade.sh` reuses that selection/verification owner with its already admitted
+  manifest, preserving the migration guard and backup sequence and avoiding a
+  second unpinned latest-release selection. It supports terminal injection,
+  backend-only upgrades and an explicit local terminal companion. All supplied
+  local checksums must pass before backend installation.
+- The upgrade staging tree now transfers ownership to the forecast user before
+  pipx runs as that user; the former root-only mktemp directory was inaccessible
+  to a real unprivileged installation. The controlled tests use fake privilege
+  commands, so they do not establish a real Linux permission/deployment exercise.
+- Hetzner first-install and fresh-box scripts still require split-artifact
+  migration; standalone provisioning cannot assume a checkout sibling exists.
+
+Provisioning and fresh-box product wiring:
+
+- Hetzner provisioning accepts a separately checksummed local terminal wheel and
+  installs it only after all selected artifact checks succeed. Downloaded products
+  reuse the standalone installer staging owner. Checkout runs use the sibling
+  script; standalone runs checksum-verify the release installer before executing
+  its staging mode. Older one-wheel releases retain a non-executing fallback when
+  their installer lacks staging. Ambiguous release selections fail closed.
+- The fresh-box verifier builds one current backend/terminal artifact set, checks
+  both wheels, and passes both to provisioning. It no longer picks an arbitrary
+  stale backend wheel from dist. Downloaded staging directories are handed to the
+  installation user before pipx reads them.
+- Updated the stale-build remedy to install the backend and inject the terminal;
+  `pipx install dist/*.whl` is not valid for a multiple-product release.
+- Docker is installed locally but its configured daemon is unavailable. The
+  actual fresh-container/system/SSH exercise is therefore still unverified for
+  the split distribution. Controlled installer tests do not replace that gate.
+
+Host session-store ownership:
+
+- `hosting.storage.SessionStore` now owns lazy session-database construction,
+  serialized access to initialization/closure, and initialization diagnostics.
+  The TUI RPC server delegates access and lifecycle rather than owning global
+  `_db`, `_db_lock` and `_db_error` state. Both local and remote hosts use this owner.
+- Closing stops future acquisition even if the underlying close fails. Failure
+  retains the handle for an explicit retry; a new lifetime cannot start while
+  the old connection remains owned. Successful close is idempotent. Only explicit
+  host startup admits a new database after shutdown, preventing stale callers
+  from silently opening orphan storage. Hosts still drain workers before close.
+- 471 focused gateway/session tests pass, including actual SQLite shutdown and
+  resumed durable state. Owner tests cover concurrent initialization, diagnostic
+  recovery, close failure/retry and stale acquisition. Shared quality passes with
+  twenty-three import contracts; the new storage-owner contract forbids indirect
+  presentation imports and participates in the injected-edge regression test.
+- Session registry, configuration and full resource-finalization orchestration
+  still need extraction from the RPC server. This is storage-lifetime ownership,
+  not a claim that complete hosting has become presentation-independent.
+
+Host profile-configuration ownership:
+
+- `hosting.configuration.ProfileConfiguration` owns raw host configuration
+  snapshots, content-based caching and profile-aware revision admission. The RPC
+  server delegates loading, saving and atomic key updates; its four configuration
+  cache globals and runtime-config import for snapshot persistence are removed.
+- The shared storage layer owns `ConfigSnapshot` metadata and the revision hash;
+  runtime CLI configuration retains its compatibility alias to that same owner.
+  Existing atomic YAML locking, comment-preserving updates, and CLI expansion/
+  normalization semantics are preserved. No new parallel persistence mechanism
+  is introduced.
+- Tests prove detached snapshots, profile-switch isolation, cross-profile save
+  rejection, content changes with unchanged size/timestamps, malformed-file
+  diagnostics without overwrite, and independent owners preserving atomic edits.
+  506 host/gateway/parity tests and 115 configuration/storage tests pass. Shared
+  quality passes with twenty-four import contracts, including a negative test
+  injecting an indirect presentation dependency into host configuration.
+- Session registry/finalization, broader credential orchestration and remaining
+  classic command adapters still need ownership work. This does not move CLI
+  presentation or environment-expansion policy into the raw host snapshot layer.
+
+Session finalization ownership and failed handoffs:
+
+- `hosting.sessions.finalize_session` owns boundary finalization independently of
+  transports, with explicit durable-end and notification adapters. The database
+  end happens before optional memory/hooks and before finalization is marked
+  complete. A failed durable write propagates and can be retried; successful
+  finalization is idempotent. Shutdown still leaves durable sessions resumable.
+- Explicit close retains registry membership and resource ownership on failure,
+  resets close admission, and returns an actionable RPC error. An unavailable
+  store cannot silently turn an explicit close into a successful durable end.
+- The change exposed that resume previously swallowed failed prior-session
+  cleanup. Resume and branch replacement now roll back their prepared runtime on
+  prior-session finalization failure. Resume reserves its new runtime until the
+  handoff succeeds, preventing notification turns during preparation.
+- 478 gateway/session tests pass; 72 focused protocol/close/branch tests then pass
+  with added durable-write failure cases for both handoff paths. Tests assert
+  prior-session retention, released admission, absent replacement leaks, correct
+  compressed-session identity, and exactly-once hooks after a successful retry.
+  Optional memory/hook failures are logged; full external resource disposal and
+  registry ownership remain separate unfinished host responsibilities.
+
+Live session registry ownership (isolated follow-up):
+
+- `hosting.registry.SessionRegistry` owns registration, the shared membership
+  lock, stable enumeration snapshots and retirement. The RPC server delegates
+  registration/retirement; failed finalization releases admission without
+  detaching the session. Duplicate runtime registration cannot replace an owner.
+  An import contract rejects indirect presentation dependencies.
+- Collision testing exposed branch rollback's assumption that any matching
+  runtime ID belonged to the failed construction. Rollback now checks durable
+  identity before closing it, and resume rejects runtime-ID collisions before
+  reserving the prior session. A real ledger test preserves an unrelated runtime
+  and deletes only the failed branch record.
+- The expanded selection exposed unclosed subprocess pipes. Allocation tracing
+  located them in slash-worker construction during resume: protocol fixtures
+  cleared session membership without shutdown, and production worker close did
+  not close pipes or wait after forced kill. Fixtures now invoke host shutdown;
+  pipe readers own their streams, and worker close serializes shutdown, reaps
+  terminate/kill, joins readers and closes streams. Failed reader construction
+  also disposes of the child.
+- The 497-test host/protocol/import selection passes after those repairs. Two
+  real-child tests prove forced-kill reaping, concurrent repeated close and reader
+  construction failure cleanup. These isolated changes are not yet part of the
+  primary full regression running on `66df97c89`; full qualification is pending.
+
+Retryable resource disposal (isolated follow-up):
+
+- Session retirement now includes resource disposal after durable finalization.
+  The host retains the registry entry when notification unregister, agent close
+  or slash-worker close fails. Successful steps are recorded by resource identity
+  and are not repeated on retry; all independent resource steps are attempted.
+- Once disposal starts, pending cleanup blocks session use and replacement.
+  A failed durable write still permits ordinary use because disposal has not yet
+  begun. Explicit close errors identify retryable cleanup instead of returning a
+  false successful close for partially released resources.
+- Shutdown attempts every session, reports incomplete cleanup without closing
+  the shared database, and permits a subsequent cleanup retry. New startup remains
+  blocked until prior registry/database ownership is fully relinquished.
+- Focused failure-injection tests prove retained membership, no use after partial
+  disposal, failed-step-only retries, and database lifetime across failed shutdown.
+  The current AIAgent resource implementation still contains internally swallowed
+  cleanup failures; this host layer can only retain failures propagated by owned
+  resources. That lower-level ownership/diagnostic audit remains unfinished.
+
+Installed qualification after registry/disposal integration:
+
+- Built independent wheels from isolated commit `0e4a7033f`, whose tracked source
+  matches primary `2794b8659`, into `/tmp/forecast-profiles-owned-host`. Backend
+  SHA256: `83c89bbfc646eecb66f42fce9025708df7dcccbf11828980e82ef4d128c273d8`;
+  terminal SHA256: `6d7f9dd272781c2170fe340046d96648b2b6358172bbf04091aa43a55b00e4f9`.
+- Clean-environment verification passed: backend create/update/resolve/score with
+  Node absent; independent terminal prerequisite checks; real installed Ink score
+  and clean exit against local and authenticated remote hosts; incompatible/auth
+  admission, credential-free host logs, dependency consistency and clean shutdown.
+  Log: `/tmp/forecast-owned-host-installed.log`. These are local fixture outcomes,
+  not provider-backed forecasts or a claim of native cross-platform qualification.
+- The fresh-container exercise is now running after recovering a stale Colima
+  disk attachment through Lima's disk-unlock command. The owning instance was
+  confirmed stopped without a VM host process before recovery. No disk contents
+  were deleted. Primary full regression continues independently.
+- Lower-level agent cleanup audit: `agent/session_lifecycle.py` clears child
+  references before best-effort closes and claims `_resources_closed` before
+  callbacks; `agent/openai_clients.py` swallows SDK close failures. Blindly
+  retrying task-ID cleanup could reclaim a replacement agent's resources. Further
+  work must retain concrete owned handles/generations for retry and diagnostics,
+  while preserving the existing repeated-close replacement-resource tests.
+
+Split-product fresh-container deployment qualification:
+
+- `scripts/test-fresh-box.sh` completed successfully against a fresh Ubuntu 24.04
+  ARM64 container on the local Colima Linux VM. It built and checksum-verified
+  separate backend/terminal wheels, installed them through real pipx provisioning,
+  started the gateway/cron service, passed config doctor/version-stamp checks,
+  and verified SSH shell/one-off escape hatches plus the default TUI landing.
+- The terminal rendered its first screen, and the tmux desk survived an SSH link
+  drop/reconnect. This reconnect check establishes the persistent terminal desk;
+  it does not replace the separate durable turn-recovery/provider-failure tests.
+- Log: `/tmp/forecast-split-fresh-box.log`; all stages completed with exit zero.
+  Source was isolated commit `447c41ff2` (documentation-only successor to the
+  source-qualified `0e4a7033f`). The harness removed its own disposable container.
+  The VM remains running; unrelated auto-started containers were left untouched.
+- This establishes fresh Linux container installation/provisioning of the split
+  products. Native Windows/Android qualification, an actual split-package upgrade
+  exercise, and longer installed remote provider-stream recovery remain open.
+
+Deployment checks now fail closed:
+
+- Removed warning-only success for a missing scheduler banner, an unknown TUI
+  frame, and a blank terminal pane in `scripts/test-fresh-box.sh`.
+- Re-ran the complete Ubuntu 24.04 split-product exercise with those hard gates:
+  every stage passed, including the recognized 927-character first frame and
+  desk survival across SSH link loss. Log: `/tmp/forecast-strict-fresh-box.log`.
+- Primary `2794b8659` completed full Python regression: 30,687 passed, 148 skipped,
+  58 warnings. JUnit: `.test-results/pytest-20260911T215817Z-92992.xml`.
+  These results do not establish native Windows coverage or a version upgrade.
+
+Live credential application boundary:
+
+- `hosting/credentials.py` owns applying a fresh credential generation to the
+  matching live agent. RPC retains session admission, failed-build retry,
+  presentation-worker restart and event delivery; it delegates the credential
+  operation to the host. Provider resolution/storage are supplied dependencies.
+- The shared operation passes the selected model into provider resolution,
+  rejects unrelated provider sign-ins before resolution, and updates the recovery
+  pool only after the client switch succeeds. Resolution/switch failures remain
+  observable to the adapter, which reports whether credentials were applied.
+- Added a transitive import contract and forbidden-edge regression. Quality gates
+  pass with 26 contracts. Gateway/auth/boundary selection passed 499 tests,
+  including current-provider aliases and failed-resolution/client-switch cases.
+  Log: `/tmp/forecast-credentials-gateway-tests.log`.
+- This does not complete credential orchestration: device-flow lifetime and
+  failed-build retry are still RPC-owned; remaining command adapters and agent
+  tool-resource cleanup need further ownership work.
+
+Runtime composition and serving lifetime:
+
+- `hosting/runtime.py::RuntimeHost` now composes workers, live sessions, session
+  storage and profile configuration. It owns serialized start/shutdown, agent
+  interruption, worker drain, session-disposal ordering and final database close.
+  RPC consumers use that owner instead of independent module-global resources.
+- A failed service stop or prompt release retains shutdown state even when no
+  session/database is open; restart is denied until shutdown completes. Repeated
+  successful shutdown does not run disposal callbacks again. Callback-driven
+  cleanup cannot close the store while live registry entries remain.
+- Removed the unused `_shutdown_sessions` alternate implementation. Its durable
+  restart regression now drives actual host shutdown and reads the transcript
+  through a newly opened database, rather than testing an inactive code path.
+- Direct owner tests cover failed service stop, prompt release, retained session
+  membership and failed restart. The gateway/application/bootstrap selection
+  passed 610 tests (`/tmp/forecast-runtime-owner-qualified-tests.log`). All 27
+  import contracts pass, including the host lifecycle's transitive boundary.
+- The real Ink/dashboard/provider/SQLite lifecycle selection passed all seven
+  cases (`/tmp/forecast-runtime-owner-real-desk-fixed.log`): cancellation, gateway
+  death, provider failure/disconnect/quota, unavailable history and shared forecast
+  operations. This is local provider-fixture evidence, not native Windows proof.
+- Fresh contributor bootstrap had omitted the existing `pty` extra. The same
+  bootstrap command now installs it alongside dev/web extras and passed through
+  TUI build, lint, type and Python quality checks. Transport tests now report
+  text startup errors directly instead of obscuring them with a missing-byte key.
+- Remaining boundaries include device-auth workflow state, legacy command worker
+  behavior, and concrete tool-resource ownership for safely retryable agent cleanup.
+
+Installed runtime composition qualification:
+
+- Built from isolated `9b6e98c8a` (source-equivalent to primary `374dd2d49`), then
+  verified in clean environments outside the checkout. Backend wheel SHA256:
+  `79f3d334e7b96b3e14ed80258c7ff15cd29e6942ac2a564620268bd4305470ed`;
+  terminal: `03c9d82691c80a95a0e64f3adce24b5676aae8e440861244d857d4256b17e7b2`.
+- Backend lifecycle without Node, independent terminal installation, real Ink
+  scoring against separate local and authenticated remote hosts, compatibility
+  admission, clean termination and credential-free logs passed.
+  Log: `/tmp/forecast-runtime-owner-installed.log`. This qualifies the runtime
+  composition changes before the following device-auth change.
+
+Device sign-in ownership and stale-result protection:
+
+- `hosting/device_auth.py::DeviceSignIn` owns attempts independently of RPC and
+  provider storage. New attempts cancel previous ones. The same lock serializes
+  replacement/cancellation with the final credential save; an obsolete exchange
+  cannot persist tokens or overwrite the current attempt's status.
+- Terminal status is consumed atomically, so concurrent polls cannot apply one
+  success twice. Cancellation wakes long poll intervals immediately. Results that
+  arrive after the deadline fail without being saved. Host shutdown cancels the
+  attempt before draining its owned worker; restart creates a fresh auth owner.
+- RPC still selects the supported provider and supplies its network/token-storage
+  adapters. It reports cancellation directly in the cancelling poll response;
+  subsequent polls return none, preserving once-only terminal consumption.
+- Gateway/auth/boundary selection: 514 passed. Final focused owner/auth selection,
+  including host shutdown/restart: 22 passed. Logs:
+  `/tmp/forecast-device-auth-qualified-tests.log` and
+  `/tmp/forecast-auth-owner-final-tests.log`. All 28 import contracts pass.
+- Remaining application boundaries include failed-agent-build retry and legacy
+  command behavior. Lower-level agent tool-resource retry ownership, cross-version
+  product upgrades and broader platform qualification remain open.
+
+Shared command catalog and compatibility boundaries:
+
+- Command definitions, category ordering, subcommands, alias lookup and configured
+  alias expansion now belong to `application/command_catalog/`. Workflow commands
+  and operator-support commands have separate definition modules; each module is
+  below 400 lines. Classic completion/menu adapters retain compatibility exports.
+- TUI catalog and command resolution import the shared owner directly. Classic CLI
+  and messaging alias expansion use the same operation. The catalog can import
+  and resolve commands without loading runtime adapters, prompt-toolkit, Rich,
+  CLI, TUI or messaging presentation.
+- Serialized command metadata, ordering, descriptions and subcommands matched the
+  pre-extraction snapshot exactly. Existing registry objects and public resolver
+  exports retain shared identity across the compatibility module.
+- Catalog, alias, gateway and boundary tests: 395 passed, log
+  `/tmp/forecast-command-catalog-final-tests.log`. Shared quality checks pass with
+  29 import contracts. Contributor guidance and the ownership map name the new
+  definition owners.
+- This extracts definition/resolution ownership; the legacy slash worker still
+  constructs the classic CLI for commands not yet migrated. Shared command
+  execution and failed-agent-build recovery remain unfinished.
+- Primary runtime composition batch `374dd2d49` completed full regression with
+  30,701 passed, 148 skipped and 58 warnings, then pushed successfully. Remote SHA
+  was verified. Log: `/tmp/forecast-host-owner-push.log`.
+
+Push-gate coverage for shared and newly introduced owners:
+
+- The prior changed-file selector silently omitted root CLI changes and new
+  application/hosting packages unless a changed test happened to cover them.
+  Unmapped Python changes now fall back to the full test directory; known domains
+  retain their existing selection. New owners cannot become an untested category.
+- Real temporary-Git-repository regressions cover root CLI, application, hosting
+  and an unfamiliar package. All 12 developer-workflow tests passed, log:
+  `/tmp/forecast-hook-owner-coverage.log`. Full regression for the already
+  integrated auth/catalog batch runs independently in the frozen primary tree.
+
+Configured command admission and TUI execution routing:
+
+- The application catalog now validates configured command mappings, kinds and
+  non-empty textual targets/commands. Built-ins take precedence consistently;
+  malformed definitions fail with the same message in CLI and TUI instead of
+  becoming attribute errors or unexpected command strings.
+- TUI configured commands bypass the classic slash worker and agent construction.
+  Alias chains are fully expanded and checked for cycles in shared code before
+  handing the target to Ink; invocation arguments are appended once by the client.
+  Configured shell commands execute only through command.dispatch, avoiding a
+  failed execution followed by an automatic duplicate in the fallback path.
+- A real subprocess regression counts executions across slash.exec handoff and
+  command.dispatch failure. Further tests cover malformed JSON/YAML types, cyclic
+  aliases, model-name case preservation and attempted built-in overrides.
+- Gateway/catalog/CLI validation selection: 657 passed, log
+  `/tmp/forecast-configured-commands-qualified.log`. Shared quality gates pass.
+- Shell execution environment, output/error policy and process cleanup still need
+  consolidation across synchronous CLI/TUI and asynchronous messaging adapters.
+  Other legacy slash commands remain outside the shared execution boundary.
+
+
+### On-demand compatibility worker ownership
+
+- Normal session creation and model changes no longer construct the classic CLI
+  worker. Only a legacy slash command admits that compatibility subprocess.
+- The host helper serializes command use and invalidation. Cleanup failures retain
+  the retiring handle; no subsequent command can reuse or replace it until cleanup
+  succeeds. Interruptions retain their original exception and cleanup diagnostics.
+- The command metadata regression now checks the shared catalog's values instead
+  of depending on the location or formatting of constructor source text.
+- Focused gateway, metadata and negative boundary checks initially reported 714
+  passed, one skipped and one stale formatting assertion; the assertion now reads
+  the actual command registry. The shared Python quality gate passes all 30 import
+  contracts. Final metadata and real desk verification is recorded below.
+- This does not remove the legacy dispatcher itself or finish failed-agent-build
+  ownership. Those remain application/hosting migration work.
+
+- Final metadata and real Ink/dashboard/local-provider/SQLite run: 168 passed,
+  one skipped (platform-specific metadata), seven existing forkpty warnings.
+  All seven real desk cases ran, covering provider failures, reconnect, cancellation,
+  gateway death, unavailable history and the shared forecast workflow.
+
+
+### Shared configured shell execution
+
+- CLI, TUI and messaging now delegate configured shell snippets to one host
+  owner, with a structured result. All preserve stdout and stderr, detect nonzero
+  exits, use a 30-second deadline and cap displayed output at 4,000 characters.
+- All three now use the existing profile-aware subprocess environment filter and
+  output redactor. CLI and TUI previously inherited provider credentials directly.
+  Invocation arguments are not interpolated into configured shell source.
+- Async cancellation waits for process admission, kills the owned process group
+  (Windows uses taskkill), and drains pipe readers despite repeated cancellation.
+  The sync adapter runs the same operation with its own event loop.
+- Focused tests exercise real shell timeout/reaping, stderr plus nonzero exit,
+  environment filtering, invalid UTF-8, secret redaction, and deterministic repeated
+  cancellation during startup. Existing CLI and TUI command dispatch tests pass.
+- This owner is included in strict lint/format/type checks. The inherited environment
+  and redaction helpers remain dependencies to consolidate; Windows process-tree
+  behavior has not been newly qualified by the POSIX tests.
+
+- The host owner imports only the standard library; a thin runtime adapter supplies
+  the existing environment filter/redactor. A transitive negative import contract
+  prevents process ownership from reaching presentation, runtime, agent or tools.
+- Before the final ownership split, 532 command/gateway tests passed. The final
+  split is separately covered by command behavior and negative boundary tests.
+
+- Final verification: 55 focused command/boundary tests passed; strict Python
+  lint, formatting and types passed; all 31 import contracts and protocol drift
+  checks passed. Full push qualification remains separate.
+
+
+### Deferred build admission and recovery
+
+- The host now owns initialization admission and failed-build retry decisions.
+  Rejected worker startup records a completed error instead of leaving the session
+  permanently busy. Each admitted callback receives its own completion event.
+- Sign-in recovery checks initialization errors before treating an attached agent
+  as healthy. Failed partial agents are closed before replacement; failed close
+  retains the agent and error for another retry. Notification release is not
+  repeated after success.
+- Cleanup callbacks run outside the history lock, while the caller's session-use
+  reservation prevents close/replacement. Concurrent starts admit only one build.
+- 257 initialization/auth/gateway tests passed. A final 26-test run covers the host
+  state transitions, partial-agent sign-in recovery, and negative import contracts.
+  Strict Python checks pass, including all 32 import contracts.
+- Construction and notification wiring still belong to the RPC adapter; broader
+  agent-internal cleanup and compatibility command migration remain unfinished.
+  The primary branch's full push gate runs separately and does not include this
+  isolated follow-up.
+
+
+### Installed backend upgrade and independent terminal qualification
+
+- `verify_profiles.py --upgrade-from <previous-backend-wheel>` now creates
+  forecast/evidence and session state before installing the candidate, checks
+  unchanged existing values/types and configuration, then exercises the installed
+  CLI and independent local/remote terminal. Missing history/evidence fails.
+- macOS Python 3.13.12: retained backend 0.21.2 upgraded to candidate 0.22.0.
+  Question, probability history, timestamped evidence, Unicode session history and
+  raw configuration survived. Installed resolution/scoring, local Ink, authenticated
+  remote Ink, host termination and credential-log checks passed.
+- Previous wheel SHA-256:
+  `09c3ec93d5dec5e26353922c2162f50d5702e4c5264a846643470c9fa4abfaca`.
+  Candidate wheel SHA-256:
+  `294771183bf80fd3a866dd388d4975211014689bfd80eea524d9c119ecb75226`.
+  Candidate built from isolated runtime commit `58e91e7a8`; this is local artifact
+  qualification, not publication or native Windows/Android evidence.
+- Seven verifier regression cases reject missing/retyped/changed history while
+  allowing additive fields. The terminal package remains version 0.1.0; this does
+  not claim an upgrade between different terminal versions.
+
+
+### Native command handoff before provider initialization
+
+- Slash routing now identifies native pending-input/snapshot handlers, skill
+  invocations and plugin handlers before constructing an agent. Local command
+  admission no longer depends on provider credentials or the classic CLI worker.
+- 246 command-routing/gateway tests passed, including negative assertions for
+  both agent and classic-worker construction.
+- The prior integrated batch `dcb0585aa` passed the full Python suite:
+  30,744 passed, 148 skipped, 58 warnings. Remote branch identity was verified at
+  `dcb0585aaa63c6456eeefca87eba308bf909e92a`. Build-recovery and upgrade-verifier
+  follow-ups are not covered by that full run.
+
+
+### Validation rule loading boundary and stale policy correction
+
+- Removed the hook loader's dependency on runtime configuration for its profile
+  directory; the shared profile identity owner supplies that path. Deleted the
+  corresponding frozen import exception and added strict lint/format/type coverage.
+- Removed compiled-rule caching keyed by list identity and file timestamps. Those
+  values do not identify a validation policy: in-place edits, object-ID reuse and
+  same-size timestamp-preserving replacement could apply stale rules to new forecasts.
+  Rules now compile from current specifications without retaining old policies.
+- 38 hook loader, DSL, configuration and blocking tests passed. Regressions prove
+  inline edits, same-size/preserved-timestamp file replacement and profile switches
+  affect rule evaluation. All 32 architecture contracts passed.
+
+
+### Hook configuration and rule mutation ownership
+
+- Hook setting edits now use shared atomic field mutations against current raw
+  configuration, preserving unrelated settings instead of saving merged defaults.
+  Removed the store's direct runtime-configuration import exception and enabled
+  strict lint/format/types for this owner.
+- Rule add/edit/remove holds the shared file lock across read, validation and
+  atomic replacement. Failed atomic writes propagate; the fixed-name temporary
+  fallback is removed. Malformed rule files/configuration blocks cannot be
+  silently replaced, and the enabled setter requires a real boolean.
+- 341 hook/TUI-gateway tests passed. The final store/promotion/v2 set reports
+  53 passed and eight existing skips. New regressions cover overlapping edits,
+  failed writes, malformed data preservation and unrelated configuration retention.
+
+
+### Hook policy transport validation parity
+
+- Removed RPC bool/string coercions before shared hook setters. In particular,
+  the string `"false"` previously enabled hooks because Python truthiness ran
+  before validation. Only actual booleans now reach persistence.
+- Shared profile/severity/rule-ID setters reject invalid input types with
+  user-facing validation errors. CLI disable now reports those errors consistently
+  with CLI enable/profile/severity rather than exposing an uncaught exception.
+- 34 RPC/store tests passed, including invalid booleans leaving configuration
+  untouched, true/false round trips and CLI/service error parity. Strict Python
+  quality and all 32 architecture contracts passed.
+
+
+### Shared rule parsing and compilation admission
+
+- Rule parsing now retains structured field issues instead of coercing malformed
+  objects/identifiers or raising before validation. Loader, CLI, preview and save
+  consume the same validator; invalid configured rules are skipped safely.
+- Predicate validation rejects ambiguous combiners, unhashable signal/operator
+  input, nonfinite numeric comparisons, booleans as numeric thresholds and numeric
+  or string substitutes for boolean comparisons. Direct compilation also validates.
+- The DSL owner now passes strict lint/format/types. Final DSL/store/RPC/v2 tests:
+  101 passed. Preview and save report identical field issues without writing files.
+- The preceding integrated batch `41d551d7c` passed 30,766 tests, with 148 skips
+  and 58 warnings, and was verified pushed to the working branch. Subsequent hook
+  fixes are separately tested follow-ups awaiting integrated full qualification.
+
+
+### Explicit native/legacy command handoff
+
+- Ink no longer retries every slash-worker failure through another dispatcher.
+  The host marks pre-execution handoffs explicitly; the client preserves RPC
+  error code/data and checks session/command identity before following one.
+- Timeouts, disconnects and execution failures retain their original diagnostics.
+  Established legacy handoff messages remain supported, and a host without
+  `slash.exec` can route directly through its native dispatcher.
+- 121 focused TypeScript tests passed, including wire metadata, stale-session
+  fencing and rejected retry cases. 246 backend routing/gateway tests passed.
+  Type checking, lint, Python quality and production bundle compilation passed.
+
+- Real desk plus backend handoff run: 28 passed, including all seven actual
+  Ink/dashboard/local-provider/SQLite lifecycle cases; seven existing forkpty
+  warnings. The later absent-method compatibility branch is covered by the
+  focused TypeScript test rather than a legacy-free installed host.
+
+
+### Native-first TUI command dispatch
+
+- Ink now calls native command dispatch first; native commands need one request
+  and no classic CLI runtime. Only an explicit not-executed handoff invokes the
+  compatibility worker. The old handoff direction stays available to old clients.
+- Native plugin exceptions no longer get swallowed and rerun through the legacy
+  path. Empty/failed skill payload construction also reports its own failure.
+- 106 focused TypeScript tests and 248 backend routing/gateway tests passed.
+  Shared Python/TypeScript quality gates and production bundle build passed.
+  Remaining legacy-only commands still require migration to shared operations.
+
+- Rebuilt real desk plus native routing verification: 32 passed, including all
+  seven Ink/dashboard/local-provider/SQLite lifecycle cases; seven existing
+  forkpty warnings. Native-first source was bundled before this run.
+
+### Reject unknown commands before compatibility runtime admission
+
+Both `command.dispatch` and `slash.exec` now consult the shared command catalog
+before admitting a legacy command. Unknown names return the same 4011 error
+without handoff metadata, agent initialization or classic worker construction.
+Configured commands, skills and plugins retain their existing routes; known
+built-ins can still use the explicitly marked compatibility handoff. This does
+not remove the remaining legacy dispatcher.
+
+Validation: 90 configured-command/protocol tests passed via `scripts/run_tests.sh`
+(`/tmp/forecast-unknown-command-tests.log`). Python quality checks passed,
+including all 32 import contracts (`/tmp/forecast-unknown-command-quality.log`).
+
+
+### Make the push gate match the full-suite policy
+
+The native-dispatch push exposed a mismatch between `AGENTS.md` and the hook:
+known Python directories selected only their mapped test directories. The push
+completed with 353 targeted Python tests plus changed TUI tests, not a full Python
+run. A full run of that pushed commit was started separately at
+`/tmp/forecast-native-dispatch-full.log`; its result must be checked before claiming
+qualification.
+
+The pre-push hook now invokes `scripts/run_tests.sh` without narrowing arguments
+for every non-deletion push. Removed the directory mapper and reconciled the
+contributor guide. Hook execution tests cover mapped-source and documentation
+changes, verify the actual wrapper receives zero arguments, and prove suite
+failure rejects the push. All 11 workflow tests passed via the repository wrapper
+(`/tmp/forecast-full-push-gate-tests.log`). This change is not yet pushed.
+
+### Shared plugin inspection without classic runtime construction
+
+`runtime/plugin_commands.py` now owns the plugin inspection operation and its
+plain-text result. Classic CLI and native TUI dispatch consume it; direct legacy
+RPC invocation hands off before agent admission. The operation queries the
+existing plugin manager, preserving disabled/error/count/version details and
+profile-aware installation guidance. Inspection failures remain explicit native
+errors and cannot trigger compatibility execution.
+
+The new owner is included in blocking lint/format/type checks. Validation:
+94 configured-command/protocol tests passed (`/tmp/forecast-plugin-command-final-tests.log`)
+and Python quality with all 32 import contracts passed
+(`/tmp/forecast-plugin-command-quality.log`). Other legacy slash commands remain.
+
+### Native skill-bundle commands and discovery
+
+The unknown-command admission audit exposed an omitted dynamic command family:
+skill bundles previously existed only in classic CLI dispatch. Native TUI
+commands now use the same `agent.skill_bundles.build_bundle_invocation_message`
+as the classic CLI. The returned message is submitted by the existing TUI send
+flow; building it starts no agent or classic worker. Missing skills remain visible
+in the notice. A failed bundle load cannot fall through to an individual skill or
+legacy execution. Built-ins retain precedence, and bundles precede same-named
+individual skills. Bundle entries now appear once in command discovery, including
+a dedicated category and canonical completion names.
+
+Validation: 132 configured-command, protocol and shared bundle-loader tests passed
+(`/tmp/forecast-bundle-final-tests.log`). Python quality checks and all 32 import
+contracts passed (`/tmp/forecast-bundle-quality.log`). Other legacy command
+families remain; this does not finish dispatcher migration.
+
+### Current-profile bundle discovery
+
+Removed the maximum-mtime bundle cache: it missed same-timestamp edits and
+could reuse another profile's bundle mapping when timestamps matched. Discovery
+now reads current bundle metadata; the retained snapshot is used only for reload
+diffs and carries its resolved profile directory. A reload after changing
+profiles never reports the previous profile's bundles as removed.
+
+Validation: 85 bundle/CLI/messaging/native-command tests passed
+(`/tmp/forecast-bundle-freshness-tests.log`), including preserved file timestamps
+and two profiles with identical file/directory timestamps. Python quality and all
+32 import contracts passed (`/tmp/forecast-bundle-freshness-quality.log`).
+
+The same audit corrected native plugin precedence: built-in command names are
+resolved through the shared catalog before plugin lookup, matching classic CLI
+behavior. Plugins cannot intercept built-ins such as `/retry`. An additional
+100 configured-command/protocol tests passed (`/tmp/forecast-command-precedence-tests.log`),
+and Python quality checks passed (`/tmp/forecast-command-precedence-quality.log`).
+
+### Stop notification dispatch when its owner stops
+
+The session poller previously drained the global completion queue after its stop
+signal, potentially launching new model work for a stopped session and bypassing
+async-event routing. Removed that drain. Shutdown during queue acquisition puts
+the event back; closing/finalized/stopping owners cannot admit a turn. Busy owners
+requeue with an interruptible wait instead of repeatedly displaying an event that
+has not been admitted. Status display now follows admission.
+
+Eight deterministic notification tests passed (`/tmp/forecast-notification-final-tests.log`),
+including stopped, finalized, closing, busy and stop-during-acquisition paths,
+normal delivery and consumed events. Python quality and all 32 import contracts
+passed (`/tmp/forecast-notification-quality.log`). This preserves queued work in
+the process; it does not claim queue persistence across process death or complete
+notification ownership extraction from RPC.
+
+The earlier pushed native-dispatch batch at `b55515d6f` completed its full Python
+qualification: 30,832 passed, 148 skipped, 58 warnings in 592.15 seconds
+(`/tmp/forecast-native-dispatch-full.log`). Later changes need their own gate.
+
+### One subgoal command operation for CLI, messaging and TUI
+
+`runtime/subgoal_commands.py::execute_subgoal` owns subgoal argument handling,
+mutation and result messages against the caller's session-bound GoalManager.
+Classic CLI and messaging delegate to it; native TUI uses the same live-session
+identity as `/goal`, without constructing the classic worker or a model agent.
+The legacy RPC hands off before runtime admission. Rendering remains in the
+consumers. The new operation is included in strict lint/format/type coverage.
+
+Validation: 68 goal and TUI tests passed (`/tmp/forecast-subgoal-tests.log`),
+including three-consumer output/durable-state parity for list/add/remove/clear
+and invalid input, and mutation while a TUI turn is running. Python quality
+passed (`/tmp/forecast-subgoal-quality.log`). This removes one more worker route;
+the remaining legacy dispatcher is still tracked in TODO.
+
+### Reject stale goal verdicts and destructive command ambiguity
+
+A deterministic isolated-profile reproduction showed that a criterion added
+while the judge ran was erased by the older manager's save: the stored result
+was `status=done, subgoals=[]`. GoalManager writes now compare their expected
+state against the current record inside `SessionDB.mutate_meta`'s write
+transaction. Stale writes raise and reload the current state; persistence errors
+are no longer swallowed by manager mutations. The judge receives a copied state
+and retains its original expected version, including when a concurrent edit uses
+the same GoalManager object. No old verdict can silently accept newer criteria.
+
+The shared subgoal parser also rejects trailing arguments to `remove` and `clear`
+before mutation. Classic CLI preserves internal spacing in criterion text, matching
+messaging and TUI.
+
+Validation: 81 storage/goal/command tests passed
+(`/tmp/forecast-goal-storage-final-tests.log`), including same/different-manager
+judge races, stale-editor retry, visible write failure, independent SQLite
+connection increments and callback rollback, plus three-interface validation and
+state parity. Python quality and 32 import contracts passed
+(`/tmp/forecast-goal-storage-quality.log`). Goal database cache ownership and
+long-lived manager read refresh remain separate follow-up; the low-level public
+`save_goal` compatibility helper retains its existing behavior.
+
+### Host-bound goal storage and fresh manager reads
+
+GoalManager accepts a database provider, acquires its connection once, and keeps
+that storage identity for its lifetime. Native goal/subgoal commands and TUI
+post-turn judging supply the host's store. A missing supplied store fails instead
+of falling back to the compatibility connection cache; a closed connection is
+never reopened. Manager reads, controls and judging refresh current durable state.
+Newer criteria and external pause/clear changes are visible to long-lived managers,
+while in-flight verdicts still retain their frozen expected state for atomic
+stale-write rejection. Closed metadata reads and write transactions now report a
+SQLite closed-database error instead of a NoneType attribute error.
+
+Validation: 84 goal/TUI/storage tests passed
+(`/tmp/forecast-goal-owner-qualified-tests.log`), including a supplied store that
+closes, a missing store, long-lived readers and current criteria entering the
+judge. Python quality is recorded in `/tmp/forecast-goal-owner-final-quality.log`.
+The legacy default goal DB cache remains for non-host callers and is still an
+ownership follow-up.
+
+The integrated command/notification batch `cfcbbe136` passed 30,848 Python tests,
+148 skipped, 58 warnings in 590.25 seconds and pushed successfully
+(`/tmp/forecast-command-host-push.log`). Later goal changes require their own gate.
+
+### Stable tool inventory transport names and selection semantics
+
+Restored the public `toolsets.list` RPC, which had accidentally been renamed to
+`superforecasting_agent.tooling.toolsets.list` during module renaming. The latter
+remains an alias for clients that used it. Tool listing, summary listing and
+schema inspection now share session selection: deferred agents use configured
+toolsets, while an explicitly empty live selection remains empty rather than
+being displayed as all-enabled. None retains the existing unrestricted meaning.
+Inspection starts no model agent.
+
+Validation: 78 inventory/protocol tests passed
+(`/tmp/forecast-toolset-inventory-tests.log`), covering both transport names,
+pre-build configuration, empty selections, live selections and schema-resolution
+arguments. Python quality and all 32 import contracts passed
+(`/tmp/forecast-toolset-inventory-quality.log`).
+
+### Shared toolset inventory and native terminal inspection
+
+`superforecasting_agent/tooling/inventory.py` owns typed inventory records,
+selection flags, sorting and optional legacy filtering. Classic CLI presentation
+and both inventory RPCs consume it. Native `/toolsets` uses the same operation
+with the live or configured selection and never constructs a compatibility worker;
+direct legacy invocation hands off before agent admission. RPC response fields
+remain compatible and presentation formatting stays in the consumers.
+
+The owner is covered by strict lint/format/types and a new transitive import
+contract forbidding CLI/gateway/TUI presentation dependencies. Validation:
+120 inventory, command and protocol tests passed
+(`/tmp/forecast-shared-inventory-qualified-tests.log`), including CLI/native
+record parity and no-worker admission. Python quality passed with all 33 import
+contracts (`/tmp/forecast-shared-inventory-final-quality.log`).
+
+### Shared configuration storage without a domain-to-CLI import
+
+Moved the existing path/content-aware ProfileConfiguration implementation to
+`storage/configuration.py`; the hosting module re-exports it for compatibility,
+and the host still owns its instance. Forecast AppConfig now consumes that
+storage implementation directly instead of retaining an unversioned config-file
+layer or importing runtime CLI configuration. Same-instance reads observe profile
+changes, preserved-timestamp content edits and deleted files. The canonical
+ignore-user-config flag and aliases share one resolver in profile_paths, reused
+by runtime configuration and the domain loader.
+
+Removed the AppConfig-to-runtime exception from the import ratchet. Shared
+configuration storage has its own transitive no-runtime/no-presentation contract,
+strict lint/format/type coverage and an injected-forbidden-import regression.
+Validation: 67 configuration/flag/ownership/contract tests passed
+(`/tmp/forecast-domain-config-qualified-tests.log`). Python quality passed with
+34 contracts (`/tmp/forecast-domain-config-final-quality.log`).
+
+### Correct the goal parity test's output boundary
+
+The full gate for `edad22fbb` ended with nine failures, 30,859 passes and 148
+skips (`/tmp/forecast-goal-owner-push.log`); no push occurred. All nine failures
+were CLI parity output capture: the expected CLI text was present in pytest's
+captured stdout report, but the test-local `capsys` buffer was empty. The command
+uses prompt_toolkit rendering, whose output may have been initialized before
+that sys.stdout capture. The parity test now captures `_cprint` arguments at the
+command's rendering boundary. It still executes each consumer and compares the
+complete output and independently reloaded durable goal state.
+
+Validation: 80 goal/command tests passed
+(`/tmp/forecast-goal-render-boundary-tests.log`). The integrated batch still needs
+a fresh full gate; the previous failure is not counted as qualification.
+
+### Data-only forecast settings registry with strict quality gates
+
+`forecasting/configuration/registry.py` now owns ConfigKey, setting defaults,
+alias metadata and the derived lookup maps. AppConfig retains loading, typed
+accessors and diagnostics, and re-exports the existing registry names so current
+callers keep their API. Both the loader and new configuration directory now run
+blocking lint, formatting and type checks; the registry has a transitive contract
+forbidding loader, storage/runtime, tool, agent and presentation dependencies.
+The boundary regression deliberately injects an indirect CLI import and verifies
+rejection.
+
+Validation: 48 configuration/contract tests passed
+(`/tmp/forecast-config-registry-tests.log`). Python quality passed, including all
+35 import contracts (`/tmp/forecast-config-registry-quality.log`). No setting
+values, defaults or compatibility aliases were changed.
+
+### Native profile and bundle inspection
+
+`/profile` and `/bundles` now use native command dispatch. Profile identity comes
+from the same profile-aware constants as classic CLI; bundle listing uses the
+existing shared bundle inventory. The RPC adapter only renders those results.
+Both commands hand off from legacy RPC before model/worker construction. This
+lets a terminal attached to a remote host inspect that host's profile and bundles
+without starting a second classic CLI runtime.
+
+Validation: 80 native-command/shared-bundle tests passed
+(`/tmp/forecast-profile-bundle-native-tests.log`), including CLI profile output
+parity and real temporary-directory bundle inventory/empty state. Python quality
+and all 35 import contracts passed (`/tmp/forecast-profile-bundle-native-quality.log`).
+Other legacy command routes remain.
+
+### Shared insights arguments and explicit database ownership
+
+`application/insights.py` owns typed days/source arguments and command parsing
+for CLI, messaging and native TUI insights. Defaults, numeric shorthand and
+Unicode-dash flag normalization agree across consumers; unknown/missing arguments
+and nonpositive day windows fail before report generation. Quoted source values
+are preserved. Native `/insights` delegates to the existing InsightsEngine using
+the host-owned store, without model or classic-worker construction. CLI and
+messaging keep their owned connections but close them in finally blocks when
+report generation or formatting fails. The host connection is never closed by
+the command.
+
+Validation: 123 parser/CLI/messaging/engine/native-command tests passed
+(`/tmp/forecast-insights-final-tests.log`), including owned-close and borrowed-store
+failure paths. The former Unicode normalization tests now call the actual shared
+parser instead of copying its regex. Python quality and all 35 import contracts
+passed (`/tmp/forecast-insights-quality.log`). The old `insights.get` summary RPC
+remains separate; this change migrates the slash-command workflow.
+
+
+### Insights summary parity and complete history
+
+`insights.get` now validates through `application.insights.InsightsQuery` and
+uses the same `InsightsEngine` report as CLI, messaging and native TUI commands.
+The response keeps its days/sessions/messages shape, supports the shared source
+filter and no longer silently truncates history at 500 sessions. Invalid typed
+inputs fail before storage acquisition. Both success and report failure leave
+the borrowed host database open. The transport registration remains in the
+historical voice RPC module; this change does not claim that module is decomposed.
+
+Validation: 26 focused summary and command-parser tests passed, including a real
+505-session SQLite history, empty history, source filtering, invalid inputs and
+post-failure writes through the same host store.
+
+
+### Native runtime selection and persistence failure semantics
+
+The TUI now dispatches `/codex-runtime` to the existing shared runtime-switch
+operation used by CLI and messaging. It uses the host configuration snapshot
+and revision-checked save, without constructing an agent or classic command
+worker. Changes explicitly apply to a new session; the current live agent is
+retained. Validation and persistence errors are terminal command errors, never
+a signal to execute through a second dispatcher.
+
+The shared switch now stages changes in a copied snapshot. A failed save leaves
+the caller configuration unchanged and skips migration. A successful save
+propagates the new snapshot revision, allowing subsequent writes. Real-file
+regressions cover stale saves preserving concurrent edits and subsequent writes
+after success. Existing migration behavior remains in its established owner.
+
+Validation: 82 runtime-switch/native-command tests passed; Python quality,
+35 import contracts and generated protocol checks passed.
+
+
+### Delegate network teardown to the client owner
+
+Removed the private HTTPX pool/socket traversal performed before every SDK
+client close, including its unused runtime forwarding helper. The installed
+HTTPX client closes transport and proxy mounts; httpcore removes its connection
+list under its pool lock before closing those connections. Agent teardown now
+uses that public owner instead of independently shutting down private sockets.
+The old comment claiming graceful close necessarily left CLOSE-WAIT sockets
+until an OS timeout and that shutdown/close forced RST was unsupported.
+
+Validation: six client/resource-ownership tests passed, including a real local
+TCP keep-alive exchange through OpenAI's HTTPX client, observed peer EOF after
+SDK close, and an independently allocated socket surviving repeated close. A
+guard test rejects private transport traversal. Python quality, 35 import
+contracts and protocol generation checks passed. This is not reproduction or
+attribution of the historical SSL or bad-file-descriptor incidents. Lower-level
+task-ID tool cleanup ownership and failure retention remain separate work.
+
+
+### Preserve replacement clients during eviction
+
+Client eviction and session close now detach the exact primary client under its
+client lock before invoking cleanup. Previously they read the old client, closed
+it, then unconditionally assigned `None`; a concurrent rebuild during close
+could lose the replacement reference. Rebuild admission now rejects a closed
+agent and disposes a newly constructed client if shutdown occurred during
+construction, including reentrant shutdown.
+
+Validation: 12 focused client ownership/rebuild tests passed, including an
+event-controlled concurrent eviction and rebuild, reentrant close during client
+construction, repeated close, and a real local keep-alive transport. Python
+quality, 35 import contracts and protocol checks passed. This addresses client
+identity/admission; task-ID tool cleanup and retryable cleanup-failure ownership
+remain open.
+
+
+### Enforce quality for client and session cleanup owners
+
+`agent/openai_clients.py` and `agent/session_lifecycle.py` now participate in
+the shared blocking lint, format and type scope used by development checks and
+CI. Canonical formatting/import order and nullable message parameter annotations
+were corrected; no diagnostic baseline or suppression was introduced. The
+12 focused cleanup/rebuild tests and all Python quality checks passed, including
+35 import contracts and protocol generation checks.
+
+
+### Session-bound notification routing
+
+`hosting/notifications.py` owns the pure session-routing policy. The TUI's
+compatibility helper delegates to it. Removed the 200-bounce orphan fallback:
+retry count cannot authorize delivery of a session-bound result to another
+conversation. The policy applies to every event carrying a session key, including
+process completions and watch events. Process completion production now retains
+the conversation key already stored on ProcessSession; a process ID is not used
+as a conversation ID. Legacy unscoped events retain their existing behavior.
+
+Validation: 293 notification/server/process-registry tests passed (one existing
+forkpty warning), including high-retry foreign events remaining queued without
+display or model execution, correct-owner admission, and producer key retention
+alongside secret redaction. Python quality, 35 import contracts and protocol
+checks passed. The queue remains process-local: orphan retention is not durable
+across host death, and the polling/admission wiring still lives in the transport.
+
+
+### Host-owned notification admission loop
+
+Moved queue polling, consumed-event filtering, routing, stop/requeue decisions
+and session running-state reservation into `hosting.notifications.poll_notifications`.
+The RPC adapter now only supplies the queue/formatter, host stop state, and
+protocol-specific event/turn delivery. The host module imports no agent, tool,
+CLI or transport implementation; a new transitive import contract enforces this.
+Unexpected queue failures now terminate with a diagnosable exception instead of
+being swallowed in an infinite polling loop. Dispatch failures are logged and
+release the running reservation without blindly replaying a possibly started turn.
+
+Validation: 237 host/transport notification tests and 24 import-boundary mutation
+tests passed. The shared quality command keeps all 36 contracts and passes lint,
+format, types and generated protocol checks. Direct host tests cover reservation,
+dispatch failure and broken queue behavior without a transport. Queue durability
+and exact-once delivery across process death are not established by this change.
+
+
+### Notification display cannot own turn admission
+
+Removed the notification adapter's premature duplicate `message.start`. Turn
+submission owns the start event after establishing the turn receipt, so a
+notification no longer publishes a start against the previous turn identity.
+Status rendering is best-effort with diagnostics: a display exception cannot
+discard a queued notification before its admitted turn is submitted.
+
+Validation: 238 notification/host/server tests passed, including real turn
+submission emitting exactly one start and an injected status-display failure
+still submitting exactly one turn. Python quality and all 36 import contracts
+passed. This does not make the process-local notification queue durable.
+
+
+### API-key profile paths no longer import runtime dotenv
+
+The API-key domain service now obtains `get_agent_home` from its shared constants
+owner instead of indirectly importing it through the runtime dotenv loader. The
+corresponding frozen domain-to-runtime exception is removed. A regression denies
+all runtime imports while resolving successive profile homes; existing key
+mutation/redaction/CLI tests remain unchanged.
+
+Validation: 19 API-key tests and the shared Python quality checks passed,
+including all 36 import contracts. Other domain configuration exceptions remain.
+
+
+### Numerical domain code does not provision packages
+
+Removed implicit package installation from Bayesian and Market Model backend
+loading, including ledger refresh callers. Installed NumPy/SciPy/statsmodels
+remain usable, and existing fallback/degraded behavior is retained. Setup
+instructions document explicit optional installation. This intentionally changes
+missing-backend behavior: a computation no longer mutates its Python environment
+or waits for pip/network access. Two domain-to-tools import exceptions are removed.
+
+Validation: 80 numerical/refresh tests passed, one optional SciPy parity test
+skipped because SciPy is unavailable. New tests block optional imports and record
+any attempted tool installer import, proving absent packages do not trigger
+installation even through compatibility backend-loading functions. Python quality
+and all 36 import contracts passed.
+
+
+### Qualify toolset parity at the rendering boundary
+
+The runtime batch's full gate failed one empty-selection toolset parity case:
+30,923 passed and 148 skipped; no push occurred. Its shared stdout capture and
+first-matching-row assertion did not identify the failing surface. The test now
+captures the CLI renderer directly, requires exactly one fixture row per surface,
+and names the surface on failure. TUI and CLI selection assertions remain intact.
+The original failure source is not conclusively attributed; this removes an
+ambiguous observation boundary rather than claiming a runtime defect is fixed.
+
+Validation: all 67 command/inventory tests and Python quality checks passed.
+The final integrated full gate is still required.
+
+
+### Installed qualification after host and numerical boundary changes
+
+Built independent backend and terminal artifacts in
+`/tmp/forecast-host-boundary-profiles` and ran `scripts/verify_profiles.py` with
+the retained v0.21.2 backend using fresh Python 3.11.15 environments on macOS.
+The v0.22.0 upgrade preserved question, probability history, evidence, Unicode
+session messages and configuration. Backend create/update/resolve/score ran
+without Node on PATH. The new installed numerical check disabled optional
+libraries, verified Gaussian CDF and OLS fallback results, and observed no
+installer access. Packaged Ink negotiated local and authenticated localhost
+WebSocket hosts, scored the durable forecast and exited cleanly. Optional web
+installation, clean host termination and no credential logging passed.
+
+Artifact SHA-256:
+- Backend: `77bbe07a941ed30d4c491a50d8fa25c0f5c043a86feccc8f1d1ae3c494e02d4a`
+- Terminal: `1be8eec34cbab0ef49491e1171c1e8a0ec11fd239d3c0ec1178f2022f73482a2`
+- Prior backend: `09c3ec93d5dec5e26353922c2162f50d5702e4c5264a846643470c9fa4abfaca`
+
+Evidence: `/tmp/forecast-host-boundary-build.log` and
+`/tmp/forecast-host-boundary-installed.log`. The verifier completed with exit 0.
+This qualifies these local artifacts, not publication, native Windows/Termux,
+a terminal cross-version upgrade, or long-duration remote recovery.
+
+
+### Native provider quota inspection
+
+`runtime/quota_commands.py` now owns Google credential/quota lookup orchestration
+and report lines, used by both classic CLI and native TUI `/gquota`. Provider
+adapters retain HTTP/authentication ownership. The command validates arguments
+before credential access, preserves active-console routing, and no longer needs
+an agent or classic slash worker. Reports use the same plain-text lines across
+surfaces, with stable model ordering and existing quota clamping.
+
+Validation: 56 command/CLI tests passed, including successful, empty, signed-out,
+provider-error and invalid-argument parity using fake providers. The new owner
+is in strict lint/format/type scope; all shared Python checks and 36 import
+contracts passed. No live credential-dependent quota request was performed.
+
+
+### Shared messaging configuration inspection
+
+`runtime/platform_commands.py` owns `/platforms` configuration reporting for
+classic CLI and native TUI, including the `/gateway` alias. It lists the platform
+catalog plus configured entries instead of four hard-coded integrations, and
+distinguishes enabled, disabled and absent configuration. The report explicitly
+does not claim live connectivity and uses the public gateway launch command.
+No adapter connection, agent build or classic worker is started by inspection.
+
+Validation: 205 command/catalog tests passed, including CLI/TUI report and
+validation/error parity and alias dispatch. Platform-label metadata is isolated
+in fixtures so unrelated registered plugins cannot alter expected labels. The
+new owner is covered by strict lint/format/type checks; all shared Python gates
+and 36 import contracts passed.
+
+
+### Enforce pure numerical dependencies through censoring
+
+Transitive contracts for Bayesian and Market Model computation exposed an
+indirect runtime dependency: models → censoring → ledger scoring → ledger core.
+Censoring only needed Gaussian moment extraction. That unchanged helper and its
+key lists now belong to `forecasting/distribution_parameters.py`, consumed by
+censoring and re-exported under existing private ledger names for compatibility.
+This removes ledger loading from pure censoring arithmetic without allowing
+explicit-tail declarations to fall back to Gaussian approximations.
+
+Validation: 126 scoring/censoring/numerical/import-boundary tests passed, one
+optional SciPy test skipped. The new helper is in strict quality scope, and all
+38 import contracts pass. Mutation tests prove both new transitive numerical
+contracts reject presentation dependencies through an intermediate module.
+
+The preceding integrated batch was pushed at `6100b9bce` after 30,936 Python
+tests passed and 148 skipped. This extraction and the later command/verifier
+follow-ups still require their integrated full gate.
+
+
+### Fresh-checkout development bootstrap qualification
+
+Created a separate depth-one clone at commit `f46b9b965` in
+`/tmp/forecast-fresh-bootstrap.ZV7Kj6`, verified it had neither `.venv` nor
+`ui-tui/node_modules`, then ran the documented single command:
+`python3 scripts/dev.py bootstrap`. It completed with exit 0. Frozen uv setup,
+`npm ci`, TUI build, Python lint/format/types, all 38 import contracts, generated
+protocol checks, TypeScript lint and type checking passed. Local Git settings
+were `.githooks` and `.git-blame-ignore-revs`; the resulting checkout was clean.
+
+Evidence: `/tmp/forecast-fresh-clone.log` and `/tmp/forecast-fresh-bootstrap.log`.
+This qualifies a fresh checkout on the current macOS host with prerequisite
+Python, uv and npm available; it does not prove bootstrap on untested platforms.
+The active TODO is reconciled with completed notification ownership and native
+inspection work; remaining construction and legacy-dispatch work stays open.
+
+
+### Shared background-agent inheritance and construction
+
+`agent/background_options.py` now owns background-agent option inheritance.
+The TUI supplies host defaults and storage; explicit empty toolsets and reasoning
+settings no longer fall back to configured defaults. Mutable tool selection,
+reasoning, provider lists and nested request overrides are copied so background
+work cannot mutate parent settings. Host database identity remains borrowed.
+Background construction now uses `agent.agent_factory.build_agent` with the
+parent's already-resolved settings, avoiding a second provider/account resolution.
+Unused eager runtime imports were removed from foreground construction.
+
+Validation: 229 background/gateway tests and 27 import-boundary tests passed.
+The inheritance owner is in strict quality scope, and a transitive contract keeps
+it independent of construction, runtime, transport and tool implementations. All
+39 import contracts and shared Python quality checks passed. Foreground startup
+configuration/prompt assembly still needs further ownership separation.
+
+
+### Shared startup skill assembly
+
+`agent/startup_prompt.py` owns prompt validation, startup-skill loading, missing
+skill rejection and prompt concatenation. CLI preload and TUI foreground startup
+now consume that policy; adapters keep environment/flag parsing and the existing
+forecast protocol wrapper. Skill loading retains the active session identity,
+and empty skill lists avoid touching the loader. The CLI tests patch the skill
+loader at its actual owner rather than an imported presentation alias.
+
+Validation: 234 shared startup/CLI/gateway tests passed. The new module is in
+strict lint/format/type scope and all shared Python quality checks passed.
+Foreground provider/configuration option assembly remains in the TUI adapter.
+
+### Gaussian extraction and frozen trial compatibility
+
+The integrated full-suite gate rejected the numerical extraction: 30,945 tests
+passed, but reviewed legacy trial evaluation failed because the scoring source
+identity changed. This was a deterministic provenance mismatch, not an attributed
+runtime failure. The pre-extraction evaluation identity was
+`59b0b3e52d4ca62085d295d06bfe089f22e7270b429d875e6116be09fd1b2403`.
+
+Reviewed extraction `027b706b7`: the old and new Gaussian helper ASTs match after
+symbol renaming, and the ordered parameter-key constants match. The censoring
+change only redirects that helper import; explicit tail precedence is unchanged.
+The compatibility registry now records the reviewed transition, including packets
+created between extraction and this repair. No frozen trial data is rewritten.
+The extracted helper is included in evaluation source hashing, so subsequent
+unreviewed changes cannot silently reuse historical evaluation approval.
+
+Validation: 73 learning-trial, censoring and CRPS tests passed, including a source
+mutation regression that excludes frozen pairs without altering their records.
+The shared quality workflow passed. This focused evidence does not replace the
+required integrated full-suite push gate.
+
+### CLI construction through the shared agent factory
+
+Both classic CLI foreground and background paths now use `build_agent`, removing
+two copies of provider-to-constructor field mapping. The CLI imports the runtime
+class only for type checking. UI callbacks and session initialization retain their
+existing owners. Background CLI construction now forwards the resolved credential
+pool, which its previous hand-written mapping omitted. Foreground construction
+now applies the same incompatible-provider/model rejection as the TUI.
+
+The CLI and factory tests passed (795 tests); shared quality checks passed.
+Regression coverage exercises callable credentials, ACP arguments, credential
+pool identity, explicit empty tool/reasoning selections, borrowed session storage,
+and rejection before constructing an incompatible Codex agent. Background callback
+coverage now also checks credential-pool forwarding. This extraction does not
+complete foreground configuration assembly or eliminate the legacy slash worker.
+
+### Native scheduled-task commands
+
+The complete `/cron` command family now uses one output-returning operation in
+`runtime/cron_commands.py`; classic CLI renders its result and TUI dispatches it
+without constructing a model or classic slash worker. The scheduler/tool layer
+retains persistence ownership. No global stdout capture is used.
+
+Unknown options, missing flag values and malformed quoting are rejected before
+storage access. A failed list operation reports its error instead of claiming the
+schedule is empty. Regression tests cover CLI/TUI parity across list/create/edit/
+pause/resume/run/remove, pre-execution handoff, one execution per invocation,
+invalid-input exclusion and storage-error reporting without dispatcher retry.
+150 focused command and cron-tool tests passed. Shared quality checks passed before
+the final list-error guard; the commit gate checks the final staged snapshot.
+
+### Retained child-agent cleanup ownership
+
+Agent eviction and shutdown previously cleared active-child handles and swallowed
+failures from both release and full close. The lifecycle owner now retains exact
+failed child handles and reports incomplete disposal after attempting the other
+resources. The hosting session disposer therefore keeps the parent pending rather
+than declaring it disposed. A later close retries only those child handles and
+never repeats task-ID terminal/browser/process cleanup. Reentrant callbacks cannot
+replay in-flight child cleanup, and duplicate child references are disposed once.
+
+358 lifecycle/runtime tests passed, including host disposal retry, failed eviction,
+sibling continuation, reentrancy, and a replacement terminal environment surviving
+the old parent's retry. Shared quality checks passed. This fixes child ownership;
+SDK client-close failure retention and terminal/browser cleanup failure ownership
+remain separate open work. It does not attribute the historical native crash.
+
+### SDK failure state and transport-close limits
+
+Inspected the installed HTTPX and httpcore close implementations. HTTPX marks a
+client CLOSED before invoking transport close; an exception there leaves subsequent
+client.close() calls as no-ops. The old agent helper swallowed that exception and
+lost the detached SDK handle, so host disposal could report success without proof.
+
+Failed SDK handles now remain owned, failures are logged at warning level, and
+host disposal stays pending. A later successful no-op is not accepted as recovery.
+No private socket traversal was restored. A deterministic test with a real OpenAI
+client, real HTTPX client and injected failing BaseTransport reproduces the closed
+flag/no-retry behavior and checks host pending state. Additional tests preserve
+replacement clients and deduplicate retained failed handles. 362 focused runtime
+and ownership tests passed; shared quality checks passed.
+
+This establishes truthful failure containment, not safe transport recovery after a
+partial close. That still needs an ownership-aware transport solution or verified
+process-level isolation. It does not establish either historical crash cause.
+
+The earlier integrated construction/provenance batch pushed at `c76034948` after
+30,958 tests passed (148 skipped, 58 warnings). The subsequent CLI factory, native
+cron, child cleanup and SDK diagnostics commits require their own integrated gate.
+
+### Sandbox creation generation ownership
+
+Manual terminal cleanup previously detached the environment and removed its
+creation lock in separate critical sections. An already-running creator could
+subsequently publish a sandbox after cleanup, replacing a new session's environment;
+an old waiter could also consume replacement state. Cleanup now invalidates the
+creation-lock identity atomically with environment detachment using the existing
+env-then-creation lock order. Creators and waiters check that identity before using
+state, and creators check again before publication. Retired creations are disposed
+by object handle, never through a task-ID lookup, and return cancelled without
+executing the requested command.
+
+32 focused terminal/file-tool/lifecycle tests passed; shared quality checks passed.
+A deterministic blocked-creator plus waiting-caller test installs a replacement
+between cleanup and completion, then proves no stale publication, execution or
+replacement cleanup occurs. Terminal cleanup-failure retention and file-operation
+cache cleanup races remain separate work; this does not claim all sandbox disposal
+paths are complete.
+
+### File-adapter ownership across environment replacement
+
+File-tool lazy creation now checks the same creation-lock identity as terminal
+creation, before using or publishing an environment. Cached adapters are reusable
+only when their environment object is still active. Adapter publication checks
+both environment and generation identity; stale creators cannot overwrite a new
+adapter. Working-directory bookkeeping likewise rejects stale cached environments.
+
+Terminal cleanup invalidates only an adapter for its exact detached environment,
+so delayed cleanup cannot clear the replacement's cache. Explicit empty task IDs
+no longer trigger a global cache clear; the no-argument compatibility operation
+still clears all adapters. Lock ordering remains environment, creation, then file
+cache; slow sandbox construction and disposal run outside those registry locks.
+
+118 file-tool, terminal-creation, lifecycle, patch-tracking and line-ending tests
+passed; shared quality checks passed. Deterministic tests cover creation interrupted
+by cleanup, retained replacement cache/environment, stale adapter rejection, live
+cwd selection, and empty-ID isolation. Active-operation leases and failed sandbox
+disposal ownership remain outside this change.
+
+### One sandbox configuration mapper
+
+Extracted the duplicated terminal/file sandbox constructor mapping into
+`tools/environments/configuration.py`. This fixes a real configuration difference:
+file-triggered creation omitted `modal_mode`, `docker_env` and `docker_extra_args`
+that terminal creation already forwarded. Both clients now share the complete
+mapping, including image/cwd overrides and backend-specific persistence. Mutable
+container settings are copied instead of shared with the caller's configuration.
+
+152 focused tests passed, including constructor-argument parity through both actual
+entrypoints for local, SSH, Docker, Singularity, Modal, Daytona and Vercel sandbox
+families, override propagation, mutable-setting isolation, creation ownership and
+import-boundary mutation tests. Shared quality checks passed with the new mapper
+in strict lint/format/type scope and an additional forbidden-import contract.
+These tests use controllable constructors; they do not claim live qualification
+of external container services.
+
+### Remove the legacy global goal database cache
+
+The per-home `_DB_CACHE` had neither synchronized construction nor a close owner.
+It is removed. Standalone managers own a connection with explicit close/context
+support and a weak-finalizer fallback for legacy callers. Supplied host databases
+remain borrowed. Closed managers reject reuse; failed explicit closes retain the
+live finalizer/handle for retry. Failed initialization disposes owned storage only.
+Compatibility load/save helpers now close their short-lived connections.
+
+97 goal tests passed across standalone, classic CLI, gateway and TUI paths; shared
+quality checks passed. Failure injection now targets a manager's actual connection,
+not the removed singleton. Tests cover close retry, borrowed-storage preservation,
+initialization cleanup, compatibility-helper cleanup and existing stale-write/
+profile-boundary behavior. Explicitly supplying existing CLI/gateway stores remains
+worth doing to avoid unnecessary separate standalone connections in those hosts.
+
+The prior CLI/cron/cleanup batch pushed at `ce5d9f8db` after 30,981 tests passed
+(148 skipped, 58 warnings). Sandbox ownership/configuration and goal-store changes
+remain pending their integrated gate.
+
+### Goal storage borrowed by all product hosts
+
+Wired the classic CLI and all three gateway goal-consumer paths to their existing
+session database. They no longer create standalone stores as a hidden fallback.
+CLI manager reuse requires both session and database identity, and rebinding
+retires the old manager without closing the borrowed store. Missing gateway
+storage reports unavailable/defers continuation rather than opening another DB.
+
+103 goal tests passed across CLI, gateway, TUI and standalone behavior; shared
+quality checks passed. New tests prohibit fallback database creation, exercise
+CLI session/database rebinding, preserve borrowed stores, and verify gateway
+command, queued-continuation and post-turn paths with unavailable host storage.
+Test runners now supply owned fixture databases rather than relying on the old
+global-cache behavior.
+
+### Preserve explicitly empty tool selections at startup
+
+Tracing TUI construction exposed two expansions of an explicitly empty selection.
+The shared resolver treated a saved empty platform list as an unconfigured platform,
+allowing new plugins/credential-based defaults to appear. The TUI then converted
+an empty resolved list to `None`, which means all tools to agent construction.
+The resolver now treats saved `[]` as authoritative (including implicit MCP/plugin
+additions), and the TUI forwards an empty resolved list unchanged. An absent setting
+still uses defaults; explicit `all` still retains its existing meaning.
+
+466 TUI/configuration/plugin/CLI tests passed after both fixes; shared quality
+checks passed. Construction regression coverage asserts `enabled_toolsets=[]`
+reaches the shared agent factory. Additional shared-resolver coverage supplies a
+new plugin, enabled MCP server and available xAI credentials and requires that
+an explicitly empty selection remain empty.
+
+### Startup tool selection outside the TUI adapter
+
+Moved startup tool selection from the TUI server to
+`superforecasting_agent/tooling/startup_selection.py`. The adapter now supplies an
+override value, setting label and notice renderer. The shared owner retains
+built-in/plugin resolution, disabled MCP handling, all-tool overrides and fallback
+behavior, including the explicit-empty selection repair. No presentation globals
+or process-wide output redirection are used by the shared operation.
+
+405 focused TUI, configuration, command and import-boundary tests passed. Strict
+lint/format/type checks pass for the new owner; the complete quality workflow
+reports 41 kept import contracts and no broken contracts. The extraction required
+explicit optional-validator typing and narrowing MCP config before iteration.
+Foreground startup configuration assembly still has other adapter-owned pieces;
+this extraction does not mark that broader item complete.
+
+### Integrated gate repairs: live environment fixtures and RPC ownership
+
+The sandbox/goals push gate stopped with 3 failures, 30,996 passes and 148 skips.
+Two working-directory fixtures populated file adapters without registering a live
+environment, which the new ownership checks deliberately reject. Their fixtures
+now register the exact active environment and retain the original relative-path
+and stale-file warning assertions; cache and environment state restore on exit.
+
+The recurring empty-toolset display failure was specifically in TUI output. The
+tools RPC family retained its import-time server reference when registering into
+a different server module; its helper could therefore read another host/config.
+Command and tools registration now rebind their receiving server and imported
+callbacks/constants. A deterministic replacement-server regression fails on the
+old implementations (2 failing assertions) and passes after the fix. This proves
+the stale-registration mechanism; other RPC families still warrant the same audit.
+
+118 targeted registration, command, inventory, live-path and file-staleness tests
+passed. The shared quality workflow passed for the code changes. This is focused
+evidence; the repaired integrated batch still requires the full-suite push gate.
+
+### Complete the sibling RPC registration audit
+
+Audited all RPC registration families. Ten additional import-bound families had
+the stale-reference pattern: agents, browser, completion, cron/skills, forecasts,
+market models, Obsidian, rollback, subagents and voice. Each now rebinds its imported
+server dependencies when registered, matching the command/tools fix. Closure-based
+host, forecast operations, market, PM and jobs registration already captures its
+receiving server and did not need this repair.
+
+The regression discovers import-bound families from their source imports and
+asserts that registration replaces every corresponding dependency with the new
+server's value. This checks an ownership relationship rather than a fixed family
+count. 644 TUI/gateway tests passed; shared quality checks passed. This establishes
+re-registration correctness for the existing process-level server owner, not
+simultaneous multiple server module instances sharing RPC globals.
+
+### Capture TUI startup settings once
+
+A foreground TUI build now passes its configuration snapshot through model,
+reasoning, service tier, tool progress and toolset selection. Previously each
+helper could reload settings, mixing revisions during one construction.
+The shared startup toolset resolver accepts that same snapshot, including MCP
+enablement, while standalone callers retain their existing loading behavior.
+
+Deterministic tests forbid configuration rereads at the factory boundary and
+assert the actual model/options/prompt and empty tool selection. A separate MCP
+case proves disabled servers remain excluded using supplied settings.
+646 TUI/gateway tests and the shared quality workflow passed. Provider credential
+resolution and configuration reads inside agent construction remain separate
+paths; this change does not establish a fully frozen provider build.
+
+### One configuration per runtime provider resolution
+
+The shared provider resolver now captures one normalized configuration and passes
+its model section through provider selection, endpoint resolution, Azure and pool
+mapping. Named custom provider lookup and Bedrock region/guardrail settings use
+the same configuration. Empty supplied model dictionaries no longer trigger an
+implicit reload. Callers may also supply a normalized configuration explicitly;
+the resolver copies it before use. Credential stores and token refresh remain live.
+
+Regression tests forbid a second profile load across local, named-custom and
+Bedrock branches, and forbid any load when supplying configuration. Existing
+provider/status fixtures now accept the explicit snapshot argument while retaining
+their behavioral assertions. The focused 403-test run and shared quality workflow
+passed. This resolves consistency inside provider selection; connecting the raw
+host snapshot requires shared normalization of defaults and environment references,
+and agent-internal configuration reads still need a separate audit.
+
+The expanded CLI/runtime run completed with 5,506 passes, 11 skips and three
+failures from additional string-targeted test doubles rejecting the new snapshot
+keyword. After updating those doubles, both affected modules passed all 205 tests;
+their Copilot response-mode and Ollama credential-isolation assertions are unchanged.
+The full integrated push gate remains required for this increment.
+
+
+### Connect captured startup configuration to provider and pool construction
+
+The existing configuration owner now exposes resolve_config for raw snapshots.
+File loading and snapshot normalization share the same user/default merge,
+legacy model/max-turn handling and environment expansion. Normalization returns
+independent runtime values rather than a persistence snapshot.
+
+TUI foreground construction sends those values through the shared agent factory
+to provider resolution. An integration test retains the real normalizer, factory,
+provider resolver and custom credential pool; it replaces only final model-client
+construction and credential-store I/O. It proves legacy keys and environment
+references reach the correct model/endpoint/key, empty tool choices survive,
+the raw mapping is unchanged, and profile rereads are forbidden.
+
+That test uncovered additional reads in unknown-provider diagnostics, pool-name
+lookup, custom-pool seeding and pool strategy selection. Those paths now accept
+the captured configuration. Standalone pool loading also reads configuration
+once, while live credential-store operations remain owned by the pool. Two
+provider fixtures now correctly report pool provenance: their supplied settings
+reach pool seeding instead of falling through against a different profile.
+Agent-internal configuration and subsequent live credential refresh still need
+their own consistency audit; this is construction-path evidence.
+
+Validation: the expanded CLI/runtime, TUI gateway, agent-factory and credential-pool
+run passed 6,028 tests with 10 skips. Shared quality checks passed, including all
+41 import contracts. No external inference calls were needed. The integrated
+batch still requires its full-suite pre-push gate.
+
+
+### Native curator command operations
+
+The TUI now hands /curator directly to shared command dispatch before legacy
+worker or agent initialization. The existing curator module owns the parser and
+operations; handlers accept output and confirmation callbacks. CLI keeps its
+terminal behavior, while TUI output stays in a per-request buffer without global
+stdout/stderr redirection. The TUI uses the existing session prompt broker for
+prune and rollback and includes the complete candidate/snapshot preview.
+
+Regression coverage verifies shared pause/resume output, exactly-once execution,
+invalid-input isolation, cancellation without mutations, rollback against the
+displayed snapshot, and concurrent requests with separate output. Operation
+failures never request fallback execution. 706 curator/TUI/gateway tests passed.
+This removes the curator command dependency on the classic worker; it does not
+complete migration of the other remaining commands or change curator review
+thread ownership.
+Shared quality checks passed, including the new transitive curator boundary:
+42 import contracts kept, none broken.
+
+
+### One safe transcript export owner
+
+The /save audit found duplicate CLI/TUI serialization, filenames that could
+overwrite another save within the same second, and TUI exports unnecessarily
+initializing a model. Both consumers now use storage.transcripts.save_transcript,
+which rejects empty histories, preserves their existing metadata fields, uses a
+unique filename and commits through the existing atomic JSON writer.
+
+The TUI captures a deep history snapshot under the session history lock and
+uses non-blocking session lookup without agent construction. Deferred sessions
+can export their available history without credentials; absent model metadata
+stays empty rather than being inferred from current settings. The CLI retains
+its saved-path and resume messages. The new owner is included in strict
+lint/format/type checks and has a transitive consumer-import prohibition.
+
+724 storage/CLI/TUI/gateway tests passed. Regressions cover concurrent same-second
+saves without replacement, failed serialization leaving no partial export,
+empty-state rejection, deferred-agent export and history changes between snapshot
+capture and file I/O. These are convenience transcript exports; they do not
+replace durable session journaling or the forecast-ledger transfer format.
+Shared quality checks passed with 43 import contracts kept and none broken.
+
+
+### Configuration values become an independent owner
+
+The remaining domain-to-runtime exceptions are largely configuration reads.
+As the prerequisite for migrating those readers, defaults and normalization now
+live in superforecasting_agent/configuration rather than the CLI management
+module. The package owns default data, model-section interpretation, legacy-key
+normalization, recursive merge/lookup and environment expansion. Runtime modules
+re-export existing names; TUI startup imports the shared normalizer directly.
+
+The complete DEFAULT_CONFIG expression AST was compared before and after the
+move and is identical, including arithmetic defaults. 319 focused configuration,
+model-normalization and TUI tests passed. The package is covered by strict
+lint/format/types and a transitive contract forbidding storage, runtime, domain
+and presentation dependencies. Contributor guidance now points to the actual
+defaults owner. File reading, cache/persistence migration and removal of the
+remaining domain-reader exceptions are subsequent work, not claimed complete here.
+
+The expanded runtime/CLI/TUI/AppConfig run passed 5,561 tests with 10 skips.
+Shared quality checks passed with 44 import contracts kept and none broken.
+The seven extracted normalization/lookup helper bodies were also compared by
+AST: identical apart from removing the import of their now-local model helper.
+
+
+### Domain profile reads leave CLI management
+
+Shared storage now provides read_configuration through the existing raw profile
+owner and independent value normalizer. It respects active profiles and all
+ignore-config aliases, returns independent dictionaries, expands the current
+environment on each read, and never creates a missing profile. Normalized values
+are not revision-bearing save snapshots. Invalid model lists, booleans and numbers
+now fail shared normalization instead of leaking into runtime settings; file
+readers retain their established fallback to defaults and report invalid input.
+
+Hook policy, estimate-first policy, model skill-weight settings and market
+deviation thresholds use this owner. Four frozen domain-to-runtime exceptions
+are removed (21 to 17). Other readers and legacy file-management caching remain.
+
+109 configuration/storage tests passed. The broader forecasting run passed 3,671
+tests with 11 skips and two numerical backend failures: the isolated environment
+lacked the declared NumPy 2.4.3 full-test dependency. After installing that exact
+dependency, both numerical modules and the new profile tests passed (63 tests).
+Shared Python quality checks passed, including all 44 import contracts. This
+is focused verification, not a new full-repository gate or release qualification.
+
+
+### Background forecast readers share profile ownership
+
+Scheduler, cron policy, estimator/review workers, quorum jobs/autorun and
+market/research model lookup now use shared read-only profile storage. Eight
+additional frozen runtime configuration exceptions are removed (17 to 9); the
+remaining exceptions concern CLI adapters, plugin discovery and model runners.
+No scheduling, model budget, override priority or scoring formula is changed.
+
+137 focused tests passed, including real profile values through background
+consumers with CLI configuration loaders forbidden, no profile file creation,
+and programmatic market/research model lookup with presentation imports forbidden.
+Existing command-only test fixtures retain their CLI seam. Shared Python lint,
+format, scoped types, protocol generation and all 44 import contracts passed.
+Broader forecasting verification is running separately; this entry does not
+claim that pending run or the full-repository push gate has passed.
+
+
+### Native command aliases retain their operation owner
+
+The slash handoff used raw names while command.dispatch resolved registry aliases.
+Consequently /codex_runtime and /gateway could create a classic CLI worker even
+though /codex-runtime and /platforms already had native operations. The handoff
+now canonicalizes through the shared registry before selecting an owner; custom
+command validation still occurs first and legacy commands retain their arguments.
+
+Regression coverage enumerates every registered alias of the ten native command
+families (including uppercase invocations), forbids worker/agent construction,
+and verifies a runtime-setting alias performs no write during handoff and exactly
+one write during dispatch. 672 TUI gateway tests passed, along with shared
+Python quality checks and all 44 import contracts. This fixes alias routing; it
+does not claim that the remaining classic command operations are migrated.
+
+
+Background-reader expanded verification completed: 3,673 forecasting tests passed
+with 11 skips, including the smoke subprocess and numerical backends.
+
+### Snapshot storage prerequisites for native commands
+
+The next command extraction exposed storage defects: snapshots created in the
+same second reused directories, labels and manifest paths were trusted, negative
+retention counts sliced the deletion list, and database restore unlinked the
+current file before replacement. Shared backup functions now use unique IDs,
+validate names and every supported manifest path before writes, reject symbolic
+link restore paths, publish manifests atomically, and ignore unpublished snapshots
+when pruning. Each restored file is staged, fsynced and atomically replaced; a
+failed replacement preserves its previous contents and removes the temporary file.
+
+127 backup/integrity tests passed, including simultaneous same-instant creation,
+malicious later manifest entries preventing earlier writes, source/destination
+symlinks, invalid retention and injected replacement failure. Shared Python quality
+checks passed. This is per-file atomicity, not a multi-file transaction or proof
+that replacing an open SQLite database is safe. Native TUI restore remains blocked;
+host-coordinated restoration and command extraction remain unfinished.
+
+
+### Snapshot operations become native shared consumers
+
+Snapshot storage and SQLite copying moved out of CLI backup administration into
+strictly checked storage.snapshots; runtime.backup re-exports compatibility names.
+The transitive application boundary initially rejected importing backup because
+it reaches profiles, gateway administration and CLI entrypoints. The extraction
+removes that dependency instead of adding an exception. A dedicated transitive
+storage prohibition raises the enforced contract count to 45.
+
+application.snapshots owns argument parsing, validation and formatted operation
+results. Classic CLI and TUI dispatch both invoke it; listing, creation and pruning
+no longer construct a classic worker or model. Registry aliases share the same
+route. Invalid trailing arguments and malformed labels fail before mutation, and
+operation failures do not request fallback execution. Live restore remains denied
+by the TUI host; this extraction does not implement coordinated database shutdown.
+
+960 backup/metadata/gateway tests passed with one skip; after adding native snapshot
+lifecycle and CLI-parity regressions, all 104 configured-command tests passed.
+Shared quality checks passed, including 45 import contracts. The prior full push
+gate stopped with five metadata assertions still reading moved defaults from
+runtime/config.py (31,044 other tests passed, 148 skipped); these now inspect both
+configuration owners without dropping their branding assertions and pass in the
+expanded run. A fresh full push gate is still required for the integrated batch.
+
+
+### Snapshot publication fails closed
+
+The extracted SQLite copier still treated a failed SQLite backup as permission
+to copy raw database bytes. It now uses an escaped read-only URI, stages the
+SQLite backup, closes both connections, fsyncs and replaces the destination only
+on success. Failure returns false without overwriting a previous destination or
+leaving a temporary database. Runtime backup compatibility callers share this
+behavior; corrupt or inaccessible databases are no longer raw-copied.
+
+Quick snapshot creation now captures existing files in a private pending directory
+and publishes the completed directory only after every copy and manifest write
+succeeds. Any copy failure aborts publication. Listing and pruning ignore pending
+directories even during the manifest-to-directory-publication interval. Ordinary
+exceptions remove staging; abrupt process death may leave an unpublished pending
+directory, which is not advertised as a recovery artifact. Missing optional files
+remain allowed. These snapshots do not establish a simultaneous transaction across
+independently changing profile files.
+
+237 backup, integrity and native command tests passed. Failure injection covers
+corrupt databases, destination preservation, SQLite URI metacharacters, a later
+file-copy failure, manifest failure and prune/list during pending publication. The
+existing connection-lifetime regression still proves both SQLite handles close.
+Shared Python quality checks and all 45 import contracts passed.
+
+
+### Board selection belongs to a command context
+
+The remaining /kanban worker audit found command dispatch temporarily overwriting
+all process-wide board environment aliases. Overlapping commands could therefore
+resolve each other's board and restore stale environment values. Existing board
+storage now owns a ContextVar-backed board_scope, which is entered after argument
+validation and always reset. Database/path readers use that scope; worker-spawn
+code already resolves the current board and explicitly writes child environment
+aliases. Existing explicit database/workspace environment pins retain precedence.
+
+The actual command-dispatch regression overlaps two create operations, verifies
+board identity throughout, checks durable rows in both databases and asserts that
+process aliases never change. Nested scopes unwind on exceptions. 48 focused tests
+and the expanded 559 Kanban tests passed (one skip); shared Python quality checks
+passed. This removes a prerequisite concurrency bug; run_slash still captures
+process-global stdout/stderr and is not yet safe for native concurrent RPC use.
+
+
+### Command output does not replace process streams
+
+Kanban's shared run_slash operation no longer uses redirect_stdout/stderr. Its
+handlers emit through request-local output routing; a small argparse subclass
+sends nested help/errors through the same owner. Explicit non-console output
+files remain explicit destinations. Standard CLI execution prints normally, and
+existing CLI/messaging callers retain the same returned output. Captures nest and
+reset on exceptions without changing process streams. No global parser methods
+or builtins are patched. The output owner is covered by strict checks and a
+transitive dependency prohibition.
+
+561 Kanban tests passed with one skip, including overlapping requests with
+independent board/output contexts, unchanged stdout/stderr identity and nested
+capture failure. Shared quality checks passed before the final contract addition;
+the commit gate verifies the resulting 46-contract tree. Native TUI Kanban routing
+remains unfinished: long-running daemon/watch operations need host lifetime and
+cancellation admission, not an unbounded call on an RPC worker.
+
+
+### Long-running command cancellation and signal ownership
+
+run_slash accepts an optional stop event. Watch and tail use interruptible waits;
+daemon passes cancellation into the existing dispatcher loop. Pre-cancelled
+commands do not initialize storage. Standalone daemon installs temporary signal
+handlers and restores only handlers it still owns, including when a tick is
+interrupted. Embedded calls with a supplied stop event never claim process signals.
+Tick errors use the module logger, preserving diagnostics without direct traceback
+writes from a background loop.
+
+567 Kanban tests passed with one skip; the final additional interrupted-tick
+regression passed in the focused CLI module run. Tests stop real watch/tail/daemon
+commands during one-hour waits and prove signal restoration and successor-handler
+preservation. Shared gates now run E4/E7/E9/F correctness lint on the two inherited
+Kanban modules; four unused imports/locals were removed to enable this without
+exceptions. Strict formatting/types remain scoped to extracted owners. All 46
+import contracts pass. Native host registration, UI cancellation and streaming
+remain the next integration work; cooperative loop support alone does not prove
+the complete TUI interaction.
+
+
+### Native commands retain host and session ownership
+
+RuntimeHost.command admits work and reserves a registered session, retaining its
+exact stop event until the operation exits. Foreign sessions are rejected. Session
+interrupt sets only that session's command events; shutdown closes admission,
+cancels commands and drains them before session/database disposal. A post-register
+stop check closes the admission-versus-shutdown cancellation gap. Finishing one
+command cannot remove a newer command's event. Host-stopping errors share the same
+RPC code/message whether detected by outer dispatch or nested command admission.
+
+Kanban now uses the already-asynchronous slash.exec transport and shared run_slash
+operation, bypassing the classic CLI worker and model initialization. The real
+watch loop accepts an inline session.interrupt while its original response remains
+bound to the original transport. Session interruption reports cancelling until
+that command has released its ownership.
+
+686 gateway tests passed; the final admission/host-owner run passed 115 tests.
+Coverage includes durable native task creation, one-hour watch interruption,
+shutdown retaining resources until command exit, separate sessions, replacement
+handles, foreign sessions and shutdown during admission. Full UI streaming and
+visible cancellation remain unverified; this is backend integration evidence.
+The preceding command-context batch pushed after 31,100 tests passed with 148
+skips and 58 warnings.
+
+
+### Native command progress contract and bounded capture
+
+Native Kanban operations now emit typed command.started, command.output and
+command.finished events on the requesting transport. A generated command identity
+links the sequence; the start event also identifies the original RPC request.
+Finished means the operation returned, not that a legacy textual usage/error
+result represents business success. Cancellation and raised failures have separate
+terminal statuses. These live events are not durable forecast-turn records.
+
+Request-local capture can retain a bounded Unicode character tail while streaming
+all writes. Native commands retain at most 65,536 characters per output stream;
+event chunks are limited to 4,096 characters. Observer failure is logged once and
+disabled without converting an applied mutation into an operation failure.
+
+175 focused output, Kanban and gateway tests passed, including cancellation event
+ordering on the real asynchronous transport, failed-operation terminal status,
+request-local nested capture, bounded output and exactly one durable mutation when
+event delivery fails. Python quality checks and all 46 import contracts passed.
+The preceding host-cancellation batch pushed after 31,114 tests passed, 148 skipped.
+Visible TUI progress/cancellation and acknowledged long-command timeout handling
+remain pending; generated client types alone do not establish that interaction.
+
+
+### Acknowledged native commands outlive ordinary RPC deadlines
+
+The terminal transport now suspends only a slash.exec deadline acknowledged by a
+command.started event matching its pending request and session. Both local stdio
+and attached WebSocket paths use this shared dispatcher. A terminal command event
+starts a fresh final-response deadline; duplicate start/finish events cannot keep
+extending it. Results and errors still settle through the original RPC response,
+and transport disconnection rejects pending work using the existing cleanup path.
+Command events are included in the generated-payload GatewayEvent union.
+
+23 client transport tests passed, including commands running beyond five minutes
+of virtual time, cancellation results, disconnection, missing final results,
+duplicate terminal events and wrong-session/request/non-command acknowledgements.
+These deterministic transport checks do not prove visible progress or Ctrl+C
+interaction. Those remain the next native-command integration work.
+
+
+### Native command activity is independent of model turns
+
+A terminal command store now tracks active command identities by session, retains
+only 4,096 characters of output per active command and ignores recently completed
+identities. The composer displays a bounded live preview and a cancellation hint.
+Ctrl+C requests session interruption and marks commands cancelling; only the host
+terminal event removes them. Request failure restores the active marker and reports
+the error. Transport loss clears live markers without claiming completion.
+Terminal events are consumed even when another session is displayed, preventing
+stale activity when switching back. Model-turn busy state remains independent.
+
+88 focused command-store, event-handler, input-helper and real Ink rendering tests
+passed. The rendering check exercises running, output and cancelling text at a
+60-column terminal width. Type checking and scoped lint passed. A full native watch,
+Ctrl+C and continued-use interaction, including reconnect behavior, remains to be
+qualified; input-helper tests do not prove the actual keyboard route end to end.
+
+
+### Real terminal native-command recovery verification
+
+A rebuilt local TUI bundle now exercises the actual composer, gateway, command
+loop and SQLite board through the POSIX PTY harness. Both paths begin a watch with
+a one-hour interval, observe live command activity and resize the terminal. One
+sends actual Ctrl+C; the other kills the gateway, observes the reconnect notice
+and verifies a new gateway PID. Both then create a task exactly once, verify its
+durable row, make no model calls and exit normally. Both tests passed on this
+macOS/Python 3.13 runtime. This does not qualify remote-host or other-platform
+command recovery.
+
+The preceding progress-event push was blocked by the protocol registry test's
+explicit expected-name list: it omitted the three new command events. That list
+and wire round-trip cases now cover start/output/finish without relaxing the
+exact-registration assertion. The failed full run had 31,124 passing Python tests,
+148 skips and that one failure; its subsequent 428 terminal tests passed.
+
+
+### Canonical title-setting is shared by CLI and native TUI
+
+The shared session application owner now validates and sets titles, returning the
+canonical value and whether it awaits session creation. Classic CLI and session.title
+RPC both consume it and update their pending title only after success. Previously,
+the RPC returned and queued raw input despite storage removing controls/collapsing
+whitespace; control-only input could clear a stored title while reporting success.
+Both paths now reject an empty cleaned title and preserve existing state on failure.
+Storage remains the owner of transactional uniqueness checks, including conflicts
+when the target session does not exist yet. Queued titles are not reservations.
+
+499 focused session, CLI branch, lazy-session and gateway tests passed. New tests
+exercise the actual CLI and RPC handlers against SQLite for persisted and pending
+titles, response/storage parity, conflicting names and control-only input. Shared
+Python quality gates and 46 import contracts passed. Read-side pending-title
+reconciliation and messaging's translated title presentation remain separate paths.
+
+
+### Pending-title reconciliation preserves failures and canonical values
+
+Messaging now consumes the same title-setting operation as CLI and TUI, translating
+its empty-title error through the existing localized message. It checks session
+existence directly rather than mistaking an untitled row for an absent session,
+and reports session-creation failures before attempting a title write.
+
+The session.title read path delegates queued-title reconciliation to the application
+owner. Historical raw pending values are normalized before being reported or saved.
+Storage errors now return an RPC error instead of a success-shaped fallback; the
+pending value remains intact for retry and is cleared only after successful storage.
+
+483 focused application-title, messaging-title and TUI gateway tests passed. Tests
+prove canonical pending/persisted reads, injected write failure followed by successful
+retry, no write after failed messaging session creation, and no attempt to recreate
+an existing untitled session. Python quality gates and all 46 import contracts passed.
+
+
+### Forecast CLI value readers no longer initialize runtime configuration
+
+Resolution-criteria drafting, market-nightly command setup and reforecast batch
+admission read normalized profile values through storage.read_configuration and
+the independent configuration lookup helper. They no longer import the runtime
+configuration module. The corresponding three frozen import exceptions were
+removed: six forecasting-to-runtime exceptions remain. Mutation-capable quorum
+and collaboration configuration commands retain their existing ownership pending
+separate extraction.
+
+48 focused forecasting CLI, market-nightly and reforecast tests passed. Tests use
+an isolated real config.yaml to establish model and batch-limit selection, reject
+calls to either CLI configuration loader and verify that the profile acquires no
+new files or content changes. Existing market-arm/model tests now patch the shared
+reader. All 46 import contracts and shared Python quality checks pass.
+
+
+### Collaboration links publish as one configuration mutation
+
+ProfileConfiguration.update_many uses the existing locked round-trip mutation
+primitive to publish related fields together. Collaboration linking now writes
+repository identity, workspace, branch, enable flags and optional ledger path in
+one replacement rather than five or six separately visible writes. It reads values
+through the independent configuration owner and no longer imports runtime config;
+five forecasting-to-runtime exceptions remain.
+
+14 focused collaboration/configuration tests and the shared Python quality gates
+passed. New tests observe exactly one complete publication preserving unrelated
+settings/comments, and inject a failure after several in-memory field edits to
+prove the original file is unchanged. No new locking or YAML implementation was
+introduced.
+
+The pending native-command push stopped: its PTY tests selected an older packaged
+bundle, and a Bayes test's captured output was disturbed while a bg-review thread
+from earlier work remained alive. Artifact freshness and background review cleanup
+need correction before the next full gate; these are not passing-push claims.
+
+
+### Background review no longer redirects other requests' process streams
+
+The review worker replaced sys.stdout/sys.stderr with devnull during execution
+and exception cleanup. Those redirects are process-wide, so concurrent CLI output
+and test capture could be stolen or restored to stale streams. Both redirects are
+removed; the review fork retains quiet_mode and suppress_status_output. A real
+thread regression holds review execution and failing-review cleanup while the
+foreground writes to both streams, verifying stable stream identity and visible
+capture. This establishes the stream-ownership defect; it does not establish the
+original native SSL cause or finish review-thread shutdown ownership.
+
+Source-tree PTY tests now prefer ui-tui/dist over a leftover packaged artifact.
+The canonical test runner rebuilds that source bundle when npm and the local
+esbuild toolchain are available; backend-only installs retain the no-Node path.
+The command recovery test waits for command activity to finish, not just streamed
+Created text, before checking Ctrl+C exit. An initial combined run exposed that
+streaming-versus-completion distinction; after correction all 37 focused review,
+Bayes and native terminal recovery tests passed. Python quality gates passed.
+
+
+### Review forks borrow session tools rather than destroying the parent
+
+The review fork pins the parent's session ID for cached-prompt/history compatibility.
+Normal close previously used that ID to kill background processes and clean terminal
+and browser resources, despite the review's memory/skill whitelist never owning those
+tools. Agent initialization now records session-tool ownership explicitly. The review
+marks those tools borrowed before adopting the parent's identity; lifecycle cleanup
+skips only borrowed tool resources and still closes owned children and API clients.
+
+28 focused ownership, review, cache-parity and client-lifecycle tests passed. Tests
+exercise the actual review-to-close path with a parent environment registered under
+the shared ID, proving no parent cleanup/process kill/browser cleanup while the fork's
+client closes once. Ordinary agents retain existing owner behavior and repeated-close
+protection. Shared Python quality gates passed. Background-review thread admission,
+interruption and draining are still unfinished; this addresses the separate shared-ID
+resource destruction defect discovered during that audit.
+
+
+### Background reviews participate in parent shutdown
+
+ReviewLifecycle reuses RuntimeWorkers for dedicated-thread admission and completion.
+The parent owns this lifecycle; spawning after cleanup starts is rejected. Constructed
+review agents are registered before use, and construction that finishes after shutdown
+is refused admission to the review loop. Parent close, client eviction and memory
+shutdown stop new reviews, interrupt registered running children and report pending
+cleanup until workers exit. Parent resources are not marked closed or reclaimed while
+review work remains active.
+
+Cleanup retains exact child handles and tracks memory/client disposal independently.
+Exceptions or explicit False results remain pending; successful steps are not repeated
+on retries. Child interruption and disposal admission share a lock so a completed
+child's old execution-thread identity is not signalled after disposal. Quiet operation,
+borrowed session tools and cache-compatible prompts remain intact.
+
+489 focused ownership, actual review-spawn, cache-parity, client and gateway tests
+passed. Deterministic cases cover shutdown during a blocked review, late starts,
+construction racing shutdown, repeated close and retained failed cleanup. The new
+owner receives strict lint/format/type checks and its own import contract; all 47
+contracts and shared Python quality gates pass. This does not resolve SDK transports
+that cannot safely retry disposal after their own failed close, or other terminal/
+browser resource ownership gaps recorded in TODO.md.
+
+
+### Quorum defaults publish only after validation and successful persistence
+
+A presentation-independent quorum policy validator produces the enable/scope changes.
+The CLI validates all input before mutation and publishes both fields atomically via
+ProfileConfiguration.update_many. Invalid scopes do not partially enable quorum;
+managed-install refusal returns without printing success. Existing managed-install
+policy stays in its current runtime owner pending broader extraction.
+
+The latest full push found stale criteria-loader/title test doubles and a toolset
+selection mismatch. Criteria tests now target the shared reader; title doubles use
+real storage sanitization, and failed pending reconciliation is asserted as an error
+with preserved retry state. Exact title persistence/uniqueness checks remain.
+
+Toolset command dispatch previously borrowed a sibling adapter's mutable host pointer.
+A deterministic rebind reproduction now proves it consumes its own host's selection:
+both adapters pass their session and configuration reader to the shared inventory
+owner. Explicit empty selection is preserved. This establishes the dependency hazard
+without claiming a complete reconstruction of the full-suite test ordering.
+
+399 combined forecasting, legacy gateway and configured-command tests passed, including
+atomic quorum publication, managed refusal, invalid-scope rollback and sibling-host
+isolation. Shared Python quality checks and 47 import contracts passed. The preceding
+full push remained blocked (10 failures, 31,137 passing Python tests, 148 skips; 458
+terminal tests passed). A fresh integrated gate is still required.
+
+
+### Independent installation policy
+
+Managed-install detection and refusal messages now belong to installation.py, with
+runtime compatibility helpers delegating to that owner. Quorum default mutations
+use the independent admission check before their existing atomic write. Native and
+legacy environment precedence and profile-local .managed markers remain enforced;
+read-only admission creates no profile files. General quorum configuration still
+uses the runtime setter and remains a follow-up.
+
+14 focused installation/default-policy tests passed, plus the metadata guard in a
+12-test filtered run. A fresh-process test proves importing installation policy
+loads no runtime or consumers. Shared Python quality checks and all 48 import
+contracts passed. This increment has not yet undergone its integrated full-suite
+push gate; the preceding batch is still running in the primary checkout.
+
+
+### Quorum configuration no longer imports CLI configuration
+
+Quorum overview, execution and configuration inspection now consume the independent
+normalized profile reader. Configuration writes use the shared atomic profile owner
+and installation admission, with scalar interpretation shared with the general CLI
+setter. Managed refusal and failed publication exit without printing success; extra
+arguments are rejected rather than ignored. Existing panel validation remains before
+publication. The domain-to-runtime exception for quorum_panel is removed (four remain).
+
+32 focused quorum and configuration-writer tests passed, covering failed writes,
+managed policy, scalar types, preservation of unrelated settings and concurrent
+writer behavior. Shared Python quality checks and all 48 import contracts passed.
+The broader CLI test run and the primary checkout's previous full push gate are
+still running; this increment is not yet qualified by an integrated full-suite run.
+
+
+### Provider identity without catalog initialization
+
+Provider alias normalization now belongs to configuration/providers.py. The runtime
+model module re-exports the same alias table and operation for compatibility;
+models.dev metadata lookup and the TUI provider inspection consume the independent
+owner. Pure identity resolution no longer initializes catalog discovery or credentials.
+Provider availability and default-model selection still require further extraction.
+
+180 existing model/metadata tests and 85 identity tests passed, including alias
+normalization and fresh-process import isolation. Shared Python quality checks and
+all 48 import contracts passed. The configuration package's existing transitive
+contract and directory-wide strict lint/format/type scope cover the new module.
+
+The earlier integrated batch pushed successfully at 5de4af1cc after 31,157 Python
+tests passed (148 skipped), followed by the terminal gate. The two subsequent
+configuration commits are integrated and their full push gate is running separately.
+
+
+### Native configuration inspection
+
+The TUI /config command now hands off directly to native dispatch and config.show;
+it does not construct an agent or classic slash worker. RPC and CLI use a shared
+configuration-report owner. Live session model, endpoint, iteration budget, toolsets
+and verbosity override configured defaults. Explicit empty toolsets display none,
+not all. Credentials display only presence or a callable-provider label; inspection
+never fetches a token. Classic CLI retains terminal/SSH and session-start details.
+
+359 configuration-dispatch, callable-credential and gateway tests passed. Additional
+focused verification covers inspection before model initialization and secret-byte
+exclusion. Shared application strict coverage and import rules cover the new owner.
+The primary checkout remains frozen while the earlier configuration batch runs its
+full push gate; this command migration is committed in the isolated worktree.
+
+
+### Configuration inspection captures one profile
+
+config.show now passes the captured configuration to model and toolset resolution,
+rather than reading the profile again during rendering. Canonical model.base_url is
+reported through the shared model-section interpreter, including legacy fallback.
+A deterministic test rejects a second profile read and verifies the nested endpoint,
+model and explicit empty toolset selection. 345 gateway/dispatch tests and shared
+Python quality gates passed. The earlier full push gate remains running independently.
+
+
+### Strict type diagnostics block local and CI gates
+
+The shared development check now passes --error-on-warning to ty. The inherited
+unknown-argument warning rule can no longer allow a strict-scope type defect through
+bootstrap, hooks or CI. Existing strict owners pass with this setting. A regression
+test adds a new module beneath a strict directory, runs the real type checker, proves
+an unknown keyword argument blocks subsequent gates, then repairs it and verifies
+checks continue. That failure-injection test passed, as did the shared Python quality
+workflow. Repository-wide advisory diagnostics remain separate from strict enforcement.
+
+
+### Curator worker isolation and foreground stream ownership
+
+The configuration-batch full push failed with one curator temporary-file assertion
+(31,166 passing Python tests, 148 skipped). The eligible-run test started a daemon
+review and returned without joining it, while subsequent fixtures reloaded its module
+and changed profile globals. The fixture now retains and joins exactly its own threads
+before restoring those globals. This closes an observed lifetime hazard; the historical
+temporary file's exact interleaving is not reconstructed.
+
+The curator also redirected process-wide stdout/stderr around its background model
+call. That redirect is removed; the existing quiet_mode remains the display control.
+A blocked fake review proves foreground stream identity/output and child cleanup are
+preserved. 84 curator/state/report/backup tests and shared Python quality checks passed.
+The integrated full gate is still required before publishing these fixes. Broader
+production curator worker ownership and failed child disposal remain follow-up work.
+
+
+### Curator state owns atomic field changes
+
+Curator persistence now has an independent strict storage owner using existing
+cross-process locking and atomic JSON publication. Pause changes, initial scheduler
+seeding, run-count increments and review completion mutate current fields under one
+lock. Completion no longer replaces a stale whole-state snapshot after report writing.
+Publication errors propagate instead of allowing a command to claim persistence.
+
+87 curator/state/report/backup tests passed. A real synchronous review test changes
+pause state inside report publication and proves completion retains that change;
+parallel increments and failed-publication preservation are separately covered.
+Shared Python quality checks and all 49 import contracts passed. Production daemon
+admission and shutdown ownership remain unfinished; this storage fix does not claim
+to close that separate runtime-lifetime gap.
+
+
+### Curator error parity and summary acknowledgement
+
+Standalone and native curator command execution now translate storage OSError into
+a nonzero result with the underlying diagnostic. Failed pause/resume publication
+never prints success. The remaining production whole-state writer was the update
+notice: it now conditionally acknowledges the exact displayed run and summary under
+the storage lock, preserving concurrent pause changes and newer review summaries.
+
+126 command/gateway tests passed, followed by 15 focused persistence-error, notice
+and state-owner tests after the acknowledgement fix. Shared Python quality gates
+passed. The primary integrated full push is still running on the preceding batch.
+
+
+### Curator configuration readers use independent profile storage
+
+Review policy, model binding input and backup policy now read the caller's explicit
+profile through shared read_configuration. They no longer call CLI configuration
+setup to inspect settings. The real-profile regression test forbids that old loader,
+checks non-default settings, and verifies unchanged bytes and directory contents.
+75 curator/backup/stream tests passed; shared Python quality gates passed. Provider
+credential resolution remains a runtime adapter and daemon lifetime remains separate.
+
+
+### Native curator background work belongs to the host
+
+Native command dispatch supplies its host worker registry to curator execution.
+A background review is admitted before review mutations and runs synchronously inside
+that owned worker, avoiding a nested untracked daemon. The full state/report pass
+remains counted after the initiating command returns. A deterministic gateway test
+blocks review completion, verifies shutdown refuses session disposal and subsequent
+review admission, then releases it and verifies cleanup can finish.
+
+118 native-command/curator tests and shared Python quality gates passed. This change
+establishes native host lifetime accounting; active curator agent interruption,
+failed child disposal and standalone CLI daemon ownership remain outstanding.
+
+The preceding integrated batch pushed at c5297474c with 31,257 Python tests passing
+and 148 skipped. Subsequent curator state and admission changes require a new full gate.
+
+
+### Curator state mutation rejects damaged inputs
+
+Curator state mutation now uses strict reads and validates both replacement and
+mutated state. Malformed JSON, invalid UTF-8, non-object roots, non-boolean paused
+values and invalid run counts cannot silently become default state and overwrite
+existing bytes. A review checks state before its first automatic skill mutation.
+Read-only compatibility inspection retains its existing default behavior.
+
+94 focused state/review/backup/command tests passed, including real review admission
+before skill mutation and invalid-publication preservation. Shared Python quality
+checks and all 49 import contracts passed. The previous integrated push is running;
+this increment still requires its full integrated gate.
+
+
+### Status does not disguise damaged curator state
+
+The user-facing curator status operation now opts into strict state reads. Corrupt
+JSON, non-object roots and invalid pause values produce a nonzero command result,
+not an ENABLED/default-state report. Native TUI dispatch propagates that failure
+through its existing error response while preserving file contents. The low-level
+compatibility reader remains tolerant for callers that explicitly need defaults.
+
+140 command, gateway and state tests passed, including native dispatch against an
+actual damaged state file. Shared Python quality checks and 49 import contracts
+passed. The primary push gate is still running on the earlier integrated batch.
+
+
+### Directory-wide strict tooling quality
+
+The full superforecasting_agent/tooling package now receives strict Ruff correctness
+and import-order checks, formatting checks, and warning-fatal type checks through
+the same local/CI development gate. New files inherit coverage automatically.
+Optional argument/return annotations now reflect existing None behavior; sandbox
+schema construction accepts its existing immutable-set input without an extra copy.
+GitHub App credential presence checks explicitly narrow each required value. Toolset
+demo consumers assert successful lookup before indexing optional results. Remaining
+changes normalize imports and formatting for the enforced package scope.
+
+369 tooling/cache/dispatch/toolset/code-execution/skill-hub/TUI ownership tests passed.
+Shared Python quality checks and all 49 import contracts passed. This broadens strict
+coverage without suppressions; inherited packages outside the scope remain separate.
+The previous primary integrated push is still running and is not evidence for this
+new increment.
+
+
+### Environment-line parsing separated from startup orchestration
+
+Environment repair now accepts its known-key catalog as an explicit input in the
+strict configuration package. The runtime wrapper supplies the existing credential
+catalog, preserving load/save compatibility and collision handling. This separates
+parsing from I/O and discovery without copying the catalog or removing sanitization.
+The attempted full loader move was reverted after inspection exposed that dependency;
+the forecast-to-runtime loader exception remains until catalog ownership is extracted.
+
+86 loader/credential tests, three on-load repair tests and three pure-parser fixtures
+passed. Shared Python quality gates and 49 import contracts passed. The curator host
+and state batch pushed successfully at 430c4a8b7; later state validation, strict tooling
+and parser changes require the next integrated full gate.
+
+
+### Shared built-in environment metadata
+
+Required/optional environment metadata and additional recognized key names now live
+in configuration/environment_catalog.py. Runtime configuration re-exports the same
+objects, preserving plugin metadata extensions and compatibility patches. The pure
+catalog imports without initializing runtime configuration. All three moved catalog
+expressions compare identically by AST to the previous source; no metadata entries
+changed. Developer guidance now points additions at the owning module.
+
+182 catalog/metadata/loader/credential tests passed (one existing skip). Shared Python
+quality checks and 49 import contracts passed. Dynamic platform-plugin discovery
+still belongs to runtime setup; loader extraction must preserve that extension path.
+
+
+### Platform environment metadata without runtime discovery
+
+Platform declaration parsing and manifest file loading now have separate owners in
+configuration/plugin_environment.py and storage/plugin_environment.py. Runtime setup
+retains its idempotent compatibility injector and built-in entries win. File scanning
+is deterministic; malformed YAML, non-object manifests and malformed declarations
+cannot terminate discovery for later plugins. No plugin implementation is imported.
+
+27 metadata/loader/sanitizer tests passed, including malformed-first/valid-later
+fixtures and built-in precedence. Shared Python quality gates and all 50 import
+contracts passed. This supplies the remaining independent metadata reader needed
+for startup-loader extraction; the loader itself still uses its runtime path.
+
+
+### Startup environment loading is independent
+
+startup_environment.py now owns profile/project dotenv precedence, credential
+sanitization and credential-origin metadata. It uses the shared line parser, built-in
+catalog and platform-manifest reader without importing runtime configuration or
+executing plugins. The runtime env_loader path aliases the same module, preserving
+mutable warning/origin state and existing patch seams. The standalone forecast CLI
+uses the shared owner, removing its domain-to-runtime import exception (three remain).
+
+89 loader/credential tests passed, followed by 417 forecast CLI, metadata and startup
+owner tests (one existing skip). A fresh subprocess loads and repairs a plugin-defined
+credential while proving runtime configuration stays unimported. Shared quality
+checks and all 51 import contracts passed. The primary checkout is still running
+the prior batch's push gate; this extraction awaits integrated qualification.
+
+
+### Startup repair shares credential writer locking
+
+Startup dotenv repair now holds the same cross-process/path-aware lock as credential
+updates across its complete read/repair/replace sequence. The regression pauses repair
+after reading, writes a new credential concurrently through the real runtime writer,
+and confirms both repaired entries and the new key survive. Previously the stale
+repair could overwrite that intervening write.
+
+35 loader/repair/configuration-writer tests passed, followed by three startup-owner
+tests after test-environment cleanup was tightened. Shared Python quality checks and
+all 51 import contracts passed. The preceding integrated batch pushed at 22e3f6445;
+environment metadata/startup extraction and this lock fix await their next full gate.
+
+
+### Plugin policy reads and command conflicts use shared owners
+
+Plugin enable/disable reads now use explicit-profile storage and shared nested lookup.
+Command registration checks the application command catalog directly, including
+aliases, without importing the classic command registry. The remaining runtime plugin
+manager still owns discovery and execution; this removes its configuration/command
+prerequisites before that ownership extraction.
+
+150 plugin, malformed-manifest, command and shared-owner tests passed. New tests make
+the legacy CLI loader/registry unavailable while verifying configured policy and
+built-in alias protection. Shared Python quality gates and 51 import contracts passed.
+The startup batch's full push gate remains running in the primary checkout.
+
+### Plugin declaration ownership
+
+- `configuration/plugin_manifest.py` now owns the manifest type and decoded
+  declaration validation independently of filesystem access, registration and
+  plugin execution. The runtime manager retains discovery, diagnostic logging
+  and legacy source-text routing, and re-exports the identical manifest type.
+- Invalid names, declaration containers and declaration entries fail before
+  registration; unknown kinds retain the conservative standalone fallback.
+  All shipped plugin.yaml manifests satisfy the contract.
+- Verification: 159 plugin/parser/command tests passed; an additional shipped
+  manifest contract run passed (14 tests). Shared Python quality gates passed,
+  including strict configuration coverage and all 51 import contracts.
+- This is a declaration boundary, not completion of plugin runtime ownership.
+
+### Plugin manifest storage boundary
+
+- `storage/plugin_manifests.py` owns YAML reading and legacy provider routing
+  without importing plugin implementations or runtime modules. The manager
+  retains discovery failure handling, debug diagnostics and registration.
+- Source-text routing now reads only the documented first 8192 characters,
+  instead of loading the whole implementation before slicing. Explicit kinds
+  override heuristic routing. Missing/unreadable implementation text preserves
+  standalone routing.
+- The storage owner is included in strict lint/format/type coverage and the
+  transitive metadata import contract. Fresh-process tests prove importing it
+  does not initialize the agent, runtime or TUI.
+- Verification: 165 plugin/command/declaration tests passed; shared Python gates
+  passed with all 51 contracts. This does not remove runtime discovery's remaining
+  domain import exceptions.
+
+### Shared plugin activation policy
+
+- `application/plugins.py` owns activation decisions: explicit disable overrides,
+  bundled defaults, user/project/extension opt-in and delegated provider loading.
+  The runtime manager executes the decision and retains registration state.
+- Model-provider availability remains distinct from execution by the general
+  loader. Exclusive providers retain their separate category selection path.
+  Existing reasons, legacy bare-name matching and bundled defaults are preserved.
+- Verification: 203 focused tests passed, including disable precedence across
+  every source/kind, opt-in requirements and delegated loader behavior. Shared
+  Python quality gates passed; application directory strict checks and import
+  contracts automatically cover the new owner.
+
+### Shared browser endpoint policy
+
+- `configuration/browser.py` owns CDP defaults, endpoint validation and
+  normalization, consumed by classic CLI and TUI browser management. Legacy
+  browser-connect constants remain re-exported for compatibility.
+- Local discovery aliases now normalize consistently in both products; concrete
+  WebSocket endpoint paths and query parameters retain their identity. Invalid
+  bracket/port/type inputs fail before browser cleanup; port zero is rejected.
+- Verification: 54 browser/CLI/gateway checks passed, including actual CLI alias
+  connection and invalid-input preservation of the existing connection. Shared
+  Python quality gates passed with all 51 import contracts.
+- Browser resource cleanup and connection orchestration still have separate
+  adapters; this change does not establish shared resource ownership for them.
+
+### Browser supervisor lifecycle ownership
+
+- The supervisor registry now admits only one lifecycle mutation per task while
+  allowing unrelated tasks to progress. It retains exact handles until stop
+  succeeds, owns new handles before startup, and retains failed-start handles
+  when their cleanup also fails. Concurrent starts can no longer overwrite a
+  supervisor or publish over a shutdown operation.
+- `stop_all` attempts every captured handle, preserves failures for retry and
+  checks identity before stopping so a later replacement survives. A supervisor
+  whose thread misses its stop deadline raises instead of marking itself inactive.
+- Verification: 17 deterministic ownership/healthcheck/browser-cleanup tests
+  passed; the process completed teardown with exit 0. Shared Python quality gates
+  passed. No real browser or external provider was used for this evidence.
+- Remaining browser work: session/recording/cloud-provider resource ownership and
+  propagation of cleanup failures through browser connect/disconnect adapters.
+  The registry fix alone does not establish truthful end-to-end disconnect state.
+
+### Browser endpoint transition and failure reporting
+
+- `hosting/browser_connection.py` now owns serialized endpoint transitions for
+  CLI and TUI. Both adapters drain before publishing the process override and
+  drain again afterward. A first-pass failure preserves the old setting; a
+  second-pass failure explicitly reports incomplete cleanup with the new desired
+  setting still visible. The lock serializes commands, not browser tool calls.
+- `cleanup_all_browsers` no longer suppresses supervisor shutdown failures;
+  only absence of the optional supervisor dependency is tolerated. Both
+  connection consumers report errors rather than successful disconnect when
+  supervisor cleanup fails. The CLI also probes a replacement endpoint before
+  starting destructive cleanup of the old browser resources.
+- Verification: 75 focused host/browser/CLI/TUI/supervisor tests passed. Real
+  cleanup-to-consumer tests injected a supervisor failure, proved both consumers
+  reported it and preserved the prior endpoint. Shared Python quality gates passed.
+- Remaining: per-session browser/recording/cloud cleanup ownership, concurrent
+  tool admission during an endpoint transition, and disconnect semantics when
+  a persistent config endpoint remains after the process override is removed.
+
+### Persistent browser endpoint disconnect semantics
+
+- The shared browser endpoint reader now distinguishes an absent process override
+  (inherit `browser.cdp_url`) from an explicit empty override (CDP disabled).
+  Disconnect publishes the empty override; connect replaces it. Saved profile
+  configuration remains unchanged, and startup without the override inherits it.
+- CLI status/commands, TUI status and browser tools consult the same read-only
+  endpoint selection. Profile reads use the independent configuration storage
+  owner. CLI disconnect retries cleanup even after an earlier attempt published
+  the disconnected state but failed its second cleanup pass.
+- Verification: 91 browser/CLI/TUI/CDP tests passed, including real isolated
+  profile disconnect, status/tool agreement, reconnect and unchanged config
+  bytes for both interfaces. Shared Python gates passed. Generated references
+  and the browser guide were refreshed with the explicit-empty semantics.
+- Remaining: task admission during process-wide transitions and exact ownership
+  for browser sessions, recordings and cloud resources.
+
+### Browser replacement tracking during cleanup
+
+- Recording-stop requests now use the same captured browser session handle as
+  the close request. Completion removes recording/session/activity tracking only
+  when the captured resource still owns that task entry. The last-active routing
+  pointer is preserved when a replacement primary or sidecar remains live.
+- A deterministic regression publishes a replacement while the old recording
+  stop is in flight and proves both cleanup commands target the old handle while
+  all replacement tracking survives. Hybrid-cleanup fakes now perform the actual
+  removal they previously only claimed to simulate.
+- Verification: 55 cleanup/recording/hybrid tests passed; shared Python quality
+  gates passed. This fixes delayed completion ownership, not admission across
+  all browser operations or cloud-provider disposal failure recovery.
+
+### Integrated plugin branding gate repair
+
+- The full push gate stopped on the branding test's stale assumption that
+  activation guidance still lives in runtime/plugins.py (31,373 tests passed,
+  one failed). The test now includes the shared application policy source while
+  retaining all required native wording and forbidden compatibility-brand checks.
+- Focused metadata/plugin/connection/replacement verification: 207 passed,
+  one skipped. This is not a successful full-suite or push claim.
+
+### Browser session creation admission
+
+- Reproduced duplicate cloud allocation for concurrent callers of one task: the
+  old cache double-check returned the winner but discarded the other allocated
+  resource without disposal. The new `hosting/browser_sessions.py` owner admits
+  one allocation per task, with cache recheck after waiting. Unrelated task
+  allocations remain independent; failed attempts release admission for retry.
+- Deterministic tests blocked one provider allocation, started a second caller,
+  and completed a different task before releasing the first. Before the fix this
+  allocated twice; afterward both callers receive the identical owned session.
+  Failed cloud plus failed local fallback can be retried successfully.
+- Verification: 36 creation/hybrid/CDP/cleanup tests passed; shared Python gates
+  passed, including automatic hosting strict coverage and import contracts.
+- This closes duplicate creation. It does not yet gate cleanup or process-wide
+  endpoint transitions against an allocation already in flight.
+
+### Browser allocation and cleanup coordination
+
+- Browser creation and task cleanup now share `browser_session_lifecycle`
+  admission. Primary and `::local` sidecar keys share a task group, so cleanup
+  waits for in-flight sidecar allocation before capturing resources to close.
+  Unrelated task groups remain independent.
+- A deterministic test holds sidecar creation inside the provider adapter,
+  requests parent cleanup, verifies cleanup has not returned early, then releases
+  allocation and proves the newly owned sidecar is closed and removed.
+- Verification: 31 creation/cleanup/hybrid/replacement tests passed; shared Python
+  quality gates passed. Endpoint-wide transitions and active browser commands
+  still need admission coordination; this change covers allocation and cleanup.
+
+### Exclusive browser endpoint transitions
+
+- The browser lifecycle owner now admits exclusive process-wide transitions.
+  Endpoint connect/disconnect and all-browser cleanup drain existing task
+  allocations/cleanup and block new ones until publication and cleanup complete.
+  Nested cleanup by the transition owner is supported; attempting to upgrade a
+  task operation into a global transition raises instead of deadlocking.
+- Deterministic tests hold an old operation, prove transition cleanup cannot run
+  early, then hold cleanup and prove a new task cannot enter until the new
+  endpoint is published. Failure-reporting and allocation tests remain green.
+- Verification: 40 host/transition/creation/cleanup/hybrid tests passed; shared
+  Python quality gates passed. Active browser commands still need admission;
+  current coverage establishes allocation/cleanup exclusion, not command exclusion.
+
+### Active agent-browser command admission
+
+- `_run_browser_command` now holds task lifecycle admission through process
+  completion, output parsing and fallback handling. Nested session lookup and
+  cleanup commands use the same reentrant owner; global endpoint transitions
+  wait until the admitted command finishes.
+- A deterministic test pauses the actual command runner at process wait with a
+  fake local process, starts an endpoint transition, proves cleanup has not run,
+  then releases the command and verifies success followed by endpoint publication.
+- Verification: 61 host/browser/creation/cleanup/hardening tests passed; shared
+  Python quality gates passed. AST comparison proves the existing command body
+  is unchanged inside the new admission scope.
+- Scope: agent-browser execution only. Direct CDP and Camofox paths and whole-tool
+  work outside the command runner still require lifecycle admission review.
+
+### Browser tool surface lifecycle admission
+
+- Added task lifecycle admission around ten public browser-tool operations,
+  twelve Camofox operations (including cleanup) and direct CDP execution. This
+  covers backend selection and result/tracking updates outside the subprocess
+  runner as well as direct-backend calls. Reentrant admission supports nested
+  tool/adapter calls within one task group.
+- AST checks verified all 23 existing bodies, including embedded script string
+  values, remain unchanged inside their admission scopes. Deterministic direct
+  CDP and Camofox tests pause a backend call and prove endpoint cleanup waits.
+- Verification: 117 browser/CDP/Camofox/hybrid/creation/transition/console/hardening
+  tests passed; shared Python quality gates passed. Provider-level disposal
+  failure semantics and browser-supervisor asynchronous maintenance remain
+  separate ownership concerns; this does not prove all runtime cleanup complete.
+
+### Camofox disposal ownership and truthful failures
+
+- `camofox_close` retains the exact tracked session until its remote delete
+  succeeds. Failure now returns `success: false, closed: false` with the error,
+  allowing a retry against the same remote identity; an already-completed close
+  remains a no-op. Removal checks handle identity before deleting local tracking.
+- Browser task cleanup validates the close result and propagates failures instead
+  of suppressing them and continuing as though disposal completed. Managed soft
+  cleanup retains its existing explicit persistence behavior.
+- Verification: 37 Camofox/cleanup/transition tests passed; shared Python quality
+  gates passed. Tests cover failed close, exact-identity retry, completed-close
+  idempotence, and failure propagation to the task cleanup owner.
+- Remaining: global cleanup must enumerate Camofox-only sessions, and cloud
+  browser provider disposal still needs equivalent exact-owner failure handling.
+
+### Global browser cleanup covers independently owned backends
+
+- Global cleanup now includes Camofox-only session keys, independent of the
+  currently selected mode. It attempts every task group and the supervisor
+  registry before reporting aggregate failure. Task cleanup likewise attempts
+  both primary and sidecar resources after an individual failure.
+- Camofox exposes read-only ownership queries so cleanup does not inspect or
+  create sessions through backend internals. Failed resources remain in their
+  owning registry; successful resources are removed even when a sibling fails.
+- Tests cover a failed Camofox primary alongside a healthy separate task or local
+  sidecar after switching away from Camofox mode. Both healthy resources and
+  supervisors still receive cleanup. Existing Camofox HTTP tests now isolate
+  their session registry so fake allocations cannot outlive their mocks.
+- Verification: 86 disposal/browser/host/transition/hybrid tests passed; shared
+  Python quality gates passed. Cloud-provider exact disposal ownership remains
+  unfinished; aggregate reporting does not fix failures suppressed by a backend.
+
+### Cloud browser provider identity and failed disposal
+
+- Cloud session allocation retains the creating provider instance. Cleanup uses
+  that instance, checks its boolean close result, and retains the session until
+  remote disposal is confirmed. Unknown provider ownership fails explicitly
+  instead of guessing from current configuration. Pending cleanup blocks reuse.
+- A confirmed cloud close is recorded on the retained handle, avoiding repeated
+  provider disposal if later local cleanup needs retry. Tracking is removed only
+  after the remaining cleanup path completes and only for the captured owner.
+- Verification: 39 cloud/creation/cleanup/hybrid/CDP/replacement tests passed;
+  shared Python quality gates passed. The regression changes provider selection,
+  forces close failure, proves no current-provider lookup occurs, rejects reuse,
+  and retries the original remote ID successfully.
+- Remaining: bundled providers still reread credentials/endpoint configuration
+  inside their close methods. Capturing the provider instance does not yet freeze
+  its account/endpoint provenance. Local daemon disposal also remains best effort.
+
+
+### Cloud browser disposal provenance
+
+Bundled Browserbase, Browser Use and Firecrawl allocations now return ordinary
+serializable metadata with a private disposer capturing the allocation endpoint
+and credentials. The dispatcher retains that disposer through failed-close retries;
+configuration changes cannot redirect normal disposal to another account. Legacy
+providers returning plain dictionaries retain creating-provider compatibility.
+Credentials are not added to metadata or JSON exports. Emergency bulk cleanup
+and malformed allocation responses remain separate audit paths.
+
+Validation: 49 focused provider, managed-gateway, creation and disposal tests
+passed; shared Python lint/format/type, protocol and all 51 import contracts passed.
+Fixtures mutate credentials, endpoint and project after allocation and verify
+that disposal still targets the original identity.
+
+
+### Browser task lock ordering
+
+The shared browser lifetime owner now rejects nested acquisition of a different
+task outside an exclusive endpoint transition. Unordered cross-task locking could
+otherwise deadlock against another operation or a waiting endpoint transition.
+Same-task helpers remain reentrant, and exclusive cleanup can acquire multiple
+tasks. A rejection leaves no admission state behind. Fifteen focused admission,
+allocation and disposal tests passed, including explicit rejection and subsequent
+per-task/global reuse.
+
+
+### Shared goal command application operation
+
+CLI, messaging gateway and native TUI now invoke `application.goals.execute_goal`
+for status/set/pause/resume/clear and compatibility aliases. Parsing and manager
+mutation have one owner; immutable returned snapshots prevent subsequent manager
+changes from altering an already-produced result. Presentation, localization,
+continuation queue cleanup and initial prompt delivery remain with each adapter.
+The operation propagates failed writes instead of replaying them. Existing
+consumer tests and new SQLite-backed transitions verify persistence, aliases,
+result isolation and classic CLI kickoff behavior.
+
+Validation: 39 focused application/CLI/TUI/gateway tests passed; shared Python
+quality gates passed with all 51 import contracts intact.
+
+
+### Goal and subgoal dependency enforcement
+
+Subgoal validation and dispatch now share the goal application owner, using a
+structural manager port rather than importing GoalManager. CLI, messaging and
+native TUI import this owner directly; the old runtime path preserves function
+identity as a compatibility alias. A dedicated transitive contract prohibits
+implementation imports from the shared goal command owner.
+
+Validation: 91 focused SQLite-backed application, goal-manager, TUI and gateway
+tests passed; shared quality checks passed with 52 import contracts. Invalid
+subgoal indices/clear arguments preserve stored criteria and compatibility
+imports resolve to the same operation.
+
+
+### Shared goal budget configuration
+
+Four CLI/gateway/TUI budget readers now delegate to a pure configuration owner.
+The prior integer coercion accepted booleans and truncated fractional values.
+Configured budgets now require positive integers or integer strings; malformed
+settings retain the established default of 20. Runtime exports the shared default
+for compatibility. Loaders retain their acquisition/failure policy; saved profiles
+and stored goal records are untouched.
+
+Validation: 124 focused configuration/application/CLI/gateway/TUI tests passed,
+including malformed settings through real native TUI dispatch. Shared Python
+quality gates passed with all 52 import contracts.
+
+
+### Backend worker startup ownership
+
+Detached jobs now launch `superforecasting_agent.worker`, which owns plugin
+startup before domain execution. The old module command forwards for compatibility.
+The new entrypoint has strict lint/format/type coverage, and its migration removes
+one frozen forecasting-to-runtime exception. Discovery failures retain diagnostics
+instead of silently disappearing. The installed-profile verifier now checks that
+the backend worker entrypoint is present without requiring terminal dependencies.
+
+Validation: 44 focused entrypoint, detached-launcher, real warnings-job and
+reforecast tests passed. Shared Python quality gates passed with 52 contracts.
+The new installed-artifact check is added but has not yet run on a rebuilt wheel.
+
+
+### Installed backend worker and distribution qualification
+
+Built backend and terminal wheels from `6337ab6ac` into
+`/tmp/forecast-worker-profile-artifacts`. Strengthened the installed verifier to
+create a durable warnings dry-run job, execute the backend worker in a separate
+process and read back its completed state. Verification runs outside the checkout
+with Node absent from the backend PATH.
+
+The verifier completed with exit 0 on macOS Python 3.11.15. Upgrade from retained
+0.21.2 to candidate 0.22.0 preserved question, probability history, evidence,
+Unicode session and configuration. Worker execution, numerical fallback, forecast
+create/update/resolve/score, independent local and authenticated localhost remote
+Ink, optional web installation and clean host termination passed. These are local
+artifact qualifications, not publication or native Windows/Termux evidence.
+
+SHA-256:
+- Backend: `063472fa70f4738bc7fa17145c8226834752e3a54e7a9bd7a132dc0166fcab9d`
+- Terminal: `120714c254f5dcce02da01d7627b0e7d5b287ba8efd16cdca93d7d55e64e15a8`
+- Prior backend: `09c3ec93d5dec5e26353922c2162f50d5702e4c5264a846643470c9fa4abfaca`
+
+Evidence: `/tmp/forecast-worker-profile-build.log` and
+`/tmp/forecast-worker-profile-execution.log`. Shared Python quality gates also
+passed after the verifier change.
+
+
+### Learning-command compatibility handoff
+
+The legacy `slash.exec` path omitted `/learn` from commands whose input must be
+delivered to the live session. It could construct an unnecessary agent and classic
+worker, then enqueue the learning prompt where no input reader consumes it. The
+command now hands off before execution to the existing native `command.dispatch`
+operation. Both empty and explicit learning requests retain their exact prompt.
+
+The new regression first failed on unexpected agent construction in both cases.
+After the fix, all 178 configured-command/protocol tests passed. Modern clients
+already use native dispatch first; this closes the older-client entry path.
+
+
+### Durable desk test observes rendered state
+
+The integrated push gate failed one real desk test after 31,431 other passes.
+It waited for `TODAY` in newly emitted PTY bytes after pager dismissal. Ink emits
+screen differences, so an unchanged heading need not appear in a later frame.
+Reusing the existing tested VTScreen emulator preserves cursor movement, erased
+text and unchanged rows between waits. The first screen-aware run also showed
+that `TODAY` remains visible behind the pager: the next command must wait for
+the pager hint to disappear, not only for the landing heading to be present.
+
+The corrected test checks rendered pager dismissal before sending each command;
+a deterministic frame fixture proves unchanged rows survive and erased text does
+not. Raw byte returns remain unchanged for reconnect cursor accounting. Diagnostics
+now include the rendered screen. No production timeout or test deadline changed.
+All 22 real desk lifecycle and VT emulator tests passed in 10.04 seconds. This
+fixes an invalid test observation boundary; it does not attribute the historical
+native SSL incident.
+
+
+### Provider/model syntax parity
+
+Quorum parsing previously retained alias prefixes such as `glm`, so connected
+canonical `zai` credentials could be rejected during panel validation. It also
+parsed `custom:local:model` as provider `custom`, model `local:model`, unlike the
+interactive picker. A shared pure configuration parser now normalizes aliases
+and preserves named endpoint identity for both consumers. Colon-containing model
+IDs, URLs and existing incomplete custom syntax retain interactive compatibility.
+Credential/known-provider catalog discovery remains outside this parser.
+
+Four new cases failed before the fix. After extraction, 208 focused syntax, model
+validation and quorum tests passed, including one- and two-turn agent construction
+receiving the named endpoint and bare model separately. Shared Python quality
+gates passed with 52 contracts.
+
+
+### Pinned provider preflight matches execution
+
+An unconditional aggregator shortcut accepted explicit `anthropic:model` pins
+with only OpenRouter connected, although execution requests Anthropic directly.
+Preflight also counted explicitly unauthenticated supplied catalog rows. Removed
+the shortcut for pinned validation and now honor explicit authentication flags.
+Unprefixed IDs retain automatic routing; legacy already-authenticated ID-only
+inputs remain supported. Exact named custom identities cannot be substituted by
+an anonymous custom endpoint.
+
+Four regressions failed before the fix; all 132 focused parser/quorum/default
+configuration tests passed afterward. The previous aggregator test now asserts
+actual supported routing: unprefixed models or explicit aggregator-prefixed IDs.
+
+
+### Quorum agent lifetime
+
+Panel calls built agents without closing them. Shared scoped construction now
+closes after a successful/failed call or the complete blind/reconcile pair. It
+uses the owning worker thread, so a timeout never disposes resources underneath
+an active model call; when the call eventually exits, cleanup runs. Close errors
+propagate with the original conversation exception as context. Lightweight
+injected agents lacking a close method remain compatible.
+
+Eight cleanup regressions failed before the change. Afterward 99 focused runner,
+provider syntax and quorum tests passed, including timeout ownership and cleanup
+error context. The agent factory now joins strict lint/format/type scope, and all
+52 import contracts pass. This establishes normal scoped cleanup, not forced
+cancellation or retry ownership for a close that itself fails.
+
+
+### Command-test module patch identity
+
+The integrated gate stopped with 19 failures and 5 setup errors in command tests
+after 31,420 passes. The failures were dotted monkeypatch lookups: cached agent
+submodules existed, but the parent package lacked their attributes. A direct
+fixture reproduced the exact failure by retaining `agent.skill_commands` in the
+module cache and removing only the package attribute. Normal import still returns
+the module, whereas dotted getattr-based patch resolution fails.
+
+Affected patches now target `import_module(...)` results, matching production
+imports without repairing or hiding package state. The originating full-suite
+package mutation is not conclusively attributed; the former candidate ordering
+(browser-provider tests followed by command tests) passed in isolation. The new
+regression failed before the patch change; all 128 command/provider tests passed
+afterward. No production module loading behavior changed.
+
+
+### Restore staging and truthful completion
+
+Quick restore previously copied/published each member in turn, swallowed errors,
+and returned true when any file succeeded. A later failed copy could change
+configuration while leaving authentication/state behind and still report success.
+Restore now stages and fsyncs all copies before publishing any destination. Copy
+errors propagate without modifying live files; publication failures report the
+failed member and confirmed progress, including uncertainty if replacement
+succeeded before a durability error. Temporary copies are cleaned on exit.
+
+Two new regressions failed before the change. All 253 snapshot integrity, backup
+and command tests passed afterward; shared Python gates passed with 52 contracts.
+This is preparation for live restoration, not a cross-file crash transaction.
+Durable recovery records and host-wide quiescence remain necessary; TUI restore
+remains blocked until those are implemented.
+
+
+### Journaled snapshot recovery
+
+Restore now records its staged copies and SHA-256 digests before publication.
+Publication errors retain those exact copies; a new restore cannot overwrite a
+pending journal. Recovery validates every member before writing and can roll
+forward without retaining the source snapshot. A completed journal distinguishes
+unfinished cleanup from unfinished publication, so cleanup retries do not overwrite
+subsequent profile changes. Publication copies have journal-derived names for
+reclamation after abrupt death. POSIX directory entries are synced in publication
+order; Windows currently has process-interruption recovery only, with no power-loss
+durability claim.
+
+The storage API is `recover_quick_snapshot_restore(home)`. It serializes restores,
+not all profile writers: callers must quiesce writers before restore or recovery.
+Live TUI restoration remains disabled pending host coordination. This provides
+recoverable roll-forward, not an atomic cross-file transaction or live SQLite swap.
+
+All 151 snapshot integrity/recovery and backup tests passed. Four subprocess tests
+terminate via `os._exit` before/after file publication and the completion marker,
+remove the source snapshot, then recover in another process. Further tests cover
+corrupt/missing/symlink copies, malformed journals, duplicate members, pending
+restore admission and interrupted cleanup. Shared Python quality gates passed
+with all 52 import contracts. Physical power loss and other platform behavior
+were not tested by these subprocess cases.
+
+
+### Storage-owned turn receipts and host-owned finalization
+
+Durable receipt persistence moved from `tui_gateway.turn_journal` into
+`superforecasting_agent.storage.turns`, with strict lint/format/type coverage and
+an enforced transitive import boundary. Gateway consumers now import storage;
+the former module only re-exports the public compatibility functions. Existing
+`tui_turns` table/index/trigger names and saved rows remain compatible.
+
+RuntimeHost now marks drained in-flight receipts interrupted before asking an
+adapter to dispose sessions. The transport no longer owns that state transition.
+Persistence failure or a missing owned store keeps shutdown incomplete and retains
+the session for retry. Completed/error receipts remain unchanged. This does not
+yet provide profile-wide restoration admission or cross-process writer exclusion.
+
+All 31 host/turn-journal/worker-ownership tests passed, including transport-free
+SQLite shutdown, failed writes, missing stores, terminal-receipt preservation and
+compatibility function identity. Shared Python gates passed with 53 import
+contracts. The preceding snapshot batch push remains in its existing full-suite
+gate; this extraction was developed in the isolated worktree.
+
+
+### Reject implicit runtime session replacement
+
+SessionRegistry.register rejected collisions, but mapping assignment only guarded
+a currently retiring session. Assigning a different object could silently detach
+an idle resource owner, an active build or a failed cleanup handle. Assignment
+now rejects any different existing owner; identical-object assignment remains
+idempotent, and an identifier can be reused after explicit retirement succeeds.
+
+Four new regressions failed before the fix. All 81 registry/build/branch/protocol
+tests passed afterward. This closes replacement admission, not raw mapping removal:
+inherited fixtures still use pop/clear and need migration before those bypasses
+can be removed from the owner API.
+
+
+### Explicit registry retirement and fixture ownership
+
+SessionRegistry now implements Mapping with collision-safe assignment, rather than
+MutableMapping. Generic pop/clear/popitem/update and direct deletion cannot detach
+an owned session. Production consumers already use register/retire. Inherited test
+cleanup now stops notification polling, observes worker quiescence and invokes
+shared resource disposal through retirement. Fixtures no longer rely on unowned
+mapping removal. Tests that patched mapping entries now register their test owner.
+
+The broader run exposed a provider fixture patching a stale parent-package module
+attribute rather than the module used by the factory's direct import. A deterministic
+regression reproduced the missed patch; the fixture now targets import_module's
+identity. The origin of the stale parent attribute remains unattributed.
+
+All 749 gateway, registry, worker, build, auth, lazy-session and session-toggle tests
+passed. Shared Python quality gates passed with 53 contracts. The preceding snapshot
+push failed one development-hook test (31,488 passed): an unexpected untracked file
+masked its intended second-ref rejection. That test's 11-test module passed in
+isolation; the historical file identity was not available from the retained output.
+
+
+### Actionable checkout-gate diagnostics
+
+The snapshot gate now names up to ten untracked paths using escaped representations
+and reports any remaining count. Its refusal policy is unchanged. The multi-ref
+hook regression includes fixture git status on assertion failure so a recurring
+unexpected file can be identified. All 11 development-workflow tests passed;
+this adds diagnostic evidence, not a claim to have attributed the earlier failure.
+
+
+### Explicit ownership for market conversation agents
+
+Live market forecasting previously leaked agents: fresh-per-call instances were
+never closed, and the cached sequential agent had no close API. AgentConversations
+now owns construction handles, admitted calls and disposal independently of forecast
+or presentation code. Fresh instances close after call success or failure. Cached
+instances are serialized and close at batch end. Close rejects active/queued work,
+blocks new admission and retains failed handles for retry; successful closes are
+not repeated. Minimal injected agents without a close method remain supported.
+
+The returned forecaster remains callable and exposes close(); the CLI calls it in
+finally after record_pending. It preserves provider/forecast failure handling and
+probability parsing. This does not change the pre-existing timeout argument, which
+still has no execution-deadline enforcement and is recorded in TODO.
+
+All 63 conversation-owner, live-market, model-lookup and CLI tests passed. They cover
+success/failure disposal, active-call close rejection, exact failed-handle retries,
+reused-agent release and CLI cleanup after ledger failure. Shared Python gates pass
+with 54 contracts, including a transitive boundary around the new strict owner.
+
+
+### Shared agent execution-budget interpretation
+
+TUI initialization previously coerced fractions/booleans with int() and raised on
+malformed strings; the classic CLI could pass raw strings or invalid numbers to
+agent construction. A pure configuration owner now selects a valid positive whole
+number from explicit override, nested agent configuration, legacy root value and
+caller-owned fallback. Numeric strings remain supported. Configuration normalization,
+classic CLI startup, TUI startup and gateway iteration environment mirrors use it.
+
+The classic CLI preserves its legacy environment fallback only when no valid
+configured budget exists; it does not reread fallback configuration when a captured
+budget is usable. TUI environment precedence and the gateway's rule that missing
+config leaves legacy environment values alone remain intact. The new file receives
+strict checks automatically through directory-wide configuration coverage.
+
+All 342 focused tests passed, including real classic-CLI construction, malformed
+values/sections, TUI parity, configuration migration and subprocess gateway import
+with stale environment values. Shared Python gates passed with 54 contracts.
+
+
+### Shared retry preparation across CLI, TUI and messaging
+
+Three retry implementations selected and altered history independently. A pure
+application operation now validates the last user request and returns a detached
+message/history plan. The CLI preserves structured content, refuses empty/invalid
+requests before removing history, and no longer formats a list as a string slice.
+Text-only transports reject unsupported attachments rather than silently dropping
+them. TUI preparation and history/version replacement occur under one history lock.
+Messaging persists the prepared prefix before resetting token accounting or sending.
+
+All 137 retry/command tests passed, including empty content, attachment preservation,
+plan isolation, TUI version updates and gateway rewrite failure preventing resend.
+Shared Python gates passed with 55 contracts; the retry operation has a transitive
+boundary forbidding storage, runtime and presentation imports. This preserves the
+existing commit-then-send flow; crash-safe retry delivery after a committed history
+change is not established by these tests, and attachment replay in text-only
+transports still requires a future transport capability.
+
+
+### Submission callbacks retain their originating TUI session
+
+useSubmission previously captured a session for file detection, then reread the
+current session when detection completed. Switching sessions during that request
+could submit the original file text into the replacement session. A late prompt
+failure could also queue text or reset busy/status state in a different session.
+The send operation now captures its session once and checks it before submission,
+file activity and error handling. Detection failure uses the same guarded fallback.
+
+Four regressions failed before the fix. All seven submission/session-state checks
+passed afterward, including normal same-session file submission and busy queueing.
+The tests drive the real hook's deferred callbacks with mocked React hook plumbing;
+they do not claim a rendered terminal or network lifecycle exercise. Full shared
+Python/TypeScript quality gates and the production TUI build passed. The scoped
+design detector reported no findings; no visual layout changed. A session switch
+invalidates the delayed submission rather than sending it into another session;
+this change does not introduce durable draft recovery for that unsent input.
+
+
+### Session ownership for shell, interpolation and steering callbacks
+
+The remaining deferred submission paths had the same cross-session failure: shell
+completion could append output and clear a replacement session's busy state,
+interpolation could submit there, and failed steering could enqueue an old note.
+Each callback now checks its originating session before changing presentation or
+queue state. Same-session behavior is preserved. This does not cancel an already
+running shell command or introduce durable draft recovery.
+
+Five regressions failed before the fix. All 15 focused submission/state tests pass,
+including successful same-session shell, interpolation and steering fallback paths.
+Full shared quality checks passed with 55 import contracts, and the production TUI
+build passed. These are deferred-callback tests with mocked hook plumbing, not a
+rendered terminal or network recovery qualification.
+
+
+### Shared complete-exchange undo and retry regression reconciliation
+
+CLI, messaging and TUI now prepare undo through a pure application owner. It
+removes everything from the last user note onward, preserves history with no user
+note, and returns a detached prefix and structured-content-safe preview. Messaging
+updates token accounting only after persistence succeeds. The TUI no longer builds
+an agent to undo history; its running check and history mutation share the prompt
+admission lock. The existing TUI in-memory persistence behavior is unchanged.
+
+All 431 combined command, retry, undo and gateway tests passed, including a
+lock-admission race, orphan history, intervening system messages, long structured
+notes and failed durable writes. Strict application checks and the transitive
+history-preparation import contract cover the new owner.
+
+The previous push gate failed on two outdated retry expectations (empty-history
+wording and stripping an image). Tests now assert the shared error and unchanged
+attachment-bearing history. A separate combined run reproduced a stale agent-factory
+mock: the CLI fixture restored the entire sys.modules dictionary after importing
+new child modules, leaving parent attributes behind. It now restores only its
+prompt-toolkit stubs; the combined test run passes without weakening provider
+validation. This finding does not attribute the historical SSL or SQLite incidents.
+
+
+### Host-owned initialization completion and partial-agent retention
+
+Deferred construction now completes through hosting.builds.execute_build. The
+host publishes the exact constructed agent before adapter initialization, retains
+it on setup failure, records the original failure even if transport reporting
+fails, and always signals readiness. Registry admission already prevents retirement
+while a build is queued or executing; the gateway's duplicate abandoned-agent
+cleanup was removed. Construction, callback wiring and protocol notices remain
+adapter responsibilities. This does not claim to extract provider-specific agent
+construction or failures internal to constructors before they return an object.
+
+All 252 focused build, registry and gateway tests passed. Deterministic cases cover
+queued and initializing retirement rejection, constructor failure, setup failure,
+KeyboardInterrupt, broken error transport and retained handles for existing retry
+cleanup. Shared quality gates passed with 55 import contracts; hosting remains
+under directory-wide strict lint, formatting and type checks.
+
+
+### Construction context cleanup cannot lose the returned agent
+
+The gateway previously returned the new agent only after clearing its session
+context in a finally block. A context-reset failure could therefore lose a
+successfully constructed agent before host ownership began. The host build service
+now accepts a construction scope and attaches the returned handle before that
+scope exits. Adapter initialization still runs after scope cleanup; failure leaves
+the agent and error available to the existing cleanup/retry operation.
+
+The 253 build/registry/gateway tests passed, followed by all 12 focused build tests
+including a gateway-level injected context-reset failure. Shared quality gates
+passed with 55 contracts. Constructor-internal allocations that fail before an
+agent is returned still require their own constructor cleanup; this change does
+not claim to handle those allocations or attribute historical native crashes.
+
+
+### Directory-wide storage quality enforcement
+
+The shared development gate now checks the storage directory rather than eight
+selected storage files. All 25 modules, including new files added later, receive
+blocking lint, formatting and type checks through the same local/CI command.
+The audit found 12 lint issues and 33 type diagnostics. Optional parameters now
+accurately include None; compatibility exports remain explicit reexports; the
+YAML representer keeps its base-class keyword parameter; file-mode restoration
+accepts both path types it actually receives. A closed connection now returns
+before attempting a best-effort checkpoint. Windows locking has a small explicit
+module protocol so its required operations can be checked on the macOS host.
+
+All 321 focused storage, SQLite lifecycle and development-gate tests passed, as
+did the shared quality gates with 55 import contracts. Formatting accounts for
+most of the diff. These checks do not establish native Windows execution, and
+inherited unannotated storage methods still limit static analysis precision;
+directory-wide enforcement is not a claim that all storage APIs are fully typed.
+
+
+### Native tool inventory display
+
+The bare /tools command no longer initializes an agent or classic CLI subprocess
+in the TUI. It reads the live session selection (including an explicitly empty
+selection), obtains tool definitions, and uses the same pure application formatter
+as the classic CLI. The existing pager/output response stays unchanged. Toolset
+configuration listing and mutation paths are not claimed migrated by this change.
+
+All 125 focused command/view tests passed, including forbidden worker/model build,
+selection preservation, tool grouping/order and description truncation. Shared
+quality checks passed with 55 contracts. No terminal rendering or live provider
+availability claim is made by these mocked inventory tests.
+
+
+### Native saved tool-configuration listing
+
+The TUI now serves /tools list directly from saved profile configuration. CLI and
+TUI use a shared view of built-in/plugin toolsets and MCP filters. Disabled MCP
+servers no longer report all tools enabled, and simultaneous include/exclude
+filters are both shown. Invalid filter shapes produce a specific validation error.
+Argument selection preserves the classic CLI's quoted subcommand and trailing
+argument behavior; read-only tool-display fallbacks no longer need its worker.
+
+All 147 focused application, RPC and CLI tool-configuration tests passed, along
+with shared quality gates. This lists saved configuration, not verified live MCP
+connectivity. Tool mutation and other legacy command paths remain separate work.
+
+
+### Shared tool-change validation and no-op preservation
+
+CLI and TUI now call one tool-selection edit operation. It validates action/target
+shape, applies platform restrictions in both interfaces, stages combined toolset
+and MCP changes in a detached copy, and reports whether configuration changed.
+Unknown/restricted targets, missing servers and unchanged MCP exclusions no longer
+trigger a save or session reset. Failed combined edits leave the caller's snapshot
+intact. Successful changes retain the existing persistence and reset adapters.
+
+All 165 focused CLI, application and RPC tests passed. Two older tests were updated
+to assert no write for an idempotent or invalid request, rather than expecting a
+redundant write. Shared quality gates passed. Successful TUI replacement still
+uses `_reset_session_agent`, whose direct replacement/admission requires a separate
+ownership fix; this batch does not establish safe reset during active execution.
+
+
+### Owned TUI tool-change reset
+
+Tool changes that would alter configuration now reserve the idle session through
+save and reset. Active calls/builds/background work reject admission before any
+save. Reset disposes the old agent and classic worker through the host cleanup
+owner, retaining failed steps. Reconstruction uses host build completion with its
+construction scope, and shared gateway initialization reinstalls callbacks and
+notifications. Notification polling starts after initialization reporting succeeds.
+History and attachment state are replaced only after successful reconstruction.
+
+All 259 focused build, reset, registry-related gateway and tool tests passed,
+including busy-before-save, disposal-before-construction, failed close retaining
+ownership and failed construction preserving history/error/readiness. Shared
+quality gates passed. The error distinguishes saved configuration from a failed
+active-session reset and directs close/recreate recovery. The save and reset are
+not one durable transaction; a rendered terminal recovery exercise remains needed.
+
+
+### Reset admission through the actual RPC dispatcher
+
+RPC-level success/failure tests caught the ordinary dispatcher use lease counting
+the reset request itself as active work. tools.configure now owns its replacement
+reservation, verifying session identity under the registry lock before saving.
+An expired session request cannot modify profile configuration. Busy admission
+retains the standard 4009 error; saved configuration followed by failed activation
+reports the partial outcome explicitly. Save failure leaves the old agent untouched.
+
+The expanded 261-test gateway/ownership run passed, followed by all nine reset
+RPC tests after preserving the busy error code. Shared quality checks passed.
+Tests reproduce retirement during configuration read, successful reset and save/
+construction failures through handle_request; they still do not substitute for
+rendered terminal recovery qualification.
+
+
+### Real terminal tool-reset recovery and composer clear fix
+
+The local desk harness now records fixture-agent creation/closure and supports a
+single injected reconstruction failure. New tests drive real Ink through the
+dashboard WebSocket/PTY and Python gateway, verify saved tool configuration and
+SQLite receipts, and complete another turn after successful reset or failed reset
+followed by a new session. The original agent is closed exactly once before recovery.
+
+This exercise exposed an input bug: the TextInput self-update flag treated a
+submit-time parent clear as an echo. Batched typing and submission could leave the
+submitted slash command in its internal buffer, turning the next /new into
+/tools disable web/new. Submission now forces reconciliation with the parent's
+controlled value even when that value is unchanged by the batch.
+
+All 10 local desk lifecycle tests passed on macOS, including existing auth/rate-limit/
+stream failure, cancellation and gateway reconnect cases. All 84 input/submission
+checks passed, along with shared quality gates and the production TUI build. The
+scoped design detector reported no findings. An initial test-observer rows/columns
+mistake was corrected, and wrapped error text is compared as normalized whitespace.
+These are local-provider macOS PTY results, not Windows/Termux or real-provider
+qualification; the dashboard transport is exercised through FastAPI TestClient.
+
+
+### Strict tool-change input boundary
+
+The tools.configure RPC previously stringified each name, while change_tools
+accepted a bare string as an iterable. Both now use one name validator in the
+tooling owner. It requires a nonempty list of nonempty strings, strips and
+deduplicates valid names, and rejects incomplete MCP server:tool targets. The
+RPC validates before configuration access or reset admission; non-string actions
+produce a validation error rather than an unhashable-type failure. Existing
+RPC action/name error codes are retained.
+
+All 129 focused CLI, MCP configuration, gateway configuration and reset ownership
+tests passed. Shared lint, format, type, import, protocol and TUI quality gates
+passed. Regressions assert malformed inputs do not load or save configuration or
+reset a session, and direct shared-operation calls preserve the input snapshot.
+This closes input coercion; it does not remove remaining classic worker commands.
+
+
+### Connected-panel policy separated from discovery
+
+forecasting.panel_selection now owns provider deduplication, aggregator handling,
+panel size, judge choice and self-fusion selection. The existing quorum adapter
+supplies a provider snapshot with native default IDs; the rules perform no
+credential lookup or model discovery. Explicitly unauthenticated or malformed
+authentication statuses no longer influence connected-panel selection, consistent
+with pinned-panel validation. Missing status remains compatible with existing
+authenticated-row callers. Credential presence is not proof of quota or model access.
+
+All 121 panel/quorum/autonomy tests passed, including blocked-discovery policy
+tests and adapter coverage proving unauthenticated rows trigger no default lookup.
+Python quality gates passed with strict coverage for the new owner and 56 enforced
+import contracts. The existing runtime dependency exception remains honest: the
+quorum discovery adapter still uses the runtime catalog and credential inventory.
+
+
+### Native background commands with session ownership
+
+The legacy slash.exec path previously ran /stop in a classic worker, then mirrored
+a global process kill in the gateway. This missed gateway-owned async delegations and could affect
+other sessions. Shared tooling background operations now serve classic CLI and
+native slash/dispatch handlers for /agents (/tasks alias) and /stop. No agent or
+classic worker is initialized. Process and delegation registries accept an exact
+session-key filter; None retains standalone process-wide behavior, while an empty
+key is not a wildcard. Hosted commands reject a missing owner. Inspection filters
+before refreshing detached process state.
+
+All 202 focused registry, command and ownership tests passed, including another
+session's work surviving stop, live-agent inspection, direct dispatch parity,
+standalone CLI scope and failed interruption reporting. Delegation interruption
+remains a signal: completion records retain their actual running status until the
+worker finishes. This is not a guarantee of forced termination or distributed
+cancellation. Python quality gates passed; the new owner is in directory-wide
+strict coverage and has a presentation/runtime import prohibition.
+
+
+### Verify and connect the actual Ink stop consumer
+
+Real-terminal verification exposed two client routes the RPC-only tests did not
+cover: /agents and /tasks open Ink's local dashboard, while /stop called the older
+process.stop RPC directly. Ink now sends /stop to the shared native slash operation
+and renders its result, including failed delegation interruptions. The older
+process.stop RPC now requires a session owner and kills only matching processes;
+older requests with no session fail closed. Its optional session_id field is
+recorded in the generated protocol.
+
+The corrected rendered stop test passed through real Ink, stdio gateway, dashboard
+WebSocket/PTY and SQLite, with classic worker construction forbidden. It verifies
+receipt preservation, no agent rebuild and another completed turn in the same
+session. All 68 focused RPC tests and 95 slash-handler tests passed. The prior
+10 local desk tests passed in the initial run; its new test failed because it
+incorrectly expected local /agents dashboards to be RPC pagers. A second observer
+expectation exposed the process.stop bypass before the implementation was fixed.
+These are macOS local-provider results. Registry tests cover active work isolation;
+the rendered test covers the no-running-work path. Dashboard-wide delegation
+inspection and pause/cancel scoping still require a separate audit.
+
+
+### Delegation dashboard session ownership
+
+Delegation status, pause and single-child interruption now require an admitted
+live session and select its durable owner. Nested child registration inherits
+the root owner rather than the child's generated session ID. Pause admission
+consults that owner, while an explicit global administrator pause continues to
+block every session. Invalid boolean pause values fail before mutation. Existing
+registry callers can retain global scope by omitting the new keyword; RPC callers
+without a session now fail closed.
+
+Ink's dashboard, slash pause controls and event-driven refresh supply the current
+session ID. Old-session status/pause replies cannot overwrite the current state,
+and a session handoff resets cached pause/caps. The protocol includes the new
+request fields. All 214 Python delegation/protocol tests and 162 client tests
+passed, as did shared quality gates and the production build. The scoped design
+detector completed without reported findings. Tests cover cross-session denial,
+scoped/global pause interaction, nested pause admission, boolean validation and
+client handoff state. A rendered nested-work/reconnect exercise remains; pause is
+in-memory and interruption is cooperative, not a forced-termination guarantee.
+
+
+### Rendered delegation pause and session handoff
+
+A new real-Ink test pauses one session, creates a new session, verifies the client
+no longer displays the previous pause, pauses/resumes the new session, and then
+completes a turn. The test fixture audits calls to the real pause implementation:
+its recorded owner keys prove that resuming the second session leaves the first
+session's pause intact. Classic worker construction is forbidden throughout.
+The test passed on macOS through the dashboard WebSocket/PTY, stdio gateway and
+SQLite; Python quality gates passed. This qualifies pause handoff, not rendered
+nested-child interruption or cross-platform reconnects.
+
+
+The first background-command push gate found a test-order capture dependency:
+the classic CLI's cached console writer emitted the expected text into pytest's
+outer capture, bypassing the new test's capsys stream. The ownership test now
+installs its own console sink. The gate reported 31,639 other Python tests passing
+and 572 TUI tests passing; it correctly blocked the push until this fixture fix
+and a fresh full gate.
+
+
+### Hosting owner for delegation control state
+
+Pause state and the active-child registry now live in hosting.delegations. Tool
+execution uses its registration/progress/retirement operations; existing exported
+control functions in delegate_tool remain compatibility imports. The gateway
+consumes the hosting controls directly. A transitive import contract prohibits
+tools, agent, runtime and presentation dependencies, with strict lint/format/types
+from the hosting directory. Runtime model construction and async execution remain
+in their existing owners; this extraction does not claim per-RuntimeHost registry
+instances or durable pause state.
+
+Registration refuses to replace a live record, and retirement requires the exact
+child handle. Registration is inside the child cleanup region, so a rejected
+collision releases the new child without removing or closing the original. Tests
+prove this path and stale retirement. The owner also validates boolean pause
+values independently of RPC validation. The 226-test delegation/protocol/real-desk
+run passed (including all 12 terminal cases), and 149 delegation/ownership tests
+passed after adding collision coverage. Shared Python gates passed with 58 import
+contracts. Child close failures are still handled by the existing tool execution
+cleanup; retained failed-close ownership remains an outstanding runtime task.
+
+
+### Retain delegated child cleanup failures
+
+Each delegated child now has a serialized cleanup handle. Failed closes and
+explicit False results retain the exact handle, session owner and diagnostic;
+success removes the live record only after disposal. Repeated calls on the same
+handle close once, and BaseException paths retain ownership before propagating.
+Completed model results remain available even when subsequent disposal fails.
+
+The shared /stop operation retries only retained failures belonging to its scope
+and reports remaining child IDs/errors. Session disposal also retries its own
+children and stays cleanup-pending until they finish, preserving completed parent
+cleanup steps. Session resource close returning False is now a failure too.
+
+The 171-test delegation/background/reset run and 42 host/registry/build tests
+passed; six focused cleanup tests passed after adding diagnostic text. Shared
+Python quality gates passed. This proves retained ownership for raised failures
+or explicit incomplete results, not that lower-level SDKs always report their
+cleanup failures truthfully. Process-death recovery of these in-memory handles
+and forced termination of hung closes are outside this evidence.
+
+
+### Native shared Skills Hub dispatch
+
+Remaining /skills slash commands call the existing runtime Skills Hub operations
+through a bounded, per-call Rich output buffer. CLI and TUI share dispatch;
+the TUI no longer constructs the classic worker for this path. Host command
+admission retains session ownership until completion. Nested update and snapshot
+import installs propagate non-interactive mode, avoiding stdin prompts in the
+transport process while retaining the existing security checks.
+
+Validation: 158 Python command/Skills Hub tests, 96 TUI command tests and a real
+Ink/dashboard PTY test passed. The real test forbids classic worker construction,
+checks unchanged agent lifetime and durable receipt, and completes a subsequent
+turn in the same session. Shared quality gates and the TUI build passed.
+Concurrent output-buffer isolation and nested confirmation propagation have
+regressions. This does not prove cancellation during synchronous hub I/O or
+network-provider behavior; install success accounting and quoted arguments remain
+explicit follow-ups.
+
+
+### Shared skill result and output correctness
+
+The native migration exposed snapshot export writing directly to process stdout,
+which is the gateway protocol channel. Export now writes to the supplied console
+sink, including raw JSON without Rich rendering. Shared slash parsing uses shlex
+and rejects malformed quoting before dispatch. Quoted paths work in both callers.
+
+Installation returns True only after installation completes, and False on handled
+rejection/cancellation paths. Batch update/import summaries count that result;
+structured TUI installation no longer unconditionally returns installed=True.
+The 178-test skills/command run and shared quality checks passed. Regression
+coverage includes actual successful and security-blocked install paths, mixed
+batch results, malformed quoting, and no export leakage to global stdout.
+Network exceptions continue to propagate to the caller's existing error handling.
+
+
+### Native diagnostic dispatch and output ownership
+
+/debug now invokes the existing runtime report/share operation under host command
+admission without constructing an agent or classic worker. Existing defaults and
+redaction remain unchanged. Upload failure exit codes become RPC errors instead
+of terminating the transport. The debug and dump commands use request-local
+output routing; collecting a dump no longer replaces process stdout. Nested
+capture restores its enclosing sink and concurrent captures cannot intercept
+protocol output.
+
+The 208-test debug/dump/gateway/configured-command run passed. Shared quality gates
+passed with 58 import contracts. Native dispatch tests forbid worker/agent
+construction, assert admitted command ownership, and cover success/failure. Uploads
+were mocked; this is engineering evidence, not live paste-service verification.
+Network operations remain synchronous and this does not add mid-upload cancellation.
+
+
+### Atomic shared footer transitions
+
+The application footer operation owns inspection, validation and mutation for
+classic CLI and native TUI. Messaging gateway mutations call the same operation;
+its status retains effective platform reporting. Global toggles now read the
+latest global flag under the writer lock rather than toggling a stale snapshot
+or a platform-specific override. Invalid configuration fails before writes, and
+status on a missing profile does not create a file. The TUI no longer needs a
+classic worker for this command.
+
+164 focused command/footer tests and shared quality gates passed. Tests exercise
+concurrent toggles, malformed boolean configuration, read-only status, CLI/native
+TUI parity without worker construction, and gateway toggles with a platform
+override and deliberately stale reader snapshot. This configures the existing
+runtime metadata footer; it does not change Ink's distinct local status bar.
+
+
+### Preserve gateway ownership at handoff deadlines
+
+The handoff audit found that the CLI timeout unconditionally failed the session
+row, including running or completed transfers. That could enable a retry while
+the gateway still performed the original transfer. Storage now exposes atomic
+pending-only cancellation. Worker completion/failure require running state and
+cannot overwrite terminal results. The CLI uses a monotonic wait deadline and
+reports the durable result after its cancellation attempt; completion exits,
+running remains owned by the gateway, and only unclaimed work is cancelled.
+
+25 handoff/branch tests and shared quality gates passed. Tests cover competing
+claim/cancel operations, terminal preservation, rejected retries during running
+state, and CLI deadline messages without wall-clock sleeps. Existing handoff
+test fixtures now close their database handles. This is a prerequisite fix;
+native handoff command migration, attempt identity and recovery of a gateway that
+dies after claiming a handoff remain open.
+
+
+### Bind handoff transitions to an attempt
+
+Session schema v12 adds a handoff attempt ID. Requests generate an ID (or accept
+the initiating caller's ID), and claim, completion, failure and pending-only
+cancellation require it alongside the expected state. The gateway uses the ID
+from its pending-row snapshot throughout processing. The CLI retains its own ID
+and stops observing a replacement attempt rather than reporting its result as
+the original transfer. Legacy handoff rows receive IDs during migration; reopening
+the database preserves them.
+
+243 storage/handoff/branch tests and shared quality gates passed. Regression
+coverage includes stale claims and callbacks against a retry, migration/reopen
+identity, and the actual gateway watcher using an isolated database with a fake
+transfer operation. Historical schema fixtures remain at their original versions;
+post-migration assertions now expect v12. Native handoff admission and recovery of
+claimed work after gateway death remain unimplemented. This does not establish
+compatibility with simultaneously running older gateway code that lacks attempt
+checks.
+
+
+### Shared handoff observation and waiting
+
+`application.handoff` owns attempt-scoped observation and waiting with immutable
+results. It uses a monotonic finite deadline and an interruptible event wait.
+Local cancellation can cancel only the expected pending attempt; returned state
+is read after the transition, preserving a gateway claim that wins the race.
+Unknown or replaced attempts are surfaced without inferring success. The CLI
+consumes this service and no longer opens an implicit fallback SessionDB.
+
+250 storage/handoff/branch tests and shared quality gates passed. Cancellation
+and completion tests use real SQLite state with event-driven control and no
+wall-clock sleeps. Invalid or unbounded deadlines are rejected. Native TUI
+handoff still requires host admission and durable pending-state presentation;
+this extraction supplies the shared behavior but does not claim that integration.
+
+
+### Native TUI handoff and durable turn exclusion
+
+Native /handoff validates the configured destination, rejects active session work,
+retains host command ownership and calls the shared attempt-scoped waiter. It
+emits command activity and reads durable outcomes. A completed source session
+requires a new session or explicit later resume; completion after the local wait
+also blocks a subsequent source turn. TUI turn creation and handoff requests
+exclude each other inside the same SQLite write transaction. Empty sessions are
+created explicitly; the prior CLI title update did not create its claimed stub.
+
+178 focused command/journal/handoff tests, shared quality gates and a real
+Ink/dashboard PTY handoff test passed. The real test uses a separate SQLite
+connection as the simulated destination, forbids classic worker construction,
+checks unchanged source agent lifetime and receipt, and completes a turn after
+/new. Its first version incorrectly assumed real TUI startup did not begin agent
+construction; the busy guard correctly rejected that race. The corrected test
+finishes startup before handoff. This validates the local macOS transport, not a
+live messaging provider or interrupted remote gateway. Further admission/reconnect
+qualification and claimed-transfer recovery remain open.
+
+
+### Handoff admission across background work and reconnects
+
+Foreground and background prompts now share application-owned local-turn
+validation before agent construction. The check reads durable pending/running
+state even without a source attempt marker, protecting reconnected handles.
+Source handles also reject delayed completion and changed/unknown attempts.
+A preparation reservation blocks background submission before the pending row
+is published. Handoff state reads now propagate database errors rather than
+conflating read failure with absence of a handoff.
+
+191 focused command/journal/background/handoff tests, shared quality gates and
+the real terminal handoff regression passed. Tests include background submission
+during reserved handoff, pending/running reconnects for both prompt methods, and
+a closed database that must block agent construction. The terminal test still
+uses a simulated messaging destination; rendered interruption/reconnect and
+recovery after gateway death remain separate qualifications.
+
+
+### Rendered handoff cancellation and dashboard reconnect
+
+The real terminal fixture can now hold a simulated destination in running state.
+Its new test starts a transfer, cancels the local wait with Ctrl+C, checks that
+the same SQLite attempt remains running and the prior receipt is unchanged,
+reconnects the dashboard to the retained PTY, verifies a local turn is rejected,
+and completes a turn in an independent /new session. Classic worker construction
+is forbidden throughout.
+
+The test passed on macOS, and shared quality gates passed. The first fixture
+version omitted the dimensions message that ForecastDeskPage.onReady sends on
+every connection; adding that real-client behavior corrected the rendered /new
+assertion. This is retained-PTY reconnect coverage with a simulated destination,
+not backend restart recovery, real messaging service verification, or cross-platform
+qualification. A crashed gateway's claimed transfer remains an open recovery task.
+
+
+### Correct messaging-only command availability
+
+The remaining-dispatch audit confirmed configured aliases already re-enter the
+TUI's local registry. It found /whoami advertised in terminal help although its
+implementation is messaging access control. Its shared metadata is now gateway-only,
+so classic and TUI catalogs omit it while gateway menus and access policy retain it.
+Native slash dispatch rejects gateway-only definitions before constructing a
+worker, including manually entered hidden commands.
+
+329 catalog/dispatch/access-policy tests and shared quality gates passed. This
+corrects unsupported interface advertisement; the generic legacy fallback still
+exists and its direct-RPC compatibility cases require a separate migration audit.
+
+### Remove duplicate market plugin initialization
+
+Market forecaster construction no longer eagerly initializes runtime plugins.
+The default agent already loads the tool runtime, whose discovery is authoritative;
+injected factories own their own initialization. Removed the internal `discover`
+keyword and its test callers, and deleted the associated frozen import exception.
+
+The four affected forecasting test modules passed all 88 tests, including
+fresh-process default discovery and lazy injected-factory checks. Shared quality
+gates passed with all 58 import contracts kept. This does not remove quorum
+provider discovery or the separate forecasting-to-tool exceptions.
+
+### Shared forecasting desk construction policy
+
+The CLI and TUI now construct desk agents through build_forecast_agent in the
+existing agent factory. Forecast prompt assembly and optional startup-skill
+loading have one owner; provider resolution continues through build_agent.
+Callbacks and session storage pass through without replacing or closing them.
+Generic background construction is unchanged. The shared factory rejects invalid
+prompts, missing skills and conflicting raw prompt overrides before provider
+resolution/allocation. Launch settings and RPC callback wiring remain adapter work.
+
+70 factory, startup prompt, CLI provider/personality and TUI construction tests
+passed, along with shared quality gates and 59 import contracts. The new
+construction contract blocks direct presentation imports; it does not claim the
+legacy runtime has no indirect presentation dependencies. These include injected runtime/agent
+construction, not credentialed provider calls or rendered terminal qualification.
+The complete CLI and TUI gateway directories also passed all 1,379 tests.
+
+### Host-owned desk launch construction
+
+Moved foreground desk construction, configuration normalization, static routing,
+execution defaults and tool/prompt selection into hosting/desk_agent.py. The RPC
+adapter now captures launch aliases and supplies session storage, callbacks and
+warning output. Inspection helpers delegate to the same host policy. Removed the
+unused gateway skill-list parser. The host module is covered by strict directory
+checks and a direct presentation-import prohibition (60 total import contracts).
+
+All 1,630 host, CLI, TUI gateway and factory tests passed, including concurrent
+session launch overrides, preserved borrowed resources, snapshot selection and
+empty toolsets. Existing construction fixtures now patch the actual host/tool
+owners. Shared quality gates passed. Background construction/disposal remains in
+the RPC handler, including a cleanup path that removes its handle even when close
+raises; that concrete ownership gap remains to fix.
+
+The preceding plugin-ownership push was stopped by a rendered handoff-reconnect
+test failure (31,717 passed, 1 failed). The failure reproduces locally at the
+rendered /new status assertion. The new-session screen appears with corrupted
+status text in the test emulator; renderer versus emulator attribution remains
+unproven. No hook bypass or successful integrated-push claim is made.
+
+### Attribute and correct the handoff-reconnect test failure
+
+Captured the complete failing PTY byte stream and replayed it through the locally
+installed dashboard xterm parser. xterm displayed the correct /new status; the
+Python VTScreen emulator corrupted it. The trace uses DECSTBM (CSI 2;41r), scroll
+up (CSI 2S), then resets margins (CSI r). VTScreen ignored margins and scrolled the
+whole screen, moving the header/footer while Ink expected them to stay fixed.
+
+The emulator now tracks scrolling margins for scroll, newline and insert/delete
+line operations, and resets them on resize. All 45 captured screen rows match
+xterm after the change. Added minimal control-sequence regressions rather than
+loosening the lifecycle assertion or adding a delay. This attributes this test
+failure, not any historical SSL or native runtime incident.
+
+All 32 emulator and real desk lifecycle tests passed, including the unchanged
+handoff cancellation/reconnect assertion. Shared quality gates also passed.
+
+### Background conversation ownership, interruption and recovery
+
+Moved reservation, background construction/execution and cleanup out of RPC into
+hosting.background. Captured caller context preserves tenant credentials; the
+adapter seeds approvals/tools from the parent session. Fallback options now use a
+single captured profile while retaining the 25-turn background default. Failed
+close (exceptions or False) transfers the exact handle to ChildCleanup; /stop and
+session disposal retry it without rerunning work. Worker-start and report failures
+release admission correctly. Active background records are now visible to shared
+inspection/interruption under the parent owner.
+
+The rendered exercise exposed that native /agents uses a spawn-tree overlay,
+which previously ignored backend active snapshots. It now merges background
+records independently of foreground turn events, polls while open, displays
+cleanup pending and stale-inspection warnings, and drops snapshots on session
+change. The protocol includes the record kind and fractional start timestamps.
+
+827 Python host/RPC regression tests, 164 TypeScript store/command/event tests and
+shared quality gates (61 import contracts) passed. The real Ink/dashboard/local
+provider exercise passed: inspect active background work, interrupt it, observe
+an injected close failure, retry cleanup, then complete another turn in the same
+durable parent session. Its fixture waits for the actual overlay title before
+closing it; matching the echoed command alone was an insufficient ready signal.
+The scoped interface detector reported no findings. This does not prove cleanup
+across process death or repair SDK-internal partially closed transport state.
+
+The integrated push is still blocked by a separate stale-timeout test entering
+an Ollama /api/show probe against the OpenAI endpoint during agent construction
+(31,728 passed, 1 failed). The trace reached DNS/connect work before the test's
+30-second timeout. Investigation of that unsupported metadata probe is next;
+no push gate was bypassed.
+
+The affected protocol/code-generation and background ownership checks also passed
+all 79 tests after the wire-schema changes.
+
+### Provider-aware native metadata discovery
+
+The failed full-suite test timed out while constructing an OpenAI agent, before
+its stale-call assertion. Context discovery sent Ollama `/api/show` to OpenAI
+and entered DNS/connect work. The shared native probe now rejects recognized
+non-Ollama endpoints before HTTP client allocation. Local endpoints, Ollama
+Cloud and unknown custom hosts retain native discovery. Provider identity uses
+the shared hostname matcher instead of substring matching, including explicit
+MiniMax global/legacy domains and the distinct China provider registration.
+
+161 focused metadata/context/stale-timeout tests and the shared quality workflow
+passed. Regression fixtures prohibit client allocation for known non-Ollama
+providers, exercise the full provider-catalog resolution path, reject lookalike
+hosts/userinfo/path matches, and retain custom/local discovery. This fixes the
+observed unsupported request; it does not establish the historical native SSL
+crash cause or bound DNS latency for supported network discovery.
+
+### Stable provider snapshots at quorum selection
+
+The quorum adapter previously replaced caller-supplied default-model values with
+live catalog values. It now enriches only legacy rows missing the field; an
+explicit value, including None, remains authoritative. This permits deterministic
+selection from a complete supplied snapshot without provider discovery.
+
+The pure selector rejects non-string/blank defaults before constructing seats.
+Missing catalog entries no longer turn several authenticated providers into a
+misleading single-provider fallback, and an explicitly different active provider
+cannot supply that fallback. Unknown/incomplete selection retains the existing
+preset behavior; it is not a claim that the preset is callable. Shared provider
+alias normalization now applies to active-provider matching and judge selection.
+Seven new regression cases failed before the fix; all 400 CLI/quorum consumer
+tests and the shared quality workflow pass after it. These changes do not establish
+credential validity, quota availability or successful model execution.
+
+The preceding integrated construction/background/metadata batch passed the full
+push gate: 31,755 Python tests (148 skipped) and 672 affected TUI tests. Remote
+branch codex/learning-settlement-runtime advanced to 78d8e5e1e. This supersedes
+the earlier blocked-push notes above; the snapshot-selection change still needs
+its own integrated push gate.
+
+### Plugin coroutine lifetime ownership
+
+RPC session admission already protects synchronous plugin execution. Its shared
+async-result resolver was the remaining hole: a running-loop caller could return
+a timeout while a daemon helper continued the command, and that helper did not
+inherit context variables. The no-running-loop path had no deadline at all.
+
+Both paths now apply the cooperative coroutine deadline and wait for completion
+of cancellation before releasing the caller. Helper threads inherit a copy of
+caller context, join before return, and close an unstarted coroutine if thread
+creation fails. Handler/cleanup timeout diagnostics are preserved. This does not
+forcibly terminate blocking or cancellation-suppressing code, nor prove that a
+plugin releases every external resource correctly.
+
+The three original failure cases reproduced before the fix. All 287 plugin and
+TUI command/protocol tests pass afterward, including both RPC command surfaces
+rejecting session close during async cancellation cleanup and permitting it
+after completion. Failure never becomes a command redispatch.
+
+### Eliminate classic-worker command execution
+
+The complete catalog inventory found a native backend or Ink handler for every
+non-messaging command, including /new through the reset handler alias. Removed
+slash.exec's worker execution and its obsolete agent-initialization step.
+Terminal-owned requests now return a structured pre-execution handoff;
+command.dispatch redirects them to their canonical Ink handler using the existing
+alias response. Unknown native routes report a missing handler rather than
+creating a second classic runtime. The client stops an unsupported self-alias
+instead of recursively requesting it.
+
+The shared route inventory is checked against the actual Ink registry. Catalog
+load failures now fail the parity test instead of skipping it; every catalog
+command must have an owner. Tests verify terminal-only RPCs never build an agent
+or worker, canonical aliases still work, and plugin discovery failure cannot
+change ownership. All real desk lifecycle fixtures now prohibit worker creation.
+The old worker class, subprocess entrypoint, side-effect mirror and retirement
+helpers remain as removal work; they no longer implement command execution.
+
+The preceding snapshot batch passed its full gate: 31,764 Python tests with
+148 skipped, and remote branch codex/learning-settlement-runtime advanced to
+a3bef09ba. The plugin lifetime fix is integrated locally for the next batch.
+
+Validation: 838 backend/real-desk tests and 100 TUI routing tests passed, with a
+fresh terminal build and the shared quality workflow. The rendered lifecycle
+exercises run through the actual Ink/dashboard/local-provider/session database
+with classic-worker construction forbidden. This remains local POSIX evidence,
+not qualification of every supported remote platform.
+
+### Remove retired classic-worker implementation
+
+Deleted the worker subprocess entrypoint, worker class, side-effect mirror and
+legacy host owner. Session creation, model/auth changes, compression re-anchoring
+and disposal no longer carry worker handles or restart flags. Removed the unused
+worker timeout setting and updated the TUI architecture and debugging guide.
+
+The import prohibition now covers the entire tui_gateway package. Removing the
+obsolete worker-owner contract leaves 60 contracts with broader TUI coverage.
+Worker-only tests were removed with their implementation; agent disposal failure,
+retry, history preservation, session admission and command parity tests remain.
+The real desk fixture asserts the worker class is absent.
+
+1008 focused host/gateway/metadata tests passed (1 skipped), along with the shared
+quality workflow. Fresh real-desk qualification is run separately before this
+change is integrated. Historical SSL attribution remains unchanged.
+
+Real desk and existing boundary qualification passed all 44 tests. The expanded
+failure-injection suite passes all 29 cases, including a new transport module
+importing classic CLI code: the package-wide rule rejects it. Updated the old
+README assertion that explicitly required the deleted subprocess architecture.
+
+### Delegation RPC server binding
+
+The integrated routing/plugin push was blocked: 31,766 Python tests passed, but
+seven delegation tests selected an unknown session; the 100 affected TUI tests
+passed. A deterministic fixture reproduced the same error by replacing the
+package-level server attribute while calling the registered server's RPC table.
+The delegation helper dynamically imported that attribute for each lookup.
+
+It now uses the server bound by register(), matching the other extracted RPC
+families and keeping session lookup tied to handler registration. The regression
+failed before the change and passes afterward; all 220 delegation/command/protocol
+tests passed. This establishes the lookup failure mechanism, not which preceding
+full-suite test originally left module references inconsistent. No gate was
+bypassed. The retired-worker deletion is integrated for the next push attempt.
+
+### Structured source dispatch without agent execution
+
+Moved adapter routing and option forwarding from the forecasting tool into
+`forecasting/sources/dispatch.py`; market refresh now calls that shared owner.
+Removed the frozen market-model-to-forecasting-tool import exception. Enforcing
+the new transitive source boundary exposed configuration diagnostics as an
+indirect route back into agents and tools. Extracted the read-only layered
+configuration reader into storage, with one shared singleton and compatibility
+exports; diagnostic report generation remains separate. Dispatch joins strict
+lint, format and type coverage; storage already has directory-wide coverage.
+
+Validation: 306 focused tests passed, covering tool ingestion, market refresh,
+configuration, themes, source contracts and injected forbidden dependencies.
+A fresh-process test blocks execution-layer imports while loading dispatch.
+Adapter option coercion and settlement semantics are unchanged by this move.
+
+### One provider snapshot for pinned panels
+
+Extracted pinned-route rules into the pure panel-selection owner; the existing
+quorum adapter captures credential rows and known syntax names. Configured
+panelists and judge now validate together, preventing acceptance against two
+incompatible snapshots when credentials change between checks. Named endpoints,
+aliases, aggregator restrictions and malformed authentication flags retain
+explicit regression coverage. Tightened the panel import gate to reject indirect
+runtime/presentation dependencies and added failure-injection coverage.
+
+Validation: 376 quorum, CLI, provider-syntax and boundary tests passed; the shared
+quality workflow passed. Discovery remains in the quorum adapter, so the final
+runtime import exception is still open.
+
+### Emergency browser disposal retains ownership
+
+Emergency cleanup previously set its completed flag before disposal and cleared
+all tracking even when the provider failed. It now uses exclusive endpoint
+admission, includes supervisor/Camofox cleanup with an empty active-session map,
+and leaves failed handles with their existing owners for retry. Completion is
+recorded only after cleanup and the orphan sweep return successfully. The orphan
+reaper retains its existing process-liveness checks; local daemon PID disposal
+is still a separate open investigation.
+
+Validation: 341 browser tests passed, 22 optional cases skipped; shared quality
+checks passed. A failed cloud disposer retains the same object, succeeds on retry,
+and is not called again after successful disposal. Removed an implementation-text
+assertion that required the unsafe unconditional tracking clear.
+
+### Browser PID files cannot select process groups
+
+Local daemon cleanup previously accepted zero/negative PID-file contents directly
+as signal targets. Shared process-ID parsing now rejects process-group selectors;
+liveness probes reject them too. Local cleanup marks all resources pending,
+retains handles on invalid PID files or signaling errors, and only treats an
+already-gone process as successful signaling cleanup. An unreadable owner record
+is unknown and no longer authorizes an orphan kill through the legacy fallback.
+
+Validation: 356 process/browser tests passed, 22 optional cases skipped; shared
+quality checks passed. Fake signal tests cover zero, negative IDs and permission
+failure without signaling actual processes. Positive PID validation is not proof
+of process identity: PID reuse and confirmed termination remain open work.
+
+### Partial browser output allocation cleanup
+
+Failure injection reproduced a stdout descriptor leak when stderr creation
+failed in both browser launch paths (two negative controls failed; spawn-error
+controls already passed). Both paths now use a shared process-output context
+manager backed by ExitStack, registering each descriptor before allocating the
+next. The owner preserves private file permissions and the existing file-backed
+output strategy needed for daemonized children.
+
+Validation: 360 process/browser tests passed, 22 optional cases skipped; shared
+quality checks passed. Test teardown compares descriptor file identities before
+closing leaked fixtures so it cannot close another component's reused handle.
+This is a confirmed allocation leak; it does not establish the cause of either
+historical native crash.
+
+### Watched sources shared by refresh consumers
+
+Moved concurrent watched-source acquisition out of the forecasting tool. Scheduled
+reviews, batch refresh and CLI refresh now import the shared source owner,
+removing three frozen tool dependencies. Evidence payload formatting and filter
+normalization have separate pure owners. The agent tool keeps compatibility
+exports. A malformed adapter-options object is now caught per source instead of
+aborting the entire batch; output remains ordered and acquisition performs no
+ledger writes. Timestamp fallback and settlement semantics are unchanged here.
+
+Validation: 157 refresh, tool, CLI resolution, job and boundary tests passed;
+shared quality checks passed. Fresh-process acquisition succeeds with execution
+and ledger imports blocked. Both new owners have transitive import gates and
+strict lint/format/type coverage. Eleven frozen forecast-to-tool edges remain.
+
+### Question candidate ownership and complete pipeline refresh routing
+
+Moved duplicate-candidate ranking and its thresholds into a read-only application
+owner shared by CLI onboarding and the tool surfaces. Removed the corresponding
+frozen tool import; ten direct forecast-to-tool exceptions remain. Matching uses
+the existing search semantics, and creation/force-new policy is unchanged.
+
+The caller audit also found core pipeline refresh still importing the tool's
+watched-source export. It now calls the source owner directly. Its old test only
+asserted that some snapshot existed, which could pass without refreshing. The
+regression now requires a new snapshot ID and changed probability.
+
+Validation: 57 refresh, question-spec and full-chain tests passed, including CLI
+and tool duplicate routing and explicit duplicate creation. Shared quality checks
+passed; the new application file automatically receives directory-wide gates.
+
+### Market-model tool dependencies and approval restoration
+
+Removed the final two direct market-model-to-tool edges. Presentation handoff now
+belongs to the application layer; terminal prompt callback slots belong to shared
+tooling. Compatibility exports keep tool/CLI callback consumers on the same state.
+Interactive builds previously left an auto-approval callback on their worker after
+return or failure. Three negative controls reproduced that leak. A scoped callback
+now restores the exact caller policy around both construction and conversation.
+
+The market handoff retains only the latest emission and consumes it once, retaining
+the established per-thread semantics. Concurrent worker and nested callback tests
+cover isolation and interruption restoration. Validation: 83 market/tool/CLI/
+background/boundary tests plus three ownership tests passed; shared quality checks
+passed. Eight direct forecast-to-tool exceptions remain. This does not claim full
+SDK/child-worker cleanup qualification for every market build failure path.
+
+### Forecast Slack consumers use a shared transport
+
+Extracted Slack token resolution and API dispatch from the registered tool into
+`forecasting/transports/slack.py`. Forecast notifications, collaboration directory
+posting and both connection-admin paths consume structured results directly.
+Removed four frozen tool dependencies; four remain. The tool retains schema,
+registration and JSON serialization. The shared transport has strict quality
+coverage and a transitive consumer-import gate.
+
+Hardened response handling: non-object responses and non-boolean `ok` fields
+become structured failures; a remote `success` field cannot override Slack's
+failure. Notification delivery uses the canonical success result. Explicit OAuth
+store lookups no longer fall back to another workspace, and malformed token
+values are ignored. Environment-token precedence is unchanged; this is not a
+claim that an environment token's workspace has been verified.
+
+Validation: 118 transport/tool/collaboration/notification/connection and boundary
+tests passed; shared quality checks passed. HTTP was replaced by fake transports;
+no Slack messages were sent and no live integration qualification is claimed.
+
+### Shared forecast-card operation
+
+Moved governed sharing out of the agent action module into the application layer,
+with CLI and tool adapters consuming the same policy and execution result. Removed
+the CLI-to-tool sharing exception; three direct forecast-to-tool edges remain.
+
+Failure injection reproduced posting a dangling metadata card after its overflow
+body upload failed. Sharing now stops on that failure and reports shared=false;
+boolean status is required and canonical failure cannot be overridden by an ok
+field. Existing policy ask/never paths still post nothing. A successful upload
+followed by a failed card post is not an atomic external transaction; automatic
+retry/deduplication is not introduced by this extraction.
+
+Validation: 30 sharing, card, CLI and multi-instance collaboration checks passed;
+shared quality checks passed. All posting used fake transports; no Slack messages
+were sent. Application lint/format/type and transitive product-boundary checks
+cover the new file automatically.
+
+
+### Shared model-build operation and atomic links
+
+Moved forecast model building into `forecasting/application/model_build.py`; CLI
+and tool adapters share question-derived parameters and the build operation.
+Removed the CLI core's final tool dependency exception (two remain overall).
+Failure injection first reproduced silent success after a linking error and a
+partial link after interruption. Both link writes now use one ledger transaction.
+The durable model is retained and errors return its ID; the link operation can be
+retried independently without another build. KeyboardInterrupt propagates after
+rollback. The separate model-to-forecast seed conversion still needs the same
+partial-write audit; this change does not claim that flow is atomic.
+
+Validation: 56 model, ledger, tool and output tests passed, including CLI/tool/
+application parameter parity and failure/retry cases. All 66 import contracts and
+the shared lint, format, type, protocol and TUI quality checks passed.
+
+
+### Shared triage operations and coupled review writes
+
+Extracted labeling, contested routing, expert adjudication, rubrics and trust
+reports into the application layer. The CLI and tool adapters share results and
+validation errors. Removed the triage CLI's tool-import exception; supervisor web
+search is the one remaining direct forecast-to-tool edge.
+
+Failure injection reproduced partial label/alert writes and swallowed alert
+acknowledgement failures. Routing and adjudication now each use the existing
+ledger transaction owner, with rollback on exceptions and cancellation. Retry
+checks preserve alert deduplication and complete the coupled writes. No remote
+labeler call runs under the write transaction.
+
+Validation: 65 triage, CLI, label-scoring and trust checks passed, including
+CLI/tool/application error parity and interrupted-write recovery. Shared quality
+checks passed, including all 66 import contracts and blocking Python/TUI checks.
+
+
+### Expert triage label validation
+
+The extraction exposed a separate correctness defect: unknown expert labels were
+silently normalized to skim and recorded as gold. Direct ledger writes also
+accepted invalid scalar labels (malformed objects instead failed at SQLite).
+Strict normalization now rejects unknown expert classes at both entrypoints,
+while recognized aliases become canonical labels. Model-generated suggestions
+keep their conservative skim fallback. Malformed/missing adjudications now fail
+rather than reporting successful partial work; the batch transaction rolls back.
+
+Validation: six negative controls failed before the fix. 86 triage, trust, CLI,
+scoring and evidence-autopilot checks now pass, including malformed batch rollback
+and canonical alias storage. Shared quality checks passed. Existing gold records
+that were previously coerced cannot be retrospectively certified by this change.
+
+
+### Shared cancellation signaling
+
+Moved per-thread interrupt state into the shared tooling package in preparation
+for extracting supervisor search from the registered web tool. Legacy functions
+and the event proxy retain identity and share the same state. A transitive
+consumer-import gate covers the owner. Seventeen interrupt propagation,
+concurrency and CLI checks passed, including old/new API interoperability; shared
+quality checks passed. Blocking providers still require cooperative cancellation.
+
+
+### Shared supervisor and tool search
+
+Removed the final direct forecast-to-tool import exception by making supervisor
+research and the registered web tool consume the shared search operation.
+Provider selection now consistently uses the existing registry and shared profile
+reader. Negative controls reproduced silent fallback from an unavailable explicit
+search provider and a case-sensitivity regression; both now preserve configured
+routing. No provider was contacted during verification.
+
+Cancellation tests cover pre-call stop, stop during a returning provider and stop
+during a provider exception across the service, tool and supervisor surfaces.
+Late results cannot enter supervisor evidence. Invalid response status/list
+shapes become failures; provider errors cannot masquerade as successful evidence.
+Diagnostic-write failures no longer discard successful tool output. Two existing
+Parallel client tests now stub their optional SDK installer as well as the fake
+module and restore any previous module, so they do not require installed packages.
+
+Validation: 296 web/provider/supervisor tests passed. The shared quality workflow
+passes 68 import contracts, blocking Python lint/format/types, protocol generation
+and TUI lint/types. Extract/crawl compatibility routing and provider-internal
+legacy tool imports remain outside this extraction.
+
+
+### Shared provider identities
+
+Moved canonical provider entries, labels and provider-prefix names into shared
+configuration ownership; quorum syntax recognition and the runtime model picker
+consume the same catalog. Plugin extension and compatibility object identities
+are preserved. Model defaults and credential-status discovery remain explicit
+runtime dependencies until their implementations are separated.
+
+Validation: 195 model picker, inventory, provider and quorum checks passed;
+shared quality checks passed. Three injected-import checks confirm the new
+provider identity, shared search and cancellation gates reject transitive
+presentation dependencies.
+
+
+### Shared offline model catalogs
+
+Extracted fallback model lists and offline curation into `agent/model_catalog.py`,
+with pure Codex fallback/forward-compatibility rules in configuration ownership.
+Runtime model pickers preserve compatibility exports, and quorum defaults consume
+the shared owner directly. Live network catalogs and their caches remain separate.
+Strict lint/format/types cover the new owners, with transitive runtime/presentation
+import prohibitions. Credential-status discovery remains explicitly unextracted.
+
+Validation: 264 model, Codex, inventory, provider, quorum and injected-boundary
+checks passed; the shared quality workflow passed all 71 import contracts plus
+blocking Python/TUI/protocol checks. Model IDs and fallback ordering were preserved;
+this is not a live-provider or model-availability qualification.
+
+
+### Auth-status profile isolation
+
+Credential tracing found that status discovery is not purely observational:
+Nous/Codex status paths can resolve or refresh runtime credentials. That behavior
+remains explicit extraction work. A reproduced cache defect let two profiles with
+identical auth-file timestamps reuse the first profile's Nous status. The cache
+key now includes the resolved auth-store path as well as its timestamp. Six cache
+checks passed, including existing TTL/invalidation behavior and isolation for
+both matching timestamps and missing auth files. Shared quality checks passed.
+This does not change live refresh behavior or claim concurrent process-wide
+profile mutation is safe.
+
+
+### Credential writer resource ownership
+
+Two negative controls reproduced leaked descriptors when `fdopen` failed in the
+shared atomic writer and native auth-store writer. A shared context now owns the
+raw descriptor while the text wrapper borrows it; all three native token writers
+use the same mechanism. The previous file and temporary-file cleanup survive
+construction failures. Early wrapper close, cancellation and repeated context
+teardown close the raw handle once and preserve other allocations.
+
+Validation: 27 descriptor, atomic JSON/YAML and credential-mode tests passed;
+shared quality checks passed. The historical SSL/native descriptor incidents
+remain unproven and are not attributed to this newly reproduced leak.
+
+
+### Shared auth-store persistence
+
+Moved auth-store parsing, legacy format handling, corrupt-file preservation and
+durable writes into `storage/auth.py`, with explicit paths and shared descriptor
+ownership. Runtime delegates preserve the existing profile selection and caller-
+owned cross-process lock. Credential execution/refresh is deliberately not hidden
+behind a nominally read-only storage API. A transitive import gate excludes it.
+
+A negative control also confirmed the pytest guard missed the primary forecast
+home; both primary and legacy default homes are now protected. Tests use simulated
+homes and never access live credentials. Validation: 544 auth/provider, storage,
+metadata and boundary checks passed (one skip), plus three standalone storage
+compatibility/recovery checks. Shared quality checks passed all 72 import contracts
+and blocking Python/TUI/protocol checks. Refresh/discovery extraction remains open.
+
+
+### Deterministic background-cache verification
+
+The full push suite exposed a scheduling race in the achievements integration
+test: a fast successful refresh replaced the stale snapshot before the test
+asserted its timestamp. The production path can legitimately return that newer
+snapshot. The test now gates the background worker, proves immediate stale-data
+service, then releases and verifies fresh session totals. Fixture teardown drains
+workers before restoring patched modules/profile paths. Nine plugin checks pass.
+No production cache behavior was weakened to satisfy the test.
+
+
+### Non-writing global credential fallback
+
+Two negative controls reproduced a global fallback writing a corrupt-file backup
+and the pytest fallback guard failing to protect the primary forecast home.
+Global reads now disable backup writes through the shared storage API, and both
+default homes are protected using the real HOME environment path. Owned-store
+recovery backups retain their existing behavior; logs only claim preservation
+when the copy actually succeeds. 158 auth/profile/storage checks and the shared
+quality workflow passed. No live credentials were read in the tests.
+
+
+### Resource-specific file-lock reentrancy
+
+A negative control reproduced the shared lock helper skipping the OS lock for a
+second path when callers reused a thread-local holder. Reentrancy now uses process
+identity and the resolved path. Nested independent stores acquire and release
+independent locks; interruption preserves the outer lock. Tests include a real
+POSIX subprocess denied access to both paths and simulated inherited bookkeeping
+that cannot bypass a new process acquisition. This does not establish forked
+file-descriptor cleanup or native Windows qualification.
+
+Validation: 157 auth/provider and lock checks passed; the shared quality workflow
+passed all 72 import contracts and blocking Python/TUI/protocol checks. The historical SSL and late descriptor incident
+causes remain unproven; this is a separately reproduced storage ownership defect.
+
+
+### Authentication metadata boundary and remaining credential writers
+
+Moved provider authentication metadata and pure secret policy to shared
+configuration, with direct TUI/CLI/gateway/pool consumers and identity-preserving
+runtime exports. Plugin alias metadata is checked in a fresh interpreter without
+loading the auth runtime. A new transitive prohibition brings the gate to 73
+contracts; new configuration files inherit strict lint, format and type checks.
+
+Five negative controls reproduced Anthropic inspection choosing placeholder keys
+instead of the valid fallback (or reporting a placeholder as configured). It now
+uses the existing shared usable-secret rule. Three additional negative controls
+reproduced temporary descriptor leaks in `.env` save/remove/sanitize on wrapper
+construction failure. All use the existing storage descriptor owner; failures
+preserve old file contents and process values.
+
+Verification: 373 policy/provider/boundary checks, 504 credential/setup/gateway
+consumer checks and 114 configuration/descriptor checks passed through the
+hermetic test runner. Shared quality checks passed. Full-suite push validation is
+required for the integrated commit. OAuth refresh/status ownership and the
+historical native crash attribution are still incomplete.
+
+
+### Content-correct credential-file reads
+
+A negative control reproduced `.env` reads retaining an obsolete key after a
+same-size edit with preserved mtime. Shared storage now reads current contents and
+caches only parsing by contents plus recognized-key vocabulary. The parser lives
+with pure environment-line rules; the runtime loader is a delegate. Timestamp,
+path and global cache races can no longer substitute another parse for current
+bytes. Missing files remain empty; access failures remain errors.
+
+144 configuration/storage/boundary checks passed, including independent mappings,
+concurrent profiles, vocabulary changes, BOM/invalid UTF-8 compatibility and
+non-mutating reads. Additional review caught and corrected Unicode line-separator
+handling before publication: parsing matches text-file universal newlines and
+preserves other separators inside values. Strict Python/TUI/protocol checks and 74 import contracts
+passed. A local 80-key warm-read comparison measured 3.18 ms (old metadata cache)
+and 14.13 ms (content-correct reader) per 1,000 calls, medians of five runs. Parsing
+remains cached; the measured extra read cost is about 11 microseconds per call.
+These timings are local evidence, not a portable performance guarantee.
+
+The metadata batch's full push gate stopped on one auxiliary-client fixture that
+still replaced the legacy auth module's registry (31,890 other tests passed,
+148 skipped). The fixture now replaces the shared metadata owner actually read by
+the auxiliary router; its prohibition on implicit Anthropic fallback is retained.
+All 174 auxiliary-client checks pass. The integrated batch still requires the
+full push gate; the failed run did not publish changes.
+
+
+### Credential storage policy and durable endpoint detection
+
+The preceding metadata/reader batch is verified on the remote at `02368c7c9`:
+31,900 Python tests passed, 148 skipped, with 66 warnings in the full push gate.
+
+Moved stored provider/pool policy and borrowed-secret sanitization to shared
+storage. The runtime delegates candidate overlay and provider updates; the agent
+policy module retains compatibility exports. A negative control reproduced raw
+borrowed credentials bypassing the pool-specific writer through `save_auth_store`.
+The actual file boundary now applies the shared policy, including nested secret
+fields, without rewriting caller-held credentials. Owned sources retain their
+existing behavior.
+
+A separate negative control reproduced repeated Z.AI endpoint probes: the old
+`_save_provider_state` helper updated only a dictionary, never the file. Detection
+now persists under the captured profile's lock after re-reading current state,
+without selecting Z.AI as the active provider. Tests cover an intervening writer,
+a profile replacement during the probe, repeat reads and optional cache failure.
+No live provider calls were used; this does not attribute the historical SSL crash.
+
+704 credential/provider/storage/boundary checks and the shared quality workflow
+passed (74 import contracts). The integrated commit still requires the full push
+gate. OAuth status/discovery extraction remains open.
+
+
+### Provider configuration is not authentication
+
+The credential storage batch is verified on the remote at `225250cab`:
+31,916 Python tests passed, 148 skipped, with 66 warnings in the full push gate.
+
+A negative-control RPC test reproduced `config.get provider` invoking credential
+discovery. The configuration getter now uses shared, pure provider-selection
+policy, honoring launch selection, config and the environment fallback. A model
+publisher prefix no longer masquerades as its serving provider. Automatic
+selection remains `auto`; resolving the live route is a separate runtime action.
+Unreadable configuration produces an error rather than a misleading auto result.
+
+The response now has a generated protocol model. Its catalog entries retain
+`id`, `label` and `aliases`; `authenticated` is explicitly null and the response
+says `authentication_status: not_checked`. Consumers must not interpret null as
+successful authentication. This corrects the previous boolean's mixed meanings
+(stored material, refreshed OAuth access, or configured local endpoint). The
+model picker's credential-aware inventory is unchanged. Catalog plugin metadata
+still uses the existing extension mechanism; arbitrary plugin code is not
+certified side-effect free by this change. Full passive credential inventory and
+the forecasting discovery exception remain open.
+
+107 focused provider/configuration/protocol tests pass. The shared quality
+workflow passed before the final null-only wire-model tightening; commit/push
+hooks recheck the final snapshot. The unreadable-profile test uses its own
+subdirectory because the hermetic fixture also creates a sibling test home.
+
+
+### Partial provider discovery is not disconnection
+
+Two negative-control tests reproduced provider-inspection exceptions being
+silently converted to `authenticated: false`. With another connected provider,
+quorum discovery incorrectly returned a singleton instead of unknown state.
+`list_available_providers` now raises with the failed provider's identity rather
+than publishing a partial boolean inventory. Both forecasting discovery adapters
+already translate unavailable discovery to unknown, retaining the requested
+panel rather than claiming a single-provider environment. A confirmed negative
+status still permits the existing single-provider fallback.
+
+This addresses raised inspection failures; provider-specific status functions
+that internally collapse errors remain part of the open credential-service
+extraction. Credential presence still does not prove quota or model access.
+60 focused discovery, panel-selection and autonomy checks passed before the
+expanded regression run and commit gates.
+The expanded catalog/quorum/jobs regression run passed all 216 tests.
+
+### Construction fixtures follow the actual owner
+
+The provider-configuration batch is verified on the remote at `2f44b49b5`:
+31,929 Python tests, 458 affected TUI tests and all 74 import contracts passed.
+Its independent wheels also passed installation, upgrade from 0.21.2, backend
+without Node, and local/authenticated remote Ink checks on macOS arm64 with
+Python 3.13.12 and 3.11.15. Artifact identities and exact scope are recorded in
+`/tmp/forecast-provider-boundary-wheels/VERIFICATION.md`.
+
+The quorum follow-up's full gate stopped on a Gemini construction fixture:
+31,931 tests passed, one failed, 148 skipped. Its mock targeted the old
+`run_agent.ContextCompressor` import, while construction uses
+`agent.agent_init.ContextCompressor`. The real compressor attempted DNS against
+the fixture proxy URL and exceeded the test deadline. Updated all four remaining
+stale compressor patches (three Gemini cases and one compression-feasibility
+case) and added assertions proving the replacement is used. All 62 affected
+provider/compression tests pass. This is a conclusive test-isolation failure,
+not attribution of the historical native SSL crash. The corrected batch still
+requires a successful full push gate.
+
+
+### AWS credential discovery ownership
+
+Moved AWS source and region discovery from the Bedrock execution adapter into
+`hosting/aws_credentials.py`. CLI/status, TUI inventory, routing, doctor and
+auxiliary-client consumers now use this shared owner. Legacy adapter names remain
+identity-preserving exports. A transitive import contract rejects execution and
+presentation dependencies; the new module joins strict lint, format and type gates.
+
+Two negative controls proved import-time dependency installation and duplicate
+SDK credential lookup after a failed probe. SDK installation now occurs only on
+explicit client construction, including the Anthropic Bedrock path, and failed
+credential detection consults the SDK once. Credential/region discovery still
+uses the installed SDK chain when needed; it may query metadata or refresh
+credentials and is not claimed to be passive authentication verification.
+
+Updated affected mocks to the actual shared owner. The first focused run exposed
+one stale picker mock (371 other tests passed); the corrected focused run passed
+548 tests and the broader runtime/doctor/auxiliary checks passed 430. All 75 import
+contracts and strict Python quality checks pass. The final commit and full push
+gates remain required.
+
+Closeout scope after the user's duration concern: complete credential-service
+ownership and host-wide live-restore coordination, then audit the original five
+deliverables against current evidence. Adjacent cleanup should not silently add
+new completion requirements. Historical SSL attribution and extra platforms stay
+explicitly unverified unless they block an original acceptance requirement.
+
+
+### Profile restoration admission (2026-09-12, in progress)
+
+Runtime hosts, CLI/worker lifetimes, SessionDB connections and shared config/auth
+writers now retain profile admission. Restore/recovery requires an exclusive
+SQLite coordination lease; interrupted restore journals block new readers.
+Failed host shutdown/restart retains admission until explicit cleanup succeeds.
+The lock file is excluded from profile/backup transfer. The standalone
+`superforecasting-agent snapshot restore <id>` / `snapshot recover` path operates
+without constructing a runtime; interactive CLI/TUI direct users to this path.
+Restoration checkpoints old session WAL state before database replacement.
+
+Real subprocess death, conflicting readers, failed shutdown/restart, crashed WAL,
+configuration/auth writer exclusion and offline CLI behavior have focused tests.
+The broader storage/snapshot/host/command/backup selection passed 438 tests;
+strict Python checks and all 75 import contracts passed. The subsequent snapshot
+capture admission rerun passed all 58 focused tests. This is not yet the final
+integrated push: remaining caller admission and transfer-path review must precede
+that gate, along with credential-service separation and acceptance reconciliation.
+
+
+### Full backup import admission follow-up (2026-09-12)
+
+The caller audit found full backup import bypassed snapshot admission. Its storage
+entry now requires exclusive access to the default home and refuses pending
+snapshot recovery. Named-profile users retain the enclosing home lease, so a
+full-home import cannot overwrite an active named profile; independent named
+profiles still admit separate work and restoration. Backup import skips source
+coordination/journal/WAL files and checkpoints destination state.db before
+replacement. The standalone CLI uses shared import argument definitions without
+constructing a runtime that would conflict with import admission.
+
+The isolated-worktree backup/admission selection passed 122 tests and the final
+CLI/admission selection passed 17. Strict Python checks and all 75 contracts pass.
+Those checks exposed an optional-SDK assumption in AWS discovery: the owner now
+loads botocore explicitly through importlib on discovery, permitting the same
+quality gates to run when the optional SDK is absent. No dependency is installed
+on import. The AWS selection passed 139 tests (6 optional-SDK skips); its fake
+package fixtures now bind the parent and submodule to the same SDK object. These
+changes await integration after the current main push terminates.
+
+
+The b02dd642a full push gate failed: 31,934 passed, 13 failed, 2 errors,
+148 skipped. Most failures were Python 3.13 unclosed SQLite warnings from
+abandoned profile leases; an additional assertion retained old TUI restore copy.
+Profile leases now register explicit collection-time cleanup with weakref.finalize,
+retaining their enclosing home until the child closes. Explicit failed closes
+still retain handles for retry. The regression holds the underlying connection
+after collecting the lease and verifies it was explicitly closed, then verifies
+exclusive home admission. The focused admission/goal/websocket/TUI selection
+passed 287 tests. Full integrated verification remains required.
+
+### Credential-owner extraction in progress (2026-09-12)
+
+The isolated worktree now separates 150 credential/discovery/refresh functions
+from 20 interactive login/configuration functions. Direct noninteractive imports
+route to `superforecasting_agent.credentials.auth`; the inherited auth module
+retains interactive functions and explicit compatibility exports. Credential
+file/configuration reads now use shared read-only storage, and Nous environment
+aliases have a configuration owner. This is unfinished work: Copilot and config
+validation dependencies remain, and an initial 112-test selection reached 107
+passes with five mixed-interface mock ownership failures before the latest read
+changes. No complete boundary or full-suite claim applies to this extraction.
+Main separately contains the committed profile finalization fix, still to be
+integrated into this worktree before final verification. Do not discard either.
+
+
+The credential extraction now has no runtime/presentation dependency: 76 import
+contracts pass, including the new transitive credentials prohibition and removal
+of the last direct forecast-to-runtime exception. Credential/provider tests
+passed 2,533 with two skips; strict Python checks passed. The service import test
+also caught a bundled provider importing runtime solely for version metadata;
+GMI now uses the public package version. The new package has directory-wide
+strict lint/format/type coverage, including its inherited OAuth implementation.
+Mixed interactive callers now invoke shared helper owners explicitly, and mocks
+follow those actual owners rather than stale compatibility aliases.
+
+A stale Qwen path mock in the early failed extraction test wrote fixture tokens
+to the external `.qwen/oauth_creds.json` path. The identified fixture payload was
+quarantined as `oauth_creds.json.codex-test-fixture-20260912T173707Z`; prior file
+existence could not be established. Qwen tests now isolate HOME independently of
+the credential-path mock. No successful full-suite or publication claim applies
+until this batch is integrated with main's restoration-finalization fix and the
+full push gate passes. Optional Anthropic/Bedrock tests used the exact SDK
+versions already pinned in pyproject.toml in the isolated worktree.
+
+
+The initial credential commit was blocked by the repository's 1,200-line added
+file gate. The oversized auth implementation is now split into fifteen
+provider/lifecycle leaves under `credentials/oauth/`; the auth facade retains
+shared mutable state and public exports. This follows the existing carve
+pattern: leaves address shared state and dependencies explicitly through the
+facade, preserving its compatibility/monkeypatch semantics. The facade's late
+imports are documented and suppress only E402 there because provider defaults
+require initialized shared constants. No hook was bypassed and the mixed batch
+is not labeled MOVES-ONLY.
+
+A mechanical AST comparison verified all 149 moved function bodies, normalizing
+only explicit facade references, global declarations and no-op pass statements.
+The post-split provider/credential selection again passed 2,533 tests with two
+skips. Strict checks and all 76 import contracts pass. Full integration and
+artifact verification remain outstanding.
+
+
+## Final acceptance closeout — 2026-09-12
+
+Fresh bootstrap at bbe02caae passed all shared gates and 76 import contracts.
+Separate installed backend/terminal/combined/web profiles passed on macOS arm64
+Python 3.11.15 and 3.13.12, including real local/remote Ink scoring and retained
+0.21.2 backend upgrades. The acceptance audit records artifact hashes and limits.
+
+The first full-suite push failed with 31,955 passes, 148 skips and six stale
+test-owner references: five source-branding assertions still inspected former
+credential locations, and an Ollama setup mock patched the credential service
+for a prompt owned by interactive authentication. The tests now inspect or patch
+the actual owners; no production change or gate relaxation was needed. Added a
+negative credential-boundary case proving transitive presentation imports fail.
+Final publication remains governed by the full pre-push suite.

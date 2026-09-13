@@ -52,6 +52,11 @@ from collections import defaultdict
 from datetime import timedelta
 from typing import Any
 
+from forecasting.distribution_parameters import (
+    GAUSSIAN_MEAN_KEYS as _CRPS_MEAN_KEYS,
+    GAUSSIAN_SD_KEYS as _CRPS_SD_KEYS,
+    gaussian_parameters as _crps_gaussian_params,
+)
 from forecasting.ledger import core as _core
 from forecasting.models import (
     ForecastSnapshot,
@@ -199,59 +204,82 @@ def get_current_score(ledger, question_id: str) -> ScoreRecord | None:
 
 
 def score_snapshot(ledger, forecast_id: str, *, force: bool = False) -> ScoreRecord:
-    snapshot = ledger.get_snapshot(forecast_id)
-    question = ledger.get_question(snapshot.question_id)
-    resolution = ledger.get_latest_resolution(snapshot.question_id, confirmed_only=True)
-    if resolution is None:
-        raise ValidationError(
-            "cannot score until resolution is confirmed, criteria-satisfied, and scoreable"
-        )
+    with ledger.transaction(immediate=True):
+        snapshot = ledger.get_snapshot(forecast_id)
+        question = ledger.get_question(snapshot.question_id)
+        resolution = ledger.get_latest_resolution(snapshot.question_id, confirmed_only=True)
+        if resolution is None:
+            raise ValidationError(
+                "cannot score until resolution is confirmed, criteria-satisfied, and scoreable"
+            )
 
-    if not force:
+        # Imported provenance is historical data, not local settlement authority.
+        # Checking here also covers packets with a resolution but no score rows.
+        if question.metadata.get('settlement_binding'):
+            with ledger._connect() as conn:
+                pending_source = conn.execute("SELECT 1 FROM transferred_source_archives WHERE verification_status='imported' AND evidence_id IN (SELECT id FROM evidence_items WHERE question_id=?) LIMIT 1", (question.id,)).fetchone()
+            if pending_source:
+                raise ValidationError('transferred settlement requires local source verification before scoring')
         existing = ledger._existing_score(snapshot.forecast_id, resolution.id)
         if existing is not None:
-            return existing
-
-    scoring = ledger._score_forecast_payload(
-        snapshot.probability_or_distribution,
-        resolution.outcome,
-        question.outcome_space,
-    )
-    score_id = f"sc_{uuid.uuid4().hex[:12]}"
-    with ledger._connect() as conn:
-        conn.execute(
-            """
-            INSERT INTO score_records (
-                id, question_id, forecast_id, resolution_id, scored_at,
-                brier_score, log_score, proper_score, score_rule, calibration_bucket,
-                forecast_horizon_days, domain, forecast_origin,
-                calibration_eligible, calibration_weight, baseline_ref, notes
+            if not force:
+                return existing
+            ledger.create_correction(
+                target_type="score_record", target_id=existing.id, status="applied",
+                reason="Explicit score recomputation; retain prior score and invalidate derived learning.",
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
-            """,
-            (
-                score_id,
-                snapshot.question_id,
-                snapshot.forecast_id,
-                resolution.id,
-                utc_now_iso(),
-                scoring["brier_score"],
-                scoring["log_score"],
-                scoring["proper_score"],
-                scoring["score_rule"],
-                scoring["calibration_bucket"],
-                snapshot.forecast_horizon_days,
-                question.domain,
-                snapshot.forecast_origin,
-                1 if snapshot.calibration_eligible and question.outcome_space.censoring is None else 0,
-                snapshot.calibration_weight,
-                scoring["notes"],
-            ),
+
+        scoring = ledger._score_forecast_payload(
+            snapshot.probability_or_distribution,
+            resolution.outcome,
+            question.outcome_space,
         )
-    score = ledger.get_score(score_id)
-    if score.calibration_eligible and score.forecast_origin == "live":
-        ledger.update_domain_error_profile(question)
-    return score
+        score_id = f"sc_{uuid.uuid4().hex[:12]}"
+        with ledger._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO score_records (
+                    id, question_id, forecast_id, resolution_id, scored_at,
+                    brier_score, log_score, proper_score, score_rule, calibration_bucket,
+                    forecast_horizon_days, domain, forecast_origin,
+                    calibration_eligible, calibration_weight, baseline_ref, notes
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+                """,
+                (
+                    score_id,
+                    snapshot.question_id,
+                    snapshot.forecast_id,
+                    resolution.id,
+                    utc_now_iso(),
+                    scoring["brier_score"],
+                    scoring["log_score"],
+                    scoring["proper_score"],
+                    scoring["score_rule"],
+                    scoring["calibration_bucket"],
+                    snapshot.forecast_horizon_days,
+                    question.domain,
+                    snapshot.forecast_origin,
+                    1 if snapshot.calibration_eligible and question.outcome_space.censoring is None else 0,
+                    snapshot.calibration_weight,
+                    scoring["notes"],
+                ),
+            )
+        if force and existing is not None:
+            with ledger._connect() as conn:
+                stamp = utc_now_iso()
+                conn.execute("""
+                    INSERT OR IGNORE INTO operational_tasks
+                        (id, task_type, lane, question_id, status, priority,
+                         available_at, idempotency_key, created_at, updated_at)
+                    VALUES (?, 'finalize_resolution', 'deterministic_critical', ?,
+                            'pending', 100, ?, ?, ?, ?)
+                """, (f"ot_{uuid.uuid4().hex[:12]}", question.id, stamp,
+                      f"finalize-score:{score_id}", stamp, stamp))
+        score = ledger.get_score(score_id)
+        if score.calibration_eligible and score.forecast_origin == "live":
+            ledger.update_domain_error_profile(question)
+        return score
 
 
 def backfill_crps_scores(ledger, *, dry_run: bool = True) -> dict[str, Any]:
@@ -1805,8 +1833,6 @@ def _normal_distribution_score(
 # 1/√π, the CRPS of a standard normal at its own mean's tail constant.
 _CRPS_INV_SQRT_PI = 1.0 / math.sqrt(math.pi)
 
-_CRPS_MEAN_KEYS = ("mean", "expected", "value", "point")
-_CRPS_SD_KEYS = ("sd", "std", "sigma", "stdev", "standard_deviation")
 
 
 def _crps_num_from_suffix(raw: Any) -> float | None:
@@ -1908,24 +1934,6 @@ def _crps_pmf_points(payload: dict[str, Any]) -> list[tuple[float, float]] | Non
         points.append((value, min(cumulative, 1.0)))
     return points
 
-
-def _crps_gaussian_params(payload: dict[str, Any]) -> tuple[float | None, float | None]:
-    """Extract (mean, sd) from the moment keys or an ``equivalent_normal_*``
-    summary — the inputs to the closed-form normal CRPS + the log score."""
-    def _first(keys: tuple[str, ...], prefix: str = "") -> float | None:
-        for key in keys:
-            value = payload.get(prefix + key)
-            if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
-                return float(value)
-        return None
-
-    mean = _first(_CRPS_MEAN_KEYS)
-    if mean is None:
-        mean = _first(("mean",), prefix="equivalent_normal_")
-    sd = _first(_CRPS_SD_KEYS)
-    if sd is None:
-        sd = _first(("sd",), prefix="equivalent_normal_")
-    return mean, sd
 
 
 def _crps_discrete(points: list[tuple[float, float]], outcome: float) -> float:

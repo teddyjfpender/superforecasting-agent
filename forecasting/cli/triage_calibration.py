@@ -238,17 +238,10 @@ def register_triage(forecast_sub: argparse._SubParsersAction) -> None:
 
 
 def _run_triage_tool(args: argparse.Namespace, payload: dict[str, Any]) -> dict[str, Any]:
-    """Call the SAME triage tool action the agent uses and return the parsed result.
+    """Run the shared triage operation and render its structured result."""
+    from forecasting.application.triage import execute_triage_action
 
-    The CLI triage group is a thin surface over ``forecast_ledger_tool`` so the
-    triage logic (labeler wiring, contested routing, trust gate) lives in exactly
-    one place. Prints the structured result and raises SystemExit(1) on a tool error.
-    """
-    from tools.forecasting_tool import forecast_ledger_tool
-
-    payload = {**payload, "db": getattr(args, "db", None)}
-    out = forecast_ledger_tool(payload)
-    result = json.loads(out)
+    result = execute_triage_action(payload, _core._ledger(args))
     print(json.dumps(result, indent=2, sort_keys=True))
     if result.get("error") or result.get("success") is False:
         raise SystemExit(1)

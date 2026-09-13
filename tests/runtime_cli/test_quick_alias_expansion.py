@@ -27,7 +27,9 @@ def test_alias_cycles_fail_before_dispatch(aliases):
 
 
 def test_invalid_entries_and_empty_target():
-    assert expand_quick_alias("/a Arg", {"a": None}) == "/a Arg"
-    assert expand_quick_alias("/a Arg", {"a": {"type": "exec"}}) == "/a Arg"
+    with pytest.raises(ValueError, match="mapping"):
+        expand_quick_alias("/a Arg", {"a": None})
+    with pytest.raises(ValueError, match="no command"):
+        expand_quick_alias("/a Arg", {"a": {"type": "exec"}})
     with pytest.raises(ValueError, match="no target"):
         expand_quick_alias("/a", {"a": {"type": "alias"}})

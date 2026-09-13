@@ -1,22 +1,18 @@
-"""WARN->ERROR promotion machinery — the live-verification pre-check baked into the
-2026-07-09 promotion wave, plus the ``forecast hooks promotions`` advisor.
+"""Promotion behavior tests and opt-in audits of an explicitly supplied ledger.
 
-The pre-check is the operator's safety proof: each rule promoted to ERROR in the
-``standard`` profile is re-linted READ-ONLY against the LIVE ledger's actives and
-must show 0 failures, so the promotion commit itself proves it bricks nothing on
-the open book. If the live ledger is absent (CI / a fresh checkout), the pre-check
-skips — it is an environment proof, not a unit test — while the profile-pin +
-promotion-queue tests below run everywhere.
+The ordinary suite uses isolated fixtures. Set FORECAST_TEST_AUDIT_DB to a
+review copy to run the historical promotion pre-checks; never discover the
+operator's personal ledger implicitly.
 """
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from superforecasting_agent.constants import _NATIVE_HOME_DIRNAME
 from forecasting.hooks import by_rule_sweep, promotion_queue
 from forecasting.hooks.profiles import profile_severities
 from forecasting.hooks.spec import Severity
@@ -45,9 +41,11 @@ HELD_AT_WARN = ("lessons_applied",)
 
 
 def _live_ledger_path() -> Path:
-    """The REAL live ledger (NOT the per-test isolated HERMES_HOME). ``Path.home()``
-    is deliberately not redirected by conftest, so this targets the operator's book."""
-    return Path.home() / _NATIVE_HOME_DIRNAME / "forecasting" / "forecasting.db"
+    """Explicit audit input; ordinary test runs never select a personal book."""
+    explicit = os.environ.get("FORECAST_TEST_AUDIT_DB")
+    if not explicit:
+        pytest.skip("live audit requires an explicit isolated FORECAST_TEST_AUDIT_DB")
+    return Path(explicit)
 
 
 def test_every_promoted_rule_is_error_in_standard():
@@ -158,11 +156,11 @@ def test_promotion_queue_never_lists_a_promoted_rule_against_live():
         assert r["failed"] == 0
 
 
-def test_cmd_hooks_promotions_renders(capsys):
+def test_cmd_hooks_promotions_renders(capsys, tmp_path):
     """The CLI verb runs and prints the queue header (JSON + human paths)."""
-    db = _live_ledger_path()
-    if not db.exists():
-        pytest.skip(f"no live ledger at {db}")
+    from forecasting import ForecastLedger
+    db = tmp_path / "ledger.db"
+    ForecastLedger(db)
     from forecasting.cli import _cmd_hooks_promotions
 
     _cmd_hooks_promotions(SimpleNamespace(db=str(db), json=False))

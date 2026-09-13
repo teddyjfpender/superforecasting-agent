@@ -1,17 +1,117 @@
 """Atomic JSON/YAML writes that preserve symlinks and file permissions."""
 
+import hashlib
 import json
 import logging
 import os
 import stat
 import tempfile
-from contextlib import contextmanager
+import threading
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from typing import Any, Iterator, TextIO, Union
 
 import yaml
 
 logger = logging.getLogger(__name__)
+
+
+class ConfigSnapshot(dict):
+    """Revision-bearing mapping shared by all runtime configuration loaders."""
+
+    _path: Path | None = None
+    _revision: str | None = None
+
+
+def config_revision(path: Path) -> str | None:
+    try:
+        contents = path.read_bytes()
+    except FileNotFoundError:
+        return None
+    return hashlib.sha256(contents).hexdigest()
+
+
+# ponytail: serialize YAML writes globally; use per-path locks if contention warrants it.
+_YAML_LOCK = threading.RLock()
+_YAML_LOCK_HOLDERS = threading.local()
+
+
+@contextmanager
+def yaml_update_lock(path):
+    """Serialize read-modify-write across threads, processes and symlink aliases."""
+    from .locking import file_lock
+    from .profile_lease import ProfileLease
+
+    original = Path(path).absolute()
+    target = original.resolve()
+    admission = (
+        ProfileLease(original.parent)
+        if original.name in {"config.yaml", ".env", "auth.json"}
+        else nullcontext()
+    )
+    with admission, _YAML_LOCK:
+        holders = getattr(_YAML_LOCK_HOLDERS, "paths", None)
+        if holders is None:
+            holders = _YAML_LOCK_HOLDERS.paths = {}
+        holder = holders.setdefault(str(target), threading.local())
+        with file_lock(
+            target.with_name(target.name + ".lock"),
+            holder,
+            10,
+            "Timed out waiting for configuration writer",
+        ):
+            yield
+
+
+def set_nested(config, dotted_key: str, value):
+    """Set a value at an arbitrarily nested dotted key path.
+
+    Supports both dict and list navigation:
+      _set_nested(c, "a.b.c", 1)     → c["a"]["b"]["c"] = 1
+      _set_nested(c, "a.0.b", 1)     → c["a"][0]["b"] = 1
+      _set_nested(c, "providers.1", "x") → c["providers"][1] = "x"
+
+    Intermediate dicts are created on demand.  List indices are parsed
+    from numeric path segments; the referenced index must already exist
+    (we do not grow lists — the user is navigating into structure they
+    wrote themselves).  If a segment targets a non-container leaf
+    (scalar), the leaf is replaced with a fresh dict so the write can
+    proceed — this preserves the pre-existing behavior for bare scalar
+    overrides (e.g. setting ``a.b.c`` where ``a.b`` was previously a
+    string).
+
+    Guards against #17876: before this fix the code unconditionally
+    replaced any non-dict value (including lists) with ``{}``, silently
+    destroying list-typed config like ``custom_providers`` whenever a
+    caller used an indexed path.
+    """
+    parts = dotted_key.split(".")
+    current = config
+    for part in parts[:-1]:
+        if isinstance(current, list):
+            try:
+                idx = int(part)
+            except (TypeError, ValueError):
+                raise TypeError(
+                    f"Cannot navigate into list at key {dotted_key!r}: "
+                    f"segment {part!r} is not a numeric index"
+                )
+            current = current[idx]
+        elif isinstance(current, dict):
+            existing = current.get(part)
+            # Preserve dicts and lists; replace missing/scalar with a fresh dict.
+            if part not in current or not isinstance(existing, (dict, list)):
+                current[part] = {}
+            current = current[part]
+        else:
+            raise TypeError(
+                f"Cannot navigate into {type(current).__name__} at key {dotted_key!r}"
+            )
+    last = parts[-1]
+    if isinstance(current, list):
+        current[int(last)] = value
+    else:
+        current[last] = value
 
 
 def _preserve_file_mode(path: Path) -> "int | None":
@@ -22,7 +122,7 @@ def _preserve_file_mode(path: Path) -> "int | None":
         return None
 
 
-def _restore_file_mode(path: Path, mode: "int | None") -> None:
+def _restore_file_mode(path: str | Path, mode: "int | None") -> None:
     """Re-apply *mode* to *path* after an atomic replace.
 
     ``tempfile.mkstemp`` creates files with 0o600 (owner-only).  After
@@ -66,6 +166,21 @@ def atomic_replace(tmp_path: Union[str, Path], target: Union[str, Path]) -> str:
 
 
 @contextmanager
+def owned_text_descriptor(fd: int) -> Iterator[TextIO]:
+    """Own a descriptor through wrapper construction, use, and teardown.
+
+    The text wrapper borrows the descriptor. This context remains its sole owner
+    even if wrapper construction fails, so cleanup never depends on a partial
+    transfer of ownership inside fdopen.
+    """
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", closefd=False) as handle:
+            yield handle
+    finally:
+        os.close(fd)
+
+
+@contextmanager
 def _atomic_text_writer(path: Union[str, Path]) -> Iterator[TextIO]:
     """Commit a complete text write, preserving links and permissions on success."""
     path = Path(path)
@@ -77,7 +192,7 @@ def _atomic_text_writer(path: Union[str, Path]) -> Iterator[TextIO]:
         suffix=".tmp",
     )
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
+        with owned_text_descriptor(fd) as f:
             yield f
             f.flush()
             os.fsync(f.fileno())
@@ -152,6 +267,25 @@ def atomic_yaml_write(
             f.write(extra_content)
 
 
+def _roundtrip_codec():
+    """Keep YAML 1.2 writers compatible with the application's YAML 1.1 readers."""
+    from ruamel.yaml import YAML
+    from ruamel.yaml.representer import RoundTripRepresenter
+
+    class ConfigRepresenter(RoundTripRepresenter):
+        def represent_str(self, data):
+            style = '"' if data.lower() in {"on", "off", "yes", "no"} else None
+            return self.represent_scalar("tag:yaml.org,2002:str", data, style=style)
+
+    ConfigRepresenter.add_representer(str, ConfigRepresenter.represent_str)
+    codec = YAML(typ="rt")
+    codec.Representer = ConfigRepresenter
+    codec.version = (1, 1)  # read existing booleans like the application loaders
+    codec.preserve_quotes = True
+    codec.allow_unicode = True
+    return codec
+
+
 def atomic_roundtrip_yaml_update(
     path: Union[str, Path],
     key_path: str,
@@ -164,43 +298,63 @@ def atomic_roundtrip_yaml_update(
     should survive a single setting mutation.  Writes still use the same temp
     file + fsync + atomic replace pattern.
     """
-    try:
-        from ruamel.yaml import YAML
-        from ruamel.yaml.comments import CommentedMap
-    except ModuleNotFoundError:
-        _atomic_yaml_update_without_ruamel(path, key_path, value)
-        return
+    with yaml_update_lock(path):
+        try:
+            from ruamel.yaml.comments import CommentedMap
+        except ModuleNotFoundError:
+            _atomic_yaml_update_without_ruamel(path, key_path, value)
+            return
 
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        yaml_rt = _roundtrip_codec()
+        yaml_rt.preserve_quotes = True
+        yaml_rt.allow_unicode = True
+        yaml_rt.default_flow_style = False
+        yaml_rt.indent(mapping=2, sequence=4, offset=2)
+
+        if path.exists():
+            with path.open("r", encoding="utf-8") as f:
+                config = yaml_rt.load(f)
+                if config is None:
+                    config = CommentedMap()
+        else:
+            config = CommentedMap()
+
+        if not isinstance(config, dict):
+            raise ValueError("configuration root must be a mapping")
+
+        set_nested(config, key_path, value)
+
+        with _atomic_text_writer(path) as f:
+            yaml_rt.version = None  # avoid introducing a YAML directive
+            yaml_rt.dump(config, f)
+
+
+def atomic_roundtrip_yaml_mutate(path, mutate):
+    """Apply a compound edit to the latest mapping under the shared writer lock."""
     path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    yaml_rt = YAML(typ="rt")
-    yaml_rt.preserve_quotes = True
-    yaml_rt.allow_unicode = True
-    yaml_rt.default_flow_style = False
-    yaml_rt.indent(mapping=2, sequence=4, offset=2)
-
-    if path.exists():
-        with path.open("r", encoding="utf-8") as f:
-            config = yaml_rt.load(f) or CommentedMap()
-    else:
-        config = CommentedMap()
-
-    if not isinstance(config, CommentedMap):
-        config = CommentedMap(config)
-
-    current = config
-    keys = key_path.split(".")
-    for key in keys[:-1]:
-        next_value = current.get(key)
-        if not isinstance(next_value, CommentedMap):
-            next_value = CommentedMap()
-            current[key] = next_value
-        current = next_value
-    current[keys[-1]] = value
-
-    with _atomic_text_writer(path) as f:
-        yaml_rt.dump(config, f)
+    with yaml_update_lock(path):
+        try:
+            codec = _roundtrip_codec()
+            codec.preserve_quotes = True
+            codec.allow_unicode = True
+        except ImportError:
+            codec = None
+        raw = path.read_text(encoding="utf-8") if path.exists() else ""
+        config = codec.load(raw) if codec else yaml.safe_load(raw)
+        if config is None:
+            config = {}
+        if not isinstance(config, dict):
+            raise ValueError("configuration root must be a mapping")
+        mutate(config)
+        with _atomic_text_writer(path) as stream:
+            if codec:
+                codec.version = None
+                codec.dump(config, stream)
+            else:
+                yaml.safe_dump(config, stream, allow_unicode=True, sort_keys=False)
 
 
 def _yaml_inline_scalar(value: Any) -> str:
@@ -273,22 +427,16 @@ def _atomic_yaml_update_without_ruamel(
             with _atomic_text_writer(path) as f:
                 f.write(patched)
             return
-        config = yaml.safe_load(original_text) or {}
+        config = yaml.safe_load(original_text)
+        if config is None:
+            config = {}
     else:
         config = {}
 
     if not isinstance(config, dict):
-        config = {}
+        raise ValueError("configuration root must be a mapping")
 
-    current = config
-    keys = key_path.split(".")
-    for key in keys[:-1]:
-        next_value = current.get(key)
-        if not isinstance(next_value, dict):
-            next_value = {}
-            current[key] = next_value
-        current = next_value
-    current[keys[-1]] = value
+    set_nested(config, key_path, value)
     atomic_yaml_write(path, config, sort_keys=False)
 
 

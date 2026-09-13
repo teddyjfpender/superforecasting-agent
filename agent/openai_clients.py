@@ -33,16 +33,24 @@ def _openai_client_lock(self) -> threading.RLock:
     return lock
 
 
+def detach_primary_client(self) -> Any:
+    """Transfer this instance's current client to cleanup under the owner lock."""
+    with _openai_client_lock(self):
+        client = getattr(self, "client", None)
+        self.client = None
+        return client
+
+
 def _is_openai_client_closed(client: Any) -> bool:
     """Check if an OpenAI client is closed.
 
-        Handles both property and method forms of is_closed:
-        - httpx.Client.is_closed is a bool property
-        - openai.OpenAI.is_closed is a method returning bool
+    Handles both property and method forms of is_closed:
+    - httpx.Client.is_closed is a bool property
+    - openai.OpenAI.is_closed is a method returning bool
 
-        Prior bug: getattr(client, "is_closed", False) returned the bound method,
-        which is always truthy, causing unnecessary client recreation on every call.
-        """
+    Prior bug: getattr(client, "is_closed", False) returned the bound method,
+    which is always truthy, causing unnecessary client recreation on every call.
+    """
     from unittest.mock import Mock
 
     if isinstance(client, Mock):
@@ -65,8 +73,9 @@ def _is_openai_client_closed(client: Any) -> bool:
 
 def _build_keepalive_http_client(base_url: str = "") -> Any:
     try:
-        import httpx as _httpx
         import socket as _socket
+
+        import httpx as _httpx
 
         _sock_opts = [(_socket.SOL_SOCKET, _socket.SO_KEEPALIVE, 1)]
         if hasattr(_socket, "TCP_KEEPIDLE"):
@@ -91,20 +100,30 @@ def _build_keepalive_http_client(base_url: str = "") -> Any:
 def _close_openai_client(self, client: Any, *, reason: str, shared: bool) -> None:
     if client is None:
         return
-    # Force-close TCP sockets first to prevent CLOSE-WAIT accumulation,
-    # then do the graceful SDK-level close.
-    force_closed = self._force_close_tcp_sockets(client)
+    with _openai_client_lock(self):
+        failures = getattr(self, "_failed_client_closes", [])
+        if any(failed is client for failed in failures):
+            # HTTPX may mark itself closed before transport close raises. A
+            # second successful no-op is not evidence that sockets were freed.
+            return
+    # The SDK/transport owns its pools, proxy mounts and socket lifetime.
+    # Closing private sockets here bypasses that ownership and synchronization.
     try:
         client.close()
         logger.info(
-            "OpenAI client closed (%s, shared=%s, tcp_force_closed=%d) %s",
+            "OpenAI client closed (%s, shared=%s) %s",
             reason,
             shared,
-            force_closed,
             self._client_log_context(),
         )
     except Exception as exc:
-        logger.debug(
+        with _openai_client_lock(self):
+            failures = getattr(self, "_failed_client_closes", None)
+            if failures is None:
+                failures = self._failed_client_closes = []
+            if not any(failed is client for failed in failures):
+                failures.append(client)
+        logger.warning(
             "OpenAI client close failed (%s, shared=%s) %s error=%s",
             reason,
             shared,
@@ -113,17 +132,35 @@ def _close_openai_client(self, client: Any, *, reason: str, shared: bool) -> Non
         )
 
 
+def require_client_cleanup_complete(self) -> None:
+    """Do not let a host retire an owner whose SDK cleanup was unconfirmed."""
+    with _openai_client_lock(self):
+        if getattr(self, "_failed_client_closes", []):
+            raise RuntimeError(
+                "SDK client cleanup failed; retained handles require investigation"
+            )
+
+
 def _replace_primary_openai_client(self, *, reason: str) -> bool:
     with self._openai_client_lock():
+        if getattr(self, "_resources_closed", False):
+            return False
         old_client = getattr(self, "client", None)
         try:
-            new_client = self._create_openai_client(self._client_kwargs, reason=reason, shared=True)
+            new_client = self._create_openai_client(
+                self._client_kwargs, reason=reason, shared=True
+            )
         except Exception as exc:
             logger.warning(
                 "Failed to rebuild shared OpenAI client (%s) %s error=%s",
                 reason,
                 self._client_log_context(),
                 exc,
+            )
+            return False
+        if getattr(self, "_resources_closed", False):
+            self._close_openai_client(
+                new_client, reason="closed_during_build", shared=True
             )
             return False
         self.client = new_client
@@ -133,6 +170,8 @@ def _replace_primary_openai_client(self, *, reason: str) -> bool:
 
 def _ensure_primary_openai_client(self, *, reason: str) -> Any:
     with self._openai_client_lock():
+        if getattr(self, "_resources_closed", False):
+            raise RuntimeError("Agent resources are closed")
         client = getattr(self, "client", None)
         if client is not None and not self._is_openai_client_closed(client):
             return client
@@ -176,12 +215,14 @@ def _api_kwargs_have_image_parts(api_kwargs: dict) -> bool:
 
 
 def _copilot_headers_for_request(self, *, is_vision: bool) -> dict:
-    from superforecasting_agent.runtime.copilot_auth import copilot_request_headers
+    from superforecasting_agent.credentials.copilot import copilot_request_headers
 
     return copilot_request_headers(is_agent_turn=True, is_vision=is_vision)
 
 
-def _create_request_openai_client(self, *, reason: str, api_kwargs: Optional[dict] = None) -> Any:
+def _create_request_openai_client(
+    self, *, reason: str, api_kwargs: Optional[dict] = None
+) -> Any:
     from unittest.mock import Mock
 
     primary_client = self._ensure_primary_openai_client(reason=reason)
@@ -200,11 +241,12 @@ def _create_request_openai_client(self, *, reason: str, api_kwargs: Optional[dic
     # Shared/primary clients and Anthropic / Bedrock paths are
     # unaffected (they don't go through here).
     request_kwargs["max_retries"] = 0
-    if (
-        base_url_host_matches(str(request_kwargs.get("base_url", "")), "api.githubcopilot.com")
-        and self._api_kwargs_have_image_parts(api_kwargs or {})
-    ):
-        request_kwargs["default_headers"] = self._copilot_headers_for_request(is_vision=True)
+    if base_url_host_matches(
+        str(request_kwargs.get("base_url", "")), "api.githubcopilot.com"
+    ) and self._api_kwargs_have_image_parts(api_kwargs or {}):
+        request_kwargs["default_headers"] = self._copilot_headers_for_request(
+            is_vision=True
+        )
     return self._create_openai_client(request_kwargs, reason=reason, shared=False)
 
 

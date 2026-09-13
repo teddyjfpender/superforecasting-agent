@@ -28,6 +28,8 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from forecasting.distribution_summary import summarize_distribution
+
 __all__ = ["recenter_distribution", "would_recenter"]
 
 
@@ -114,14 +116,10 @@ def recenter_distribution(
     warning; the dispatcher does NOT auto-apply it (central-in-band stays
     ``NO_AUTO``/surfaced until validated + explicitly chosen).
     """
-    try:
-        from forecasting.dashboard import _distribution_view
-    except Exception:
-        return payload, []
     if not isinstance(payload, dict):
         return payload, []
 
-    view = _distribution_view(payload)
+    view = summarize_distribution(payload)
     if view is None or view.get("pmf"):
         # Not a continuous distribution (binary / candidate-share PMF): nothing to
         # recenter — the band invariant does not apply.

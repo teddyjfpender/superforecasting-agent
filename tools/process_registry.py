@@ -412,7 +412,7 @@ class ProcessRegistry:
             return False
         # ``os.kill(pid, 0)`` is NOT a no-op on Windows (bpo-14484) — use
         # the cross-platform existence check.
-        from gateway.status import _pid_exists
+        from superforecasting_agent.processes import pid_exists as _pid_exists
         return _pid_exists(pid)
 
     def _refresh_detached_session(self, session: Optional[ProcessSession]) -> Optional[ProcessSession]:
@@ -824,6 +824,7 @@ class ProcessRegistry:
             notification = {
                 "type": "completion",
                 "session_id": session.id,
+                "session_key": session.session_key,
                 "command": session.command,
                 "exit_code": session.exit_code,
                 "output": output_tail,
@@ -1198,10 +1199,13 @@ class ProcessRegistry:
         except Exception as e:
             return {"status": "error", "error": str(e)}
 
-    def list_sessions(self, task_id: str = None) -> list:
+    def list_sessions(self, task_id: str = None, *, session_key: str | None = None) -> list:
         """List all running and recently-finished processes."""
         with self._lock:
             all_sessions = list(self._running.values()) + list(self._finished.values())
+
+        if session_key is not None:
+            all_sessions = [s for s in all_sessions if s.session_key == session_key]
 
         all_sessions = [self._refresh_detached_session(s) for s in all_sessions]
 
@@ -1257,12 +1261,13 @@ class ProcessRegistry:
                 for s in self._running.values()
             )
 
-    def kill_all(self, task_id: str = None) -> int:
-        """Kill all running processes, optionally filtered by task_id. Returns count killed."""
+    def kill_all(self, task_id: str = None, *, session_key: str | None = None) -> int:
+        """Kill matching running processes. None selects all; empty scope is exact."""
         with self._lock:
             targets = [
                 s for s in self._running.values()
-                if (task_id is None or s.task_id == task_id) and not s.exited
+                if (task_id is None or s.task_id == task_id)
+                and (session_key is None or s.session_key == session_key) and not s.exited
             ]
 
         killed = 0

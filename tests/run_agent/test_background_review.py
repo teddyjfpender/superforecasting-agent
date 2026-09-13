@@ -241,3 +241,137 @@ def test_background_review_fork_skips_external_memory_plugins(monkeypatch):
         "the fork leaks harness prompts into the user's real memory "
         "namespace via on_turn_start / prefetch_all / sync_all."
     )
+
+
+def test_background_review_never_replaces_foreground_streams(monkeypatch, capsys):
+    """Hold a real review worker at run and cleanup while foreground output flows."""
+    import sys
+    import threading
+    from agent.background_review import _run_review_in_thread
+
+    entered = threading.Event()
+    proceed = threading.Event()
+    cleaning = threading.Event()
+    finish = threading.Event()
+    failures = []
+    streams = (sys.stdout, sys.stderr)
+
+    class FakeReviewAgent:
+        def __init__(self, **kwargs):
+            assert kwargs['quiet_mode'] is True
+            self._session_messages = []
+        def run_conversation(self, **kwargs):
+            entered.set()
+            assert proceed.wait(5)
+            raise RuntimeError('injected review failure')
+        def shutdown_memory_provider(self):
+            cleaning.set()
+            assert finish.wait(5)
+        def close(self):
+            pass
+
+    monkeypatch.setattr(run_agent_module, 'AIAgent', FakeReviewAgent)
+    agent = _bare_agent()
+    agent._emit_auxiliary_failure = lambda *args: failures.append(args)
+    worker = threading.Thread(target=_run_review_in_thread, args=(agent, [], 'review'))
+    worker.start()
+    try:
+        assert entered.wait(5)
+        assert (sys.stdout, sys.stderr) == streams
+        print('foreground during review')
+        assert 'foreground during review' in capsys.readouterr().out
+        proceed.set()
+        assert cleaning.wait(5)
+        assert (sys.stdout, sys.stderr) == streams
+        print('foreground during cleanup', file=sys.stderr)
+        assert 'foreground during cleanup' in capsys.readouterr().err
+    finally:
+        proceed.set()
+        finish.set()
+        worker.join(5)
+    assert not worker.is_alive()
+    assert len(failures) == 1
+    assert 'injected review failure' in str(failures[0][1])
+    assert (sys.stdout, sys.stderr) == streams
+
+
+def test_review_borrows_parent_session_tools_but_closes_its_client(monkeypatch):
+    import threading
+    from unittest.mock import Mock
+    from agent import session_lifecycle
+    from tools import process_registry, terminal_tool
+
+    parent = _bare_agent()
+    environment = Mock()
+    client = object()
+    close_client = Mock()
+    monkeypatch.setattr(terminal_tool, '_active_environments', {parent.session_id: environment})
+    kill = Mock()
+    browser = Mock()
+    monkeypatch.setattr(process_registry.process_registry, 'kill_all', kill)
+    monkeypatch.setattr(session_lifecycle, 'cleanup_browser', browser)
+    class FakeReviewAgent:
+        def __init__(self, **kwargs):
+            self._session_messages = []
+            self._resource_close_lock = threading.RLock()
+            self._active_children_lock = threading.Lock()
+            self._active_children = []
+            self.client = client
+            self._close_openai_client = close_client
+        def run_conversation(self, **kwargs):
+            assert self.session_id == parent.session_id
+            assert self._owns_session_tools is False
+        def shutdown_memory_provider(self):
+            pass
+        def close(self):
+            session_lifecycle.close(self)
+    monkeypatch.setattr(run_agent_module, 'AIAgent', FakeReviewAgent)
+    monkeypatch.setattr(run_agent_module.threading, 'Thread', ImmediateThread)
+    AIAgent._spawn_background_review(parent, [], review_memory=True)
+    assert terminal_tool._active_environments[parent.session_id] is environment
+    environment.cleanup.assert_not_called()
+    kill.assert_not_called()
+    browser.assert_not_called()
+    close_client.assert_called_once_with(client, reason='agent_close', shared=True)
+
+
+def test_real_review_spawn_is_owned_until_parent_cleanup_can_finish(monkeypatch):
+    import threading
+    import pytest
+    from unittest.mock import Mock
+    from agent import session_lifecycle
+
+    entered, leave, interrupted = threading.Event(), threading.Event(), threading.Event()
+    constructed = []
+    class FakeReviewAgent:
+        def __init__(self, **kwargs):
+            constructed.append(self)
+            self._session_messages = []
+        def run_conversation(self, **kwargs):
+            entered.set()
+            assert leave.wait(5)
+        def interrupt(self):
+            interrupted.set()
+        def shutdown_memory_provider(self):
+            pass
+        def close(self):
+            pass
+    monkeypatch.setattr(run_agent_module, 'AIAgent', FakeReviewAgent)
+    cleanup = Mock()
+    monkeypatch.setattr(session_lifecycle, '_close_resources', cleanup)
+    parent = _bare_agent()
+    parent._resource_close_lock = threading.RLock()
+    AIAgent._spawn_background_review(parent, [], review_memory=True)
+    try:
+        assert entered.wait(5)
+        with pytest.raises(RuntimeError, match='still running'):
+            session_lifecycle.close(parent)
+        assert interrupted.is_set()
+        cleanup.assert_not_called()
+        AIAgent._spawn_background_review(parent, [], review_memory=True)
+        assert len(constructed) == 1
+    finally:
+        leave.set()
+        assert parent._review_lifecycle.workers.drain(5)
+    session_lifecycle.close(parent)
+    cleanup.assert_called_once()

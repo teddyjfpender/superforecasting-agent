@@ -22,7 +22,7 @@ def managed_nous_tools_enabled() -> bool:
     False — never block the agent startup path.
     """
     try:
-        from superforecasting_agent.runtime.auth import get_nous_auth_status
+        from superforecasting_agent.credentials.auth import get_nous_auth_status
 
         status = get_nous_auth_status()
         if not status.get("logged_in"):

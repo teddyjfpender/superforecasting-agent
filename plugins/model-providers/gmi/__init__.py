@@ -1,6 +1,6 @@
 """GMI Cloud provider profile."""
 
-from superforecasting_agent.runtime import __version__ as _HERMES_VERSION
+from superforecasting_agent import __version__ as _HERMES_VERSION
 from providers import register_provider
 from providers.base import ProviderProfile
 

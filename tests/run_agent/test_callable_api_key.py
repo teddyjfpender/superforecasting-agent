@@ -318,25 +318,19 @@ class TestInlinedDisplayMasks:
             "placeholder plumbing, no describe-mask fallback."
         )
 
-    def test_cli_show_config_handles_callable(self):
-        """``cli.HermesCLI.show_config`` previously did
-        ``self.api_key[-4:]`` / ``len(self.api_key)`` which crashes on
-        callable Entra ID providers. The inlined version uses
-        ``is_token_provider`` and prints the same static label as the
-        run_agent banners."""
-        from pathlib import Path
-        src = (Path(__file__).resolve().parent.parent.parent
-               / "cli.py").read_text()
-        assert "is_token_provider(self.api_key)" in src, (
-            "cli.HermesCLI.show_config must guard self.api_key via "
-            "is_token_provider so callable Entra ID providers don't "
-            "crash /config."
-        )
-        assert '"Microsoft Entra ID"' in src, (
-            "cli.HermesCLI.show_config must print the static "
-            "'Microsoft Entra ID' label (matching run_agent banners) "
-            "instead of attempting to slice the callable."
-        )
+    def test_cli_show_config_handles_callable(self, capsys):
+        from types import SimpleNamespace
+        from cli import HermesCLI
+
+        def credential():
+            raise AssertionError("configuration inspection must not fetch a token")
+
+        view = SimpleNamespace(model="model", base_url="", api_key=credential,
+                               max_turns=90, enabled_toolsets=[], verbose=False)
+        HermesCLI.show_config(view)
+        output = capsys.readouterr().out
+        assert "Token provider" in output
+        assert "Toolsets: none" in output
 
     def test_mask_api_key_for_logs_handles_callable(self):
         """Diagnostic formatting must not invoke a callable credential provider."""

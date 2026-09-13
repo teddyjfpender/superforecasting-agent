@@ -28,10 +28,23 @@ def load_owid_observations(
     since_ts = parse_timestamp(since, field_name="since") if since else None
     since_dt = timestamp_to_datetime(since_ts) if since_ts else None
     text = _read_text_endpoint(endpoint, "owid grapher csv")
-    rows = list(csv.DictReader(text.splitlines()))
+    return _owid_observations_from_text(text, slug=slug, endpoint=endpoint, entity=entity,
+                                        value_column=value_column, since_dt=since_dt, limit=limit)
+
+
+def _owid_observations_from_text(text, *, slug, endpoint, entity=None, value_column=None, since_dt=None, limit=10):
+    """Parse an explicit measurement without inventing publication/vintage data."""
+    reader = csv.DictReader(text.splitlines())
+    if reader.fieldnames and len(set(reader.fieldnames)) != len(reader.fieldnames):
+        raise ValidationError("owid CSV has duplicate columns")
+    rows = list(reader)
+    if any(None in row or any(value is None for value in row.values()) for row in rows):
+        raise ValidationError("owid CSV row does not match its columns")
     if not rows:
         return []
     selected_value_column = value_column or _owid_value_column(rows[0])
+    if selected_value_column not in rows[0] or selected_value_column in {"Entity", "Code", "Year", "Date"}:
+        raise ValidationError("owid CSV is missing the requested measurement column")
     observations: list[OwidObservation] = []
     entity_filter = entity.casefold() if entity else None
     for row in rows:
@@ -40,14 +53,16 @@ def load_owid_observations(
         observation_date = _optional_str(row.get("Year")) or _optional_str(row.get("Date"))
         if not observation_date:
             continue
-        published_at = _owid_date_to_iso(observation_date)
-        if not published_at:
+        observation_time = _owid_date_to_iso(observation_date)
+        if not observation_time:
             continue
-        published_dt = timestamp_to_datetime(published_at) if published_at else None
-        if since_dt is not None and published_dt is not None and published_dt < since_dt:
+        observation_dt = timestamp_to_datetime(observation_time)
+        if since_dt is not None and observation_dt is not None and observation_dt < since_dt:
             continue
         raw_value = _optional_str(row.get(selected_value_column))
         value = _optional_float(raw_value)
+        if raw_value is not None and value is None:
+            raise ValidationError("owid measurement must be finite numeric data")
         observations.append(
             OwidObservation(
                 slug=slug,
@@ -56,7 +71,7 @@ def load_owid_observations(
                 observation_date=observation_date,
                 value=value if value is not None else raw_value,
                 value_column=selected_value_column,
-                published_at=published_at,
+                published_at=None,
                 source_url=endpoint,
                 source_name="Our World in Data",
                 entry_id=f"{slug}:{row.get('Entity', '')}:{observation_date}",
@@ -85,10 +100,10 @@ def _owid_endpoint(source: str, *, api_base_url: str) -> tuple[str, str]:
 
 
 def _owid_value_column(row: dict[str, str]) -> str:
-    for key in row:
-        if key not in {"Entity", "Code", "Year", "Date"}:
-            return key
-    raise ValidationError("owid CSV must include a value column")
+    columns = [key for key in row if key not in {"Entity", "Code", "Year", "Date"}]
+    if len(columns) != 1:
+        raise ValidationError("owid CSV measurement is ambiguous; specify --value-column")
+    return columns[0]
 
 
 def _owid_date_to_iso(value: str) -> str | None:

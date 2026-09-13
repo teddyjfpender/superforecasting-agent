@@ -31,6 +31,9 @@ def method(name: str):
 
 def register(server) -> None:
     """(Re-)register every carved cron/skills handler into ``server._methods``."""
+    global _err, _ok
+    _err = server._err
+    _ok = server._ok
     for kind, name, fn in _REGISTRARS:
         getattr(server, kind)(name)(fn)
 
@@ -102,8 +105,8 @@ def _(rid, params: dict) -> dict:
                 def print(self, *a, **k):
                     pass
 
-            do_install(query, skip_confirm=True, console=_Q())
-            return _ok(rid, {"installed": True, "name": query})
+            installed = do_install(query, skip_confirm=True, console=_Q())
+            return _ok(rid, {"installed": installed is True, "name": query})
         if action == "browse":
             from superforecasting_agent.runtime.skills_hub import browse_skills
 

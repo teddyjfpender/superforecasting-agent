@@ -36,7 +36,7 @@ from typing import Any, Dict, Optional
 
 import requests
 
-from agent.browser_provider import BrowserProvider
+from agent.browser_provider import BrowserProvider, BrowserSession
 
 logger = logging.getLogger(__name__)
 
@@ -179,7 +179,7 @@ class BrowserUseBrowserProvider(BrowserProvider):
         }
 
     def create_session(self, task_id: str) -> Dict[str, object]:
-        config = self._get_config()
+        config = dict(self._get_config())
         managed_mode = bool(config.get("managed_mode"))
 
         headers = self._headers(config)
@@ -235,17 +235,17 @@ class BrowserUseBrowserProvider(BrowserProvider):
 
         cdp_url = session_data.get("cdpUrl") or session_data.get("connectUrl") or ""
 
-        return {
+        return BrowserSession({
             "session_name": session_name,
             "bb_session_id": session_data["id"],
             "cdp_url": cdp_url,
             "features": {"browser_use": True},
             "external_call_id": external_call_id,
-        }
+        }, close=lambda session_id=session_data["id"]: self.close_session(session_id, _config=config))
 
-    def close_session(self, session_id: str) -> bool:
+    def close_session(self, session_id: str, *, _config: Dict[str, Any] | None = None) -> bool:
         try:
-            config = self._get_config()
+            config = self._get_config() if _config is None else _config
         except ValueError:
             logger.warning(
                 "Cannot close Browser Use session %s — missing credentials", session_id

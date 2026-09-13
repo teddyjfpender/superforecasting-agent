@@ -12,21 +12,21 @@ logger = logging.getLogger(__name__)
 def resolve_resume_session_id(self, session_id: str) -> str:
     """Redirect a resume target to the descendant session that holds the messages.
 
-        Context compression ends the current session and forks a new child session
-        (linked via ``parent_session_id``). The flush cursor is reset, so the
-        child is where new messages actually land — the parent ends up with
-        ``message_count = 0`` rows unless messages had already been flushed to
-        it before compression. See #15000.
+    Context compression ends the current session and forks a new child session
+    (linked via ``parent_session_id``). The flush cursor is reset, so the
+    child is where new messages actually land — the parent ends up with
+    ``message_count = 0`` rows unless messages had already been flushed to
+    it before compression. See #15000.
 
-        This helper walks ``parent_session_id`` forward from ``session_id`` and
-        returns the first descendant in the chain that has at least one message
-        row. If the original session already has messages, or no descendant
-        has any, the original ``session_id`` is returned unchanged.
+    This helper walks ``parent_session_id`` forward from ``session_id`` and
+    returns the first descendant in the chain that has at least one message
+    row. If the original session already has messages, or no descendant
+    has any, the original ``session_id`` is returned unchanged.
 
-        The chain is always walked via the child whose ``started_at`` is
-        latest; that matches the single-chain shape that compression creates.
-        A depth cap (32) guards against accidental loops in malformed data.
-        """
+    The chain is always walked via the child whose ``started_at`` is
+    latest; that matches the single-chain shape that compression creates.
+    A depth cap (32) guards against accidental loops in malformed data.
+    """
     if not session_id:
         return session_id
     with self._lock:
@@ -41,7 +41,7 @@ def resolve_resume_session_id(self, session_id: str) -> str:
         if row is not None:
             return session_id
         # Walk descendants: at each step, pick the most-recently-started
-            # child session; stop once we find one with messages.
+        # child session; stop once we find one with messages.
         current = session_id
         seen = {current}
         for _ in range(32):
@@ -77,9 +77,9 @@ def get_messages_as_conversation(
     self, session_id: str, include_ancestors: bool = False
 ) -> List[Dict[str, Any]]:
     """
-        Load messages in the OpenAI conversation format (role + content dicts).
-        Used by the gateway to restore conversation history.
-        """
+    Load messages in the OpenAI conversation format (role + content dicts).
+    Used by the gateway to restore conversation history.
+    """
     session_ids = [session_id]
     if include_ancestors:
         session_ids = self._session_lineage_root_to_tip(session_id)
@@ -106,7 +106,9 @@ def get_messages_as_conversation(
             try:
                 msg["tool_calls"] = json.loads(row["tool_calls"])
             except (json.JSONDecodeError, TypeError):
-                logger.warning("Failed to deserialize tool_calls in conversation replay, falling back to []")
+                logger.warning(
+                    "Failed to deserialize tool_calls in conversation replay, falling back to []"
+                )
                 msg["tool_calls"] = []
         # Restore reasoning fields on assistant messages so providers
         # that replay reasoning (OpenRouter, OpenAI, Nous) receive
@@ -122,21 +124,31 @@ def get_messages_as_conversation(
                 try:
                     msg["reasoning_details"] = json.loads(row["reasoning_details"])
                 except (json.JSONDecodeError, TypeError):
-                    logger.warning("Failed to deserialize reasoning_details, falling back to None")
+                    logger.warning(
+                        "Failed to deserialize reasoning_details, falling back to None"
+                    )
                     msg["reasoning_details"] = None
             if row["codex_reasoning_items"]:
                 try:
-                    msg["codex_reasoning_items"] = json.loads(row["codex_reasoning_items"])
+                    msg["codex_reasoning_items"] = json.loads(
+                        row["codex_reasoning_items"]
+                    )
                 except (json.JSONDecodeError, TypeError):
-                    logger.warning("Failed to deserialize codex_reasoning_items, falling back to None")
+                    logger.warning(
+                        "Failed to deserialize codex_reasoning_items, falling back to None"
+                    )
                     msg["codex_reasoning_items"] = None
             if row["codex_message_items"]:
                 try:
                     msg["codex_message_items"] = json.loads(row["codex_message_items"])
                 except (json.JSONDecodeError, TypeError):
-                    logger.warning("Failed to deserialize codex_message_items, falling back to None")
+                    logger.warning(
+                        "Failed to deserialize codex_message_items, falling back to None"
+                    )
                     msg["codex_message_items"] = None
-        if include_ancestors and self._is_duplicate_replayed_user_message(messages, msg):
+        if include_ancestors and self._is_duplicate_replayed_user_message(
+            messages, msg
+        ):
             continue
         messages.append(msg)
     return messages
@@ -164,7 +176,9 @@ def _session_lineage_root_to_tip(self, session_id: str) -> List[str]:
     return list(reversed(chain)) or [session_id]
 
 
-def _is_duplicate_replayed_user_message(messages: List[Dict[str, Any]], msg: Dict[str, Any]) -> bool:
+def _is_duplicate_replayed_user_message(
+    messages: List[Dict[str, Any]], msg: Dict[str, Any]
+) -> bool:
     if msg.get("role") != "user":
         return False
     content = msg.get("content")
@@ -173,6 +187,8 @@ def _is_duplicate_replayed_user_message(messages: List[Dict[str, Any]], msg: Dic
     for prev in reversed(messages):
         if prev.get("role") == "user" and prev.get("content") == content:
             return True
-        if prev.get("role") == "assistant" and (prev.get("content") or prev.get("tool_calls")):
+        if prev.get("role") == "assistant" and (
+            prev.get("content") or prev.get("tool_calls")
+        ):
             return False
     return False

@@ -209,6 +209,8 @@ class ReloadEnvResponse(WireModel):
 class ProcessStopRequest(WireModel):
     TS_NAME = "ProcessStopRequest"
 
+    session_id: str | None = wire_optional()
+
 
 class ProcessStopResponse(WireModel):
     TS_NAME = "ProcessStopResponse"

@@ -97,7 +97,7 @@ def quorum_auto_indicated(
 def available_provider_slugs() -> set[str] | None:
     """Authenticated LLM-provider slugs, or ``None`` when detection is unavailable.
 
-    Reuses the same :func:`superforecasting_agent.runtime.models.list_available_providers` seam the
+    Reuses the same :func:`superforecasting_agent.credentials.catalog.list_available_providers` seam the
     ``/model`` picker uses (which itself checks ``get_auth_status`` / the
     ``OPENROUTER_API_KEY``). Returning ``None`` on any failure is the FAIL-OPEN
     signal: an unknown provider picture must never spuriously downgrade a panel to
@@ -105,7 +105,7 @@ def available_provider_slugs() -> set[str] | None:
     """
 
     try:
-        from superforecasting_agent.runtime.models import list_available_providers
+        from superforecasting_agent.credentials.catalog import list_available_providers
 
         slugs = {
             str(p.get("id"))
@@ -173,21 +173,14 @@ def models_reachable(models: Sequence[str], available: set[str] | None) -> bool:
 # resolve_connected_panel rebuilds a preset's panel from the user's ACTUALLY-authed
 # providers — each provider's own default model, dispatched natively via the
 # ``provider:model`` runner split — and falls back to an HONESTLY-labeled
-# single-provider self-fusion when only one provider is reachable. It NEVER names a
-# model the user cannot call.
-
-# Aggregator providers serve many vendors' models under one key, so the hardcoded
-# preset ids ARE callable when one is authed — no rebuild needed (OpenRouter/Nous/
-# Vercel become "just another provider IF a key exists").
-_AGGREGATOR_PROVIDER_SLUGS = frozenset({"openrouter", "nous", "ai-gateway"})
-# Provider slugs that are not a distinct model source for panel diversity.
-_NON_PANEL_PROVIDER_SLUGS = frozenset({"custom"})
+# single-provider self-fusion when only one provider is detected. Selection rules
+# live in forecasting.panel_selection; discovery here is not a callability probe.
 
 
 def available_providers_detail() -> list[dict[str, Any]] | None:
     """Authenticated-provider detail rows, or ``None`` when detection is unavailable.
 
-    Reuses the same :func:`superforecasting_agent.runtime.models.list_available_providers` seam as
+    Reuses the same :func:`superforecasting_agent.credentials.catalog.list_available_providers` seam as
     :func:`available_provider_slugs` but keeps the ORDER + labels (so the panel is
     built deterministically from the canonical provider order). ``None`` on any
     failure is the FAIL-OPEN signal — an unknown provider picture must never
@@ -195,7 +188,7 @@ def available_providers_detail() -> list[dict[str, Any]] | None:
     """
 
     try:
-        from superforecasting_agent.runtime.models import list_available_providers
+        from superforecasting_agent.credentials.catalog import list_available_providers
 
         rows = [
             dict(p) for p in list_available_providers() if p.get("authenticated")
@@ -209,7 +202,7 @@ def _provider_default_model(slug: str) -> str | None:
     """The provider's own default/best model id (native form), or ``None``."""
 
     try:
-        from superforecasting_agent.runtime.models import get_default_model_for_provider
+        from agent.model_catalog import get_default_model_for_provider
 
         model = (get_default_model_for_provider(slug) or "").strip()
     except Exception:  # noqa: BLE001 — best-effort; a provider with no default is skipped
@@ -226,20 +219,18 @@ def _split_provider_model(model_id: str) -> tuple[str | None, str]:
     auto-resolution. Returns ``(None, model_id)`` when there is no provider prefix.
     """
 
-    if ":" not in model_id:
-        return None, model_id
-    head, rest = model_id.split(":", 1)
-    head_n = head.strip().lower()
-    rest = rest.strip()
-    if not rest:
-        return None, model_id
-    try:
-        from superforecasting_agent.runtime.models import _KNOWN_PROVIDER_NAMES
+    from superforecasting_agent.configuration.providers import split_provider_model
 
-        known = head_n in _KNOWN_PROVIDER_NAMES
+    return split_provider_model(model_id, _known_provider_names())
+
+
+def _known_provider_names() -> set[str]:
+    """Capture syntax names from the shared provider identity catalog."""
+    try:
+        from superforecasting_agent.configuration.provider_catalog import KNOWN_PROVIDER_NAMES
     except Exception:  # noqa: BLE001 — without the catalog, never split
-        known = False
-    return (head_n, rest) if known else (None, model_id)
+        return set()
+    return set(KNOWN_PROVIDER_NAMES)
 
 
 def resolve_connected_panel(
@@ -264,9 +255,11 @@ def resolve_connected_panel(
         reachable: ``active_model`` sampled ``samples`` times, with the HONEST label
         "1 provider connected -> self-fusion; multi-model needs a second provider".
 
-    Never names a model the user cannot call: a rebuilt multi-provider panel uses
-    each provider's OWN default model, and the self-fusion fallback uses the active
-    model routed through its active provider.
+    Supplied default_model fields are authoritative, including None (unknown).
+    Legacy rows without that field are enriched from the provider catalog.
+    A rebuilt panel uses provider-native defaults. Credential detection does not
+    prove quota, model access, or successful inference; execution must still report
+    provider failures.
     """
 
     detail = (
@@ -274,85 +267,24 @@ def resolve_connected_panel(
         if providers is not None
         else available_providers_detail()
     )
-    base = {
-        "rebuilt": False,
-        "self_fusion": False,
-        "models": None,
-        "judge": None,
-        "label": None,
-        "providers_used": [],
-    }
-    if detail is None:
-        # Unknown provider picture — fail open, keep the preset verbatim.
-        return base
+    from forecasting.panel_selection import select_connected_panel
 
-    authed = {str(p.get("id")) for p in detail}
-    base["providers_used"] = sorted(authed)
-    # An aggregator key serves the hardcoded preset ids as-is — no rebuild.
-    if authed & _AGGREGATOR_PROVIDER_SLUGS:
-        return base
-
-    # Distinct native providers, canonical order, each with its own default model.
-    pairs: list[tuple[str, str]] = []
-    seen: set[str] = set()
-    for row in detail:
-        slug = str(row.get("id"))
-        if slug in _NON_PANEL_PROVIDER_SLUGS or slug in _AGGREGATOR_PROVIDER_SLUGS:
-            continue
-        if slug in seen:
-            continue
-        model = _provider_default_model(slug)
-        if not model:
-            continue
-        seen.add(slug)
-        pairs.append((slug, f"{slug}:{model}"))
-
-    if len(pairs) >= 2:
-        want = max(2, min(preset_model_count(preset, samples=samples), len(pairs)))
-        chosen = pairs[:want]
-        models = [qm for _, qm in chosen]
-        active_norm = (active_provider or "").strip().lower()
-        judge = next(
-            (qm for slug, qm in chosen if slug == active_norm), models[0]
-        )
-        label = (
-            f"{len(chosen)} providers connected -> multi-model panel: "
-            + ", ".join(slug for slug, _ in chosen)
-        )
-        return {
-            "rebuilt": True,
-            "self_fusion": False,
-            "models": models,
-            "judge": judge,
-            "label": label,
-            "providers_used": [slug for slug, _ in chosen],
-        }
-
-    # ZERO usable providers: the docstring's contract — nothing usable was
-    # found -> rebuilt=False (fail-open, preset verbatim). Claiming
-    # "1 provider connected" here would be a lie, and self-fusing an active
-    # model with no live provider behind it reproduces the empty-response
-    # failure this function exists to prevent.
-    if not pairs and not authed:
-        return base
-
-    # Exactly 1 native provider reachable — honest single-provider self-fusion.
-    if active_model:
-        n = max(1, int(samples))
-        label = (
-            "1 provider connected -> self-fusion; multi-model needs a second provider"
-        )
-        return {
-            "rebuilt": True,
-            "self_fusion": True,
-            "models": [active_model] * n,
-            "judge": active_model,
-            "label": label,
-            "providers_used": [pairs[0][0]] if pairs else sorted(authed),
-        }
-
-    # Nothing usable to rebuild with (no aggregator, <2 providers, no active model).
-    return base
+    if detail is not None:
+        detail = [
+            {**row, "default_model": (
+                row["default_model"] if "default_model" in row
+                else _provider_default_model(str(row["id"]))
+            )}
+            for row in detail
+            if row.get("id") and row.get("authenticated", True) is True
+        ]
+    return select_connected_panel(
+        detail,
+        panel_size=preset_model_count(preset, samples=samples),
+        active_model=active_model,
+        active_provider=active_provider,
+        samples=samples,
+    )
 
 
 # ── Operator-pinned panel (QUORUM_PANEL_MODELS) ──────────────────────────────
@@ -384,15 +316,17 @@ def validate_panel_models(
     *,
     providers: Sequence[Mapping[str, Any]] | None = None,
 ) -> None:
-    """Validate pinned panel entries against the ACTUALLY-callable providers.
+    """Validate pinned panel entries against a captured credential snapshot.
 
     Raises :class:`ValidationError` naming EVERY entry whose ``provider:`` prefix is
-    not a connected/callable provider — never silently drops one. A bare id (no
+    not a connected provider — never silently drops one. Credential presence
+    does not prove model access, quota or successful inference. A bare id (no
     known provider prefix) routes through the active provider, so it is accepted
     (its reachability cannot be judged here). When the provider picture is UNKNOWN
     (detection unavailable) validation fails OPEN — the same fail-open contract the
-    rest of the module keeps — so a sandboxed/headless host is never blocked. An
-    aggregator key (OpenRouter/Nous/AI-Gateway) serves any id, so all entries pass.
+    rest of the module keeps — so a sandboxed/headless host is never blocked.
+    An explicit provider is binding even when an aggregator is connected: execution
+    requests that provider, rather than rerouting its model through the aggregator.
     """
 
     detail = (
@@ -402,26 +336,9 @@ def validate_panel_models(
     )
     if detail is None:
         return  # unknown provider picture — cannot prove non-callability, fail open
-    authed = {str(p.get("id")) for p in detail}
-    if authed & _AGGREGATOR_PROVIDER_SLUGS:
-        return  # a universal aggregator serves every pinned id
-    bad: list[str] = []
-    for entry in models:
-        prefix, _bare = _split_provider_model(entry)
-        if prefix is None:
-            continue  # bare id → active provider; reachability not decidable here
-        if prefix not in authed:
-            bad.append(entry)
-    if bad:
-        raise ValidationError(
-            f"{QUORUM_PANEL_MODELS_KEY} names entr"
-            + ("ies" if len(bad) > 1 else "y")
-            + " whose provider is not connected/callable: "
-            + ", ".join(bad)
-            + ". Connected providers: "
-            + (", ".join(sorted(authed)) or "(none)")
-            + f". Fix {QUORUM_PANEL_MODELS_KEY} or connect the provider."
-        )
+    from forecasting.panel_selection import validate_panel_routes
+
+    validate_panel_routes(models, detail, known_providers=_known_provider_names())
 
 
 def resolve_configured_panel(
@@ -433,7 +350,7 @@ def resolve_configured_panel(
     """The operator-pinned panel from ``QUORUM_PANEL_MODELS`` / ``QUORUM_JUDGE_MODEL``.
 
     Returns ``{"models": [...], "judge": str | None}`` when ``QUORUM_PANEL_MODELS``
-    is set (validated — a non-callable entry raises :class:`ValidationError`), or
+    is set (an explicitly disconnected route raises :class:`ValidationError`), or
     ``None`` when it is unset so the caller falls through to the preset / connected
     resolution. ``panel_models`` / ``judge_model`` are injectable for tests; unset
     (the default) reads them from the layered appconfig loader (registry default <
@@ -447,12 +364,11 @@ def resolve_configured_panel(
     models = parse_panel_models_config(panel_models)
     if not models:
         return None
-    validate_panel_models(models, providers=providers)
     if judge_model is _UNSET_CONFIG:
         from forecasting import appconfig
 
         judge_model = appconfig.get_str(QUORUM_JUDGE_MODEL_KEY, None)
     judge = (str(judge_model).strip() if judge_model else "") or None
-    if judge:
-        validate_panel_models([judge], providers=providers)
+    # Validate panelists and judge together against one credential snapshot.
+    validate_panel_models([*models, *([judge] if judge else [])], providers=providers)
     return {"models": models, "judge": judge}

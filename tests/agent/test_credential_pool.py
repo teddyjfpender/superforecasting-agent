@@ -300,7 +300,7 @@ def test_explicit_reset_timestamp_overrides_default_429_ttl(tmp_path, monkeypatc
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
     # Prevent auto-seeding from Codex CLI tokens on the host
     monkeypatch.setattr(
-        "superforecasting_agent.runtime.auth._import_codex_cli_tokens",
+        "superforecasting_agent.credentials.auth._import_codex_cli_tokens",
         lambda: None,
     )
     _write_auth_store(
@@ -620,7 +620,7 @@ def test_write_credential_pool_sanitizes_borrowed_payload_at_disk_boundary(tmp_p
     manual_secret = "MANUAL_SECRET_STAYS_PERSISTABLE"
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
 
-    from superforecasting_agent.runtime.auth import write_credential_pool
+    from superforecasting_agent.credentials.auth import write_credential_pool
 
     write_credential_pool("openrouter", [
         {
@@ -663,7 +663,7 @@ def test_write_credential_pool_treats_unowned_oauth_source_as_borrowed(tmp_path,
     sentinel = "S3NTINEL_DO_NOT_PERSIST_UNOWNED_OAUTH"
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
 
-    from superforecasting_agent.runtime.auth import write_credential_pool
+    from superforecasting_agent.credentials.auth import write_credential_pool
 
     write_credential_pool("openrouter", [
         {
@@ -691,7 +691,7 @@ def test_write_credential_pool_preserves_known_provider_owned_oauth_state(tmp_pa
     sentinel = "PROVIDER_OWNED_DEVICE_CODE_STAYS_PERSISTABLE"
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
 
-    from superforecasting_agent.runtime.auth import write_credential_pool
+    from superforecasting_agent.credentials.auth import write_credential_pool
 
     write_credential_pool("nous", [
         {
@@ -916,8 +916,8 @@ def test_nous_pool_terminal_refresh_removes_device_code_entry(tmp_path, monkeypa
     )
 
     from agent.credential_pool import PooledCredential, load_pool
-    from superforecasting_agent.runtime import auth as auth_mod
-    from superforecasting_agent.runtime.auth import AuthError
+    from superforecasting_agent.credentials import auth as auth_mod
+    from superforecasting_agent.credentials.auth import AuthError
 
     refresh_calls = {"count": 0}
 
@@ -1045,11 +1045,11 @@ def test_load_pool_removes_stale_file_backed_singleton_entry(tmp_path, monkeypat
     )
 
     monkeypatch.setattr(
-        "agent.anthropic_adapter.read_hermes_oauth_credentials",
+        "superforecasting_agent.credentials.anthropic.read_hermes_oauth_credentials",
         lambda: None,
     )
     monkeypatch.setattr(
-        "agent.anthropic_adapter.read_claude_code_credentials",
+        "superforecasting_agent.credentials.anthropic.read_claude_code_credentials",
         lambda: None,
     )
 
@@ -1114,7 +1114,7 @@ def test_singleton_seed_does_not_clobber_manual_oauth_entry(tmp_path, monkeypatc
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_TOKEN", raising=False)
     monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
-    monkeypatch.setattr("superforecasting_agent.runtime.auth.is_provider_explicitly_configured", lambda pid: True)
+    monkeypatch.setattr("superforecasting_agent.credentials.auth.is_provider_explicitly_configured", lambda pid: True)
     _write_auth_store(
         tmp_path,
         {
@@ -1137,7 +1137,7 @@ def test_singleton_seed_does_not_clobber_manual_oauth_entry(tmp_path, monkeypatc
     )
 
     monkeypatch.setattr(
-        "agent.anthropic_adapter.read_hermes_oauth_credentials",
+        "superforecasting_agent.credentials.anthropic.read_hermes_oauth_credentials",
         lambda: {
             "accessToken": "seeded-token",
             "refreshToken": "seeded-refresh",
@@ -1145,7 +1145,7 @@ def test_singleton_seed_does_not_clobber_manual_oauth_entry(tmp_path, monkeypatc
         },
     )
     monkeypatch.setattr(
-        "agent.anthropic_adapter.read_claude_code_credentials",
+        "superforecasting_agent.credentials.anthropic.read_claude_code_credentials",
         lambda: None,
     )
 
@@ -1166,7 +1166,7 @@ def test_load_pool_prefers_anthropic_env_token_over_file_backed_oauth(tmp_path, 
     _write_auth_store(tmp_path, {"version": 1, "providers": {}})
 
     monkeypatch.setattr(
-        "agent.anthropic_adapter.read_hermes_oauth_credentials",
+        "superforecasting_agent.credentials.anthropic.read_hermes_oauth_credentials",
         lambda: {
             "accessToken": "file-backed-token",
             "refreshToken": "refresh-token",
@@ -1174,7 +1174,7 @@ def test_load_pool_prefers_anthropic_env_token_over_file_backed_oauth(tmp_path, 
         },
     )
     monkeypatch.setattr(
-        "agent.anthropic_adapter.read_claude_code_credentials",
+        "superforecasting_agent.credentials.anthropic.read_claude_code_credentials",
         lambda: None,
     )
 
@@ -1193,7 +1193,7 @@ def test_least_used_strategy_selects_lowest_count(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
     monkeypatch.setattr(
         "agent.credential_pool.get_pool_strategy",
-        lambda _provider: "least_used",
+        lambda _provider, config=None: "least_used",
     )
     monkeypatch.setattr(
         "agent.credential_pool._seed_from_singletons",
@@ -1257,7 +1257,7 @@ def test_thread_safety_concurrent_select(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
     monkeypatch.setattr(
         "agent.credential_pool.get_pool_strategy",
-        lambda _provider: "round_robin",
+        lambda _provider, config=None: "round_robin",
     )
     monkeypatch.setattr(
         "agent.credential_pool._seed_from_singletons",
@@ -1318,7 +1318,7 @@ def test_custom_endpoint_pool_keyed_by_name(tmp_path, monkeypatch):
     # Disable seeding so we only test stored entries
     monkeypatch.setattr(
         "agent.credential_pool._seed_custom_pool",
-        lambda pool_key, entries: (False, set()),
+        lambda pool_key, entries, **_snapshot: (False, set()),
     )
     _write_auth_store(
         tmp_path,
@@ -1637,16 +1637,16 @@ def test_load_pool_does_not_seed_claude_code_when_anthropic_not_configured(tmp_p
 
     # Claude Code credentials exist on disk
     monkeypatch.setattr(
-        "agent.anthropic_adapter.read_claude_code_credentials",
+        "superforecasting_agent.credentials.anthropic.read_claude_code_credentials",
         lambda: {"accessToken": "sk-ant...oken", "refreshToken": "rt", "expiresAt": 9999999999999},
     )
     monkeypatch.setattr(
-        "agent.anthropic_adapter.read_hermes_oauth_credentials",
+        "superforecasting_agent.credentials.anthropic.read_hermes_oauth_credentials",
         lambda: None,
     )
     # User configured kimi-coding, NOT anthropic
     monkeypatch.setattr(
-        "superforecasting_agent.runtime.auth.is_provider_explicitly_configured",
+        "superforecasting_agent.credentials.auth.is_provider_explicitly_configured",
         lambda pid: pid == "kimi-coding",
     )
 
@@ -1663,7 +1663,7 @@ def test_load_pool_seeds_copilot_via_gh_auth_token(tmp_path, monkeypatch):
     _write_auth_store(tmp_path, {"version": 1, "credential_pool": {}})
 
     monkeypatch.setattr(
-        "superforecasting_agent.runtime.copilot_auth.resolve_copilot_token",
+        "superforecasting_agent.credentials.copilot.resolve_copilot_token",
         lambda: ("gho_fake_token_abc123", "gh auth token"),
     )
 
@@ -1684,7 +1684,7 @@ def test_load_pool_does_not_seed_copilot_when_no_token(tmp_path, monkeypatch):
     _write_auth_store(tmp_path, {"version": 1, "credential_pool": {}})
 
     monkeypatch.setattr(
-        "superforecasting_agent.runtime.copilot_auth.resolve_copilot_token",
+        "superforecasting_agent.credentials.copilot.resolve_copilot_token",
         lambda: ("", ""),
     )
 
@@ -1701,7 +1701,7 @@ def test_load_pool_seeds_qwen_oauth_via_cli_tokens(tmp_path, monkeypatch):
     _write_auth_store(tmp_path, {"version": 1, "credential_pool": {}})
 
     monkeypatch.setattr(
-        "superforecasting_agent.runtime.auth.resolve_qwen_runtime_credentials",
+        "superforecasting_agent.credentials.auth.resolve_qwen_runtime_credentials",
         lambda **kw: {
             "provider": "qwen-oauth",
             "base_url": "https://portal.qwen.ai/v1",
@@ -1727,10 +1727,10 @@ def test_load_pool_does_not_seed_qwen_oauth_when_no_token(tmp_path, monkeypatch)
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
     _write_auth_store(tmp_path, {"version": 1, "credential_pool": {}})
 
-    from superforecasting_agent.runtime.auth import AuthError
+    from superforecasting_agent.credentials.auth import AuthError
 
     monkeypatch.setattr(
-        "superforecasting_agent.runtime.auth.resolve_qwen_runtime_credentials",
+        "superforecasting_agent.credentials.auth.resolve_qwen_runtime_credentials",
         lambda **kw: (_ for _ in ()).throw(
             AuthError("Qwen CLI credentials not found.", provider="qwen-oauth", code="qwen_auth_missing")
         ),
@@ -2174,7 +2174,7 @@ def _xai_auth_store(access_token: str, refresh_token: str) -> dict:
 
 
 def test_is_terminal_xai_oauth_refresh_error():
-    from superforecasting_agent.runtime.auth import AuthError, _is_terminal_xai_oauth_refresh_error
+    from superforecasting_agent.credentials.auth import AuthError, _is_terminal_xai_oauth_refresh_error
 
     assert _is_terminal_xai_oauth_refresh_error(
         AuthError("Refresh failed", provider="xai-oauth", code="xai_refresh_failed", relogin_required=True)
@@ -2204,8 +2204,8 @@ def test_xai_oauth_terminal_refresh_clears_auth_json_and_removes_pool_entries(
     _write_auth_store(tmp_path, _xai_auth_store("old-access-token", "old-refresh-token"))
 
     from agent.credential_pool import PooledCredential, load_pool
-    import superforecasting_agent.runtime.auth as auth_mod
-    from superforecasting_agent.runtime.auth import AuthError
+    import superforecasting_agent.credentials.auth as auth_mod
+    from superforecasting_agent.credentials.auth import AuthError
 
     pool = load_pool("xai-oauth")
     selected = pool.select()
@@ -2264,8 +2264,8 @@ def test_xai_oauth_nonterminal_refresh_does_not_quarantine(tmp_path, monkeypatch
     _write_auth_store(tmp_path, _xai_auth_store("old-access-token", "old-refresh-token"))
 
     from agent.credential_pool import load_pool
-    import superforecasting_agent.runtime.auth as auth_mod
-    from superforecasting_agent.runtime.auth import AuthError
+    import superforecasting_agent.credentials.auth as auth_mod
+    from superforecasting_agent.credentials.auth import AuthError
 
     pool = load_pool("xai-oauth")
     assert pool.select() is not None
@@ -2310,7 +2310,7 @@ def _codex_auth_store(access_token: str, refresh_token: str) -> dict:
 
 
 def test_is_terminal_codex_oauth_refresh_error():
-    from superforecasting_agent.runtime.auth import AuthError, _is_terminal_codex_oauth_refresh_error
+    from superforecasting_agent.credentials.auth import AuthError, _is_terminal_codex_oauth_refresh_error
 
     assert _is_terminal_codex_oauth_refresh_error(
         AuthError("Refresh failed", provider="openai-codex", code="codex_refresh_failed", relogin_required=True)
@@ -2346,8 +2346,8 @@ def test_codex_oauth_terminal_refresh_clears_auth_json_and_removes_pool_entries(
     _write_auth_store(tmp_path, _codex_auth_store("old-access-token", "old-refresh-token"))
 
     from agent.credential_pool import PooledCredential, load_pool
-    import superforecasting_agent.runtime.auth as auth_mod
-    from superforecasting_agent.runtime.auth import AuthError
+    import superforecasting_agent.credentials.auth as auth_mod
+    from superforecasting_agent.credentials.auth import AuthError
 
     pool = load_pool("openai-codex")
     selected = pool.select()
@@ -2405,8 +2405,8 @@ def test_codex_oauth_nonterminal_refresh_does_not_quarantine(tmp_path, monkeypat
     _write_auth_store(tmp_path, _codex_auth_store("old-access-token", "old-refresh-token"))
 
     from agent.credential_pool import load_pool
-    import superforecasting_agent.runtime.auth as auth_mod
-    from superforecasting_agent.runtime.auth import AuthError
+    import superforecasting_agent.credentials.auth as auth_mod
+    from superforecasting_agent.credentials.auth import AuthError
 
     pool = load_pool("openai-codex")
     assert pool.select() is not None

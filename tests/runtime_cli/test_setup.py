@@ -6,7 +6,7 @@ import types
 
 import pytest
 
-from superforecasting_agent.runtime.auth import get_active_provider
+from superforecasting_agent.credentials.auth import get_active_provider
 from superforecasting_agent.runtime.config import load_config, save_config
 from superforecasting_agent.runtime import setup as setup_mod
 from superforecasting_agent.runtime.setup import setup_model_provider
@@ -338,7 +338,7 @@ def test_select_provider_and_model_warns_if_named_custom_provider_disappears(
         save_config(current)
         return next(i for i, label in enumerate(choices) if label.startswith("Local (localhost:8080/v1)"))
 
-    monkeypatch.setattr("superforecasting_agent.runtime.auth.resolve_provider", lambda provider: None)
+    monkeypatch.setattr("superforecasting_agent.credentials.auth.resolve_provider", lambda provider: None)
     monkeypatch.setattr("superforecasting_agent.runtime.main._prompt_provider_choice", fake_prompt_provider_choice)
     monkeypatch.setattr(
         "superforecasting_agent.runtime.main._model_flow_named_custom",

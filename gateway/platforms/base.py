@@ -475,10 +475,7 @@ from gateway.session import SessionSource, build_session_key
 from superforecasting_agent.constants import get_agent_dir
 
 
-GATEWAY_SECRET_CAPTURE_UNSUPPORTED_MESSAGE = (
-    "Secure secret entry is not supported over messaging. "
-    "Load this skill in the local CLI to be prompted, or add the key to the active agent-home .env manually."
-)
+from superforecasting_agent.constants import REMOTE_SECRET_ENTRY_HINT as GATEWAY_SECRET_CAPTURE_UNSUPPORTED_MESSAGE
 
 
 def safe_url_for_log(url: str, max_len: int = 80) -> str:
@@ -554,49 +551,13 @@ def get_image_cache_dir() -> Path:
     return IMAGE_CACHE_DIR
 
 
-def _looks_like_image(data: bytes) -> bool:
-    """Return True if *data* starts with a known image magic-byte sequence."""
-    if len(data) < 4:
-        return False
-    if data[:8] == b"\x89PNG\r\n\x1a\n":
-        return True
-    if data[:3] == b"\xff\xd8\xff":
-        return True
-    if data[:6] in {b"GIF87a", b"GIF89a"}:
-        return True
-    if data[:2] == b"BM":
-        return True
-    if data[:4] == b"RIFF" and len(data) >= 12 and data[8:12] == b"WEBP":
-        return True
-    return False
+from superforecasting_agent.storage.media import _looks_like_image
 
 
 def cache_image_from_bytes(data: bytes, ext: str = ".jpg") -> str:
-    """
-    Save raw image bytes to the cache and return the absolute file path.
+    from superforecasting_agent.storage.media import cache_image_from_bytes as cache
 
-    Args:
-        data: Raw image bytes.
-        ext:  File extension including the dot (e.g. ".jpg", ".png").
-
-    Returns:
-        Absolute path to the cached image file as a string.
-
-    Raises:
-        ValueError: If *data* does not look like a valid image (e.g. an HTML
-            error page returned by the upstream server).
-    """
-    if not _looks_like_image(data):
-        snippet = data[:80].decode("utf-8", errors="replace")
-        raise ValueError(
-            f"Refusing to cache non-image data as {ext} "
-            f"(starts with: {snippet!r})"
-        )
-    cache_dir = get_image_cache_dir()
-    filename = f"img_{uuid.uuid4().hex[:12]}{ext}"
-    filepath = cache_dir / filename
-    filepath.write_bytes(data)
-    return str(filepath)
+    return cache(data, ext, cache_dir=get_image_cache_dir())
 
 
 async def cache_image_from_url(url: str, ext: str = ".jpg", retries: int = 2) -> str:

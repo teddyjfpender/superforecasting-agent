@@ -444,19 +444,19 @@ class TestResolveActiveHost:
     def test_profile_name_derives_host(self):
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("HERMES_HONCHO_HOST", None)
-            with patch("superforecasting_agent.runtime.profiles.get_active_profile_name", return_value="coder"):
+            with patch("superforecasting_agent.constants.get_active_profile_name", return_value="coder"):
                 assert resolve_active_host() == "hermes.coder"
 
     def test_default_profile_returns_hermes(self):
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("HERMES_HONCHO_HOST", None)
-            with patch("superforecasting_agent.runtime.profiles.get_active_profile_name", return_value="default"):
+            with patch("superforecasting_agent.constants.get_active_profile_name", return_value="default"):
                 assert resolve_active_host() == "hermes"
 
     def test_custom_profile_returns_hermes(self):
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("HERMES_HONCHO_HOST", None)
-            with patch("superforecasting_agent.runtime.profiles.get_active_profile_name", return_value="custom"):
+            with patch("superforecasting_agent.constants.get_active_profile_name", return_value="custom"):
                 assert resolve_active_host() == "hermes"
 
     def test_profiles_import_failure_falls_back(self):

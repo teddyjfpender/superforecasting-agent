@@ -168,7 +168,7 @@ def add_evidence(
         if archived_url_snapshot is not None:
             snapshot_path = archived_url_snapshot["snapshot_path"]
             evidence_metadata["source_snapshot"] = archived_url_snapshot
-            if not archived_url_snapshot.get('blocked') and archived_url_snapshot.get('status') == 200:
+            if not archived_url_snapshot.get('blocked') and not archived_url_snapshot.get('redirected') and archived_url_snapshot.get('status') == 200:
                 evidence_metadata['source_capture'] = {
                     'url': inferred_url, 'sha256': archived_url_snapshot.get('sha256'),
                     'captured_at': now, 'method': 'https_fetch',
@@ -649,6 +649,12 @@ def update_triage_label(
     verdict: str | None = None,
     materiality: str | None = None,
 ) -> dict[str, Any] | None:
+    from forecasting.triage import normalize_label
+
+    if expert_label is not None:
+        expert_label = normalize_label(expert_label, strict=True)
+    if triage_label is not None:
+        triage_label = normalize_label(triage_label, strict=True)
     sets: list[str] = []
     params: list[Any] = []
     if expert_label is not None:

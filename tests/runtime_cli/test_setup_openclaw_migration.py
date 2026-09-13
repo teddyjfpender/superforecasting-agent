@@ -245,7 +245,7 @@ class TestSetupWizardOpenclawIntegration:
             patch.object(setup_mod, "get_agent_home", return_value=tmp_path),
             patch.object(setup_mod, "get_env_value", return_value=""),
             patch.object(setup_mod, "is_interactive_stdin", return_value=True),
-            patch("superforecasting_agent.runtime.auth.get_active_provider", return_value=None),
+            patch("superforecasting_agent.credentials.auth.get_active_provider", return_value=None),
             # User presses Enter to start
             patch("builtins.input", return_value=""),
             # Select "Full setup" (index 1) so we exercise the full path
@@ -282,7 +282,7 @@ class TestSetupWizardOpenclawIntegration:
             patch.object(setup_mod, "get_agent_home", return_value=tmp_path),
             patch.object(setup_mod, "get_env_value", return_value=""),
             patch.object(setup_mod, "is_interactive_stdin", return_value=True),
-            patch("superforecasting_agent.runtime.auth.get_active_provider", return_value=None),
+            patch("superforecasting_agent.credentials.auth.get_active_provider", return_value=None),
             patch("builtins.input", return_value=""),
             patch.object(setup_mod, "prompt_choice", return_value=1),
             patch.object(setup_mod, "_offer_openclaw_migration", return_value=True),
@@ -314,7 +314,7 @@ class TestSetupWizardOpenclawIntegration:
             patch.object(setup_mod, "get_agent_home", return_value=tmp_path),
             patch.object(setup_mod, "get_env_value", return_value=""),
             patch.object(setup_mod, "is_interactive_stdin", return_value=True),
-            patch("superforecasting_agent.runtime.auth.get_active_provider", return_value=None),
+            patch("superforecasting_agent.credentials.auth.get_active_provider", return_value=None),
             patch("builtins.input", return_value=""),
             patch.object(setup_mod, "prompt_choice", return_value=1),
             patch.object(setup_mod, "_offer_openclaw_migration", return_value=True),
@@ -343,7 +343,7 @@ class TestSetupWizardOpenclawIntegration:
                 "get_env_value",
                 side_effect=lambda k: "sk-xxx" if k == "OPENROUTER_API_KEY" else "",
             ),
-            patch("superforecasting_agent.runtime.auth.get_active_provider", return_value=None),
+            patch("superforecasting_agent.credentials.auth.get_active_provider", return_value=None),
             # Returning user picks "Exit"
             patch.object(setup_mod, "prompt_choice", return_value=9),
             patch.object(
@@ -649,7 +649,7 @@ class TestSetupWizardSkipsConfiguredSections:
             patch.object(setup_mod, "get_env_value", side_effect=env_side),
             patch.object(gateway_mod, "get_env_value", side_effect=env_side),
             patch.object(setup_mod, "is_interactive_stdin", return_value=True),
-            patch("superforecasting_agent.runtime.auth.get_active_provider", return_value=None),
+            patch("superforecasting_agent.credentials.auth.get_active_provider", return_value=None),
             patch("builtins.input", return_value=""),
             patch.object(setup_mod, "prompt_choice", return_value=1),
             # Migration succeeds and flips the env_side flag

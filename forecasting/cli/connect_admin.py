@@ -92,7 +92,7 @@ def build_connect_listing(*, router: Optional[notify_mod.NotifyRouter] = None) -
     })
 
     try:
-        from tools.slack_tool import _resolve_bot_token
+        from forecasting.transports.slack import resolve_bot_token as _resolve_bot_token
         slack_token = bool(_resolve_bot_token(None))
     except Exception:
         slack_token = False
@@ -254,7 +254,7 @@ def run_slack_connect(
     store = store or router.store
     set_token = set_token or _default_set_env("SLACK_BOT_TOKEN")
     if auth_test is None:
-        from tools.slack_tool import _slack_api_call
+        from forecasting.transports.slack import api_call as _slack_api_call
         auth_test = lambda t: _slack_api_call("auth.test", t)  # noqa: E731
 
     if name is None:

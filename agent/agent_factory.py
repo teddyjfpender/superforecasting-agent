@@ -1,9 +1,8 @@
 """The single resolve->construct path for an AIAgent.
 
-Every surface (TUI gateway, CLI, delegation, and the new Slack/voice/meet surfaces)
-spawns agents through ``build_agent()`` so the resolve-runtime-provider -> map ->
-construct pattern lives in ONE place — and so a per-tenant credential context has a
-single seam to thread through (``credential_context``).
+Migrated surfaces spawn agents through ``build_agent()`` so the
+resolve-runtime-provider -> map -> construct pattern has one owner. A per-tenant
+credential context has a single seam to thread through (``credential_context``).
 
 ADDITIVE by design: this wraps, and never replaces, ``AIAgent`` / ``init_agent``. The
 constructor and its 30+ kwargs are unchanged; existing call sites keep working and are
@@ -12,11 +11,12 @@ migrated incrementally.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 # The runtime-provider dict keys (resolve_runtime_provider) that map onto AIAgent
-# constructor kwargs, and the kwarg each becomes. Mirrors the canonical mapping in
-# tui_gateway/server.py:_make_agent and cli.py:ChatSession.refresh.
+# constructor kwargs. CLI and TUI construction both use this mapping.
 _RUNTIME_TO_KWARG: dict[str, str] = {
     "provider": "provider",
     "base_url": "base_url",
@@ -43,9 +43,9 @@ def _validate_provider_model(provider: str | None, model: str) -> None:
 
 
 def _aiagent_cls():
-    """Indirection so callers/tests can construct without importing run_agent eagerly
-    (run_agent is heavy) and so the class is patchable in tests."""
-    from run_agent import AIAgent
+    """Indirection so callers/tests can construct without importing the runtime eagerly
+    (agent.runtime is heavy) and so the class is patchable in tests."""
+    from agent.runtime import AIAgent
 
     return AIAgent
 
@@ -56,6 +56,7 @@ def resolve_and_map_runtime(
     requested_provider: str | None = None,
     target_model: str | None = None,
     credential_context: dict[str, Any] | None = None,
+    configuration: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Resolve a runtime-provider dict (if not supplied) and map it to the AIAgent
     kwargs. A ``credential_context`` (the per-tenant seam) may supply an explicit
@@ -63,14 +64,18 @@ def resolve_and_map_runtime(
     multi-tenant caller can resolve secrets per tenant without touching process globals.
     Keys whose runtime value is None are dropped (so the AIAgent default applies)."""
     if runtime is None:
-        from superforecasting_agent.runtime.runtime_provider import resolve_runtime_provider
+        from superforecasting_agent.runtime.runtime_provider import (
+            resolve_runtime_provider,
+        )
 
         ctx = credential_context or {}
+        config_options = {"config": configuration} if configuration is not None else {}
         runtime = resolve_runtime_provider(
             requested=ctx.get("provider") or requested_provider,
             explicit_api_key=ctx.get("api_key"),
             explicit_base_url=ctx.get("base_url"),
             target_model=target_model or None,
+            **config_options,
         )
     return {
         kwarg: runtime.get(key)
@@ -85,6 +90,7 @@ def build_agent(
     model: str = "",
     requested_provider: str | None = None,
     credential_context: dict[str, Any] | None = None,
+    configuration: dict[str, Any] | None = None,
     **agent_kwargs: Any,
 ):
     """Construct an AIAgent via the single resolve->construct path.
@@ -107,8 +113,55 @@ def build_agent(
         requested_provider=requested_provider,
         target_model=model or None,
         credential_context=credential_context,
+        configuration=configuration,
     )
     for kwarg, value in mapped.items():
         agent_kwargs.setdefault(kwarg, value)
     _validate_provider_model(agent_kwargs.get("provider"), model)
     return _aiagent_cls()(model=model, **agent_kwargs)
+
+
+def build_forecast_agent(
+    *,
+    session_id: str,
+    system_prompt: str | None = None,
+    startup_skills: list[str] | None = None,
+    **agent_kwargs: Any,
+):
+    """Construct a forecasting desk agent with the shared startup policy.
+
+    Interfaces supply their session, callbacks and runtime options. Prompt/skill
+    validation precedes provider resolution or agent allocation. Storage remains
+    borrowed from the caller; construction and cleanup ownership are unchanged.
+    """
+    from agent.startup_prompt import prepare_startup_prompt
+    from forecasting.protocol import build_forecast_chat_system_prompt
+
+    if "ephemeral_system_prompt" in agent_kwargs:
+        raise ValueError("Use system_prompt when constructing a forecasting agent")
+    prompt, _loaded_skills = prepare_startup_prompt(
+        system_prompt, startup_skills or [], session_id=session_id
+    )
+    return build_agent(
+        session_id=session_id,
+        ephemeral_system_prompt=build_forecast_chat_system_prompt(prompt),
+        **agent_kwargs,
+    )
+
+
+@contextmanager
+def managed_agent(**kwargs: Any) -> Iterator[Any]:
+    """Own a newly constructed agent through a complete unit of conversation work.
+
+    Cleanup happens in the calling thread after work exits, never while a timed-out
+    worker is still using the agent. Close failures propagate with the original
+    exception as context. Minimal injected agents without a close method remain
+    supported; production AIAgent supplies explicit resource cleanup.
+    """
+    agent = build_agent(**kwargs)
+    try:
+        yield agent
+    finally:
+        close = getattr(agent, "close", None)
+        if callable(close):
+            close()

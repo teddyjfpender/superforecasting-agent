@@ -1,0 +1,4 @@
+ca-certificates	20260601~24.04.1
+libc6:amd64	2.39-0ubuntu8.8
+libssl3t64:amd64	3.0.13-0ubuntu3.15
+openssl	3.0.13-0ubuntu3.15

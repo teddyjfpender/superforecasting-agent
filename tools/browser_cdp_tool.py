@@ -331,93 +331,96 @@ def browser_cdp(
         JSON string ``{"success": True, "method": ..., "result": {...}}`` on
         success, or ``{"error": "..."}`` on failure.
     """
-    # --- Route iframe-scoped calls through the supervisor ---------------
-    if frame_id:
-        return _browser_cdp_via_supervisor(
-            task_id=task_id or "default",
-            frame_id=frame_id,
-            method=method,
-            params=params,
-            timeout=timeout,
-        )
-    del task_id  # stateless path below
+    from superforecasting_agent.hosting.browser_sessions import browser_session_lifecycle
 
-    if not method or not isinstance(method, str):
-        return tool_error(
-            "'method' is required (e.g. 'Target.getTargets')",
-            cdp_docs=CDP_DOCS_URL,
-        )
+    with browser_session_lifecycle((task_id or "default").removesuffix("::local")):
+        # --- Route iframe-scoped calls through the supervisor ---------------
+        if frame_id:
+            return _browser_cdp_via_supervisor(
+                task_id=task_id or "default",
+                frame_id=frame_id,
+                method=method,
+                params=params,
+                timeout=timeout,
+            )
+        del task_id  # stateless path below
 
-    if not _WS_AVAILABLE:
-        return tool_error(
-            "The 'websockets' Python package is required but not installed. "
-            "Install it with: pip install websockets"
-        )
+        if not method or not isinstance(method, str):
+            return tool_error(
+                "'method' is required (e.g. 'Target.getTargets')",
+                cdp_docs=CDP_DOCS_URL,
+            )
 
-    endpoint = _resolve_cdp_endpoint()
-    if not endpoint:
-        return tool_error(
-            "No CDP endpoint is available. Run '/browser connect' to attach "
-            "to a running Chrome, Brave, Chromium, or Edge browser, or set "
-            "'browser.cdp_url' in config.yaml. The Camofox backend is REST-only "
-            "and does not expose CDP.",
-            cdp_docs=CDP_DOCS_URL,
-        )
+        if not _WS_AVAILABLE:
+            return tool_error(
+                "The 'websockets' Python package is required but not installed. "
+                "Install it with: pip install websockets"
+            )
 
-    if not endpoint.startswith(("ws://", "wss://")):
-        return tool_error(
-            f"CDP endpoint is not a WebSocket URL: {endpoint!r}. "
-            "Expected ws://... or wss://... — the /browser connect "
-            "resolver should have rewritten this. Check that a Chromium-family "
-            "browser is actually listening on the debug port."
-        )
+        endpoint = _resolve_cdp_endpoint()
+        if not endpoint:
+            return tool_error(
+                "No CDP endpoint is available. Run '/browser connect' to attach "
+                "to a running Chrome, Brave, Chromium, or Edge browser, or set "
+                "'browser.cdp_url' in config.yaml. The Camofox backend is REST-only "
+                "and does not expose CDP.",
+                cdp_docs=CDP_DOCS_URL,
+            )
 
-    call_params: Dict[str, Any] = params or {}
-    if not isinstance(call_params, dict):
-        return tool_error(
-            f"'params' must be an object/dict, got {type(call_params).__name__}"
-        )
+        if not endpoint.startswith(("ws://", "wss://")):
+            return tool_error(
+                f"CDP endpoint is not a WebSocket URL: {endpoint!r}. "
+                "Expected ws://... or wss://... — the /browser connect "
+                "resolver should have rewritten this. Check that a Chromium-family "
+                "browser is actually listening on the debug port."
+            )
 
-    try:
-        safe_timeout = float(timeout) if timeout else 30.0
-    except (TypeError, ValueError):
-        safe_timeout = 30.0
-    safe_timeout = max(1.0, min(safe_timeout, 300.0))
+        call_params: Dict[str, Any] = params or {}
+        if not isinstance(call_params, dict):
+            return tool_error(
+                f"'params' must be an object/dict, got {type(call_params).__name__}"
+            )
 
-    try:
-        result = _run_async(
-            _cdp_call(endpoint, method, call_params, target_id, safe_timeout)
-        )
-    except asyncio.TimeoutError as exc:
-        return tool_error(
-            f"CDP call timed out after {safe_timeout}s: {exc}",
-            method=method,
-        )
-    except TimeoutError as exc:
-        return tool_error(str(exc), method=method)
-    except RuntimeError as exc:
-        return tool_error(str(exc), method=method)
-    except WebSocketException as exc:
-        return tool_error(
-            f"WebSocket error talking to CDP at {endpoint}: {exc}. The "
-            "browser may have disconnected — try '/browser connect' again.",
-            method=method,
-        )
-    except Exception as exc:  # pragma: no cover — unexpected
-        logger.exception("browser_cdp unexpected error")
-        return tool_error(
-            f"Unexpected error: {type(exc).__name__}: {exc}",
-            method=method,
-        )
+        try:
+            safe_timeout = float(timeout) if timeout else 30.0
+        except (TypeError, ValueError):
+            safe_timeout = 30.0
+        safe_timeout = max(1.0, min(safe_timeout, 300.0))
 
-    payload: Dict[str, Any] = {
-        "success": True,
-        "method": method,
-        "result": result,
-    }
-    if target_id:
-        payload["target_id"] = target_id
-    return json.dumps(payload, ensure_ascii=False)
+        try:
+            result = _run_async(
+                _cdp_call(endpoint, method, call_params, target_id, safe_timeout)
+            )
+        except asyncio.TimeoutError as exc:
+            return tool_error(
+                f"CDP call timed out after {safe_timeout}s: {exc}",
+                method=method,
+            )
+        except TimeoutError as exc:
+            return tool_error(str(exc), method=method)
+        except RuntimeError as exc:
+            return tool_error(str(exc), method=method)
+        except WebSocketException as exc:
+            return tool_error(
+                f"WebSocket error talking to CDP at {endpoint}: {exc}. The "
+                "browser may have disconnected — try '/browser connect' again.",
+                method=method,
+            )
+        except Exception as exc:  # pragma: no cover — unexpected
+            logger.exception("browser_cdp unexpected error")
+            return tool_error(
+                f"Unexpected error: {type(exc).__name__}: {exc}",
+                method=method,
+            )
+
+        payload: Dict[str, Any] = {
+            "success": True,
+            "method": method,
+            "result": result,
+        }
+        if target_id:
+            payload["target_id"] = target_id
+        return json.dumps(payload, ensure_ascii=False)
 
 
 # ---------------------------------------------------------------------------

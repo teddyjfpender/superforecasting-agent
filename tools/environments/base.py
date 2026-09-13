@@ -231,7 +231,8 @@ class _ThreadedProcessHandle:
         # Pipe for stdout — drain thread in _wait_for_process reads the read end.
         read_fd, write_fd = os.pipe()
         self._stdout = os.fdopen(read_fd, "r", encoding="utf-8", errors="replace")
-        self._write_fd = write_fd
+        # The worker exclusively owns write_fd until it finishes. Cleanup must
+        # never close its numeric descriptor: it may already have been reused.
         self._closed = False
 
         def _worker():
@@ -240,7 +241,7 @@ class _ThreadedProcessHandle:
                 self._returncode = exit_code
                 # Write output into the pipe so drain thread picks it up.
                 try:
-                    os.write(self._write_fd, output.encode("utf-8", errors="replace"))
+                    os.write(write_fd, output.encode("utf-8", errors="replace"))
                 except OSError:
                     pass
             except Exception as exc:
@@ -248,7 +249,7 @@ class _ThreadedProcessHandle:
                 self._returncode = 1
             finally:
                 try:
-                    os.close(self._write_fd)
+                    os.close(write_fd)
                 except OSError:
                     pass
                 self._done.set()
@@ -285,10 +286,6 @@ class _ThreadedProcessHandle:
         try:
             self._stdout.close()
         except Exception:
-            pass
-        try:
-            os.close(self._write_fd)
-        except OSError:
             pass
 
     def __del__(self):

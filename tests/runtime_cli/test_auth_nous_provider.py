@@ -10,7 +10,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from superforecasting_agent.runtime.auth import AuthError, get_provider_auth_state, resolve_nous_runtime_credentials
+from superforecasting_agent.credentials.auth import AuthError, get_provider_auth_state, resolve_nous_runtime_credentials
 
 
 # =============================================================================
@@ -28,7 +28,7 @@ class TestResolveVerifyFallback:
         monkeypatch.setattr("sys.platform", "linux")
 
     def test_missing_ca_bundle_in_auth_state_falls_back(self):
-        from superforecasting_agent.runtime.auth import _resolve_verify
+        from superforecasting_agent.credentials.auth import _resolve_verify
 
         result = _resolve_verify(auth_state={
             "tls": {"insecure": False, "ca_bundle": "/nonexistent/ca-bundle.pem"},
@@ -37,7 +37,7 @@ class TestResolveVerifyFallback:
 
     def test_valid_ca_bundle_in_auth_state_is_returned(self, tmp_path, monkeypatch):
         import ssl
-        from superforecasting_agent.runtime.auth import _resolve_verify
+        from superforecasting_agent.credentials.auth import _resolve_verify
 
         ca_file = tmp_path / "ca-bundle.pem"
         ca_file.write_text("fake cert")
@@ -54,7 +54,7 @@ class TestResolveVerifyFallback:
         )
 
     def test_missing_ssl_cert_file_env_falls_back(self, monkeypatch):
-        from superforecasting_agent.runtime.auth import _resolve_verify
+        from superforecasting_agent.credentials.auth import _resolve_verify
 
         monkeypatch.setenv("SSL_CERT_FILE", "/nonexistent/ssl-cert.pem")
         monkeypatch.delenv("HERMES_CA_BUNDLE", raising=False)
@@ -62,7 +62,7 @@ class TestResolveVerifyFallback:
         assert result is True
 
     def test_missing_hermes_ca_bundle_env_falls_back(self, monkeypatch):
-        from superforecasting_agent.runtime.auth import _resolve_verify
+        from superforecasting_agent.credentials.auth import _resolve_verify
 
         monkeypatch.setenv("HERMES_CA_BUNDLE", "/nonexistent/hermes-ca.pem")
         monkeypatch.delenv("SSL_CERT_FILE", raising=False)
@@ -70,7 +70,7 @@ class TestResolveVerifyFallback:
         assert result is True
 
     def test_insecure_takes_precedence_over_missing_ca(self):
-        from superforecasting_agent.runtime.auth import _resolve_verify
+        from superforecasting_agent.credentials.auth import _resolve_verify
 
         result = _resolve_verify(
             insecure=True,
@@ -80,20 +80,20 @@ class TestResolveVerifyFallback:
 
     def test_string_false_in_auth_state_does_not_disable_tls_verify(self):
         import ssl
-        from superforecasting_agent.runtime.auth import _resolve_verify
+        from superforecasting_agent.credentials.auth import _resolve_verify
 
         result = _resolve_verify(auth_state={"tls": {"insecure": "false"}})
         assert result is not False
         assert result is True or isinstance(result, ssl.SSLContext)
 
     def test_string_true_in_auth_state_disables_tls_verify(self):
-        from superforecasting_agent.runtime.auth import _resolve_verify
+        from superforecasting_agent.credentials.auth import _resolve_verify
 
         result = _resolve_verify(auth_state={"tls": {"insecure": "true"}})
         assert result is False
 
     def test_no_ca_bundle_returns_true(self, monkeypatch):
-        from superforecasting_agent.runtime.auth import _resolve_verify
+        from superforecasting_agent.credentials.auth import _resolve_verify
 
         monkeypatch.delenv("HERMES_CA_BUNDLE", raising=False)
         monkeypatch.delenv("SSL_CERT_FILE", raising=False)
@@ -101,14 +101,14 @@ class TestResolveVerifyFallback:
         assert result is True
 
     def test_explicit_ca_bundle_param_missing_falls_back(self):
-        from superforecasting_agent.runtime.auth import _resolve_verify
+        from superforecasting_agent.credentials.auth import _resolve_verify
 
         result = _resolve_verify(ca_bundle="/nonexistent/explicit-ca.pem")
         assert result is True
 
     def test_explicit_ca_bundle_param_valid_is_returned(self, tmp_path, monkeypatch):
         import ssl
-        from superforecasting_agent.runtime.auth import _resolve_verify
+        from superforecasting_agent.credentials.auth import _resolve_verify
 
         ca_file = tmp_path / "explicit-ca.pem"
         ca_file.write_text("fake cert")
@@ -196,7 +196,7 @@ def test_resolve_nous_runtime_credentials_prefers_invoke_jwt_and_mirrors(
     tmp_path,
     monkeypatch,
 ):
-    import superforecasting_agent.runtime.auth as auth_mod
+    import superforecasting_agent.credentials.auth as auth_mod
 
     hermes_home = tmp_path / "hermes"
     token = _invoke_jwt(seconds=3600)
@@ -235,7 +235,7 @@ def test_resolve_nous_runtime_credentials_invoke_jwt_is_idempotent(
     tmp_path,
     monkeypatch,
 ):
-    import superforecasting_agent.runtime.auth as auth_mod
+    import superforecasting_agent.credentials.auth as auth_mod
 
     hermes_home = tmp_path / "hermes"
     hermes_home.mkdir(parents=True, exist_ok=True)
@@ -312,7 +312,7 @@ def test_resolve_nous_runtime_credentials_trusts_invoke_jwt_exp_over_stale_metad
     tmp_path,
     monkeypatch,
 ):
-    import superforecasting_agent.runtime.auth as auth_mod
+    import superforecasting_agent.credentials.auth as auth_mod
 
     hermes_home = tmp_path / "hermes"
     token = _invoke_jwt(seconds=3600)
@@ -351,7 +351,7 @@ def test_resolve_nous_runtime_credentials_does_not_apply_legacy_ttl_to_invoke_jw
     tmp_path,
     monkeypatch,
 ):
-    import superforecasting_agent.runtime.auth as auth_mod
+    import superforecasting_agent.credentials.auth as auth_mod
 
     hermes_home = tmp_path / "hermes"
     token = _invoke_jwt(seconds=900)
@@ -379,7 +379,7 @@ def test_resolve_nous_runtime_credentials_does_not_apply_legacy_ttl_to_invoke_jw
 
 
 def test_legacy_auth_mode_bypasses_usable_invoke_jwt(tmp_path, monkeypatch):
-    import superforecasting_agent.runtime.auth as auth_mod
+    import superforecasting_agent.credentials.auth as auth_mod
 
     hermes_home = tmp_path / "hermes"
     token = _invoke_jwt(seconds=3600)
@@ -417,7 +417,7 @@ def test_resolve_nous_runtime_credentials_falls_back_when_invoke_scope_missing(
     tmp_path,
     monkeypatch,
 ):
-    import superforecasting_agent.runtime.auth as auth_mod
+    import superforecasting_agent.credentials.auth as auth_mod
 
     hermes_home = tmp_path / "hermes"
     token = _jwt_with_claims({
@@ -455,6 +455,7 @@ def test_resolve_nous_runtime_credentials_falls_back_when_invoke_scope_missing(
 
 def test_nous_device_code_login_retries_legacy_scope_when_invoke_refused(monkeypatch):
     import superforecasting_agent.runtime.auth as auth_mod
+    from superforecasting_agent.credentials import auth as credential_auth
 
     scopes = []
 
@@ -497,9 +498,9 @@ def test_nous_device_code_login_retries_legacy_scope_when_invoke_refused(monkeyp
         refreshed["agent_key_expires_at"] = _future_iso(1800)
         return refreshed
 
-    monkeypatch.setattr(auth_mod, "_request_device_code", _fake_request_device_code)
-    monkeypatch.setattr(auth_mod, "_poll_for_token", _fake_poll_for_token)
-    monkeypatch.setattr(auth_mod, "refresh_nous_oauth_from_state", _fake_refresh)
+    monkeypatch.setattr(credential_auth, "_request_device_code", _fake_request_device_code)
+    monkeypatch.setattr(credential_auth, "_poll_for_token", _fake_poll_for_token)
+    monkeypatch.setattr(credential_auth, "refresh_nous_oauth_from_state", _fake_refresh)
 
     result = auth_mod._nous_device_code_login(
         portal_base_url="https://portal.example.com",
@@ -515,6 +516,7 @@ def test_nous_device_code_login_retries_legacy_scope_when_invoke_refused(monkeyp
 
 def test_forced_legacy_env_skips_invoke_scope_and_jwt_storage(tmp_path, monkeypatch):
     import superforecasting_agent.runtime.auth as auth_mod
+    from superforecasting_agent.credentials import auth as credential_auth
 
     hermes_home = tmp_path / "hermes"
     token = _invoke_jwt(seconds=3600)
@@ -535,7 +537,7 @@ def test_forced_legacy_env_skips_invoke_scope_and_jwt_storage(tmp_path, monkeypa
         mint_calls.append(access_token)
         return _mint_payload(api_key="forced-legacy-key")
 
-    monkeypatch.setattr(auth_mod, "_mint_agent_key", _fake_mint_agent_key)
+    monkeypatch.setattr(credential_auth, "_mint_agent_key", _fake_mint_agent_key)
 
     creds = auth_mod.resolve_nous_runtime_credentials(min_key_ttl_seconds=300)
 
@@ -574,9 +576,9 @@ def test_forced_legacy_env_skips_invoke_scope_and_jwt_storage(tmp_path, monkeypa
         refreshed["agent_key_expires_at"] = _future_iso(1800)
         return refreshed
 
-    monkeypatch.setattr(auth_mod, "_request_device_code", _fake_request_device_code)
-    monkeypatch.setattr(auth_mod, "_poll_for_token", _fake_poll_for_token)
-    monkeypatch.setattr(auth_mod, "refresh_nous_oauth_from_state", _fake_refresh)
+    monkeypatch.setattr(credential_auth, "_request_device_code", _fake_request_device_code)
+    monkeypatch.setattr(credential_auth, "_poll_for_token", _fake_poll_for_token)
+    monkeypatch.setattr(credential_auth, "refresh_nous_oauth_from_state", _fake_refresh)
 
     auth_mod._nous_device_code_login(
         portal_base_url="https://portal.example.com",
@@ -593,7 +595,7 @@ def test_nous_inference_auth_logs_do_not_include_secret_values(
     monkeypatch,
     caplog,
 ):
-    import superforecasting_agent.runtime.auth as auth_mod
+    import superforecasting_agent.credentials.auth as auth_mod
 
     hermes_home = tmp_path / "hermes"
     token = _jwt_with_claims({
@@ -635,7 +637,7 @@ def test_get_nous_auth_status_checks_credential_pool(tmp_path, monkeypatch):
     case when login happened via the dashboard device-code flow which
     saves to the pool only.
     """
-    from superforecasting_agent.runtime.auth import get_nous_auth_status
+    from superforecasting_agent.credentials.auth import get_nous_auth_status
 
     hermes_home = tmp_path / "hermes"
     hermes_home.mkdir(parents=True, exist_ok=True)
@@ -671,13 +673,13 @@ def test_get_nous_auth_status_auth_store_fallback(tmp_path, monkeypatch):
     """get_nous_auth_status() falls back to auth store when credential
     pool is empty.
     """
-    from superforecasting_agent.runtime.auth import get_nous_auth_status
+    from superforecasting_agent.credentials.auth import get_nous_auth_status
 
     hermes_home = tmp_path / "hermes"
     _setup_nous_auth(hermes_home, access_token="at-123")
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
     monkeypatch.setattr(
-        "superforecasting_agent.runtime.auth.resolve_nous_runtime_credentials",
+        "superforecasting_agent.credentials.auth.resolve_nous_runtime_credentials",
         lambda min_key_ttl_seconds=60: {
             "base_url": "https://inference.example.com/v1",
             "expires_at": "2099-01-01T00:00:00+00:00",
@@ -692,7 +694,7 @@ def test_get_nous_auth_status_auth_store_fallback(tmp_path, monkeypatch):
 
 
 def test_get_nous_auth_status_prefers_runtime_auth_store_over_stale_pool(tmp_path, monkeypatch):
-    from superforecasting_agent.runtime.auth import get_nous_auth_status
+    from superforecasting_agent.credentials.auth import get_nous_auth_status
     from agent.credential_pool import PooledCredential, load_pool
 
     hermes_home = tmp_path / "hermes"
@@ -717,7 +719,7 @@ def test_get_nous_auth_status_prefers_runtime_auth_store_over_stale_pool(tmp_pat
     pool.add_entry(stale)
 
     monkeypatch.setattr(
-        "superforecasting_agent.runtime.auth.resolve_nous_runtime_credentials",
+        "superforecasting_agent.credentials.auth.resolve_nous_runtime_credentials",
         lambda min_key_ttl_seconds=60: {
             "base_url": "https://inference.example.com/v1",
             "expires_at": "2099-01-01T00:00:00+00:00",
@@ -734,7 +736,7 @@ def test_get_nous_auth_status_prefers_runtime_auth_store_over_stale_pool(tmp_pat
 
 
 def test_get_nous_auth_status_reports_revoked_refresh_session(tmp_path, monkeypatch):
-    from superforecasting_agent.runtime.auth import get_nous_auth_status
+    from superforecasting_agent.credentials.auth import get_nous_auth_status
 
     hermes_home = tmp_path / "hermes"
     _setup_nous_auth(hermes_home, access_token="at-123")
@@ -743,7 +745,7 @@ def test_get_nous_auth_status_reports_revoked_refresh_session(tmp_path, monkeypa
     def _boom(min_key_ttl_seconds=60):
         raise AuthError("Refresh session has been revoked", provider="nous", relogin_required=True)
 
-    monkeypatch.setattr("superforecasting_agent.runtime.auth.resolve_nous_runtime_credentials", _boom)
+    monkeypatch.setattr("superforecasting_agent.credentials.auth.resolve_nous_runtime_credentials", _boom)
 
     status = get_nous_auth_status()
     assert status["logged_in"] is False
@@ -756,7 +758,7 @@ def test_get_nous_auth_status_empty_returns_not_logged_in(tmp_path, monkeypatch)
     """get_nous_auth_status() returns logged_in=False when both pool
     and auth store are empty.
     """
-    from superforecasting_agent.runtime.auth import get_nous_auth_status
+    from superforecasting_agent.credentials.auth import get_nous_auth_status
 
     hermes_home = tmp_path / "hermes"
     hermes_home.mkdir(parents=True, exist_ok=True)
@@ -793,8 +795,8 @@ def test_refresh_token_persisted_when_mint_returns_insufficient_credits(tmp_path
             raise AuthError("credits exhausted", provider="nous", code="insufficient_credits")
         return _mint_payload(api_key="agent-key-2")
 
-    monkeypatch.setattr("superforecasting_agent.runtime.auth._refresh_access_token", _fake_refresh_access_token)
-    monkeypatch.setattr("superforecasting_agent.runtime.auth._mint_agent_key", _fake_mint_agent_key)
+    monkeypatch.setattr("superforecasting_agent.credentials.auth._refresh_access_token", _fake_refresh_access_token)
+    monkeypatch.setattr("superforecasting_agent.credentials.auth._mint_agent_key", _fake_mint_agent_key)
 
     with pytest.raises(AuthError) as exc:
         resolve_nous_runtime_credentials(min_key_ttl_seconds=300)
@@ -826,8 +828,8 @@ def test_refresh_token_persisted_when_mint_times_out(tmp_path, monkeypatch):
     def _fake_mint_agent_key(*, client, portal_base_url, access_token, min_ttl_seconds):
         raise httpx.ReadTimeout("mint timeout")
 
-    monkeypatch.setattr("superforecasting_agent.runtime.auth._refresh_access_token", _fake_refresh_access_token)
-    monkeypatch.setattr("superforecasting_agent.runtime.auth._mint_agent_key", _fake_mint_agent_key)
+    monkeypatch.setattr("superforecasting_agent.credentials.auth._refresh_access_token", _fake_refresh_access_token)
+    monkeypatch.setattr("superforecasting_agent.credentials.auth._mint_agent_key", _fake_mint_agent_key)
 
     with pytest.raises(httpx.ReadTimeout):
         resolve_nous_runtime_credentials(min_key_ttl_seconds=300)
@@ -842,7 +844,7 @@ def test_terminal_refresh_failure_quarantines_tokens(
     tmp_path, monkeypatch, shared_store_env,
 ):
     """A revoked/invalid Nous refresh token must not be replayed forever."""
-    from superforecasting_agent.runtime import auth as auth_mod
+    from superforecasting_agent.credentials import auth as auth_mod
 
     hermes_home = tmp_path / "hermes"
     _setup_nous_auth(hermes_home, refresh_token="refresh-old")
@@ -892,7 +894,7 @@ def test_terminal_refresh_failure_quarantines_tokens(
 def test_managed_access_token_refresh_failure_quarantines_tokens(
     tmp_path, monkeypatch, shared_store_env,
 ):
-    from superforecasting_agent.runtime import auth as auth_mod
+    from superforecasting_agent.credentials import auth as auth_mod
 
     hermes_home = tmp_path / "hermes"
     _setup_nous_auth(hermes_home, refresh_token="refresh-old")
@@ -955,8 +957,8 @@ def test_mint_retry_uses_latest_rotated_refresh_token(tmp_path, monkeypatch):
             raise AuthError("stale access token", provider="nous", code="invalid_token")
         return _mint_payload(api_key="agent-key")
 
-    monkeypatch.setattr("superforecasting_agent.runtime.auth._refresh_access_token", _fake_refresh_access_token)
-    monkeypatch.setattr("superforecasting_agent.runtime.auth._mint_agent_key", _fake_mint_agent_key)
+    monkeypatch.setattr("superforecasting_agent.credentials.auth._refresh_access_token", _fake_refresh_access_token)
+    monkeypatch.setattr("superforecasting_agent.credentials.auth._mint_agent_key", _fake_mint_agent_key)
 
     creds = resolve_nous_runtime_credentials(min_key_ttl_seconds=300)
     assert creds["api_key"] == "agent-key"
@@ -1004,7 +1006,6 @@ class TestLoginNousSkipKeepsCurrent:
         """Patch OAuth + model-list + prompt so _login_nous doesn't hit network."""
         import superforecasting_agent.runtime.auth as auth_mod
         import superforecasting_agent.runtime.models as models_mod
-        import superforecasting_agent.runtime.nous_subscription as ns
 
         fake_auth_state = {
             "access_token": "fake-nous-token",
@@ -1028,7 +1029,8 @@ class TestLoginNousSkipKeepsCurrent:
             models_mod, "partition_nous_models_by_tier",
             lambda ids, p, free_tier=False: (ids, []),
         )
-        monkeypatch.setattr(ns, "prompt_enable_tool_gateway", lambda cfg: None)
+        from superforecasting_agent.runtime import oauth_setup
+        monkeypatch.setattr(oauth_setup, "prompt_enable_tool_gateway", lambda cfg: None)
 
     def test_skip_keep_current_preserves_provider_and_model(self, tmp_path, monkeypatch):
         """User picks Skip → config.yaml untouched, Nous creds still saved."""
@@ -1157,7 +1159,7 @@ def test_persist_nous_credentials_writes_both_pool_and_providers(tmp_path, monke
     agent failed with "Non-retryable client error". Both stores must stay
     in sync at write time.
     """
-    from superforecasting_agent.runtime.auth import persist_nous_credentials, NOUS_DEVICE_CODE_SOURCE
+    from superforecasting_agent.credentials.auth import persist_nous_credentials, NOUS_DEVICE_CODE_SOURCE
 
     hermes_home = tmp_path / "hermes"
     hermes_home.mkdir(parents=True, exist_ok=True)
@@ -1198,7 +1200,7 @@ def test_persist_nous_credentials_allows_recovery_from_401(tmp_path, monkeypatch
     calls after a Nous 401 — before the fix it would raise AuthError because
     providers.nous was empty.
     """
-    from superforecasting_agent.runtime.auth import (
+    from superforecasting_agent.credentials.auth import (
         NOUS_INFERENCE_AUTH_MODE_FRESH,
         persist_nous_credentials,
         resolve_nous_runtime_credentials,
@@ -1227,8 +1229,8 @@ def test_persist_nous_credentials_allows_recovery_from_401(tmp_path, monkeypatch
     def _fake_mint_agent_key(*, client, portal_base_url, access_token, min_ttl_seconds):
         return _mint_payload(api_key="new-agent-key")
 
-    monkeypatch.setattr("superforecasting_agent.runtime.auth._refresh_access_token", _fake_refresh_access_token)
-    monkeypatch.setattr("superforecasting_agent.runtime.auth._mint_agent_key", _fake_mint_agent_key)
+    monkeypatch.setattr("superforecasting_agent.credentials.auth._refresh_access_token", _fake_refresh_access_token)
+    monkeypatch.setattr("superforecasting_agent.credentials.auth._mint_agent_key", _fake_mint_agent_key)
 
     creds = resolve_nous_runtime_credentials(
         min_key_ttl_seconds=300,
@@ -1247,7 +1249,7 @@ def test_persist_nous_credentials_idempotent_no_duplicate_pool_entries(tmp_path,
     materialise the pool entry under the canonical ``device_code`` source, so
     two persists still leave the pool with exactly one row.
     """
-    from superforecasting_agent.runtime.auth import persist_nous_credentials, NOUS_DEVICE_CODE_SOURCE
+    from superforecasting_agent.credentials.auth import persist_nous_credentials, NOUS_DEVICE_CODE_SOURCE
 
     hermes_home = tmp_path / "hermes"
     hermes_home.mkdir(parents=True, exist_ok=True)
@@ -1286,7 +1288,7 @@ def test_persist_nous_credentials_reloads_pool_after_singleton_write(tmp_path, m
     callers observe the canonical seeded state, including any legacy entries
     that ``_seed_from_singletons`` pruned or upserted.
     """
-    from superforecasting_agent.runtime.auth import persist_nous_credentials, NOUS_DEVICE_CODE_SOURCE
+    from superforecasting_agent.credentials.auth import persist_nous_credentials, NOUS_DEVICE_CODE_SOURCE
 
     hermes_home = tmp_path / "hermes"
     hermes_home.mkdir(parents=True, exist_ok=True)
@@ -1312,7 +1314,7 @@ def test_persist_nous_credentials_embeds_custom_label(tmp_path, monkeypatch):
     _seed_from_singletons always auto-derived via label_from_token().  The
     fix stashes the label inside providers.nous so seeding prefers it.
     """
-    from superforecasting_agent.runtime.auth import persist_nous_credentials, NOUS_DEVICE_CODE_SOURCE
+    from superforecasting_agent.credentials.auth import persist_nous_credentials, NOUS_DEVICE_CODE_SOURCE
 
     hermes_home = tmp_path / "hermes"
     hermes_home.mkdir(parents=True, exist_ok=True)
@@ -1336,7 +1338,7 @@ def test_persist_nous_credentials_custom_label_survives_reseed(tmp_path, monkeyp
     """Reopening the pool (which re-runs _seed_from_singletons) must keep the
     user-chosen label instead of clobbering it with label_from_token output.
     """
-    from superforecasting_agent.runtime.auth import persist_nous_credentials
+    from superforecasting_agent.credentials.auth import persist_nous_credentials
     from agent.credential_pool import load_pool
 
     hermes_home = tmp_path / "hermes"
@@ -1360,7 +1362,7 @@ def test_persist_nous_credentials_no_label_uses_auto_derived(tmp_path, monkeypat
     """When the caller doesn't pass ``label``, the auto-derived fingerprint
     is used (unchanged default behaviour — regression guard).
     """
-    from superforecasting_agent.runtime.auth import persist_nous_credentials
+    from superforecasting_agent.credentials.auth import persist_nous_credentials
 
     hermes_home = tmp_path / "hermes"
     hermes_home.mkdir(parents=True, exist_ok=True)
@@ -1393,7 +1395,7 @@ def test_refresh_token_reuse_detection_surfaces_actionable_message():
     bug when the true cause is external RT consumption (monitoring scripts,
     custom self-heal hooks).
     """
-    from superforecasting_agent.runtime.auth import _refresh_access_token
+    from superforecasting_agent.credentials.auth import _refresh_access_token
 
     class _FakeResponse:
         status_code = 400
@@ -1428,7 +1430,7 @@ def test_refresh_token_reuse_detection_surfaces_actionable_message():
 
 def test_refresh_token_reuse_error_code_is_terminal():
     """Nous may return refresh_token_reused as the OAuth error code itself."""
-    from superforecasting_agent.runtime import auth as auth_mod
+    from superforecasting_agent.credentials import auth as auth_mod
 
     class _FakeResponse:
         status_code = 400
@@ -1460,7 +1462,7 @@ def test_refresh_token_exchange_sends_refresh_token_header():
     """Nous refresh tokens must be sent in a header so sandbox proxies can
     substitute placeholder credentials without parsing form bodies.
     """
-    from superforecasting_agent.runtime.auth import _refresh_access_token
+    from superforecasting_agent.credentials.auth import _refresh_access_token
 
     class _FakeResponse:
         status_code = 200
@@ -1504,7 +1506,7 @@ def test_refresh_non_reuse_error_keeps_original_description():
     downstream consequence) keeps its original text so we don't overwrite
     useful server context for unrelated failure modes.
     """
-    from superforecasting_agent.runtime.auth import _refresh_access_token
+    from superforecasting_agent.credentials.auth import _refresh_access_token
 
     class _FakeResponse:
         status_code = 400
@@ -1558,7 +1560,7 @@ def test_shared_store_seat_belt_refuses_real_home_under_pytest(monkeypatch):
     redirect this store in a test must fail loudly instead of silently
     writing to the user's real ``~/.hermes/shared/`` across CI runs.
     """
-    from superforecasting_agent.runtime.auth import _nous_shared_store_path
+    from superforecasting_agent.credentials.auth import _nous_shared_store_path
 
     monkeypatch.delenv("HERMES_SHARED_AUTH_DIR", raising=False)
 
@@ -1568,7 +1570,7 @@ def test_shared_store_seat_belt_refuses_real_home_under_pytest(monkeypatch):
 
 def test_shared_store_honors_env_override(tmp_path, monkeypatch):
     """HERMES_SHARED_AUTH_DIR must redirect the path."""
-    from superforecasting_agent.runtime.auth import _nous_shared_store_path, NOUS_SHARED_STORE_FILENAME
+    from superforecasting_agent.credentials.auth import _nous_shared_store_path, NOUS_SHARED_STORE_FILENAME
 
     custom_dir = tmp_path / "custom_shared"
     monkeypatch.setenv("HERMES_SHARED_AUTH_DIR", str(custom_dir))
@@ -1579,14 +1581,14 @@ def test_shared_store_honors_env_override(tmp_path, monkeypatch):
 
 def test_shared_store_read_missing_returns_none(shared_store_env):
     """Missing file → ``_read_shared_nous_state()`` returns None."""
-    from superforecasting_agent.runtime.auth import _read_shared_nous_state
+    from superforecasting_agent.credentials.auth import _read_shared_nous_state
 
     assert _read_shared_nous_state() is None
 
 
 def test_shared_store_read_malformed_returns_none(shared_store_env):
     """Unreadable / non-JSON file → None, not an exception."""
-    from superforecasting_agent.runtime.auth import _nous_shared_store_path, _read_shared_nous_state
+    from superforecasting_agent.credentials.auth import _nous_shared_store_path, _read_shared_nous_state
 
     path = _nous_shared_store_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1597,7 +1599,7 @@ def test_shared_store_read_malformed_returns_none(shared_store_env):
 
 def test_shared_store_read_missing_required_fields_returns_none(shared_store_env):
     """Payload without refresh_token → None (nothing worth importing)."""
-    from superforecasting_agent.runtime.auth import _nous_shared_store_path, _read_shared_nous_state
+    from superforecasting_agent.credentials.auth import _nous_shared_store_path, _read_shared_nous_state
 
     path = _nous_shared_store_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1608,7 +1610,7 @@ def test_shared_store_read_missing_required_fields_returns_none(shared_store_env
 
 def test_shared_store_write_and_read_roundtrip(shared_store_env):
     """Write → read must preserve refresh_token + OAuth URLs."""
-    from superforecasting_agent.runtime.auth import (
+    from superforecasting_agent.credentials.auth import (
         _nous_shared_store_path,
         _read_shared_nous_state,
         _write_shared_nous_state,
@@ -1637,7 +1639,7 @@ def test_shared_store_write_and_read_roundtrip(shared_store_env):
 
 def test_shared_store_write_skips_when_refresh_token_missing(shared_store_env):
     """Write is a no-op when refresh_token is absent (nothing to share)."""
-    from superforecasting_agent.runtime.auth import _nous_shared_store_path, _write_shared_nous_state
+    from superforecasting_agent.credentials.auth import _nous_shared_store_path, _write_shared_nous_state
 
     state = dict(_full_state_fixture())
     state["refresh_token"] = ""
@@ -1654,7 +1656,7 @@ def test_persist_nous_credentials_mirrors_to_shared_store(
     AND the shared store, so a future profile's `superforecasting-agent auth add nous
     --type oauth` can one-tap import instead of redoing device-code.
     """
-    from superforecasting_agent.runtime.auth import (
+    from superforecasting_agent.credentials.auth import (
         _nous_shared_store_path,
         _read_shared_nous_state,
         persist_nous_credentials,
@@ -1684,7 +1686,7 @@ def test_persist_nous_credentials_mirrors_to_shared_store(
 
 def test_try_import_shared_returns_none_when_store_missing(shared_store_env):
     """No shared store → no rehydrate (fall through to device-code)."""
-    from superforecasting_agent.runtime.auth import _try_import_shared_nous_state
+    from superforecasting_agent.credentials.auth import _try_import_shared_nous_state
 
     assert _try_import_shared_nous_state() is None
 
@@ -1696,7 +1698,7 @@ def test_try_import_shared_returns_none_on_refresh_failure(
     portal down), _try_import_shared_nous_state must return None so the
     login flow falls back to a fresh device-code run.
     """
-    from superforecasting_agent.runtime import auth as auth_mod
+    from superforecasting_agent.credentials import auth as auth_mod
 
     # Seed the shared store
     auth_mod._write_shared_nous_state(_full_state_fixture())
@@ -1725,7 +1727,7 @@ def test_try_import_shared_persists_rotated_token_when_mint_fails(
     rotated refresh token; otherwise the next import attempt replays the
     consumed token and trips refresh-token reuse.
     """
-    from superforecasting_agent.runtime import auth as auth_mod
+    from superforecasting_agent.credentials import auth as auth_mod
 
     shared_state = _full_state_fixture()
     shared_state["refresh_token"] = "refresh-old"
@@ -1761,7 +1763,7 @@ def test_try_import_shared_rehydrates_on_success(shared_store_env, monkeypatch):
     returns a fresh access_token + agent_key, and the returned dict has
     every field persist_nous_credentials() needs.
     """
-    from superforecasting_agent.runtime import auth as auth_mod
+    from superforecasting_agent.credentials import auth as auth_mod
 
     auth_mod._write_shared_nous_state(_full_state_fixture())
 
@@ -1800,7 +1802,7 @@ def test_shared_store_survives_across_profile_switch(
     (different HERMES_HOME) sees the same shared state and can rehydrate
     without re-running device-code.
     """
-    from superforecasting_agent.runtime import auth as auth_mod
+    from superforecasting_agent.credentials import auth as auth_mod
 
     # Profile A: login, which mirrors to shared store
     profile_a = tmp_path / "profile_a"
@@ -1869,7 +1871,7 @@ def test_runtime_refresh_uses_newer_shared_token_before_local_stale_token(
     can submit the stale local refresh token and trigger portal reuse
     revocation for the whole shared session.
     """
-    from superforecasting_agent.runtime import auth as auth_mod
+    from superforecasting_agent.credentials import auth as auth_mod
 
     profile_b = tmp_path / "profile_b"
     _setup_nous_auth(
@@ -1915,7 +1917,7 @@ def test_managed_gateway_access_token_uses_newer_shared_token(
     tmp_path, monkeypatch, shared_store_env,
 ):
     """Managed-tool token reads share the same stale-refresh-token hazard."""
-    from superforecasting_agent.runtime import auth as auth_mod
+    from superforecasting_agent.credentials import auth as auth_mod
 
     profile_b = tmp_path / "profile_b"
     _setup_nous_auth(

@@ -221,7 +221,7 @@ def _discord_tools_loaded() -> bool:
         return False
     try:
         from superforecasting_agent.runtime.config import load_config
-        from superforecasting_agent.runtime.tools_config import _get_platform_tools
+        from superforecasting_agent.tooling.selection import _get_platform_tools
         cfg = load_config()
         enabled = _get_platform_tools(cfg, "discord", include_default_mcp_servers=False)
         return "discord" in enabled or "discord_admin" in enabled
@@ -253,7 +253,7 @@ def build_session_context_prompt(
     _is_pii_safe = context.source.platform in _PII_SAFE_PLATFORMS
     if not _is_pii_safe:
         try:
-            from gateway.platform_registry import platform_registry
+            from superforecasting_agent.platform_registry import platform_registry
             entry = platform_registry.get(context.source.platform.value)
             if entry and entry.pii_safe:
                 _is_pii_safe = True

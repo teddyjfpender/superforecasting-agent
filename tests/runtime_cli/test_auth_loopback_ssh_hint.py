@@ -24,7 +24,7 @@ def _cap(fn):
 
 
 def test_loopback_ssh_hint_silent_when_not_remote(monkeypatch):
-    monkeypatch.setattr(auth_mod, "_is_remote_session", lambda: False)
+    monkeypatch.setattr(auth_mod.credential_service, "_is_remote_session", lambda: False)
     out = _cap(lambda: auth_mod._print_loopback_ssh_hint(
         "http://127.0.0.1:56121/callback", docs_url=auth_mod.XAI_OAUTH_DOCS_URL
     ))
@@ -32,7 +32,7 @@ def test_loopback_ssh_hint_silent_when_not_remote(monkeypatch):
 
 
 def test_loopback_ssh_hint_prints_tunnel_command_on_ssh(monkeypatch):
-    monkeypatch.setattr(auth_mod, "_is_remote_session", lambda: True)
+    monkeypatch.setattr(auth_mod.credential_service, "_is_remote_session", lambda: True)
     out = _cap(lambda: auth_mod._print_loopback_ssh_hint(
         "http://127.0.0.1:56121/callback", docs_url=auth_mod.XAI_OAUTH_DOCS_URL
     ))
@@ -48,7 +48,7 @@ def test_loopback_ssh_hint_uses_actual_bound_port(monkeypatch):
     """When the preferred port is busy, _xai_start_callback_server falls back to
     an OS-assigned port. The hint must echo whichever port actually got bound,
     not the hardcoded constant."""
-    monkeypatch.setattr(auth_mod, "_is_remote_session", lambda: True)
+    monkeypatch.setattr(auth_mod.credential_service, "_is_remote_session", lambda: True)
     out = _cap(lambda: auth_mod._print_loopback_ssh_hint(
         "http://127.0.0.1:51234/callback", docs_url=auth_mod.XAI_OAUTH_DOCS_URL
     ))
@@ -59,7 +59,7 @@ def test_loopback_ssh_hint_uses_actual_bound_port(monkeypatch):
 def test_loopback_ssh_hint_silent_for_non_loopback_uri(monkeypatch):
     """Defense in depth: if a future caller passes a non-loopback redirect URI
     by mistake, we don't tell the user to forward an external port."""
-    monkeypatch.setattr(auth_mod, "_is_remote_session", lambda: True)
+    monkeypatch.setattr(auth_mod.credential_service, "_is_remote_session", lambda: True)
     out = _cap(lambda: auth_mod._print_loopback_ssh_hint(
         "https://example.com/callback", docs_url=auth_mod.XAI_OAUTH_DOCS_URL
     ))
@@ -67,7 +67,7 @@ def test_loopback_ssh_hint_silent_for_non_loopback_uri(monkeypatch):
 
 
 def test_loopback_ssh_hint_silent_for_malformed_uri(monkeypatch):
-    monkeypatch.setattr(auth_mod, "_is_remote_session", lambda: True)
+    monkeypatch.setattr(auth_mod.credential_service, "_is_remote_session", lambda: True)
     out = _cap(lambda: auth_mod._print_loopback_ssh_hint(
         "not-a-uri", docs_url=auth_mod.XAI_OAUTH_DOCS_URL
     ))
@@ -75,7 +75,7 @@ def test_loopback_ssh_hint_silent_for_malformed_uri(monkeypatch):
 
 
 def test_loopback_ssh_hint_works_without_provider_docs_url(monkeypatch):
-    monkeypatch.setattr(auth_mod, "_is_remote_session", lambda: True)
+    monkeypatch.setattr(auth_mod.credential_service, "_is_remote_session", lambda: True)
     out = _cap(lambda: auth_mod._print_loopback_ssh_hint(
         "http://127.0.0.1:43827/oauth/callback"
     ))
@@ -89,7 +89,7 @@ def test_loopback_ssh_hint_works_without_provider_docs_url(monkeypatch):
 def test_loopback_ssh_hint_accepts_localhost_hostname(monkeypatch):
     """The constant is 127.0.0.1, but parsing tolerates `localhost` too in case
     a future caller normalizes the URI differently."""
-    monkeypatch.setattr(auth_mod, "_is_remote_session", lambda: True)
+    monkeypatch.setattr(auth_mod.credential_service, "_is_remote_session", lambda: True)
     out = _cap(lambda: auth_mod._print_loopback_ssh_hint(
         "http://localhost:56121/callback"
     ))
@@ -99,8 +99,8 @@ def test_loopback_ssh_hint_accepts_localhost_hostname(monkeypatch):
 def test_loopback_ssh_hint_includes_user_at_host(monkeypatch):
     """The SSH command should include a detected user@host so the user can
     copy-paste it without manually substituting placeholders."""
-    monkeypatch.setattr(auth_mod, "_is_remote_session", lambda: True)
-    monkeypatch.setattr(auth_mod, "_ssh_user_at_host", lambda: "alice@myserver.lan")
+    monkeypatch.setattr(auth_mod.credential_service, "_is_remote_session", lambda: True)
+    monkeypatch.setattr(auth_mod.credential_service, "_ssh_user_at_host", lambda: "alice@myserver.lan")
     out = _cap(lambda: auth_mod._print_loopback_ssh_hint(
         "http://127.0.0.1:56121/callback"
     ))
@@ -109,7 +109,7 @@ def test_loopback_ssh_hint_includes_user_at_host(monkeypatch):
 
 def test_loopback_ssh_hint_has_visual_header(monkeypatch):
     """The hint should print a divider and header so it stands out in noisy output."""
-    monkeypatch.setattr(auth_mod, "_is_remote_session", lambda: True)
+    monkeypatch.setattr(auth_mod.credential_service, "_is_remote_session", lambda: True)
     out = _cap(lambda: auth_mod._print_loopback_ssh_hint(
         "http://127.0.0.1:56121/callback"
     ))

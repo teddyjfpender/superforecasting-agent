@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { asRpcResult, rpcErrorMessage } from '../lib/rpc.js'
+import { asRpcResult, GatewayRpcError, isCommandHandoff, rpcErrorMessage } from '../lib/rpc.js'
 
 describe('asRpcResult', () => {
   it('keeps plain object payloads', () => {
@@ -23,5 +23,29 @@ describe('rpcErrorMessage', () => {
   it('falls back for unknown errors', () => {
     expect(rpcErrorMessage('broken')).toBe('broken')
     expect(rpcErrorMessage({ code: 500 })).toBe('request failed')
+  })
+})
+
+describe('isCommandHandoff', () => {
+  it('supports a native host without the legacy slash method', () => {
+    expect(isCommandHandoff(new GatewayRpcError('method not found', -32601))).toBe(true)
+  })
+
+  it('accepts explicit non-execution metadata', () => {
+    expect(isCommandHandoff(new GatewayRpcError('handoff', 4018, {
+      dispatch: 'command.dispatch', execution_started: false
+    }))).toBe(true)
+  })
+
+  it.each([null, [], {}, { dispatch: 'command.dispatch', execution_started: true }])(
+    'does not use legacy text to override invalid explicit metadata: %j', data => {
+      expect(isCommandHandoff(new GatewayRpcError('skill command: use command.dispatch', 4018, data))).toBe(false)
+    }
+  )
+
+  it('accepts only the established legacy pre-execution handoff', () => {
+    expect(isCommandHandoff(new GatewayRpcError('skill command: use command.dispatch', 4018))).toBe(true)
+    expect(isCommandHandoff(new GatewayRpcError('skill command: use command.dispatch', 5030))).toBe(false)
+    expect(isCommandHandoff(new Error('skill command: use command.dispatch'))).toBe(false)
   })
 })
