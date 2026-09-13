@@ -44,3 +44,30 @@ def test_failed_cloud_close_retains_creating_provider_and_blocks_reuse(monkeypat
     browser.cleanup_browser("task")
     assert "task" not in browser._active_sessions
     assert attempts == ["remote", "remote"]
+
+
+def test_partial_allocation_blocks_fallback_until_original_disposer_succeeds(monkeypatch):
+    from unittest.mock import Mock
+    from agent.browser_provider import BrowserSession
+
+    monkeypatch.setattr(browser, '_active_sessions', {})
+    for name in ('_start_browser_cleanup_thread', '_update_session_activity', '_ensure_cdp_supervisor',
+                 '_stop_cdp_supervisor', '_maybe_stop_recording'):
+        monkeypatch.setattr(browser, name, lambda *args, **kwargs: None)
+    monkeypatch.setattr(browser, '_get_cdp_override', lambda: '')
+    monkeypatch.setattr(browser, '_is_camofox_mode', lambda: False)
+    monkeypatch.setattr(browser, '_run_browser_command', lambda *args, **kwargs: {})
+    monkeypatch.setattr(browser.os.path, 'exists', lambda path: False)
+    disposer = Mock(side_effect=[False, True])
+    allocation = BrowserSession({'session_name': 'partial', 'bb_session_id': 'remote', 'cdp_url': ''}, close=disposer)
+    provider = SimpleNamespace(create_session=lambda task: allocation.require_endpoint())
+    fallback = Mock()
+    monkeypatch.setattr(browser, '_get_cloud_provider', lambda: provider)
+    monkeypatch.setattr(browser, '_create_local_session', fallback)
+    with pytest.raises(RuntimeError, match='retained'):
+        browser._get_session_info('task')
+    fallback.assert_not_called()
+    assert browser._active_sessions['task']['_cleanup_pending']
+    browser.cleanup_browser('task')
+    assert 'task' not in browser._active_sessions
+    assert disposer.call_count == 2

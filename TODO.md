@@ -1,199 +1,45 @@
-# Active engineering backlog
+# Engineering backlog
 
-The product-boundary implementation is delivered; final verification is recorded
-in the acceptance audit below. Open items are subsequent engineering qualification
-and maintenance, not a list of forecasting operations.
-The [current acceptance audit](docs/plans/2026-09-12-product-acceptance-audit.md)
-separates verified delivery evidence from remaining migration work.
-The [ownership map](docs/architecture/ownership-map.md) defines module owners;
-the [architecture work log](docs/plans/2026-09-11-product-boundaries.md) records
-changes, tests and their limits. The previous checklist is preserved in the
-[chronological archive](docs/plans/2026-09-12-todo-archive.md).
+Product boundaries, shared TUI/CLI operations, independent distributions and
+contributor gates are delivered. This list tracks current work only; prior detail
+is in [the history](docs/plans/2026-09-13-todo-history.md). See the
+[ownership map](docs/architecture/ownership-map.md) for implementation boundaries.
 
-## 1. Finish application and product boundaries
+## Delivered runtime correctness batch
 
-- [x] Give structured source dispatch one owner independent of agent tools.
-  Market refresh and evidence ingestion share `forecasting/sources/dispatch.py`.
-  Read-only forecast configuration lives in storage; diagnostic runtime imports
-  remain in the compatibility facade. A transitive import contract blocks source
-  dispatch from importing execution and presentation layers. Scheduled, batch and
-  CLI refresh now share watched-source acquisition directly; pure evidence payload
-  formatting has its own owner. Three further tool dependency exceptions are removed.
+- [x] Retain failed SDK cleanup and partial browser allocations; require daemon
+  identity and confirmed exit before retirement.
+- [x] Enforce conversation deadlines and Skills Hub HTTP cancellation, including
+  parallel source search and prevention of publication after cancellation.
+- [x] Exercise nested delegation and interrupted handoff recovery
+  through the real TUI and repeated authenticated remote/dashboard reconnects.
+- [x] Enforce shared blocking quality checks and the full Python suite before pushing.
+- [x] Verify economic lexical/duplicate safeguards through settlement admission.
 
-- [x] Remove the classic slash-worker implementation and cleanup scaffolding.
-  TUI command execution no longer constructs or calls it. Every catalog command
-  has a native backend or Ink owner, enforced by a cross-language parity test.
-  Terminal-only requests hand back to the client before agent construction.
-  The worker class, subprocess entrypoint, side-effect mirror, timeout setting
-  and retirement hooks are deleted. The whole TUI gateway package now has a
-  blocking prohibition on classic CLI imports.
-  Native handoff now uses host/session admission and the shared waiter: local timeouts now cancel only unclaimed pending work, and running/terminal gateway states cannot be overwritten by timeout. Attempt identity is now enforced on gateway transitions and CLI cancellation/waiting. Shared application observation/waiting returns durable outcomes on cancellation, and the CLI borrows host storage without opening a fallback connection; native progress/completion is verified through the real terminal with a simulated destination. Foreground/background admission now shares durable handoff validation, including reconnected sessions and read failures. A real terminal test now covers cancelling a claimed-transfer wait, retained-PTY dashboard reconnect, blocked source work and a new independent session. Interrupted gateway recovery and cross-platform handoff qualification remain to be completed.
-  Preserve aliases, validation, error semantics and state ownership. Configured aliases already redispatch through the local TUI registry. Messaging-only commands now fail before worker construction; /whoami metadata no longer advertises unavailable terminal behavior. Snapshot
-  listing, creation and pruning now share application/storage owners;
-  restoration uses exclusive offline profile admission. Restore stages
-  all files before publication and rejects partial success. A versioned restore
-  journal retains hash-verified copies for idempotent recovery after process death;
-  profile leases now exclude restore/recovery while managed hosts, sessions and config/auth writers are active; failed shutdown retains admission and pending journals block new users. Offline restore/recover has a dedicated CLI path, and crashed SQLite WAL is drained before database replacement. Full backup import also takes exclusive admission; named profiles retain root admission so a full-home import cannot overwrite an active child profile. Kanban now runs
-  natively with host/session cancellation and visible activity. Real terminal tests
-  cover watch, resizing, Ctrl+C, gateway death/reconnect and continued command use.
-  Extended remote-host command recovery remains to be qualified.
-- [x] Finish separating agent construction from RPC orchestration. Deferred-build
-  admission/retry, initialization completion and partial-agent retention, and notification polling/admission now belong to the host;
-  protocol event delivery remains an adapter responsibility. CLI and TUI now share
-  forecasting-agent prompt/skill construction through the agent factory. Hosted
-  desk launch selection/construction now lives in hosting/desk_agent.py; RPC
-  supplies captured overrides, callbacks and borrowed storage. Background
-  construction/execution/disposal now belongs to the host, with a captured
-  credential context and parent-scoped tools/approvals. Failed closes transfer
-  exact handles to session-scoped retry ownership; /stop also interrupts these
-  active background agents.
-- [x] Remove the frozen direct domain-to-runtime/tool import exceptions.
-  Move a capability and its tests together; directory moves alone are insufficient.
-  Question candidate matching now has one read-only application owner shared by
-  CLI and tool creation paths. Market artifact transfer and scoped prompt callbacks
-  now have shared owners. Slack notifications, collaboration and connection checks
-  use a shared transport. Governed forecast-card sharing has a shared application
-  owner. Model building now shares an application operation; reciprocal question links
-  commit atomically and failed links preserve the build for retry. Triage operations
-  now share validation/results across CLI and tools; label/alert changes commit
-  together. Expert triage labels now require a known class at the application and
-  ledger boundaries; invalid adjudication batches roll back instead of becoming
-  silent partial successes. Supervisor search now consumes shared provider routing
-  and cancellation; no direct forecast-to-tool exceptions remain. Web provider
-  selection reads shared profile storage and honors explicit search overrides.
-  Shared defaults/normalization and read-only profile access are now independent.
-  Ledger scoring/snapshot settings, hook policy and estimate-first policy use them;
-  scheduler, worker and research readers use the same owner. Quorum command reads and writes now use independent configuration and installation
-  owners. Startup environment loading is now independent too. Connected-panel selection rules now run on supplied provider snapshots in a pure forecasting module; discovery remains in the adapter. Pinned-route validation now uses a pure rule owner too; panelists and judge are validated together against one credential snapshot, under a transitive import gate. Explicit default-model snapshots now remain authoritative, including unknown values; malformed model defaults cannot become seats, and incomplete multi-provider catalogs cannot masquerade as a single-provider fallback. Market forecasters now leave plugin initialization to the tool runtime when the default agent is first constructed. Provider identity and offline model-default catalogs now have shared owners with transitive runtime/presentation prohibitions. Quorum reads them directly. Credential-status inventory now belongs to `credentials/catalog.py`; the direct forecast-to-runtime contract has no exceptions. Authentication metadata and pure secret validation now live in `configuration/authentication.py`, consumed directly by TUI, CLI, gateway and pool callers. A transitive boundary rejects execution/presentation imports. Z.AI endpoint discovery now persists its cache under the initiating profile lock, preserving intervening writes and active-provider selection. The TUI `config.get provider` read now reports configured selection without credential discovery, preserves `auto`, and explicitly reports authentication as not checked. It no longer mistakes a model publisher for the serving provider. Provider inventory exceptions now invalidate the complete boolean snapshot, preventing partial failures from being mistaken for a single-provider quorum; this does not change the confirmed-disconnected case. AWS credential/region discovery now has a host owner with no execution/presentation imports. Adapter import no longer installs dependencies; explicit client construction owns that step, and failed credential detection probes the SDK only once. Credential-aware picker/status calls can still refresh OAuth credentials; `credentials/` now owns discovery, refresh and token persistence independently of interactive login commands. A transitive import contract rejects runtime/presentation imports, and the entire package has strict lint, format and type gates. Auth-store parsing, stored pool overlay policy and durable writes now have a shared storage owner with explicit paths. The final writer enforces borrowed-secret stripping, including nested secret fields, while preserving owned credentials and caller-held runtime values; `.env` parsing and content-keyed reads also have shared owners, preventing stale credentials after timestamp-preserving edits; the credential service now owns profile selection and read/modify/write locking. The Nous status cache now binds the resolved auth-store path so profiles with matching timestamps cannot reuse each other's status. The direct tool-import contract has no exceptions.
+Implementation and focused evidence are recorded in
+[the runtime closeout](docs/plans/2026-09-13-runtime-closeout.md). The pre-push hook requires the full suite;
+focused checks do not substitute for that publication gate.
 
-Already implemented: shared forecast review/resolution/scoring, command catalog
-and aliases, configured-command validation/execution, session selection and
-branching, native command handoffs before model initialization, shared goal-command transitions, shared retry preparation with validation before history mutation, shared complete-exchange undo with locked TUI admission and no model initialization, shared positive-integer agent budget selection
-across configuration normalization, classic CLI, TUI and gateway environment bridges, shared configuration inspection
-(including live session settings and credential-safe reporting), shared toolset/insights/
-quota/platform inspection, curator operations and runtime selection, and native command admission.
-Tool inventory and /tools list now use shared views without building an agent or classic worker. Tool changes share strict name validation; malformed RPC input is rejected before configuration access or session reset. Native /agents, /tasks and /stop now use shared background operations; hosted inspection and cancellation select the current session in both process and delegation registries. The remaining /skills slash commands now call the same Skills Hub operations as the CLI, with isolated output and no classic worker. Nested update/import installs are explicitly non-interactive. Native /debug now uses shared diagnostics with request-local dump/output capture and no agent or worker construction. Footer inspection/mutation now uses a shared application owner across CLI, gateway and native TUI; toggles read the latest global value under the writer lock and preserve platform overrides. The classic-worker fallback is removed; terminal-owned commands return to Ink.
+## Further qualification
 
-## 2. Finish resource ownership and recovery
+- [ ] Verify installed products on native Linux, Windows and Android/Termux.
+- [ ] Verify a successor independent terminal package upgrade when one exists.
+- [ ] Complete live credential-dependent integrations and release publication.
+- [ ] Attribute the historical native SSL crash if original runtime/certificate
+  artifacts or a credible reproducer become available. Containment is implemented;
+  the original cause remains unproven.
 
-- [ ] Qualify delegation dashboard controls with rendered nested-work and reconnect
-  exercises. Status, pause and interruption now require the current session owner;
-  nested children inherit the root owner and stale client replies are discarded.
-  A real-terminal pause/new-session/resume exercise now verifies distinct backend
-  pause owners and successful continued conversation.
-  Ink /stop consumes the shared session-scoped operation, and legacy process.stop
-  rejects missing session ownership. The hosting delegation owner now centralizes
-  pause/registry state and rejects replacement or stale retirement of a live child.
-  Pause flags remain process-lifetime state.
-- [ ] Audit lower-level agent cleanup for concrete resource ownership.
-  Interactive market builds now restore the prior approval callback after success,
-  constructor failure or conversation failure; worker reuse cannot inherit that
-  build-scoped setting.
-  Tool-triggered resets now reserve host replacement before saving, dispose the
-  previous agent/worker, and retain failed construction state and history. Saved
-  configuration may outlive a failed reset. The macOS real-terminal harness now
-  verifies successful reset and failed-reset/new-session recovery against saved
-  configuration, agent ownership and durable turn receipts.
-  Live market conversation agents now have an explicit owner: per-call disposal,
-  batch close for cached agents, and retained failed-close handles. The CLI releases
-  the owner after recording, including failures. The existing market forecaster
-  timeout argument still does not enforce an execution deadline.
-  Do not retry task-ID cleanup if it could close a replacement component's resources.
-  Registry assignment rejects a different existing owner, including builds and
-  failed cleanup. Membership now has no raw mapping removal/update APIs; callers
-  must retire explicitly, and isolated fixtures verify quiescence before disposal.
-- [ ] Close remaining partial-construction and shutdown failure paths with
-  deterministic failure injection and retained cleanup handles. Async plugin
-  command resolution now cancels cooperatively and waits for coroutine cleanup
-  on both CLI/TUI paths, preserving caller context instead of abandoning a
-  timed-out helper thread. Blocking or cancellation-suppressing plugin code
-  remains cooperative; it cannot be forcibly stopped in-process. Delegated child
-  close failures now retain exact handles and diagnostics; session-scoped /stop
-  and session disposal retry them, with session close remaining pending on failure. Child cleanup
-  retries retain exact handles. Direct background conversation agents now use the
-  same retained cleanup owner and session-scoped /stop/close retries. Failed SDK close remains pending because HTTPX
-  can mark itself closed before transport disposal fails. Safe recovery of those
-  transports and terminal/browser cleanup failures is still unfinished. Browser
-  supervisors now retain failed startup/stop handles and reject overlapping
-  lifecycle mutations. CLI/TUI now share endpoint transitions and surface
-  supervisor cleanup failures. Browser tool admission now drains before global
-  endpoint changes; failed cloud/Camofox disposal retains exact handles, and
-  bundled cloud disposers retain allocation credentials. Emergency bulk cleanup now drains endpoint operations, retains failed disposal
-  handles and marks completion only after success. Malformed allocations and
-  lower-level local daemon disposal remain to audit. Browser subprocess output
-  descriptors now share a scoped owner that closes partial allocations in both
-  normal and Chrome-fallback launch paths. Shared configuration and auth-store
-  writers now keep raw descriptor ownership through text-wrapper construction;
-  wrapper failures and repeated teardown cannot leak or re-close those handles. The three `.env` mutation paths now use the same descriptor owner; failed construction preserves both the previous file and process environment. Shared file-lock reentrancy now keys the process and resolved path, so nested independent stores cannot skip their OS locks. Interruption and real subprocess exclusion have regression coverage. PID-file parsing now rejects
-  process-group selectors; invalid PID files and signaling failures retain local
-  handles. Unreadable owner records no longer authorize orphan reaping. PID reuse
-  and confirmation of daemon termination remain unqualified.
-  Disconnect now suppresses the saved CDP
-  endpoint for the running process without rewriting the profile.
-- [x] Remove the legacy global goal database cache. Standalone managers own
-  closable connections; CLI, gateway and TUI managers borrow their host storage.
-  Manager reads refresh and writes reject stale state. Hosted goal paths never
-  open an implicit fallback database.
-- [ ] Extend installed remote-host/provider recovery exercises to longer sessions.
+## Maintenance policy
 
-Already implemented: host-owned workers, session registry/storage, profile
-configuration, device sign-in, build admission/retry, notification admission and
-command subprocess cleanup. Durable turn receipts now belong to storage; the host
-finalizes drained turns before session disposal and retains resources on write failure. SDK transports own socket teardown; client eviction
-detaches exact handles before cleanup so concurrent replacements survive. Real
-Ink/dashboard/local-provider/SQLite recovery tests exist. TUI submission callbacks
-now retain their originating session: delayed file detection and request errors
-cannot send into or reset a replacement session. Shell completion, interpolation
-and failed steering now apply the same session ownership rule.
+Expand strict lint/format/type coverage when touching inherited owners; prefer
+behavioral fixes over cosmetic file moves. New files in configuration, storage,
+hosting, application, credentials and tooling receive strict checks automatically.
+Keep protocol generation, extension documentation and compatibility aliases aligned
+with code. Preserve forecast provenance and fail closed on unsupported source semantics.
 
-## 3. Complete distribution qualification
+Cancellation remains cooperative inside provider/plugin code: pending work retains
+ownership until it exits. Do not report a non-cooperative call as stopped or dispose
+its resources beneath it. Cross-platform evidence must identify the actual platform.
 
-- [ ] Exercise additional supported platform combinations, especially native
-  Windows and Android/Termux; POSIX PTY evidence does not establish their behavior.
-- [x] Implement retained-artifact backend upgrade qualification with
-  `verify_profiles.py --upgrade-from`. The final candidate passed on Python
-  3.11.15 and 3.13.12 against the retained 0.21.2 wheel. Repeat for future candidates.
-- [ ] Qualify upgrades between terminal versions when a successor terminal
-  artifact exists; the current independent terminal package is still 0.1.0.
-
-Already implemented: separate backend/CLI and terminal wheels, optional web
-hosting, protocol/capability negotiation, backend execution without Node,
-independent local/remote terminal verification, and a macOS installed
-0.21.2 → 0.22.0 backend upgrade preserving forecast/evidence/session/configuration.
-See the work log for artifact hashes; this is not a published-release claim.
-
-## 4. Maintain enforceable repository hygiene
-
-- [ ] Expand strict lint/format/type coverage as inherited owners are extracted.
-  Shared tooling and the entire storage package join configuration, hosting and application packages in
-  directory-wide strict coverage. New files there are covered automatically;
-  older code elsewhere still has narrower checks.
-- [ ] Keep ownership documentation, generated protocol references and extension
-  guides aligned with code. Reconcile older website guides and compatibility names.
-- [x] Enforce final integrated verification before pushing. The pre-push hook
-  blocks publication unless shared gates and the full Python suite pass; see
-  the acceptance audit for candidate evidence and the final push log.
-
-Already implemented: `python3 scripts/dev.py bootstrap` installs hooks and runs
-the same quality workflow as CI; `check` runs lint/format/types/import/protocol
-checks. Every push runs the full Python suite, matching the repository development policy.
-All 76 import contracts pass; direct forecasting-to-tool/runtime exception lists
-are empty. Strict coverage remains scoped for inherited code.
-
-## 5. Other engineering follow-up
-
-- [ ] Conclusively attribute the historical native SSL crash if original incident
-  artifacts or a reproducer become available. Containment and native experiments
-  are verified; the original cause remains unproven. A separate construction-time
-  timeout was traced to an unsupported Ollama metadata probe against OpenAI.
-  Recognized non-Ollama endpoints now skip that probe before client allocation;
-  hostname-boundary matching prevents lookalike endpoint misclassification.
-- [ ] Continue source-adapter parser/semantic separation where unsupported units,
-  timestamps, revisions or identities could otherwise reach settlement.
-- [ ] Complete credential-dependent integration and formal release verification
-  when that work is resumed. Source pushes are not release publication.
-
-Forecast pilots, deferred settlements and operational lesson evaluation are
-tracked in the archive and ledger. They do not block this structural workstream.
-
-Skills Hub follow-up: provide cooperative cancellation for in-progress hub I/O. Native dispatch currently retains host ownership until the operation returns. Shared parsing now accepts quoted arguments, snapshot stdout uses the caller output sink, and batch/TUI installation results reflect actual completed installs.
+Live forecasting cohorts, settlements and learning evaluation belong in the ledger
+and operational archive; they are not prerequisites for these engineering tasks.

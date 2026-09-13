@@ -138,3 +138,94 @@ def test_failed_sdk_close_is_retained_once_and_does_not_touch_replacement():
     replacement.close.assert_not_called()
     with pytest.raises(RuntimeError, match='SDK client cleanup failed'):
         require_client_cleanup_complete(agent)
+
+
+def test_recovery_never_inspects_private_sockets_of_open_client():
+    from agent.openai_clients import recover_closed_client
+
+    class Client:
+        is_closed = False
+        @property
+        def _client(self):
+            raise AssertionError('SDK internals are not the health-check interface')
+
+    agent = SimpleNamespace(client=Client(), _replace_primary_openai_client=Mock())
+    assert not recover_closed_client(agent)
+    agent._replace_primary_openai_client.assert_not_called()
+
+
+def test_closed_client_recovery_reports_failed_replacement():
+    from agent.openai_clients import recover_closed_client
+
+    agent = SimpleNamespace(client=SimpleNamespace(is_closed=True),
+                            _replace_primary_openai_client=Mock(return_value=False))
+    assert not recover_closed_client(agent)
+    agent._replace_primary_openai_client.assert_called_once_with(reason='closed_client_cleanup')
+
+
+def test_owned_httpx_transport_close_failure_can_be_retried_without_replacement():
+    import pytest
+    from agent.http_cleanup import OwnedHTTPClient
+    from agent.openai_clients import register_owned_client, require_client_cleanup_complete
+
+    class Transport(httpx.BaseTransport):
+        calls = 0
+        def close(self):
+            self.calls += 1
+            if self.calls == 1:
+                raise OSError('first close fails')
+
+    transport = Transport()
+    http = OwnedHTTPClient(transport=transport)
+    client = OpenAI(api_key='fixture', http_client=http)
+    replacement = Mock()
+    agent = SimpleNamespace(client=replacement, _client_log_context=lambda: 'fixture')
+    register_owned_client(agent, client, http)
+    _close_openai_client(agent, client, reason='test', shared=True)
+    assert http.is_closed
+    assert agent._failed_client_closes == [client]
+    require_client_cleanup_complete(agent)
+    assert transport.calls == 2
+    assert agent._failed_client_closes == []
+    assert agent.client is replacement
+    replacement.close.assert_not_called()
+    client.close()
+    assert transport.calls == 2
+
+
+def test_transport_retains_connections_discarded_by_pool_on_failed_close():
+    import pytest
+    from agent.http_cleanup import RetainedHTTPTransport
+
+    connection = Mock()
+    connection.close.side_effect = [OSError('stream close failed'), None]
+    class Pool:
+        connections = [connection]
+        def close(self):
+            closing, self.connections = self.connections, []
+            for conn in closing:
+                conn.close()
+    transport = RetainedHTTPTransport()
+    transport._pool.close()
+    transport._pool = Pool()
+    with pytest.raises(OSError):
+        transport.close()
+    assert transport._pool.connections == []
+    transport.close()
+    transport.close()
+    assert connection.close.call_count == 2
+
+
+def test_failed_sdk_construction_releases_owned_transport():
+    import pytest
+    from agent.http_cleanup import OwnedHTTPClient
+    from agent.openai_clients import construct_owned_client
+
+    transport = Mock(spec=httpx.BaseTransport)
+    http = OwnedHTTPClient(transport=transport)
+    agent = SimpleNamespace(_client_log_context=lambda: 'fixture')
+    with pytest.raises(ValueError, match='invalid SDK configuration'):
+        construct_owned_client(agent, Mock(side_effect=ValueError('invalid SDK configuration')),
+                               {'http_client': http})
+    transport.close.assert_called_once_with()
+    assert http.is_closed

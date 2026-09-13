@@ -241,7 +241,7 @@ class BrowserUseBrowserProvider(BrowserProvider):
             "cdp_url": cdp_url,
             "features": {"browser_use": True},
             "external_call_id": external_call_id,
-        }, close=lambda session_id=session_data["id"]: self.close_session(session_id, _config=config))
+        }, close=lambda session_id=session_data["id"]: self.close_session(session_id, _config=config)).require_endpoint()
 
     def close_session(self, session_id: str, *, _config: Dict[str, Any] | None = None) -> bool:
         try:

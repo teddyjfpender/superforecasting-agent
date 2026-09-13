@@ -14,6 +14,8 @@ Used by superforecasting_agent/runtime/skills_hub.py for CLI commands and the /s
 inside an interactive forecast session.
 """
 
+from superforecasting_agent.tooling.http_io import checkpoint, get as hub_http_get
+
 import hashlib
 import json
 import logging
@@ -102,7 +104,7 @@ def _guarded_http_get(url: str, *, timeout: int = 20) -> Optional[httpx.Response
             return None
 
         try:
-            resp = httpx.get(current_url, timeout=timeout, follow_redirects=False)
+            resp = hub_http_get(current_url, timeout=timeout, follow_redirects=False)
         except httpx.HTTPError as exc:
             logger.debug("Skills Hub fetch failed for %s: %s", current_url, exc)
             return None
@@ -284,7 +286,7 @@ class GitHubSource(SkillSource):
 
         url = f"https://api.github.com/repos/{repo}/contents/{path.rstrip('/')}"
         try:
-            resp = httpx.get(url, headers=self.auth.get_headers(), timeout=15, follow_redirects=True)
+            resp = hub_http_get(url, headers=self.auth.get_headers(), timeout=15, follow_redirects=True)
             if resp.status_code != 200:
                 return []
         except httpx.HTTPError:
@@ -333,7 +335,7 @@ class GitHubSource(SkillSource):
 
         # Resolve default branch
         try:
-            resp = httpx.get(
+            resp = hub_http_get(
                 f"https://api.github.com/repos/{repo}",
                 headers=headers, timeout=15, follow_redirects=True,
             )
@@ -346,7 +348,7 @@ class GitHubSource(SkillSource):
 
         # Fetch recursive tree
         try:
-            resp = httpx.get(
+            resp = hub_http_get(
                 f"https://api.github.com/repos/{repo}/git/trees/{default_branch}",
                 params={"recursive": "1"},
                 headers=headers, timeout=30, follow_redirects=True,
@@ -437,7 +439,7 @@ class GitHubSource(SkillSource):
         """Recursively download via Contents API (fallback)."""
         url = f"https://api.github.com/repos/{repo}/contents/{path.rstrip('/')}"
         try:
-            resp = httpx.get(url, headers=self.auth.get_headers(), timeout=15, follow_redirects=True)
+            resp = hub_http_get(url, headers=self.auth.get_headers(), timeout=15, follow_redirects=True)
             if resp.status_code != 200:
                 logger.debug("Contents API returned %d for %s/%s", resp.status_code, repo, path)
                 return {}
@@ -497,7 +499,7 @@ class GitHubSource(SkillSource):
         """Fetch a single file's content from GitHub."""
         url = f"https://api.github.com/repos/{repo}/contents/{path}"
         try:
-            resp = httpx.get(
+            resp = hub_http_get(
                 url,
                 headers={**self.auth.get_headers(), "Accept": "application/vnd.github.v3.raw"},
                 timeout=15, follow_redirects=True,
@@ -999,7 +1001,7 @@ class SkillsShSource(SkillSource):
             return [SkillMeta(**item) for item in cached][:limit]
 
         try:
-            resp = httpx.get(
+            resp = hub_http_get(
                 self.SEARCH_URL,
                 params={"q": query, "limit": limit},
                 timeout=20,
@@ -1059,7 +1061,7 @@ class SkillsShSource(SkillSource):
             return [SkillMeta(**item) for item in cached][:limit]
 
         try:
-            resp = httpx.get(self.BASE_URL, timeout=20)
+            resp = hub_http_get(self.BASE_URL, timeout=20)
             if resp.status_code != 200:
                 return []
         except httpx.HTTPError:
@@ -1135,7 +1137,7 @@ class SkillsShSource(SkillSource):
             return cached
 
         try:
-            resp = httpx.get(f"{self.BASE_URL}/{identifier}", timeout=20)
+            resp = hub_http_get(f"{self.BASE_URL}/{identifier}", timeout=20)
             if resp.status_code != 200:
                 return None
         except httpx.HTTPError:
@@ -1221,7 +1223,7 @@ class SkillsShSource(SkillSource):
         # Fallback: scan repo root for directories that might contain skills
         try:
             root_url = f"https://api.github.com/repos/{repo}/contents/"
-            resp = httpx.get(root_url, headers=self.github.auth.get_headers(),
+            resp = hub_http_get(root_url, headers=self.github.auth.get_headers(),
                              timeout=15, follow_redirects=True)
             if resp.status_code == 200:
                 entries = resp.json()
@@ -1616,7 +1618,7 @@ class ClawHubSource(SkillSource):
             )
 
         try:
-            resp = httpx.get(
+            resp = hub_http_get(
                 f"{self.BASE_URL}/skills",
                 params={"search": query, "limit": limit},
                 timeout=15,
@@ -1742,7 +1744,7 @@ class ClawHubSource(SkillSource):
                 params["cursor"] = cursor
 
             try:
-                resp = httpx.get(f"{self.BASE_URL}/skills", params=params, timeout=30)
+                resp = hub_http_get(f"{self.BASE_URL}/skills", params=params, timeout=30)
                 if resp.status_code != 200:
                     break
                 data = resp.json()
@@ -1779,7 +1781,7 @@ class ClawHubSource(SkillSource):
 
     def _get_json(self, url: str, timeout: int = 20) -> Optional[Any]:
         try:
-            resp = httpx.get(url, timeout=timeout)
+            resp = hub_http_get(url, timeout=timeout)
             if resp.status_code != 200:
                 return None
             return resp.json()
@@ -1848,7 +1850,7 @@ class ClawHubSource(SkillSource):
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                resp = httpx.get(
+                resp = hub_http_get(
                     f"{self.BASE_URL}/download",
                     params={"slug": slug, "version": version},
                     timeout=30,
@@ -1991,7 +1993,7 @@ class ClaudeMarketplaceSource(SkillSource):
 
         url = f"https://api.github.com/repos/{repo}/contents/.claude-plugin/marketplace.json"
         try:
-            resp = httpx.get(
+            resp = hub_http_get(
                 url,
                 headers={**self.auth.get_headers(), "Accept": "application/vnd.github.v3.raw"},
                 timeout=15,
@@ -2109,7 +2111,7 @@ class LobeHubSource(SkillSource):
             return cached
 
         try:
-            resp = httpx.get(self.INDEX_URL, timeout=30)
+            resp = hub_http_get(self.INDEX_URL, timeout=30)
             if resp.status_code != 200:
                 return None
             data = resp.json()
@@ -2123,7 +2125,7 @@ class LobeHubSource(SkillSource):
         """Fetch a single agent's JSON file."""
         url = f"https://chat-agents.lobehub.com/{agent_id}.json"
         try:
-            resp = httpx.get(url, timeout=15)
+            resp = hub_http_get(url, timeout=15)
             if resp.status_code == 200:
                 return resp.json()
         except (httpx.HTTPError, json.JSONDecodeError) as e:
@@ -2198,7 +2200,7 @@ class BrowseShSource(SkillSource):
         if cached is not None:
             return cached
         try:
-            resp = httpx.get(self.CATALOG_URL, timeout=20)
+            resp = hub_http_get(self.CATALOG_URL, timeout=20)
             if resp.status_code != 200:
                 return []
             data = resp.json()
@@ -2284,7 +2286,7 @@ class BrowseShSource(SkillSource):
         if not md_url:
             return None
         try:
-            resp = httpx.get(md_url, timeout=20, follow_redirects=True)
+            resp = hub_http_get(md_url, timeout=20, follow_redirects=True)
             if resp.status_code != 200:
                 return None
             content = resp.text
@@ -2315,7 +2317,7 @@ class BrowseShSource(SkillSource):
         ``sourceUrl`` (some entries may), use it directly.
         """
         try:
-            detail = httpx.get(
+            detail = hub_http_get(
                 self.SKILL_DETAIL_URL.format(slug=slug),
                 timeout=20,
                 follow_redirects=True,
@@ -2716,6 +2718,7 @@ def ensure_hub_dirs() -> None:
 
 def quarantine_bundle(bundle: SkillBundle) -> Path:
     """Write a skill bundle to the quarantine directory for scanning."""
+    checkpoint()
     ensure_hub_dirs()
     skill_name = _validate_skill_name(bundle.name)
     validated_files: List[Tuple[str, Union[str, bytes]]] = []
@@ -2747,6 +2750,7 @@ def install_from_quarantine(
     scan_result: ScanResult,
 ) -> Path:
     """Move a scanned skill from quarantine into the skills directory."""
+    checkpoint()
     safe_skill_name = _validate_skill_name(skill_name)
     safe_category = _validate_category_name(category) if category else ""
     quarantine_resolved = quarantine_path.resolve()
@@ -2924,7 +2928,7 @@ def _load_hermes_index() -> Optional[dict]:
 
     # Fetch from docs site
     try:
-        resp = httpx.get(HERMES_INDEX_URL, timeout=15, follow_redirects=True)
+        resp = hub_http_get(HERMES_INDEX_URL, timeout=15, follow_redirects=True)
         if resp.status_code != 200:
             logger.debug("Forecast index fetch returned %d", resp.status_code)
             return _load_stale_index_cache()
@@ -3171,6 +3175,7 @@ def parallel_search_sources(
     invoked as each source completes — useful for progress indicators.
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
+    from contextvars import copy_context
 
     per_source_limits = per_source_limits or {}
 
@@ -3209,7 +3214,7 @@ def parallel_search_sources(
         futures = {}
         for src in active:
             lim = per_source_limits.get(src.source_id(), 50)
-            fut = pool.submit(_search_one_source, src, query, lim)
+            fut = pool.submit(copy_context().run, _search_one_source, src, query, lim)
             futures[fut] = src.source_id()
 
         try:

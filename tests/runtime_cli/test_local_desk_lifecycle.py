@@ -463,3 +463,33 @@ def test_real_desk_background_stop_and_cleanup_retry(local_desk, monkeypatch):
         assert receipt(home)['session_id'] == before['session_id']
         assert len(bridges) == 1
         ws.close(code=1000)
+
+
+def test_real_desk_repeated_reconnects_match_durable_failure_and_completion(local_desk):
+    from tests.tui_pty.vt import VTScreen
+
+    client, home, bridges = local_desk
+    url = '/api/pty?token=local-engineering&channel=repeated-durable'
+    cursor = 0
+    previous = None
+    screen = VTScreen(rows=40, cols=140)
+    scenarios = [('failure', b'expired', 'error'), ('complete', b'durable fixture prefix', 'complete'),
+                 ('quota', b'exceeded', 'error'), ('disconnect', b'ended', 'error')] * 2
+    for index, (prompt, visible, expected) in enumerate(scenarios):
+        with client.websocket_connect(url + f'&cursor={cursor}') as ws:
+            ws.send_text('\x1b[RESIZE:140;40]')
+            if index == 0:
+                cursor += len(until(ws, lambda out: b'local-fixture' in out, screen=screen))
+            else:
+                assert receipt(home) == previous
+            ws.send_text(prompt + '\r')
+            def settled(out):
+                saved = receipt(home)
+                return (visible in out and saved is not None and saved['status'] == expected
+                        and (previous is None or saved['id'] != previous['id']))
+            cursor += len(until(ws, settled, screen=screen))
+            previous = receipt(home)
+            assert previous['partial_text'] == 'durable fixture prefix'
+            assert len(bridges) == 1
+            ws.close(code=1000 if index == len(scenarios) - 1 else 1006)
+        assert receipt(home) == previous

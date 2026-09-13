@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
+import math
 import threading
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -33,24 +36,77 @@ class AgentConversations:
         with self._lock:
             self._agents.pop(id(agent), None)
 
-    def run(self, message: str, *, system_message: str) -> Any:
+    def _run(
+        self, agent: Any, message: str, system_message: str, deadline: float | None
+    ) -> Any:
+        expired = threading.Event()
+
+        def interrupt() -> None:
+            expired.set()
+            try:
+                agent.interrupt()
+            except Exception:
+                logging.getLogger(__name__).exception("Deadline interruption failed")
+
+        timer = None
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("Conversation deadline expired before execution")
+            timer = threading.Timer(remaining, interrupt)
+            timer.daemon = True
+            timer.start()
+        try:
+            result = agent.run_conversation(message, system_message=system_message)
+        except Exception as exc:
+            if expired.is_set() or (
+                deadline is not None and time.monotonic() >= deadline
+            ):
+                raise TimeoutError("Conversation deadline expired") from exc
+            raise
+        finally:
+            if timer is not None:
+                timer.cancel()
+                # No delayed callback may interrupt a later use of this agent.
+                timer.join()
+        if expired.is_set() or (deadline is not None and time.monotonic() >= deadline):
+            raise TimeoutError("Conversation deadline expired")
+        return result
+
+    def run(
+        self, message: str, *, system_message: str, timeout: float | None = None
+    ) -> Any:
+        """Cancel at the deadline and reject late results; drain before disposal.
+
+        Cancellation is cooperative: an unresponsive provider retains ownership
+        until it returns. Queuing and construction consume the same budget.
+        """
+        if timeout is not None and (
+            isinstance(timeout, bool) or not math.isfinite(timeout) or timeout <= 0
+        ):
+            raise ValueError("timeout must be a finite positive number")
+        deadline = None if timeout is None else time.monotonic() + timeout
         with self._workers.operation():
             if self._fresh:
                 agent = self._create()
                 try:
-                    return agent.run_conversation(
-                        message, system_message=system_message
-                    )
+                    return self._run(agent, message, system_message, deadline)
                 finally:
                     self._dispose(agent)
-            # Reused agents carry mutable conversation state. Admission counts
-            # queued calls too, so shutdown cannot dispose an agent they still own.
+            # Queued calls retain admission, but cannot start after their deadline.
             with self._serial:
+                if deadline is not None and time.monotonic() >= deadline:
+                    raise TimeoutError("Conversation deadline expired while queued")
                 if self._cached is None:
                     self._cached = self._create()
-                return self._cached.run_conversation(
-                    message, system_message=system_message
-                )
+                agent = self._cached
+                try:
+                    return self._run(agent, message, system_message, deadline)
+                except TimeoutError:
+                    # An interrupted agent must not carry partial state forward.
+                    self._cached = None
+                    self._dispose(agent)
+                    raise
 
     def close(self) -> None:
         self._workers.stop()

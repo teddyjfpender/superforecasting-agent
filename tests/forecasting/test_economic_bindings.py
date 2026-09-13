@@ -45,6 +45,7 @@ def test_first_release_and_vintage_are_distinct():
     ('doc', 'output_type', 1), ('doc', 'count', True), ('doc', 'offset', False), ('doc', 'count', 2), ('doc', 'offset', 1),
     ('row', 'date', '2026-07-01'), ('row', 'value', '.'), ('row', 'value', True),
     ('meta', 'frequency_short', 'W'), ('row', 'realtime_end', '2026-09-01'),
+    ('row', 'value', '1_000'), ('row', 'value', '+4.2'), ('row', 'value', ' 4.2'),
     ('row', 'value', 'NaN'), ('row', 'realtime_start', '2026-09-12')])
 def test_plausible_wrong_measurements_cannot_settle(tmp_path, monkeypatch, target, key, value):
     monkeypatch.setattr('forecasting.applicability_facts.utc_now_iso', lambda: STAMP)
@@ -107,3 +108,22 @@ def test_fred_key_is_only_added_at_fetch_boundary(monkeypatch):
     assert 'test-private-key' not in canonical
     assert 'api_key=test-private-key' in authenticated_url(canonical)
     assert authenticated_url('https://example.org/fred/series') == 'https://example.org/fred/series'
+
+
+@pytest.mark.parametrize('raw', ['1_000', ' 4.2', '4.2 ', '+4.2', '04.2', 'NaN', 'Infinity', True, 10 ** 1000])
+def test_economic_numeric_lexemes_fail_closed(raw):
+    doc, meta = fred_documents()
+    doc['observations'][0]['value'] = raw
+    with pytest.raises(ValidationError):
+        extract_measurement(doc, fred_contract(), captured_at=STAMP, metadata_document=meta)
+
+
+def test_identical_bls_duplicate_rows_do_not_choose_a_revision():
+    contract = source_contract(adapter='bls_observation_v1', entity='LNS14000000', units='Percent',
+        window_start='2026-08-01T00:00:00Z', window_end='2026-09-01T00:00:00Z',
+        observation_date='2026-08-01', revision_policy='as_captured')
+    row = {'year': '2026', 'period': 'M08', 'value': '4.2'}
+    doc = {'status': 'REQUEST_SUCCEEDED', 'Results': {'series': [
+        {'seriesID': 'LNS14000000', 'data': [row, dict(row)]}]}}
+    with pytest.raises(ValidationError, match='duplicate'):
+        extract_measurement(doc, contract, captured_at=STAMP)

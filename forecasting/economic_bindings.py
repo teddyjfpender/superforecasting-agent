@@ -6,7 +6,6 @@ physical units and entity identity come from an independently archived series
 metadata response. BLS's current API is deliberately not first-release proof.
 """
 from datetime import date, datetime, time, timedelta, timezone
-import math
 import re
 from urllib.parse import urlencode
 from forecasting.models import ValidationError, timestamp_to_datetime
@@ -157,17 +156,9 @@ def extract(document, contract, captured_at, *, metadata_document=None):
             if timestamp_to_datetime(published) > capture or timestamp_to_datetime(published) < end or vintage < observation:
                 raise ValidationError('FRED release time invalid or not fully observed')
             meaning = {'publication_status': 'day_precision_upper_bound', 'revision_status': 'initial_release'}
-    if not matches or any(r != matches[0] for r in matches):
-        raise ValidationError('missing measurement or conflicting revisions')
-    raw = matches[0].get('value')
-    if isinstance(raw, bool) or not isinstance(raw, (str, int, float)):
-        raise ValidationError('economic measurement must be numeric')
-    try:
-        value = float(raw)
-    except ValueError as exc:
-        raise ValidationError('economic measurement missing or nonnumeric') from exc
-    if not math.isfinite(value):
-        raise ValidationError('economic measurement must be finite')
+    from forecasting.economic_measurements import unique_numeric_observation
+
+    value = unique_numeric_observation(matches)
     return value, observed, {**meaning, 'published_at': published, 'entity': contract['entity'],
         'units': contract['units'], 'measurement': 'economic_series_observation',
         'observation_period': contract['observation_date'], 'revision_policy': contract['revision_policy'],

@@ -5630,7 +5630,9 @@ def _(rid, params: dict) -> dict:
             with _host.command(session) as stop:
                 if stop.is_set():
                     return _err(rid, 5030, "Skills command cancelled before execution")
-                output = skills_slash_output(_cmd_arg)
+                from superforecasting_agent.tooling.http_io import cancellation_scope
+                with cancellation_scope(stop):
+                    output = skills_slash_output(_cmd_arg)
             return _ok(rid, {"output": output})
         except Exception as exc:
             return _err(rid, 5030, f"Skills command failed: {exc}")

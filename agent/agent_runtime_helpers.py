@@ -1269,7 +1269,8 @@ def create_openai_client(agent, client_kwargs: dict, *, reason: str, shared: boo
                 keepalive_http = agent._build_keepalive_http_client(base_url)
                 if keepalive_http is not None:
                     safe_kwargs["http_client"] = keepalive_http
-            client = GeminiNativeClient(**safe_kwargs)
+            from agent.openai_clients import construct_owned_client
+            client = construct_owned_client(agent, GeminiNativeClient, safe_kwargs)
             _ra().logger.info(
                 "Gemini native client created (%s, shared=%s) %s",
                 reason,
@@ -1300,7 +1301,8 @@ def create_openai_client(agent, client_kwargs: dict, *, reason: str, shared: boo
             client_kwargs["http_client"] = keepalive_http
     # Uses the module-level `OpenAI` name, resolved lazily on first
     # access via __getattr__ below. Tests patch via `run_agent.OpenAI`.
-    client = _ra().OpenAI(**client_kwargs)
+    from agent.openai_clients import construct_owned_client
+    client = construct_owned_client(agent, _ra().OpenAI, client_kwargs)
     _ra().logger.info(
         "OpenAI client created (%s, shared=%s) %s",
         reason,
@@ -1899,74 +1901,10 @@ def copy_reasoning_content_for_api(agent, source_msg: dict, api_msg: dict) -> No
 
 
 def cleanup_dead_connections(agent) -> bool:
-    """Detect and clean up dead TCP connections on the primary client.
+    """Compatibility delegate; transport health checks own their sockets."""
+    from agent.openai_clients import recover_closed_client
 
-    Inspects the httpx connection pool for sockets in unhealthy states
-    (CLOSE-WAIT, errors).  If any are found, force-closes all sockets
-    and rebuilds the primary client from scratch.
-
-    Returns True if dead connections were found and cleaned up.
-    """
-    client = getattr(agent, "client", None)
-    if client is None:
-        return False
-    try:
-        http_client = getattr(client, "_client", None)
-        if http_client is None:
-            return False
-        transport = getattr(http_client, "_transport", None)
-        if transport is None:
-            return False
-        pool = getattr(transport, "_pool", None)
-        if pool is None:
-            return False
-        connections = (
-            getattr(pool, "_connections", None)
-            or getattr(pool, "_pool", None)
-            or []
-        )
-        dead_count = 0
-        for conn in list(connections):
-            # Check for connections that are idle but have closed sockets
-            stream = (
-                getattr(conn, "_network_stream", None)
-                or getattr(conn, "_stream", None)
-            )
-            if stream is None:
-                continue
-            sock = getattr(stream, "_sock", None)
-            if sock is None:
-                sock = getattr(stream, "stream", None)
-                if sock is not None:
-                    sock = getattr(sock, "_sock", None)
-            if sock is None:
-                continue
-            # Probe socket health with a non-blocking recv peek
-            import socket as _socket
-            try:
-                sock.setblocking(False)
-                data = sock.recv(1, _socket.MSG_PEEK | _socket.MSG_DONTWAIT)
-                if data == b"":
-                    dead_count += 1
-            except BlockingIOError:
-                pass  # No data available — socket is healthy
-            except OSError:
-                dead_count += 1
-            finally:
-                try:
-                    sock.setblocking(True)
-                except OSError:
-                    pass
-        if dead_count > 0:
-            _ra().logger.warning(
-                "Found %d dead connection(s) in client pool — rebuilding client",
-                dead_count,
-            )
-            agent._replace_primary_openai_client(reason="dead_connection_cleanup")
-            return True
-    except Exception as exc:
-        _ra().logger.debug("Dead connection check error: %s", exc)
-    return False
+    return recover_closed_client(agent)
 
 
 

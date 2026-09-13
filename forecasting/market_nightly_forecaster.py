@@ -338,11 +338,6 @@ def build_informed_market_forecaster(
     if factory is None:
         from agent.agent_factory import build_agent as factory  # type: ignore[no-redef]
 
-    # ``timeout`` is part of the public budget contract (callers may pass it) but
-    # AIAgent's constructor has NO ``timeout`` kwarg — forwarding it would crash
-    # construction — so it is accepted-and-held here, NOT passed to the factory.
-    del timeout
-
     def _build_agent() -> Any:
         return factory(
             model=model or "",
@@ -366,6 +361,7 @@ def build_informed_market_forecaster(
             result = conversations.run(
                 messages[1]["content"],
                 system_message=messages[0]["content"],
+                timeout=timeout,
             )
             if isinstance(result, dict):
                 response = result.get("final_response") or result

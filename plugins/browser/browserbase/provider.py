@@ -210,9 +210,9 @@ class BrowserbaseBrowserProvider(BrowserProvider):
         return BrowserSession({
             "session_name": session_name,
             "bb_session_id": session_data["id"],
-            "cdp_url": session_data["connectUrl"],
+            "cdp_url": session_data.get("connectUrl"),
             "features": features_enabled,
-        }, close=lambda session_id=session_data["id"]: self.close_session(session_id, _config=config))
+        }, close=lambda session_id=session_data["id"]: self.close_session(session_id, _config=config)).require_endpoint()
 
     def close_session(self, session_id: str, *, _config: Dict[str, Any] | None = None) -> bool:
         try:

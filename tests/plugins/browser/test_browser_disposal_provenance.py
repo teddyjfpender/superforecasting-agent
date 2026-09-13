@@ -43,3 +43,28 @@ def test_disposal_is_bound_to_allocation_configuration(monkeypatch, name, class_
     serialized = json.dumps(session)
     assert "secret" not in serialized
     assert "_close" not in serialized
+
+
+@pytest.mark.parametrize('name,class_name', [
+    ('browserbase', 'BrowserbaseBrowserProvider'), ('browser_use', 'BrowserUseBrowserProvider'),
+    ('firecrawl', 'FirecrawlBrowserProvider')])
+def test_partial_allocation_keeps_disposer_without_endpoint(monkeypatch, name, class_name):
+    from agent.browser_provider import BrowserAllocationError
+    module = importlib.import_module(f'plugins.browser.{name}.provider')
+    provider = getattr(module, class_name)()
+    config = {'base_url': 'https://original.invalid', 'api_key': 'fixture', 'project_id': 'fixture'}
+    if name == 'firecrawl':
+        monkeypatch.setattr(provider, '_api_url', lambda: config['base_url'])
+        monkeypatch.setattr(provider, '_headers', lambda: {'Authorization': 'Bearer fixture'})
+    else:
+        monkeypatch.setattr(provider, '_get_config', lambda: config)
+    response = Mock(status_code=200, ok=True, headers={})
+    response.json.return_value = {'id': 'allocated-but-incomplete'}
+    monkeypatch.setattr(module.requests, 'post', lambda *args, **kwargs: response)
+    cleanup = Mock(return_value=True)
+    monkeypatch.setattr(provider, 'close_session', cleanup)
+    with pytest.raises(BrowserAllocationError) as failure:
+        provider.create_session('task')
+    assert failure.value.session['bb_session_id'] == 'allocated-but-incomplete'
+    assert failure.value.session.close() is True
+    assert cleanup.call_args.args == ('allocated-but-incomplete',)

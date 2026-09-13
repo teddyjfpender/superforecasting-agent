@@ -109,9 +109,9 @@ class FirecrawlBrowserProvider(BrowserProvider):
         return BrowserSession({
             "session_name": session_name,
             "bb_session_id": data["id"],
-            "cdp_url": data["cdpUrl"],
+            "cdp_url": data.get("cdpUrl"),
             "features": {"firecrawl": True},
-        }, close=lambda session_id=data["id"]: self.close_session(session_id, _connection=(base_url, headers)))
+        }, close=lambda session_id=data["id"]: self.close_session(session_id, _connection=(base_url, headers))).require_endpoint()
 
     def close_session(self, session_id: str, *, _connection: tuple[str, Dict[str, str]] | None = None) -> bool:
         try:
