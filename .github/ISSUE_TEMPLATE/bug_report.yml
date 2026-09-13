@@ -129,7 +129,7 @@ body:
     attributes:
       label: Superforecasting Agent Version
       description: Assigned release tag and installed backend/TUI versions from the local debug report; include the commit for a source build
-      placeholder: "Assigned tag: v0.22.1; backend: 0.22.1; terminal: 0.1.1"
+      placeholder: "Assigned tag: v0.22.4; backend: 0.22.4; terminal: 0.1.1"
     validations:
       required: true
 

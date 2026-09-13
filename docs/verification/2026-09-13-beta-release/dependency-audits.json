@@ -1,0 +1,46 @@
+{
+  "ui-tui": {
+    "lock_sha256": "9252da8e0cb8374d07ca7aaf95037b647dfd06feadfccfe02f307d6f5182dc27",
+    "vulnerabilities": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 0
+    }
+  },
+  "web": {
+    "lock_sha256": "b4ac4439715bc28250903f4804c3e72a95142c2a07e4bcff36ea4477bbd82c13",
+    "vulnerabilities": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 0
+    }
+  },
+  "website": {
+    "lock_sha256": "101437a5b243ecf6d0cae0e5c362a3ac9ed217ff512f052631d4c7c54d9a33a9",
+    "vulnerabilities": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 0
+    }
+  },
+  "scripts/whatsapp-bridge": {
+    "lock_sha256": "4f367c5a719fc6dfae4815fc51112754ca4b43879b5775a30b806d7875efe6aa",
+    "vulnerabilities": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 0
+    }
+  }
+}

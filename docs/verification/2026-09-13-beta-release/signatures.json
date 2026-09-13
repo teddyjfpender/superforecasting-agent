@@ -1,0 +1,15 @@
+{
+  "status": "passed",
+  "repository": "teddyjfpender/superforecasting-agent",
+  "workflow_identity": "https://github.com/teddyjfpender/superforecasting-agent/.github/workflows/production-release.yml@refs/heads/superforecasting-agent-snapshot",
+  "workflow_ref": "refs/heads/superforecasting-agent-snapshot",
+  "workflow_commit": "2abad017bd7acb3d5f6a60416165eb07c15ed37b",
+  "workflow_trigger": "workflow_dispatch",
+  "source_commit": "ad20896a728eb76f1a56d627dfb3b057e978c634",
+  "payloads": {
+    "superforecasting_agent-0.22.4-py3-none-any.whl": "d1dc20e8279fa2649399527f98ba40c8a7b3e80373d9009ac96ad9fd413545d1",
+    "superforecasting_agent_tui-0.1.1-py3-none-any.whl": "a26c34663a33fe6e71510fabe4e907c23ad3711fce39cc7c458135c3a80adc1b",
+    "superforecasting_agent-0.22.4.tar.gz": "427a23f90a639b6a203fdcbc5a44ae16d63ad369493c3b377b2c1dbef91edd1e",
+    "dashboard-assets.tar.gz": "075411fe30df40f07e678cd51189e6b1e0164eda03da055d27785a7d7d080501"
+  }
+}

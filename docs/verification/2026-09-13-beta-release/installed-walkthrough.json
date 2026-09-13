@@ -1,0 +1,30 @@
+{
+  "status": "passed",
+  "release": "https://github.com/teddyjfpender/superforecasting-agent/releases/tag/v0.22.4",
+  "versions": {
+    "superforecasting-agent": "0.22.4",
+    "superforecasting-agent-tui": "0.1.1"
+  },
+  "checks": [
+    "published POSIX installer",
+    "pip dependency consistency",
+    "packaged TUI check",
+    "synthetic new/update/resolve/score/postmortem/export",
+    "local diagnostics installed versions"
+  ],
+  "profile_isolated": true,
+  "platform": {
+    "system": "Darwin",
+    "machine": "arm64",
+    "node": "v22.14.0"
+  },
+  "durable_state": {
+    "question_status": "resolved",
+    "forecast_count": 1,
+    "resolution_status": "confirmed",
+    "criteria_satisfied": true,
+    "score_count_after_repeated_scoring": 1,
+    "brier_score": 0.09000000000000002,
+    "postmortem_present": true
+  }
+}

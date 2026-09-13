@@ -176,7 +176,7 @@ representative files, child packages and verification commands. The
 ## Beta testers
 
 Use the [beta tester guide](website/docs/getting-started/tester-pilot.md) for the
-coordinator-assigned artifact bundle, isolated profile, provider setup, synthetic
+[v0.22.4 beta artifact bundle](https://github.com/teddyjfpender/superforecasting-agent/releases/tag/v0.22.4), isolated profile, provider setup, synthetic
 walkthrough and recovery. The [support scope](website/docs/getting-started/beta-scope.md)
 distinguishes qualified desktop/VPS paths from experimental integrations. Keep the
 assigned release for reproductions; source-development installation instructions
