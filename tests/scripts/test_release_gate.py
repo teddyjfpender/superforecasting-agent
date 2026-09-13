@@ -194,7 +194,7 @@ def test_gate_red_when_tag_already_exists(monkeypatch):
 
 
 def _clone_repo(dest: Path) -> Path:
-    """Local clone of the repo (full history + tags) for tag-position tests.
+    """Local clone with full history/tags and only the gate's source inputs.
 
     Isolated in tmp — we move a tag here to exercise the gate's tag-run modes
     without ever touching (or pushing) a tag in the real repo.
@@ -202,11 +202,17 @@ def _clone_repo(dest: Path) -> Path:
     if shutil.which("git") is None:
         pytest.skip("git is required for tag-run gate tests")
     r = subprocess.run(
-        ["git", "clone", "--local", "--quiet", str(REPO_ROOT), str(dest)],
+        ["git", "clone", "--local", "--quiet", "--no-checkout", str(REPO_ROOT), str(dest)],
         capture_output=True, text=True, timeout=120,
     )
     if r.returncode != 0:
         pytest.skip(f"git clone --local unavailable: {r.stderr.strip()}")
+    subprocess.run(
+        ["git", "-C", str(dest), "sparse-checkout", "set", "--no-cone",
+         "/scripts/check-release-ready.sh", "/scripts/check-protocol.sh",
+         "/pyproject.toml", "/superforecasting_agent/runtime/__init__.py", "/CHANGELOG.md"],
+        check=True, capture_output=True, text=True, timeout=30,
+    )
     # Local clones contain committed objects only. Overlay the gate and its
     # version inputs so the fixture exercises the current candidate layout.
     for source in (

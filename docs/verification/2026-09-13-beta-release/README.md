@@ -104,3 +104,7 @@ separate protocol/docgen integration and missing-toolchain tests remain intact.
 Local follow-up verification passed 21 real-Chrome supervisor tests; one existing
 OOPIF case remains explicitly skipped. All eight deterministic supervisor ownership
 tests passed, as did the focused release, calibration and trial-compatibility checks.
+
+Tag-position fixtures retain the full Git history through sparse local clones,
+checking out only their gate/version inputs. This removes unrelated source/skill
+checkout work without changing the tag ancestry and mismatch assertions.
