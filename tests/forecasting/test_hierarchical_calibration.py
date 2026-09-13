@@ -67,6 +67,10 @@ def test_fit_recovers_opposite_signed_offsets():
     assert 0.6 < model.a < 1.6
 
 
+# These validate full regularization grids and held-out folds in pure Python.
+# Keep every statistical assertion; the runner's generic 30-second deadlock
+# budget is not a performance contract for these multi-fit experiments.
+@pytest.mark.timeout(120)
 def test_hierarchical_beats_global_on_held_out_where_skew_exists():
     rows = _skewed_rows("live_calibration_eligible", 1.3, 300, seed=3) + _skewed_rows(
         "imported_baseline", -1.2, 300, seed=4
@@ -81,6 +85,7 @@ def test_hierarchical_beats_global_on_held_out_where_skew_exists():
         assert report["cohorts"][name]["has_offset"] is True
 
 
+@pytest.mark.timeout(120)
 def test_no_skew_does_not_recommend_flip():
     # Two cohorts with the SAME (zero) skew — a per-cohort intercept cannot help
     # out-of-sample, so the held-out gain is inside the noise and the verdict is
@@ -99,6 +104,7 @@ def test_no_skew_does_not_recommend_flip():
     assert report["lambda_at_ceiling"] is True
 
 
+@pytest.mark.timeout(120)
 def test_material_bar_gates_the_flip_recommendation():
     # A gain that is positive but below the material bar must NOT flip; a clearly
     # material gain (strong skew) must. This is the discipline that kept the LIVE

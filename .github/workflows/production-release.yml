@@ -304,7 +304,15 @@ jobs:
         run: scripts/verify_windows_installer.ps1
       - name: Verify a published release asset set without installing
         shell: powershell
-        run: scripts/install-release.ps1 -Tag v0.19.0 -VerifyOnly
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Scope authentication to the GitHub metadata cmdlet in this step.
+          # Asset downloads use Invoke-WebRequest and never receive this token.
+          $PSDefaultParameterValues = @{
+            'Invoke-RestMethod:Headers' = @{ Authorization = "Bearer $env:GH_TOKEN" }
+          }
+          scripts/install-release.ps1 -Tag v0.19.0 -VerifyOnly
 
   # -------------------------------------------------------------------------
   # Build the formal set: wheel + multi-arch image + checksums + manifest,
