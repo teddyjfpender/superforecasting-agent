@@ -34,6 +34,9 @@ live messaging integration.
   moved to the canonical credential owner. Its resolver is now patched where used.
 - CI bypassed the canonical test runner and omitted terminal dependencies. Shared
   isolation, bounded workers and current TUI builds now apply in CI as locally.
+- The artifact-build job installs its pinned process-ownership harness dependency
+  explicitly; dependencies in other jobs or installed product environments do not
+  populate the verification driver's interpreter.
 - Windows checks flagged intentionally Linux-only TLS cleanup and guarded alarm
   access. The Linux restriction is explicit; optional signal lookup is portable.
 - Nix built the package but failed its version-content check. Capture complete

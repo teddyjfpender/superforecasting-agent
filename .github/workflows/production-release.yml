@@ -4,7 +4,8 @@ name: Production Release (formal artifact set)
 #   1. Independent backend and terminal wheels  2. sdist
 #   3. install.sh (macOS/Linux)  4. install.ps1 (Windows)  5. SHA256SUMS
 #   6. release-manifest.json (names, versions, image digest, min-migration)
-#   7. multi-arch image → ghcr.io (linux/amd64 + linux/arm64), tags vX.Y.Z + latest
+#   7. multi-arch image → ghcr.io (linux/amd64 + linux/arm64), immutable vX.Y.Z
+#      (latest advances only after explicit stable-channel qualification)
 # and attaches 1-6 to the GitHub Release.  Mirrors scripts/release.sh so a
 # local dry-run matches CI exactly.
 #
@@ -351,6 +352,9 @@ jobs:
         env:
           RELEASE_WITH_WEB: '1'
         run: scripts/build-release.sh
+
+      - name: Install terminal verification harness dependencies
+        run: python3 -m pip install "psutil==7.2.2"
 
       - name: Verify installed local and remote product profiles
         run: python3 scripts/verify_profiles.py dist --python "$(command -v python3)"

@@ -36,6 +36,8 @@ artifact set described in `docs/plans/2026-07-09-hetzner-productionization.md`
 - Filter exported scores by question in SQL instead of repeatedly scanning the complete ledger.
 - Batch synthetic calibration fixture writes without relaxing timeout or statistical correctness checks.
 - Includes the secure beta release pipeline and PowerShell verification fixes below.
+- Install the process-ownership harness dependency in the isolated artifact-build job.
+- Wait for backend completion acknowledgement when testing native command cancellation.
 
 ## [0.22.2] - 2026-09-13
 
