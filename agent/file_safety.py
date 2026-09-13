@@ -13,16 +13,19 @@ _WRITE_SAFE_ROOT_ENV_NAMES = (
 )
 
 
-def _hermes_home_path() -> Path:
+def _agent_home_path() -> Path:
     """Resolve the active agent home (profile-aware) without circular imports."""
     try:
-        from superforecasting_agent.constants import get_agent_home  # local import to avoid cycles
+        from superforecasting_agent.constants import (
+            get_agent_home,  # local import to avoid cycles
+        )
+
         return get_agent_home()
     except Exception:
         return Path(os.path.expanduser("~/.superforecasting-agent"))
 
 
-def _hermes_root_path() -> Path:
+def _agent_root_path() -> Path:
     """Resolve the global agent root.
 
     In profile mode the active home is ``<root>/profiles/<name>``; the root
@@ -30,16 +33,19 @@ def _hermes_root_path() -> Path:
     profile run still can't read ``<root>/auth.json`` etc.
     """
     try:
-        from superforecasting_agent.constants import get_default_agent_root  # local import to avoid cycles
+        from superforecasting_agent.constants import (
+            get_default_agent_root,  # local import to avoid cycles
+        )
+
         return get_default_agent_root()
     except Exception:
-        return _hermes_home_path()
+        return _agent_home_path()
 
 
 def build_write_denied_paths(home: str) -> set[str]:
     """Return exact sensitive paths that must never be written."""
-    hermes_home = _hermes_home_path()
-    hermes_root = _hermes_root_path()
+    agent_home = _agent_home_path()
+    agent_root = _agent_root_path()
     return {
         os.path.realpath(p)
         for p in [
@@ -47,7 +53,7 @@ def build_write_denied_paths(home: str) -> set[str]:
             os.path.join(home, ".ssh", "id_rsa"),
             os.path.join(home, ".ssh", "id_ed25519"),
             os.path.join(home, ".ssh", "config"),
-            str(hermes_home / ".env"),
+            str(agent_home / ".env"),
             # Active-profile Anthropic PKCE credential store. Overwriting it
             # would let a session clobber the OAuth tokens the provider tools
             # read through internal channels. Resolved against BOTH the active
@@ -55,8 +61,8 @@ def build_write_denied_paths(home: str) -> set[str]:
             # agent_dirs loop) so a profile-mode run can't overwrite
             # <root>/.anthropic_oauth.json that default/non-profile sessions
             # still consume.
-            str(hermes_home / ".anthropic_oauth.json"),
-            str(hermes_root / ".anthropic_oauth.json"),
+            str(agent_home / ".anthropic_oauth.json"),
+            str(agent_root / ".anthropic_oauth.json"),
             os.path.join(home, ".bashrc"),
             os.path.join(home, ".zshrc"),
             os.path.join(home, ".profile"),
@@ -118,7 +124,9 @@ def is_write_denied(path: str) -> bool:
             return True
 
     safe_root = get_safe_write_root()
-    if safe_root and not (resolved == safe_root or resolved.startswith(safe_root + os.sep)):
+    if safe_root and not (
+        resolved == safe_root or resolved.startswith(safe_root + os.sep)
+    ):
         return True
 
     return False
@@ -174,7 +182,7 @@ def get_read_block_error(path: str) -> Optional[str]:
     # so credential stores at ``<root>/auth.json`` etc. are blocked under a
     # profile too (home points at ``<root>/profiles/<name>`` in profile mode).
     agent_dirs: list[Path] = []
-    for base in (_hermes_home_path(), _hermes_root_path()):
+    for base in (_agent_home_path(), _agent_root_path()):
         try:
             real = base.resolve()
         except Exception:

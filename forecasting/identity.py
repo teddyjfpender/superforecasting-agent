@@ -156,7 +156,7 @@ def resolve_team(team_id: Optional[str] = None, home: Optional[Path | str] = Non
     import json
 
     try:
-        path = (Path(home) if home is not None else _hermes_home()) / "slack_tokens.json"
+        path = (Path(home) if home is not None else _agent_home()) / "slack_tokens.json"
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
@@ -167,7 +167,7 @@ def resolve_team(team_id: Optional[str] = None, home: Optional[Path | str] = Non
     return None
 
 
-def _hermes_home() -> Path:
+def _agent_home() -> Path:
     from superforecasting_agent.constants import get_agent_home
 
     return get_agent_home()

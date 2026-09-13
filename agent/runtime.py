@@ -87,9 +87,9 @@ from superforecasting_agent.runtime.timeouts import (
     get_provider_stale_timeout,
 )
 
-_hermes_home = get_agent_home()
+_agent_home = get_agent_home()
 _project_env = Path(__file__).resolve().parents[1] / '.env'
-_loaded_env_paths = load_hermes_dotenv(hermes_home=_hermes_home, project_env=_project_env)
+_loaded_env_paths = load_hermes_dotenv(hermes_home=_agent_home, project_env=_project_env)
 if _loaded_env_paths:
     for _env_path in _loaded_env_paths:
         logger.info("Loaded environment variables from %s", _env_path)
@@ -247,10 +247,10 @@ _QWEN_CODE_VERSION = "0.14.1"
 
 def _routermint_headers() -> dict:
     """Return the User-Agent RouterMint needs to avoid Cloudflare 1010 blocks."""
-    from superforecasting_agent.runtime import __version__ as _HERMES_VERSION
+    from superforecasting_agent.runtime import __version__ as _AGENT_VERSION
 
     return {
-        "User-Agent": f"SuperforecastingAgent/{_HERMES_VERSION}",
+        "User-Agent": f"SuperforecastingAgent/{_AGENT_VERSION}",
     }
 
 

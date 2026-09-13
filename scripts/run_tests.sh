@@ -75,7 +75,7 @@ for candidate in \
   "$REPO_ROOT/venv" \
   "$HOME/.superforecasting-agent/superforecasting-agent/venv" \
   "$HOME/.hermes/hermes-agent/venv"; do
-  if [ -f "$candidate/bin/activate" ]; then
+  if [ -f "$candidate/bin/activate" ] || [ -f "$candidate/Scripts/activate" ]; then
     VENV="$candidate"
     break
   fi
@@ -87,6 +87,9 @@ if [ -z "$VENV" ]; then
 fi
 
 PYTHON="$VENV/bin/python"
+if [ -f "$VENV/Scripts/python.exe" ]; then
+  PYTHON="$VENV/Scripts/python.exe"
+fi
 
 # ── Ensure pytest-split is installed (required for shard-equivalent runs) ──
 if ! "$PYTHON" -c "import pytest_split" 2>/dev/null; then
@@ -258,11 +261,12 @@ SELECTION=(--ignore=tests/integration -m "not integration")
 if [ "${#LIVE_PATHS[@]}" -gt 0 ]; then
   SELECTION=(-m integration "${LIVE_PATHS[@]}")
 fi
+TIMEOUT_METHOD="$("$PYTHON" -c 'import signal; print("signal" if hasattr(signal, "SIGALRM") else "thread")')"
 "$PYTHON" -m pytest \
   -o "addopts=" \
   -n "$WORKERS" \
   --timeout=30 \
-  --timeout-method=signal \
+  --timeout-method="$TIMEOUT_METHOD" \
   --junitxml="$JUNIT_XML" \
   --ignore=tests/e2e \
   "${SELECTION[@]}" \

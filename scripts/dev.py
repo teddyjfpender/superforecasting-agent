@@ -20,6 +20,11 @@ ROOT = Path(__file__).resolve().parents[1]
 # the repository-wide encoding gate; no silent baseline hides new-layer errors.
 STRICT_PYTHON = (
     "agent/browser_provider.py",
+    "agent/file_safety.py",
+    "agent/lsp/install.py",
+    "tui_gateway/ws.py",
+    "tools/skills_sync.py",
+    "agent/portal_tags.py",
     "forecasting/economic_measurements.py",
     "agent/http_cleanup.py",
     "superforecasting_agent/credentials",
@@ -69,6 +74,9 @@ STRICT_PYTHON = (
     "scripts/dev.py",
     "scripts/build_profiles.py",
     "scripts/verify_profiles.py",
+    "scripts/terminal_session.py",
+    "superforecasting_agent/constants.py",
+    "superforecasting_agent/bootstrap.py",
     "scripts/verify_headless_host.py",
     "products/tui/superforecasting_agent_tui",
 )
@@ -77,6 +85,7 @@ STRICT_PYTHON = (
 # Inherited owners can adopt correctness checks before wholesale formatting/types.
 CORRECTNESS_PYTHON = (
     "agent/agent_runtime_helpers.py",
+    "tools/code_execution_tool.py",
     "scripts/investigate_native_tls.py",
     "superforecasting_agent/runtime/kanban.py",
     "superforecasting_agent/runtime/kanban_db.py",

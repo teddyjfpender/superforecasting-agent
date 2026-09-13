@@ -1,4 +1,4 @@
-"""Windows UTF-8 bootstrap for Hermes entry points.
+"""Windows UTF-8 bootstrap for Superforecasting Agent entry points.
 
 Python on Windows has two long-standing text-encoding footguns:
 

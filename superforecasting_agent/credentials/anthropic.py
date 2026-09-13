@@ -279,7 +279,7 @@ _OAUTH_FILE_ENV_NAMES = (
 )
 
 
-def get_hermes_oauth_file() -> Path:
+def get_agent_oauth_file() -> Path:
     """Return the Anthropic PKCE credential file path."""
     override = env_var_alias_value(_OAUTH_FILE_ENV_NAMES)
     if override:
@@ -287,9 +287,9 @@ def get_hermes_oauth_file() -> Path:
     return get_agent_home() / ".anthropic_oauth.json"
 
 
-def read_hermes_oauth_credentials() -> Optional[Dict[str, Any]]:
+def read_agent_oauth_credentials() -> Optional[Dict[str, Any]]:
     """Read forecast-home OAuth credentials from .anthropic_oauth.json."""
-    oauth_file = get_hermes_oauth_file()
+    oauth_file = get_agent_oauth_file()
     if oauth_file.exists():
         try:
             data = json.loads(oauth_file.read_text(encoding="utf-8"))
@@ -300,3 +300,8 @@ def read_hermes_oauth_credentials() -> Optional[Dict[str, Any]]:
                 "Failed to read Superforecasting Agent OAuth credentials: %s", e
             )
     return None
+
+
+# Compatibility exports for existing plugins; canonical implementations above.
+get_hermes_oauth_file = get_agent_oauth_file
+read_hermes_oauth_credentials = read_agent_oauth_credentials

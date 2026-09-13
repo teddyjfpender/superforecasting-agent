@@ -747,3 +747,120 @@ class TestResetBundledSkill:
             post_manifest = _read_manifest()
             assert "google-workspace" in post_manifest
         assert (skills_dir / "productivity" / "google-workspace" / "SKILL.md").exists()
+
+
+import pytest
+
+
+@pytest.mark.parametrize("state", ["unchanged", "modified", "deleted", "untracked", "conflict", "old_manifest"])
+def test_canonical_directory_migration_preserves_user_ownership(tmp_path, state):
+    bundled = tmp_path / "bundled"
+    user = tmp_path / "user"
+    old_relative = Path("autonomous-ai-agents/hermes-agent")
+    new_relative = Path("autonomous-ai-agents/superforecasting-agent")
+    old = user / old_relative
+    old.mkdir(parents=True)
+    original = "---\nname: superforecasting-agent\ndescription: Configure forecasts.\n---\nOriginal body.\n"
+    (old / "SKILL.md").write_text(original)
+    manifest = {} if state == "untracked" else {
+        "hermes-agent" if state == "old_manifest" else "superforecasting-agent": _dir_hash(old)
+    }
+    source = bundled / new_relative
+    source.mkdir(parents=True)
+    (source / "SKILL.md").write_text(original.replace("Original body", "Updated body"))
+    if state == "modified":
+        (old / "SKILL.md").write_text("user customization")
+    elif state == "deleted":
+        import shutil
+        shutil.rmtree(old)
+    elif state == "conflict":
+        (user / new_relative).mkdir(parents=True)
+        (user / new_relative / "SKILL.md").write_text("canonical customization")
+    with patch("tools.skills_sync.SKILLS_DIR", user), patch(
+        "tools.skills_sync.MANIFEST_FILE", user / ".bundled_manifest"
+    ), patch("tools.skills_sync._get_bundled_dir", return_value=bundled):
+        _write_manifest(manifest)
+        for _ in range(2):  # A retry must preserve the same decision.
+            result = sync_skills(quiet=True)
+        if state in {"unchanged", "old_manifest"}:
+            assert not old.exists()
+            assert (user / new_relative / "SKILL.md").read_text() == (source / "SKILL.md").read_text()
+            assert _read_manifest()["superforecasting-agent"] == _dir_hash(source)
+        elif state == "deleted":
+            assert not (user / new_relative).exists()
+        else:
+            assert "superforecasting-agent" in result["user_modified"]
+            assert (old / "SKILL.md").read_text() == ("user customization" if state == "modified" else original)
+            if state == "conflict":
+                assert (user / new_relative / "SKILL.md").read_text() == "canonical customization"
+            else:
+                assert not (user / new_relative).exists()
+
+
+def test_path_migration_serializes_with_another_process(tmp_path):
+    import subprocess
+    import sys
+    import time
+    import tools.skills_sync as sync
+    from superforecasting_agent.storage.locking import file_lock
+
+    bundled = tmp_path / "bundled"
+    user = tmp_path / "user"
+    relative = Path("autonomous-ai-agents/superforecasting-agent")
+    old = user / "autonomous-ai-agents/hermes-agent"
+    old.mkdir(parents=True)
+    text = "---\nname: superforecasting-agent\n---\nBefore"
+    (old / "SKILL.md").write_text(text)
+    source = bundled / relative
+    source.mkdir(parents=True)
+    (source / "SKILL.md").write_text(text.replace("Before", "After"))
+    manifest = user / ".bundled_manifest"
+    ready = tmp_path / "ready"
+    code = '''import sys
+from pathlib import Path
+import tools.skills_sync as sync
+sync.SKILLS_DIR = Path(sys.argv[1])
+sync.MANIFEST_FILE = sync.SKILLS_DIR / ".bundled_manifest"
+sync._get_bundled_dir = lambda: Path(sys.argv[2])
+Path(sys.argv[3]).touch()
+sync.sync_skills(quiet=True)
+'''
+    with patch.object(sync, "SKILLS_DIR", user), patch.object(sync, "MANIFEST_FILE", manifest), patch.object(sync, "_get_bundled_dir", return_value=bundled):
+        _write_manifest({"superforecasting-agent": _dir_hash(old)})
+        child = None
+        try:
+            with file_lock(manifest.with_name(".bundled_manifest.lock"), sync._sync_lock_holder, 10, "test lock timeout"):
+                child = subprocess.Popen([sys.executable, "-c", code, str(user), str(bundled), str(ready)])
+                deadline = time.monotonic() + 10
+                while not ready.exists():
+                    assert child.poll() is None
+                    assert time.monotonic() < deadline
+                    time.sleep(.01)
+                assert child.poll() is None
+                sync_skills(quiet=True)
+            assert child.wait(timeout=10) == 0
+            assert (user / relative / "SKILL.md").read_text().endswith("After")
+            assert not old.exists()
+            assert _read_manifest()["superforecasting-agent"] == _dir_hash(source)
+        finally:
+            if child is not None and child.poll() is None:
+                child.kill()
+                child.wait(timeout=5)
+
+
+@pytest.mark.parametrize("restore", [False, True])
+def test_explicit_reset_accepts_legacy_name_and_preserves_or_restores(tmp_path, restore):
+    bundled, user = tmp_path / "bundled", tmp_path / "user"
+    relative = Path("autonomous-ai-agents/superforecasting-agent")
+    old = user / "autonomous-ai-agents/hermes-agent"
+    old.mkdir(parents=True)
+    (old / "SKILL.md").write_text("customized")
+    source = bundled / relative
+    source.mkdir(parents=True)
+    text = "---\nname: superforecasting-agent\n---\nBundled"
+    (source / "SKILL.md").write_text(text)
+    with patch("tools.skills_sync.SKILLS_DIR", user), patch("tools.skills_sync.MANIFEST_FILE", user / ".bundled_manifest"), patch("tools.skills_sync._get_bundled_dir", return_value=bundled):
+        result = reset_bundled_skill("hermes-agent", restore=restore)
+    assert result["ok"]
+    assert not old.exists()
+    assert (user / relative / "SKILL.md").read_text() == (text if restore else "customized")

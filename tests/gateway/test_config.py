@@ -748,7 +748,7 @@ class TestGatewayPromptAliasConfig:
     def test_ephemeral_prompt_prefers_forecast_native_env(self, monkeypatch, tmp_path):
         from gateway import run as gateway_run
 
-        monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
+        monkeypatch.setattr(gateway_run, "_agent_home", tmp_path)
         (tmp_path / "config.yaml").write_text(
             "agent:\n  system_prompt: from config\n",
             encoding="utf-8",
@@ -766,7 +766,7 @@ class TestGatewayPromptAliasConfig:
         legacy_prefill.write_text(json.dumps([{"role": "user", "content": "legacy"}]), encoding="utf-8")
         fork_prefill.write_text(json.dumps([{"role": "user", "content": "fork"}]), encoding="utf-8")
 
-        monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
+        monkeypatch.setattr(gateway_run, "_agent_home", tmp_path)
         (tmp_path / "config.yaml").write_text(
             f"prefill_messages_file: {legacy_prefill}\n",
             encoding="utf-8",

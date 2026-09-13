@@ -1,0 +1,115 @@
+{
+  "python": "3.11.15 (main, Mar  3 2026, 14:59:53) [Clang 21.1.4 ]",
+  "executable": "/home/runner/work/_temp/uv-python-dir/cpython-3.11.15-linux-x86_64-gnu/bin/python3.11",
+  "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+  "libc": [
+    "glibc",
+    "2.39"
+  ],
+  "openssl": "OpenSSL 3.5.5 27 Jan 2026",
+  "ssl_extension": null,
+  "ssl_binary": "/home/runner/work/_temp/uv-python-dir/cpython-3.11.15-linux-x86_64-gnu/bin/python3.11",
+  "runner_image": "20260907.300.1",
+  "original_runner_image": "20260907.300.1",
+  "original_bundle_hash": null,
+  "certificate_paths": {
+    "cafile": null,
+    "capath": "/etc/ssl/certs",
+    "openssl_cafile_env": "SSL_CERT_FILE",
+    "openssl_cafile": "/etc/ssl/cert.pem",
+    "openssl_capath_env": "SSL_CERT_DIR",
+    "openssl_capath": "/etc/ssl/certs"
+  },
+  "sha256": {
+    "python": "387140463425a3077772bac4433cf3ebef7ca9cff7fb14d7983722b38c665adc",
+    "ssl": "387140463425a3077772bac4433cf3ebef7ca9cff7fb14d7983722b38c665adc",
+    "ca": "ecd9dc38bc3efb7dbd6431f57e29d2f8d6a0f0d211e1464b3fef2cbfe266fcd2"
+  },
+  "cases": [
+    {
+      "mode": "capture-selftest",
+      "gdb_exit": 0,
+      "crashed": true,
+      "clean_exit": false,
+      "core_captured": true,
+      "workload": null
+    },
+    {
+      "mode": "serial",
+      "gdb_exit": 1,
+      "crashed": false,
+      "clean_exit": true,
+      "core_captured": false,
+      "workload": {
+        "contexts": 200,
+        "mutations": 0
+      }
+    },
+    {
+      "mode": "concurrent",
+      "gdb_exit": 1,
+      "crashed": false,
+      "clean_exit": true,
+      "core_captured": false,
+      "workload": {
+        "contexts": 800,
+        "mutations": 0
+      }
+    },
+    {
+      "mode": "environment",
+      "gdb_exit": 1,
+      "crashed": false,
+      "clean_exit": true,
+      "core_captured": false,
+      "workload": {
+        "contexts": 200,
+        "mutations": 239
+      }
+    },
+    {
+      "mode": "environment-unset",
+      "gdb_exit": 1,
+      "crashed": false,
+      "clean_exit": true,
+      "core_captured": false,
+      "workload": {
+        "contexts": 200,
+        "mutations": 310
+      }
+    },
+    {
+      "mode": "explicit-ca-environment",
+      "gdb_exit": 1,
+      "crashed": false,
+      "clean_exit": true,
+      "core_captured": false,
+      "workload": {
+        "contexts": 200,
+        "mutations": 7657
+      }
+    },
+    {
+      "mode": "explicit-ca-environment-unset",
+      "gdb_exit": 1,
+      "crashed": false,
+      "clean_exit": true,
+      "core_captured": false,
+      "workload": {
+        "contexts": 200,
+        "mutations": 6741
+      }
+    },
+    {
+      "mode": "shutdown",
+      "gdb_exit": 1,
+      "crashed": false,
+      "clean_exit": true,
+      "core_captured": false,
+      "workload": {
+        "contexts": 0,
+        "mutations": 0
+      }
+    }
+  ]
+}

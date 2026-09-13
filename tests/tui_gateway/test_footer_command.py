@@ -41,7 +41,7 @@ def test_cli_and_native_footer_share_profile_operation(tmp_path, monkeypatch, ca
     import cli
     from superforecasting_agent import constants
 
-    monkeypatch.setattr(cli, '_hermes_home', tmp_path)
+    monkeypatch.setattr(cli, '_agent_home', tmp_path)
     monkeypatch.setattr(cli, '_cprint', print)
     monkeypatch.setattr(constants, 'get_agent_home', lambda: tmp_path)
     monkeypatch.setattr(server, '_host', RuntimeHost())
@@ -65,7 +65,7 @@ async def test_gateway_toggle_uses_global_flag_not_platform_override(tmp_path, m
     path = tmp_path / 'config.yaml'
     config = {'display': {'runtime_footer': {'enabled': False}, 'platforms': {'telegram': {'runtime_footer': {'enabled': True}}}}}
     path.write_text(yaml.safe_dump(config), encoding='utf-8')
-    monkeypatch.setattr(runtime, '_hermes_home', tmp_path)
+    monkeypatch.setattr(runtime, '_agent_home', tmp_path)
     monkeypatch.setattr(runtime, '_load_gateway_config', lambda: config)
     monkeypatch.setattr(runtime, '_resolve_gateway_model', lambda cfg: 'fixture')
     runner = object.__new__(runtime.GatewayRunner)

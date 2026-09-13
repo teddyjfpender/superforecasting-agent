@@ -79,7 +79,7 @@ try:
 except (ModuleNotFoundError, ImportError):
     # Fallback for environments where superforecasting_agent.constants isn't importable
     # (mirrors the same fallback used by the google-workspace skill's
-    # _hermes_home.py shim).
+    # _agent_home.py shim).
     def get_agent_home() -> Path:
         for env_name in (
             "SUPERFORECASTING_AGENT_HOME",
@@ -102,7 +102,7 @@ except (ModuleNotFoundError, ImportError):
 from superforecasting_agent.storage.files import atomic_replace
 
 
-def _hermes_home() -> Path:
+def _agent_home() -> Path:
     """Resolve the active agent home at call time (NOT module import).
 
     Tests, profile switches, and home env overrides need this to be
@@ -125,19 +125,19 @@ def _sanitize_email(email: str) -> str:
 
 
 def _legacy_token_path() -> Path:
-    return _hermes_home() / "google_chat_user_token.json"
+    return _agent_home() / "google_chat_user_token.json"
 
 
 def _user_tokens_dir() -> Path:
-    return _hermes_home() / "google_chat_user_tokens"
+    return _agent_home() / "google_chat_user_tokens"
 
 
 def _legacy_pending_path() -> Path:
-    return _hermes_home() / "google_chat_user_oauth_pending.json"
+    return _agent_home() / "google_chat_user_oauth_pending.json"
 
 
 def _user_pending_dir() -> Path:
-    return _hermes_home() / "google_chat_user_oauth_pending"
+    return _agent_home() / "google_chat_user_oauth_pending"
 
 
 def _token_path(email: Optional[str] = None) -> Path:
@@ -148,7 +148,7 @@ def _token_path(email: Optional[str] = None) -> Path:
 
 
 def _client_secret_path() -> Path:
-    return _hermes_home() / "google_chat_user_client_secret.json"
+    return _agent_home() / "google_chat_user_client_secret.json"
 
 
 def _pending_auth_path(email: Optional[str] = None) -> Path:

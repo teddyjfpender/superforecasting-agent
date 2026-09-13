@@ -390,9 +390,12 @@ def derive_skill_meta(skill_path: Path, source_dir: Path, source_kind: str) -> d
 
 def page_id(meta: dict[str, Any]) -> str:
     """Stable slug used for filename + sidebar id."""
+    # Published URLs are compatibility identifiers, independent of source names.
+    legacy_slugs = {value: key for key, value in SKILL_DISPLAY_NAME_OVERRIDES.items()}
+    slug = legacy_slugs.get(meta["slug"], meta["slug"])
     if meta["sub"]:
-        return f"{meta['category']}-{meta['sub']}-{meta['slug']}"
-    return f"{meta['category']}-{meta['slug']}"
+        return f"{meta['category']}-{meta['sub']}-{slug}"
+    return f"{meta['category']}-{slug}"
 
 
 def page_output_path(meta: dict[str, Any]) -> Path:

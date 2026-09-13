@@ -201,6 +201,15 @@ class TestExecuteCode(unittest.TestCase):
             )
         return json.loads(result)
 
+    def test_canonical_and_legacy_modules_share_tool_state(self):
+        result = self._run(
+            'import forecast_tools as native; import hermes_tools as legacy; '
+            'assert native is legacy; '
+            'print(native.terminal("one")); print(legacy.terminal("two"))'
+        )
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["tool_calls_made"], 2)
+
     def test_basic_print(self):
         """Script that just prints -- no tool calls."""
         result = self._run('print("hello world")')

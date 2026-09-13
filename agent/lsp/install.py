@@ -1,8 +1,8 @@
 """Auto-installation of LSP server binaries.
 
 Tries to install missing servers using whatever package manager is
-appropriate.  All installs go to a Hermes-owned bin staging dir,
-``<HERMES_HOME>/lsp/bin/``, so we don't pollute the user's global
+appropriate.  All installs go to a agent-owned bin staging dir,
+``<agent-home>/lsp/bin/``, so we don't pollute the user's global
 toolchain.
 
 Strategies:
@@ -10,7 +10,7 @@ Strategies:
 - ``auto`` — attempt to install with the best available package
   manager.  This is the default.
 - ``manual`` — never install; if a binary is missing, the server is
-  silently skipped and the user is told about it via ``hermes lsp
+  silently skipped and the user is told about it via ``superforecasting-agent lsp
   status``.
 - ``off`` — same as ``manual`` for now (kept distinct so we can
   evolve behavior later, e.g. logging differently).
@@ -24,6 +24,7 @@ try/except and returns ``None`` on failure.  The tool layer then
 falls back to its in-process syntax checker, exactly as if the user
 hadn't enabled LSP at all.
 """
+
 from __future__ import annotations
 
 import logging
@@ -40,7 +41,7 @@ logger = logging.getLogger("agent.lsp.install")
 # Package-name → install-strategy hint registry.  Each entry is a
 # tuple of strategy name + package name + executable name.  When the
 # install completes, we look for the executable in
-# ``<HERMES_HOME>/lsp/bin/`` first, then on PATH.
+# ``<agent-home>/lsp/bin/`` first, then on PATH.
 #
 # Optional fields:
 #   - ``extra_pkgs``: list of sibling packages to install alongside
@@ -93,7 +94,11 @@ INSTALL_RECIPES: Dict[str, Dict[str, Any]] = {
         "bin": "docker-langserver",
     },
     # Go
-    "gopls": {"strategy": "go", "pkg": "golang.org/x/tools/gopls@latest", "bin": "gopls"},
+    "gopls": {
+        "strategy": "go",
+        "pkg": "golang.org/x/tools/gopls@latest",
+        "bin": "gopls",
+    },
     # Rust — too heavy (hundreds of MB to bootstrap).  We do NOT
     # auto-install rust-analyzer; users install via rustup.
     "rust-analyzer": {"strategy": "manual", "pkg": "", "bin": "rust-analyzer"},
@@ -101,7 +106,11 @@ INSTALL_RECIPES: Dict[str, Dict[str, Any]] = {
     "clangd": {"strategy": "manual", "pkg": "", "bin": "clangd"},
     # Lua — manual (LuaLS is platform-specific binaries from GitHub
     # releases; complex enough that we punt to the user)
-    "lua-language-server": {"strategy": "manual", "pkg": "", "bin": "lua-language-server"},
+    "lua-language-server": {
+        "strategy": "manual",
+        "pkg": "",
+        "bin": "lua-language-server",
+    },
 }
 
 
@@ -110,19 +119,18 @@ _install_results: Dict[str, Optional[str]] = {}
 _install_lock_meta = threading.Lock()
 
 
-def hermes_lsp_bin_dir() -> Path:
-    """Return the Hermes-owned bin staging dir for LSP servers."""
-    home = os.environ.get("HERMES_HOME")
-    if home is None:
-        home = os.path.join(os.path.expanduser("~"), ".hermes")
-    p = Path(home) / "lsp" / "bin"
+def agent_lsp_bin_dir() -> Path:
+    """Return the active forecast profile's LSP staging directory."""
+    from superforecasting_agent.constants import get_agent_home
+
+    p = get_agent_home() / "lsp" / "bin"
     p.mkdir(parents=True, exist_ok=True)
     return p
 
 
 def _existing_binary(name: str) -> Optional[str]:
     """Probe the staging dir + PATH for a binary named ``name``."""
-    staged = hermes_lsp_bin_dir() / name
+    staged = agent_lsp_bin_dir() / name
     if staged.exists() and os.access(staged, os.X_OK):
         return str(staged)
     on_path = shutil.which(name)
@@ -151,7 +159,9 @@ def try_install(pkg: str, strategy: str = "auto") -> Optional[str]:
     same path (or ``None``) without reinstalling.  Concurrent calls
     are serialized.
     """
-    if strategy not in {"auto",}:
+    if strategy not in {
+        "auto",
+    }:
         # Only ``auto`` triggers an actual install.  In manual/off,
         # we still check whether the binary already exists.
         recipe = INSTALL_RECIPES.get(pkg, {})
@@ -224,7 +234,7 @@ def _install_npm(
     if npm is None:
         logger.info("[install] cannot install %s: npm not on PATH", pkg)
         return None
-    staging = hermes_lsp_bin_dir().parent  # <HERMES_HOME>/lsp/
+    staging = agent_lsp_bin_dir().parent  # <agent-home>/lsp/
     install_targets = [pkg] + list(extra_pkgs or [])
     try:
         logger.info(
@@ -233,7 +243,16 @@ def _install_npm(
             " ".join(install_targets),
         )
         proc = subprocess.run(
-            [npm, "install", "--prefix", str(staging), "--silent", "--no-fund", "--no-audit", *install_targets],
+            [
+                npm,
+                "install",
+                "--prefix",
+                str(staging),
+                "--silent",
+                "--no-fund",
+                "--no-audit",
+                *install_targets,
+            ],
             check=False,
             capture_output=True,
             text=True,
@@ -241,7 +260,9 @@ def _install_npm(
         )
         if proc.returncode != 0:
             logger.warning(
-                "[install] npm install failed for %s: %s", pkg, proc.stderr.strip()[:500]
+                "[install] npm install failed for %s: %s",
+                pkg,
+                proc.stderr.strip()[:500],
             )
             return None
     except (subprocess.TimeoutExpired, OSError) as e:
@@ -258,7 +279,7 @@ def _install_npm(
     for c in candidates:
         if c.exists():
             # Symlink into our `lsp/bin/` for stable PATH access.
-            link = hermes_lsp_bin_dir() / c.name
+            link = agent_lsp_bin_dir() / c.name
             if not link.exists():
                 try:
                     link.symlink_to(c)
@@ -269,7 +290,9 @@ def _install_npm(
                     except OSError:
                         return str(c)
             return str(link if link.exists() else c)
-    logger.warning("[install] npm install for %s succeeded but bin %s not found", pkg, bin_name)
+    logger.warning(
+        "[install] npm install for %s succeeded but bin %s not found", pkg, bin_name
+    )
     return None
 
 
@@ -279,7 +302,7 @@ def _install_go(pkg: str, bin_name: str) -> Optional[str]:
     if go is None:
         logger.info("[install] cannot install %s: go not on PATH", pkg)
         return None
-    staging = hermes_lsp_bin_dir()
+    staging = agent_lsp_bin_dir()
     env = dict(os.environ)
     env["GOBIN"] = str(staging)
     try:
@@ -305,12 +328,14 @@ def _install_go(pkg: str, bin_name: str) -> Optional[str]:
         bin_path = bin_path.with_suffix(".exe")
     if bin_path.exists():
         return str(bin_path)
-    logger.warning("[install] go install for %s succeeded but bin %s not found", pkg, bin_name)
+    logger.warning(
+        "[install] go install for %s succeeded but bin %s not found", pkg, bin_name
+    )
     return None
 
 
 def _install_pip(pkg: str, bin_name: str) -> Optional[str]:
-    """Install a Python package into a hermes-owned target dir.
+    """Install a Python package into a agent-owned target dir.
 
     We avoid polluting the user's site-packages by using
     ``pip install --target``.  Bins go into
@@ -318,12 +343,21 @@ def _install_pip(pkg: str, bin_name: str) -> Optional[str]:
     ``<staging>/bin``.  Note: this only works for packages that ship a
     console script.
     """
-    pip_target = hermes_lsp_bin_dir().parent / "python-packages"
+    pip_target = agent_lsp_bin_dir().parent / "python-packages"
     pip_target.mkdir(parents=True, exist_ok=True)
     try:
         logger.info("[install] pip install --target %s %s", pip_target, pkg)
         proc = subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--target", str(pip_target), "--quiet", pkg],
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "--target",
+                str(pip_target),
+                "--quiet",
+                pkg,
+            ],
             check=False,
             capture_output=True,
             text=True,
@@ -331,7 +365,9 @@ def _install_pip(pkg: str, bin_name: str) -> Optional[str]:
         )
         if proc.returncode != 0:
             logger.warning(
-                "[install] pip install failed for %s: %s", pkg, proc.stderr.strip()[:500]
+                "[install] pip install failed for %s: %s",
+                pkg,
+                proc.stderr.strip()[:500],
             )
             return None
     except (subprocess.TimeoutExpired, OSError) as e:
@@ -340,7 +376,7 @@ def _install_pip(pkg: str, bin_name: str) -> Optional[str]:
     # Look for the script
     bin_path = pip_target / "bin" / bin_name
     if bin_path.exists():
-        link = hermes_lsp_bin_dir() / bin_name
+        link = agent_lsp_bin_dir() / bin_name
         if not link.exists():
             try:
                 link.symlink_to(bin_path)
@@ -356,7 +392,7 @@ def _install_pip(pkg: str, bin_name: str) -> Optional[str]:
 def detect_status(pkg: str) -> str:
     """Return ``installed``, ``missing``, or ``manual-only`` for a package.
 
-    Used by the ``hermes lsp status`` CLI to give users a quick
+    Used by the ``superforecasting-agent lsp status`` CLI to give users a quick
     overview of what's available without spawning anything.
     """
     recipe = INSTALL_RECIPES.get(pkg)
@@ -372,5 +408,10 @@ __all__ = [
     "INSTALL_RECIPES",
     "try_install",
     "detect_status",
+    "agent_lsp_bin_dir",
     "hermes_lsp_bin_dir",
 ]
+
+
+# Compatibility exports for existing plugins; canonical implementations above.
+hermes_lsp_bin_dir = agent_lsp_bin_dir

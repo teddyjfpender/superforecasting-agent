@@ -25,7 +25,7 @@ _env_path = get_env_path()
 load_forecast_dotenv(hermes_home=_env_path.parent, project_env=PROJECT_ROOT / ".env")
 
 from superforecasting_agent.runtime.colors import Colors, color
-from superforecasting_agent.runtime.models import _HERMES_USER_AGENT
+from superforecasting_agent.runtime.models import _AGENT_USER_AGENT
 from superforecasting_agent.runtime.vercel_auth import describe_vercel_auth
 from superforecasting_agent.constants import OPENROUTER_MODELS_URL
 from superforecasting_agent.urls import base_url_host_matches
@@ -1603,7 +1603,7 @@ def run_doctor(args):
             url = (base.rstrip("/") + "/models") if base else default_url
             headers = {
                 "Authorization": f"Bearer {key}",
-                "User-Agent": _HERMES_USER_AGENT,
+                "User-Agent": _AGENT_USER_AGENT,
             }
             if base_url_host_matches(base, "api.kimi.com"):
                 headers["User-Agent"] = "claude-code/0.1.0"

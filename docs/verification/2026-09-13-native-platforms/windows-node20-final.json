@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "platform": {
+    "system": "Windows",
+    "machine": "AMD64",
+    "release": "2025Server",
+    "driver_python": "3.12.10"
+  },
+  "status": "passed",
+  "checks": {
+    "fresh_install_dependencies": "passed",
+    "backend_lifecycle_worker_numerical_fallback": "passed",
+    "local_terminal_interaction": "passed",
+    "authenticated_headless_host": "passed",
+    "remote_terminal_interaction": "passed",
+    "backend_upgrade": "not_requested",
+    "terminal_upgrade": "not_requested"
+  },
+  "artifacts": {
+    "backend": {
+      "name": "superforecasting-agent",
+      "version": "0.22.1",
+      "sha256": "4840b89239d6f6ea79a399de49bcb40cba928aa54ec03bf066553a358dbcfd19"
+    },
+    "terminal": {
+      "name": "superforecasting-agent-tui",
+      "version": "0.1.1",
+      "sha256": "6c9bc13fe31c2b289b3783204b24c9ad523b9369b98799e79305eb3843999c30"
+    }
+  },
+  "installed_runtime": {
+    "python": "3.11.15",
+    "machine": "",
+    "openssl": "OpenSSL 3.5.5 27 Jan 2026"
+  }
+}

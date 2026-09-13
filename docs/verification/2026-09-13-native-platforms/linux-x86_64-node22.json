@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "platform": {
+    "system": "Linux",
+    "machine": "x86_64",
+    "release": "6.17.0-1022-azure",
+    "driver_python": "3.12.3"
+  },
+  "status": "passed",
+  "checks": {
+    "fresh_install_dependencies": "passed",
+    "backend_lifecycle_worker_numerical_fallback": "passed",
+    "local_terminal_interaction": "passed",
+    "authenticated_headless_host": "passed",
+    "remote_terminal_interaction": "passed",
+    "backend_upgrade": "not_requested",
+    "terminal_upgrade": "not_requested"
+  },
+  "artifacts": {
+    "backend": {
+      "name": "superforecasting-agent",
+      "version": "0.22.1",
+      "sha256": "cab97512b049a6fae228d69b7a9a7ad5b0c1d13d95c3f893496089a2068d7819"
+    },
+    "terminal": {
+      "name": "superforecasting-agent-tui",
+      "version": "0.1.1",
+      "sha256": "65c2cb03579883e851a3c0d9c6d7d2629d856c7eecab23fe3f37d1a20d720641"
+    }
+  },
+  "installed_runtime": {
+    "python": "3.11.15",
+    "machine": "x86_64",
+    "openssl": "OpenSSL 3.5.5 27 Jan 2026"
+  }
+}

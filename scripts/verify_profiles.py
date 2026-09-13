@@ -9,9 +9,8 @@ import json
 import os
 import platform
 import re
-import select
-import signal
 import subprocess
+import sys
 import tempfile
 import time
 import zipfile
@@ -53,104 +52,91 @@ def verify_installed_terminal(
     gateway_url: str | None = None,
 ) -> None:
     """Exercise packaged Ink against a separate local or remote backend."""
-    if os.name == "nt":
-        print(
-            "Installed terminal PTY exercise: skipped on native Windows (requires ConPTY)."
+    if platform.system() == "Windows":
+        # winpty-rs 0.4 replaces process-global standard handles and may allocate
+        # a console. Keep those changes out of the qualification/host parent.
+        worker = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()), "--terminal-worker"],
+            input=json.dumps({
+                "terminal_python": str(terminal_python),
+                "backend_python": str(backend_python),
+                "root": str(root),
+                "env": env,
+                "question": question,
+                "gateway_url": gateway_url,
+            }),
+            text=True,
+            capture_output=True,
+            timeout=180,
         )
+        print(worker.stdout, end="")
+        print(worker.stderr, end="", file=sys.stderr)
+        worker.check_returncode()
         return
-    import fcntl
-    import pty
-    import struct
-    import termios
+    _verify_installed_terminal(
+        terminal_python, backend_python, root, env, question, gateway_url=gateway_url
+    )
 
-    master, slave = pty.openpty()
-    process = None
-    try:
-        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 45, 160, 0, 0))
-        process = subprocess.Popen(
-            [
-                str(terminal_python),
-                "-c",
-                "from superforecasting_agent_tui import main; raise SystemExit(main())",
-                *(
-                    ["--gateway-url", gateway_url]
-                    if gateway_url
-                    else ["--python", str(backend_python)]
-                ),
-            ],
-            stdin=slave,
-            stdout=slave,
-            stderr=slave,
-            cwd=root,
-            env={
-                **env,
-                "TERM": "xterm-256color",
-                "SUPERFORECASTING_AGENT_TUI_CRON_TICKER": "0",
-            },
-            start_new_session=True,
-        )
-        os.close(slave)
-        slave = -1
+
+def _verify_installed_terminal(
+    terminal_python: Path,
+    backend_python: Path,
+    root: Path,
+    env: dict[str, str],
+    question: str,
+    *,
+    gateway_url: str | None = None,
+) -> None:
+    from terminal_session import TerminalSession
+
+    argv = [
+        str(terminal_python),
+        "-c",
+        "from superforecasting_agent_tui import main; raise SystemExit(main())",
+        *(
+            ["--gateway-url", gateway_url]
+            if gateway_url
+            else ["--python", str(backend_python)]
+        ),
+    ]
+    with TerminalSession(
+        argv,
+        cwd=root,
+        env={
+            **env,
+            "TERM": "xterm-256color",
+            "SUPERFORECASTING_AGENT_TUI_CRON_TICKER": "0",
+        },
+    ) as terminal:
 
         def expect(text: bytes) -> None:
             output = bytearray()
             deadline = time.monotonic() + 45
             while time.monotonic() < deadline:
-                readable, _, _ = select.select([master], [], [], 0.2)
-                if readable:
-                    try:
-                        chunk = os.read(master, 65536)
-                    except OSError:
-                        break
-                    if not chunk:
-                        break
-                    output.extend(chunk)
-                    if text in output:
-                        return
-                if process.poll() is not None:
+                output.extend(terminal.read())
+                if text in output:
+                    return
+                if terminal.poll() is not None:
                     break
-            plain = re.sub(rb"\x1b\[[0-?]*[ -/]*[@-~]", b"", bytes(output))
-            plain = re.sub(rb"[^\x20-\x7e\n\r]", b"", plain)
             raise RuntimeError(
-                f"Installed terminal did not display {text!r}: {plain[-12000:]!r}"
+                f"Installed terminal did not display {text!r}: {bytes(output[-12000:])!r}"
             )
 
         expect(b"setup required")
-        os.write(master, f"/score {question} --baselines\r".encode())
+        terminal.resize(35, 120)
+        terminal.write(f"/score {question} --baselines\r".encode())
         expect(b"baseline_scores: none")
-        os.write(master, b"q")
+        terminal.write(b"q")
         expect(b"setup required")
-        # Let the close redraw settle before the next physical key sequence.
-        # A footer also appears under the open viewer, so matching its bytes
-        # alone is not proof that the viewer has released input focus.
         settle_deadline = time.monotonic() + 3
         while time.monotonic() < settle_deadline:
-            if not select.select([master], [], [], 0.2)[0]:
-                break
-            os.read(master, 65536)
-        os.write(master, b"/quit\r")
-        # Keep draining redraw/terminal-reset output while the child exits.
-        # Waiting without reading can fill the PTY and block Node's shutdown.
-        deadline = time.monotonic() + 15
-        while process.poll() is None and time.monotonic() < deadline:
-            if select.select([master], [], [], 0.2)[0]:
-                try:
-                    if not os.read(master, 65536):
-                        break
-                except OSError:
-                    break
-        if process.wait(timeout=3) != 0:
+            terminal.read()
+        terminal.write(b"/quit\r")
+        if terminal.wait() != 0:
             raise RuntimeError("Installed terminal exited unsuccessfully")
         print(
-            f"Installed terminal: negotiated {'remote' if gateway_url else 'local'} host, scored durable forecast and exited cleanly."
+            f"Installed terminal: negotiated {'remote' if gateway_url else 'local'} host, resized, scored durable forecast and exited cleanly."
         )
-    finally:
-        if slave >= 0:
-            os.close(slave)
-        os.close(master)
-        if process is not None and process.poll() is None:
-            os.killpg(process.pid, signal.SIGKILL)
-            process.wait(timeout=5)
 
 
 def assert_preserved(before: Any, after: Any, path: str = "state") -> None:
@@ -322,9 +308,16 @@ def verify(args: argparse.Namespace, report: dict[str, Any]) -> None:
             "HERMES_HOME": str(profile),
             "LANG": "C.UTF-8",
             "PYTHONUTF8": "1",
+            "TMPDIR": str(root),
         }
+        # Preserve mobile platform detection without importing user credentials.
+        for name in ("TERMUX_VERSION", "PREFIX", "ANDROID_ROOT", "ANDROID_DATA"):
+            if name in os.environ:
+                env[name] = os.environ[name]
         if os.name == "nt":
             env["SYSTEMROOT"] = os.environ["SYSTEMROOT"]
+            env["USERPROFILE"] = str(profile)
+            env["TEMP"] = env["TMP"] = str(root)
 
         def backend_run(*arguments: str) -> str:
             try:
@@ -513,10 +506,6 @@ def verify(args: argparse.Namespace, report: dict[str, Any]) -> None:
         report["checks"]["backend_lifecycle_worker_numerical_fallback"] = "passed"
         terminal_env = {**env, "PATH": os.environ["PATH"]}
         if args.terminal_upgrade_from:
-            if os.name == "nt":
-                raise RuntimeError(
-                    "Terminal upgrade interaction requires a PTY; native Windows ConPTY is not implemented"
-                )
             verify_installed_terminal(
                 terminal_python, backend_python, root, terminal_env, question
             )
@@ -562,9 +551,7 @@ def verify(args: argparse.Namespace, report: dict[str, Any]) -> None:
         verify_installed_terminal(
             terminal_python, backend_python, root, terminal_env, question
         )
-        report["checks"]["local_terminal_interaction"] = (
-            "skipped_conpty_unavailable" if os.name == "nt" else "passed"
-        )
+        report["checks"]["local_terminal_interaction"] = "passed"
         if args.terminal_upgrade_from:
             report["checks"]["terminal_upgrade"] = "passed"
         subprocess.run(
@@ -591,7 +578,7 @@ def verify(args: argparse.Namespace, report: dict[str, Any]) -> None:
                 "install",
                 "--python",
                 str(backend_python),
-                str(backend) + "[web]",
+                str(backend) + "[web,pty]",
             ],
             check=True,
         )
@@ -602,13 +589,13 @@ def verify(args: argparse.Namespace, report: dict[str, Any]) -> None:
             [
                 str(backend_python),
                 "-c",
-                "import fastapi; import uvicorn; from tui_gateway.http_server import make_server; host = make_server(host='127.0.0.1', port=0); host.restore_transport(); host.server_close()",
+                "import fastapi; import uvicorn; from tui_gateway import server; from tui_gateway.http_server import make_server; host = make_server(host='127.0.0.1', port=0); host.server_close(); assert server.shutdown_runtime()",
             ],
             cwd=root,
             env=terminal_env,
             check=True,
         )
-        subprocess.run(
+        headless = subprocess.run(
             [
                 str(backend_python),
                 str(Path(__file__).with_name("verify_headless_host.py").resolve()),
@@ -621,15 +608,23 @@ def verify(args: argparse.Namespace, report: dict[str, Any]) -> None:
             ],
             cwd=root,
             env=terminal_env,
-            check=True,
+            capture_output=True,
+            text=True,
             timeout=180,
         )
+        print(headless.stdout, end="")
+        print(headless.stderr, end="", file=sys.stderr)
+        headless.check_returncode()
         report["checks"]["authenticated_headless_host"] = "passed"
-        report["checks"]["remote_terminal_interaction"] = (
-            "skipped_conpty_unavailable" if os.name == "nt" else "passed"
-        )
+        report["checks"]["remote_terminal_interaction"] = "passed"
         print("Optional web profile: installed authenticated hosting passed.")
 
 
 if __name__ == "__main__":
-    main()
+    if sys.argv[1:] == ["--terminal-worker"]:
+        request = json.load(sys.stdin)
+        for key in ("terminal_python", "backend_python", "root"):
+            request[key] = Path(request[key])
+        _verify_installed_terminal(**request)
+    else:
+        main()

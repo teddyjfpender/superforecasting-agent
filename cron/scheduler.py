@@ -141,12 +141,12 @@ from cron.jobs import get_due_jobs, mark_job_run, save_job_output, advance_next_
 SILENT_MARKER = "[SILENT]"
 
 # Backward-compatible module override used by tests and emergency monkeypatches.
-_hermes_home: Path | None = None
+_agent_home: Path | None = None
 
 
 def _get_agent_home() -> Path:
     """Resolve the active agent home while preserving test monkeypatch hooks."""
-    return _hermes_home or get_agent_home()
+    return _agent_home or get_agent_home()
 
 
 def _get_lock_paths() -> tuple[Path, Path]:
@@ -177,8 +177,8 @@ def _job_profile_context(job_id: str, profile: Optional[str]):
         yield None
         return
 
-    global _hermes_home
-    prior_override = _hermes_home
+    global _agent_home
+    prior_override = _agent_home
     env_snapshot = os.environ.copy()
 
     from superforecasting_agent.profile_paths import normalize_profile_name, resolve_profile_env
@@ -199,7 +199,7 @@ def _job_profile_context(job_id: str, profile: Optional[str]):
     override_token = None
     try:
         override_token = set_agent_home_override(profile_home)
-        _hermes_home = profile_home
+        _agent_home = profile_home
         logger.info(
             "Job '%s': using agent profile '%s' (%s)",
             job_id,
@@ -208,7 +208,7 @@ def _job_profile_context(job_id: str, profile: Optional[str]):
         )
         yield normalized_profile
     finally:
-        _hermes_home = prior_override
+        _agent_home = prior_override
         if override_token is not None:
             reset_agent_home_override(override_token)
         # Delta-based restore: remove added keys, restore changed keys.
@@ -1974,7 +1974,7 @@ def tick(verbose: bool = True, adapters=None, loop=None) -> int:
         # Partition due jobs: jobs with a per-job workdir and/or profile touch
         # process-global runtime state inside run_job. Workdir jobs temporarily
         # set os.environ["TERMINAL_CWD"]; profile jobs use a context-local
-        # agent home override, scheduler _hermes_home hook, and temporary
+        # agent home override, scheduler _agent_home hook, and temporary
         # profile .env load into os.environ with snapshot/restore. They MUST run
         # sequentially to avoid corrupting each other. Jobs without either field
         # stay parallel-safe.

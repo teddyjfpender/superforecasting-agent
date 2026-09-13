@@ -53,15 +53,15 @@ class TestWriteDenyExactPaths:
         # Under a profile (home = <root>/profiles/<name>), the root-level
         # <root>/.anthropic_oauth.json must ALSO be write-denied — the same
         # root-pass gap #15981 closed for .env. build_write_denied_paths
-        # resolves the OAuth store against both _hermes_home_path() and
-        # _hermes_root_path(), so point them at distinct dirs and assert the
+        # resolves the OAuth store against both _agent_home_path() and
+        # _agent_root_path(), so point them at distinct dirs and assert the
         # root copy is blocked.
         import agent.file_safety as fs
 
         root = Path.home() / ".superforecasting-agent-test-root"
         home = root / "profiles" / "default"
-        monkeypatch.setattr(fs, "_hermes_home_path", lambda: home)
-        monkeypatch.setattr(fs, "_hermes_root_path", lambda: root)
+        monkeypatch.setattr(fs, "_agent_home_path", lambda: home)
+        monkeypatch.setattr(fs, "_agent_root_path", lambda: root)
         assert _is_write_denied(str(root / ".anthropic_oauth.json")) is True
 
     def test_shell_profiles(self):

@@ -15,7 +15,7 @@ def test_skill_index_fetch_uses_fork_documentation_url(monkeypatch, tmp_path):
 
     monkeypatch.setattr(skills_hub, "HERMES_INDEX_CACHE_FILE", tmp_path / "index.json")
     monkeypatch.setattr(skills_hub.httpx, "get", get)
-    assert skills_hub._load_hermes_index() == payload
+    assert skills_hub._load_agent_index() == payload
     assert requested == [
         "https://teddyjfpender.github.io/superforecasting-agent/docs/api/skills-index.json"
     ]

@@ -25,7 +25,7 @@ def test_read_shares_defaults_but_only_load_bridges_environment(tmp_path, monkey
 def test_gateway_personalities_do_not_import_cli_or_mutate_environment(tmp_path, monkeypatch):
     from tui_gateway import server
 
-    monkeypatch.setattr(server, '_hermes_home', tmp_path)
+    monkeypatch.setattr(server, '_agent_home', tmp_path)
     (tmp_path / 'config.yaml').write_text('agent:\n  personalities:\n    analyst: careful\n', encoding='utf-8')
     for key in ('SUPERFORECASTING_AGENT_IGNORE_USER_CONFIG', 'FORECAST_IGNORE_USER_CONFIG', 'HERMES_IGNORE_USER_CONFIG'):
         monkeypatch.delenv(key, raising=False)

@@ -91,23 +91,39 @@ class TestIsContainer:
     def test_detects_cgroup_docker(self, monkeypatch, tmp_path):
         """/proc/1/cgroup containing 'docker' triggers detection."""
         import builtins
+
         self._reset_cache(monkeypatch)
         monkeypatch.setattr(os.path, "exists", lambda p: False)
         cgroup_file = tmp_path / "cgroup"
         cgroup_file.write_text("12:memory:/docker/abc123\n")
         _real_open = builtins.open
-        monkeypatch.setattr("builtins.open", lambda p, *a, **kw: _real_open(str(cgroup_file), *a, **kw) if p == "/proc/1/cgroup" else _real_open(p, *a, **kw))
+        monkeypatch.setattr(
+            "builtins.open",
+            lambda p, *a, **kw: (
+                _real_open(str(cgroup_file), *a, **kw)
+                if p == "/proc/1/cgroup"
+                else _real_open(p, *a, **kw)
+            ),
+        )
         assert is_container() is True
 
     def test_negative_case(self, monkeypatch, tmp_path):
         """Returns False on a regular Linux host."""
         import builtins
+
         self._reset_cache(monkeypatch)
         monkeypatch.setattr(os.path, "exists", lambda p: False)
         cgroup_file = tmp_path / "cgroup"
         cgroup_file.write_text("12:memory:/\n")
         _real_open = builtins.open
-        monkeypatch.setattr("builtins.open", lambda p, *a, **kw: _real_open(str(cgroup_file), *a, **kw) if p == "/proc/1/cgroup" else _real_open(p, *a, **kw))
+        monkeypatch.setattr(
+            "builtins.open",
+            lambda p, *a, **kw: (
+                _real_open(str(cgroup_file), *a, **kw)
+                if p == "/proc/1/cgroup"
+                else _real_open(p, *a, **kw)
+            ),
+        )
         assert is_container() is False
 
     def test_caches_result(self, monkeypatch):
@@ -171,3 +187,20 @@ class TestParseReasoningEffort:
         """
         documented = {"minimal", "low", "medium", "high", "xhigh"}
         assert documented.issubset(set(VALID_REASONING_EFFORTS))
+
+
+@pytest.mark.parametrize(
+    "variable", ["SUPERFORECASTING_AGENT_HOME", "FORECAST_HOME", "HERMES_HOME"]
+)
+@pytest.mark.parametrize("profile", [False, True])
+def test_explicit_root_without_os_user_home(monkeypatch, tmp_path, variable, profile):
+    for name in ("SUPERFORECASTING_AGENT_HOME", "FORECAST_HOME", "HERMES_HOME"):
+        monkeypatch.delenv(name, raising=False)
+    target = tmp_path / "profiles" / "desk" if profile else tmp_path
+    monkeypatch.setenv(variable, str(target))
+
+    def unavailable():
+        raise RuntimeError("Could not determine home directory.")
+
+    monkeypatch.setattr(Path, "home", unavailable)
+    assert get_default_agent_root() == tmp_path

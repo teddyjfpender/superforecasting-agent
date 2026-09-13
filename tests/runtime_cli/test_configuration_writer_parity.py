@@ -38,7 +38,7 @@ def test_dashboard_stale_form_and_yaml_edits_fail_without_losing_values(tmp_path
 
 def test_tui_stale_configuration_cannot_replace_a_new_setting(tmp_path, monkeypatch):
     from tui_gateway import server
-    monkeypatch.setattr(server,'_hermes_home',tmp_path)
+    monkeypatch.setattr(server,'_agent_home',tmp_path)
     monkeypatch.setattr(server._host.configuration,'_snapshot',None)
     path=tmp_path/'config.yaml'; path.write_text('model: first\n',encoding='utf-8')
     loaded=server._load_cfg(); loaded['model']='stale'
@@ -50,7 +50,7 @@ def test_tui_stale_configuration_cannot_replace_a_new_setting(tmp_path, monkeypa
 
 def test_first_cli_setting_is_owned_by_the_profile(tmp_path, monkeypatch):
     import cli
-    monkeypatch.setattr(cli,'_hermes_home',tmp_path)
+    monkeypatch.setattr(cli,'_agent_home',tmp_path)
     assert cli.save_config_value('display.skin','forecast')
     assert yaml.safe_load((tmp_path/'config.yaml').read_text())=={'display':{'skin':'forecast'}}
 
@@ -96,7 +96,7 @@ def test_same_timestamp_and_size_edit_is_not_cached(tmp_path, monkeypatch, loade
     monkeypatch.setenv('HERMES_HOME', str(tmp_path))
     if loader_name == 'tui':
         from tui_gateway import server
-        monkeypatch.setattr(server, '_hermes_home', tmp_path)
+        monkeypatch.setattr(server, '_agent_home', tmp_path)
         monkeypatch.setattr(server._host.configuration, '_snapshot', None)
         load = server._load_cfg
         save = server._save_cfg

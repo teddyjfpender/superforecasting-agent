@@ -146,7 +146,7 @@ from superforecasting_agent.runtime.config import (
     save_env_value,
     remove_env_value,
     get_env_value,
-    ensure_hermes_home,
+    ensure_agent_home,
 )
 # display_agent_home imported lazily at call sites (stale-module safety during
 # superforecasting-agent update)
@@ -3187,7 +3187,7 @@ def run_setup_wizard(args):
     if is_managed():
         managed_error("run setup wizard")
         return
-    ensure_hermes_home()
+    ensure_agent_home()
 
     reset_requested = bool(getattr(args, "reset", False))
     if reset_requested:

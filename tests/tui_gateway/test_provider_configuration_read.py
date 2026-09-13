@@ -41,7 +41,7 @@ def test_unreadable_configuration_does_not_report_auto(tmp_path, monkeypatch):
     tmp_path.mkdir()
     path = tmp_path / 'config.yaml'
     path.write_text('model: [', encoding='utf-8')
-    monkeypatch.setattr(server, '_hermes_home', tmp_path)
+    monkeypatch.setattr(server, '_agent_home', tmp_path)
     monkeypatch.setattr(server._host, 'configuration', ProfileConfiguration())
     response = server.handle_request({
         'id': 'read', 'method': 'config.get', 'params': {'key': 'provider'},

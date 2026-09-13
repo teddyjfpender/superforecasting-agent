@@ -15,7 +15,7 @@ Configure, extend, or contribute to Superforecasting Agent.
 | | |
 |---|---|
 | Source | Bundled (installed by default) |
-| Path | `skills/autonomous-ai-agents/hermes-agent` |
+| Path | `skills/autonomous-ai-agents/superforecasting-agent` |
 | Version | `2.1.0` |
 | Author | Superforecasting Agent + Teknium |
 | License | MIT |

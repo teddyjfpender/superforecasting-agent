@@ -162,7 +162,7 @@ Use `execute_code` for mechanical data gathering, then delegate the reasoning-he
 # Step 1: Mechanical gathering (execute_code is better here — no reasoning needed)
 execute_code("""
 # Inherited execute_code helper module.
-from hermes_tools import web_search, web_extract
+from forecast_tools import web_search, web_extract
 
 results = []
 for query in ["export controls semiconductor equipment 2026",

@@ -55,7 +55,7 @@ def _enter_existing_install_patches(stack, **extra):
     """
     # Unconditional mocks (no return values to assert against).
     for target, kwargs in [
-        ("superforecasting_agent.runtime.setup.ensure_hermes_home", {}),
+        ("superforecasting_agent.runtime.setup.ensure_agent_home", {}),
         ("superforecasting_agent.runtime.setup.is_interactive_stdin", {"return_value": True}),
         ("superforecasting_agent.runtime.config.is_managed", {"return_value": False}),
         ("superforecasting_agent.runtime.setup.load_config", {"return_value": {}}),
@@ -76,7 +76,7 @@ def _enter_existing_install_patches(stack, **extra):
 
 def _enter_fresh_install_patches(stack, **extra):
     for target, kwargs in [
-        ("superforecasting_agent.runtime.setup.ensure_hermes_home", {}),
+        ("superforecasting_agent.runtime.setup.ensure_agent_home", {}),
         ("superforecasting_agent.runtime.setup.is_interactive_stdin", {"return_value": True}),
         ("superforecasting_agent.runtime.config.is_managed", {"return_value": False}),
         ("superforecasting_agent.runtime.setup.load_config", {"return_value": {}}),

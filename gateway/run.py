@@ -556,7 +556,7 @@ def _home_thread_env_var(platform_name: str) -> str:
 
 def _restart_notification_pending() -> bool:
     """Return True when a /restart completion marker is waiting to be delivered."""
-    return (_hermes_home / ".restart_notify.json").exists()
+    return (_agent_home / ".restart_notify.json").exists()
 
 
 # Mark this process as a gateway so cli.py's module-level load_cli_config()
@@ -578,13 +578,13 @@ from superforecasting_agent.environment import (
 )
 from superforecasting_agent.storage.files import atomic_json_write, atomic_roundtrip_yaml_update
 from superforecasting_agent.urls import base_url_host_matches
-_hermes_home = get_agent_home()
+_agent_home = get_agent_home()
 
 # Load environment variables from the active forecast home .env first.
 # User-managed env files should override stale shell exports on restart.
 from dotenv import load_dotenv  # backward-compat for tests that monkeypatch this symbol
 from superforecasting_agent.runtime.env_loader import load_forecast_dotenv
-load_forecast_dotenv(hermes_home=_hermes_home, project_env=Path(__file__).resolve().parents[1] / '.env')
+load_forecast_dotenv(hermes_home=_agent_home, project_env=Path(__file__).resolve().parents[1] / '.env')
 
 _REDACT_SECRETS_ENV_NAMES = (
     "SUPERFORECASTING_AGENT_REDACT_SECRETS",
@@ -718,11 +718,11 @@ def _reload_runtime_env_preserving_config_authority() -> None:
     later turns.
     """
     load_forecast_dotenv(
-        hermes_home=_hermes_home,
+        hermes_home=_agent_home,
         project_env=Path(__file__).resolve().parents[1] / '.env',
     )
 
-    config_path = _hermes_home / 'config.yaml'
+    config_path = _agent_home / 'config.yaml'
     if not config_path.exists():
         return
     try:
@@ -745,7 +745,7 @@ _DOCKER_MEDIA_OUTPUT_CONTAINER_PATHS = {"/output", "/outputs"}
 
 # Bridge config.yaml values into the environment so os.getenv() picks them up.
 # config.yaml is authoritative for terminal settings — overrides .env.
-_config_path = _hermes_home / 'config.yaml'
+_config_path = _agent_home / 'config.yaml'
 if _config_path.exists():
     try:
         import yaml as _yaml
@@ -1050,7 +1050,7 @@ def _try_resolve_fallback_provider() -> dict | None:
     from superforecasting_agent.runtime.runtime_provider import resolve_runtime_provider
     try:
         import yaml as _y
-        cfg_path = _hermes_home / "config.yaml"
+        cfg_path = _agent_home / "config.yaml"
         if not cfg_path.exists():
             return None
         with open(cfg_path, encoding="utf-8") as _f:
@@ -1364,17 +1364,17 @@ def _teams_pipeline_plugin_enabled() -> bool:
 def _load_gateway_config() -> dict:
     """Load and parse active agent-home config.yaml, returning {} on any error.
 
-    Uses the module-level ``_hermes_home`` (so tests that monkeypatch it
+    Uses the module-level ``_agent_home`` (so tests that monkeypatch it
     still see their fixture) and shares the mtime-keyed raw-yaml cache
     from ``superforecasting_agent.runtime.config.read_raw_config`` when the paths match.
     """
-    config_path = _hermes_home / 'config.yaml'
+    config_path = _agent_home / 'config.yaml'
     try:
         from superforecasting_agent.runtime.config import get_config_path, read_raw_config
-        # Fast path: if _hermes_home agrees with the canonical config
+        # Fast path: if _agent_home agrees with the canonical config
         # location, reuse the shared cache. Otherwise fall through to a
         # direct read (keeps test fixtures with a monkeypatched
-        # _hermes_home working).
+        # _agent_home working).
         if config_path == get_config_path():
             return read_raw_config()
     except Exception:
@@ -1402,21 +1402,14 @@ def _resolve_gateway_model(config: dict | None = None) -> str:
     return model_section(cfg).get('default') or ''
 
 
-def _resolve_hermes_bin() -> Optional[list[str]]:
-    """Resolve the Hermes update command as argv parts.
-
-    Tries in order:
-    1. ``shutil.which("hermes")`` — standard PATH lookup
-    2. ``sys.executable -m superforecasting_agent.runtime.main`` — fallback when Hermes is running
-       from a venv/module invocation and the ``hermes`` shim is not on PATH
-
-    Returns argv parts ready for quoting/joining, or ``None`` if neither works.
-    """
+def _resolve_agent_bin() -> Optional[list[str]]:
+    """Resolve the canonical update command, with a legacy launcher fallback."""
     import shutil
 
-    hermes_bin = shutil.which("hermes")
-    if hermes_bin:
-        return [hermes_bin]
+    for command in ("superforecasting-agent", "hermes"):
+        executable = shutil.which(command)
+        if executable:
+            return [executable]
 
     try:
         import importlib.util
@@ -1900,7 +1893,7 @@ class GatewayRunner:
 
     # -- Voice mode persistence ------------------------------------------
 
-    _VOICE_MODE_PATH = _hermes_home / "gateway_voice_mode.json"
+    _VOICE_MODE_PATH = _agent_home / "gateway_voice_mode.json"
 
     def _voice_key(self, platform: Platform, chat_id: str) -> str:
         """Return a platform-namespaced key for voice mode state."""
@@ -2732,7 +2725,7 @@ class GatewayRunner:
         if not file_path:
             try:
                 import yaml as _y
-                cfg_path = _hermes_home / "config.yaml"
+                cfg_path = _agent_home / "config.yaml"
                 if cfg_path.exists():
                     with open(cfg_path, encoding="utf-8") as _f:
                         cfg = _y.safe_load(_f) or {}
@@ -2743,7 +2736,7 @@ class GatewayRunner:
             return []
         path = Path(file_path).expanduser()
         if not path.is_absolute():
-            path = _hermes_home / path
+            path = _agent_home / path
         if not path.exists():
             logger.warning("Prefill messages file not found: %s", path)
             return []
@@ -2770,7 +2763,7 @@ class GatewayRunner:
             return prompt
         try:
             import yaml as _y
-            cfg_path = _hermes_home / "config.yaml"
+            cfg_path = _agent_home / "config.yaml"
             if cfg_path.exists():
                 with open(cfg_path, encoding="utf-8") as _f:
                     cfg = _y.safe_load(_f) or {}
@@ -2791,7 +2784,7 @@ class GatewayRunner:
         effort = ""
         try:
             import yaml as _y
-            cfg_path = _hermes_home / "config.yaml"
+            cfg_path = _agent_home / "config.yaml"
             if cfg_path.exists():
                 with open(cfg_path, encoding="utf-8") as _f:
                     cfg = _y.safe_load(_f) or {}
@@ -2874,7 +2867,7 @@ class GatewayRunner:
         raw = ""
         try:
             import yaml as _y
-            cfg_path = _hermes_home / "config.yaml"
+            cfg_path = _agent_home / "config.yaml"
             if cfg_path.exists():
                 with open(cfg_path, encoding="utf-8") as _f:
                     cfg = _y.safe_load(_f) or {}
@@ -2890,7 +2883,7 @@ class GatewayRunner:
         """Load show_reasoning toggle from config.yaml display section."""
         try:
             import yaml as _y
-            cfg_path = _hermes_home / "config.yaml"
+            cfg_path = _agent_home / "config.yaml"
             if cfg_path.exists():
                 with open(cfg_path, encoding="utf-8") as _f:
                     cfg = _y.safe_load(_f) or {}
@@ -2910,7 +2903,7 @@ class GatewayRunner:
         if not mode:
             try:
                 import yaml as _y
-                cfg_path = _hermes_home / "config.yaml"
+                cfg_path = _agent_home / "config.yaml"
                 if cfg_path.exists():
                     with open(cfg_path, encoding="utf-8") as _f:
                         cfg = _y.safe_load(_f) or {}
@@ -2931,7 +2924,7 @@ class GatewayRunner:
         if not raw:
             try:
                 import yaml as _y
-                cfg_path = _hermes_home / "config.yaml"
+                cfg_path = _agent_home / "config.yaml"
                 if cfg_path.exists():
                     with open(cfg_path, encoding="utf-8") as _f:
                         cfg = _y.safe_load(_f) or {}
@@ -2964,7 +2957,7 @@ class GatewayRunner:
         if not mode:
             try:
                 import yaml as _y
-                cfg_path = _hermes_home / "config.yaml"
+                cfg_path = _agent_home / "config.yaml"
                 if cfg_path.exists():
                     with open(cfg_path, encoding="utf-8") as _f:
                         cfg = _y.safe_load(_f) or {}
@@ -2990,7 +2983,7 @@ class GatewayRunner:
         """Load OpenRouter provider routing preferences from config.yaml."""
         try:
             import yaml as _y
-            cfg_path = _hermes_home / "config.yaml"
+            cfg_path = _agent_home / "config.yaml"
             if cfg_path.exists():
                 with open(cfg_path, encoding="utf-8") as _f:
                     cfg = _y.safe_load(_f) or {}
@@ -3009,7 +3002,7 @@ class GatewayRunner:
         """
         try:
             import yaml as _y
-            cfg_path = _hermes_home / "config.yaml"
+            cfg_path = _agent_home / "config.yaml"
             if cfg_path.exists():
                 with open(cfg_path, encoding="utf-8") as _f:
                     cfg = _y.safe_load(_f) or {}
@@ -3205,7 +3198,7 @@ class GatewayRunner:
                     f"{message}\n\n"
                     f"{busy_input_hint_gateway(_hint_mode)}"
                 )
-                mark_seen(_hermes_home / "config.yaml", BUSY_INPUT_FLAG)
+                mark_seen(_agent_home / "config.yaml", BUSY_INPUT_FLAG)
         except Exception as _onb_err:
             logger.debug("Failed to apply busy-input onboarding hint: %s", _onb_err)
 
@@ -4124,7 +4117,7 @@ class GatewayRunner:
         """
         import json
 
-        path = _hermes_home / self._STUCK_LOOP_FILE
+        path = _agent_home / self._STUCK_LOOP_FILE
         try:
             counts = json.loads(path.read_text()) if path.exists() else {}
         except Exception:
@@ -4151,7 +4144,7 @@ class GatewayRunner:
         """
         import json
 
-        path = _hermes_home / self._STUCK_LOOP_FILE
+        path = _agent_home / self._STUCK_LOOP_FILE
         if not path.exists():
             return 0
 
@@ -4198,7 +4191,7 @@ class GatewayRunner:
         """
         import json
 
-        path = _hermes_home / self._STUCK_LOOP_FILE
+        path = _agent_home / self._STUCK_LOOP_FILE
         if not path.exists():
             return
         try:
@@ -4216,7 +4209,7 @@ class GatewayRunner:
         import shutil
         import subprocess
 
-        hermes_cmd = _resolve_hermes_bin()
+        hermes_cmd = _resolve_agent_bin()
         if not hermes_cmd:
             logger.error("Could not locate hermes binary for detached /restart")
             return
@@ -4574,7 +4567,7 @@ class GatewayRunner:
         if not _any_allowlist and not _allow_all:
             logger.warning(
                 "No user allowlists configured. All unauthorized users will be denied. "
-                f"Set GATEWAY_ALLOW_ALL_USERS=true in {_hermes_home}/.env to allow open access, "
+                f"Set GATEWAY_ALLOW_ALL_USERS=true in {_agent_home}/.env to allow open access, "
                 "or configure platform allowlists (e.g., TELEGRAM_ALLOWED_USERS=your_id)."
             )
         
@@ -4633,7 +4626,7 @@ class GatewayRunner:
         # process already drained active agents, so sessions aren't stuck.
         # This prevents unwanted auto-resets after `superforecasting-agent update`,
         # `superforecasting-agent gateway restart`, or `/restart`.
-        _clean_marker = _hermes_home / ".clean_shutdown"
+        _clean_marker = _agent_home / ".clean_shutdown"
         if _clean_marker.exists():
             logger.info("Previous gateway exited cleanly — skipping session suspension")
             try:
@@ -4883,8 +4876,8 @@ class GatewayRunner:
         if not notified and any(
             path.exists()
             for path in (
-                _hermes_home / ".update_pending.json",
-                _hermes_home / ".update_pending.claimed.json",
+                _agent_home / ".update_pending.json",
+                _agent_home / ".update_pending.claimed.json",
             )
         ):
             self._schedule_update_notification_watch()
@@ -6718,7 +6711,7 @@ class GatewayRunner:
             # of resuming a half-finished tool loop.
             if not timed_out:
                 try:
-                    (_hermes_home / ".clean_shutdown").touch()
+                    (_agent_home / ".clean_shutdown").touch()
                 except Exception:
                     pass
             else:
@@ -7442,8 +7435,8 @@ class GatewayRunner:
                 else:
                     response_text = raw
             if response_text:
-                response_path = _hermes_home / ".update_response"
-                prompt_path = _hermes_home / ".update_prompt.json"
+                response_path = _agent_home / ".update_response"
+                prompt_path = _agent_home / ".update_prompt.json"
                 try:
                     tmp = response_path.with_suffix(".tmp")
                     tmp.write_text(response_text)
@@ -7462,8 +7455,8 @@ class GatewayRunner:
             # blocking on stdin until the 30-minute watcher timeout.
             # The slash command then falls through to normal dispatch.
             if _recognized_cmd:
-                response_path = _hermes_home / ".update_response"
-                prompt_path = _hermes_home / ".update_prompt.json"
+                response_path = _agent_home / ".update_response"
+                prompt_path = _agent_home / ".update_prompt.json"
                 try:
                     tmp = response_path.with_suffix(".tmp")
                     tmp.write_text("")
@@ -10599,7 +10592,7 @@ class GatewayRunner:
             if event.source.thread_id:
                 notify_data["thread_id"] = event.source.thread_id
             atomic_json_write(
-                _hermes_home / ".restart_notify.json",
+                _agent_home / ".restart_notify.json",
                 notify_data,
                 indent=None,
             )
@@ -10619,7 +10612,7 @@ class GatewayRunner:
             if event.platform_update_id is not None:
                 dedup_data["update_id"] = event.platform_update_id
             atomic_json_write(
-                _hermes_home / ".restart_last_processed.json",
+                _agent_home / ".restart_last_processed.json",
                 dedup_data,
                 indent=None,
             )
@@ -10671,7 +10664,7 @@ class GatewayRunner:
             return False
 
         try:
-            marker_path = _hermes_home / ".restart_last_processed.json"
+            marker_path = _agent_home / ".restart_last_processed.json"
             if not marker_path.exists():
                 return False
             data = json.loads(marker_path.read_text())
@@ -10811,7 +10804,7 @@ class GatewayRunner:
         current_api_key = ""
         user_provs = None
         custom_provs = None
-        config_path = _hermes_home / "config.yaml"
+        config_path = _agent_home / "config.yaml"
         try:
             cfg = _load_gateway_config()
             if cfg:
@@ -11184,7 +11177,7 @@ class GatewayRunner:
         from superforecasting_agent.constants import display_agent_home
 
         args = event.get_command_args().strip().lower()
-        config_path = _hermes_home / 'config.yaml'
+        config_path = _agent_home / 'config.yaml'
 
         try:
             config = _load_gateway_config()
@@ -12130,7 +12123,7 @@ class GatewayRunner:
         cp_cfg = {}
         try:
             import yaml as _y
-            _cfg_path = _hermes_home / "config.yaml"
+            _cfg_path = _agent_home / "config.yaml"
             if _cfg_path.exists():
                 with open(_cfg_path, encoding="utf-8") as _f:
                     _data = _y.safe_load(_f) or {}
@@ -12405,7 +12398,7 @@ class GatewayRunner:
 
         raw_args = event.get_command_args().strip()
         args, persist_global = self._parse_reasoning_command_args(raw_args)
-        config_path = _hermes_home / "config.yaml"
+        config_path = _agent_home / "config.yaml"
         session_key = self._session_key_for_source(event.source)
         self._show_reasoning = self._load_show_reasoning()
         self._reasoning_config = self._resolve_session_reasoning_config(
@@ -12500,7 +12493,7 @@ class GatewayRunner:
         from superforecasting_agent.runtime.models import model_supports_fast_mode
 
         args = event.get_command_args().strip().lower()
-        config_path = _hermes_home / "config.yaml"
+        config_path = _agent_home / "config.yaml"
         self._service_tier = self._load_service_tier()
 
         user_config = _load_gateway_config()
@@ -12560,7 +12553,7 @@ class GatewayRunner:
         have its own verbosity level independently.
         """
 
-        config_path = _hermes_home / "config.yaml"
+        config_path = _agent_home / "config.yaml"
         platform_key = _platform_config_key(event.source.platform)
 
         # --- check config gate ------------------------------------------------
@@ -12628,7 +12621,7 @@ class GatewayRunner:
         """
         from gateway.runtime_footer import resolve_footer_config
 
-        config_path = _hermes_home / "config.yaml"
+        config_path = _agent_home / "config.yaml"
         platform_key = _platform_config_key(event.source.platform)
 
         # --- parse argument -------------------------------------------------
@@ -13715,7 +13708,7 @@ class GatewayRunner:
                 # Persist the opt-out and run the reload.
                 try:
                     atomic_roundtrip_yaml_update(
-                        _hermes_home / "config.yaml", "approvals.mcp_reload_confirm", False,
+                        _agent_home / "config.yaml", "approvals.mcp_reload_confirm", False,
                     )
                     preference_saved = True
                     logger.info(
@@ -14013,7 +14006,7 @@ class GatewayRunner:
             if choice == "always":
                 try:
                     atomic_roundtrip_yaml_update(
-                        _hermes_home / "config.yaml", "approvals.destructive_slash_confirm", False,
+                        _agent_home / "config.yaml", "approvals.destructive_slash_confirm", False,
                     )
                     preference_saved = True
                     logger.info(
@@ -14362,13 +14355,13 @@ class GatewayRunner:
         if not git_dir.exists():
             return t("gateway.update.not_git_repo")
 
-        hermes_cmd = _resolve_hermes_bin()
+        hermes_cmd = _resolve_agent_bin()
         if not hermes_cmd:
             return t("gateway.update.hermes_cmd_not_found")
 
-        pending_path = _hermes_home / ".update_pending.json"
-        output_path = _hermes_home / ".update_output.txt"
-        exit_code_path = _hermes_home / ".update_exit_code"
+        pending_path = _agent_home / ".update_pending.json"
+        output_path = _agent_home / ".update_output.txt"
+        exit_code_path = _agent_home / ".update_exit_code"
         session_key = self._session_key_for_source(event.source)
         pending = {
             "platform": event.source.platform.value,
@@ -14503,11 +14496,11 @@ class GatewayRunner:
         the messenger.  The user's next message is intercepted by
         ``_handle_message`` and written to ``.update_response``.
         """
-        pending_path = _hermes_home / ".update_pending.json"
-        claimed_path = _hermes_home / ".update_pending.claimed.json"
-        output_path = _hermes_home / ".update_output.txt"
-        exit_code_path = _hermes_home / ".update_exit_code"
-        prompt_path = _hermes_home / ".update_prompt.json"
+        pending_path = _agent_home / ".update_pending.json"
+        claimed_path = _agent_home / ".update_pending.claimed.json"
+        output_path = _agent_home / ".update_output.txt"
+        exit_code_path = _agent_home / ".update_exit_code"
+        prompt_path = _agent_home / ".update_prompt.json"
 
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
@@ -14611,7 +14604,7 @@ class GatewayRunner:
                 for p in (pending_path, claimed_path, output_path,
                           exit_code_path, prompt_path):
                     p.unlink(missing_ok=True)
-                (_hermes_home / ".update_response").unlink(missing_ok=True)
+                (_agent_home / ".update_response").unlink(missing_ok=True)
                 self._update_prompt_pending.pop(session_key, None)
                 return
 
@@ -14696,7 +14689,7 @@ class GatewayRunner:
             for p in (pending_path, claimed_path, output_path,
                       exit_code_path, prompt_path):
                 p.unlink(missing_ok=True)
-            (_hermes_home / ".update_response").unlink(missing_ok=True)
+            (_agent_home / ".update_response").unlink(missing_ok=True)
             self._update_prompt_pending.pop(session_key, None)
 
     async def _send_update_notification(self) -> bool:
@@ -14709,10 +14702,10 @@ class GatewayRunner:
         cannot resolve the adapter (e.g. after a gateway restart where the
         platform hasn't reconnected yet).
         """
-        pending_path = _hermes_home / ".update_pending.json"
-        claimed_path = _hermes_home / ".update_pending.claimed.json"
-        output_path = _hermes_home / ".update_output.txt"
-        exit_code_path = _hermes_home / ".update_exit_code"
+        pending_path = _agent_home / ".update_pending.json"
+        claimed_path = _agent_home / ".update_pending.claimed.json"
+        output_path = _agent_home / ".update_output.txt"
+        exit_code_path = _agent_home / ".update_exit_code"
 
         if not pending_path.exists() and not claimed_path.exists():
             return False
@@ -14788,7 +14781,7 @@ class GatewayRunner:
 
     async def _send_restart_notification(self) -> Optional[tuple[str, str, Optional[str]]]:
         """Notify the chat that initiated /restart that the gateway is back."""
-        notify_path = _hermes_home / ".restart_notify.json"
+        notify_path = _agent_home / ".restart_notify.json"
         if not notify_path.exists():
             return None
 
@@ -16377,7 +16370,7 @@ class GatewayRunner:
                         if gate_on and not is_seen(_cfg, TOOL_PROGRESS_FLAG):
                             long_tool_hint_fired[0] = True
                             progress_queue.put(tool_progress_hint_gateway())
-                            mark_seen(_hermes_home / "config.yaml", TOOL_PROGRESS_FLAG)
+                            mark_seen(_agent_home / "config.yaml", TOOL_PROGRESS_FLAG)
                 except Exception as _hint_err:
                     logger.debug("tool-progress onboarding hint failed: %s", _hint_err)
                 return
@@ -18713,7 +18706,7 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
     # and gateway.log (INFO+, gateway-component records only).
     # Idempotent, so repeated calls from AIAgent.__init__ won't duplicate.
     from superforecasting_agent.logging import setup_logging
-    setup_logging(hermes_home=_hermes_home, mode="gateway")
+    setup_logging(hermes_home=_agent_home, mode="gateway")
 
     _stderr_handler = None
     release_owned_runtime = None
@@ -18827,7 +18820,7 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
                 # if our cgroup is being torn down.  Bounded by an internal
                 # timeout; never blocks the event loop here.
                 try:
-                    _diag_log = _hermes_home / "logs" / "gateway-shutdown-diag.log"
+                    _diag_log = _agent_home / "logs" / "gateway-shutdown-diag.log"
                     spawn_async_diagnostic(
                         _diag_log, _shutdown_ctx["signal"], timeout_seconds=5.0
                     )

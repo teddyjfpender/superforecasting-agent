@@ -522,12 +522,12 @@ def test_session_list_omits_active_durable_sessions(server, monkeypatch):
 
 
 def test_config_load_missing(server, tmp_path):
-    server._hermes_home = tmp_path
+    server._agent_home = tmp_path
     assert server._load_cfg() == {}
 
 
 def test_config_roundtrip(server, tmp_path):
-    server._hermes_home = tmp_path
+    server._agent_home = tmp_path
     cfg = server._load_cfg()
     cfg["model"] = "test/model"
     server._save_cfg(cfg)
@@ -976,3 +976,38 @@ def test_dispatch_unknown_long_method_still_goes_inline(server):
     resp = server.dispatch({"id": "r4", "method": "some.method", "params": {}})
 
     assert resp["result"] == {"ok": True}
+
+
+@pytest.mark.parametrize("detached,busy", [(True, False), (True, True), (False, False)])
+def test_resume_reattaches_only_idle_detached_allocation(server, monkeypatch, detached, busy):
+    db = MagicMock()
+    db.get_session.return_value = {"id": "saved"}
+    db.get_messages_as_conversation.return_value = [{"role": "user", "content": "retained"}]
+    monkeypatch.setattr(server, "_get_db", lambda: db)
+    monkeypatch.setattr(server, "_turn_recovery", lambda *a, **kw: {"status": "interrupted", "partial_text": "saved prefix"})
+    monkeypatch.setattr(server, "_session_info", lambda agent: {"model": "fixture"})
+    build = MagicMock(side_effect=AssertionError("must reuse the existing allocation"))
+    monkeypatch.setattr(server, "_make_agent", build)
+    agent = MagicMock()
+    old_transport, new_transport = MagicMock(), MagicMock()
+    active = {"session_key": "saved", "agent": agent, "running": busy,
+              "transport": old_transport, "transport_detached": detached,
+              "history_lock": threading.Lock()}
+    server._host.sessions["runtime"] = active
+    token = server.bind_transport(new_transport)
+    try:
+        reply = server.handle_request({"id": "r", "method": "session.resume", "params": {"session_id": "saved"}})
+    finally:
+        server.reset_transport(token)
+    if detached and not busy:
+        assert reply["result"]["session_id"] == "runtime"
+        assert reply["result"]["recovery"]["partial_text"] == "saved prefix"
+        assert active["transport"] is new_transport
+        assert active["transport_detached"] is False
+    else:
+        assert "error" in reply
+        assert active["transport"] is old_transport
+        assert active["running"] is busy
+    assert active["agent"] is agent
+    build.assert_not_called()
+    agent.close.assert_not_called()

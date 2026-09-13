@@ -518,7 +518,7 @@ class TestGeneratedSystemdUnits:
             "_system_service_identity",
             lambda run_as_user=None: ("alice", "alice", "/home/alice"),
         )
-        monkeypatch.setattr(gateway_cli, "_hermes_home_for_target_user", lambda home: "/home/alice/.hermes")
+        monkeypatch.setattr(gateway_cli, "_agent_home_for_target_user", lambda home: "/home/alice/.hermes")
         monkeypatch.setenv("PATH", "/usr/local/bin:/mnt/c/WINDOWS/system32")
         monkeypatch.setattr(gateway_cli.shutil, "which", lambda cmd: None)
 
@@ -1430,7 +1430,7 @@ class TestSystemUnitHermesHome:
 
 
 class TestHermesHomeForTargetUser:
-    """Unit tests for _hermes_home_for_target_user()."""
+    """Unit tests for _agent_home_for_target_user()."""
 
     # These exercise PURE path-mapping. They must never make the code stat a
     # real restricted path: the calling user's home is a writable tmp dir (NOT
@@ -1443,7 +1443,7 @@ class TestHermesHomeForTargetUser:
         for _name in ("SUPERFORECASTING_AGENT_HOME", "FORECAST_HOME", "HERMES_HOME"):
             monkeypatch.delenv(_name, raising=False)
 
-        result = gateway_cli._hermes_home_for_target_user("/home/alice")
+        result = gateway_cli._agent_home_for_target_user("/home/alice")
         assert result == "/home/alice/.superforecasting-agent"
 
     def test_remaps_profile_path(self, tmp_path, monkeypatch):
@@ -1452,7 +1452,7 @@ class TestHermesHomeForTargetUser:
         monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_root))
         monkeypatch.setenv("HERMES_HOME", str(fake_root / ".hermes" / "profiles" / "coder"))
 
-        result = gateway_cli._hermes_home_for_target_user("/home/alice")
+        result = gateway_cli._agent_home_for_target_user("/home/alice")
         assert result == "/home/alice/.hermes/profiles/coder"
 
     def test_keeps_custom_path(self, tmp_path, monkeypatch):
@@ -1461,14 +1461,14 @@ class TestHermesHomeForTargetUser:
         monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_root))
         monkeypatch.setenv("HERMES_HOME", "/opt/hermes")
 
-        result = gateway_cli._hermes_home_for_target_user("/home/alice")
+        result = gateway_cli._agent_home_for_target_user("/home/alice")
         assert result == "/opt/hermes"
 
     def test_noop_when_same_user(self, monkeypatch):
         monkeypatch.setattr(Path, "home", staticmethod(lambda: Path("/home/alice")))
         monkeypatch.delenv("HERMES_HOME", raising=False)
 
-        result = gateway_cli._hermes_home_for_target_user("/home/alice")
+        result = gateway_cli._agent_home_for_target_user("/home/alice")
         assert result == "/home/alice/.superforecasting-agent"
 
 

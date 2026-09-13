@@ -26,8 +26,8 @@ def fake_home(tmp_path, monkeypatch):
 
     home = tmp_path / "agent_home"
     home.mkdir()
-    monkeypatch.setattr(fs, "_hermes_home_path", lambda: home)
-    monkeypatch.setattr(fs, "_hermes_root_path", lambda: home)
+    monkeypatch.setattr(fs, "_agent_home_path", lambda: home)
+    monkeypatch.setattr(fs, "_agent_root_path", lambda: home)
     return home
 
 
@@ -117,8 +117,8 @@ def test_root_credential_blocked_under_profile(tmp_path, monkeypatch):
     root = tmp_path / "root"
     home = root / "profiles" / "default"
     home.mkdir(parents=True)
-    monkeypatch.setattr(fs, "_hermes_home_path", lambda: home)
-    monkeypatch.setattr(fs, "_hermes_root_path", lambda: root)
+    monkeypatch.setattr(fs, "_agent_home_path", lambda: home)
+    monkeypatch.setattr(fs, "_agent_root_path", lambda: root)
     (root / "auth.json").write_text("dummy", encoding="utf-8")
     err = fs.get_read_block_error(str(root / "auth.json"))
     assert err is not None and "credential store" in err

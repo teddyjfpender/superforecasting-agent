@@ -53,9 +53,9 @@ from superforecasting_agent.trajectories.reporting import _print_summary
 # Load .env from HERMES_HOME first, then project root as a dev fallback.
 from superforecasting_agent.runtime.env_loader import load_hermes_dotenv
 
-_hermes_home = get_agent_home()
+_agent_home = get_agent_home()
 _project_env = get_install_root() / ".env"
-load_hermes_dotenv(hermes_home=_hermes_home, project_env=_project_env)
+load_hermes_dotenv(hermes_home=_agent_home, project_env=_project_env)
 
 
 

@@ -18,6 +18,12 @@ from websockets.sync.client import connect
 from websockets.typing import Origin
 
 
+def verify_shutdown(returncode: int | None, log: str, *, signal_exit: int) -> None:
+    """An expected signal status cannot substitute for completed shutdown."""
+    assert "Application shutdown complete." in log, log
+    assert returncode in (0, signal_exit), f"Host exit {returncode}: {log}"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--terminal-python", type=Path)
@@ -171,18 +177,30 @@ def main() -> None:
                 while not lines.empty():
                     log.append(lines.get_nowait())
                 stderr.close()
-            for credential in ("isolated-host-verification", "rejected-host-token"):
-                assert credential not in "".join(log), (
-                    "host logged authentication token"
-                )
-            assert "[redacted]" in "".join(log), "handshake logs were not exercised"
-        # Uvicorn re-raises the captured signal after orderly ASGI shutdown.
-        # A signal exit alone is insufficient: require the completion marker too.
-        assert "Application shutdown complete." in "".join(log), "".join(log)
-        expected = (
-            (0, 0xC000013A, -1073741510) if os.name == "nt" else (0, -signal.SIGTERM)
-        )
-        assert child.returncode in expected, "".join(log)
+        for credential in ("isolated-host-verification", "rejected-host-token"):
+            assert credential not in "".join(log), "host logged authentication token"
+        assert "[redacted]" in "".join(log), "handshake logs were not exercised"
+        # Uvicorn restores the original handler and re-raises the signal after
+        # ASGI shutdown. On Windows the CRT default action exits with 3, unlike
+        # an unhandled console event's STATUS_CONTROL_C_EXIT. Verify that action
+        # using this installed interpreter rather than treating any error as OK.
+        signal_exit = -signal.SIGTERM
+        if os.name == "nt":
+            probe = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    "import signal; signal.raise_signal(signal.SIGBREAK)",
+                ],
+                capture_output=True,
+                timeout=5,
+            )
+            assert probe.returncode == 3 and not probe.stderr, (
+                f"Unexpected native SIGBREAK behavior: {probe.returncode}, {probe.stderr!r}"
+            )
+            signal_exit = probe.returncode
+        print(f"Host exit: {child.returncode}; native signal exit: {signal_exit}")
+        verify_shutdown(child.returncode, "".join(log), signal_exit=signal_exit)
         print(
             "Installed headless host: clean termination and no credential logging passed"
         )

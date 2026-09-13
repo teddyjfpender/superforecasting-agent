@@ -72,9 +72,9 @@ class TestIgnoreUserConfigEnvGate:
         (tmp_path / "config.yaml").write_text(config_yaml)
 
     def _reload_cli(self, monkeypatch, tmp_path):
-        """Point cli._hermes_home at tmp_path and return a fresh load_cli_config."""
+        """Point cli._agent_home at tmp_path and return a fresh load_cli_config."""
         import cli
-        monkeypatch.setattr(cli, "_hermes_home", tmp_path)
+        monkeypatch.setattr(cli, "_agent_home", tmp_path)
         return cli.load_cli_config
 
     def test_user_config_loaded_when_flag_unset(self, tmp_path, monkeypatch):
@@ -143,7 +143,7 @@ class TestIgnoreUserConfigEnvGate:
 
         import superforecasting_agent.runtime.config as hc
 
-        monkeypatch.setattr(hc, "ensure_hermes_home", lambda: None)
+        monkeypatch.setattr(hc, "ensure_agent_home", lambda: None)
         monkeypatch.setattr(hc, "get_config_path", lambda: tmp_path / "config.yaml")
         monkeypatch.setenv("FORECAST_IGNORE_USER_CONFIG", "1")
         hc._LOAD_CONFIG_CACHE.clear()

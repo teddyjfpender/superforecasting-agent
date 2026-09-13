@@ -9,7 +9,7 @@ import yaml
 from superforecasting_agent.runtime.config import (
     DEFAULT_CONFIG,
     get_agent_home,
-    ensure_hermes_home,
+    ensure_agent_home,
     get_compatible_custom_providers,
     load_config,
     load_env,
@@ -81,7 +81,7 @@ class TestGetHermesHome:
 class TestEnsureHermesHome:
     def test_creates_subdirs(self, tmp_path):
         with patch.dict(os.environ, {"HERMES_HOME": str(tmp_path)}):
-            ensure_hermes_home()
+            ensure_agent_home()
             assert (tmp_path / "cron").is_dir()
             assert (tmp_path / "sessions").is_dir()
             assert (tmp_path / "logs").is_dir()
@@ -89,7 +89,7 @@ class TestEnsureHermesHome:
 
     def test_creates_default_soul_md_if_missing(self, tmp_path):
         with patch.dict(os.environ, {"HERMES_HOME": str(tmp_path)}):
-            ensure_hermes_home()
+            ensure_agent_home()
             soul_path = tmp_path / "SOUL.md"
             assert soul_path.exists()
             assert soul_path.read_text(encoding="utf-8").strip() != ""
@@ -98,7 +98,7 @@ class TestEnsureHermesHome:
         with patch.dict(os.environ, {"HERMES_HOME": str(tmp_path)}):
             soul_path = tmp_path / "SOUL.md"
             soul_path.write_text("custom soul", encoding="utf-8")
-            ensure_hermes_home()
+            ensure_agent_home()
             assert soul_path.read_text(encoding="utf-8") == "custom soul"
 
 
@@ -932,7 +932,7 @@ def test_captured_config_resolution_matches_file_loader(tmp_path, monkeypatch):
     path = tmp_path / "config.yaml"
     path.write_text(yaml.safe_dump(raw), encoding="utf-8")
     monkeypatch.setattr(config, "get_config_path", lambda: path)
-    monkeypatch.setattr(config, "ensure_hermes_home", lambda: None)
+    monkeypatch.setattr(config, "ensure_agent_home", lambda: None)
     monkeypatch.setattr(config, "_ignore_user_config_requested", lambda: False)
 
     resolved = config.resolve_config(raw)

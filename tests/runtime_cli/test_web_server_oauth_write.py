@@ -20,10 +20,10 @@ class _DummyPool:
 def oauth_file(monkeypatch, tmp_path):
     target = tmp_path / '.anthropic_oauth.json'
     # web_server._save_anthropic_oauth_creds resolves the path at runtime via
-    # `from agent.anthropic_adapter import get_hermes_oauth_file`, so we patch
+    # `from agent.anthropic_adapter import get_agent_oauth_file`, so we patch
     # the getter (NOT the _HERMES_OAUTH_FILE module constant upstream patched).
     monkeypatch.setattr(
-        'superforecasting_agent.credentials.anthropic.get_hermes_oauth_file', lambda: target
+        'superforecasting_agent.credentials.anthropic.get_agent_oauth_file', lambda: target
     )
     monkeypatch.setattr(
         'agent.credential_pool.load_pool', lambda _provider, **_snapshot: _DummyPool()
