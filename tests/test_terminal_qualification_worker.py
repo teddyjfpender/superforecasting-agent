@@ -47,3 +47,19 @@ def test_windows_terminal_probe_isolated_with_visible_diagnostics(
     captured = capsys.readouterr()
     assert captured.out == "terminal output\n"
     assert captured.err == "diagnostic\n"
+
+
+@pytest.mark.parametrize("returncode", [0, 3])
+def test_host_shutdown_requires_completed_lifespan_even_for_expected_exit(returncode):
+    from scripts.verify_headless_host import verify_shutdown
+
+    with pytest.raises(AssertionError):
+        verify_shutdown(returncode, "Waiting for application shutdown.", signal_exit=3)
+    verify_shutdown(returncode, "Application shutdown complete.", signal_exit=3)
+
+
+def test_completed_lifespan_does_not_allow_unrelated_exit_failure():
+    from scripts.verify_headless_host import verify_shutdown
+
+    with pytest.raises(AssertionError, match="Host exit 1"):
+        verify_shutdown(1, "Application shutdown complete.", signal_exit=3)

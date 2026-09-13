@@ -107,3 +107,14 @@ port placeholders and credentials in both argument-based and literal alternate
 messages. Qualification cleanup no longer masks startup errors with an assertion
 that handshakes were exercised. The HTTP import probe explicitly shuts down its
 owned runtime before interpreter exit.
+
+Run `34762679228` at `5f7c47447a7e7a0400ae91cb0f0781fff98ef82d`
+passed installed Windows local and remote terminal interaction, five authenticated
+reconnects and completed ASGI shutdown. Its final exit-status assertion rejected
+the host exit. Uvicorn restores the original handler and re-raises SIGBREAK;
+[Microsoft documents CRT default signal termination as exit 3](https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/signal?view=msvc-170),
+which differs from an unhandled console event. The verifier now measures this
+using a separate child of the same installed interpreter and still requires the
+application shutdown-complete marker. Tests reject missing completion and
+unrelated exit failures. The earlier HTTP import-probe thread warning no longer
+appeared after explicit runtime shutdown in this run.
