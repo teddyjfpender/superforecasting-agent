@@ -44,3 +44,8 @@ Update this guide when entry points or ownership change. See the
 and [engineering backlog](../../TODO.md) for cross-package context.
 
 [↑ Parent directory](../README.md)
+
+Diagnostic capture and upload remain in [debug.py](debug.py). Messaging uses
+[diagnostic_service.py](diagnostic_service.py) for summary-only sharing; all
+sharing paths attach installed versions and sanitize the composed payload through
+the shared [application policy](../application/diagnostics.py).

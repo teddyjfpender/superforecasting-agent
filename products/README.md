@@ -56,7 +56,8 @@ it also produces `dashboard-assets.tar.gz`; extract that archive and set
 Installer selection and upgrade automation support the manifest-selected backend
 and terminal wheels. Backend 0.19.0 → 0.22.1 and terminal 0.1.0 → 0.1.1
 upgrades were exercised on macOS ARM64 and Linux ARM64; the native six-job
-matrix recorded fresh installations without requesting upgrades. See
+matrix now also passes old-wheel upgrades and profile/skill/plugin migrations. See
+[run 34768085661](https://github.com/teddyjfpender/superforecasting-agent/actions/runs/34768085661) and
 [product qualification](../docs/verification/2026-09-13-products/README.md).
 Build/verification commands do not publish packages.
 
@@ -97,8 +98,8 @@ and `FORECAST_TUI_WHEEL` for local companion upgrades. Keep `install-release.sh`
 beside `upgrade.sh` and its migration guard. Hetzner first installation uses the same verified staging owner and accepts
 a local `FORECAST_TUI_WHEEL` companion. Fresh Ubuntu ARM64 container provisioning, SSH/TUI launch and tmux reconnect
 have passed with the separate wheels. Native Windows installation and recovery
-receipts are linked above; broader upgrade and profile migration matrix coverage
-remains a separate qualification task.
+receipts are linked above, including the subsequent six-job upgrade and profile
+migration matrix.
 
 ## Directory guide
 

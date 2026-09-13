@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 STRICT_PYTHON = (
     "scripts/check_naming.py",
     "scripts/push_plan.py",
+    "superforecasting_agent/runtime/diagnostic_service.py",
     "superforecasting_agent/runtime/commands.py",
     "gateway/slash_access.py",
     "gateway/display_config.py",

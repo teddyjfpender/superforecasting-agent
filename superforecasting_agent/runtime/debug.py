@@ -580,14 +580,13 @@ def collect_debug_report(
 
 def run_debug_share(args):
     """Collect debug report + full logs, upload each, print URLs."""
-    _best_effort_sweep_expired_pastes()
-
     log_lines = getattr(args, "lines", 200)
     expiry = getattr(args, "expire", 7)
     local_only = getattr(args, "local", False)
     redact = not getattr(args, "no_redact", False)
 
     if not local_only:
+        _best_effort_sweep_expired_pastes()
         print(_PRIVACY_NOTICE)
 
     print("Collecting debug report...")
@@ -618,6 +617,17 @@ def run_debug_share(args):
         agent_log = dump_text + "\n\n--- full agent.log ---\n" + agent_log
     if gateway_log:
         gateway_log = dump_text + "\n\n--- full gateway.log ---\n" + gateway_log
+
+    # Apply one final boundary to composed payloads, including the system dump.
+    # Field-level dump masking and log capture cannot establish whole-report safety.
+    from superforecasting_agent.application.diagnostics import diagnostic_payload
+
+    sanitize = _redact_log_text if redact else None
+    report = diagnostic_payload(report, sanitize=sanitize)
+    if agent_log:
+        agent_log = diagnostic_payload(agent_log, sanitize=sanitize)
+    if gateway_log:
+        gateway_log = diagnostic_payload(gateway_log, sanitize=sanitize)
 
     # Visible banner so reviewers reading the public paste know redaction
     # was applied at upload time. Banner is omitted under --no-redact.

@@ -13,7 +13,7 @@ Native Windows support is **early beta**. It installs, runs, and passes our Wind
 
 Superforecasting Agent runs natively on Windows 10 and Windows 11 — no WSL, no Cygwin, no Docker. This page is the deep dive: what works natively, what's WSL-only, what the installer actually does, and the Windows-specific knobs you might need to touch.
 
-If you just want to install, the one-liner on the [landing page](/) or [Installation page](../getting-started/installation#windows-native-powershell--early-beta) is all you need. Come back here when something surprises you.
+Beta testers should follow the pinned-wheel [beta installation guide](../getting-started/tester-pilot.md). Use this page for platform details and troubleshooting.
 
 :::tip Want WSL instead?
 If you prefer a real POSIX environment (for the dashboard's embedded terminal, `fork` semantics, Linux-style file watchers, etc.), use the Windows WSL2 guide. Both coexist cleanly: native data lives under `%LOCALAPPDATA%\superforecasting-agent`, WSL data lives under `~/.superforecasting-agent`; legacy `%LOCALAPPDATA%\hermes` and `~/.hermes` homes remain readable during migration.

@@ -9,10 +9,10 @@ body:
         Sorry you are having trouble. Please fill out the details below so we can help reproduce the setup issue.
 
         **Quick checks first:**
-        - Run `superforecasting-agent debug share` and paste the links in the Debug Report section below
-        - If you are in a chat session, you can use `/debug` instead
-        - Pull or check out the latest snapshot branch you are testing
-        - Check the [README troubleshooting section](https://github.com/teddyjfpender/superforecasting-agent/blob/superforecasting-agent-snapshot/README.md#troubleshooting)
+        - Run `superforecasting-agent debug share --local` and review it before attaching safe diagnostics
+        - The `/debug` shortcut uploads immediately; use local diagnostics first
+        - Keep the failing assigned release and report its tag and installed versions
+        - Check the [beta recovery guide](https://github.com/teddyjfpender/superforecasting-agent/blob/superforecasting-agent-snapshot/website/docs/getting-started/tester-pilot.md#4-recover-without-losing-the-reproduction)
         - For general questions, use fork discussions or file an issue with the details below
 
   - type: textarea
@@ -32,10 +32,10 @@ body:
       label: Steps Taken
       description: What did you do? Include the exact commands you ran.
       placeholder: |
-        1. Cloned the alpha snapshot branch
-        2. Ran `uv pip install -e ".[all,dev]"`
+        1. Downloaded the assigned beta wheels and verified their checksums
+        2. Installed both wheels in an isolated Python environment
         3. Selected OpenRouter, entered API key
-        4. Ran `forecast` and got error...
+        4. Ran `superforecasting-agent tui` and got error...
     validations:
       required: true
 
@@ -44,7 +44,8 @@ body:
     attributes:
       label: Installation Method
       options:
-        - Install script (curl | bash)
+        - Assigned beta wheels in an isolated environment
+        - Install script
         - Manual clone + pip/uv install
         - PowerShell installer (Windows)
         - Docker
@@ -71,25 +72,25 @@ body:
     id: superforecasting-agent-version
     attributes:
       label: Superforecasting Agent Version
-      description: Output of `superforecasting-agent version` or `git log -1 --oneline` (if install got that far)
-      placeholder: "2.1.0"
+      description: Assigned release tag, installed backend/TUI versions from local diagnostics, and source commit if applicable
+      placeholder: "v0.22.1; backend 0.22.1; terminal 0.1.1"
+    validations:
+      required: true
 
   - type: textarea
     id: debug-report
     attributes:
       label: Debug Report
       description: |
-        Run `superforecasting-agent debug share` from your terminal and paste the links it prints here.
-        This uploads your system info, config, and recent logs to a paste service automatically.
-
-        If you're in an interactive chat session, you can also use the `/debug` slash command.
-
-        If the upload fails or install didn't get that far, run `superforecasting-agent debug share --local` and paste the output directly.
-        If even that doesn't work, run `superforecasting-agent doctor` and paste that output instead.
+        Run `superforecasting-agent debug share --local` and review the output before attaching it.
+        Default redaction masks secrets, but private forecast text and paths may remain.
+        Do not attach raw profiles, credentials or private ledgers.
+        If installation failed before diagnostics became available, attach the exact safe error text.
       placeholder: |
-        Report   https://paste.rs/abc123
-        agent.log   https://paste.rs/def456
-        gateway.log   https://paste.rs/ghi789
+        Assigned release: ...
+        Installed backend: ...
+        Installed terminal: ...
+        Reviewed diagnostic excerpt: ...
       render: shell
 
   - type: textarea
@@ -107,6 +108,6 @@ body:
       label: What I've Already Tried
       description: List any fixes or workarounds you've already attempted.
       placeholder: |
-        - Reinstalled with `uv pip install -e ".[all,dev]"`
-        - Tried reinstalling with `pip install -e ".[all]"`
+        - Verified the assigned wheel checksums
+        - Ran `python -m pip check` in the beta environment
         - Checked that OPENROUTER_API_KEY is set in ~/.superforecasting-agent/.env

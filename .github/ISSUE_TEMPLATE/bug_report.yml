@@ -10,8 +10,8 @@ body:
 
         **Before submitting**, please:
         - [ ] Search existing issues in this fork to avoid duplicates
-        - [ ] Update to the latest snapshot or branch you are testing
-        - [ ] Run `superforecasting-agent debug share` and paste the links below when logs are relevant
+        - [ ] Record the exact assigned beta release before changing or upgrading it
+        - [ ] Run `superforecasting-agent debug share --local`, review the output, and attach only information safe to share
 
   - type: textarea
     id: description
@@ -92,19 +92,21 @@ body:
     attributes:
       label: Debug Report
       description: |
-        Run `superforecasting-agent debug share` from your terminal and paste the links it prints here.
-        This uploads your system info, config, and recent logs to a paste service automatically.
+        Run `superforecasting-agent debug share --local` and review the report before attaching it.
+        It includes installed backend/TUI versions, system information, configuration and logs.
+        Secrets are redacted by default, but private forecast text and paths may remain.
 
-        If you're in an interactive chat session, you can also use the `/debug` slash command.
+        For an intentional public upload, `superforecasting-agent debug share` uploads immediately.
 
-        If the upload fails, run `superforecasting-agent debug share --local` and paste the output directly.
+        Do not include API keys, raw profiles or private ledger exports. A minimal synthetic reproduction is preferred.
       placeholder: |
-        Report   https://paste.rs/abc123
-        agent.log   https://paste.rs/def456
-        gateway.log   https://paste.rs/ghi789
+        Assigned release: ...
+        Installed backend: ...
+        Installed terminal: ...
+        Reviewed diagnostic excerpt: ...
       render: shell
     validations:
-      required: true
+      required: false
 
   - type: input
     id: os
@@ -126,8 +128,10 @@ body:
     id: superforecasting-agent-version
     attributes:
       label: Superforecasting Agent Version
-      description: Output of `superforecasting-agent version` or `git log -1 --oneline`
-      placeholder: "2.1.0"
+      description: Assigned release tag and installed backend/TUI versions from the local debug report; include the commit for a source build
+      placeholder: "Assigned tag: v0.22.1; backend: 0.22.1; terminal: 0.1.1"
+    validations:
+      required: true
 
   - type: textarea
     id: logs

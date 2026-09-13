@@ -4,6 +4,9 @@ title: "Updating & Uninstalling"
 description: "How to update or uninstall Superforecasting Agent."
 ---
 
+> **Beta scope:** Beta testers should use only coordinator-assigned, pinned artifact bundles and the backup/recovery procedure in the beta guide. The general update commands below are not the supported beta upgrade path. See the [beta guide](./tester-pilot.md).
+
+
 # Updating & Uninstalling
 
 ## Updating
