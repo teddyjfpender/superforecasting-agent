@@ -65,13 +65,14 @@ class ConfigFullResponse(WireModel):
 class ConfigMtimeResponse(WireModel):
     TS_NAME = "ConfigMtimeResponse"
 
-    mtime: int | None = wire_optional()
+    mtime: float | None = wire_optional()
 
 
 class ConfigGetValueRequest(WireModel):
     TS_NAME = "ConfigGetValueRequest"
 
     key: str | None = None
+    session_id: str | None = None
 
 
 class ConfigGetValueResponse(WireModel):
@@ -144,3 +145,13 @@ __all__ = [
     "SetupStatusRequest",
     "SetupStatusResponse",
 ]
+
+
+class ConfigGetResponse(
+    ConfigFullResponse, ConfigGetValueResponse, ConfigMtimeResponse
+):
+    prompt: str | None = wire_optional()
+    model: str | None = wire_optional()
+    provider: str | None = wire_optional()
+    authentication_status: str | None = wire_optional()
+    providers: list[dict[str, Any]] | None = wire_optional()

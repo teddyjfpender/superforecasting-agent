@@ -16,8 +16,16 @@ from typing import Any, Literal
 from protocol.types import WireModel, wire_optional
 
 _SubagentStatus = Literal[
-    "completed", "error", "failed", "interrupted", "queued", "running", "timeout",
-    "unconfirmed", "completion_pending", "cleanup_pending"
+    "completed",
+    "error",
+    "failed",
+    "interrupted",
+    "queued",
+    "running",
+    "timeout",
+    "unconfirmed",
+    "completion_pending",
+    "cleanup_pending",
 ]
 
 
@@ -184,6 +192,10 @@ class SubagentInterruptResponse(WireModel):
 class SpawnTreeListRequest(WireModel):
     TS_NAME = "SpawnTreeListRequest"
 
+    session_id: str | None = None
+    limit: int = 50
+    cross_session: bool = False
+
 
 class SpawnTreeListEntry(WireModel):
     TS_NAME = "SpawnTreeListEntry"
@@ -240,3 +252,15 @@ __all__ = [
     "SpawnTreeLoadRequest",
     "SpawnTreeLoadResponse",
 ]
+
+
+class SpawnTreeSaveRequest(WireModel):
+    session_id: str | None = None
+    subagents: list[Any]
+    label: str = ""
+    started_at: float | None = None
+    finished_at: float | None = None
+
+
+class SpawnTreeSaveResponse(WireModel):
+    path: str

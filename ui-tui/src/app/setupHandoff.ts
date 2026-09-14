@@ -1,6 +1,5 @@
 import type { RunExternalProcess } from '@superforecasting/ink'
 
-import type { SetupStatusResponse } from '../gatewayTypes.js'
 import type { LaunchResult } from '../lib/externalCli.js'
 
 import type { SlashHandlerContext } from './interfaces.js'
@@ -15,7 +14,14 @@ export interface RunExternalSetupOptions {
   suspend: (run: RunExternalProcess) => Promise<void>
 }
 
-export async function runExternalSetup({ args, commandName = 'superforecasting-agent', ctx, done, launcher, suspend }: RunExternalSetupOptions) {
+export async function runExternalSetup({
+  args,
+  commandName = 'superforecasting-agent',
+  ctx,
+  done,
+  launcher,
+  suspend
+}: RunExternalSetupOptions) {
   const { gateway, session, transcript } = ctx
 
   transcript.sys(`launching \`${commandName} ${args.join(' ')}\`…`)
@@ -41,7 +47,7 @@ export async function runExternalSetup({ args, commandName = 'superforecasting-a
     return
   }
 
-  const setup = await gateway.rpc<SetupStatusResponse>('setup.status', {})
+  const setup = await gateway.rpc('setup.status', {})
 
   if (setup?.provider_configured === false) {
     transcript.sys('still no provider configured')

@@ -19,7 +19,7 @@ export function pollAgentsActive(gw: GatewayClient, intervalMs: number = AGENTS_
   let cancelled = false
 
   const poll = () => {
-    gw.request<unknown>('agents.active.summary', {})
+    gw.request('agents.active.summary', {})
       .then(raw => {
         if (cancelled) {
           return

@@ -9,6 +9,7 @@ from __future__ import annotations
 import pytest
 
 from tui_gateway import pm_rpc, server
+from forecasting.pm.model import PMEvent, PMDistribution, PMOutcome, PMOrderBook
 
 
 # ── stub service returning to_dict()-able objects ────────────────────────────
@@ -28,15 +29,15 @@ class StubService:
 
     def list_events(self, *, venue=None, query=None, tag=None, limit=40):
         self.calls.append(("list", venue, query, tag, limit))
-        return [(_Dictable({"event_id": "E1", "title": "Test"}), _Dictable({"outcomes": [1]}))]
+        return [(PMEvent("polymarket", "E1", "Test"), PMDistribution("polymarket", "E1", "Test", outcomes=(PMOutcome("Yes", 1.0, 1.0, "M1"),)))]
 
     def event_detail(self, venue, event_id):
         self.calls.append(("detail", venue, event_id))
-        return _Dictable({"event_id": event_id}), _Dictable({"outcomes": []})
+        return PMEvent(venue, event_id, "Test"), PMDistribution(venue, event_id, "Test")
 
     def orderbook(self, venue, market_id):
         self.calls.append(("book", venue, market_id))
-        return _Dictable({"market_id": market_id, "bids": [], "asks": []})
+        return PMOrderBook(venue, market_id)
 
     def history(self, venue, market_id, *, series_ticker=None, interval="1w", period_interval=60, max_points=200):
         self.calls.append(("history", venue, market_id, interval, series_ticker, period_interval))
@@ -82,7 +83,7 @@ def test_pm_list_shapes_event_plus_distribution(wired):
     assert res["count"] == 1
     row = res["events"][0]
     assert row["event"]["event_id"] == "E1"
-    assert row["distribution"]["outcomes"] == [1]
+    assert row["distribution"]["outcomes"][0]["prob"] == 1.0
     assert svc.calls[0] == ("list", "polymarket", "cpi", None, 5)
 
 
@@ -93,7 +94,7 @@ def test_pm_list_carries_stale_marker_from_cold_cache():
 
     class StaleStub:
         def list_events_payload(self, *, venue=None, query=None, tag=None, limit=40):
-            return [{"event": {"event_id": "E1"}, "distribution": {"outcomes": []}}], True
+            return [{"event": PMEvent("polymarket", "E1", "Test").to_dict(), "distribution": PMDistribution("polymarket", "E1", "Test").to_dict()}], True
 
     pm_rpc.set_service(StaleStub())
     try:
@@ -109,7 +110,7 @@ def test_pm_list_omits_stale_marker_when_fresh():
 
     class FreshStub:
         def list_events_payload(self, *, venue=None, query=None, tag=None, limit=40):
-            return [{"event": {"event_id": "E1"}, "distribution": {"outcomes": []}}], False
+            return [{"event": PMEvent("polymarket", "E1", "Test").to_dict(), "distribution": PMDistribution("polymarket", "E1", "Test").to_dict()}], False
 
     pm_rpc.set_service(FreshStub())
     try:

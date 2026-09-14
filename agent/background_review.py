@@ -342,15 +342,18 @@ def _run_review_in_thread(
     def _bg_review_auto_deny(command, description, **kwargs):
         logger.warning(
             "Background review auto-denied dangerous command: %s (%s)",
-            command, description,
+            command,
+            description,
         )
         return "deny"
+
     try:
         _set_approval_callback(_bg_review_auto_deny)
     except Exception:
         pass
 
     from agent.review_lifecycle import reviews_for
+
     owner = reviews_for(agent)
     review_agent = None
     review_messages: List[Dict] = []
@@ -363,18 +366,10 @@ def _run_review_in_thread(
         # creds, or credential-pool setups where the resolver can't
         # reconstruct auth from scratch -- producing the spurious
         # "No LLM provider configured" warning at end of turn.
-        _parent_runtime = agent._current_main_runtime()
-        _parent_api_mode = _parent_runtime.get("api_mode") or None
-        # The review fork needs to call agent-loop tools (memory,
-        # skill_manage). Those tools require Hermes' own dispatch,
-        # which the codex_app_server runtime bypasses entirely
-        # (it runs the turn inside codex's subprocess). So when
-        # the parent is on codex_app_server, downgrade the review
-        # fork to codex_responses — same auth/credentials, but
-        # talks to the OpenAI Responses API directly so Hermes
-        # owns the loop and the agent-loop tools dispatch.
-        if _parent_api_mode == "codex_app_server":
-            _parent_api_mode = "codex_responses"
+        from agent.review_options import review_options
+        from superforecasting_agent.runtime.config import load_config
+
+        options, routed = review_options(agent, load_config())
         # skip_memory=True keeps the review fork from
         # touching external memory plugins (honcho, mem0,
         # supermemory, etc.).  Without it, the fork's
@@ -391,15 +386,9 @@ def _run_review_in_thread(
         # the review still land on disk; the review just
         # has zero side effects on external providers.
         review_agent = AIAgent(
-            model=agent.model,
-            max_iterations=16,
+            **options,
             quiet_mode=True,
             platform=agent.platform,
-            provider=agent.provider,
-            api_mode=_parent_api_mode,
-            base_url=_parent_runtime.get("base_url") or None,
-            api_key=_parent_runtime.get("api_key") or None,
-            credential_pool=getattr(agent, "_credential_pool", None),
             parent_session_id=agent.session_id,
             skip_memory=True,
         )
@@ -430,7 +419,8 @@ def _run_review_in_thread(
         # issue #25322 and PR #17276 for the full analysis +
         # measured impact (~26% end-to-end cost reduction on
         # Sonnet 4.5).
-        review_agent._cached_system_prompt = agent._cached_system_prompt
+        if not routed:
+            review_agent._cached_system_prompt = agent._cached_system_prompt
         # Defensive: pin session_start + session_id to the
         # parent's so any code path that re-renders parts of
         # the system prompt (compression, plugin hooks) still
@@ -445,11 +435,11 @@ def _run_review_in_thread(
         review_agent._owns_session_tools = False
         review_agent.session_id = agent.session_id
 
-        from superforecasting_agent.tooling.runtime import get_tool_definitions
         from superforecasting_agent.runtime.plugins import (
-            set_thread_tool_whitelist,
             clear_thread_tool_whitelist,
+            set_thread_tool_whitelist,
         )
+        from superforecasting_agent.tooling.runtime import get_tool_definitions
 
         review_whitelist = {
             t["function"]["name"]
@@ -468,8 +458,7 @@ def _run_review_in_thread(
         try:
             review_agent.run_conversation(
                 user_message=(
-                    prompt
-                    + "\n\nYou can only call memory and skill "
+                    prompt + "\n\nYou can only call memory and skill "
                     "management tools. Other tools will be denied "
                     "at runtime — do not attempt them."
                 ),
@@ -495,15 +484,11 @@ def _run_review_in_thread(
 
         if actions:
             summary = " · ".join(dict.fromkeys(actions))
-            agent._safe_print(
-                f"  💾 Self-improvement review: {summary}"
-            )
+            agent._safe_print(f"  💾 Self-improvement review: {summary}")
             _bg_cb = agent.background_review_callback
             if _bg_cb:
                 try:
-                    _bg_cb(
-                        f"💾 Self-improvement review: {summary}"
-                    )
+                    _bg_cb(f"💾 Self-improvement review: {summary}")
                 except Exception:
                     pass
 

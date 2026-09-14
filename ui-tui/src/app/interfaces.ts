@@ -5,7 +5,7 @@ import type { PasteEvent } from '../components/textInput.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import type { BuildInfoPayload, ImageAttachResponse } from '../gatewayTypes.js'
 import type { ParsedVoiceRecordKey } from '../lib/platform.js'
-import type { RpcResult } from '../lib/rpc.js'
+import type { RpcArgs, RpcMethod, RpcMethods } from '../protocol/generated.js'
 import type { Theme } from '../theme.js'
 import type {
   ApprovalReq,
@@ -59,7 +59,7 @@ export interface CompletionItem {
 }
 
 export interface GatewayRpc {
-  <T extends RpcResult = RpcResult>(method: string, params?: Record<string, unknown>): Promise<null | T>
+  <M extends RpcMethod>(method: M, ...args: RpcArgs<M>): Promise<null | RpcMethods[M]['result']>
 }
 
 export interface GatewayServices {

@@ -5,7 +5,7 @@ import {
   STREAM_SCROLL_BATCH_MS,
   STREAM_TYPING_BATCH_MS
 } from '../config/timing.js'
-import type { SessionInterruptResponse, SubagentEventPayload } from '../gatewayTypes.js'
+import type { SubagentEventPayload } from '../gatewayTypes.js'
 import { appendToolShelfMessage, isToolShelfMessage } from '../lib/liveProgress.js'
 import { hasReasoningTag, splitReasoning } from '../lib/reasoning.js'
 import {
@@ -16,6 +16,7 @@ import {
   sameToolTrailGroup,
   toolTrailLabel
 } from '../lib/text.js'
+import type { RpcRequest } from '../protocol/generated.js'
 import type { ActiveTool, ActivityItem, Msg, SubagentProgress, TodoItem } from '../types.js'
 
 import { resetFlowOverlays } from './overlayStore.js'
@@ -92,7 +93,7 @@ const finalTail = (finalText: string, segments: Msg[]) => {
 
 export interface InterruptDeps {
   appendMessage: (msg: Msg) => void
-  gw: { request: <T = unknown>(method: string, params?: Record<string, unknown>) => Promise<T> }
+  gw: { request: RpcRequest }
   sid: string
   sys: (text: string) => void
 }
@@ -183,7 +184,7 @@ class TurnController {
 
   interruptTurn({ appendMessage, gw, sid, sys }: InterruptDeps) {
     this.interrupted = true
-    gw.request<SessionInterruptResponse>('session.interrupt', { session_id: sid }).catch(() => {})
+    gw.request('session.interrupt', { session_id: sid }).catch(() => {})
 
     this.closeReasoningSegment()
 

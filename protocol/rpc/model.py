@@ -26,6 +26,8 @@ class ModelOptionProvider(WireModel):
 class ModelOptionsRequest(WireModel):
     TS_NAME = "ModelOptionsRequest"
 
+    session_id: str | None = None
+
 
 class ModelOptionsResponse(WireModel):
     TS_NAME = "ModelOptionsResponse"
@@ -37,3 +39,45 @@ class ModelOptionsResponse(WireModel):
 
 
 __all__ = ["ModelOptionProvider", "ModelOptionsRequest", "ModelOptionsResponse"]
+
+
+class ModelSaveKeyRequest(WireModel):
+    slug: str
+    api_key: str
+    session_id: str | None = None
+
+
+class ModelDisconnectRequest(WireModel):
+    slug: str
+
+
+class ModelDisconnectResponse(WireModel):
+    slug: str
+    name: str
+    disconnected: bool
+
+
+class AuthStartRequest(WireModel):
+    provider: str = "openai-codex"
+    session_id: str | None = None
+
+
+class AuthStartResponse(WireModel):
+    provider: str
+    url: str
+    user_code: str
+    interval: float
+
+
+class AuthPollRequest(WireModel):
+    cancel: bool = False
+    session_id: str | None = None
+
+
+class AuthPollResponse(WireModel):
+    status: str
+    provider: str | None = wire_optional(nullable=True)
+    url: str | None = wire_optional(nullable=True)
+    user_code: str | None = wire_optional(nullable=True)
+    message: str | None = wire_optional()
+    credentials_applied: bool | None = wire_optional()

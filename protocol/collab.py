@@ -65,6 +65,7 @@ KIND_REQUEST = "request"
 
 # ── canonical serialisation (byte-stable so a round-trip can be compared) ─────
 
+
 def canonical_json(obj: Any) -> str:
     """Deterministic JSON: sorted keys, no whitespace, unicode preserved.
 
@@ -88,6 +89,7 @@ def _now_iso() -> str:
 
 
 # ── shared value objects ──────────────────────────────────────────────────────
+
 
 class SfpSender(WireModel):
     """The immutable provenance of a payload — mirrors
@@ -146,6 +148,7 @@ class SfpFilePointer(WireModel):
 
 
 # ── the six body kinds ────────────────────────────────────────────────────────
+
 
 class ForecastCardBody(WireModel):
     """``forecast.card`` — a scoreable forecast shared as a card.
@@ -262,6 +265,7 @@ VALID_KINDS = frozenset(BODY_MODEL_BY_KIND)
 
 # ── the envelope ──────────────────────────────────────────────────────────────
 
+
 class SfpEnvelope(WireModel):
     """The ``sfp/1`` envelope: ``{v, kind, sender, ts, body}``.
 
@@ -307,8 +311,12 @@ class SfpEnvelope(WireModel):
 
         if isinstance(sender, dict):
             sender = SfpSender.model_validate(sender)
-        body_dict = body.model_dump(mode="json") if isinstance(body, WireModel) else dict(body)
-        return cls(v=SFP_VERSION, kind=kind, sender=sender, ts=ts or _now_iso(), body=body_dict)
+        body_dict = (
+            body.model_dump(mode="json") if isinstance(body, WireModel) else dict(body)
+        )
+        return cls(
+            v=SFP_VERSION, kind=kind, sender=sender, ts=ts or _now_iso(), body=body_dict
+        )
 
     def canonical_body_json(self) -> str:
         return canonical_json(self.body)
@@ -350,6 +358,7 @@ def parse_body(envelope: SfpEnvelope) -> WireModel:
 
 # ── size cap + overflow ───────────────────────────────────────────────────────
 
+
 class SfpSizeError(ValueError):
     """Raised when a metadata payload exceeds the Slack 8 KB cap and cannot be
     carried inline (names the byte count it refused)."""
@@ -369,7 +378,9 @@ def metadata_byte_size(payload: dict[str, Any]) -> int:
     return len(canonical_json(payload).encode("utf-8"))
 
 
-def validate_metadata_size(payload: dict[str, Any], *, limit: int = SFP_MAX_METADATA_BYTES) -> int:
+def validate_metadata_size(
+    payload: dict[str, Any], *, limit: int = SFP_MAX_METADATA_BYTES
+) -> int:
     """Assert *payload* fits the metadata cap; return its byte size or raise
     :class:`SfpSizeError` naming the overflow."""
 
@@ -413,7 +424,9 @@ def build_metadata(
     inline_payload = envelope.model_dump(mode="json")
     event_type = event_type_for(envelope.kind)
     if metadata_byte_size(inline_payload) <= limit:
-        return SfpMetadata(event_type=event_type, event_payload=inline_payload, overflow=False)
+        return SfpMetadata(
+            event_type=event_type, event_payload=inline_payload, overflow=False
+        )
 
     body_json = envelope.canonical_body_json()
     digest = sha256_hex(body_json)

@@ -89,3 +89,5 @@ Code-execution socket and remote-file RPC workers use this boundary. Tool
 selection remains an intersection with the sandbox allow-list: `None` retains the
 compatibility default, while an explicit empty or non-overlapping selection grants
 no RPC tools. Process lifetime and confirmed cleanup remain separate concerns.
+
+`mcp_http.py` caps MCP bodies and individual SSE events before SDK parsing. The [runtime controls guide](../../docs/architecture/research-runtime-controls.md) describes limits and transport compatibility.

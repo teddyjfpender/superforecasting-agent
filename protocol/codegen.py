@@ -19,8 +19,9 @@ from pathlib import Path
 from types import UnionType
 from typing import Any, Literal, Union, get_args, get_origin
 
-from protocol import EVENT_SPECS, PROTOCOL_VERSION, registered_models
-from protocol.types import WireModel
+from pydantic import BaseModel
+
+from protocol import EVENT_SPECS, PROTOCOL_VERSION, RPC_SPECS, registered_models
 
 _NONE = type(None)
 
@@ -38,8 +39,8 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
-def _ts_name(model: type[WireModel]) -> str:
-    return model.TS_NAME or model.__name__
+def _ts_name(model: type[BaseModel]) -> str:
+    return getattr(model, "TS_NAME", "") or model.__name__
 
 
 def _event_const_name(wire_name: str) -> str:
@@ -78,10 +79,12 @@ def _ts_scalar(annotation: Any) -> str:
         # deterministic diff-stable line (TS unions are order-independent).
         return " | ".join(sorted(_ts_scalar(member) for member in annotation))
 
-    if isinstance(annotation, type) and issubclass(annotation, WireModel):
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
         return _ts_name(annotation)
 
     origin = get_origin(annotation)
+    if origin in (Union, UnionType):
+        return " | ".join(sorted(_ts_scalar(member) for member in get_args(annotation)))
     if origin is Literal:
         # A ``Literal['a', 'b']`` becomes a TS string-literal union — sorted for a
         # deterministic diff-stable line (TS unions are order-independent). String
@@ -137,7 +140,9 @@ def _field_line(name: str, field: Any) -> str:
     return f"  {name}: {ts}"
 
 
-def _interface(model: type[WireModel]) -> str:
+def _interface(model: type[BaseModel]) -> str:
+    if getattr(model, "__pydantic_root_model__", False):
+        return f"export type {_ts_name(model)} = {_ts_scalar(model.model_fields['root'].annotation)}"
     lines = [f"export interface {_ts_name(model)} {{"]
     for field_name in sorted(model.model_fields):
         lines.append(_field_line(field_name, model.model_fields[field_name]))
@@ -145,11 +150,11 @@ def _interface(model: type[WireModel]) -> str:
     return "\n".join(lines)
 
 
-def _collect(models: list[type[WireModel]]) -> list[type[WireModel]]:
+def _collect(models: list[type[BaseModel]]) -> list[type[BaseModel]]:
     """Transitively collect every model reachable from ``models``, deduped by TS
     name and returned in a stable (sorted) order."""
 
-    seen: dict[str, type[WireModel]] = {}
+    seen: dict[str, type[BaseModel]] = {}
     stack = list(models)
     while stack:
         model = stack.pop()
@@ -170,13 +175,15 @@ def _collect(models: list[type[WireModel]]) -> list[type[WireModel]]:
                 elif get_origin(candidate) in (dict,):
                     args = get_args(candidate)
                     candidate = args[1] if len(args) == 2 else Any
-                if isinstance(candidate, type) and issubclass(candidate, WireModel):
+                if isinstance(candidate, type) and issubclass(candidate, BaseModel):
                     stack.append(candidate)
     return [seen[name] for name in sorted(seen)]
 
 
 def render() -> str:
     """Render the full ``generated.ts`` source as a string."""
+
+    from protocol.server_requests import SERVER_REQUESTS
 
     models = _collect(registered_models())
     event_names = sorted(spec.name for spec in EVENT_SPECS)
@@ -187,19 +194,56 @@ def render() -> str:
     union = " | ".join(f"'{name}'" for name in event_names)
     blocks.append(f"export type WireEventName = {union}")
     literal = ", ".join(f"'{name}'" for name in event_names)
-    blocks.append(f"export const WIRE_EVENT_NAMES: readonly WireEventName[] = [{literal}]")
+    blocks.append(
+        f"export const WIRE_EVENT_NAMES: readonly WireEventName[] = [{literal}]"
+    )
 
     # Named constants — the ONLY place a raw event-name literal is allowed to
     # live. Every gw.on/emit/switch-case in the TUI references `WireEvent.X`, so
     # a renamed/removed event is a compile error, never a silent miss.
-    const_entries = sorted(
-        (_event_const_name(name), name) for name in event_names
-    )
+    const_entries = sorted((_event_const_name(name), name) for name in event_names)
     const_lines = "\n".join(f"  {key}: '{name}'," for key, name in const_entries)
     blocks.append(f"export const WireEvent = {{\n{const_lines}\n}} as const")
 
     for model in models:
         blocks.append(_interface(model))
+
+    names = ", ".join(repr(name) for name in sorted(SERVER_REQUESTS))
+    blocks.append(f"export const SERVER_REQUEST_NAMES = [{names}] as const")
+    server_methods = ["export interface ServerRequestMethods {"]
+    for name, (request, result) in sorted(SERVER_REQUESTS.items()):
+        server_methods.append(
+            f"  '{name}': {{ params: Omit<{_ts_name(request)}, 'request_id'> & {{ session_id: string }}; result: {_ts_name(result)} }}"
+        )
+    server_methods.append("}")
+    blocks.append("\n".join(server_methods))
+
+    methods = ["export interface RpcMethods {"]
+    for spec in sorted(RPC_SPECS, key=lambda item: item.method):
+        methods.append(f"  '{spec.method}': {{")
+        if not spec.request.model_fields:
+            methods.append("    params: Record<string, never>")
+            methods.append(f"    result: {_ts_name(spec.response)}")
+            methods.append("  }")
+            continue
+        methods.append("    params: {")
+        for name, field in sorted(spec.request.model_fields.items()):
+            line = _field_line(name, field)
+            if not field.is_required() and f"{name}?:" not in line:
+                line = line.replace(f"{name}:", f"{name}?:", 1)
+            methods.append("    " + line)
+        methods.append("    }")
+        methods.append(f"    result: {_ts_name(spec.response)}")
+        methods.append("  }")
+    methods.append("}")
+    blocks.append("\n".join(methods))
+    blocks.append("export type RpcMethod = keyof RpcMethods")
+    blocks.append(
+        "export type RpcArgs<M extends RpcMethod> = {} extends RpcMethods[M]['params'] ? [params?: RpcMethods[M]['params']] : [params: RpcMethods[M]['params']]"
+    )
+    blocks.append(
+        "export type RpcRequest = <M extends RpcMethod>(method: M, ...args: RpcArgs<M>) => Promise<RpcMethods[M]['result']>"
+    )
 
     return "\n\n".join(blocks) + "\n"
 

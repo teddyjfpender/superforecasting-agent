@@ -698,8 +698,7 @@ def _reset_module_state():
     try:
         from tui_gateway import server as _tui_server
         retire_test_sessions(_tui_server)
-        _tui_server._pending.clear()
-        _tui_server._answers.clear()
+        _tui_server._server_requests.cancel_session(None, "test teardown")
     except Exception:
         pass
 
@@ -712,6 +711,7 @@ def _reset_module_state():
         _approval_mod._pending.clear()
         _approval_mod._gateway_queues.clear()
         _approval_mod._gateway_notify_cbs.clear()
+        _approval_mod._gateway_settle_cbs.clear()
         # ContextVar: reset to empty string so get_current_session_key()
         # falls through to the env var / default path, matching a fresh
         # process.

@@ -1430,6 +1430,10 @@ class MCPServerTask:
                 "Upgrade the mcp package to get HTTP support."
             )
 
+        from functools import partial
+
+        from superforecasting_agent.tooling.mcp_http import client as bounded_mcp_client
+
         url = config["url"]
         headers = dict(config.get("headers") or {})
         # Some MCP servers require MCP-Protocol-Version on the initial
@@ -1451,8 +1455,11 @@ class MCPServerTask:
         if self._auth_type == "oauth":
             try:
                 from tools.mcp_oauth_manager import get_manager
+
                 _oauth_auth = get_manager().get_or_build_provider(
-                    self.name, url, config.get("oauth"),
+                    self.name,
+                    url,
+                    config.get("oauth"),
                 )
             except Exception as exc:
                 logger.warning("MCP OAuth setup failed for '%s': %s", self.name, exc)
@@ -1485,6 +1492,7 @@ class MCPServerTask:
                 "headers": headers or None,
                 "timeout": float(connect_timeout),
                 "sse_read_timeout": 300.0,
+                "httpx_client_factory": partial(bounded_mcp_client, verify=ssl_verify),
             }
             if _oauth_auth is not None:
                 # Pass OAuth auth through to sse_client so SSE MCP servers
@@ -1503,7 +1511,8 @@ class MCPServerTask:
                     if reason == "reconnect":
                         logger.info(
                             "MCP server '%s': reconnect requested — "
-                            "tearing down SSE session", self.name,
+                            "tearing down SSE session",
+                            self.name,
                         )
             return
 
@@ -1519,7 +1528,9 @@ class MCPServerTask:
                 if response.is_redirect and response.next_request:
                     target = response.next_request.url
                     if (target.scheme, target.host, target.port) != (
-                        _original_url.scheme, _original_url.host, _original_url.port,
+                        _original_url.scheme,
+                        _original_url.host,
+                        _original_url.port,
                     ):
                         response.next_request.headers.pop("authorization", None)
                         response.next_request.headers.pop("Authorization", None)
@@ -1537,11 +1548,15 @@ class MCPServerTask:
 
             # Caller owns the client lifecycle — the SDK skips cleanup when
             # http_client is provided, so we wrap in async-with.
-            async with httpx.AsyncClient(**client_kwargs) as http_client:
+            async with bounded_mcp_client(**client_kwargs) as http_client:
                 async with streamable_http_client(url, http_client=http_client) as (
-                    read_stream, write_stream, _get_session_id,
+                    read_stream,
+                    write_stream,
+                    _get_session_id,
                 ):
-                    async with ClientSession(read_stream, write_stream, **sampling_kwargs) as session:
+                    async with ClientSession(
+                        read_stream, write_stream, **sampling_kwargs
+                    ) as session:
                         self.initialize_result = await session.initialize()
                         self.session = session
                         await self._discover_tools()
@@ -1550,21 +1565,26 @@ class MCPServerTask:
                         if reason == "reconnect":
                             logger.info(
                                 "MCP server '%s': reconnect requested — "
-                                "tearing down HTTP session", self.name,
+                                "tearing down HTTP session",
+                                self.name,
                             )
         else:
             # Deprecated API (mcp < 1.24.0): manages httpx client internally.
             _http_kwargs: dict = {
                 "headers": headers,
                 "timeout": float(connect_timeout),
-                "verify": ssl_verify,
+                "httpx_client_factory": partial(bounded_mcp_client, verify=ssl_verify),
             }
             if _oauth_auth is not None:
                 _http_kwargs["auth"] = _oauth_auth
             async with streamablehttp_client(url, **_http_kwargs) as (
-                read_stream, write_stream, _get_session_id,
+                read_stream,
+                write_stream,
+                _get_session_id,
             ):
-                async with ClientSession(read_stream, write_stream, **sampling_kwargs) as session:
+                async with ClientSession(
+                    read_stream, write_stream, **sampling_kwargs
+                ) as session:
                     self.initialize_result = await session.initialize()
                     self.session = session
                     await self._discover_tools()
@@ -1573,7 +1593,8 @@ class MCPServerTask:
                     if reason == "reconnect":
                         logger.info(
                             "MCP server '%s': reconnect requested — "
-                            "tearing down legacy HTTP session", self.name,
+                            "tearing down legacy HTTP session",
+                            self.name,
                         )
 
     async def _discover_tools(self):

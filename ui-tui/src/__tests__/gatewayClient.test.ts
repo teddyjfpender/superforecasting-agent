@@ -138,13 +138,85 @@ describe('GatewayClient websocket attach mode', () => {
     }
   })
 
+  it('correlates queued prompts, rejects duplicate answers and withdraws cancellation', async () => {
+    process.env.SUPERFORECASTING_AGENT_TUI_GATEWAY_URL = 'ws://gateway.test/api/ws'
+    const gw = new GatewayClient()
+    gw.start()
+    const socket = FakeWebSocket.instances[0]!
+    socket.open()
+    const cancelled = vi.fn()
+    gw.on('prompt.cancelled', cancelled)
+
+    const request = (id: string) =>
+      socket.message(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id,
+          method: 'clarify',
+          params: { session_id: 's', question: 'Choose', choices: [] }
+        })
+      )
+
+    try {
+      request('srq-first')
+      request('srq-second')
+      await expect(gw.replyPrompt('secret', 'srq-first', { value: 'wrong kind' })).rejects.toThrow('kind')
+      await gw.replyPrompt('clarify', 'srq-first', { answer: 'yes' })
+      expect(JSON.parse(socket.sent.at(-1)!)).toEqual({ jsonrpc: '2.0', id: 'srq-first', result: { answer: 'yes' } })
+      await expect(gw.replyPrompt('clarify', 'srq-first', { answer: 'duplicate' })).rejects.toThrow('already')
+      request('srq-first')
+      expect(gw.hasPrompt('srq-first')).toBe(false)
+      socket.message(JSON.stringify({ jsonrpc: '2.0', method: 'request.cancel', params: { id: 'srq-second' } }))
+      expect(cancelled).toHaveBeenCalledWith({ requestId: 'srq-second', sessionId: 's' })
+      await expect(gw.replyPrompt('clarify', 'srq-second', { answer: 'late' })).rejects.toThrow('already')
+    } finally {
+      await gw.kill()
+    }
+  })
+
+  it.each([false, true])('restores server-owned prompts after reconnect, including a lost answer (%s)', async lostAnswer => {
+    process.env.SUPERFORECASTING_AGENT_TUI_GATEWAY_URL = 'ws://gateway.test/api/ws'
+    const gw = new GatewayClient()
+    gw.start()
+    const first = FakeWebSocket.instances[0]!
+    first.open()
+    const frame = { jsonrpc: '2.0', id: 'srq-one', method: 'sudo', params: { session_id: 's' } }
+
+    try {
+      first.message(JSON.stringify(frame))
+
+      if (lostAnswer) {await gw.replyPrompt('sudo', 'srq-one', {password: 'lost-in-transit'})}
+      first.close()
+      expect(gw.hasPrompt('srq-one')).toBe(false)
+      gw.reconnect()
+      const second = FakeWebSocket.instances.at(-1)!
+      second.open()
+      const resume = gw.request('session.resume', { session_id: 's' })
+      await Promise.resolve()
+      const outbound = JSON.parse(second.sent.at(-1)!)
+      second.message(
+        JSON.stringify({ jsonrpc: '2.0', id: outbound.id, result: { session_id: 's', open_requests: [frame] } })
+      )
+      await resume
+      await gw.replyPrompt('sudo', 'srq-one', { password: 'only-new-peer' })
+      expect(JSON.parse(second.sent.at(-1)!)).toEqual({
+        jsonrpc: '2.0',
+        id: 'srq-one',
+        result: { password: 'only-new-peer' }
+      })
+      expect(first.sent).toHaveLength(lostAnswer ? 1 : 0)
+    } finally {
+      await gw.kill()
+    }
+  })
+
   it('waits for websocket open and resolves RPC requests', async () => {
     process.env.HERMES_TUI_GATEWAY_URL = 'ws://gateway.test/api/ws?token=abc'
     const gw = new GatewayClient()
 
     gw.start()
     const gatewaySocket = FakeWebSocket.instances[0]!
-    const req = gw.request<{ ok: boolean }>('session.create', { cols: 80 })
+    const req = gw.request('session.create', { cols: 80 })
 
     expect(gatewaySocket.sent).toHaveLength(0)
     gatewaySocket.open()
@@ -163,7 +235,7 @@ describe('GatewayClient websocket attach mode', () => {
     'keeps acknowledged commands pending until %s',
     async ending => {
       vi.useFakeTimers()
-      process.env.HERMES_TUI_GATEWAY_URL = 'ws://gateway.test/api/ws'
+      process.env.SUPERFORECASTING_AGENT_TUI_GATEWAY_URL = 'ws://gateway.test/api/ws'
       const gw = new GatewayClient()
 
       try {
@@ -218,7 +290,7 @@ describe('GatewayClient websocket attach mode', () => {
     'does not extend an RPC deadline for %s acknowledgements',
     async mismatch => {
       vi.useFakeTimers()
-      process.env.HERMES_TUI_GATEWAY_URL = 'ws://gateway.test/api/ws'
+      process.env.SUPERFORECASTING_AGENT_TUI_GATEWAY_URL = 'ws://gateway.test/api/ws'
       const gw = new GatewayClient()
 
       try {
@@ -259,7 +331,7 @@ describe('GatewayClient websocket attach mode', () => {
 
     gw.start()
     const gatewaySocket = FakeWebSocket.instances[0]!
-    const req = gw.request<{ ok: boolean }>('session.create', { cols: 80 })
+    const req = gw.request('session.create', { cols: 80 })
 
     gatewaySocket.open()
     await vi.waitFor(() => expect(gatewaySocket.sent).toHaveLength(1))

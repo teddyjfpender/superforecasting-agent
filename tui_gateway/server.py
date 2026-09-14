@@ -228,8 +228,9 @@ def start_build_check() -> None:
 from tui_gateway.render import make_stream_renderer, render_diff, render_message
 
 _methods: dict[str, callable] = {}
-_pending: dict[str, tuple[str, threading.Event]] = {}
-_answers: dict[str, str] = {}
+from tui_gateway.server_requests import ServerRequests
+
+_server_requests = ServerRequests()
 _stdout_lock = threading.Lock()
 _DETAIL_SECTION_NAMES = ("thinking", "tools", "subagents", "activity")
 _DETAIL_MODES = frozenset({"hidden", "collapsed", "expanded"})
@@ -734,28 +735,56 @@ def _turn_recovery(db, session_key, *, recover=False):
 def _emit(event: str, sid: str, payload: dict | None = None):
     session = _host.sessions.get(sid, {})
     turn_id = session.get("turn_id")
-    if turn_id and event in ("message.start", "message.delta", "message.complete", "error"):
+    if turn_id and event in (
+        "message.start",
+        "message.delta",
+        "message.complete",
+        "error",
+    ):
         payload = dict(payload or {})
         if payload.get("turn_id", turn_id) != turn_id:
             return
         payload["turn_id"] = turn_id
         try:
             from superforecasting_agent.storage import turns as turn_journal
+
             status = "error" if event == "error" else payload.get("status", "running")
-            receipt = turn_journal.transition(_get_db(), turn_id, status,
+            receipt = turn_journal.transition(
+                _get_db(),
+                turn_id,
+                status,
                 delta=payload.get("text", "") if event == "message.delta" else None,
-                text=(payload.get("text") or None) if event == "message.complete" else None,
-                error=payload.get("message") if event == "error" else None)
-            if event in ("message.start", "message.delta") and receipt["status"] in turn_journal.TERMINAL:
+                text=(payload.get("text") or None)
+                if event == "message.complete"
+                else None,
+                error=payload.get("message") if event == "error" else None,
+            )
+            if (
+                event in ("message.start", "message.delta")
+                and receipt["status"] in turn_journal.TERMINAL
+            ):
                 return
             payload["durable_status"] = receipt["status"]
         except Exception:
             logger.exception("Turn receipt could not be persisted")
             payload["durable_status"] = "unavailable"
-            payload["warning"] = "Turn recovery state could not be saved; keep this response before exiting."
-    elif session.get("turn_persistence_unavailable") and event in ("message.start", "message.delta", "message.complete", "error"):
-        payload = {**(payload or {}), "durable_status": "unavailable",
-                   "warning": "Session storage is unavailable; keep this response before exiting."}
+            payload["warning"] = (
+                "Turn recovery state could not be saved; keep this response before exiting."
+            )
+    elif session.get("turn_persistence_unavailable") and event in (
+        "message.start",
+        "message.delta",
+        "message.complete",
+        "error",
+    ):
+        payload = {
+            **(payload or {}),
+            "durable_status": "unavailable",
+            "warning": "Session storage is unavailable; keep this response before exiting.",
+        }
+    from protocol.validation import check_event
+
+    check_event(event, payload)
     params = {"type": event, "session_id": sid}
     if payload is not None:
         params["payload"] = payload
@@ -820,8 +849,11 @@ def register_method(name: str, fn: "callable") -> "callable":
         raise ValueError("register_method: name must be a non-empty string")
     if not callable(fn):
         raise TypeError("register_method: fn must be callable")
-    _methods[name] = fn
-    return fn
+    from protocol.validation import contract_handler
+
+    wrapped = contract_handler(name, fn)
+    _methods[name] = wrapped
+    return wrapped
 
 
 def method(name: str):
@@ -832,58 +864,8 @@ def method(name: str):
 
 
 def rpc_validated(name: str):
-    """``@method`` + Arc-A protocol-model validation for the ``forecast.*`` family.
-
-    VALIDATE-ONLY semantics — deliberately safer than the pm/market re-dump path:
-    the request is checked against the registered request model and the SUCCESS
-    result against the response model, but the handler's ORIGINAL result is ALWAYS
-    returned UNCHANGED. This family's responses are big, partial builder payloads;
-    re-serialising them would risk dropping/adding keys, so we validate for DRIFT
-    only (a genuine handler/model disagreement is logged) and the wire can never
-    regress — the JSON on the wire is byte-for-byte what the handler emitted.
-
-    The request is validated-and-LOGGED but NEVER short-circuits: the forecast
-    handlers own a richer error taxonomy (4003 / 4004 / 5008 / 5009) than pm/market's
-    uniform -32602, so the handler's own field checks stay the sole gate and no error
-    code changes. Falls back to a plain ``@method`` registration if the method has no
-    registered spec (it always does — every wrapped method is in ``RPC_SPECS``)."""
-
-    try:
-        from pydantic import ValidationError
-
-        from protocol import RPC_BY_METHOD
-    except Exception:  # pragma: no cover - the protocol package is always importable
-        return method(name)
-
-    spec = RPC_BY_METHOD.get(name)
-    if spec is None:  # pragma: no cover - every wrapped method is registered
-        return method(name)
-
-    def dec(fn):
-        def wrapped(rid, params):
-            data = params if isinstance(params, dict) else {}
-            try:
-                spec.request.model_validate(data)
-            except ValidationError as exc:
-                logger.debug(
-                    "rpc %s request did not validate (passing to handler unchanged): %s",
-                    name, exc,
-                )
-            resp = fn(rid, params)
-            if isinstance(resp, dict) and isinstance(resp.get("result"), dict):
-                try:
-                    spec.response.model_validate(resp["result"])
-                except ValidationError as exc:
-                    logger.debug(
-                        "rpc %s response did not validate (wire returned UNCHANGED): %s",
-                        name, exc,
-                    )
-            return resp
-
-        wrapped.__name__ = getattr(fn, "__name__", "rpc_" + name.replace(".", "_"))
-        return register_method(name, wrapped)
-
-    return dec
+    """Compatibility decorator; every registered method shares one validator."""
+    return method(name)
 
 
 def _normalize_request(req: Any) -> tuple[Any, str, dict] | dict:
@@ -949,6 +931,14 @@ def _dispatch(req: dict, transport: Optional[Transport] = None) -> dict | None:
     t = transport or _stdio_transport
     token = bind_transport(t)
     try:
+        if (
+            isinstance(req, dict)
+            and "method" not in req
+            and isinstance(req.get("id"), str)
+            and req["id"].startswith("srq-")
+        ):
+            _server_requests.respond(req, t)
+            return None
         normalized = _normalize_request(req)
         if isinstance(normalized, dict):
             return normalized
@@ -988,9 +978,9 @@ def _initialize_built_agent(sid: str, session: dict, agent) -> None:
     if hasattr(agent, "_session_messages"):
         agent._session_messages = list(session.get("history", []))
     try:
-        from tools.approval import register_gateway_notify, load_permanent_allowlist
+        from tools.approval import load_permanent_allowlist, register_gateway_notify
 
-        register_gateway_notify(key, lambda data: _emit("approval.request", sid, data))
+        register_gateway_notify(key, lambda data: _notify_approval(sid, data))
         session.pop("_build_notifications_released", None)
         load_permanent_allowlist()
     except Exception:
@@ -1158,30 +1148,46 @@ def _enable_gateway_prompts() -> None:
 # ── Blocking prompt factory ──────────────────────────────────────────
 
 
+def _notify_approval(sid: str, payload: dict) -> None:
+    session = _host.sessions.get(sid, {})
+    from tools.approval import register_gateway_settle, resolve_gateway_approval
+
+    key = session["session_key"]
+    request_id = payload["request_id"]
+    register_gateway_settle(
+        key, lambda rid: _server_requests.cancel(rid, "approval settled")
+    )
+    _server_requests.begin(
+        sid,
+        "approval",
+        payload,
+        session.get("transport") or current_transport() or _stdio_transport,
+        request_id=request_id,
+        legacy=not session.get("server_requests", False),
+        on_result=lambda result: bool(
+            resolve_gateway_approval(key, result["choice"], request_id=request_id)
+        ),
+        on_cancel=lambda: resolve_gateway_approval(key, "deny", request_id=request_id),
+    )
+
+
 def _block(event: str, sid: str, payload: dict, timeout: int = 300) -> str:
-    rid = uuid.uuid4().hex[:8]
-    ev = threading.Event()
-    _pending[rid] = (sid, ev)
-    payload["request_id"] = rid
-    _emit(event, sid, payload)
-    ev.wait(timeout=timeout)
-    _pending.pop(rid, None)
-    return _answers.pop(rid, "")
+    session = _host.sessions.get(sid, {})
+    method = event.removesuffix(".request")
+    key = {"clarify": "answer", "sudo": "password", "secret": "value"}[method]
+    result = _server_requests.request(
+        sid,
+        method,
+        payload,
+        session.get("transport") or current_transport() or _stdio_transport,
+        timeout=timeout,
+        legacy=not session.get("server_requests", False),
+    )
+    return result.get(key, "") if isinstance(result, dict) else ""
 
 
 def _clear_pending(sid: str | None = None) -> None:
-    """Release pending prompts with an empty answer.
-
-    When *sid* is provided, only prompts owned by that session are
-    released — critical for session.interrupt, which must not
-    collaterally cancel clarify/sudo/secret prompts on unrelated
-    sessions sharing the same tui_gateway process.  When *sid* is
-    None, every pending prompt is released (used during shutdown).
-    """
-    for rid, (owner_sid, ev) in list(_pending.items()):
-        if sid is None or owner_sid == sid:
-            _answers[rid] = ""
-            ev.set()
+    _server_requests.cancel_session(sid, "session interrupted or closed")
 
 
 # ── Agent factory ────────────────────────────────────────────────────
@@ -1313,10 +1319,15 @@ def _persist_model_switch(result) -> None:
 
 
 def _apply_model_switch(sid: str, session: dict, raw_input: str) -> dict:
-    from superforecasting_agent.runtime.model_switch import parse_model_flags, switch_model
+    from superforecasting_agent.runtime.model_switch import (
+        parse_model_flags,
+        switch_model,
+    )
     from superforecasting_agent.runtime.runtime_provider import resolve_runtime_provider
 
-    model_input, explicit_provider, persist_global, _force_refresh = parse_model_flags(raw_input)
+    model_input, explicit_provider, persist_global, _force_refresh = parse_model_flags(
+        raw_input
+    )
     if not model_input:
         raise ValueError("model value required")
 
@@ -1354,7 +1365,9 @@ def _apply_model_switch(sid: str, session: dict, raw_input: str) -> dict:
             # its slug from config/env (non-raising) so switch_model can still
             # detect a provider change; leave creds empty — switch_model
             # resolves the TARGET fresh and validates ONLY that provider.
-            from superforecasting_agent.runtime.runtime_provider import resolve_requested_provider
+            from superforecasting_agent.runtime.runtime_provider import (
+                resolve_requested_provider,
+            )
 
             current_provider = resolve_requested_provider(None)
             if current_provider == "auto":
@@ -1367,7 +1380,10 @@ def _apply_model_switch(sid: str, session: dict, raw_input: str) -> dict:
     user_provs = None
     custom_provs = None
     try:
-        from superforecasting_agent.runtime.config import get_compatible_custom_providers, load_config
+        from superforecasting_agent.runtime.config import (
+            get_compatible_custom_providers,
+            load_config,
+        )
 
         cfg = load_config()
         user_provs = cfg.get("providers")
@@ -1390,6 +1406,11 @@ def _apply_model_switch(sid: str, session: dict, raw_input: str) -> dict:
         raise ValueError(result.error_message or "model switch failed")
 
     if agent:
+        from superforecasting_agent.application.model_switch_notice import (
+            attach_context_warning,
+        )
+
+        attach_context_warning(result, agent)
         agent.switch_model(
             new_model=result.new_model,
             new_provider=result.target_provider,
@@ -1557,7 +1578,7 @@ def _sync_session_key_after_compress(
         try:
             register_gateway_notify(
                 new_session_id,
-                lambda data: _emit("approval.request", sid, data),
+                lambda data: _notify_approval(sid, data),
             )
         except Exception:
             pass
@@ -1569,6 +1590,7 @@ def _sync_session_key_after_compress(
 
     if session.get("turn_id"):
         from superforecasting_agent.storage import turns as turn_journal
+
         turn_journal.reanchor(_get_db(), session["turn_id"], new_session_id)
 
     if clear_pending_title:
@@ -2286,32 +2308,45 @@ def _make_agent(sid: str, key: str, session_id: str | None = None):
         warn=lambda message: print(f"[tui] {message}", file=sys.stderr, flush=True),
     )
 
-def _init_session(sid: str, key: str, agent, history: list, cols: int = 80, *, pending_handoff: bool = False):
+def _init_session(
+    sid: str,
+    key: str,
+    agent,
+    history: list,
+    cols: int = 80,
+    *,
+    pending_handoff: bool = False,
+    server_requests: bool = False,
+):
     if hasattr(agent, "_session_messages"):
         agent._session_messages = list(history)
-    _host.sessions.register(sid, {
-        "agent": agent,
-        "session_key": key,
-        "history": history,
-        "history_lock": threading.Lock(),
-        "history_version": 0,
-        "running": pending_handoff,
-        "_replacing": pending_handoff,
-        "attached_images": [],
-        "image_counter": 0,
-        "cols": cols,
-        "show_reasoning": _load_show_reasoning(),
-        "tool_progress_mode": _load_tool_progress_mode(),
-        "edit_snapshots": {},
-        "tool_started_at": {},
-        # Pin async event emissions to whichever transport created the
-        # session (stdio for Ink, JSON-RPC WS for the dashboard sidebar).
-        "transport": current_transport() or _stdio_transport,
-    })
+    _host.sessions.register(
+        sid,
+        {
+            "agent": agent,
+            "session_key": key,
+            "history": history,
+            "history_lock": threading.Lock(),
+            "history_version": 0,
+            "running": pending_handoff,
+            "_replacing": pending_handoff,
+            "attached_images": [],
+            "image_counter": 0,
+            "cols": cols,
+            "show_reasoning": _load_show_reasoning(),
+            "tool_progress_mode": _load_tool_progress_mode(),
+            "edit_snapshots": {},
+            "tool_started_at": {},
+            # Pin async event emissions to whichever transport created the
+            # session (stdio for Ink, JSON-RPC WS for the dashboard sidebar).
+            "transport": current_transport() or _stdio_transport,
+            "server_requests": server_requests,
+        },
+    )
     try:
-        from tools.approval import register_gateway_notify, load_permanent_allowlist
+        from tools.approval import load_permanent_allowlist, register_gateway_notify
 
-        register_gateway_notify(key, lambda data: _emit("approval.request", sid, data))
+        register_gateway_notify(key, lambda data: _notify_approval(sid, data))
         load_permanent_allowlist()
     except Exception:
         pass
@@ -2329,7 +2364,9 @@ def _init_session(sid: str, key: str, agent, history: list, cols: int = 80, *, p
         # session startup resilient).
         pass
     _wire_callbacks(sid)
-    _host.sessions[sid]["_notif_stop"] = _start_notification_poller(sid, _host.sessions[sid])
+    _host.sessions[sid]["_notif_stop"] = _start_notification_poller(
+        sid, _host.sessions[sid]
+    )
     _notify_session_boundary("on_session_reset", key)
     _emit("session.info", sid, _session_info(agent))
 
@@ -2471,25 +2508,29 @@ def _(rid, params: dict) -> dict:
 
     ready = threading.Event()
 
-    _host.sessions.register(sid, {
-        "agent": None,
-        "agent_error": None,
-        "agent_ready": ready,
-        "attached_images": [],
-        "cols": cols,
-        "edit_snapshots": {},
-        "history": [],
-        "history_lock": threading.Lock(),
-        "history_version": 0,
-        "image_counter": 0,
-        "pending_title": None,
-        "running": False,
-        "session_key": key,
-        "show_reasoning": _load_show_reasoning(),
-        "tool_progress_mode": _load_tool_progress_mode(),
-        "tool_started_at": {},
-        "transport": current_transport() or _stdio_transport,
-    })
+    _host.sessions.register(
+        sid,
+        {
+            "agent": None,
+            "agent_error": None,
+            "agent_ready": ready,
+            "attached_images": [],
+            "cols": cols,
+            "edit_snapshots": {},
+            "history": [],
+            "history_lock": threading.Lock(),
+            "history_version": 0,
+            "image_counter": 0,
+            "pending_title": None,
+            "running": False,
+            "session_key": key,
+            "show_reasoning": _load_show_reasoning(),
+            "tool_progress_mode": _load_tool_progress_mode(),
+            "tool_started_at": {},
+            "transport": current_transport() or _stdio_transport,
+            "server_requests": params.get("server_requests") is True,
+        },
+    )
 
     # Return the lightweight session immediately so Ink can paint the composer
     # + skeleton panel, then build the real AIAgent just after this response is
@@ -2504,6 +2545,7 @@ def _(rid, params: dict) -> dict:
         time.sleep(0.05)
         if not _host.workers.stopping:
             _deferred_build()
+
     _host.workers.start(delayed_build, name="forecast-deferred-build")
 
     return _ok(
@@ -2636,12 +2678,23 @@ def _(rid, params: dict) -> dict:
         if active_sid is not None:
             active = _host.sessions[active_sid]
             transport = current_transport()
-            if not active.get("transport_detached") or transport is None or transport is _stdio_transport:
+            if (
+                not active.get("transport_detached")
+                or transport is None
+                or transport is _stdio_transport
+            ):
                 return _err(rid, 4010, "session is already active")
-            # Reattach the exact idle allocation after a disconnected client.
-            # Reservation prevents prompts or cleanup racing the transfer.
-            with replacement(active):
-                messages = _history_to_messages(db.get_messages_as_conversation(target, include_ancestors=True))
+            # Reattach the same allocation, including a turn waiting for input.
+            # Registry and history locks serialize cleanup and history snapshots.
+            with active.get("history_lock", contextlib.nullcontext()):
+                if any(
+                    active.get(flag)
+                    for flag in ("_closing", "_replacing", "_cleanup_pending")
+                ):
+                    return _err(rid, 4009, "session cleanup or replacement in progress")
+                messages = _history_to_messages(
+                    db.get_messages_as_conversation(target, include_ancestors=True)
+                )
                 recovery = _turn_recovery(db, target)
                 info = _session_info(active.get("agent"))
                 if replace_sid and replace_sid != active_sid:
@@ -2649,11 +2702,22 @@ def _(rid, params: dict) -> dict:
                 active["cols"] = int(params.get("cols", 80))
                 active["transport"] = transport
                 active["transport_detached"] = False
-                return _ok(rid, {
-                    "session_id": active_sid, "resumed": target,
-                    "message_count": len(messages), "messages": messages,
-                    "info": info, "recovery": recovery,
-                })
+                active["server_requests"] = params.get("server_requests") is True
+                open_requests = _server_requests.resume(
+                    active_sid, transport, legacy=not active["server_requests"]
+                )
+                return _ok(
+                    rid,
+                    {
+                        "session_id": active_sid,
+                        "resumed": target,
+                        "message_count": len(messages),
+                        "messages": messages,
+                        "info": info,
+                        "recovery": recovery,
+                        "open_requests": open_requests,
+                    },
+                )
         recovery = _turn_recovery(db, target, recover=True)
         if recovery and recovery.get("owner_active"):
             return _err(rid, 4010, "session turn is still owned by a running gateway")
@@ -2665,7 +2729,11 @@ def _(rid, params: dict) -> dict:
             if replace_lock is None:
                 replace_lock = contextlib.nullcontext()
             with replace_lock:
-                if in_use(replace_session) or replace_session.get("_closing") or replace_session.get("_cleanup_pending"):
+                if (
+                    in_use(replace_session)
+                    or replace_session.get("_closing")
+                    or replace_session.get("_cleanup_pending")
+                ):
                     return _err(
                         rid,
                         4009,
@@ -2686,7 +2754,15 @@ def _(rid, params: dict) -> dict:
                 agent = _make_agent(sid, target, session_id=target)
             finally:
                 _clear_session_context(tokens)
-            _init_session(sid, target, agent, history, cols=int(params.get("cols", 80)), pending_handoff=True)
+            _init_session(
+                sid,
+                target,
+                agent,
+                history,
+                cols=int(params.get("cols", 80)),
+                pending_handoff=True,
+                server_requests=params.get("server_requests") is True,
+            )
             db.reopen_session(target)
             if replace_sid and replace_sid != sid:
                 _close_runtime_session(replace_sid, reserved=True)
@@ -3087,9 +3163,15 @@ def _branch_session(rid, params: dict, *, replace_current: bool) -> dict:
     agent = None
     try:
         from superforecasting_agent.application.sessions import branch_session
+
         title = branch_session(
-            db, session_id=new_key, parent_session_id=old_key, history=history,
-            name=params.get("name", ""), source="tui", model=_resolve_model(),
+            db,
+            session_id=new_key,
+            parent_session_id=old_key,
+            history=history,
+            name=params.get("name", ""),
+            source="tui",
+            model=_resolve_model(),
         )
         created = True
         tokens = _set_session_context(new_key)
@@ -3097,14 +3179,24 @@ def _branch_session(rid, params: dict, *, replace_current: bool) -> dict:
             agent = _make_agent(new_sid, new_key, session_id=new_key)
         finally:
             _clear_session_context(tokens)
-        _init_session(new_sid, new_key, agent, list(history), cols=session.get("cols", 80), pending_handoff=replace_current)
+        _init_session(
+            new_sid,
+            new_key,
+            agent,
+            list(history),
+            cols=session.get("cols", 80),
+            pending_handoff=replace_current,
+            server_requests=session.get("server_requests", False),
+        )
         if replace_current:
             _close_runtime_session(params["session_id"], reserved=True)
     except Exception as exc:
         cleanup_error = ""
         try:
             if (_host.sessions.get(new_sid) or {}).get("session_key") == new_key:
-                _close_runtime_session(new_sid, mark_ended=False, reserved=replace_current)
+                _close_runtime_session(
+                    new_sid, mark_ended=False, reserved=replace_current
+                )
             elif agent is not None:
                 agent.close()
             if created:
@@ -3961,13 +4053,13 @@ def _(rid, params: dict) -> dict:
 
 
 def _respond(rid, params, key):
-    r = params.get("request_id", "")
-    entry = _pending.get(r)
-    if not entry:
-        return _err(rid, 4009, f"no pending {key} request")
-    _, ev = entry
-    _answers[r] = params.get(key, "")
-    ev.set()
+    if not _server_requests.legacy_reply(
+        params.get("request_id", ""),
+        key,
+        params.get(key, ""),
+        current_transport() or _stdio_transport,
+    ):
+        return _err(rid, 4009, f"no pending {key} request owned by this transport")
     return _ok(rid, {"status": "ok"})
 
 
@@ -3994,6 +4086,12 @@ def _(rid, params: dict) -> dict:
     try:
         from tools.approval import resolve_gateway_approval
 
+        if params.get("request_id"):
+            accepted = _server_requests.legacy_reply(
+                params["request_id"], "choice", params.get("choice", "deny"),
+                current_transport() or _stdio_transport,
+            )
+            return _ok(rid, {"resolved": 1}) if accepted else _err(rid, 4009, "approval is no longer pending on this connection")
         return _ok(
             rid,
             {
@@ -4001,6 +4099,7 @@ def _(rid, params: dict) -> dict:
                     session["session_key"],
                     params.get("choice", "deny"),
                     resolve_all=params.get("all", False),
+                    request_id=params.get("request_id"),
                 )
             },
         )

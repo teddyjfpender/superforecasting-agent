@@ -15,6 +15,16 @@ from tui_gateway import server
 from tests.runtime_session_cleanup import retire_test_session, retire_test_sessions
 
 
+def _wire_info(model):
+    return {
+        "model": model, "tools": {}, "skills": {},
+        "usage": {"calls": 0, "input": 0, "output": 0, "total": 0},
+        "reasoning_effort": "", "service_tier": "", "fast": False,
+        "cwd": "/tmp", "version": "test", "release_date": "", "update_behind": None,
+        "update_command": "", "profile_name": "test",
+    }
+
+
 @pytest.fixture(autouse=True)
 def _stop_leaked_notification_pollers(monkeypatch):
     """Own test workers and poller stops explicitly, without Thread internals."""
@@ -1281,7 +1291,7 @@ def test_session_resume_uses_parent_lineage_for_display(monkeypatch):
         lambda agent: {"model": "test", "tools": {}, "skills": {}},
     )
     monkeypatch.setattr(
-        server, "_init_session", lambda sid, key, agent, history, cols=80, pending_handoff=False: server._host.sessions.register(sid, {"session_key": key, "history_lock": threading.Lock(), "running": pending_handoff, "_replacing": pending_handoff})
+        server, "_init_session", lambda sid, key, agent, history, cols=80, pending_handoff=False, server_requests=False: server._host.sessions.register(sid, {"session_key": key, "history_lock": threading.Lock(), "running": pending_handoff, "_replacing": pending_handoff})
     )
 
     resp = server.handle_request(
@@ -2097,7 +2107,7 @@ def test_config_set_fast_updates_live_agent_and_config(monkeypatch):
     monkeypatch.setattr(
         server, "_write_config_key", lambda path, value: writes.append((path, value))
     )
-    monkeypatch.setattr(server, "_session_info", lambda _agent: {"model": "x"})
+    monkeypatch.setattr(server, "_session_info", lambda _agent: _wire_info("x"))
     monkeypatch.setattr(server, "_emit", lambda *args: emits.append(args))
     monkeypatch.setattr(
         "superforecasting_agent.runtime.models.resolve_fast_mode_overrides",
@@ -2119,7 +2129,7 @@ def test_config_set_fast_updates_live_agent_and_config(monkeypatch):
             "service_tier": "priority",
         }
         assert ("agent.service_tier", "fast") in writes
-        assert ("session.info", "sid", {"model": "x"}) in emits
+        assert ("session.info", "sid", _wire_info("x")) in emits
 
         resp_normal = server.handle_request(
             {
@@ -2842,7 +2852,7 @@ def test_config_set_personality_preserves_history_and_returns_info(monkeypatch):
         lambda cfg=None: {"helpful": "You are helpful."},
     )
     monkeypatch.setattr(
-        server, "_session_info", lambda agent: {"model": getattr(agent, "model", "?")}
+        server, "_session_info", lambda agent: _wire_info(getattr(agent, "model", "?"))
     )
     monkeypatch.setattr(server, "_emit", lambda *args: emits.append(args))
     monkeypatch.setattr(server, "_write_config_key", lambda path, value: None)
@@ -2856,7 +2866,7 @@ def test_config_set_personality_preserves_history_and_returns_info(monkeypatch):
     )
 
     assert resp["result"]["history_reset"] is False
-    assert resp["result"]["info"] == {"model": "?"}
+    assert resp["result"]["info"] == _wire_info("?")
     # History is preserved with a pivot marker appended
     assert len(session["history"]) == 2
     assert session["history"][0] == {"role": "user", "text": "hi"}
@@ -2869,7 +2879,7 @@ def test_config_set_personality_preserves_history_and_returns_info(monkeypatch):
     assert "Superforecasting Agent" in agent.ephemeral_system_prompt
     assert "You are helpful." in agent.ephemeral_system_prompt
     assert agent._cached_system_prompt == "old"
-    assert ("session.info", "sid", {"model": "?"}) in emits
+    assert ("session.info", "sid", _wire_info("?")) in emits
 
 
 def test_session_compress_uses_compress_helper(monkeypatch):
@@ -2879,9 +2889,9 @@ def test_session_compress_uses_compress_helper(monkeypatch):
     monkeypatch.setattr(
         server,
         "_compress_session_history",
-        lambda session, focus_topic=None, **_kw: (2, {"total": 42}),
+        lambda session, focus_topic=None, **_kw: (2, {"total": 42, "calls": 0, "input": 0, "output": 0}),
     )
-    monkeypatch.setattr(server, "_session_info", lambda _agent: {"model": "x"})
+    monkeypatch.setattr(server, "_session_info", lambda _agent: _wire_info("x"))
 
     with patch("tui_gateway.server._emit") as emit:
         resp = server.handle_request(
@@ -2890,7 +2900,7 @@ def test_session_compress_uses_compress_helper(monkeypatch):
 
     assert resp["result"]["removed"] == 2
     assert resp["result"]["usage"]["total"] == 42
-    emit.assert_any_call("session.info", "sid", {"model": "x"})
+    emit.assert_any_call("session.info", "sid", _wire_info("x"))
     # Final status.update clears the pinned "compressing" indicator so the
     # status bar can revert to the neutral state when compaction finishes.
     emit.assert_any_call("status.update", "sid", {"kind": "status", "text": "ready"})
@@ -2911,9 +2921,9 @@ def test_session_compress_syncs_session_key_after_rotation(monkeypatch):
     monkeypatch.setattr(
         server,
         "_compress_session_history",
-        lambda session, focus_topic=None, **_kw: (2, {"total": 42}),
+        lambda session, focus_topic=None, **_kw: (2, {"total": 42, "calls": 0, "input": 0, "output": 0}),
     )
-    monkeypatch.setattr(server, "_session_info", lambda _agent: {"model": "x"})
+    monkeypatch.setattr(server, "_session_info", lambda _agent: _wire_info("x"))
 
     try:
         with patch("tui_gateway.server._emit"):
@@ -3700,118 +3710,62 @@ def test_prompt_submit_history_version_match_persists_normally(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+def _owned_prompt(sid, method="sudo", legacy=False):
+    payload = {"question": "Choose", "choices": None} if method == "clarify" else {}
+    return server._server_requests.begin(sid, method, payload, server._stdio_transport, legacy=legacy)
+
+
 def test_interrupt_only_clears_own_session_pending():
-    """session.interrupt on session A must NOT release pending prompts
-    that belong to session B."""
-    import types
-
-    session_a = _session()
-    session_a["agent"] = types.SimpleNamespace(interrupt=lambda: None)
-    session_b = _session()
-    session_b["agent"] = types.SimpleNamespace(interrupt=lambda: None)
-    server._host.sessions["sid_a"] = session_a
-    server._host.sessions["sid_b"] = session_b
-
+    """Interrupting one session cannot release another session's prompts."""
+    for sid in ("sid_a", "sid_b"):
+        session = _session()
+        session["agent"] = types.SimpleNamespace(interrupt=lambda: None)
+        server._host.sessions[sid] = session
+    aid, a = _owned_prompt("sid_a")
+    bid, b = _owned_prompt("sid_b")
     try:
-        # Simulate pending prompts on both sessions (what _block creates
-        # while a clarify/sudo/secret request is outstanding).
-        ev_a = threading.Event()
-        ev_b = threading.Event()
-        server._pending["rid-a"] = ("sid_a", ev_a)
-        server._pending["rid-b"] = ("sid_b", ev_b)
-        server._answers.clear()
-
-        # Interrupt session A.
-        resp = server.handle_request(
-            {
-                "id": "1",
-                "method": "session.interrupt",
-                "params": {"session_id": "sid_a"},
-            }
-        )
-        assert resp.get("result"), f"got error: {resp.get('error')}"
-
-        # Session A's pending must be released to empty.
-        assert ev_a.is_set(), "sid_a pending Event should be set after interrupt"
-        assert server._answers.get("rid-a") == ""
-
-        # Session B's pending MUST remain untouched — no cross-session blast.
-        assert not ev_b.is_set(), (
-            "CRITICAL: session.interrupt on sid_a released a pending prompt "
-            "belonging to sid_b — other sessions' clarify/sudo/secret "
-            "prompts are being silently cancelled"
-        )
-        assert "rid-b" not in server._answers
+        response = server.handle_request({"id": "1", "method": "session.interrupt", "params": {"session_id": "sid_a"}})
+        assert response.get("result"), response
+        assert a.event.is_set() and a.result is None
+        assert not b.event.is_set()
     finally:
-        retire_test_session(server, "sid_a")
-        retire_test_session(server, "sid_b")
-        server._pending.pop("rid-a", None)
-        server._pending.pop("rid-b", None)
-        server._answers.pop("rid-a", None)
-        server._answers.pop("rid-b", None)
+        for sid in ("sid_a", "sid_b"):
+            retire_test_session(server, sid)
+        for rid in (aid, bid):
+            server._server_requests.cancel(rid, "test teardown")
 
 
 def test_interrupt_clears_multiple_own_pending():
-    """When a single session has multiple pending prompts (uncommon but
-    possible via nested tool calls), interrupt must release all of them."""
-    import types
-
-    sess = _session()
-    sess["agent"] = types.SimpleNamespace(interrupt=lambda: None)
-    server._host.sessions["sid"] = sess
-
+    session = _session()
+    session["agent"] = types.SimpleNamespace(interrupt=lambda: None)
+    server._host.sessions["sid"] = session
+    prompts = [_owned_prompt("sid") for _ in range(2)]
     try:
-        ev1, ev2 = threading.Event(), threading.Event()
-        server._pending["r1"] = ("sid", ev1)
-        server._pending["r2"] = ("sid", ev2)
-
-        resp = server.handle_request(
-            {"id": "1", "method": "session.interrupt", "params": {"session_id": "sid"}}
-        )
-        assert resp.get("result")
-        assert ev1.is_set() and ev2.is_set()
-        assert server._answers.get("r1") == "" and server._answers.get("r2") == ""
+        response = server.handle_request({"id": "1", "method": "session.interrupt", "params": {"session_id": "sid"}})
+        assert response.get("result")
+        assert all(p.event.is_set() and p.result is None for _, p in prompts)
     finally:
         retire_test_session(server, "sid")
-        for key in ("r1", "r2"):
-            server._pending.pop(key, None)
-            server._answers.pop(key, None)
+        for rid, _ in prompts:
+            server._server_requests.cancel(rid, "test teardown")
 
 
 def test_clear_pending_without_sid_clears_all():
-    """_clear_pending(None) is the shutdown path — must still release
-    every pending prompt regardless of owning session."""
-    ev1, ev2, ev3 = threading.Event(), threading.Event(), threading.Event()
-    server._pending["a"] = ("sid_x", ev1)
-    server._pending["b"] = ("sid_y", ev2)
-    server._pending["c"] = ("sid_z", ev3)
-    try:
-        server._clear_pending(None)
-        assert ev1.is_set() and ev2.is_set() and ev3.is_set()
-    finally:
-        for key in ("a", "b", "c"):
-            server._pending.pop(key, None)
-            server._answers.pop(key, None)
+    prompts = [_owned_prompt(sid) for sid in ("sid_x", "sid_y", "sid_z")]
+    server._clear_pending(None)
+    assert all(p.event.is_set() and p.result is None for _, p in prompts)
 
 
-def test_respond_unpacks_sid_tuple_correctly():
-    """After the (sid, Event) tuple change, _respond must still work."""
-    ev = threading.Event()
-    server._pending["rid-x"] = ("sid_x", ev)
+def test_legacy_respond_settles_owned_request_once():
+    rid, pending = _owned_prompt("sid_x", "clarify", legacy=True)
+    request = {"id": "1", "method": "clarify.respond", "params": {"request_id": rid, "answer": "the answer"}}
     try:
-        resp = server.handle_request(
-            {
-                "id": "1",
-                "method": "clarify.respond",
-                "params": {"request_id": "rid-x", "answer": "the answer"},
-            }
-        )
-        assert resp.get("result")
-        assert ev.is_set()
-        assert server._answers.get("rid-x") == "the answer"
+        response = server.handle_request(request)
+        assert response.get("result")
+        assert pending.event.is_set() and pending.result == {"answer": "the answer"}
+        assert server.handle_request(request)["error"]["code"] == 4009
     finally:
-        server._pending.pop("rid-x", None)
-        server._answers.pop("rid-x", None)
+        server._server_requests.cancel(rid, "test teardown")
 
 
 # ---------------------------------------------------------------------------
@@ -4085,7 +4039,7 @@ def test_session_create_close_race_preserves_agent_without_classic_runtime(monke
         "_get_db",
         lambda: types.SimpleNamespace(create_session=lambda *a, **kw: None, end_session=lambda *a: None),
     )
-    monkeypatch.setattr(server, "_session_info", lambda _a: {"model": "x"})
+    monkeypatch.setattr(server, "_session_info", lambda _a: _wire_info("x"))
     monkeypatch.setattr(server, "_probe_credentials", lambda _a: None)
     monkeypatch.setattr(server, "_wire_callbacks", lambda _sid: None)
     monkeypatch.setattr(server, "_emit", lambda *a, **kw: None)
@@ -4156,7 +4110,7 @@ def test_session_create_keeps_agent_without_classic_runtime(monkeypatch):
         "_get_db",
         lambda: types.SimpleNamespace(create_session=lambda *a, **kw: None, end_session=lambda *a: None),
     )
-    monkeypatch.setattr(server, "_session_info", lambda _a: {"model": "x"})
+    monkeypatch.setattr(server, "_session_info", lambda _a: _wire_info("x"))
     monkeypatch.setattr(server, "_probe_credentials", lambda _a: None)
     monkeypatch.setattr(server, "_wire_callbacks", lambda _sid: None)
     monkeypatch.setattr(server, "_emit", lambda *a, **kw: None)
@@ -4228,7 +4182,7 @@ def test_session_create_continues_when_state_db_is_unavailable(monkeypatch):
 
     monkeypatch.setattr(server, "_make_agent", lambda sid, key: _FakeAgent())
     monkeypatch.setattr(server, "_get_db", lambda: None)
-    monkeypatch.setattr(server, "_session_info", lambda _a: {"model": "x"})
+    monkeypatch.setattr(server, "_session_info", lambda _a: _wire_info("x"))
     monkeypatch.setattr(server, "_probe_credentials", lambda _a: None)
     monkeypatch.setattr(server, "_wire_callbacks", lambda _sid: None)
     monkeypatch.setattr(server, "_emit", lambda *a, **kw: emits.append(a))

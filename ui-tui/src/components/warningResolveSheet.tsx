@@ -65,7 +65,7 @@ export function WarningResolveSheet({ alert, cols, gw, onClose, onResolved, rows
     aliveRef.current = true
     setBusy(true)
     setError('')
-    gw.request<unknown>('forecast.warnings.resolve', { alert_id: alert.id })
+    gw.request('forecast.warnings.resolve', { alert_id: alert.id })
       .then(raw => {
         if (!aliveRef.current) {
           return

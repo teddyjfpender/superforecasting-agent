@@ -1,15 +1,6 @@
-// ── Arc A ENDGAME (A4): gatewayTypes.ts is now a THIN RE-EXPORT SHIM ──────────
-// Every RPC/event wire shape is GENERATED from the `protocol/` pydantic models
-// (single source of truth → ./protocol/generated.ts). This file survives ONLY
-// as (1) a stable import site — the long tail of consumers keeps
-// `from '../gatewayTypes.js'` working via the re-export blocks below — and
-// (2) the home of the TWO irreducibly-TS-only type ALIASES that have no single
-// pydantic-model form: `GatewayEvent` (a discriminated union over the generated
-// `WireEvent.*` event-name literals) and `CommandDispatchResponse` (a 4-arm
-// union discriminated on `type`). Both are `type` aliases, never `interface`s,
-// so the A4 grep-proof (no hand-written wire-shape INTERFACE outside
-// generated.ts) holds. The forecast value-enums re-export from ./types.js.
-import type { WireEvent } from './protocol/generated.js'
+// Stable import site for Python-generated RPC types and the TUI event view.
+// Method arguments and results are owned by protocol/ and generated.ts.
+import type { ApprovalRequestPayload, WireEvent } from './protocol/generated.js'
 import type { CommandFinished, CommandOutput, CommandStarted } from './protocol/generated.js'
 import type { BuildInfoPayload, GatewaySkin, SubagentEventPayload } from './protocol/generated.js'
 import type { SessionInfo, Usage } from './types.js'
@@ -210,14 +201,7 @@ export type {
   ForecastWorkspaceTrigger
 } from './protocol/generated.js'
 
-// ── TS-ONLY ALIAS #1: command.dispatch's 4-arm discriminated union ────────────
-// No single pydantic-model form (the arms carry disjoint keys keyed on `type`);
-// stays hand-written as a `type` alias.
-export type CommandDispatchResponse =
-  | { output?: string; type: 'exec' | 'plugin' }
-  | { target: string; type: 'alias' }
-  | { message?: string; name: string; type: 'skill' }
-  | { message: string; notice?: string; type: 'send' }
+export type { CommandDispatchResponse } from './protocol/generated.js'
 
 // The automode job events keep their legacy TUI names, aliased onto the generated
 // jobs-runtime payloads (protocol/events/warnings.py).
@@ -306,7 +290,7 @@ export type GatewayEvent =
       session_id?: string
       type: typeof WireEvent.CLARIFY_REQUEST
     }
-  | { payload: { command: string; description: string }; session_id?: string; type: typeof WireEvent.APPROVAL_REQUEST }
+  | { payload: ApprovalRequestPayload; session_id?: string; type: typeof WireEvent.APPROVAL_REQUEST }
   | { payload: { request_id: string }; session_id?: string; type: typeof WireEvent.SUDO_REQUEST }
   | {
       payload: { env_var: string; prompt: string; request_id: string }

@@ -13,6 +13,7 @@ import logging
 import os
 import re
 import sys
+import uuid
 import threading
 import time
 import unicodedata
@@ -543,11 +544,13 @@ class _ApprovalEntry:
 
     def __init__(self, data: dict):
         self.event = threading.Event()
-        self.data = data          # command, description, pattern_keys, …
+        data.setdefault("request_id", "srq-" + uuid.uuid4().hex)
+        self.data = data  # command, description, pattern_keys, …
         self.result: Optional[str] = None  # "once"|"session"|"always"|"deny"
 
 
 _gateway_queues: dict[str, list] = {}        # session_key → [_ApprovalEntry, …]
+_gateway_settle_cbs: dict[str, object] = {}
 _gateway_notify_cbs: dict[str, object] = {}  # session_key → callable(approval_data)
 
 
@@ -563,6 +566,22 @@ def register_gateway_notify(session_key: str, cb) -> None:
         _gateway_notify_cbs[session_key] = cb
 
 
+def _notify_gateway_settled(session_key: str, entry) -> None:
+    with _lock:
+        callback = _gateway_settle_cbs.get(session_key)
+    if callback is not None:
+        try:
+            callback(entry.data.get("request_id"))
+        except Exception:
+            logger.exception("Gateway approval settlement notification failed")
+
+
+def register_gateway_settle(session_key: str, cb) -> None:
+    """Observe queue settlement so transports withdraw the exact prompt."""
+    with _lock:
+        _gateway_settle_cbs[session_key] = cb
+
+
 def unregister_gateway_notify(session_key: str) -> None:
     """Unregister the per-session gateway approval callback.
 
@@ -574,10 +593,17 @@ def unregister_gateway_notify(session_key: str) -> None:
         entries = _gateway_queues.pop(session_key, [])
     for entry in entries:
         entry.event.set()
+        _notify_gateway_settled(session_key, entry)
+    with _lock:
+        _gateway_settle_cbs.pop(session_key, None)
 
 
-def resolve_gateway_approval(session_key: str, choice: str,
-                             resolve_all: bool = False) -> int:
+def resolve_gateway_approval(
+    session_key: str,
+    choice: str,
+    resolve_all: bool = False,
+    request_id: str | None = None,
+) -> int:
     """Called by the gateway's /approve or /deny handler to unblock
     waiting agent thread(s).
 
@@ -587,11 +613,19 @@ def resolve_gateway_approval(session_key: str, choice: str,
 
     Returns the number of approvals resolved (0 means nothing was pending).
     """
+    if choice not in {"once", "session", "always", "deny"}:
+        raise ValueError("invalid approval choice")
     with _lock:
         queue = _gateway_queues.get(session_key)
         if not queue:
             return 0
-        if resolve_all:
+        if request_id is not None:
+            targets = [
+                entry for entry in queue if entry.data.get("request_id") == request_id
+            ]
+            for entry in targets:
+                queue.remove(entry)
+        elif resolve_all:
             targets = list(queue)
             queue.clear()
         else:
@@ -602,6 +636,7 @@ def resolve_gateway_approval(session_key: str, choice: str,
     for entry in targets:
         entry.result = choice
         entry.event.set()
+        _notify_gateway_settled(session_key, entry)
     return len(targets)
 
 
@@ -1077,8 +1112,9 @@ def _format_tirith_description(tirith_result: dict) -> str:
     return "Security scan — " + "; ".join(parts)
 
 
-def check_all_command_guards(command: str, env_type: str,
-                             approval_callback=None) -> dict:
+def check_all_command_guards(
+    command: str, env_type: str, approval_callback=None
+) -> dict:
     """Run all pre-exec security checks and return a single approval decision.
 
     Gathers findings from tirith and dangerous-command detection, then
@@ -1106,14 +1142,19 @@ def check_all_command_guards(command: str, env_type: str,
     # check so even yolo/smart approval/mode=off cannot bypass it.
     is_sudo_guess, sudo_guess_desc = _check_sudo_stdin_guard(command)
     if is_sudo_guess:
-        logger.warning("Sudo stdin guard block: %s (command: %s)",
-                       sudo_guess_desc, command[:200])
+        logger.warning(
+            "Sudo stdin guard block: %s (command: %s)", sudo_guess_desc, command[:200]
+        )
         return _sudo_stdin_block_result(sudo_guess_desc)
 
     # --yolo or approvals.mode=off: bypass all approval prompts.
     # Gateway /yolo is session-scoped; CLI --yolo remains process-scoped.
     approval_mode = _get_approval_mode()
-    if is_process_yolo_enabled() or is_current_session_yolo_enabled() or approval_mode == "off":
+    if (
+        is_process_yolo_enabled()
+        or is_current_session_yolo_enabled()
+        or approval_mode == "off"
+    ):
         return {"approved": True, "message": None}
 
     is_cli = env_var_alias_enabled(INTERACTIVE_ENV_NAMES)
@@ -1148,6 +1189,7 @@ def check_all_command_guards(command: str, env_type: str,
     tirith_result = {"action": "allow", "findings": [], "summary": ""}
     try:
         from tools.tirith_security import check_command_security
+
         tirith_result = check_command_security(command)
     except ImportError:
         pass  # tirith module not installed — allow
@@ -1193,17 +1235,23 @@ def check_all_command_guards(command: str, env_type: str,
             # Auto-approve and grant session-level approval for these patterns
             for key, _, _ in warnings:
                 approve_session(session_key, key)
-            logger.debug("Smart approval: auto-approved '%s' (%s)",
-                         command[:60], combined_desc_for_llm)
-            return {"approved": True, "message": None,
-                    "smart_approved": True,
-                    "description": combined_desc_for_llm}
+            logger.debug(
+                "Smart approval: auto-approved '%s' (%s)",
+                command[:60],
+                combined_desc_for_llm,
+            )
+            return {
+                "approved": True,
+                "message": None,
+                "smart_approved": True,
+                "description": combined_desc_for_llm,
+            }
         elif verdict == "deny":
             combined_desc_for_llm = "; ".join(desc for _, desc, _ in warnings)
             return {
                 "approved": False,
                 "message": f"BLOCKED by smart approval: {combined_desc_for_llm}. "
-                           "The command was assessed as genuinely dangerous. Do NOT retry.",
+                "The command was assessed as genuinely dangerous. Do NOT retry.",
                 "smart_denied": True,
             }
         # verdict == "escalate" → fall through to manual prompt
@@ -1304,9 +1352,7 @@ def check_all_command_guards(command: str, env_type: str,
                     resolved = True
                     break
                 if touch_activity_if_due is not None:
-                    touch_activity_if_due(
-                        _activity_state, "waiting for user approval"
-                    )
+                    touch_activity_if_due(_activity_state, "waiting for user approval")
 
             # Clean up this entry from the queue
             with _lock:
@@ -1316,14 +1362,12 @@ def check_all_command_guards(command: str, env_type: str,
                 if not queue:
                     _gateway_queues.pop(session_key, None)
 
+            _notify_gateway_settled(session_key, entry)
             choice = entry.result
             # Normalize outcome for the post hook. Unresolved (timeout) and
             # None both mean the user never responded; report that explicitly
             # so plugins can distinguish timeout from explicit deny.
-            _outcome = (
-                "timeout" if not resolved
-                else (choice if choice else "timeout")
-            )
+            _outcome = "timeout" if not resolved else (choice if choice else "timeout")
             _fire_approval_hook(
                 "post_approval_response",
                 command=command,
@@ -1355,17 +1399,24 @@ def check_all_command_guards(command: str, env_type: str,
                 # choice == "once": no persistence — command allowed this
                 # single time only, matching the CLI's behavior.
 
-            return {"approved": True, "message": None,
-                    "user_approved": True, "description": combined_desc}
+            return {
+                "approved": True,
+                "message": None,
+                "user_approved": True,
+                "description": combined_desc,
+            }
 
         # Fallback: no gateway callback registered (e.g. cron, batch).
         # Return approval_required for backward compat.
-        submit_pending(session_key, {
-            "command": command,
-            "pattern_key": primary_key,
-            "pattern_keys": all_keys,
-            "description": combined_desc,
-        })
+        submit_pending(
+            session_key,
+            {
+                "command": command,
+                "pattern_key": primary_key,
+                "pattern_keys": all_keys,
+                "description": combined_desc,
+            },
+        )
         return {
             "approved": False,
             "pattern_key": primary_key,
@@ -1389,9 +1440,12 @@ def check_all_command_guards(command: str, env_type: str,
         session_key=session_key,
         surface="cli",
     )
-    choice = prompt_dangerous_approval(command, combined_desc,
-                                       allow_permanent=not has_tirith,
-                                       approval_callback=approval_callback)
+    choice = prompt_dangerous_approval(
+        command,
+        combined_desc,
+        allow_permanent=not has_tirith,
+        approval_callback=approval_callback,
+    )
     _fire_approval_hook(
         "post_approval_response",
         command=command,
@@ -1422,8 +1476,12 @@ def check_all_command_guards(command: str, env_type: str,
             approve_permanent(key)
             save_permanent_allowlist(_permanent_approved)
 
-    return {"approved": True, "message": None,
-            "user_approved": True, "description": combined_desc}
+    return {
+        "approved": True,
+        "message": None,
+        "user_approved": True,
+        "description": combined_desc,
+    }
 
 
 # Load permanent allowlist from config on module import

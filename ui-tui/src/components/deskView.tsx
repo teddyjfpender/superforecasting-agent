@@ -9,20 +9,31 @@ import { $reviewSweep } from '../app/uiStore.js'
 import { useJobAttach } from '../app/useJobAttach.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import { sweepColor, sweepStops } from '../lib/accentSweep.js'
+import { buildDeskTabs, type DeskTab, forecastsForTab, tabRefFactor, tabRefThesis } from '../lib/deskGroups.js'
 import {
-  buildDeskTabs,
-  type DeskTab,
-  forecastsForTab,
-  tabRefFactor,
-  tabRefThesis
-} from '../lib/deskGroups.js'
-import { bandChart, deltaGlyph, downsampleSeries, levelSparkline, pct, shortDate, windowDelta, windowDeltaDetail, wrapLines } from '../lib/forecastCharts.js'
+  bandChart,
+  deltaGlyph,
+  downsampleSeries,
+  levelSparkline,
+  pct,
+  shortDate,
+  windowDelta,
+  windowDeltaDetail,
+  wrapLines
+} from '../lib/forecastCharts.js'
 import { packetTailAudit } from '../lib/forecastTail.js'
 import { type FieldSpec, filterRanked } from '../lib/fuzzyRank.js'
 import { spinnerFrame } from '../lib/icons.js'
 import { getOverlayCache, setOverlayCache } from '../lib/overlayCache.js'
 import { asRpcResult } from '../lib/rpc.js'
-import { nextCycleState, type SortDir, sortIndicator, sortRows, type TableSortState, useTableSort } from '../lib/tableSort.js'
+import {
+  nextCycleState,
+  type SortDir,
+  sortIndicator,
+  sortRows,
+  type TableSortState,
+  useTableSort
+} from '../lib/tableSort.js'
 import { dirColor, pad, readinessColor, type Semantics, semantics } from '../lib/visualSemantics.js'
 import type {
   ForecastAnalystNote,
@@ -111,7 +122,6 @@ const EMPTY_ID_SET: ReadonlySet<string> = new Set<string>()
 
 // Packet sections rendered under the visual summary inside the modal — the
 // long-form content the skinny panel + ForecastDetail summary omit.
-
 
 // Field weights for the `/` filter — same as forecastsWorkspace so the two desks
 // agree on what matches.
@@ -257,7 +267,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   const load = (announce = false) => {
     setLoading(!cachedWs)
     // Load the FULL active book so the list + `/` filter cover every question.
-    gw.request<unknown>('forecast.workspace', { limit: 1000 })
+    gw.request('forecast.workspace', { limit: 1000 })
       .then(raw => {
         const result = asRpcResult<ForecastWorkspaceResponse>(raw)
 
@@ -311,12 +321,17 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     let cancelled = false
 
     const pull = () => {
-      gw.request<unknown>('forecast.reviews.next', {})
+      gw.request('forecast.reviews.next', {})
         .then(raw => {
-          if (cancelled) {return}
+          if (cancelled) {
+            return
+          }
+
           const r = asRpcResult<ForecastReviewsNextResponse>(raw)
 
-          if (r) {setReviewsNext(r)}
+          if (r) {
+            setReviewsNext(r)
+          }
         })
         .catch(() => {})
     }
@@ -340,7 +355,9 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     prevSweepRef.current = sweepRunning
     pullReviewsNextRef.current()
 
-    if (was && !sweepRunning) {load()}
+    if (was && !sweepRunning) {
+      load()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sweepRunning])
 
@@ -373,13 +390,21 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   const [benchLoading, setBenchLoading] = useState(false)
 
   useEffect(() => {
-    if (!onBench) {return}
+    if (!onBench) {
+      return
+    }
 
-    if (!cachedBench) {setBenchLoading(true)}
+    if (!cachedBench) {
+      setBenchLoading(true)
+    }
+
     let cancelled = false
-    gw.request<unknown>('forecast.bench', {})
+    gw.request('forecast.bench', {})
       .then(raw => {
-        if (cancelled) {return}
+        if (cancelled) {
+          return
+        }
+
         const result = asRpcResult<ForecastBenchResponse>(raw)
 
         if (result) {
@@ -390,7 +415,9 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
         setBenchLoading(false)
       })
       .catch(() => {
-        if (!cancelled) {setBenchLoading(false)}
+        if (!cancelled) {
+          setBenchLoading(false)
+        }
       })
 
     return () => {
@@ -444,7 +471,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   const rowCount = lensOffset + sortedVisible.length
   const clampedSel = Math.min(sel, Math.max(0, rowCount - 1))
   const lensActive = hasLens && clampedSel === 0
-  const selected = lensActive ? null : sortedVisible[clampedSel - lensOffset] ?? null
+  const selected = lensActive ? null : (sortedVisible[clampedSel - lensOffset] ?? null)
   const selectedId = selected?.id ?? null
 
   // Keep the SELECTED forecast selected across a re-sort (track by id, not index):
@@ -456,11 +483,16 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   useEffect(() => {
     const id = pendingReselectId.current
 
-    if (id == null) {return}
+    if (id == null) {
+      return
+    }
+
     pendingReselectId.current = null
     const idx = sortedVisible.findIndex(it => it.id === id)
 
-    if (idx >= 0) {setSel(idx + lensOffset)}
+    if (idx >= 0) {
+      setSel(idx + lensOffset)
+    }
   }, [sortedVisible, lensOffset])
 
   const armReselect = () => {
@@ -555,7 +587,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     }
 
     let cancelled = false
-    gw.request<unknown>('forecast.question', { id: selectedId })
+    gw.request('forecast.question', { id: selectedId })
       .then(raw => {
         if (cancelled) {
           return
@@ -636,9 +668,13 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   // carried by forecast.question instead — merge them onto the item for the modal.
   // (Must live with the other hooks, ABOVE the loading/error early-returns.)
   const detailItem = useMemo(() => {
-    if (!selected) {return null}
+    if (!selected) {
+      return null
+    }
 
-    if (!packet || packetId !== selectedId) {return selected}
+    if (!packet || packetId !== selectedId) {
+      return selected
+    }
 
     return {
       ...selected,
@@ -806,7 +842,10 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     const targetId = lensActive ? (refThesis?.id ?? refFactor?.id) : selectedId
     const targetTitle = lensActive ? (refThesis?.title ?? refFactor?.title) : selected?.title
 
-    if (!targetId) {return}
+    if (!targetId) {
+      return
+    }
+
     setFlash(`↻ re-armed for next cycle: ${truncate(targetTitle ?? targetId, 32)}`)
     gw.request('forecast.reforecast', { id: targetId })
       .then(() => load()) // silent refresh (no 'refreshed' flash) so NEXT flips to "now" but the re-arm message stays
@@ -929,7 +968,9 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     const tally: MassTally = { error: 0, noSources: 0, refreshed: 0, unchanged: 0 }
 
     const step = (i: number) => {
-      if (unmountedRef.current) {return}
+      if (unmountedRef.current) {
+        return
+      }
 
       if (i >= total) {
         massRunningRef.current = false
@@ -982,7 +1023,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     const ids = targets.map(target => target.id)
     refreshRunningRef.current = true
     setFlash('') // the re-attach-backed progress line below is the sole feedback
-    gw.request<unknown>('jobs.start', { spec: { question_ids: ids }, type: 'refresh' })
+    gw.request('jobs.start', { spec: { question_ids: ids }, type: 'refresh' })
       .then(raw => {
         const r = asRpcResult<{ job_id?: string }>(raw)
 
@@ -1036,7 +1077,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     setFlash(
       `🧠 agent run: ${ids.length} question${ids.length === 1 ? '' : 's'}, ~${ids.length} LLM session${ids.length === 1 ? '' : 's'}`
     )
-    gw.request<unknown>('forecast.reforecast.start', { question_ids: ids })
+    gw.request('forecast.reforecast.start', { question_ids: ids })
       .then(raw => {
         const r = asRpcResult<ForecastReforecastStartResponse>(raw)
 
@@ -1102,7 +1143,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     agentRunningRef.current = true
     setTaskOpen(false)
     setFlash(`🧠 task: ${ids.length} question${ids.length === 1 ? '' : 's'}`)
-    gw.request<unknown>('forecast.desk.task', { instruction, question_ids: ids })
+    gw.request('forecast.desk.task', { instruction, question_ids: ids })
       .then(raw => {
         const r = asRpcResult<ForecastReforecastStartResponse>(raw)
 
@@ -1159,215 +1200,219 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   // lens row) the lens thesis/factor itself.
   const settingsTargetId = lensActive ? (refThesis?.id ?? refFactor?.id ?? null) : selectedId
 
-  const settingsTargetTitle = lensActive
-    ? (refThesis?.title ?? refFactor?.title ?? null)
-    : (selected?.title ?? null)
+  const settingsTargetTitle = lensActive ? (refThesis?.title ?? refFactor?.title ?? null) : (selected?.title ?? null)
 
   const openSettings = () => {
-    if (!settingsTargetId) {return}
+    if (!settingsTargetId) {
+      return
+    }
+
     setModalOpen(false)
     setSettingsOpen(true)
   }
 
   const modalPageSize = Math.max(4, termRows - 12)
 
-  useInput((ch, key) => {
-    // The settings / task modals own the keyboard while open (each has its own
-    // useInput); trap everything here so the desk can't double-handle a key.
-    if (settingsOpen || taskOpen) {
-      return
-    }
+  useInput(
+    (ch, key) => {
+      // The settings / task modals own the keyboard while open (each has its own
+      // useInput); trap everything here so the desk can't double-handle a key.
+      if (settingsOpen || taskOpen) {
+        return
+      }
 
-    // Filter text-entry mode swallows printable keys.
-    if (filtering) {
-      if (key.return) {
-        return setFiltering(false)
+      // Filter text-entry mode swallows printable keys.
+      if (filtering) {
+        if (key.return) {
+          return setFiltering(false)
+        }
+
+        if (key.escape) {
+          setQuery('')
+
+          return setFiltering(false)
+        }
+
+        if (key.backspace || key.delete) {
+          return setQuery(q => q.slice(0, -1))
+        }
+
+        if (ch && !key.ctrl && !key.meta) {
+          // Accept multi-char chunks (paste / fast typing), printable only.
+          const printable = [...ch].filter(c => c >= ' ').join('')
+
+          if (printable) {
+            setSel(0)
+
+            return setQuery(q => q + printable)
+          }
+        }
+
+        return
+      }
+
+      // While the modal is open it owns input: scroll + close. (Markets pattern:
+      // `if (modal) return` — here the modal has its own scroll handlers first.)
+      if (modalOpen) {
+        if (key.escape || ch === 'q') {
+          return setModalOpen(false)
+        }
+
+        if (key.upArrow || ch === 'k' || key.wheelUp) {
+          return modalScrollRef.current?.scrollBy?.(-2)
+        }
+
+        if (key.downArrow || ch === 'j' || key.wheelDown) {
+          return modalScrollRef.current?.scrollBy?.(2)
+        }
+
+        if (key.pageUp || (key.ctrl && ch === 'u')) {
+          return modalScrollRef.current?.scrollBy?.(-modalPageSize)
+        }
+
+        if (key.pageDown || (key.ctrl && ch === 'd')) {
+          return modalScrollRef.current?.scrollBy?.(modalPageSize)
+        }
+
+        if (ch === 'g') {
+          return modalScrollRef.current?.scrollTo?.(0)
+        }
+
+        if (ch === 'G') {
+          return modalScrollRef.current?.scrollToBottom?.()
+        }
+
+        return
+      }
+
+      // ── Main keymap ─────────────────────────────────────────────────────────
+      if (ch === 'q') {
+        return onClose()
       }
 
       if (key.escape) {
+        // Esc clears a non-empty selection FIRST, then an active filter, else closes.
+        if (selectedIds.size > 0) {
+          return clearSelection()
+        }
+
+        if (query) {
+          return setQuery('')
+        }
+
+        return onClose()
+      }
+
+      if (ch === '/' && !onBench) {
         setQuery('')
 
-        return setFiltering(false)
+        return setFiltering(true)
       }
 
-      if (key.backspace || key.delete) {
-        return setQuery(q => q.slice(0, -1))
+      if (ch === 'r') {
+        return load(true)
       }
 
-      if (ch && !key.ctrl && !key.meta) {
-        // Accept multi-char chunks (paste / fast typing), printable only.
-        const printable = [...ch].filter(c => c >= ' ').join('')
+      if (key.tab || key.rightArrow || ch === 'l') {
+        return switchTab(tab + 1)
+      }
 
-        if (printable) {
-          setSel(0)
+      // `←` steps to the previous lens (Tab/→ go forward). `h` is now Help on every
+      // view, so the old `h`-for-previous-lens alias is retired — ← still does it.
+      if (key.leftArrow) {
+        return switchTab(tab - 1)
+      }
 
-          return setQuery(q => q + printable)
+      // `h` (and the `?` alias) open the unified Help modal — consistent everywhere.
+      if (ch === 'h' || ch === '?') {
+        return openHelpOverlay()
+      }
+
+      // The Bench lens is a read-only scoreboard: no per-row selection, modal, update,
+      // settings, or filter — only tab-switching + refresh apply. Trap the rest here.
+      if (onBench) {
+        return
+      }
+
+      if (ch === 'u') {
+        return selectedIds.size > 0 ? runMass() : runRearm()
+      }
+
+      if (ch === 'U') {
+        return runRefresh()
+      }
+
+      // `A` — AGENT RUN (detached full reforecast flow); `T` — free-text TASK modal.
+      // Both fan over the selection (marked set, or a lens → all its members).
+      if (ch === 'A') {
+        return runAgent()
+      }
+
+      if (ch === 'T') {
+        return openTask()
+      }
+
+      // Space — mark the cursor row (mutt-style, advances after). Shift+↑/↓ extends
+      // the marked run. Both are inert on the read-only Bench lens (trapped above).
+      if (ch === ' ') {
+        return toggleMark()
+      }
+
+      if (key.shift && (key.upArrow || key.downArrow)) {
+        return extendSelection(key.upArrow ? -1 : 1)
+      }
+
+      if (ch === 'R') {
+        return openResolve()
+      }
+
+      if (ch === 'n') {
+        return openNewQuestion()
+      }
+
+      if (ch === 's') {
+        if (settingsTargetId) {
+          return openSettings()
         }
+
+        return
       }
 
-      return
-    }
+      // `o` cycles the sort column (header order → unsorted); `O` toggles asc/desc.
+      if (ch === 'o') {
+        return onSortCycle()
+      }
 
-    // While the modal is open it owns input: scroll + close. (Markets pattern:
-    // `if (modal) return` — here the modal has its own scroll handlers first.)
-    if (modalOpen) {
-      if (key.escape || ch === 'q') {
-        return setModalOpen(false)
+      if (ch === 'O') {
+        return onSortToggle()
+      }
+
+      if (key.return) {
+        if (lensActive || selected) {
+          return setModalOpen(true)
+        }
+
+        return
       }
 
       if (key.upArrow || ch === 'k' || key.wheelUp) {
-        return modalScrollRef.current?.scrollBy?.(-2)
+        return setSel(i => Math.max(0, i - 1))
       }
 
       if (key.downArrow || ch === 'j' || key.wheelDown) {
-        return modalScrollRef.current?.scrollBy?.(2)
-      }
-
-      if (key.pageUp || (key.ctrl && ch === 'u')) {
-        return modalScrollRef.current?.scrollBy?.(-modalPageSize)
-      }
-
-      if (key.pageDown || (key.ctrl && ch === 'd')) {
-        return modalScrollRef.current?.scrollBy?.(modalPageSize)
+        return setSel(i => Math.min(Math.max(0, rowCount - 1), i + 1))
       }
 
       if (ch === 'g') {
-        return modalScrollRef.current?.scrollTo?.(0)
+        return setSel(0)
       }
 
       if (ch === 'G') {
-        return modalScrollRef.current?.scrollToBottom?.()
+        return setSel(Math.max(0, rowCount - 1))
       }
-
-      return
-    }
-
-    // ── Main keymap ─────────────────────────────────────────────────────────
-    if (ch === 'q') {
-      return onClose()
-    }
-
-    if (key.escape) {
-      // Esc clears a non-empty selection FIRST, then an active filter, else closes.
-      if (selectedIds.size > 0) {
-        return clearSelection()
-      }
-
-      if (query) {
-        return setQuery('')
-      }
-
-      return onClose()
-    }
-
-    if (ch === '/' && !onBench) {
-      setQuery('')
-
-      return setFiltering(true)
-    }
-
-    if (ch === 'r') {
-      return load(true)
-    }
-
-    if (key.tab || key.rightArrow || ch === 'l') {
-      return switchTab(tab + 1)
-    }
-
-    // `←` steps to the previous lens (Tab/→ go forward). `h` is now Help on every
-    // view, so the old `h`-for-previous-lens alias is retired — ← still does it.
-    if (key.leftArrow) {
-      return switchTab(tab - 1)
-    }
-
-    // `h` (and the `?` alias) open the unified Help modal — consistent everywhere.
-    if (ch === 'h' || ch === '?') {
-      return openHelpOverlay()
-    }
-
-    // The Bench lens is a read-only scoreboard: no per-row selection, modal, update,
-    // settings, or filter — only tab-switching + refresh apply. Trap the rest here.
-    if (onBench) {
-      return
-    }
-
-    if (ch === 'u') {
-      return selectedIds.size > 0 ? runMass() : runRearm()
-    }
-
-    if (ch === 'U') {
-      return runRefresh()
-    }
-
-    // `A` — AGENT RUN (detached full reforecast flow); `T` — free-text TASK modal.
-    // Both fan over the selection (marked set, or a lens → all its members).
-    if (ch === 'A') {
-      return runAgent()
-    }
-
-    if (ch === 'T') {
-      return openTask()
-    }
-
-    // Space — mark the cursor row (mutt-style, advances after). Shift+↑/↓ extends
-    // the marked run. Both are inert on the read-only Bench lens (trapped above).
-    if (ch === ' ') {
-      return toggleMark()
-    }
-
-    if (key.shift && (key.upArrow || key.downArrow)) {
-      return extendSelection(key.upArrow ? -1 : 1)
-    }
-
-    if (ch === 'R') {
-      return openResolve()
-    }
-
-    if (ch === 'n') {
-      return openNewQuestion()
-    }
-
-    if (ch === 's') {
-      if (settingsTargetId) {
-        return openSettings()
-      }
-
-      return
-    }
-
-    // `o` cycles the sort column (header order → unsorted); `O` toggles asc/desc.
-    if (ch === 'o') {
-      return onSortCycle()
-    }
-
-    if (ch === 'O') {
-      return onSortToggle()
-    }
-
-    if (key.return) {
-      if (lensActive || selected) {
-        return setModalOpen(true)
-      }
-
-      return
-    }
-
-    if (key.upArrow || ch === 'k' || key.wheelUp) {
-      return setSel(i => Math.max(0, i - 1))
-    }
-
-    if (key.downArrow || ch === 'j' || key.wheelDown) {
-      return setSel(i => Math.min(Math.max(0, rowCount - 1), i + 1))
-    }
-
-    if (ch === 'g') {
-      return setSel(0)
-    }
-
-    if (ch === 'G') {
-      return setSel(Math.max(0, rowCount - 1))
-    }
-  }, { isActive: !globalModal })
+    },
+    { isActive: !globalModal }
+  )
 
   // ── Header ──────────────────────────────────────────────────────────────
   const header = (
@@ -1404,9 +1449,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
             {` open alert${desk.alerts === 1 ? '' : 's'}`}
             {desk.generatedAt ? ` · as of ${shortDate(desk.generatedAt)}` : ''}
           </Text>
-          {selectedIds.size > 0 ? (
-            <Text bold color={t.color.accent}>{` · ${selectedIds.size} selected`}</Text>
-          ) : null}
+          {selectedIds.size > 0 ? <Text bold color={t.color.accent}>{` · ${selectedIds.size} selected`}</Text> : null}
         </Text>
       )}
     </Box>
@@ -1473,7 +1516,10 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
         <DeskLensRow
           active={lensActive}
           onOpen={() => {
-            if (modalOpen || settingsOpen || taskOpen || globalModal) {return}
+            if (modalOpen || settingsOpen || taskOpen || globalModal) {
+              return
+            }
+
             setSel(0)
             setModalOpen(true)
           }}
@@ -1491,8 +1537,16 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
         nowMs={Math.floor(Date.now() / 60_000) * 60_000}
         // Clicking the pinned thesis row selects it (row 0 / lensActive), the same
         // as an arrow-key landing — Enter then opens the thesis read.
-        onPinnedSelect={() => { if (!modalOpen && !settingsOpen && !taskOpen && !globalModal) {setSel(0)} }}
-        onSelect={i => { if (!modalOpen && !settingsOpen && !taskOpen && !globalModal) {setSel(i + lensOffset)} }}
+        onPinnedSelect={() => {
+          if (!modalOpen && !settingsOpen && !taskOpen && !globalModal) {
+            setSel(0)
+          }
+        }}
+        onSelect={i => {
+          if (!modalOpen && !settingsOpen && !taskOpen && !globalModal) {
+            setSel(i + lensOffset)
+          }
+        }}
         // The header sorts on click, but only while nothing modal is covering the
         // body — matches the row/tab click gating.
         onSort={modalOpen || settingsOpen || taskOpen || globalModal ? undefined : onSortByKey}
@@ -1541,70 +1595,73 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   // desk render (every cursor move) and then thrown away because `modal` is gated
   // on `modalOpen`. Gating the construction here keeps steady-state scrolling
   // O(viewport) and skips the heavy detail subtree entirely while the modal is shut.
-  const modalBody = modalOpen && selected
-    ? (() => {
-        const detailW = Math.max(20, (wide ? Math.min(cols - 10, 92) : cols - 6) - 4)
+  const modalBody =
+    modalOpen && selected
+      ? (() => {
+          const detailW = Math.max(20, (wide ? Math.min(cols - 10, 92) : cols - 6) - 4)
 
-        return (
-          <Box flexDirection="column" paddingBottom={2} paddingRight={1}>
-            <ForecastDetail
-              afterChart={
-                latestNote ? (
-                  <AnalystNote
-                    note={latestNote}
-                    showStance={selected.headline_kind !== 'distribution'}
-                    t={t}
-                    variant={latestNote.kind === 'retrospective' ? 'retrospective' : 'quickread'}
-                    width={detailW}
-                  />
-                ) : null
-              }
-              ensembleRows={ensembleRows}
-              item={detailItem ?? selected}
-              packetPanel={packetPanel}
-              t={t}
-              tailAudit={tailAudit}
-              width={detailW}
-            />
-            {packetTail && packetTail.length ? (
-              <ForecastPacketTail sections={packetTail} t={t} width={detailW} />
-            ) : tailLoading ? (
-              <Box marginTop={1}>
-                <Text color={t.color.muted}>loading detail…</Text>
-              </Box>
-            ) : null}
-            {priorNotes.length ? <DeskAnalystLog notes={priorNotes} t={t} /> : null}
-          </Box>
-        )
-      })()
-    : null
+          return (
+            <Box flexDirection="column" paddingBottom={2} paddingRight={1}>
+              <ForecastDetail
+                afterChart={
+                  latestNote ? (
+                    <AnalystNote
+                      note={latestNote}
+                      showStance={selected.headline_kind !== 'distribution'}
+                      t={t}
+                      variant={latestNote.kind === 'retrospective' ? 'retrospective' : 'quickread'}
+                      width={detailW}
+                    />
+                  ) : null
+                }
+                ensembleRows={ensembleRows}
+                item={detailItem ?? selected}
+                packetPanel={packetPanel}
+                t={t}
+                tailAudit={tailAudit}
+                width={detailW}
+              />
+              {packetTail && packetTail.length ? (
+                <ForecastPacketTail sections={packetTail} t={t} width={detailW} />
+              ) : tailLoading ? (
+                <Box marginTop={1}>
+                  <Text color={t.color.muted}>loading detail…</Text>
+                </Box>
+              ) : null}
+              {priorNotes.length ? <DeskAnalystLog notes={priorNotes} t={t} /> : null}
+            </Box>
+          )
+        })()
+      : null
 
   // The thesis/factor aggregate read leads the modal ONLY when the INSPECTED row
   // IS the lens row (Enter on the thesis/factor itself → `lensActive`). For a
   // MEMBER question (a `forecast` row under the lens) the modal must lead with
   // that question's own detail — never prepend the parent thesis/factor read just
   // because a lens is ACTIVE in the tab strip.
-  const refRead = !modalOpen || !lensActive ? null : refThesis ? (
-    <ThesisDeskRead t={t} thesis={refThesis} width={Math.max(20, (wide ? Math.min(cols - 10, 92) : cols - 6) - 4)} />
-  ) : refFactor ? (
-    <FactorDeskRead factor={refFactor} t={t} width={Math.max(20, (wide ? Math.min(cols - 10, 92) : cols - 6) - 4)} />
-  ) : null
+  const refRead =
+    !modalOpen || !lensActive ? null : refThesis ? (
+      <ThesisDeskRead t={t} thesis={refThesis} width={Math.max(20, (wide ? Math.min(cols - 10, 92) : cols - 6) - 4)} />
+    ) : refFactor ? (
+      <FactorDeskRead factor={refFactor} t={t} width={Math.max(20, (wide ? Math.min(cols - 10, 92) : cols - 6) - 4)} />
+    ) : null
 
-  const settingsModal = settingsOpen && settingsTargetId ? (
-    <ForecastSettingsModal
-      cols={cols}
-      gw={gw}
-      onClose={() => setSettingsOpen(false)}
-      onSaved={() => {
-        setFlash('settings saved')
-        load() // silent refresh so the NEXT column reflects a cadence change
-      }}
-      questionId={settingsTargetId}
-      rows={termRows}
-      t={t}
-      title={settingsTargetTitle ?? settingsTargetId}
-    />
-  ) : null
+  const settingsModal =
+    settingsOpen && settingsTargetId ? (
+      <ForecastSettingsModal
+        cols={cols}
+        gw={gw}
+        onClose={() => setSettingsOpen(false)}
+        onSaved={() => {
+          setFlash('settings saved')
+          load() // silent refresh so the NEXT column reflects a cadence change
+        }}
+        questionId={settingsTargetId}
+        rows={termRows}
+        t={t}
+        title={settingsTargetTitle ?? settingsTargetId}
+      />
+    ) : null
 
   // The `T` task modal: a free-text instruction over the captured id batch. Owns
   // its own keyboard (the desk useInput traps `taskOpen`); Enter → submitTask,
@@ -1658,9 +1715,25 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     : onBench
       ? [
           { k: '⇥', label: 'Lens', run: () => switchTab(tab + 1) },
-          { k: 'r', label: 'Refresh', run: () => { setBenchLoading(true); gw.request<unknown>('forecast.bench', {}).then(raw => { const r = asRpcResult<ForecastBenchResponse>(raw);
+          {
+            k: 'r',
+            label: 'Refresh',
+            run: () => {
+              setBenchLoading(true)
+              gw.request('forecast.bench', {})
+                .then(raw => {
+                  const r = asRpcResult<ForecastBenchResponse>(raw)
 
- if (r) { setOverlayCache('forecast.bench', r); setBench(r) } setBenchLoading(false) }).catch(() => setBenchLoading(false)) } },
+                  if (r) {
+                    setOverlayCache('forecast.bench', r)
+                    setBench(r)
+                  }
+
+                  setBenchLoading(false)
+                })
+                .catch(() => setBenchLoading(false))
+            }
+          },
           { k: 'h', label: 'Help', run: openHelpOverlay },
           { k: 'q', label: 'Close', run: onClose }
         ]
@@ -1688,7 +1761,15 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
             { k: 'n', label: 'New', run: () => openNewQuestion() },
             { k: 's', label: 'Settings', run: () => openSettings() },
             { k: 'o', label: 'Sort', run: () => onSortCycle() },
-            { k: '/', label: 'Filter', run: () => { setSel(0); setQuery(''); setFiltering(true) } },
+            {
+              k: '/',
+              label: 'Filter',
+              run: () => {
+                setSel(0)
+                setQuery('')
+                setFiltering(true)
+              }
+            },
             { k: 'h', label: 'Help', run: openHelpOverlay },
             { k: 'q', label: 'Close', run: onClose }
           ]
@@ -1697,7 +1778,9 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   // `u` only re-arms the schedule, `U` runs a real update now. This is contextual
   // STATUS, not a shortcuts row — the FooterChips above are the single, canonical
   // key row (the old always-on prose duplicate was removed).
-  const selectedDue = !onBench && !lensActive && selected ? dueText(selected, Math.floor(Date.now() / 60_000) * 60_000) : null
+  const selectedDue =
+    !onBench && !lensActive && selected ? dueText(selected, Math.floor(Date.now() / 60_000) * 60_000) : null
+
   const selectedStale = selectedDue?.status === 'now'
   const showStaleNote = !flash && !filtering && !modalOpen && !onBench && selectedStale
 
@@ -1755,7 +1838,17 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
           Body clicks are gated while the modal is open (switchTab/onSelect early-
           return) so the still-visible tabs/rows can't leak interaction — the
           keyboard is already trapped by the `if (modalOpen) return` in useInput. */}
-      <DeskTabsStrip active={tab} onSelect={i => { if (!modalOpen && !settingsOpen && !taskOpen && !globalModal) {switchTab(i)} }} t={t} tabs={tabs} width={width} />
+      <DeskTabsStrip
+        active={tab}
+        onSelect={i => {
+          if (!modalOpen && !settingsOpen && !taskOpen && !globalModal) {
+            switchTab(i)
+          }
+        }}
+        t={t}
+        tabs={tabs}
+        width={width}
+      />
       {onOperations ? (
         <OperationsCockpit operations={payload?.operations} t={t} />
       ) : onBench ? (
@@ -1952,7 +2045,15 @@ export function DeskTaskModal({
   const lines = value.length ? value.split('\n') : ['']
 
   return (
-    <ModalOverlay cols={cols} footerHint="⏎ submit · Esc cancel" maxHeight={modalH} maxWidth={modalW} rows={rows} t={t} title="Agent task">
+    <ModalOverlay
+      cols={cols}
+      footerHint="⏎ submit · Esc cancel"
+      maxHeight={modalH}
+      maxWidth={modalW}
+      rows={rows}
+      t={t}
+      title="Agent task"
+    >
       <Box flexDirection="column" flexGrow={1} minHeight={0}>
         <Text color={t.color.muted} wrap="truncate-end">
           {`What should the agent do with these ${count} question${count === 1 ? '' : 's'}?`}
@@ -2021,11 +2122,15 @@ export function NextBestActions({ actions, t, width }: { actions: ForecastNextAc
           <Box flexDirection="column" key={action.question_id ?? `na:${index}`}>
             <Text wrap="truncate-end">
               <Text bold color={badgeColor(action.action)}>{`${index + 1}. ${badge} `}</Text>
-              <Text color={t.color.text}>{truncate(action.title ?? action.question_id ?? '—', Math.max(8, width - 8))}</Text>
+              <Text color={t.color.text}>
+                {truncate(action.title ?? action.question_id ?? '—', Math.max(8, width - 8))}
+              </Text>
             </Text>
             {action.reason ? (
               <Text color={t.color.muted} wrap="wrap">
-                {wrapLines(action.reason, width, 2).map(line => `   ${line}`).join('\n')}
+                {wrapLines(action.reason, width, 2)
+                  .map(line => `   ${line}`)
+                  .join('\n')}
               </Text>
             ) : null}
           </Box>
@@ -2116,9 +2221,7 @@ export function DeskSummary({
   // freshness, close, teaser) never gets pushed past the bottom on a short screen.
   const chartHeight = Math.max(4, Math.min(7, (rows ?? 28) - 16))
 
-  const chart = hasSeries
-    ? bandChart(bandPoints, { height: chartHeight, width: inner, yMax, yMin })
-    : null
+  const chart = hasSeries ? bandChart(bandPoints, { height: chartHeight, width: inner, yMax, yMin }) : null
 
   // The teaser must READ COMPLETE or end honestly: the old silent
   // body.slice(0,120) chopped mid-thought with no ellipsis (the operator:
@@ -2256,7 +2359,7 @@ function LensSummary({
   width: number
 }) {
   const inner = Math.max(16, width - 2)
-  const title = (refThesis?.title ?? refFactor?.title) ?? 'Lens'
+  const title = refThesis?.title ?? refFactor?.title ?? 'Lens'
   const delta = refThesis?.delta ?? refFactor?.delta ?? null
   const glyph = deltaGlyph(delta)
   const deltaColor = !finite(delta) || Math.abs(delta) < 0.005 ? t.color.muted : delta > 0 ? t.color.ok : t.color.error
@@ -2266,7 +2369,11 @@ function LensSummary({
   // a real q05–q95 band; theses plot the health line (the score band is a
   // different 0–100 scale, so it isn't drawn here).
   const fullBandPoints = refFactor
-    ? (refFactor.history ?? []).map(p => ({ hi: p.band_high ?? null, lo: p.band_low ?? null, y: p.headline_probability ?? null }))
+    ? (refFactor.history ?? []).map(p => ({
+        hi: p.band_high ?? null,
+        lo: p.band_low ?? null,
+        y: p.headline_probability ?? null
+      }))
     : (refThesis?.history ?? []).map(p => ({ y: p.headline_probability ?? null }))
 
   const hasSeries = fullBandPoints.some(p => finite(p.y))
@@ -2277,7 +2384,7 @@ function LensSummary({
   const chartHeight = Math.max(4, Math.min(7, (rows ?? 28) - 14))
   const chart = hasSeries ? bandChart(bandPoints, { height: chartHeight, width: inner, yMax, yMin }) : null
 
-  const members = (refThesis?.member_count ?? refFactor?.member_count) ?? 0
+  const members = refThesis?.member_count ?? refFactor?.member_count ?? 0
   const coverage = refThesis?.coverage ?? refFactor?.coverage
   const nEff = refThesis?.n_eff ?? refFactor?.n_eff
   const asOf = refThesis?.as_of ?? refFactor?.as_of
@@ -2290,31 +2397,44 @@ function LensSummary({
       <Text bold color={t.color.accent} wrap="wrap">
         {`${refThesis ? '◆' : '▣'} ${wrapLines(title, inner - 2, 2).join('\n  ')}`}
       </Text>
-      <Text color={t.color.muted} wrap="truncate-end">{refThesis ? 'thesis lens' : 'factor lens'}</Text>
+      <Text color={t.color.muted} wrap="truncate-end">
+        {refThesis ? 'thesis lens' : 'factor lens'}
+      </Text>
 
       <Box marginTop={1}>
         {refThesis ? (
           <Text wrap="truncate-end">
             <Text color={t.color.muted}>health </Text>
             <Text bold color={healthColor(t, refThesis.health_probability)}>
-              {refThesis.health_display ?? (finite(refThesis.health_probability) ? pct(refThesis.health_probability) : '—')}
+              {refThesis.health_display ??
+                (finite(refThesis.health_probability) ? pct(refThesis.health_probability) : '—')}
             </Text>
             <Text color={t.color.label}> alive</Text>
             <Text color={t.color.muted}>{'  ·  score '}</Text>
-            <Text bold color={t.color.primary}>{scoreText(refThesis.thesis_score)}</Text>
+            <Text bold color={t.color.primary}>
+              {scoreText(refThesis.thesis_score)}
+            </Text>
             <Text color={t.color.label}> strength</Text>
             <Text color={t.color.muted}>{'  '}</Text>
-            <Text bold color={deltaColor}>{glyph}</Text>
+            <Text bold color={deltaColor}>
+              {glyph}
+            </Text>
           </Text>
         ) : refFactor ? (
           <Text wrap="truncate-end">
             <Text color={t.color.muted}>μ </Text>
-            <Text bold color={signColor(t, refFactor.mean)}>{finite(refFactor.mean) ? `${trimNum(refFactor.mean)}${unit}` : '—'}</Text>
+            <Text bold color={signColor(t, refFactor.mean)}>
+              {finite(refFactor.mean) ? `${trimNum(refFactor.mean)}${unit}` : '—'}
+            </Text>
             <Text color={t.color.label}> return</Text>
             <Text color={t.color.muted}>{'  ·  vol σ '}</Text>
-            <Text color={t.color.text}>{finite(refFactor.volatility) ? `${trimNum(refFactor.volatility)}${unit}` : '—'}</Text>
+            <Text color={t.color.text}>
+              {finite(refFactor.volatility) ? `${trimNum(refFactor.volatility)}${unit}` : '—'}
+            </Text>
             <Text color={t.color.muted}>{'  '}</Text>
-            <Text bold color={deltaColor}>{glyph}</Text>
+            <Text bold color={deltaColor}>
+              {glyph}
+            </Text>
           </Text>
         ) : null}
       </Box>
@@ -2444,7 +2564,7 @@ function LensHeader({
           <Text color={t.color.label}> alive</Text>
         </Text>
         <Text wrap="truncate-end">
-          <Text color={t.color.muted}>score  </Text>
+          <Text color={t.color.muted}>score </Text>
           <Text color={t.color.text}>{scoreText(score)}</Text>
           <Text color={t.color.label}> strength</Text>
         </Text>
@@ -2470,7 +2590,9 @@ function LensHeader({
         </Text>
         <Text wrap="truncate-end">
           <Text color={t.color.muted}>vol σ </Text>
-          <Text color={t.color.text}>{finite(refFactor.volatility) ? `${trimNum(refFactor.volatility)}${unit}` : '—'}</Text>
+          <Text color={t.color.text}>
+            {finite(refFactor.volatility) ? `${trimNum(refFactor.volatility)}${unit}` : '—'}
+          </Text>
           <Text color={t.color.label}> volatility</Text>
         </Text>
       </Box>
@@ -2560,10 +2682,7 @@ export function DeskForecastList({
   // A 2-col saturation gutter is reserved ONLY when the book actually holds an
   // under-saturated forecast (Wave 3) — so a healthy book's table is byte-for-byte
   // unchanged, and the ◌ marker (always in the leading gutter) is never truncated.
-  const hasUnderSaturated = useMemo(
-    () => items.some(item => item.saturation_below_threshold === true),
-    [items]
-  )
+  const hasUnderSaturated = useMemo(() => items.some(item => item.saturation_below_threshold === true), [items])
 
   const layout = useMemo(() => {
     const sem = semantics(t)
@@ -2651,7 +2770,9 @@ export function DeskForecastList({
           (gated while a modal covers the body). The active column shows a ▲/▼
           direction glyph and paints in accent; the rest stay the plain heading. */}
       <Box>
-        <Text bold color={sem.heading}>{satGutter ? '    ' : '  '}</Text>
+        <Text bold color={sem.heading}>
+          {satGutter ? '    ' : '  '}
+        </Text>
         {keptCols.map(c => {
           const active = sortKey === c.key
           const ind = active ? ` ${sortIndicator({ dir: sortDir, key: sortKey }, c.key)}` : ''
@@ -2664,8 +2785,16 @@ export function DeskForecastList({
             </Box>
           )
         })}
-        {showTrend ? <Text bold color={sem.heading}>{pad('1MO', trendW, 'left')}</Text> : null}
-        {sensSlot ? <Text bold color={sem.heading}>{pad('ΔPP', sensSlot, 'left')}</Text> : null}
+        {showTrend ? (
+          <Text bold color={sem.heading}>
+            {pad('1MO', trendW, 'left')}
+          </Text>
+        ) : null}
+        {sensSlot ? (
+          <Text bold color={sem.heading}>
+            {pad('ΔPP', sensSlot, 'left')}
+          </Text>
+        ) : null}
       </Box>
       <Text color={sem.rule}>{'─'.repeat(avail)}</Text>
       {pinnedThesis ? (
@@ -2704,7 +2833,7 @@ export function DeskForecastList({
               runningNow={runningId !== null && runningId === item.id}
               satGutter={satGutter}
               sem={sem}
-              sensitivityPp={sensByMember.size ? sensByMember.get(item.id ?? '') ?? null : null}
+              sensitivityPp={sensByMember.size ? (sensByMember.get(item.id ?? '') ?? null) : null}
               sensSlot={sensSlot}
               showTrend={showTrend}
               spinFrame={runningId !== null && runningId === item.id ? spinTick : 0}
@@ -3122,10 +3251,16 @@ const benchBrierText = (value: null | number | undefined): string =>
 // EDGE = market Brier − agent Brier; positive (green) = the agent beat the
 // honest market freeze on Brier. Neutral when either leg is missing.
 const benchEdgeCell = (edge: null | number | undefined, t: Theme): { color: string; text: string } => {
-  if (edge === null || edge === undefined || !finite(edge)) {return { color: t.color.muted, text: '—' }}
+  if (edge === null || edge === undefined || !finite(edge)) {
+    return { color: t.color.muted, text: '—' }
+  }
+
   const sign = edge > 0 ? '+' : ''
 
-  return { color: Math.abs(edge) < 0.0005 ? t.color.muted : edge > 0 ? t.color.ok : t.color.error, text: `${sign}${edge.toFixed(3)}` }
+  return {
+    color: Math.abs(edge) < 0.0005 ? t.color.muted : edge > 0 ? t.color.ok : t.color.error,
+    text: `${sign}${edge.toFixed(3)}`
+  }
 }
 
 function BenchScoreboard({
@@ -3157,8 +3292,8 @@ function BenchScoreboard({
         </Text>
         <Box marginTop={1}>
           <Text color={t.color.muted} wrap="wrap">
-            No ForecastBench backtests yet. Ingest a dataset (forecast ingest forecastbench …) to
-            populate the agent-vs-market Brier board.
+            No ForecastBench backtests yet. Ingest a dataset (forecast ingest forecastbench …) to populate the
+            agent-vs-market Brier board.
           </Text>
         </Box>
       </Box>
@@ -3188,16 +3323,32 @@ function BenchScoreboard({
           <Text bold color={t.color.accent}>
             ◇ ForecastBench
           </Text>
-          <Text color={t.color.muted}>{`   ${bench?.count ?? rows.length} questions · ${bench?.resolved_count ?? 0} resolved · ${agg.n ?? 0} scored`}</Text>
+          <Text
+            color={t.color.muted}
+          >{`   ${bench?.count ?? rows.length} questions · ${bench?.resolved_count ?? 0} resolved · ${agg.n ?? 0} scored`}</Text>
         </Text>
         <Text wrap="truncate-end">
           <Text color={t.color.muted}>agent Brier </Text>
-          <Text bold color={t.color.primary}>{benchBrierText(agg.mean_agent_brier)}</Text>
+          <Text bold color={t.color.primary}>
+            {benchBrierText(agg.mean_agent_brier)}
+          </Text>
           <Text color={t.color.muted}>{'  vs  market '}</Text>
-          <Text bold color={t.color.text}>{benchBrierText(agg.mean_market_brier)}</Text>
+          <Text bold color={t.color.text}>
+            {benchBrierText(agg.mean_market_brier)}
+          </Text>
           <Text color={t.color.muted}>{'   edge '}</Text>
-          <Text bold color={edge.color}>{edge.text}</Text>
-          <Text color={t.color.muted}>{edge.text === '—' ? '' : edge.color === t.color.ok ? ' (agent ahead)' : edge.color === t.color.error ? ' (market ahead)' : ''}</Text>
+          <Text bold color={edge.color}>
+            {edge.text}
+          </Text>
+          <Text color={t.color.muted}>
+            {edge.text === '—'
+              ? ''
+              : edge.color === t.color.ok
+                ? ' (agent ahead)'
+                : edge.color === t.color.error
+                  ? ' (market ahead)'
+                  : ''}
+          </Text>
         </Text>
       </Box>
 
@@ -3209,7 +3360,10 @@ function BenchScoreboard({
 
       {shown.map((row: ForecastBenchRow) => {
         const e = benchEdgeCell(row.brier_edge, t)
-        const outText = !row.resolved || row.outcome === null || row.outcome === undefined ? '—' : row.outcome >= 0.5 ? '1' : '0'
+
+        const outText =
+          !row.resolved || row.outcome === null || row.outcome === undefined ? '—' : row.outcome >= 0.5 ? '1' : '0'
+
         const outColor = outText === '1' ? t.color.ok : outText === '0' ? t.color.error : t.color.muted
 
         return (
@@ -3225,9 +3379,7 @@ function BenchScoreboard({
           </Text>
         )
       })}
-      {rows.length > shown.length ? (
-        <Text color={t.color.muted}>{`  ${shown.length}/${rows.length}`}</Text>
-      ) : null}
+      {rows.length > shown.length ? <Text color={t.color.muted}>{`  ${shown.length}/${rows.length}`}</Text> : null}
     </Box>
   )
 }

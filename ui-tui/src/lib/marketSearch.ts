@@ -1,5 +1,4 @@
 import { DEFAULT_SERIES, type MarketSeries } from '../content/marketProviders.js'
-import type { MarketSearchResponse } from '../protocol/generated.js'
 
 import type { QuotesTransport } from './marketFetch.js'
 
@@ -114,7 +113,7 @@ export const searchYahoo = async (query: string, gw?: QuotesTransport): Promise<
   }
 
   try {
-    const res = await gw.request<MarketSearchResponse>('market.search', { query: q })
+    const res = await gw.request('market.search', { query: q })
 
     return (res?.results ?? []).map(r => ({
       category: r.category,

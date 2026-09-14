@@ -1,5 +1,12 @@
 import { useStore } from '@nanostores/react'
-import { type ScrollBoxHandle, useApp, useHasSelection, useSelection, useStdout, useTerminalTitle } from '@superforecasting/ink'
+import {
+  type ScrollBoxHandle,
+  useApp,
+  useHasSelection,
+  useSelection,
+  useStdout,
+  useTerminalTitle
+} from '@superforecasting/ink'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { STARTUP_RESUME_ID } from '../config/env.js'
@@ -9,12 +16,7 @@ import { SECTION_NAMES, sectionMode } from '../domain/details.js'
 import { attachedImageNotice, imageTokenMeta } from '../domain/messages.js'
 import { fmtCwdBranch, shortCwd } from '../domain/paths.js'
 import { type GatewayClient, type GatewayExitInfo, type GatewayReconnectInfo } from '../gatewayClient.js'
-import type {
-  ClarifyRespondResponse,
-  ClipboardPasteResponse,
-  GatewayEvent,
-  TerminalResizeResponse
-} from '../gatewayTypes.js'
+import type { GatewayEvent } from '../gatewayTypes.js'
 import { useGitBranch } from '../hooks/useGitBranch.js'
 import { useVirtualHistory } from '../hooks/useVirtualHistory.js'
 import { speakingLabel } from '../lib/audiogram.js'
@@ -28,6 +30,7 @@ import { runtimeEnvValue } from '../lib/runtimeEnv.js'
 import { terminalParityHints } from '../lib/terminalParity.js'
 import { buildToolTrailLine, sameToolTrailGroup, toolTrailLabel } from '../lib/text.js'
 import { estimatedMsgHeight, messageHeightKey } from '../lib/virtualHeights.js'
+import type { RpcArgs, RpcMethod } from '../protocol/generated.js'
 import { WireEvent } from '../protocol/generated.js'
 import type { Msg, PanelSection, SlashCatalog } from '../types.js'
 
@@ -51,7 +54,9 @@ import { useLongRunToolCharms } from './useLongRunToolCharms.js'
 import { useSessionLifecycle } from './useSessionLifecycle.js'
 import { useSubmission } from './useSubmission.js'
 
-const FORECAST_PULSE_RE = /\b(forecast|probability|base[- ]rate|calibration|calibrate|resolve|score|brier|log score|update|evidence)\b/i
+const FORECAST_PULSE_RE =
+  /\b(forecast|probability|base[- ]rate|calibration|calibrate|resolve|score|brier|log score|update|evidence)\b/i
+
 const BRACKET_PASTE_ON = '\x1b[?2004h'
 const BRACKET_PASTE_OFF = '\x1b[?2004l'
 const MAX_HEIGHT_CACHE_BUCKETS = 12
@@ -133,7 +138,7 @@ export function useMainApp(gw: GatewayClient) {
       return
     }
 
-    const id = setInterval(() => setVoiceFrame((f) => (f + 1) % 100000), 90)
+    const id = setInterval(() => setVoiceFrame(f => (f + 1) % 100000), 90)
 
     return () => clearInterval(id)
   }, [voiceSpeaking])
@@ -372,12 +377,9 @@ export function useMainApp(gw: GatewayClient) {
   }, [])
 
   const rpc: GatewayRpc = useCallback(
-    async <T extends Record<string, any> = Record<string, any>>(
-      method: string,
-      params: Record<string, unknown> = {}
-    ) => {
+    async <M extends RpcMethod>(method: M, ...args: RpcArgs<M>) => {
       try {
-        const result = asRpcResult<T>(await gw.request<T>(method, params))
+        const result = await gw.request(method, ...args)
 
         if (result) {
           return result
@@ -422,8 +424,7 @@ export function useMainApp(gw: GatewayClient) {
       // a slow/failed triage query never perturbs the desk-rail refresh above.
       rpc('forecast.triage.contested', { limit: 200 })
         .then((r: any) => {
-          const count =
-            typeof r?.count === 'number' ? r.count : Array.isArray(r?.contested) ? r.contested.length : 0
+          const count = typeof r?.count === 'number' ? r.count : Array.isArray(r?.contested) ? r.contested.length : 0
 
           patchUiState({ forecastContestedCount: Math.max(0, count) })
         })
@@ -513,7 +514,7 @@ export function useMainApp(gw: GatewayClient) {
       clearTimeout(timer)
       timer = setTimeout(() => {
         timer = undefined
-        void rpc<TerminalResizeResponse>('terminal.resize', { cols: stdout.columns ?? 80, session_id: ui.sid })
+        void rpc('terminal.resize', { cols: stdout.columns ?? 80, session_id: ui.sid })
       }, 100)
     }
 
@@ -538,7 +539,7 @@ export function useMainApp(gw: GatewayClient) {
       turnController.turnTools = turnController.turnTools.filter(line => !sameToolTrailGroup(label, line))
       patchTurnState({ turnTrail: turnController.turnTools })
 
-      rpc<ClarifyRespondResponse>('clarify.respond', { answer, request_id: clarify.requestId }).then(r => {
+      gw.replyPrompt('clarify', clarify.requestId, { answer }).then(r => {
         if (!r) {
           return
         }
@@ -557,15 +558,17 @@ export function useMainApp(gw: GatewayClient) {
           sys('prompt cancelled')
         }
 
-        patchOverlayState({ clarify: null })
+        if ($overlayState.get().clarify?.requestId === overlay.clarify?.requestId) {
+          patchOverlayState({ clarify: null })
+        }
       })
     },
-    [appendMessage, overlay.clarify, rpc, sys]
+    [appendMessage, overlay.clarify, gw, sys]
   )
 
   const paste = useCallback(
     (quiet = false) =>
-      rpc<ClipboardPasteResponse>('clipboard.paste', { session_id: getUiState().sid }).then(r => {
+      rpc('clipboard.paste', { session_id: getUiState().sid }).then(r => {
         if (!r) {
           return
         }
@@ -715,10 +718,7 @@ export function useMainApp(gw: GatewayClient) {
         sid: null,
         status: reconnectingStatus(info.attempt, info.max, info.delayMs)
       })
-      turnController.pushActivity(
-        `gateway lost (${info.reason}) · reconnecting ${info.attempt}/${info.max}`,
-        'warn'
-      )
+      turnController.pushActivity(`gateway lost (${info.reason}) · reconnecting ${info.attempt}/${info.max}`, 'warn')
     }
 
     // Terminal: the retry budget is spent (or this was a deliberate stop). Name
@@ -758,7 +758,10 @@ export function useMainApp(gw: GatewayClient) {
 
     const onMarketProgress = (p: { id?: string; message?: string; phase?: string }) => {
       if (p?.id) {
-        setMarketJob(p.id, { message: p.message || p.phase || 'working', status: p.phase === 'refining' ? 'refining' : 'building' })
+        setMarketJob(p.id, {
+          message: p.message || p.phase || 'working',
+          status: p.phase === 'refining' ? 'refining' : 'building'
+        })
       }
     }
 
@@ -871,19 +874,57 @@ export function useMainApp(gw: GatewayClient) {
 
   slashRef.current = slash
 
-  const respondWith = useCallback(
-    (method: string, params: Record<string, unknown>, done: () => void) => rpc(method, params).then(r => r && done()),
-    [rpc]
-  )
+  useEffect(() => {
+    const cancelPrompt = ({ requestId }: { requestId: string }) => {
+      const current = $overlayState.get()
+
+      for (const kind of ['clarify', 'sudo', 'secret', 'approval'] as const) {
+        if (current[kind]?.requestId === requestId) {
+          patchOverlayState({ [kind]: null })
+        }
+      }
+    }
+
+    gw.on('prompt.cancelled', cancelPrompt)
+
+    return () => {
+      gw.off('prompt.cancelled', cancelPrompt)
+    }
+  }, [gw])
+
+  useEffect(() => {
+    if (ui.sid) {
+      gw.replayPrompts(ui.sid)
+    }
+  }, [gw, ui.sid])
 
   const answerApproval = useCallback(
-    (choice: string) =>
-      respondWith('approval.respond', { choice, session_id: ui.sid }, () => {
-        patchOverlayState({ approval: null })
+    (choice: string) => {
+      if (choice !== 'once' && choice !== 'session' && choice !== 'always' && choice !== 'deny') {
+        return
+      }
+
+      const requestId = overlay.approval?.requestId
+
+      const response =
+        requestId && gw.hasPrompt(requestId)
+          ? gw.replyPrompt('approval', requestId, { choice })
+          : rpc('approval.respond', { choice, session_id: ui.sid, ...(requestId && { request_id: requestId }) })
+
+      return response.then(r => {
+        if (!r) {
+          return
+        }
+
+        if ($overlayState.get().approval?.requestId === requestId) {
+          patchOverlayState({ approval: null })
+        }
+
         patchTurnState({ outcome: choice === 'deny' ? 'denied' : `approved (${choice})` })
         patchUiState({ status: 'running…' })
-      }),
-    [respondWith, ui.sid]
+      })
+    },
+    [gw, overlay.approval, rpc, ui.sid]
   )
 
   const answerSudo = useCallback(
@@ -892,12 +933,15 @@ export function useMainApp(gw: GatewayClient) {
         return
       }
 
-      return respondWith('sudo.respond', { password: pw, request_id: overlay.sudo.requestId }, () => {
-        patchOverlayState({ sudo: null })
+      return gw.replyPrompt('sudo', overlay.sudo.requestId, { password: pw }).then(() => {
+        if ($overlayState.get().sudo?.requestId === overlay.sudo?.requestId) {
+          patchOverlayState({ sudo: null })
+        }
+
         patchUiState({ status: 'running…' })
       })
     },
-    [overlay.sudo, respondWith]
+    [overlay.sudo, gw]
   )
 
   const answerSecret = useCallback(
@@ -906,12 +950,15 @@ export function useMainApp(gw: GatewayClient) {
         return
       }
 
-      return respondWith('secret.respond', { request_id: overlay.secret.requestId, value }, () => {
-        patchOverlayState({ secret: null })
+      return gw.replyPrompt('secret', overlay.secret.requestId, { value }).then(() => {
+        if ($overlayState.get().secret?.requestId === overlay.secret?.requestId) {
+          patchOverlayState({ secret: null })
+        }
+
         patchUiState({ status: 'running…' })
       })
     },
-    [overlay.secret, respondWith]
+    [overlay.secret, gw]
   )
 
   const onModelSelect = useCallback((value: string, effort?: string) => {

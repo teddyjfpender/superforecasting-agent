@@ -61,6 +61,7 @@ class BackgroundStartResponse(WireModel):
 
 class ClarifyRespondRequest(WireModel):
     TS_NAME = "ClarifyRespondRequest"
+    answer: str = ""
 
     request_id: str | None = None
     session_id: str | None = None
@@ -123,6 +124,8 @@ class ClipboardPasteResponse(WireModel):
 class InputDetectDropRequest(WireModel):
     TS_NAME = "InputDetectDropRequest"
 
+    session_id: str | None = None
+
     text: str | None = None
 
 
@@ -152,6 +155,8 @@ class TerminalResizeResponse(OkResponse):
 
 class ImageAttachRequest(WireModel):
     TS_NAME = "ImageAttachRequest"
+
+    path: str | None = None
 
     session_id: str | None = None
 
@@ -188,6 +193,10 @@ class ToolsConfigureResponse(WireModel):
 class ReloadMcpRequest(WireModel):
     TS_NAME = "ReloadMcpRequest"
 
+    session_id: str | None = None
+    confirm: bool = False
+    always: bool = False
+
 
 class ReloadMcpResponse(WireModel):
     TS_NAME = "ReloadMcpResponse"
@@ -220,6 +229,9 @@ class ProcessStopResponse(WireModel):
 
 class BrowserManageRequest(WireModel):
     TS_NAME = "BrowserManageRequest"
+
+    session_id: str | None = None
+    url: str | None = None
 
     action: str | None = None
 
@@ -265,3 +277,16 @@ __all__ = [
     "BrowserManageRequest",
     "BrowserManageResponse",
 ]
+
+
+class SudoRespondRequest(RespondRequest):
+    password: str = ""
+
+
+class SecretRespondRequest(RespondRequest):
+    value: str = ""
+
+
+class ApprovalRespondRequest(RespondRequest):
+    choice: str = "deny"
+    all: bool = False

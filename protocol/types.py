@@ -23,9 +23,9 @@ EventId = str  # a venue event identifier
 class WireModel(BaseModel):
     """Base for every model that crosses the gateway wire.
 
-    ``extra='ignore'`` mirrors the current handlers exactly — unknown request
-    keys are dropped, never rejected, so adding validation changes no wire
-    behaviour. ``TS_NAME`` sets the generated TypeScript interface name and
+    ``extra='ignore'`` permits additive response fields. The registration
+    wrapper rejects unknown request fields before effects, while shared
+    application validators retain their documented domain diagnostics. ``TS_NAME`` sets the generated TypeScript interface name and
     defaults to the class name.
     """
 

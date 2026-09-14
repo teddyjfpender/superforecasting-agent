@@ -31,11 +31,6 @@ from protocol import RPC_BY_METHOD
 
 logger = logging.getLogger(__name__)
 
-# Result keys that ride the wire additively even though the generated response
-# model doesn't declare them (see ``_rpc_model``). Kept tiny + explicit.
-_PASSTHROUGH_RESULT_KEYS = ("stale", "catalog")
-
-
 def _field_error(exc: ValidationError) -> ValueError:
     """Turn a pydantic request-validation failure into a ValueError that NAMES
     the offending field (so it routes to the -32602 ``_err`` path with the field
@@ -261,19 +256,7 @@ def register(server) -> None:
         return _ok(rid, result)
 
     def _rpc_model(method: str, handler):
-        """Wrap a handler with protocol-model validation WITHOUT changing the
-        wire.
-
-        * requests are validated against the registered request model — an
-          invalid payload short-circuits to the existing ``_err`` path with the
-          field named (pydantic ``ValidationError`` subclasses ``ValueError`` so
-          the code stays -32602);
-        * a SUCCESS result is round-tripped through the response model and
-          re-serialised via ``model_dump`` — for a well-formed venue payload this
-          is byte-identical to the handler's ``to_dict`` output. A payload that
-          does NOT validate (e.g. a test stub, or genuine latent drift) passes
-          through UNCHANGED and is logged, so the wire can never regress.
-        """
+        """Preserve PM parameter diagnostics; shared registration checks results."""
 
         spec = RPC_BY_METHOD.get(method)
         if spec is None:  # pragma: no cover - every pm.* method is registered
@@ -284,26 +267,7 @@ def register(server) -> None:
                 spec.request.model_validate(params if isinstance(params, dict) else {})
             except ValidationError as exc:
                 return _err(rid, _field_error(exc))
-            resp = handler(rid, params)
-            if isinstance(resp, dict) and isinstance(resp.get("result"), dict):
-                try:
-                    model = spec.response.model_validate(resp["result"])
-                except ValidationError:
-                    logger.debug(
-                        "pm response for %s did not validate; passing through unchanged",
-                        method,
-                    )
-                    return resp
-                dumped = model.model_dump(mode="json", exclude_none=spec.exclude_none)
-                # Re-attach whitelisted out-of-model markers the wire is allowed
-                # to carry but the generated response model doesn't declare (it
-                # is extra='ignore', so model_dump silently drops them). pm.list's
-                # cold-start `stale` flag is one such honest, additive signal.
-                for extra in _PASSTHROUGH_RESULT_KEYS:
-                    if extra in resp["result"] and extra not in dumped:
-                        dumped[extra] = resp["result"][extra]
-                return {**resp, "result": dumped}
-            return resp
+            return handler(rid, params)
 
         wrapped.__name__ = getattr(handler, "__name__", method)
         return wrapped

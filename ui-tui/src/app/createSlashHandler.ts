@@ -1,5 +1,4 @@
 import { parseSlashCommand } from '../domain/slash.js'
-import type { SlashExecResponse } from '../gatewayTypes.js'
 import { asCommandDispatch, isCommandHandoff, rpcErrorMessage } from '../lib/rpc.js'
 
 import type { SlashHandlerContext } from './interfaces.js'
@@ -131,7 +130,7 @@ export function createSlashHandler(ctx: SlashHandlerContext): (cmd: string) => b
           return
         }
 
-        gw.request<SlashExecResponse>('slash.exec', { command: cmd.slice(1), session_id: sid })
+        gw.request('slash.exec', { command: cmd.slice(1), session_id: sid })
           .then(r => {
             if (!stale()) {
               showOutput(r?.output, r?.warning)

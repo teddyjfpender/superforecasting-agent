@@ -1,11 +1,11 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
 // Data hooks for the Prediction Markets pane: they keep the network + streaming
 // lifecycle out of the view component (which stays under the non-monolithic
 // line budget and reads as pure layout + input). One list fetch per refresh;
 // book/history fetch on demand for the selection; ONE multiplexed ws
 // subscription per selected event, folded in place on pm.tick.
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-
+import type { RpcRequest } from '../protocol/generated.js'
 import { WireEvent } from '../protocol/generated.js'
 
 import {
@@ -32,7 +32,7 @@ import {
 export interface PMHookGateway {
   off?: (event: string, listener: (...args: unknown[]) => void) => void
   on?: (event: string, listener: (...args: unknown[]) => void) => void
-  request: <T = unknown>(method: string, params?: Record<string, unknown>) => Promise<T>
+  request: RpcRequest
 }
 
 // ── list ─────────────────────────────────────────────────────────────────────

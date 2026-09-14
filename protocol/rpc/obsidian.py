@@ -21,6 +21,8 @@ class ObsidianNote(WireModel):
 class ObsidianStatusRequest(WireModel):
     TS_NAME = "ObsidianStatusRequest"
 
+    limit: int = 100
+
 
 class ObsidianStatusResponse(WireModel):
     TS_NAME = "ObsidianStatusResponse"
@@ -48,6 +50,8 @@ class ObsidianNoteResponse(WireModel):
 
 class ObsidianSearchRequest(WireModel):
     TS_NAME = "ObsidianSearchRequest"
+
+    limit: int = 50
 
     query: str | None = None
 
@@ -81,3 +85,32 @@ __all__ = [
     "ObsidianSearchResult",
     "ObsidianSearchResponse",
 ]
+
+
+class ObsidianWriteRequest(WireModel):
+    rel_path: str
+    content: str
+
+
+class ObsidianCreateRequest(WireModel):
+    rel_path: str
+    content: str = ""
+    title: str = ""
+
+
+class ObsidianAppendRequest(WireModel):
+    rel_path: str
+    text: str
+
+
+class ObsidianWriteResponse(WireModel):
+    ok: bool
+    rel_path: str
+    size: int | None = wire_optional()
+
+
+class ObsidianSetupResponse(WireModel):
+    ok: bool
+    vault: str
+    created: list[str]
+    skipped: list[str]

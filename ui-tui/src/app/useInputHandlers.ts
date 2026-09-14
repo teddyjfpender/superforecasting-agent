@@ -4,13 +4,7 @@ import { useEffect, useRef } from 'react'
 
 import { TYPING_IDLE_MS } from '../config/timing.js'
 import { resolveViewChord } from '../content/keymaps.js'
-import type {
-  ApprovalRespondResponse,
-  ConfigSetResponse,
-  SecretRespondResponse,
-  SudoRespondResponse,
-  VoiceRecordResponse
-} from '../gatewayTypes.js'
+import type { VoiceRecordResponse } from '../gatewayTypes.js'
 import { completionRequestForInput } from '../hooks/useCompletion.js'
 import { forecastFindDraft, forecastShortcutForKey } from '../lib/forecastShortcuts.js'
 import { isAction, isCopyShortcut, isMac, isVoiceToggleKey } from '../lib/platform.js'
@@ -168,19 +162,19 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
 
     if (overlay.approval) {
       return gateway
-        .rpc<ApprovalRespondResponse>('approval.respond', { choice: 'deny', session_id: getUiState().sid })
+        .rpc('approval.respond', { choice: 'deny', session_id: getUiState().sid })
         .then(r => r && (patchOverlayState({ approval: null }), patchTurnState({ outcome: 'denied' })))
     }
 
     if (overlay.sudo) {
       return gateway
-        .rpc<SudoRespondResponse>('sudo.respond', { password: '', request_id: overlay.sudo.requestId })
+        .rpc('sudo.respond', { password: '', request_id: overlay.sudo.requestId })
         .then(r => r && (patchOverlayState({ sudo: null }), actions.sys('sudo cancelled')))
     }
 
     if (overlay.secret) {
       return gateway
-        .rpc<SecretRespondResponse>('secret.respond', { request_id: overlay.secret.requestId, value: '' })
+        .rpc('secret.respond', { request_id: overlay.secret.requestId, value: '' })
         .then(r => r && (patchOverlayState({ secret: null }), actions.sys('secret entry cancelled')))
     }
 
@@ -309,7 +303,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     }
 
     gateway
-      .rpc<VoiceRecordResponse>('voice.record', { action, session_id: getUiState().sid })
+      .rpc('voice.record', { action, session_id: getUiState().sid })
       .then(r => applyVoiceRecordResponse(r, starting, voice, actions.sys))
       .catch((e: Error) => {
         // Revert optimistic UI on failure.
@@ -785,7 +779,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
 
       // gateway.rpc swallows errors with its own sys() message and resolves to null,
       // so we only speak when it came back with a real shape. null = rpc already spoke.
-      return void gateway.rpc<ConfigSetResponse>('config.set', { key: 'yolo', session_id: live.sid }).then(r => {
+      return void gateway.rpc('config.set', { key: 'yolo', session_id: live.sid }).then(r => {
         if (r?.value === '1') {
           return actions.sys('yolo on')
         }

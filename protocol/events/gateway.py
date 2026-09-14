@@ -100,7 +100,7 @@ class SessionInfo(WireModel):
     cwd: str
     version: str
     release_date: str
-    update_behind: bool | None
+    update_behind: int | None
     update_command: str
     profile_name: str
     usage: dict[str, Any]

@@ -64,7 +64,7 @@ const cycleSev = (current: string, dir: 1 | -1): Severity => {
   const idx = Math.max(0, SEVERITIES.indexOf((current as Severity) ?? 'warn'))
   const n = SEVERITIES.length
 
-  return SEVERITIES[((idx + dir) % n + n) % n]
+  return SEVERITIES[(((idx + dir) % n) + n) % n]
 }
 
 // Step a threshold by ±1 unit (integers) or ±5% of its range (continuous),
@@ -126,19 +126,27 @@ export function ForecastSettingsModal({
     // (it builds a fresh ledger per forecast.config call) or busy, surface a
     // clear, actionable state instead of an endless spinner.
     const timer = setTimeout(() => {
-      if (!aliveRef.current) {return}
+      if (!aliveRef.current) {
+        return
+      }
+
       setError('Settings are taking a while to load — the desk gateway may be busy. Press Esc to close and try again.')
       setLoading(false)
     }, 8000)
 
-    gw.request<unknown>('forecast.config', { id: questionId })
+    gw.request('forecast.config', { id: questionId })
       .then(raw => {
-        if (!aliveRef.current) {return}
+        if (!aliveRef.current) {
+          return
+        }
+
         clearTimeout(timer)
         const cfg = asRpcResult<ForecastConfigResponse>(raw)
 
         if (!cfg) {
-          setError('No settings are available for this forecast — it may be a benchmark or market question without a configurable profile. Press Esc to close.')
+          setError(
+            'No settings are available for this forecast — it may be a benchmark or market question without a configurable profile. Press Esc to close.'
+          )
           setLoading(false)
 
           return
@@ -156,7 +164,10 @@ export function ForecastSettingsModal({
         setLoading(false)
       })
       .catch((err: unknown) => {
-        if (!aliveRef.current) {return}
+        if (!aliveRef.current) {
+          return
+        }
+
         clearTimeout(timer)
         setError(err instanceof Error ? err.message : String(err))
         setLoading(false)
@@ -171,13 +182,18 @@ export function ForecastSettingsModal({
   // Fetch the readiness composite for the READINESS section (independent of config).
   useEffect(() => {
     let alive = true
-    gw.request<unknown>('forecast.question.readiness', { question_id: questionId })
+    gw.request('forecast.question.readiness', { question_id: questionId })
       .then(raw => {
-        if (!alive) {return}
+        if (!alive) {
+          return
+        }
+
         setReadiness(asRpcResult<ForecastQuestionReadinessResponse>(raw) ?? null)
       })
       .catch(() => {
-        if (alive) {setReadiness(null)}
+        if (alive) {
+          setReadiness(null)
+        }
       })
 
     return () => {
@@ -213,7 +229,10 @@ export function ForecastSettingsModal({
   }, [fields.length])
 
   const save = () => {
-    if (busy) {return}
+    if (busy) {
+      return
+    }
+
     setBusy(true)
     setStatus('saving…')
     setError('')
@@ -249,14 +268,20 @@ export function ForecastSettingsModal({
 
     gw.request('forecast.config.set', params)
       .then(() => {
-        if (!aliveRef.current) {return}
+        if (!aliveRef.current) {
+          return
+        }
+
         setBusy(false)
         setStatus('saved')
         onSaved?.()
         onClose()
       })
       .catch((err: unknown) => {
-        if (!aliveRef.current) {return}
+        if (!aliveRef.current) {
+          return
+        }
+
         setBusy(false)
         setStatus('')
         setError(err instanceof Error ? err.message : String(err))
@@ -264,14 +289,19 @@ export function ForecastSettingsModal({
   }
 
   const editText = (apply: (prev: string) => string) => {
-    if (current.key === 'cadence') {return setCadence(apply)}
+    if (current.key === 'cadence') {
+      return setCadence(apply)
+    }
+
     setDecision(prev => ({ ...prev, [current.key]: apply(prev[current.key as keyof DraftDecision]) }))
   }
 
   const adjust = (dir: 1 | -1) => {
     if (current.kind === 'gate' && current.ref !== undefined) {
       const i = current.ref
-      setGates(prev => prev.map((g, gi) => (gi === i ? { ...g, severity: cycleSev(g.severity, dir), source: 'override' } : g)))
+      setGates(prev =>
+        prev.map((g, gi) => (gi === i ? { ...g, severity: cycleSev(g.severity, dir), source: 'override' } : g))
+      )
 
       return
     }
@@ -279,7 +309,9 @@ export function ForecastSettingsModal({
     if (current.kind === 'threshold' && current.ref !== undefined) {
       const i = current.ref
       setThresholds(prev =>
-        prev.map((thr, ti) => (ti === i ? { ...thr, value: stepThreshold(thr, thr.value, dir), source: 'override' } : thr))
+        prev.map((thr, ti) =>
+          ti === i ? { ...thr, value: stepThreshold(thr, thr.value, dir), source: 'override' } : thr
+        )
       )
     }
   }
@@ -295,63 +327,80 @@ export function ForecastSettingsModal({
       return Math.min(max, Math.max(0, cur + delta))
     })
 
-  useInput((ch, key) => {
-    if (busy) {
-      if (key.escape) {onClose()}
+  useInput(
+    (ch, key) => {
+      if (busy) {
+        if (key.escape) {
+          onClose()
+        }
 
-      return
-    }
+        return
+      }
 
-    if (key.escape) {return onClose()}
+      if (key.escape) {
+        return onClose()
+      }
 
-    if (key.upArrow || (ch === 'k' && current.kind !== 'cadence' && current.kind !== 'text')) {
-      return move(-1)
-    }
+      if (key.upArrow || (ch === 'k' && current.kind !== 'cadence' && current.kind !== 'text')) {
+        return move(-1)
+      }
 
-    if (key.downArrow || (ch === 'j' && current.kind !== 'cadence' && current.kind !== 'text')) {
-      return move(1)
-    }
+      if (key.downArrow || (ch === 'j' && current.kind !== 'cadence' && current.kind !== 'text')) {
+        return move(1)
+      }
 
-    if (key.tab) {
-      return setSel(i => {
-        const max = Math.max(0, fields.length - 1)
-        const cur = Math.min(Math.max(0, i), max)
+      if (key.tab) {
+        return setSel(i => {
+          const max = Math.max(0, fields.length - 1)
+          const cur = Math.min(Math.max(0, i), max)
 
-        return cur >= max ? 0 : cur + 1
-      })
-    }
+          return cur >= max ? 0 : cur + 1
+        })
+      }
 
-    if (current.kind === 'save') {
-      if (key.return) {return save()}
+      if (current.kind === 'save') {
+        if (key.return) {
+          return save()
+        }
 
-      return
-    }
+        return
+      }
 
-    if (current.kind === 'gate' || current.kind === 'threshold') {
-      if (key.leftArrow || ch === 'h' || ch === '-') {return adjust(-1)}
+      if (current.kind === 'gate' || current.kind === 'threshold') {
+        if (key.leftArrow || ch === 'h' || ch === '-') {
+          return adjust(-1)
+        }
 
-      if (key.rightArrow || ch === 'l' || ch === '+' || ch === ' ') {return adjust(1)}
+        if (key.rightArrow || ch === 'l' || ch === '+' || ch === ' ') {
+          return adjust(1)
+        }
 
-      if (key.return) {return move(1)}
+        if (key.return) {
+          return move(1)
+        }
 
-      return
-    }
+        return
+      }
 
-    // text / cadence fields capture typing
-    if (key.return) {
-      return move(1)
-    }
+      // text / cadence fields capture typing
+      if (key.return) {
+        return move(1)
+      }
 
-    if (key.backspace || key.delete) {
-      return editText(s => s.slice(0, -1))
-    }
+      if (key.backspace || key.delete) {
+        return editText(s => s.slice(0, -1))
+      }
 
-    if (ch && !key.ctrl && !key.meta) {
-      const printable = [...ch].filter(c => c >= ' ').join('')
+      if (ch && !key.ctrl && !key.meta) {
+        const printable = [...ch].filter(c => c >= ' ').join('')
 
-      if (printable) {editText(s => s + printable)}
-    }
-  }, { isActive: !globalModal })
+        if (printable) {
+          editText(s => s + printable)
+        }
+      }
+    },
+    { isActive: !globalModal }
+  )
 
   const modalW = Math.max(54, Math.min(cols - 4, 96))
   const modalH = Math.max(18, Math.min(rows - 4, 38))
@@ -386,7 +435,9 @@ export function ForecastSettingsModal({
       <Text key={key} wrap="truncate-end">
         <Text color={active ? t.color.accent : t.color.muted}>{cursorFor(key)}</Text>
         <Text color={active ? t.color.accent : t.color.text}>{(g.label ?? g.id).padEnd(38).slice(0, 38)}</Text>
-        <Text color={sevColor(t, g.severity)}>{` ${sevLabel[(g.severity as Severity) ?? 'warn'] ?? g.severity}`.padEnd(7)}</Text>
+        <Text color={sevColor(t, g.severity)}>
+          {` ${sevLabel[(g.severity as Severity) ?? 'warn'] ?? g.severity}`.padEnd(7)}
+        </Text>
         {g.source === 'override' ? <Text color={t.color.info}>{' (set)'}</Text> : null}
         {looser ? <Text color={t.color.warn}>{' ⚠ looser'}</Text> : null}
       </Text>
@@ -423,24 +474,27 @@ export function ForecastSettingsModal({
   // unavailable (a benchmark/market question). A fully-ready question shows "· ready".
   const gapCount = readiness?.gaps?.length ?? 0
 
-  const readinessSection = readiness && Number.isFinite(readiness.score) ? (
-    <Box flexDirection="column" flexShrink={0}>
-      <Box flexShrink={0}>
-        <Text bold color={t.color.primary}>
-          {'READINESS  '}
-        </Text>
-        <Text bold color={readinessColor(t, readiness.score)}>
-          {`${Math.round(readiness.score)}/100`}
-        </Text>
-        <Text color={t.color.muted}>{gapCount > 0 ? ` · ${gapCount} gap${gapCount === 1 ? '' : 's'}` : ' · ready'}</Text>
+  const readinessSection =
+    readiness && Number.isFinite(readiness.score) ? (
+      <Box flexDirection="column" flexShrink={0}>
+        <Box flexShrink={0}>
+          <Text bold color={t.color.primary}>
+            {'READINESS  '}
+          </Text>
+          <Text bold color={readinessColor(t, readiness.score)}>
+            {`${Math.round(readiness.score)}/100`}
+          </Text>
+          <Text color={t.color.muted}>
+            {gapCount > 0 ? ` · ${gapCount} gap${gapCount === 1 ? '' : 's'}` : ' · ready'}
+          </Text>
+        </Box>
+        {(readiness.gaps ?? []).map(gap => (
+          <Text color={t.color.muted} key={gap.key} wrap="truncate-end">
+            {`  · ${gap.label} — ${gap.fix_hint}`}
+          </Text>
+        ))}
       </Box>
-      {(readiness.gaps ?? []).map(gap => (
-        <Text color={t.color.muted} key={gap.key} wrap="truncate-end">
-          {`  · ${gap.label} — ${gap.fix_hint}`}
-        </Text>
-      ))}
-    </Box>
-  ) : null
+    ) : null
 
   const body = loading ? (
     <Text color={t.color.muted}>Loading settings…</Text>

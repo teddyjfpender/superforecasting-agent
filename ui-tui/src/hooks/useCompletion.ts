@@ -112,7 +112,7 @@ export function useCompletion(input: string, blocked: boolean, gw: GatewayClient
         return
       }
 
-      gw.request<CompletionResponse>(request.method, request.params)
+      gw.request(request.method, request.params)
         .then(raw => {
           if (ref.current !== input) {
             return

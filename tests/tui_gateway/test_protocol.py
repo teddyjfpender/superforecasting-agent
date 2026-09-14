@@ -25,19 +25,24 @@ def _restore_stdout():
 
 @pytest.fixture()
 def server():
-    with patch.dict("sys.modules", {
-        "superforecasting_agent.constants": MagicMock(get_agent_home=MagicMock(return_value=Path("/tmp/hermes_test"))),
-        "superforecasting_agent.runtime.env_loader": MagicMock(),
-        "superforecasting_agent.runtime.banner": MagicMock(),
-        "superforecasting_agent.storage.session": MagicMock(),
-    }):
+    with patch.dict(
+        "sys.modules",
+        {
+            "superforecasting_agent.constants": MagicMock(
+                get_agent_home=MagicMock(return_value=Path("/tmp/hermes_test"))
+            ),
+            "superforecasting_agent.runtime.env_loader": MagicMock(),
+            "superforecasting_agent.runtime.banner": MagicMock(),
+            "superforecasting_agent.storage.session": MagicMock(),
+        },
+    ):
         import importlib
+
         mod = importlib.import_module("tui_gateway.server")
         yield mod
         assert mod.shutdown_runtime(5), "protocol test left runtime workers active"
         retire_test_sessions(mod)
-        mod._pending.clear()
-        mod._answers.clear()
+        mod._server_requests.cancel_session(None, "test cleanup")
         mod._methods.clear()
     importlib.reload(mod)
 
@@ -60,13 +65,17 @@ def test_unknown_method(server):
 
 def test_ok_envelope(server):
     assert server._ok("r1", {"x": 1}) == {
-        "jsonrpc": "2.0", "id": "r1", "result": {"x": 1},
+        "jsonrpc": "2.0",
+        "id": "r1",
+        "result": {"x": 1},
     }
 
 
 def test_err_envelope(server):
     assert server._err("r2", 4001, "nope") == {
-        "jsonrpc": "2.0", "id": "r2", "error": {"code": 4001, "message": "nope"},
+        "jsonrpc": "2.0",
+        "id": "r2",
+        "error": {"code": 4001, "message": "nope"},
     }
 
 
@@ -81,8 +90,11 @@ def test_write_json(capture):
 
 def test_write_json_broken_pipe(server):
     class _Broken:
-        def write(self, _): raise BrokenPipeError
-        def flush(self): raise BrokenPipeError
+        def write(self, _):
+            raise BrokenPipeError
+
+        def flush(self):
+            raise BrokenPipeError
 
     server._real_stdout = _Broken()
     assert server.write_json({"x": 1}) is False
@@ -92,8 +104,11 @@ def test_write_json_closed_stream_returns_false(server):
     """ValueError ('I/O on closed file') used to bubble up; treat as gone."""
 
     class _Closed:
-        def write(self, _): raise ValueError("I/O operation on closed file")
-        def flush(self): raise ValueError("I/O operation on closed file")
+        def write(self, _):
+            raise ValueError("I/O operation on closed file")
+
+        def flush(self):
+            raise ValueError("I/O operation on closed file")
 
     server._real_stdout = _Closed()
     assert server.write_json({"x": 1}) is False
@@ -108,7 +123,9 @@ def test_write_json_unicode_encode_error_re_raises(server):
     class _AsciiOnly:
         def write(self, line):
             line.encode("ascii")  # raises UnicodeEncodeError on non-ascii
-        def flush(self): pass
+
+        def flush(self):
+            pass
 
     server._real_stdout = _AsciiOnly()
     with pytest.raises(UnicodeEncodeError):
@@ -120,8 +137,11 @@ def test_write_json_unrelated_value_error_re_raises(server):
     ValueErrors are programming errors and must surface."""
 
     class _BadValue:
-        def write(self, _): raise ValueError("something else entirely")
-        def flush(self): pass
+        def write(self, _):
+            raise ValueError("something else entirely")
+
+        def flush(self):
+            pass
 
     server._real_stdout = _BadValue()
     with pytest.raises(ValueError, match="something else entirely"):
@@ -147,8 +167,11 @@ def test_write_json_peer_gone_oserror_on_flush_returns_false(server):
     written = []
 
     class _FlushPeerGone:
-        def write(self, line): written.append(line)
-        def flush(self): raise OSError(errno.EPIPE, "broken pipe")
+        def write(self, line):
+            written.append(line)
+
+        def flush(self):
+            raise OSError(errno.EPIPE, "broken pipe")
 
     server._real_stdout = _FlushPeerGone()
     assert server.write_json({"x": 1}) is False
@@ -162,8 +185,11 @@ def test_write_json_non_peer_gone_oserror_re_raises(server):
     import errno
 
     class _DiskFull:
-        def write(self, _): raise OSError(errno.ENOSPC, "no space left")
-        def flush(self): pass
+        def write(self, _):
+            raise OSError(errno.ENOSPC, "no space left")
+
+        def flush(self):
+            pass
 
     server._real_stdout = _DiskFull()
     with pytest.raises(OSError, match="no space"):
@@ -187,8 +213,11 @@ def test_write_json_skips_flush_when_disable_flush_true(monkeypatch):
     written = []
 
     class _Stream:
-        def write(self, line): written.append(line)
-        def flush(self): flushed["count"] += 1
+        def write(self, line):
+            written.append(line)
+
+        def flush(self):
+            flushed["count"] += 1
 
     stream = _Stream()
     transport = transport_mod.StdioTransport(lambda: stream, threading.Lock())
@@ -242,37 +271,16 @@ def test_emit_without_payload(capture):
 # ── Blocking prompt round-trip ───────────────────────────────────────
 
 
-def test_block_and_respond(capture):
-    server, _ = capture
-    result = [None]
-
-    threading.Thread(
-        target=lambda: result.__setitem__(0, server._block("test.prompt", "s1", {"q": "?"}, timeout=5)),
-    ).start()
-
-    for _ in range(100):
-        if server._pending:
-            break
-        threading.Event().wait(0.01)
-
-    rid = next(iter(server._pending))
-    server._answers[rid] = "my_answer"
-    # _pending values are (sid, Event) tuples — unpack to set the Event
-    _, ev = server._pending[rid]
-    ev.set()
-
-    threading.Event().wait(0.1)
-    assert result[0] == "my_answer"
-
-
 def test_clear_pending(server):
-    ev = threading.Event()
-    # _pending values are (sid, Event) tuples
-    server._pending["r1"] = ("sid-x", ev)
-    server._clear_pending()
+    from tests.tui_gateway.test_server_requests import Transport
 
-    assert ev.is_set()
-    assert server._answers["r1"] == ""
+    request_id, pending = server._server_requests.begin(
+        "sid-x", "sudo", {}, Transport()
+    )
+    server._clear_pending()
+    assert pending.event.is_set()
+    assert pending.result is None
+    assert server._server_requests.resume("sid-x", Transport()) == []
 
 
 # ── Session lookup ───────────────────────────────────────────────────
@@ -316,17 +324,31 @@ def test_session_resume_returns_hydrated_messages(server, monkeypatch):
             ]
 
     monkeypatch.setattr(server, "_get_db", lambda: _DB())
-    monkeypatch.setattr(server, "_make_agent", lambda sid, key, session_id=None: object())
-    monkeypatch.setattr(server, "_init_session", lambda sid, key, agent, history, cols=80, pending_handoff=False: server._host.sessions.register(sid, {"session_key": key, "history_lock": threading.Lock(), "running": pending_handoff, "_replacing": pending_handoff}))
-    monkeypatch.setattr(server, "_session_info", lambda _agent: {"model": "test/model"})
-
-    resp = server.handle_request(
-        {
-            "id": "r1",
-            "method": "session.resume",
-            "params": {"session_id": "20260409_010101_abc123", "cols": 100},
-        }
+    monkeypatch.setattr(
+        server, "_make_agent", lambda sid, key, session_id=None: object()
     )
+    monkeypatch.setattr(
+        server,
+        "_init_session",
+        lambda sid, key, agent, history, cols=80, pending_handoff=False, server_requests=False: (
+            server._host.sessions.register(
+                sid,
+                {
+                    "session_key": key,
+                    "history_lock": threading.Lock(),
+                    "running": pending_handoff,
+                    "_replacing": pending_handoff,
+                },
+            )
+        ),
+    )
+    monkeypatch.setattr(server, "_session_info", lambda _agent: {"model": "test/model", "skills": {}, "tools": {}})
+
+    resp = server.handle_request({
+        "id": "r1",
+        "method": "session.resume",
+        "params": {"session_id": "20260409_010101_abc123", "cols": 100},
+    })
 
     assert "error" not in resp
     assert resp["result"]["message_count"] == 3
@@ -338,7 +360,9 @@ def test_session_resume_returns_hydrated_messages(server, monkeypatch):
 
 
 @pytest.mark.parametrize("fail_end", [False, True])
-def test_session_resume_replaces_old_runtime_only_after_success(server, monkeypatch, fail_end):
+def test_session_resume_replaces_old_runtime_only_after_success(
+    server, monkeypatch, fail_end
+):
     class _DB:
         def end_session(self, _sid, _reason):
             if fail_end:
@@ -355,19 +379,24 @@ def test_session_resume_replaces_old_runtime_only_after_success(server, monkeypa
 
     server._host.sessions["old-runtime"] = {"session_key": "old", "agent": None}
     monkeypatch.setattr(server, "_get_db", lambda: _DB())
-    monkeypatch.setattr(server, "_make_agent", lambda sid, key, session_id=None: object())
-    monkeypatch.setattr(server, "_session_info", lambda _agent: {})
-
-    resp = server.handle_request(
-        {
-            "id": "r1",
-            "method": "session.resume",
-            "params": {
-                "session_id": "saved",
-                "replace_session_id": "old-runtime",
-            },
-        }
+    monkeypatch.setattr(
+        server, "_make_agent", lambda sid, key, session_id=None: object()
     )
+    monkeypatch.setattr(server, "_session_info", lambda _agent: {
+        "model": "fixture", "skills": {}, "tools": {}, "usage": {"calls": 0, "input": 0, "output": 0, "total": 0},
+        "reasoning_effort": "", "service_tier": "", "fast": False,
+        "cwd": "/tmp", "version": "test", "release_date": "", "update_behind": None,
+        "update_command": "", "profile_name": "test",
+    })
+
+    resp = server.handle_request({
+        "id": "r1",
+        "method": "session.resume",
+        "params": {
+            "session_id": "saved",
+            "replace_session_id": "old-runtime",
+        },
+    })
 
     if fail_end:
         assert "injected prior session end failure" in resp["error"]["message"]
@@ -400,16 +429,14 @@ def test_session_resume_failure_preserves_old_runtime(server, monkeypatch):
         lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("boom")),
     )
 
-    resp = server.handle_request(
-        {
-            "id": "r1",
-            "method": "session.resume",
-            "params": {
-                "session_id": "saved",
-                "replace_session_id": "old-runtime",
-            },
-        }
-    )
+    resp = server.handle_request({
+        "id": "r1",
+        "method": "session.resume",
+        "params": {
+            "session_id": "saved",
+            "replace_session_id": "old-runtime",
+        },
+    })
 
     assert resp["error"]["code"] == 5000
     assert server._host.sessions["old-runtime"] is old
@@ -445,16 +472,14 @@ def test_session_resume_rolls_back_partial_new_runtime(server, monkeypatch):
 
     monkeypatch.setattr(server, "_init_session", fail_after_insert)
 
-    resp = server.handle_request(
-        {
-            "id": "r1",
-            "method": "session.resume",
-            "params": {
-                "session_id": "saved",
-                "replace_session_id": "old-runtime",
-            },
-        }
-    )
+    resp = server.handle_request({
+        "id": "r1",
+        "method": "session.resume",
+        "params": {
+            "session_id": "saved",
+            "replace_session_id": "old-runtime",
+        },
+    })
 
     assert resp["error"]["code"] == 5000
     assert server._host.sessions == {"old-runtime": old}
@@ -471,13 +496,11 @@ def test_session_resume_refuses_to_replace_busy_runtime(server, monkeypatch):
     server._host.sessions["old-runtime"] = old
     monkeypatch.setattr(server, "_get_db", lambda: _DB())
 
-    resp = server.handle_request(
-        {
-            "id": "r1",
-            "method": "session.resume",
-            "params": {"session_id": "saved", "replace_session_id": "old-runtime"},
-        }
-    )
+    resp = server.handle_request({
+        "id": "r1",
+        "method": "session.resume",
+        "params": {"session_id": "saved", "replace_session_id": "old-runtime"},
+    })
 
     assert resp["error"]["code"] == 4009
     assert server._host.sessions == {"old-runtime": old}
@@ -492,9 +515,11 @@ def test_session_resume_refuses_already_active_durable_session(server, monkeypat
     server._host.sessions["active-runtime"] = active
     monkeypatch.setattr(server, "_get_db", lambda: _DB())
 
-    resp = server.handle_request(
-        {"id": "r1", "method": "session.resume", "params": {"session_id": "saved"}}
-    )
+    resp = server.handle_request({
+        "id": "r1",
+        "method": "session.resume",
+        "params": {"session_id": "saved"},
+    })
 
     assert resp["error"]["code"] == 4010
     assert server._host.sessions == {"active-runtime": active}
@@ -502,7 +527,9 @@ def test_session_resume_refuses_already_active_durable_session(server, monkeypat
 
 def test_session_list_omits_active_durable_sessions(server, monkeypatch):
     class _DB:
-        def list_sessions_rich(self, source=None, limit=200, offset=0, exclude_sources=None):
+        def list_sessions_rich(
+            self, source=None, limit=200, offset=0, exclude_sources=None
+        ):
             return [
                 {"id": "active", "title": "Active", "source": "tui"},
                 {"id": "saved", "title": "Saved", "source": "cli"},
@@ -511,9 +538,11 @@ def test_session_list_omits_active_durable_sessions(server, monkeypatch):
     server._host.sessions["runtime"] = {"session_key": "active", "running": False}
     monkeypatch.setattr(server, "_get_db", lambda: _DB())
 
-    resp = server.handle_request(
-        {"id": "r1", "method": "session.list", "params": {"limit": 20}}
-    )
+    resp = server.handle_request({
+        "id": "r1",
+        "method": "session.list",
+        "params": {"limit": 20},
+    })
 
     assert [item["id"] for item in resp["result"]["sessions"]] == ["saved"]
 
@@ -537,13 +566,16 @@ def test_config_roundtrip(server, tmp_path):
 # ── _cli_exec_blocked ────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("argv", [
-    [],
-    ["setup"],
-    ["gateway"],
-    ["sessions", "browse"],
-    ["config", "edit"],
-])
+@pytest.mark.parametrize(
+    "argv",
+    [
+        [],
+        ["setup"],
+        ["gateway"],
+        ["sessions", "browse"],
+        ["config", "edit"],
+    ],
+)
 def test_cli_exec_blocked(server, argv):
     assert server._cli_exec_blocked(argv) is not None
 
@@ -557,10 +589,13 @@ def test_cli_exec_bare_hint_prefers_forecast_oneshot(server):
     assert "superforecasting-agent chat -q" not in hint
 
 
-@pytest.mark.parametrize("argv", [
-    ["version"],
-    ["sessions", "list"],
-])
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["version"],
+        ["sessions", "list"],
+    ],
+)
 def test_cli_exec_allowed(server, argv):
     assert server._cli_exec_blocked(argv) is None
 
@@ -575,7 +610,9 @@ def test_slash_exec_rejects_skill_commands(server):
     server._host.sessions[sid] = {"session_key": sid, "agent": None}
 
     # Mock scan_skill_commands to return a known skill
-    fake_skills = {"/hermes-agent-dev": {"name": "hermes-agent-dev", "description": "Dev workflow"}}
+    fake_skills = {
+        "/hermes-agent-dev": {"name": "hermes-agent-dev", "description": "Dev workflow"}
+    }
 
     with patch("agent.skill_commands.get_skill_commands", return_value=fake_skills):
         resp = server.handle_request({
@@ -593,7 +630,6 @@ def test_slash_exec_rejects_skill_commands(server):
 def test_slash_exec_handles_plugin_commands_in_live_gateway(server):
     """Plugin slash commands return normal slash.exec output without using the worker."""
     sid = "test-session"
-
 
     server._host.sessions[sid] = {"session_key": sid, "agent": None}
 
@@ -615,7 +651,6 @@ def test_slash_exec_plugin_lookup_failure_keeps_terminal_ownership(server):
     """Plugin discovery failures cannot divert terminal commands to a worker."""
     sid = "test-session"
 
-
     server._host.sessions[sid] = {"session_key": sid, "agent": None}
 
     with patch(
@@ -634,7 +669,6 @@ def test_slash_exec_plugin_lookup_failure_keeps_terminal_ownership(server):
 def test_slash_exec_plugin_handler_error_returns_output(server):
     """Plugin handler failures return slash output so the TUI does not redispatch."""
     sid = "test-session"
-
 
     def handler(arg):
         raise RuntimeError(f"handler boom: {arg}")
@@ -655,7 +689,9 @@ def test_slash_exec_plugin_handler_error_returns_output(server):
     assert resp["result"] == {"output": "Plugin command error: handler boom: hello"}
 
 
-@pytest.mark.parametrize("cmd", ["retry", "queue hello", "q hello", "steer fix the test"])
+@pytest.mark.parametrize(
+    "cmd", ["retry", "queue hello", "q hello", "steer fix the test"]
+)
 def test_slash_exec_rejects_pending_input_commands(server, cmd):
     """slash.exec must reject commands that use _pending_input in the CLI."""
     sid = "test-session"
@@ -680,7 +716,11 @@ def test_command_dispatch_queue_sends_message(server):
     resp = server.handle_request({
         "id": "r1",
         "method": "command.dispatch",
-        "params": {"name": "queue", "arg": "tell me about quantum computing", "session_id": sid},
+        "params": {
+            "name": "queue",
+            "arg": "tell me about quantum computing",
+            "session_id": sid,
+        },
     })
 
     assert "error" not in resp
@@ -705,10 +745,14 @@ def test_command_dispatch_queue_requires_arg(server):
 
 
 def test_skills_manage_search_uses_tools_hub_sources(server):
-    result = type("Result", (), {
-        "description": "Build better terminal demos",
-        "name": "showroom",
-    })()
+    result = type(
+        "Result",
+        (),
+        {
+            "description": "Build better terminal demos",
+            "name": "showroom",
+        },
+    )()
     auth = MagicMock(return_value="auth")
     router = MagicMock(return_value=["source"])
     search = MagicMock(return_value=[result])
@@ -731,7 +775,9 @@ def test_skills_manage_search_uses_tools_hub_sources(server):
     }
     auth.assert_called_once_with()
     router.assert_called_once_with("auth")
-    search.assert_called_once_with("showroom", ["source"], source_filter="all", limit=20)
+    search.assert_called_once_with(
+        "showroom", ["source"], source_filter="all", limit=20
+    )
 
 
 def test_command_dispatch_steer_fallback_sends_message(server):
@@ -809,10 +855,16 @@ def test_command_dispatch_retry_preserves_unsupported_multipart_content(server):
     """Text-only retry must not silently drop the original image."""
     sid = "test-session"
     history = [
-        {"role": "user", "content": [
-            {"type": "text", "text": "analyze this"},
-            {"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}}
-        ]},
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "analyze this"},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": "data:image/png;base64,..."},
+                },
+            ],
+        },
         {"role": "assistant", "content": "I see the image."},
     ]
     server._host.sessions[sid] = {
@@ -841,11 +893,17 @@ def test_command_dispatch_returns_skill_payload(server):
     sid = "test-session"
     server._host.sessions[sid] = {"session_key": sid}
 
-    fake_skills = {"/hermes-agent-dev": {"name": "hermes-agent-dev", "description": "Dev workflow"}}
+    fake_skills = {
+        "/hermes-agent-dev": {"name": "hermes-agent-dev", "description": "Dev workflow"}
+    }
     fake_msg = "Loaded skill content here"
 
-    with patch("agent.skill_commands.scan_skill_commands", return_value=fake_skills), \
-         patch("agent.skill_commands.build_skill_invocation_message", return_value=fake_msg):
+    with (
+        patch("agent.skill_commands.scan_skill_commands", return_value=fake_skills),
+        patch(
+            "agent.skill_commands.build_skill_invocation_message", return_value=fake_msg
+        ),
+    ):
         resp = server.handle_request({
             "id": "r2",
             "method": "command.dispatch",
@@ -892,7 +950,9 @@ def test_dispatch_runs_short_handlers_inline(server):
 def test_dispatch_offloads_long_handlers_and_emits_via_stdout(capture):
     """Long handlers run on the pool and write their response via write_json."""
     server, buf = capture
-    server._methods["slash.exec"] = lambda rid, params: server._ok(rid, {"output": "hi"})
+    server._methods["slash.exec"] = lambda rid, params: server._ok(
+        rid, {"output": "hi"}
+    )
 
     resp = server.dispatch({"id": "r2", "method": "slash.exec", "params": {}})
     assert resp is None
@@ -909,7 +969,10 @@ def test_dispatch_offloads_long_handlers_and_emits_via_stdout(capture):
 def test_dispatch_long_handler_does_not_block_fast_handler(server):
     """A slow long handler must not prevent a concurrent fast handler from completing."""
     released = threading.Event()
-    server._methods["slash.exec"] = lambda rid, params: (released.wait(timeout=5), server._ok(rid, {"done": True}))[1]
+    server._methods["slash.exec"] = lambda rid, params: (
+        released.wait(timeout=5),
+        server._ok(rid, {"done": True}),
+    )[1]
     server._methods["fast.ping"] = lambda rid, params: server._ok(rid, {"pong": True})
 
     t0 = time.monotonic()
@@ -919,7 +982,9 @@ def test_dispatch_long_handler_does_not_block_fast_handler(server):
     fast_elapsed = time.monotonic() - t0
 
     assert fast_resp["result"] == {"pong": True}
-    assert fast_elapsed < 0.5, f"fast handler blocked for {fast_elapsed:.2f}s behind slow handler"
+    assert fast_elapsed < 0.5, (
+        f"fast handler blocked for {fast_elapsed:.2f}s behind slow handler"
+    )
 
     released.set()
 
@@ -936,13 +1001,18 @@ def test_dispatch_session_compress_does_not_block_fast_handler(server):
     server._methods["fast.ping"] = lambda rid, params: server._ok(rid, {"pong": True})
 
     t0 = time.monotonic()
-    assert server.dispatch({"id": "slow", "method": "session.compress", "params": {}}) is None
+    assert (
+        server.dispatch({"id": "slow", "method": "session.compress", "params": {}})
+        is None
+    )
 
     fast_resp = server.dispatch({"id": "fast", "method": "fast.ping", "params": {}})
     fast_elapsed = time.monotonic() - t0
 
     assert fast_resp["result"] == {"pong": True}
-    assert fast_elapsed < 0.5, f"fast handler blocked for {fast_elapsed:.2f}s behind session.compress"
+    assert fast_elapsed < 0.5, (
+        f"fast handler blocked for {fast_elapsed:.2f}s behind session.compress"
+    )
 
     released.set()
 
@@ -979,31 +1049,58 @@ def test_dispatch_unknown_long_method_still_goes_inline(server):
 
 
 @pytest.mark.parametrize("detached,busy", [(True, False), (True, True), (False, False)])
-def test_resume_reattaches_only_idle_detached_allocation(server, monkeypatch, detached, busy):
+def test_resume_reattaches_detached_allocation_including_waiting_turn(
+    server, monkeypatch, detached, busy
+):
     db = MagicMock()
     db.get_session.return_value = {"id": "saved"}
-    db.get_messages_as_conversation.return_value = [{"role": "user", "content": "retained"}]
+    db.get_messages_as_conversation.return_value = [
+        {"role": "user", "content": "retained"}
+    ]
     monkeypatch.setattr(server, "_get_db", lambda: db)
-    monkeypatch.setattr(server, "_turn_recovery", lambda *a, **kw: {"status": "interrupted", "partial_text": "saved prefix"})
-    monkeypatch.setattr(server, "_session_info", lambda agent: {"model": "fixture"})
+    monkeypatch.setattr(
+        server,
+        "_turn_recovery",
+        lambda *a, **kw: {"status": "interrupted", "partial_text": "saved prefix"},
+    )
+    monkeypatch.setattr(
+        server,
+        "_session_info",
+        lambda agent: {"model": "fixture", "skills": {}, "tools": {}},
+    )
     build = MagicMock(side_effect=AssertionError("must reuse the existing allocation"))
     monkeypatch.setattr(server, "_make_agent", build)
     agent = MagicMock()
     old_transport, new_transport = MagicMock(), MagicMock()
-    active = {"session_key": "saved", "agent": agent, "running": busy,
-              "transport": old_transport, "transport_detached": detached,
-              "history_lock": threading.Lock()}
+    active = {
+        "session_key": "saved",
+        "agent": agent,
+        "running": busy,
+        "transport": old_transport,
+        "transport_detached": detached,
+        "history_lock": threading.Lock(),
+    }
     server._host.sessions["runtime"] = active
+    request_id, pending = server._server_requests.begin("runtime", "sudo", {}, old_transport)
     token = server.bind_transport(new_transport)
     try:
-        reply = server.handle_request({"id": "r", "method": "session.resume", "params": {"session_id": "saved"}})
+        reply = server.handle_request({
+            "id": "r",
+            "method": "session.resume",
+            "params": {"session_id": "saved", "server_requests": True},
+        })
     finally:
         server.reset_transport(token)
-    if detached and not busy:
+    if detached:
         assert reply["result"]["session_id"] == "runtime"
         assert reply["result"]["recovery"]["partial_text"] == "saved prefix"
         assert active["transport"] is new_transport
         assert active["transport_detached"] is False
+        assert reply["result"]["open_requests"][0]["id"] == request_id
+        answer = {"jsonrpc": "2.0", "id": request_id, "result": {"password": "secret"}}
+        assert not server._server_requests.respond(answer, old_transport)
+        assert server._server_requests.respond(answer, new_transport)
+        assert pending.event.is_set()
     else:
         assert "error" in reply
         assert active["transport"] is old_transport

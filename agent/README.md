@@ -103,3 +103,5 @@ can be persisted again through the normal output-storage path.
 context. Silencing a tool worker leaves other sessions visible, supports nested
 scopes, and never closes borrowed stdout/stderr streams. It does not redirect
 native file-descriptor writes.
+
+Background memory/skill review routing and budgets are owned by `review_options.py`; see the [runtime controls](../docs/architecture/research-runtime-controls.md).

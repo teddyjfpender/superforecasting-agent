@@ -11,12 +11,10 @@ transcript line.
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 
 from tests.runtime_session_cleanup import retire_test_sessions
 
@@ -27,7 +25,9 @@ def server():
         "sys.modules",
         {
             "superforecasting_agent.constants": MagicMock(
-                get_agent_home=MagicMock(return_value=Path("/tmp/hermes_test_review_summary"))
+                get_agent_home=MagicMock(
+                    return_value=Path("/tmp/hermes_test_review_summary")
+                )
             ),
             "superforecasting_agent.runtime.env_loader": MagicMock(),
             "superforecasting_agent.runtime.banner": MagicMock(),
@@ -46,8 +46,7 @@ def server():
         mod._start_notification_poller = lambda _sid, _session: threading.Event()
         yield mod
         retire_test_sessions(mod)
-        mod._pending.clear()
-        mod._answers.clear()
+        mod._server_requests.cancel_session(None, "test cleanup")
         mod._methods.clear()
     importlib.reload(mod)
 
@@ -67,9 +66,7 @@ def test_init_session_attaches_background_review_callback(server, monkeypatch):
     monkeypatch.setattr(
         server,
         "_emit",
-        lambda event, sid, payload=None: captured_emits.append(
-            (event, sid, payload)
-        ),
+        lambda event, sid, payload=None: captured_emits.append((event, sid, payload)),
     )
 
     class FakeAgent:

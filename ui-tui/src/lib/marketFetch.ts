@@ -1,5 +1,6 @@
 import type { MarketSeries } from '../content/marketProviders.js'
-import type { MarketQuotesResponse, MarketSeriesRef } from '../protocol/generated.js'
+import type { RpcRequest } from '../protocol/generated.js'
+import type { MarketSeriesRef } from '../protocol/generated.js'
 
 // Every market provider is parsed SERVER-SIDE (Arc C — DONE at C3): their series
 // route through the gateway's `market.quotes` RPC (one shared key store + the
@@ -45,7 +46,7 @@ export interface MarketQuote {
 // structural (not the full GatewayClient) so the lib stays decoupled and is
 // trivially stubbable in tests; GatewayClient satisfies it by shape.
 export interface QuotesTransport {
-  request: <T = unknown>(method: string, params?: Record<string, unknown>) => Promise<T>
+  request: RpcRequest
 }
 
 export interface FetchOpts {
@@ -87,7 +88,7 @@ export const fetchQuotes = async (seriesList: MarketSeries[], opts: FetchOpts): 
   }
 
   try {
-    const res = await opts.gw.request<MarketQuotesResponse>('market.quotes', {
+    const res = await opts.gw.request('market.quotes', {
       series: serverSeries.map(toSeriesRef)
     })
 

@@ -1,44 +1,81 @@
-# Versioned product protocol
+# Gateway protocol
 
-Defines shared RPC types, events, protocol versions and generation of client contracts.
+Python models in this directory own the shared gateway API. The TUI consumes
+[`generated.ts`](../ui-tui/src/protocol/generated.ts); edit declarations here and
+run `python -m protocol.codegen` instead of editing generated types.
 
-## Ownership and boundaries
+## Requests and results
 
-Change declarations here before regenerating consumers. Negotiate required capabilities and preserve backward compatibility rather than editing generated client types directly.
+[`RPC_SPECS`](__init__.py) binds each bundled method to parameter and result models.
+The generated `RpcMethods`, `RpcArgs`, and `RpcRequest` types connect those models
+to the client, safe RPC wrappers, and shared consumer interfaces. Callers cannot
+choose an arbitrary result type or send parameters intended for another method.
+Empty parameter objects reject extra fields too. Dispatch outcomes use a Python
+root-model union with required fields for each `type` variant.
 
-## Start here
+[`validation.py`](validation.py) wraps both decorator and programmatic
+registration. Unknown parameters and wrong JSON value types are rejected before the handler
+runs. Missing-field and domain-selector errors retain handler ownership. Handlers
+retain their documented domain errors; accepted inputs and successful outputs
+must conform to the declared JSON types. Contract disagreement raises in tests
+and successful-response disagreement returns a generic JSON-RPC internal error
+in production. Diagnostics never include parameter or result values. Known events
+are checked before emission. Extension-owned payloads remain explicitly opaque;
+this is a transport contract, not a substitute for forecast-ledger validation.
 
-These are entry points and representative modules, not an exhaustive inventory.
+`config.get` and skills management retain their existing polymorphic envelopes.
+Their optional fields reflect the selected operation, rather than inventing new
+wire methods or breaking older clients.
 
-| File                       | Responsibility                                                                                                                                   |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [\_\_init\_\_.py](__init__.py) | Protocol-first gateway contract: one source of truth for every RPC and event crossing the gateway wire, with TypeScript types generated from it. |
-| [codegen.py](codegen.py)   | Emit `ui-tui/src/protocol/generated.ts` from the protocol registry.                                                                              |
-| [collab.py](collab.py)     | `sfp/1` — the SuperForecast Protocol carried over Slack message metadata.                                                                        |
-| [types.py](types.py)       | Shared primitives and the base model for every wire-crossing schema.                                                                             |
-| [version.py](version.py)   | The single wire-protocol version for the gateway.                                                                                                |
+## Correlated interactive requests
 
-## Subdirectories
+[`server_requests.py`](server_requests.py) declares clarification, sudo, secret,
+and approval results. The backend owner is
+[`tui_gateway/server_requests.py`](../tui_gateway/server_requests.py).
 
-- [events/](events/README.md) — Gateway event declarations.
-- [rpc/](rpc/README.md) — RPC declarations.
+Hosts advertise `rpc.server_requests`. A supporting client opts in with
+`server_requests: true` on session creation or resume. The server sends an ordinary
+JSON-RPC request with an `srq-` ID and a session-scoped payload. The client answers
+with the same ID and a method-specific `result`, or a JSON-RPC error to cancel.
+`request.cancel` withdraws a request after interruption, timeout, or settlement.
 
-## Working in this directory
+Replies are accepted once and only from the owning transport. Reconnecting a
+live, detached session transfers outstanding requests to the new connection and
+returns them in `session.resume.open_requests`. That server snapshot is authoritative:
+an answer sent just before disconnection may not have arrived. Old connections
+and stale modal completions cannot answer or dismiss replacement prompts.
+Closing/replacing allocations cannot be reattached.
 
-Run checks from the repository root:
+Unanswered prompts survive a **connection** loss while the backend is alive. They
+are not persisted across backend process death, and secret answers are never
+saved for automatic replay. Durable session recovery remains responsible for
+interrupted turns after a backend restart.
 
-```sh
-python3 scripts/dev.py check
-scripts/run_tests.sh tests/
-```
+Older clients receive the existing prompt notifications and answer through the
+legacy `*.respond` adapters. Request-ID-aware approval replies target the exact
+queue entry. Older approval clients without IDs retain their FIFO behavior.
 
-Use the canonical runner for Python tests so isolation and environment settings
-match repository policy. Extend a regression around the changed contract; use
-controlled failures for retries, cancellation and interrupted writes. The full
-Python suite is required before pushing.
+## Layout and checks
 
-Update this guide when entry points or ownership change. See the
-[ownership map](../docs/architecture/ownership-map.md)
-and [engineering backlog](../TODO.md) for cross-package context.
+| Path | Responsibility |
+| --- | --- |
+| [rpc/](rpc/README.md) | Method parameter and result declarations |
+| [events/](events/README.md) | Event payload declarations |
+| [types.py](types.py) | Shared wire primitives and optional-field metadata |
+| [codegen.py](codegen.py) | Deterministic TypeScript generation |
+| [version.py](version.py) | Compatibility versions |
+| [collab.py](collab.py) | Forecast collaboration protocol |
 
-[↑ Parent directory](../README.md)
+The blocking development gate checks formatting, lint, typing, and generated-file
+freshness. [Contract tests](../tests/protocol/README.md) require every bundled
+method to have a declaration and prove malformed successes fail without replacing
+domain errors. TypeScript compile-time examples cover wrong method names, missing
+parameters, wrong field types, and mismatched prompt results.
+
+[↑ Repository](../README.md)
+
+Application operations with an existing strict shared request validator can declare
+`handler_validates_request` to preserve the same diagnostic across CLI and RPC.
+They must validate before effects; their successful input and output still undergo
+contract checks. Field-specific exceptions use `handler_validated_parameters`.
+The forecast operation parity tests cover both malformed input and absence of writes.

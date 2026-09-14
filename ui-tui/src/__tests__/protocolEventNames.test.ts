@@ -83,10 +83,11 @@ describe('gatewayTypes.ts is a thin re-export shim (A4 grep-proof)', () => {
     expect(interfaces, `hand-written wire interface(s) in gatewayTypes.ts — model them in protocol/`).toEqual([])
   })
 
-  it('keeps EXACTLY the two TS-only type aliases that have no single pydantic-model form', () => {
+  it('keeps only the TUI event view handwritten; dispatch outcomes are generated', () => {
     const aliases = [...shim.matchAll(/^export type (\w+) =/gm)].map(m => m[1]).sort()
 
-    expect(aliases).toEqual(['CommandDispatchResponse', 'GatewayEvent'])
+    expect(aliases).toEqual(['GatewayEvent'])
+    expect(shim).toContain("export type { CommandDispatchResponse } from './protocol/generated.js'")
   })
 
   it('imports every re-exported wire shape from the generated protocol', () => {

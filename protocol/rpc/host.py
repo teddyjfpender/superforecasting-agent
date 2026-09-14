@@ -1,4 +1,5 @@
 """Host compatibility admission, shared by local and remote transports."""
+
 from pydantic import ConfigDict, Field
 
 from protocol.types import WireModel

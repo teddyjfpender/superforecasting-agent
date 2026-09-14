@@ -14,16 +14,16 @@ export const asCommandDispatch = (value: unknown): CommandDispatchResponse | nul
 
   const t = o.type
 
-  if (t === 'exec' || t === 'plugin') {
-    return { type: t, output: typeof o.output === 'string' ? o.output : undefined }
+  if ((t === 'exec' || t === 'plugin') && typeof o.output === 'string') {
+    return { type: t, output: o.output }
   }
 
   if (t === 'alias' && typeof o.target === 'string') {
     return { type: 'alias', target: o.target }
   }
 
-  if (t === 'skill' && typeof o.name === 'string') {
-    return { type: 'skill', name: o.name, message: typeof o.message === 'string' ? o.message : undefined }
+  if (t === 'skill' && typeof o.name === 'string' && typeof o.message === 'string') {
+    return { type: 'skill', name: o.name, message: o.message }
   }
 
   if (t === 'send' && typeof o.message === 'string') {

@@ -30,7 +30,7 @@ const EFFORT_HINTS: Record<string, string> = {
   low: 'fastest · cheapest · least thorough',
   medium: 'balanced default',
   high: 'slower · pricier · more thorough',
-  xhigh: 'slowest · most expensive · most thorough',
+  xhigh: 'slowest · most expensive · most thorough'
 }
 
 export function ModelPicker({ gw, onCancel, onConnect, onSelect, sessionId, t }: ModelPickerProps) {
@@ -57,7 +57,7 @@ export function ModelPicker({ gw, onCancel, onConnect, onSelect, sessionId, t }:
   const width = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, (stdout?.columns ?? 80) - 6))
 
   useEffect(() => {
-    gw.request<ModelOptionsResponse>('model.options', sessionId ? { session_id: sessionId } : {})
+    gw.request('model.options', sessionId ? { session_id: sessionId } : {})
       .then(raw => {
         const r = asRpcResult<ModelOptionsResponse>(raw)
 
@@ -169,10 +169,10 @@ export function ModelPicker({ gw, onCancel, onConnect, onSelect, sessionId, t }:
 
         setKeySaving(true)
         setKeyError('')
-        gw.request<{ provider?: ModelOptionProvider }>('model.save_key', {
+        gw.request('model.save_key', {
           slug: provider?.slug,
           api_key: keyInput.trim(),
-          ...(sessionId ? { session_id: sessionId } : {}),
+          ...(sessionId ? { session_id: sessionId } : {})
         })
           .then(raw => {
             const r = asRpcResult<{ provider?: ModelOptionProvider }>(raw)
@@ -185,9 +185,7 @@ export function ModelPicker({ gw, onCancel, onConnect, onSelect, sessionId, t }:
             }
 
             // Update the provider in our list with fresh data
-            setProviders(prev =>
-              prev.map(p => p.slug === r.provider!.slug ? r.provider! : p)
-            )
+            setProviders(prev => prev.map(p => (p.slug === r.provider!.slug ? r.provider! : p)))
             setKeyInput('')
             setKeySaving(false)
             setStage('model')
@@ -231,9 +229,9 @@ export function ModelPicker({ gw, onCancel, onConnect, onSelect, sessionId, t }:
         }
 
         setKeySaving(true)
-        gw.request<{ disconnected?: boolean }>('model.disconnect', {
+        gw.request('model.disconnect', {
           slug: provider.slug,
-          ...(sessionId ? { session_id: sessionId } : {}),
+          ...(sessionId ? { session_id: sessionId } : {})
         })
           .then(raw => {
             const r = asRpcResult<{ disconnected?: boolean }>(raw)
@@ -241,9 +239,18 @@ export function ModelPicker({ gw, onCancel, onConnect, onSelect, sessionId, t }:
             if (r?.disconnected) {
               // Mark provider as unauthenticated in local state
               setProviders(prev =>
-                prev.map(p => p.slug === provider.slug
-                  ? { ...p, authenticated: false, models: [], total_models: 0, warning: p.key_env ? `paste ${p.key_env} to activate` : 'press ⏎ to sign in (device-code), or run /auth' }
-                  : p
+                prev.map(p =>
+                  p.slug === provider.slug
+                    ? {
+                        ...p,
+                        authenticated: false,
+                        models: [],
+                        total_models: 0,
+                        warning: p.key_env
+                          ? `paste ${p.key_env} to activate`
+                          : 'press ⏎ to sign in (device-code), or run /auth'
+                      }
+                    : p
                 )
               )
             }
@@ -268,13 +275,11 @@ export function ModelPicker({ gw, onCancel, onConnect, onSelect, sessionId, t }:
       return
     }
 
-    const count =
-      stage === 'provider' ? providers.length : stage === 'effort' ? efforts.length : models.length
+    const count = stage === 'provider' ? providers.length : stage === 'effort' ? efforts.length : models.length
 
     const sel = stage === 'provider' ? providerIdx : stage === 'effort' ? effortIdx : modelIdx
 
-    const setSel =
-      stage === 'provider' ? setProviderIdx : stage === 'effort' ? setEffortIdx : setModelIdx
+    const setSel = stage === 'provider' ? setProviderIdx : stage === 'effort' ? setEffortIdx : setModelIdx
 
     if (key.upArrow && sel > 0) {
       setSel(v => v - 1)
@@ -401,17 +406,23 @@ export function ModelPicker({ gw, onCancel, onConnect, onSelect, sessionId, t }:
           Paste your API key below (saved to the agent .env)
         </Text>
 
-        <Text color={t.color.muted} wrap="truncate-end"> </Text>
+        <Text color={t.color.muted} wrap="truncate-end">
+          {' '}
+        </Text>
 
         <Text color={t.color.muted} wrap="truncate-end">
           {provider.key_env}:
         </Text>
 
         <Text color={t.color.accent} wrap="truncate-end">
-          {'  '}{masked || '(empty)'}{keySaving ? '' : '▎'}
+          {'  '}
+          {masked || '(empty)'}
+          {keySaving ? '' : '▎'}
         </Text>
 
-        <Text color={t.color.muted} wrap="truncate-end"> </Text>
+        <Text color={t.color.muted} wrap="truncate-end">
+          {' '}
+        </Text>
 
         {keyError ? (
           <Text color={t.color.label} wrap="truncate-end">
@@ -422,7 +433,9 @@ export function ModelPicker({ gw, onCancel, onConnect, onSelect, sessionId, t }:
             saving…
           </Text>
         ) : (
-          <Text color={t.color.muted} wrap="truncate-end"> </Text>
+          <Text color={t.color.muted} wrap="truncate-end">
+            {' '}
+          </Text>
         )}
 
         <OverlayHint t={t}>Enter save · Ctrl+U clear · Esc back</OverlayHint>
@@ -438,7 +451,9 @@ export function ModelPicker({ gw, onCancel, onConnect, onSelect, sessionId, t }:
           Disconnect {provider.name}?
         </Text>
 
-        <Text color={t.color.muted} wrap="truncate-end"> </Text>
+        <Text color={t.color.muted} wrap="truncate-end">
+          {' '}
+        </Text>
 
         <Text color={t.color.muted} wrap="truncate-end">
           This removes saved credentials for {provider.name}.
@@ -448,10 +463,14 @@ export function ModelPicker({ gw, onCancel, onConnect, onSelect, sessionId, t }:
           You can re-authenticate later by selecting it again.
         </Text>
 
-        <Text color={t.color.muted} wrap="truncate-end"> </Text>
+        <Text color={t.color.muted} wrap="truncate-end">
+          {' '}
+        </Text>
 
         {keySaving ? (
-          <Text color={t.color.muted} wrap="truncate-end">disconnecting…</Text>
+          <Text color={t.color.muted} wrap="truncate-end">
+            disconnecting…
+          </Text>
         ) : (
           <OverlayHint t={t}>y/Enter confirm · n/Esc cancel</OverlayHint>
         )}
@@ -461,18 +480,15 @@ export function ModelPicker({ gw, onCancel, onConnect, onSelect, sessionId, t }:
 
   // ── Provider selection stage ─────────────────────────────────────────
   if (stage === 'provider') {
-    const rows = providers.map(
-      (p, i) => {
-        const authMark = p.authenticated === false ? '○' : p.is_current ? '*' : '●'
-        const modelCount = p.total_models ?? p.models?.length ?? 0
+    const rows = providers.map((p, i) => {
+      const authMark = p.authenticated === false ? '○' : p.is_current ? '*' : '●'
+      const modelCount = p.total_models ?? p.models?.length ?? 0
 
-        const suffix = p.authenticated === false
-          ? (p.auth_type === 'api_key' ? '(no key)' : '(⏎ to sign in)')
-          : `${modelCount} models`
+      const suffix =
+        p.authenticated === false ? (p.auth_type === 'api_key' ? '(no key)' : '(⏎ to sign in)') : `${modelCount} models`
 
-        return `${authMark} ${names[i]} · ${suffix}`
-      }
-    )
+      return `${authMark} ${names[i]} · ${suffix}`
+    })
 
     const { items, offset } = windowItems(rows, providerIdx, VISIBLE)
 
@@ -576,7 +592,8 @@ export function ModelPicker({ gw, onCancel, onConnect, onSelect, sessionId, t }:
               wrap="truncate-end"
             >
               {prefix}
-              {idx + 1}. {row}{hint}
+              {idx + 1}. {row}
+              {hint}
             </Text>
           )
         })}

@@ -227,9 +227,7 @@ export const buildNoteRows = (
     const entries = [...node.children.values()]
     const folders = entries.filter(e => e.noteIndex < 0).sort((a, b) => a.name.localeCompare(b.name))
 
-    const leaves = entries
-      .filter(e => e.noteIndex >= 0)
-      .sort(sortLeaf ?? ((a, b) => a.name.localeCompare(b.name)))
+    const leaves = entries.filter(e => e.noteIndex >= 0).sort(sortLeaf ?? ((a, b) => a.name.localeCompare(b.name)))
 
     for (const f of folders) {
       const expanded = !collapsed.has(f.path)
@@ -465,7 +463,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
   const listScrollRef = useRef<null | ScrollBoxHandle>(null)
   const docScrollRef = useRef<null | ScrollBoxHandle>(null)
   const chatScrollRef = useRef<null | ScrollBoxHandle>(null)
-   
+
   const blockRefs = useRef<any[]>([])
 
   const notes: ObsidianNote[] = useMemo(() => data?.notes ?? [], [data?.notes])
@@ -482,11 +480,14 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
   }, [notes])
 
   // Clear any pending preview load when the view unmounts.
-  useEffect(() => () => {
-    if (previewTimer.current) {
-      clearTimeout(previewTimer.current)
-    }
-  }, [])
+  useEffect(
+    () => () => {
+      if (previewTimer.current) {
+        clearTimeout(previewTimer.current)
+      }
+    },
+    []
+  )
 
   // Leaf comparator for the tree (o/O sort): reorder notes within each folder
   // by the active column, leaving the folder structure intact.
@@ -503,9 +504,10 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
 
         const factor = sort.state.dir === 'desc' ? -1 : 1
 
-        const cmp = typeof av === 'number' && typeof bv === 'number'
-          ? av - bv
-          : String(av).localeCompare(String(bv), undefined, { numeric: true, sensitivity: 'base' })
+        const cmp =
+          typeof av === 'number' && typeof bv === 'number'
+            ? av - bv
+            : String(av).localeCompare(String(bv), undefined, { numeric: true, sensitivity: 'base' })
 
         return cmp * factor
       }
@@ -634,9 +636,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
     return notes.find(n => n.rel_path?.replace(/\.md$/i, '').toLowerCase() === key)?.rel_path
   }
 
-  const backlinks = notes.filter(
-    n => n.rel_path !== currentRel && (n.links ?? []).some(l => resolve(l) === currentRel)
-  )
+  const backlinks = notes.filter(n => n.rel_path !== currentRel && (n.links ?? []).some(l => resolve(l) === currentRel))
 
   const jumpTo = (rel: string | undefined) => {
     if (!rel) {
@@ -674,7 +674,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
   const load = (announce = false) => {
     // Only show the loading screen when we have nothing cached to show.
     setLoading(!data)
-    gw.request<unknown>('obsidian.status', { limit: 200 })
+    gw.request('obsidian.status', { limit: 200 })
       .then(raw => {
         const result = asRpcResult<ObsidianStatusResponse>(raw)
 
@@ -703,7 +703,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
   const loadNote = (rel: string) => {
     setDocLoading(true)
     setDocError(null)
-    gw.request<unknown>('obsidian.note', { rel_path: rel })
+    gw.request('obsidian.note', { rel_path: rel })
       .then(raw => {
         setDoc(asRpcResult<ObsidianNoteResponse>(raw) ?? null)
         setDocLoading(false)
@@ -717,7 +717,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
   const runSetup = () => {
     setLoading(true)
     setFlash('setting up vault…')
-    gw.request<unknown>('obsidian.setup', {})
+    gw.request('obsidian.setup', {})
       .then(() => load(true))
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
@@ -742,22 +742,30 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
     const context = currentRel ? `(About the Obsidian note "${currentRel}".)\n\n` : ''
 
     setChat(c =>
-      c ? { ...c, busy: true, input: '', status: 'sending', stream: '', todos: [], turns: [...c.turns, { role: 'user', text }] } : c
+      c
+        ? {
+            ...c,
+            busy: true,
+            input: '',
+            status: 'sending',
+            stream: '',
+            todos: [],
+            turns: [...c.turns, { role: 'user', text }]
+          }
+        : c
     )
-    gw.request<unknown>('prompt.submit', { session_id: sid ?? 'default', text: `${context}${text}` }).catch(
-      (err: unknown) => {
-        setChat(c =>
-          c
-            ? {
-                ...c,
-                busy: false,
-                status: '',
-                turns: [...c.turns, { role: 'system', text: `couldn't reach the desk: ${String(err)}` }]
-              }
-            : c
-        )
-      }
-    )
+    gw.request('prompt.submit', { session_id: sid ?? 'default', text: `${context}${text}` }).catch((err: unknown) => {
+      setChat(c =>
+        c
+          ? {
+              ...c,
+              busy: false,
+              status: '',
+              turns: [...c.turns, { role: 'system', text: `couldn't reach the desk: ${String(err)}` }]
+            }
+          : c
+      )
+    })
   }
 
   // Esc out of chat: if the open note has unsaved edits, confirm first.
@@ -781,7 +789,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
     }
 
     setSaveState('saving')
-    gw.request<unknown>('obsidian.write', { content: text, rel_path: currentRel })
+    gw.request('obsidian.write', { content: text, rel_path: currentRel })
       .then(() => {
         dirtyRef.current = false
         setSaveState('saved')
@@ -889,7 +897,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
     }
 
     if (mode === 'create') {
-      gw.request<unknown>('obsidian.create', { rel_path: value })
+      gw.request('obsidian.create', { rel_path: value })
         .then(raw => {
           const created = (asRpcResult<{ rel_path?: string }>(raw) ?? {}).rel_path ?? value
           setFlash(`created ${created}`)
@@ -908,7 +916,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
 
     const anchor = selSnippet ? `${lineRef} ¦ ${selSnippet}` : lineRef
     const next = addComment(doc.content, anchor, value)
-    gw.request<unknown>('obsidian.write', { content: next, rel_path: currentRel })
+    gw.request('obsidian.write', { content: next, rel_path: currentRel })
       .then(() => {
         setFlash('comment added')
         loadNote(currentRel)
@@ -968,17 +976,14 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
       return
     }
 
-     
     const parseTodos = (raw: any): ChatTodo[] | undefined =>
       Array.isArray(raw)
-        ?  
-          raw.map((td: any) => ({
+        ? raw.map((td: any) => ({
             done: td?.status === 'completed',
             text: String(td?.content ?? td?.text ?? td?.subject ?? '').trim()
           }))
         : undefined
 
-     
     const handler = (ev: any) => {
       if (ev.session_id && sid && ev.session_id !== sid) {
         return
@@ -990,7 +995,12 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
         case WireEvent.ERROR:
           setChat(c =>
             c
-              ? { ...c, busy: false, status: '', turns: [...c.turns, { role: 'system', text: `error: ${p.message ?? 'unknown error'}` }] }
+              ? {
+                  ...c,
+                  busy: false,
+                  status: '',
+                  turns: [...c.turns, { role: 'system', text: `error: ${p.message ?? 'unknown error'}` }]
+                }
               : c
           )
 
@@ -1065,7 +1075,6 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
     return () => {
       gw.off('event', handler)
     }
-
   }, [chatOpen, sid, gw])
 
   // Animate the spinner / thinking word while the desk is working.
@@ -1124,344 +1133,347 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
   const pageSize = Math.max(4, termRows - 12)
   const move = (delta: number) => setSelected(s => Math.max(0, Math.min(notes.length - 1, s + delta)))
 
-  useInput((ch, key) => {
-    // Chat modal captures input while open.
-    if (chat) {
-      if (chat.confirmSave) {
-        if (ch === 'y') {
-          saveNow(editText)
-          setChat(null)
+  useInput(
+    (ch, key) => {
+      // Chat modal captures input while open.
+      if (chat) {
+        if (chat.confirmSave) {
+          if (ch === 'y') {
+            saveNow(editText)
+            setChat(null)
 
-          return
-        }
+            return
+          }
 
-        if (ch === 'n') {
-          dirtyRef.current = false
-          setChat(null)
+          if (ch === 'n') {
+            dirtyRef.current = false
+            setChat(null)
+
+            return
+          }
+
+          if (key.escape) {
+            return setChat(c => (c ? { ...c, confirmSave: false } : c))
+          }
 
           return
         }
 
         if (key.escape) {
-          return setChat(c => (c ? { ...c, confirmSave: false } : c))
+          return closeChat()
+        }
+
+        if (key.return) {
+          return sendChat(chat.input)
+        }
+
+        if (key.backspace || key.delete) {
+          return setChat(c => (c ? { ...c, input: c.input.slice(0, -1) } : c))
+        }
+
+        if (ch && ch.length === 1 && !key.ctrl && !key.meta) {
+          return setChat(c => (c ? { ...c, input: c.input + ch } : c))
         }
 
         return
       }
 
-      if (key.escape) {
-        return closeChat()
+      // Search modal captures input while open.
+      if (search) {
+        if (key.escape) {
+          return setSearch(null)
+        }
+
+        if (key.return) {
+          return openSearchResult(search.results[search.sel]?.rel_path)
+        }
+
+        if (key.upArrow) {
+          return setSearch(s => (s ? { ...s, sel: Math.max(0, s.sel - 1) } : s))
+        }
+
+        if (key.downArrow) {
+          return setSearch(s => (s ? { ...s, sel: Math.min(s.results.length - 1, s.sel + 1) } : s))
+        }
+
+        if (key.backspace || key.delete) {
+          return setSearch(s => (s ? { ...s, query: s.query.slice(0, -1) } : s))
+        }
+
+        if (ch && ch.length === 1 && !key.ctrl && !key.meta) {
+          return setSearch(s => (s ? { ...s, loading: true, query: s.query + ch } : s))
+        }
+
+        return
       }
 
-      if (key.return) {
-        return sendChat(chat.input)
+      // Inline `/` filter captures input while live: type to refine, Enter keeps
+      // the filter applied (returns to nav), Esc clears it entirely.
+      if (filter?.live) {
+        if (key.escape) {
+          return setFilter(null)
+        }
+
+        if (key.return) {
+          return setFilter(f => (f ? { ...f, live: false } : f))
+        }
+
+        if (key.backspace || key.delete) {
+          return setFilter(f => (f ? { ...f, query: f.query.slice(0, -1) } : f))
+        }
+
+        if (ch && !key.ctrl && !key.meta) {
+          const printable = [...ch].filter(c => c >= ' ').join('')
+
+          if (printable) {
+            setListIdx(0)
+            setFilter(f => (f ? { ...f, query: f.query + printable } : f))
+          }
+        }
+
+        return
       }
 
-      if (key.backspace || key.delete) {
-        return setChat(c => (c ? { ...c, input: c.input.slice(0, -1) } : c))
+      // Inline prompt (new note / comment) captures input while open.
+      if (prompt) {
+        if (key.escape) {
+          return setPrompt(null)
+        }
+
+        if (key.return) {
+          return submitPrompt()
+        }
+
+        if (key.backspace || key.delete) {
+          return setPrompt(p => (p ? { ...p, value: p.value.slice(0, -1) } : p))
+        }
+
+        if (ch && ch.length === 1 && !key.ctrl && !key.meta) {
+          return setPrompt(p => (p ? { ...p, value: p.value + ch } : p))
+        }
+
+        return
       }
 
-      if (ch && ch.length === 1 && !key.ctrl && !key.meta) {
-        return setChat(c => (c ? { ...c, input: c.input + ch } : c))
+      // Edit mode captures input (Esc saves + exits; q is just a character here).
+      if (editing) {
+        if (key.escape) {
+          return exitEdit()
+        }
+
+        if (key.ctrl && ch === 's') {
+          return saveNow(editText)
+        }
+
+        if (key.return) {
+          return editInsert('\n')
+        }
+
+        if (key.backspace || key.delete) {
+          return editBackspace()
+        }
+
+        if (key.leftArrow) {
+          return setCur(editCursorRef.current - 1)
+        }
+
+        if (key.rightArrow) {
+          return setCur(Math.min(editText.length, editCursorRef.current + 1))
+        }
+
+        if (key.upArrow) {
+          return editMoveLine(-1)
+        }
+
+        if (key.downArrow) {
+          return editMoveLine(1)
+        }
+
+        if (key.tab) {
+          return editInsert('  ')
+        }
+
+        if (ch && !key.ctrl && !key.meta) {
+          return editInsert(ch)
+        }
+
+        return
       }
 
-      return
-    }
-
-    // Search modal captures input while open.
-    if (search) {
-      if (key.escape) {
-        return setSearch(null)
+      // Esc peels back one layer at a time: an active selection, then an applied
+      // filter, then it closes the view.
+      if (key.escape && selAnchor >= 0) {
+        return setSelAnchor(-1)
       }
 
-      if (key.return) {
-        return openSearchResult(search.results[search.sel]?.rel_path)
-      }
-
-      if (key.upArrow) {
-        return setSearch(s => (s ? { ...s, sel: Math.max(0, s.sel - 1) } : s))
-      }
-
-      if (key.downArrow) {
-        return setSearch(s => (s ? { ...s, sel: Math.min(s.results.length - 1, s.sel + 1) } : s))
-      }
-
-      if (key.backspace || key.delete) {
-        return setSearch(s => (s ? { ...s, query: s.query.slice(0, -1) } : s))
-      }
-
-      if (ch && ch.length === 1 && !key.ctrl && !key.meta) {
-        return setSearch(s => (s ? { ...s, loading: true, query: s.query + ch } : s))
-      }
-
-      return
-    }
-
-    // Inline `/` filter captures input while live: type to refine, Enter keeps
-    // the filter applied (returns to nav), Esc clears it entirely.
-    if (filter?.live) {
-      if (key.escape) {
+      // Only peel back an applied filter that is actually narrowing the list. An
+      // empty applied filter ({live:false, query:''}) changes nothing on screen, so
+      // consuming Esc on it would make the first Esc appear dead — let it fall
+      // through to close instead.
+      if (key.escape && filter?.query.trim()) {
         return setFilter(null)
       }
 
-      if (key.return) {
-        return setFilter(f => (f ? { ...f, live: false } : f))
+      if (ch === 'q' || key.escape) {
+        return onClose()
       }
 
-      if (key.backspace || key.delete) {
-        return setFilter(f => (f ? { ...f, query: f.query.slice(0, -1) } : f))
+      // `h` opens the unified Help modal — consistent on every view. Nav mode only
+      // (the edit/chat/search/prompt guards above already returned).
+      if (ch === 'h') {
+        return openHelpOverlay()
       }
 
-      if (ch && !key.ctrl && !key.meta) {
-        const printable = [...ch].filter(c => c >= ' ').join('')
+      // Docs kind tabs: 1 Markdown (this view) · 2 LaTeX. Only in nav mode (the
+      // edit/chat/search/prompt guards above already returned).
+      if (onSelectKind && (ch === '1' || ch === '2')) {
+        return onSelectKind(ch === '2' ? 'latex' : 'markdown')
+      }
 
-        if (printable) {
-          setListIdx(0)
-          setFilter(f => (f ? { ...f, query: f.query + printable } : f))
+      if (!hasVault) {
+        if (ch === 's') {
+          return runSetup()
         }
-      }
 
-      return
-    }
+        if (ch === 'r') {
+          return load(true)
+        }
 
-    // Inline prompt (new note / comment) captures input while open.
-    if (prompt) {
-      if (key.escape) {
-        return setPrompt(null)
-      }
-
-      if (key.return) {
-        return submitPrompt()
-      }
-
-      if (key.backspace || key.delete) {
-        return setPrompt(p => (p ? { ...p, value: p.value.slice(0, -1) } : p))
-      }
-
-      if (ch && ch.length === 1 && !key.ctrl && !key.meta) {
-        return setPrompt(p => (p ? { ...p, value: p.value + ch } : p))
-      }
-
-      return
-    }
-
-    // Edit mode captures input (Esc saves + exits; q is just a character here).
-    if (editing) {
-      if (key.escape) {
-        return exitEdit()
-      }
-
-      if (key.ctrl && ch === 's') {
-        return saveNow(editText)
-      }
-
-      if (key.return) {
-        return editInsert('\n')
-      }
-
-      if (key.backspace || key.delete) {
-        return editBackspace()
-      }
-
-      if (key.leftArrow) {
-        return setCur(editCursorRef.current - 1)
-      }
-
-      if (key.rightArrow) {
-        return setCur(Math.min(editText.length, editCursorRef.current + 1))
-      }
-
-      if (key.upArrow) {
-        return editMoveLine(-1)
-      }
-
-      if (key.downArrow) {
-        return editMoveLine(1)
-      }
-
-      if (key.tab) {
-        return editInsert('  ')
-      }
-
-      if (ch && !key.ctrl && !key.meta) {
-        return editInsert(ch)
-      }
-
-      return
-    }
-
-    // Esc peels back one layer at a time: an active selection, then an applied
-    // filter, then it closes the view.
-    if (key.escape && selAnchor >= 0) {
-      return setSelAnchor(-1)
-    }
-
-    // Only peel back an applied filter that is actually narrowing the list. An
-    // empty applied filter ({live:false, query:''}) changes nothing on screen, so
-    // consuming Esc on it would make the first Esc appear dead — let it fall
-    // through to close instead.
-    if (key.escape && filter?.query.trim()) {
-      return setFilter(null)
-    }
-
-    if (ch === 'q' || key.escape) {
-      return onClose()
-    }
-
-    // `h` opens the unified Help modal — consistent on every view. Nav mode only
-    // (the edit/chat/search/prompt guards above already returned).
-    if (ch === 'h') {
-      return openHelpOverlay()
-    }
-
-    // Docs kind tabs: 1 Markdown (this view) · 2 LaTeX. Only in nav mode (the
-    // edit/chat/search/prompt guards above already returned).
-    if (onSelectKind && (ch === '1' || ch === '2')) {
-      return onSelectKind(ch === '2' ? 'latex' : 'markdown')
-    }
-
-    if (!hasVault) {
-      if (ch === 's') {
-        return runSetup()
+        return
       }
 
       if (ch === 'r') {
         return load(true)
       }
 
-      return
-    }
+      if (ch === 's') {
+        return setSearch({ loading: false, query: '', results: [], sel: 0 })
+      }
 
-    if (ch === 'r') {
-      return load(true)
-    }
+      // `/` opens the inline notes filter (flat ranked list); `s` above is the
+      // deeper full-content vault search modal.
+      if (ch === '/') {
+        setListIdx(0)
+        setFocus('list')
 
-    if (ch === 's') {
-      return setSearch({ loading: false, query: '', results: [], sel: 0 })
-    }
+        return setFilter({ live: true, query: filter?.query ?? '' })
+      }
 
-    // `/` opens the inline notes filter (flat ranked list); `s` above is the
-    // deeper full-content vault search modal.
-    if (ch === '/') {
-      setListIdx(0)
-      setFocus('list')
+      // o cycles the notes sort column (name ↔ modified ↔ default); O flips it.
+      if (ch === 'o') {
+        return sort.cycle()
+      }
 
-      return setFilter({ live: true, query: filter?.query ?? '' })
-    }
+      if (ch === 'O') {
+        return sort.toggle()
+      }
 
-    // o cycles the notes sort column (name ↔ modified ↔ default); O flips it.
-    if (ch === 'o') {
-      return sort.cycle()
-    }
+      if (ch === 'n') {
+        return setPrompt({ mode: 'create', value: '' })
+      }
 
-    if (ch === 'O') {
-      return sort.toggle()
-    }
+      // Ask the desk — reachable even with an empty vault (e.g. to ask it to sync
+      // learnings), so it sits above the "needs a note" guard below.
+      if (ch === 'a') {
+        return askAgent()
+      }
 
-    if (ch === 'n') {
-      return setPrompt({ mode: 'create', value: '' })
-    }
+      if (!notes.length) {
+        return
+      }
 
-    // Ask the desk — reachable even with an empty vault (e.g. to ask it to sync
-    // learnings), so it sits above the "needs a note" guard below.
-    if (ch === 'a') {
-      return askAgent()
-    }
+      if (ch === 'c') {
+        return setPrompt({ mode: 'comment', value: '' })
+      }
 
-    if (!notes.length) {
-      return
-    }
+      if (ch === 'e') {
+        return enterEdit()
+      }
 
-    if (ch === 'c') {
-      return setPrompt({ mode: 'comment', value: '' })
-    }
+      // Start/stop a visual line selection at the cursor (vim-style). While
+      // active, plain ↑↓/jk extend it; c then comments on the whole range.
+      if (ch === 'v') {
+        return toggleSelect()
+      }
 
-    if (ch === 'e') {
-      return enterEdit()
-    }
+      // Switch notes (left list): [ previous, ] next.
+      if (ch === '[') {
+        return move(-1)
+      }
 
-    // Start/stop a visual line selection at the cursor (vim-style). While
-    // active, plain ↑↓/jk extend it; c then comments on the whole range.
-    if (ch === 'v') {
-      return toggleSelect()
-    }
+      if (ch === ']') {
+        return move(1)
+      }
 
-    // Switch notes (left list): [ previous, ] next.
-    if (ch === '[') {
-      return move(-1)
-    }
+      // Wikilink focus (in-document): Tab cycles links, Enter opens the focused
+      // one. Clicking a link works too — each is its own hit-target.
+      if (key.tab) {
+        return focusLink(key.shift ? -1 : 1)
+      }
 
-    if (ch === ']') {
-      return move(1)
-    }
+      // Enter: in the notes tree it toggles a folder / opens a note; in the doc
+      // it follows the focused wikilink.
+      if (key.return) {
+        return focus === 'list' ? listActivate() : openFocusedLink()
+      }
 
-    // Wikilink focus (in-document): Tab cycles links, Enter opens the focused
-    // one. Clicking a link works too — each is its own hit-target.
-    if (key.tab) {
-      return focusLink(key.shift ? -1 : 1)
-    }
+      // ←/→ move focus across panes: notes ↔ outline ↔ doc. `h` is now Help
+      // (handled above), so ← is the sole "move left"; `l` still moves right.
+      if (key.leftArrow) {
+        return moveFocus(-1)
+      }
 
-    // Enter: in the notes tree it toggles a folder / opens a note; in the doc
-    // it follows the focused wikilink.
-    if (key.return) {
-      return focus === 'list' ? listActivate() : openFocusedLink()
-    }
+      if (key.rightArrow || ch === 'l') {
+        return moveFocus(1)
+      }
 
-    // ←/→ move focus across panes: notes ↔ outline ↔ doc. `h` is now Help
-    // (handled above), so ← is the sole "move left"; `l` still moves right.
-    if (key.leftArrow) {
-      return moveFocus(-1)
-    }
+      // ↑↓/jk navigate the focused pane (note list / outline / doc cursor).
+      // v + ↑↓ (or Shift/J/K) extend a selection in the doc.
+      if (key.upArrow || ch === 'k' || ch === 'K') {
+        return navStep(-1, Boolean(key.shift) || ch === 'K')
+      }
 
-    if (key.rightArrow || ch === 'l') {
-      return moveFocus(1)
-    }
+      if (key.downArrow || ch === 'j' || ch === 'J') {
+        return navStep(1, Boolean(key.shift) || ch === 'J')
+      }
 
-    // ↑↓/jk navigate the focused pane (note list / outline / doc cursor).
-    // v + ↑↓ (or Shift/J/K) extend a selection in the doc.
-    if (key.upArrow || ch === 'k' || ch === 'K') {
-      return navStep(-1, Boolean(key.shift) || ch === 'K')
-    }
+      // Mouse wheel: small, smooth steps (a full page per tick felt janky).
+      if (key.wheelDown) {
+        return docScrollRef.current?.scrollBy(3)
+      }
 
-    if (key.downArrow || ch === 'j' || ch === 'J') {
-      return navStep(1, Boolean(key.shift) || ch === 'J')
-    }
+      if (key.wheelUp) {
+        return docScrollRef.current?.scrollBy(-3)
+      }
 
-    // Mouse wheel: small, smooth steps (a full page per tick felt janky).
-    if (key.wheelDown) {
-      return docScrollRef.current?.scrollBy(3)
-    }
+      // Page scroll: PgUp/PgDn, space, ctrl-u/d.
+      if (key.pageDown || ch === ' ' || (key.ctrl && ch === 'd')) {
+        return docScrollRef.current?.scrollBy(pageSize)
+      }
 
-    if (key.wheelUp) {
-      return docScrollRef.current?.scrollBy(-3)
-    }
+      if (key.pageUp || (key.ctrl && ch === 'u')) {
+        return docScrollRef.current?.scrollBy(-pageSize)
+      }
 
-    // Page scroll: PgUp/PgDn, space, ctrl-u/d.
-    if (key.pageDown || ch === ' ' || (key.ctrl && ch === 'd')) {
-      return docScrollRef.current?.scrollBy(pageSize)
-    }
+      if (ch === 'g') {
+        const first = blocks.findIndex(b => b.kind !== 'blank')
 
-    if (key.pageUp || (key.ctrl && ch === 'u')) {
-      return docScrollRef.current?.scrollBy(-pageSize)
-    }
+        return first >= 0 ? jumpCursor(first) : docScrollRef.current?.scrollTo(0)
+      }
 
-    if (ch === 'g') {
-      const first = blocks.findIndex(b => b.kind !== 'blank')
+      if (ch === 'G') {
+        let last = -1
+        blocks.forEach((b, bi) => {
+          if (b.kind !== 'blank') {
+            last = bi
+          }
+        })
 
-      return first >= 0 ? jumpCursor(first) : docScrollRef.current?.scrollTo(0)
-    }
-
-    if (ch === 'G') {
-      let last = -1
-      blocks.forEach((b, bi) => {
-        if (b.kind !== 'blank') {
-          last = bi
-        }
-      })
-
-      return last >= 0 ? jumpCursor(last) : docScrollRef.current?.scrollToBottom?.()
-    }
-  }, { isActive: !globalModal })
+        return last >= 0 ? jumpCursor(last) : docScrollRef.current?.scrollToBottom?.()
+      }
+    },
+    { isActive: !globalModal }
+  )
 
   const { body: rawBody, tags: docTags } = doc?.content ? splitFrontmatter(doc.content) : { body: '', tags: '' }
   const { body: docBody, comments: docComments } = splitComments(rawBody)
@@ -1472,10 +1484,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
   const showComments = !editing && cols >= 100
   const commentsW = showComments ? Math.max(20, Math.min(34, Math.floor(cols * 0.22))) : 0
 
-  const docWidth = Math.max(
-    24,
-    cols - listW - outlineW - commentsW - 6 - (outlineW ? 2 : 0) - (commentsW ? 2 : 0)
-  )
+  const docWidth = Math.max(24, cols - listW - outlineW - commentsW - 6 - (outlineW ? 2 : 0) - (commentsW ? 2 : 0))
 
   // Editor render data: lines + a block cursor at (cursorRow, cursorCol).
   const editLines = editText.split('\n')
@@ -1495,7 +1504,14 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
 
       if (col === null || col < at || col >= end) {
         out.push(
-          <Text bold={s.bold} color={s.color} dimColor={s.dim} italic={s.italic} key={out.length} underline={s.underline}>
+          <Text
+            bold={s.bold}
+            color={s.color}
+            dimColor={s.dim}
+            italic={s.italic}
+            key={out.length}
+            underline={s.underline}
+          >
             {s.text}
           </Text>
         )
@@ -1536,9 +1552,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
       )
     }
 
-    return (
-      <Text wrap="truncate-end">{out.length ? out : ' '}</Text>
-    )
+    return <Text wrap="truncate-end">{out.length ? out : ' '}</Text>
   }
 
   // Header: the note's title (H1 / filename, never the raw path) on its own
@@ -1666,8 +1680,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
   }
 
   // ←/→ move focus across the panes; outline is skipped when it's hidden.
-  const focusOrder = (): ('doc' | 'list' | 'outline')[] =>
-    outlineW > 0 ? ['list', 'outline', 'doc'] : ['list', 'doc']
+  const focusOrder = (): ('doc' | 'list' | 'outline')[] => (outlineW > 0 ? ['list', 'outline', 'doc'] : ['list', 'doc'])
 
   const moveFocus = (dir: -1 | 1) => {
     const order = focusOrder()
@@ -1719,11 +1732,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
     }
 
     const next =
-      focusedLink < 0
-        ? dir > 0
-          ? 0
-          : docLinks.length - 1
-        : (focusedLink + dir + docLinks.length) % docLinks.length
+      focusedLink < 0 ? (dir > 0 ? 0 : docLinks.length - 1) : (focusedLink + dir + docLinks.length) % docLinks.length
 
     setFocusedLink(next)
     jumpCursor(docLinks[next]!.block)
@@ -1743,7 +1752,12 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
   // comment anchors to).
   const selStartLine = blocks[selLo]?.start ?? 0
   const selEndLine = blocks[selHi]?.end ?? selStartLine
-  const lineRef = selStartLine ? (selEndLine > selStartLine ? `L${selStartLine}-${selEndLine}` : `L${selStartLine}`) : 'note'
+
+  const lineRef = selStartLine
+    ? selEndLine > selStartLine
+      ? `L${selStartLine}-${selEndLine}`
+      : `L${selStartLine}`
+    : 'note'
 
   const selSnippet = stripInlineMarkup((blocks[selLo]?.text ?? '').split('\n')[0] ?? '')
     .replace(/^#+\s*/, '')
@@ -1848,23 +1862,29 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
               <Text bold color={t.color.accent}>
                 s
               </Text>{' '}
-              and the desk builds a vault seeded with a starter forecasting knowledge base — the art
-              of superforecasting, a getting-started guide, the core methods, and a question-dossier
-              template, all wikilinked into an index.
+              and the desk builds a vault seeded with a starter forecasting knowledge base — the art of
+              superforecasting, a getting-started guide, the core methods, and a question-dossier template, all
+              wikilinked into an index.
             </Text>
           </Box>
           <Box flexDirection="column" marginTop={1}>
             <Text color={t.color.text}>
-              <Text bold color={t.color.accent}>s</Text> set up + seed the vault
+              <Text bold color={t.color.accent}>
+                s
+              </Text>{' '}
+              set up + seed the vault
             </Text>
             <Text color={t.color.text}>
-              <Text bold color={t.color.accent}>2</Text> switch to the LaTeX workspace instead
+              <Text bold color={t.color.accent}>
+                2
+              </Text>{' '}
+              switch to the LaTeX workspace instead
             </Text>
           </Box>
           <Box marginTop={1}>
             <Text color={t.color.muted} wrap="wrap">
-              Created at ~/Documents/Obsidian Vault by default — export OBSIDIAN_VAULT_PATH before
-              launching to choose another location.
+              Created at ~/Documents/Obsidian Vault by default — export OBSIDIAN_VAULT_PATH before launching to choose
+              another location.
             </Text>
           </Box>
         </Box>
@@ -1879,16 +1899,22 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
           </Text>
           <Box marginTop={1}>
             <Text color={t.color.muted} wrap="wrap">
-              Nothing has been written here yet. Start a note, or ask the desk to sync what it has
-              learned so far into the vault.
+              Nothing has been written here yet. Start a note, or ask the desk to sync what it has learned so far into
+              the vault.
             </Text>
           </Box>
           <Box flexDirection="column" marginTop={1}>
             <Text color={t.color.text}>
-              <Text bold color={t.color.accent}>n</Text> new note (folders in the path are created, e.g. Topic/Note)
+              <Text bold color={t.color.accent}>
+                n
+              </Text>{' '}
+              new note (folders in the path are created, e.g. Topic/Note)
             </Text>
             <Text color={t.color.text}>
-              <Text bold color={t.color.accent}>a</Text> ask the desk to sync learnings
+              <Text bold color={t.color.accent}>
+                a
+              </Text>{' '}
+              ask the desk to sync learnings
             </Text>
           </Box>
         </Box>
@@ -1927,7 +1953,9 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
                       toggleFolder(row.path)
                     }}
                   >
-                    <Text color={onCursor ? t.color.primary : t.color.muted}>{`${indent}${row.expanded ? '▾' : '▸'} `}</Text>
+                    <Text
+                      color={onCursor ? t.color.primary : t.color.muted}
+                    >{`${indent}${row.expanded ? '▾' : '▸'} `}</Text>
                     <Text bold color={onCursor ? t.color.text : t.color.label} wrap="truncate-end">
                       {truncate(row.name, listW - indent.length - 3)}
                     </Text>
@@ -2040,109 +2068,112 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
                   </Box>
                 ) : (
                   <>
-                {docLoading && !docBody ? (
-                  // Only show the spinner on a cold load. While previewing
-                  // through the list, keep the current doc on screen until the
-                  // next one arrives so the reader swaps cleanly without a
-                  // "Loading…" blink on every cursor move.
-                  <Text color={t.color.muted}>Loading…</Text>
-                ) : docError ? (
-                  <Text color={t.color.error} wrap="wrap">
-                    {docError}
-                  </Text>
-                ) : docBody ? (
-                  blocks.map((b, i) => {
-                    const onCursor = i >= selLo && i <= selHi
+                    {docLoading && !docBody ? (
+                      // Only show the spinner on a cold load. While previewing
+                      // through the list, keep the current doc on screen until the
+                      // next one arrives so the reader swaps cleanly without a
+                      // "Loading…" blink on every cursor move.
+                      <Text color={t.color.muted}>Loading…</Text>
+                    ) : docError ? (
+                      <Text color={t.color.error} wrap="wrap">
+                        {docError}
+                      </Text>
+                    ) : docBody ? (
+                      blocks.map((b, i) => {
+                        const onCursor = i >= selLo && i <= selHi
 
-                    // Blank lines inside a selection still draw the gutter so a
-                    // multi-line selection reads as one continuous bar (no gaps).
-                    if (b.kind === 'blank') {
-                      return (
-                        <Box flexDirection="row" key={i}>
-                          <Text bold={onCursor} color={onCursor ? t.color.primary : t.color.muted}>
-                            {onCursor ? '▌ ' : '  '}
-                          </Text>
-                          <Text> </Text>
-                        </Box>
-                      )
-                    }
+                        // Blank lines inside a selection still draw the gutter so a
+                        // multi-line selection reads as one continuous bar (no gaps).
+                        if (b.kind === 'blank') {
+                          return (
+                            <Box flexDirection="row" key={i}>
+                              <Text bold={onCursor} color={onCursor ? t.color.primary : t.color.muted}>
+                                {onCursor ? '▌ ' : '  '}
+                              </Text>
+                              <Text> </Text>
+                            </Box>
+                          )
+                        }
 
-                    return (
-                      <Box
-                        flexDirection="row"
-                        key={i}
-                        onClick={(event: { cellIsBlank?: boolean; stopPropagation?: () => void }) => {
-                          if (event.cellIsBlank || chat || globalModal) {
-                            return
-                          }
+                        return (
+                          <Box
+                            flexDirection="row"
+                            key={i}
+                            onClick={(event: { cellIsBlank?: boolean; stopPropagation?: () => void }) => {
+                              if (event.cellIsBlank || chat || globalModal) {
+                                return
+                              }
 
-                          event.stopPropagation?.()
-                          setFocus('doc')
-                          jumpCursor(i)
-                        }}
-                         
-                        ref={(el: any) => {
-                          blockRefs.current[i] = el
-                        }}
-                      >
-                        <Text bold={onCursor} color={onCursor ? t.color.primary : t.color.muted}>
-                          {onCursor ? '▌ ' : '  '}
-                        </Text>
-                        {/* Definite width + clip: Md wraps paragraphs at the
+                              event.stopPropagation?.()
+                              setFocus('doc')
+                              jumpCursor(i)
+                            }}
+                            ref={(el: any) => {
+                              blockRefs.current[i] = el
+                            }}
+                          >
+                            <Text bold={onCursor} color={onCursor ? t.color.primary : t.color.muted}>
+                              {onCursor ? '▌ ' : '  '}
+                            </Text>
+                            {/* Definite width + clip: Md wraps paragraphs at the
                             parent box width (it only honors `cols` for tables),
                             and the doc ScrollBox doesn't clip horizontally — so
                             without a hard width the body bled into the Comments
                             column. */}
-                        <Box flexShrink={0} overflow="hidden" width={Math.max(10, docWidth - 2)}>
-                          <Md
-                            activeWikiLink={
-                              focusedLink >= 0 && docLinks[focusedLink]?.block === i
-                                ? focusedLink - blockLinkBase[i]!
-                                : undefined
-                            }
-                            cols={Math.max(10, docWidth - 2)}
-                            onWikiLink={(target: string) => { if (!chat) {jumpTo(resolveTarget(target))} }}
-                            t={t}
-                            text={b.text}
-                          />
-                        </Box>
-                      </Box>
-                    )
-                  })
-                ) : (
-                  <Text color={t.color.muted}>Select a note to read it.</Text>
-                )}
-                {doc?.truncated ? (
-                  <Text color={t.color.muted}>{'\n… (truncated — open in Obsidian for the rest)'}</Text>
-                ) : null}
+                            <Box flexShrink={0} overflow="hidden" width={Math.max(10, docWidth - 2)}>
+                              <Md
+                                activeWikiLink={
+                                  focusedLink >= 0 && docLinks[focusedLink]?.block === i
+                                    ? focusedLink - blockLinkBase[i]!
+                                    : undefined
+                                }
+                                cols={Math.max(10, docWidth - 2)}
+                                onWikiLink={(target: string) => {
+                                  if (!chat) {
+                                    jumpTo(resolveTarget(target))
+                                  }
+                                }}
+                                t={t}
+                                text={b.text}
+                              />
+                            </Box>
+                          </Box>
+                        )
+                      })
+                    ) : (
+                      <Text color={t.color.muted}>Select a note to read it.</Text>
+                    )}
+                    {doc?.truncated ? (
+                      <Text color={t.color.muted}>{'\n… (truncated — open in Obsidian for the rest)'}</Text>
+                    ) : null}
 
-                {/* Outgoing links live inline now (click / Tab) — no separate
+                    {/* Outgoing links live inline now (click / Tab) — no separate
                     index needed. Backlinks stay: they aren't shown inline. */}
-                {backlinks.length > 0 ? (
-                  <Box flexDirection="column" marginTop={1}>
-                    <Text bold color={t.color.accent}>
-                      Backlinks
-                    </Text>
-                    {backlinks.map((note, i) => (
-                      <Box
-                        key={note.rel_path ?? i}
-                        onClick={(event: { cellIsBlank?: boolean; stopPropagation?: () => void }) => {
-                          if (event.cellIsBlank || chat || globalModal) {
-                            return
-                          }
-
-                          event.stopPropagation?.()
-                          jumpTo(note.rel_path)
-                        }}
-                      >
-                        <Text color={t.color.primary}>↩ </Text>
-                        <Text color={t.color.primary} underline wrap="truncate-end">
-                          {truncate(note.title || note.rel_path || '—', docWidth - 6)}
+                    {backlinks.length > 0 ? (
+                      <Box flexDirection="column" marginTop={1}>
+                        <Text bold color={t.color.accent}>
+                          Backlinks
                         </Text>
+                        {backlinks.map((note, i) => (
+                          <Box
+                            key={note.rel_path ?? i}
+                            onClick={(event: { cellIsBlank?: boolean; stopPropagation?: () => void }) => {
+                              if (event.cellIsBlank || chat || globalModal) {
+                                return
+                              }
+
+                              event.stopPropagation?.()
+                              jumpTo(note.rel_path)
+                            }}
+                          >
+                            <Text color={t.color.primary}>↩ </Text>
+                            <Text color={t.color.primary} underline wrap="truncate-end">
+                              {truncate(note.title || note.rel_path || '—', docWidth - 6)}
+                            </Text>
+                          </Box>
+                        ))}
                       </Box>
-                    ))}
-                  </Box>
-                ) : null}
+                    ) : null}
                   </>
                 )}
               </Box>
@@ -2224,9 +2255,13 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
           <>
             <Text color={t.color.text}>{data?.count ?? notes.length}</Text>
             <Text color={t.color.muted}> notes</Text>
-            {flatMode ? <Text color={t.color.muted}>{`  ·  ${flatRows.length} match${flatRows.length === 1 ? '' : 'es'}`}</Text> : null}
+            {flatMode ? (
+              <Text color={t.color.muted}>{`  ·  ${flatRows.length} match${flatRows.length === 1 ? '' : 'es'}`}</Text>
+            ) : null}
             {sort.state.key ? (
-              <Text color={t.color.muted}>{`  ·  ${sort.state.key === 'modified' ? 'modified' : 'name'} ${sortIndicator(sort.state, sort.state.key)}`}</Text>
+              <Text
+                color={t.color.muted}
+              >{`  ·  ${sort.state.key === 'modified' ? 'modified' : 'name'} ${sortIndicator(sort.state, sort.state.key)}`}</Text>
             ) : null}
           </>
         ) : (
@@ -2259,13 +2294,29 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
         ]
       : narrow
         ? [
-            { k: '/', label: 'Filter', run: () => { setListIdx(0); setFocus('list'); setFilter({ live: true, query: filter?.query ?? '' }) } },
+            {
+              k: '/',
+              label: 'Filter',
+              run: () => {
+                setListIdx(0)
+                setFocus('list')
+                setFilter({ live: true, query: filter?.query ?? '' })
+              }
+            },
             { k: 'o', label: 'Sort', run: () => sort.cycle() },
             { k: 'e', label: 'Edit', run: enterEdit },
             { k: 'a', label: 'Ask desk', run: askAgent }
           ]
         : [
-            { k: '/', label: 'Filter', run: () => { setListIdx(0); setFocus('list'); setFilter({ live: true, query: filter?.query ?? '' }) } },
+            {
+              k: '/',
+              label: 'Filter',
+              run: () => {
+                setListIdx(0)
+                setFocus('list')
+                setFilter({ live: true, query: filter?.query ?? '' })
+              }
+            },
             { k: 'o', label: 'Sort', run: () => sort.cycle() },
             { k: 's', label: 'Search', run: () => setSearch({ loading: false, query: '', results: [], sel: 0 }) },
             { k: 'v', label: selAnchor >= 0 ? 'End select' : 'Select', run: toggleSelect },
@@ -2295,17 +2346,16 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
 
   const browseChips: FooterChip[] = [...navChips, ...actions]
 
-  const onActionClick =
-    (run: () => void) => (event: { cellIsBlank?: boolean; stopPropagation?: () => void }) => {
-      // Body mouse handlers no-op while the chat overlay is open (the keyboard is
-      // already trapped by the `if (chat)` branch in useInput).
-      if (event.cellIsBlank || chat || globalModal) {
-        return
-      }
-
-      event.stopPropagation?.()
-      run()
+  const onActionClick = (run: () => void) => (event: { cellIsBlank?: boolean; stopPropagation?: () => void }) => {
+    // Body mouse handlers no-op while the chat overlay is open (the keyboard is
+    // already trapped by the `if (chat)` branch in useInput).
+    if (event.cellIsBlank || chat || globalModal) {
+      return
     }
+
+    event.stopPropagation?.()
+    run()
+  }
 
   const saveLabel =
     saveState === 'saving'
@@ -2337,9 +2387,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
               <Text color={t.color.label}>{' Save & exit'}</Text>
               <Text color={t.color.muted}>]</Text>
             </Box>
-            {saveLabel ? (
-              <Text color={saveState === 'error' ? t.color.error : t.color.muted}>{saveLabel}</Text>
-            ) : null}
+            {saveLabel ? <Text color={saveState === 'error' ? t.color.error : t.color.muted}>{saveLabel}</Text> : null}
           </Box>
           <Text color={t.color.muted} wrap="truncate-end">
             editing · arrows move · ⏎ newline · ⌃S save now · autosaves
@@ -2384,13 +2432,14 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
     const spinner = SPINNER[spin % SPINNER.length]
     const word = THINKING_WORDS[Math.floor(spin / 8) % THINKING_WORDS.length]
 
-    const liveLabel = chat.status && !['reasoning', 'sending', 'thinking', 'writing'].includes(chat.status)
-      ? chat.status
-      : chat.status === 'writing'
-        ? 'writing'
-        : chat.status === 'reasoning'
-          ? 'reasoning'
-          : word
+    const liveLabel =
+      chat.status && !['reasoning', 'sending', 'thinking', 'writing'].includes(chat.status)
+        ? chat.status
+        : chat.status === 'writing'
+          ? 'writing'
+          : chat.status === 'reasoning'
+            ? 'reasoning'
+            : word
 
     chatOverlay = (
       <ModalOverlay
@@ -2403,16 +2452,28 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
         title={`Ask the desk${currentRel ? `  ·  ${docTitle}` : ''}`}
       >
         <Box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0}>
-          <ScrollBox decstbm={false} flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0} ref={chatScrollRef}>
+          <ScrollBox
+            decstbm={false}
+            flexDirection="column"
+            flexGrow={1}
+            flexShrink={1}
+            minHeight={0}
+            ref={chatScrollRef}
+          >
             {chat.turns.length === 0 && !chat.busy ? (
               <Text color={t.color.muted} wrap="wrap">
-                Chat with the desk about this note without leaving Obsidian. It shares your main
-                session, so the exchange is also in the chat when you go back.
+                Chat with the desk about this note without leaving Obsidian. It shares your main session, so the
+                exchange is also in the chat when you go back.
               </Text>
             ) : (
               chat.turns.map((turn, i) => (
                 <Box flexDirection="column" key={i} marginTop={i ? 1 : 0}>
-                  <Text bold color={turn.role === 'user' ? t.color.primary : turn.role === 'system' ? t.color.error : t.color.accent}>
+                  <Text
+                    bold
+                    color={
+                      turn.role === 'user' ? t.color.primary : turn.role === 'system' ? t.color.error : t.color.accent
+                    }
+                  >
                     {turn.role === 'user' ? 'you' : turn.role === 'system' ? 'system' : 'desk'}
                   </Text>
                   {turn.role === 'assistant' ? (

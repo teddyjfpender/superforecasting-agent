@@ -105,8 +105,18 @@ export const buildMonthMatrix = (year: number, month: number): DayCell[][] => {
 }
 
 const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December'
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December'
 ]
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -115,8 +125,7 @@ const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 // (warning), everything further out is muted. Past events (negative days) read as
 // urgent too — they are already due.
 export type ProximityBucket = 'danger' | 'muted' | 'warn'
-export const proximityBucket = (days: number): ProximityBucket =>
-  days <= 2 ? 'danger' : days <= 7 ? 'warn' : 'muted'
+export const proximityBucket = (days: number): ProximityBucket => (days <= 2 ? 'danger' : days <= 7 ? 'warn' : 'muted')
 
 export const proximityColor = (t: Theme, days: number): string => {
   const b = proximityBucket(days)
@@ -142,8 +151,7 @@ export const relIn = (days: number): string => {
   return `${Math.round(days / 30)}mo`
 }
 
-const daysBetween = (stamp: number, now: number): number =>
-  Math.round((startOfDay(stamp) - startOfDay(now)) / DAY_MS)
+const daysBetween = (stamp: number, now: number): number => Math.round((startOfDay(stamp) - startOfDay(now)) / DAY_MS)
 
 // Compact agenda date label, e.g. "Jul 03".
 const calDate = (stamp: number): string =>
@@ -305,7 +313,7 @@ export function CalendarView({ gw, onClose, t }: CalendarViewProps) {
     setLoading(!data)
     // fast: the calendar reads only questions[].{title,id,close_time,resolution_time}
     // + the schedule runs, all carried in fast mode — so skip the heavy dashboard build.
-    gw.request<unknown>('forecast.dashboard', { fast: true, limit: 200 })
+    gw.request('forecast.dashboard', { fast: true, limit: 200 })
       .then(raw => {
         const result = asRpcResult<ForecastDashboardResponse>(raw)
 
@@ -478,217 +486,227 @@ export function CalendarView({ gw, onClose, t }: CalendarViewProps) {
     }
   }, [popoverOpen])
 
-  useInput((ch, key) => {
-    // ── Popover (grid day agenda) owns input while open ──────────────────────
-    if (popoverOpen) {
-      if (key.escape || ch === 'q') {
-        return setPopoverOpen(false)
-      }
+  useInput(
+    (ch, key) => {
+      // ── Popover (grid day agenda) owns input while open ──────────────────────
+      if (popoverOpen) {
+        if (key.escape || ch === 'q') {
+          return setPopoverOpen(false)
+        }
 
-      if (key.upArrow || ch === 'k') {
-        return setPopoverSel(i => Math.max(0, i - 1))
-      }
+        if (key.upArrow || ch === 'k') {
+          return setPopoverSel(i => Math.max(0, i - 1))
+        }
 
-      if (key.downArrow || ch === 'j') {
-        return setPopoverSel(i => Math.min(Math.max(0, focusEvents.length - 1), i + 1))
-      }
+        if (key.downArrow || ch === 'j') {
+          return setPopoverSel(i => Math.min(Math.max(0, focusEvents.length - 1), i + 1))
+        }
 
-      if (key.return) {
-        const ev = focusEvents[popoverSel]
+        if (key.return) {
+          const ev = focusEvents[popoverSel]
 
-        if (ev) {
-          return deepLink(ev.id, KIND_LABEL[ev.kind])
+          if (ev) {
+            return deepLink(ev.id, KIND_LABEL[ev.kind])
+          }
+
+          return
         }
 
         return
       }
 
-      return
-    }
+      // ── Agenda filter text-entry mode ────────────────────────────────────────
+      if (filtering) {
+        if (key.return) {
+          return setFiltering(false)
+        }
 
-    // ── Agenda filter text-entry mode ────────────────────────────────────────
-    if (filtering) {
-      if (key.return) {
-        return setFiltering(false)
+        if (key.escape) {
+          setQuery('')
+
+          return setFiltering(false)
+        }
+
+        if (key.backspace || key.delete) {
+          return setQuery(q => q.slice(0, -1))
+        }
+
+        if (ch && !key.ctrl && !key.meta) {
+          const printable = [...ch].filter(c => c >= ' ').join('')
+
+          if (printable) {
+            setSel(0)
+
+            return setQuery(q => q + printable)
+          }
+        }
+
+        return
+      }
+
+      // ── Shared keys ──────────────────────────────────────────────────────────
+      if (ch === 'q') {
+        return onClose()
       }
 
       if (key.escape) {
-        setQuery('')
-
-        return setFiltering(false)
-      }
-
-      if (key.backspace || key.delete) {
-        return setQuery(q => q.slice(0, -1))
-      }
-
-      if (ch && !key.ctrl && !key.meta) {
-        const printable = [...ch].filter(c => c >= ' ').join('')
-
-        if (printable) {
-          setSel(0)
-
-          return setQuery(q => q + printable)
+        if (query) {
+          return setQuery('')
         }
+
+        return onClose()
       }
 
-      return
-    }
-
-    // ── Shared keys ──────────────────────────────────────────────────────────
-    if (ch === 'q') {
-      return onClose()
-    }
-
-    if (key.escape) {
-      if (query) {
-        return setQuery('')
+      if (ch === 'r') {
+        return load(true)
       }
 
-      return onClose()
-    }
-
-    if (ch === 'r') {
-      return load(true)
-    }
-
-    // `h` (and the `?` alias) open the unified Help modal — consistent everywhere.
-    if (ch === 'h' || ch === '?') {
-      return openHelpOverlay()
-    }
-
-    // Tab toggles modes — but ONLY when the grid is available (wide).
-    if (key.tab && wide) {
-      return toggleMode()
-    }
-
-    if (effectiveMode === 'grid') {
-      // ← moves the day focus left; `h` is now Help (handled above), so the vim
-      // alias is retired. `l` still moves right.
-      if (key.leftArrow) {
-        return moveFocus(-1)
+      // `h` (and the `?` alias) open the unified Help modal — consistent everywhere.
+      if (ch === 'h' || ch === '?') {
+        return openHelpOverlay()
       }
 
-      if (key.rightArrow || ch === 'l') {
-        return moveFocus(1)
+      // Tab toggles modes — but ONLY when the grid is available (wide).
+      if (key.tab && wide) {
+        return toggleMode()
       }
 
-      if (key.upArrow) {
-        return moveFocus(-7)
-      }
+      if (effectiveMode === 'grid') {
+        // ← moves the day focus left; `h` is now Help (handled above), so the vim
+        // alias is retired. `l` still moves right.
+        if (key.leftArrow) {
+          return moveFocus(-1)
+        }
 
-      if (key.downArrow) {
-        return moveFocus(7)
-      }
+        if (key.rightArrow || ch === 'l') {
+          return moveFocus(1)
+        }
 
-      if (key.pageUp || ch === '[') {
-        return shiftMonth(-1)
-      }
+        if (key.upArrow) {
+          return moveFocus(-7)
+        }
 
-      if (key.pageDown || ch === ']') {
-        return shiftMonth(1)
-      }
+        if (key.downArrow) {
+          return moveFocus(7)
+        }
 
-      if (ch === 't') {
-        return jumpToday()
-      }
+        if (key.pageUp || ch === '[') {
+          return shiftMonth(-1)
+        }
 
-      if (key.return) {
-        if (focusEvents.length) {
-          return setPopoverOpen(true)
+        if (key.pageDown || ch === ']') {
+          return shiftMonth(1)
+        }
+
+        if (ch === 't') {
+          return jumpToday()
+        }
+
+        if (key.return) {
+          if (focusEvents.length) {
+            return setPopoverOpen(true)
+          }
+
+          return
         }
 
         return
       }
 
-      return
-    }
+      // ── Agenda mode ──────────────────────────────────────────────────────────
+      if (ch === '/') {
+        setQuery('')
 
-    // ── Agenda mode ──────────────────────────────────────────────────────────
-    if (ch === '/') {
-      setQuery('')
-
-      return setFiltering(true)
-    }
-
-    if (key.upArrow || ch === 'k' || key.wheelUp) {
-      return setSel(i => Math.max(0, i - 1))
-    }
-
-    if (key.downArrow || ch === 'j' || key.wheelDown) {
-      return setSel(i => Math.min(Math.max(0, agendaRows.length - 1), i + 1))
-    }
-
-    if (ch === 'g') {
-      return setSel(0)
-    }
-
-    if (ch === 'G') {
-      return setSel(Math.max(0, agendaRows.length - 1))
-    }
-
-    if (ch === 'o') {
-      armReselect()
-
-      return agendaSort.cycle()
-    }
-
-    if (ch === 'O') {
-      armReselect()
-
-      return agendaSort.toggle()
-    }
-
-    if (key.return) {
-      if (selectedRow) {
-        return deepLink(selectedRow.id, KIND_LABEL[selectedRow.kind])
+        return setFiltering(true)
       }
 
-      return
-    }
-  }, { isActive: !globalModal })
+      if (key.upArrow || ch === 'k' || key.wheelUp) {
+        return setSel(i => Math.max(0, i - 1))
+      }
+
+      if (key.downArrow || ch === 'j' || key.wheelDown) {
+        return setSel(i => Math.min(Math.max(0, agendaRows.length - 1), i + 1))
+      }
+
+      if (ch === 'g') {
+        return setSel(0)
+      }
+
+      if (ch === 'G') {
+        return setSel(Math.max(0, agendaRows.length - 1))
+      }
+
+      if (ch === 'o') {
+        armReselect()
+
+        return agendaSort.cycle()
+      }
+
+      if (ch === 'O') {
+        armReselect()
+
+        return agendaSort.toggle()
+      }
+
+      if (key.return) {
+        if (selectedRow) {
+          return deepLink(selectedRow.id, KIND_LABEL[selectedRow.kind])
+        }
+
+        return
+      }
+    },
+    { isActive: !globalModal }
+  )
 
   const width = Math.max(40, cols - 4)
 
   // ── Header ────────────────────────────────────────────────────────────────
-  const header = effectiveMode === 'grid'
-    ? (
-        <Box flexShrink={0} marginBottom={1}>
+  const header =
+    effectiveMode === 'grid' ? (
+      <Box flexShrink={0} marginBottom={1}>
+        <Text wrap="truncate-end">
+          <Text bold color={t.color.primary}>
+            {`${MONTH_NAMES[anchor.m]} ${anchor.y}`}
+          </Text>
+          <Text color={t.color.muted}>{'  ·  '}</Text>
+          <Text color={monthCounts.deadlines > 0 ? t.color.warn : t.color.label}>{monthCounts.deadlines}</Text>
+          <Text color={t.color.muted}> deadline{monthCounts.deadlines === 1 ? '' : 's'} · </Text>
+          <Text color={monthCounts.reviews > 0 ? t.color.accent : t.color.label}>{monthCounts.reviews}</Text>
+          <Text color={t.color.muted}> review{monthCounts.reviews === 1 ? '' : 's'}</Text>
+        </Text>
+      </Box>
+    ) : (
+      <Box flexShrink={0} marginBottom={1}>
+        {filtering || query ? (
           <Text wrap="truncate-end">
             <Text bold color={t.color.primary}>
-              {`${MONTH_NAMES[anchor.m]} ${anchor.y}`}
+              CALENDAR
             </Text>
-            <Text color={t.color.muted}>{'  ·  '}</Text>
-            <Text color={monthCounts.deadlines > 0 ? t.color.warn : t.color.label}>{monthCounts.deadlines}</Text>
-            <Text color={t.color.muted}> deadline{monthCounts.deadlines === 1 ? '' : 's'} · </Text>
-            <Text color={monthCounts.reviews > 0 ? t.color.accent : t.color.label}>{monthCounts.reviews}</Text>
-            <Text color={t.color.muted}> review{monthCounts.reviews === 1 ? '' : 's'}</Text>
-          </Text>
-        </Box>
-      )
-    : (
-        <Box flexShrink={0} marginBottom={1}>
-          {filtering || query ? (
-            <Text wrap="truncate-end">
-              <Text bold color={t.color.primary}>CALENDAR</Text>
-              <Text color={t.color.muted}>{'   '}</Text>
-              <Text color={t.color.primary}>{'⌕ '}</Text>
-              <Text color={t.color.text}>{query}</Text>
-              {filtering ? <Text color={t.color.primary} inverse>{' '}</Text> : null}
-              <Text color={t.color.muted}>
-                {`   ${query ? `${filtered.length} matches · ` : ''}${filtering ? '⏎ done · Esc clear' : '/ refine · Esc clear'}`}
+            <Text color={t.color.muted}>{'   '}</Text>
+            <Text color={t.color.primary}>{'⌕ '}</Text>
+            <Text color={t.color.text}>{query}</Text>
+            {filtering ? (
+              <Text color={t.color.primary} inverse>
+                {' '}
               </Text>
+            ) : null}
+            <Text color={t.color.muted}>
+              {`   ${query ? `${filtered.length} matches · ` : ''}${filtering ? '⏎ done · Esc clear' : '/ refine · Esc clear'}`}
             </Text>
-          ) : (
-            <Text wrap="truncate-end">
-              <Text bold color={t.color.primary}>CALENDAR</Text>
-              <Text color={t.color.muted}>{'   '}</Text>
-              <Text color={t.color.text}>{events.length}</Text>
-              <Text color={t.color.muted}> dated events · agenda</Text>
+          </Text>
+        ) : (
+          <Text wrap="truncate-end">
+            <Text bold color={t.color.primary}>
+              CALENDAR
             </Text>
-          )}
-        </Box>
-      )
+            <Text color={t.color.muted}>{'   '}</Text>
+            <Text color={t.color.text}>{events.length}</Text>
+            <Text color={t.color.muted}> dated events · agenda</Text>
+          </Text>
+        )}
+      </Box>
+    )
 
   // ── Body ──────────────────────────────────────────────────────────────────
   let body
@@ -724,8 +742,19 @@ export function CalendarView({ gw, onClose, t }: CalendarViewProps) {
     body = (
       <AgendaTable
         cursor={clampedSel}
-        onSelect={i => { if (!popoverOpen && !globalModal) {setSel(i)} }}
-        onSort={popoverOpen || globalModal ? undefined : (key: string) => { armReselect(); agendaSort.sortByKey(key) }}
+        onSelect={i => {
+          if (!popoverOpen && !globalModal) {
+            setSel(i)
+          }
+        }}
+        onSort={
+          popoverOpen || globalModal
+            ? undefined
+            : (key: string) => {
+                armReselect()
+                agendaSort.sortByKey(key)
+              }
+        }
         query={query}
         rows={agendaRows}
         sortDir={agendaSort.state.dir}
@@ -739,32 +768,69 @@ export function CalendarView({ gw, onClose, t }: CalendarViewProps) {
   }
 
   // ── Footer chips — only the keys that are LIVE in this mode ────────────────
-  const chips: FooterChip[] = effectiveMode === 'grid'
-    ? [
-        { k: '◀▶', label: 'Move' },
-        { k: 'PgUp/Dn', label: 'Month', run: () => shiftMonth(1) },
-        { k: 't', label: 'Today', run: () => jumpToday() },
-        { k: '⏎', label: 'Day', run: () => { if (focusEvents.length) {setPopoverOpen(true)} } },
-        ...(wide ? [{ k: '⇥', label: 'Agenda', run: () => toggleMode() }] : []),
-        { k: 'r', label: 'Refresh', run: () => load(true) },
-        { k: 'h', label: 'Help', run: openHelpOverlay },
-        { k: 'q', label: 'Close', run: onClose }
-      ]
-    : [
-        { k: '↑↓', label: 'Select' },
-        { k: '⏎', label: 'Open', run: () => { if (selectedRow) {deepLink(selectedRow.id, KIND_LABEL[selectedRow.kind])} } },
-        { k: 'o', label: 'Sort', run: () => { armReselect(); agendaSort.cycle() } },
-        { k: '/', label: 'Filter', run: () => { setSel(0); setQuery(''); setFiltering(true) } },
-        ...(wide ? [{ k: '⇥', label: 'Grid', run: () => toggleMode() }] : []),
-        { k: 'r', label: 'Refresh', run: () => load(true) },
-        { k: 'h', label: 'Help', run: openHelpOverlay },
-        { k: 'q', label: 'Close', run: onClose }
-      ]
+  const chips: FooterChip[] =
+    effectiveMode === 'grid'
+      ? [
+          { k: '◀▶', label: 'Move' },
+          { k: 'PgUp/Dn', label: 'Month', run: () => shiftMonth(1) },
+          { k: 't', label: 'Today', run: () => jumpToday() },
+          {
+            k: '⏎',
+            label: 'Day',
+            run: () => {
+              if (focusEvents.length) {
+                setPopoverOpen(true)
+              }
+            }
+          },
+          ...(wide ? [{ k: '⇥', label: 'Agenda', run: () => toggleMode() }] : []),
+          { k: 'r', label: 'Refresh', run: () => load(true) },
+          { k: 'h', label: 'Help', run: openHelpOverlay },
+          { k: 'q', label: 'Close', run: onClose }
+        ]
+      : [
+          { k: '↑↓', label: 'Select' },
+          {
+            k: '⏎',
+            label: 'Open',
+            run: () => {
+              if (selectedRow) {
+                deepLink(selectedRow.id, KIND_LABEL[selectedRow.kind])
+              }
+            }
+          },
+          {
+            k: 'o',
+            label: 'Sort',
+            run: () => {
+              armReselect()
+              agendaSort.cycle()
+            }
+          },
+          {
+            k: '/',
+            label: 'Filter',
+            run: () => {
+              setSel(0)
+              setQuery('')
+              setFiltering(true)
+            }
+          },
+          ...(wide ? [{ k: '⇥', label: 'Grid', run: () => toggleMode() }] : []),
+          { k: 'r', label: 'Refresh', run: () => load(true) },
+          { k: 'h', label: 'Help', run: openHelpOverlay },
+          { k: 'q', label: 'Close', run: onClose }
+        ]
 
   // Empty-state teaching line under the grid when THIS month is bare (the agenda
   // never hits this — an empty agenda already showed the no-events body above).
   const gridEmptyHint =
-    effectiveMode === 'grid' && !loading && !error && events.length > 0 && monthCounts.deadlines === 0 && monthCounts.reviews === 0
+    effectiveMode === 'grid' &&
+    !loading &&
+    !error &&
+    events.length > 0 &&
+    monthCounts.deadlines === 0 &&
+    monthCounts.reviews === 0
 
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
@@ -774,7 +840,11 @@ export function CalendarView({ gw, onClose, t }: CalendarViewProps) {
         </Text>
       ) : null}
       <FooterChips chips={chips} disabled={popoverOpen || globalModal} t={t} />
-      {flash ? <Text color={t.color.accent} wrap="truncate-end">{flash}</Text> : null}
+      {flash ? (
+        <Text color={t.color.accent} wrap="truncate-end">
+          {flash}
+        </Text>
+      ) : null}
     </Box>
   )
 
@@ -789,7 +859,12 @@ export function CalendarView({ gw, onClose, t }: CalendarViewProps) {
       scrollRef={popoverScrollRef}
       t={t}
       tick={now}
-      title={new Date(focusStamp).toLocaleDateString('en-US', { day: 'numeric', month: 'long', weekday: 'long', year: 'numeric' })}
+      title={new Date(focusStamp).toLocaleDateString('en-US', {
+        day: 'numeric',
+        month: 'long',
+        weekday: 'long',
+        year: 'numeric'
+      })}
     >
       <Box flexDirection="column">
         {focusEvents.map((ev, i) => {
@@ -797,10 +872,22 @@ export function CalendarView({ gw, onClose, t }: CalendarViewProps) {
           const days = daysBetween(ev.stamp, wallNow)
 
           return (
-            <Box key={`${ev.id ?? ''}-${ev.kind}-${i}`} onClick={globalModal ? undefined : () => { setPopoverSel(i); deepLink(ev.id, KIND_LABEL[ev.kind]) }}>
+            <Box
+              key={`${ev.id ?? ''}-${ev.kind}-${i}`}
+              onClick={
+                globalModal
+                  ? undefined
+                  : () => {
+                      setPopoverSel(i)
+                      deepLink(ev.id, KIND_LABEL[ev.kind])
+                    }
+              }
+            >
               <Text backgroundColor={active ? t.color.selectionBg : undefined} wrap="truncate-end">
                 <Text color={active ? t.color.accent : t.color.muted}>{active ? '▸ ' : '  '}</Text>
-                <Text color={kindColor(t, ev.kind)}>{`${KIND_GLYPH[ev.kind]} ${pad(KIND_LABEL[ev.kind], 8, 'left')}`}</Text>
+                <Text
+                  color={kindColor(t, ev.kind)}
+                >{`${KIND_GLYPH[ev.kind]} ${pad(KIND_LABEL[ev.kind], 8, 'left')}`}</Text>
                 <Text color={t.color.text}>{truncate(ev.title, 34)}</Text>
                 <Text color={proximityColor(t, days)}>{`  ${relIn(days)}`}</Text>
                 {ev.id ? <Text color={t.color.accent}>{'  ⏎'}</Text> : null}
@@ -904,7 +991,9 @@ function MonthGrid({
 
                 if (!ev) {
                   return (
-                    <Text backgroundColor={bg} key={`d:${di}`}>{pad('', cellW, 'left')}</Text>
+                    <Text backgroundColor={bg} key={`d:${di}`}>
+                      {pad('', cellW, 'left')}
+                    </Text>
                   )
                 }
 
@@ -1001,7 +1090,9 @@ function AgendaTable({
   return (
     <Box flexDirection="column" flexGrow={0} flexShrink={0} minHeight={0} overflow="hidden">
       <Box>
-        <Text bold color={sem.heading}>{'  '}</Text>
+        <Text bold color={sem.heading}>
+          {'  '}
+        </Text>
         {cols.map(c => {
           const active = sortKey === c.key
           const ind = active ? ` ${sortIndicator({ dir: sortDir, key: sortKey }, c.key)}` : ''
@@ -1024,10 +1115,15 @@ function AgendaTable({
         return (
           <Box key={`${ev.id ?? ''}-${ev.kind}-${index}`} onClick={() => onSelect(index)} width={width}>
             <Text backgroundColor={active ? t.color.selectionBg : undefined} wrap="truncate-end">
-              <Text bold={active} color={active ? sem.cursor : sem.faint}>{active ? '▸ ' : '  '}</Text>
+              <Text bold={active} color={active ? sem.cursor : sem.faint}>
+                {active ? '▸ ' : '  '}
+              </Text>
               <Text color={t.color.muted}>{`${pad(calDate(ev.stamp), cDate, 'left')} `}</Text>
               <Text color={proximityColor(t, days)}>{`${pad(relIn(days), cIn, 'right')} `}</Text>
-              <Text bold={active} color={active ? sem.selectionFg : t.color.text}>{`${pad(truncate(ev.title, qW), qW, 'left')} `}</Text>
+              <Text
+                bold={active}
+                color={active ? sem.selectionFg : t.color.text}
+              >{`${pad(truncate(ev.title, qW), qW, 'left')} `}</Text>
               <Text color={kindColor(t, ev.kind)}>{`${pad(KIND_LABEL[ev.kind], cKind, 'left')} `}</Text>
               <Text color={t.color.muted}>{pad(ev.prob, cProb, 'right')}</Text>
             </Text>

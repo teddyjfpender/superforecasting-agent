@@ -8,13 +8,7 @@ import { buildSetupRequiredSections, SETUP_REQUIRED_TITLE } from '../content/set
 import { introMsg, toTranscriptMessages } from '../domain/messages.js'
 import { ZERO } from '../domain/usage.js'
 import { type GatewayClient } from '../gatewayClient.js'
-import type {
-  SessionCloseResponse,
-  SessionCreateResponse,
-  SessionResumeResponse,
-  SessionTitleResponse,
-  SetupStatusResponse
-} from '../gatewayTypes.js'
+import type { SessionResumeResponse } from '../gatewayTypes.js'
 import { asRpcResult } from '../lib/rpc.js'
 import type { Msg, PanelSection, SessionInfo, Usage } from '../types.js'
 
@@ -95,7 +89,7 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
 
   const closeSession = useCallback(
     (targetSid?: null | string) =>
-      targetSid ? rpc<SessionCloseResponse>('session.close', { session_id: targetSid }) : Promise.resolve(null),
+      targetSid ? rpc('session.close', { session_id: targetSid }) : Promise.resolve(null),
     [rpc]
   )
 
@@ -137,7 +131,7 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
 
   const newSession = useCallback(
     async (msg?: string, title?: string) => {
-      const setup = await rpc<SetupStatusResponse>('setup.status', {})
+      const setup = await rpc('setup.status', {})
 
       if (setup?.provider_configured === false) {
         panel(SETUP_REQUIRED_TITLE, buildSetupRequiredSections())
@@ -147,7 +141,7 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
       }
 
       const previousSid = getUiState().sid
-      const r = await rpc<SessionCreateResponse>('session.create', { cols: colsRef.current })
+      const r = await rpc('session.create', { cols: colsRef.current })
 
       if (!r) {
         return patchUiState({ status: 'ready' })
@@ -191,7 +185,7 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
       }
 
       if (requestedTitle) {
-        rpc<SessionTitleResponse>('session.title', {
+        rpc('session.title', {
           session_id: r.session_id,
           title: requestedTitle
         })
@@ -236,7 +230,7 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
         }
       }
 
-      rpc<SetupStatusResponse>('setup.status', {}).then(setup => {
+      rpc('setup.status', {}).then(setup => {
         if (setup?.provider_configured === false) {
           panel(SETUP_REQUIRED_TITLE, buildSetupRequiredSections())
           patchUiState({ status: 'setup required' })
@@ -246,7 +240,7 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
 
         const previousSid = getUiState().sid
 
-        gw.request<SessionResumeResponse>('session.resume', {
+        gw.request('session.resume', {
           cols: colsRef.current,
           replace_session_id: previousSid,
           session_id: id

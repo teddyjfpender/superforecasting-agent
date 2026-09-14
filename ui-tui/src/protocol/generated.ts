@@ -109,6 +109,46 @@ export interface ApprovalRespondResponse {
   ok?: boolean
 }
 
+export interface ApprovalResult {
+  choice: 'always' | 'deny' | 'once' | 'session'
+}
+
+export interface AuthPollRequest {
+  cancel: boolean
+  session_id: null | string
+}
+
+export interface AuthPollResponse {
+  credentials_applied?: boolean
+  message?: string
+  provider?: null | string
+  status: string
+  url?: null | string
+  user_code?: null | string
+}
+
+export interface AuthStartRequest {
+  provider: string
+  session_id: null | string
+}
+
+export interface AuthStartResponse {
+  interval: number
+  provider: string
+  url: string
+  user_code: string
+}
+
+export interface AutomodeCancelRequest {
+  job_id: string
+}
+
+export interface AutomodeCancelResponse {
+  cancelled?: boolean
+  found: boolean
+  job_id: string
+}
+
 export interface AutomodeCompletePayload {
   cancelled?: boolean
   dry_run?: boolean
@@ -149,6 +189,8 @@ export interface BackgroundStartResponse {
 
 export interface BrowserManageRequest {
   action: null | string
+  session_id: null | string
+  url: null | string
 }
 
 export interface BrowserManageResponse {
@@ -179,12 +221,29 @@ export interface ClarifyRequestPayload {
 }
 
 export interface ClarifyRespondRequest {
+  answer: string
   request_id: null | string
   session_id: null | string
 }
 
 export interface ClarifyRespondResponse {
   ok?: boolean
+}
+
+export interface ClarifyResult {
+  answer: string
+}
+
+export interface CliExecRequest {
+  argv: string[]
+  timeout: number
+}
+
+export interface CliExecResponse {
+  blocked: boolean
+  code: number
+  hint?: string
+  output: string
 }
 
 export interface ClipboardPasteRequest {
@@ -200,6 +259,24 @@ export interface ClipboardPasteResponse {
   width?: number
 }
 
+export interface CommandAliasResult {
+  target: string
+  type: 'alias'
+}
+
+export interface CommandDispatchRequest {
+  arg: string
+  name: string
+  session_id: null | string
+}
+
+export type CommandDispatchResponse = CommandAliasResult | CommandExecResult | CommandSendResult | CommandSkillResult
+
+export interface CommandExecResult {
+  output: string
+  type: 'exec' | 'plugin'
+}
+
 export interface CommandFinished {
   command_id: string
   status: 'cancelled' | 'failed' | 'finished'
@@ -209,6 +286,28 @@ export interface CommandOutput {
   command_id: string
   stream: 'stderr' | 'stdout'
   text: string
+}
+
+export interface CommandResolveRequest {
+  name: string
+}
+
+export interface CommandResolveResponse {
+  canonical: string
+  category: string
+  description: string
+}
+
+export interface CommandSendResult {
+  message: string
+  notice?: string
+  type: 'send'
+}
+
+export interface CommandSkillResult {
+  message: string
+  name: string
+  type: 'skill'
 }
 
 export interface CommandStarted {
@@ -231,6 +330,7 @@ export interface CommandsCatalogResponse {
 
 export interface CompletionRequest {
   text: null | string
+  word: null | string
 }
 
 export interface CompletionResponse {
@@ -262,11 +362,21 @@ export interface ConfigFullConfig {
 }
 
 export interface ConfigFullResponse {
+  authentication_status?: string
   config?: ConfigFullConfig
+  display?: string
+  home?: string
+  model?: string
+  mtime?: number
+  prompt?: string
+  provider?: string
+  providers?: Record<string, unknown>[]
+  value?: string
 }
 
 export interface ConfigGetValueRequest {
   key: null | string
+  session_id: null | string
 }
 
 export interface ConfigGetValueResponse {
@@ -315,6 +425,23 @@ export interface CronFiredPayload {
   count?: number
 }
 
+export interface CronManageRequest {
+  action: string
+  name: string
+  prompt: string
+  schedule: string
+}
+
+export interface CronManageResponse {
+  count?: number
+  error?: string
+  job?: Record<string, unknown>
+  jobs?: Record<string, unknown>[]
+  message?: string
+  status?: string
+  success?: boolean
+}
+
 export interface DelegationActiveEntry {
   depth?: number
   goal?: string
@@ -359,10 +486,29 @@ export interface DelegationStatusResponse {
   paused?: boolean
 }
 
+export interface EmptyRequest {
+}
+
 export interface ErrorPayload {
   durable_status?: string
   message: string
   turn_id?: string
+}
+
+export interface EventsReplayRequest {
+  limit: number
+  session_id: string
+  since_id: number
+  types: null | string | string[]
+}
+
+export interface EventsReplayResponse {
+  count: number
+  frames: Record<string, unknown>[]
+  last_id: number
+  records: Record<string, unknown>[]
+  session_id: string
+  since_id: number
 }
 
 export interface EvidenceShareBody {
@@ -960,6 +1106,9 @@ export interface ForecastDashboardThesis {
 
 export interface ForecastDeskTaskRequest {
   instruction: null | string
+  max_iterations: null | number
+  model: null | string
+  provider: null | string
   question_ids: null | string[]
   session_id: null | string
 }
@@ -1403,12 +1552,15 @@ export interface ForecastReforecastResultRow {
   error?: null | string
   forecast_id?: null | string
   question_id: string
-  quorum_autorun?: null | boolean
+  quorum_autorun?: null | Record<string, unknown>
   saturation?: null | number
   title?: string
 }
 
 export interface ForecastReforecastStartRequest {
+  max_iterations: null | number
+  model: null | string
+  provider: null | string
   question_ids: null | string[]
   session_id: null | string
 }
@@ -1911,7 +2063,7 @@ export interface ForecastWarningsDismissRequest {
   kinds: null | unknown
   note: null | string
   now: null | string
-  reason: null | string
+  reason: null | string | string[]
   scope: null | string
   ttl_days: null | number
 }
@@ -2184,6 +2336,7 @@ export interface HostNegotiateResponse {
 }
 
 export interface ImageAttachRequest {
+  path: null | string
   session_id: null | string
 }
 
@@ -2196,6 +2349,7 @@ export interface ImageAttachResponse {
 }
 
 export interface InputDetectDropRequest {
+  session_id: null | string
   text: null | string
 }
 
@@ -2207,6 +2361,17 @@ export interface InputDetectDropResponse {
   text?: string
   token_estimate?: number
   width?: number
+}
+
+export interface InsightsRequest {
+  days: number
+  source: null | string
+}
+
+export interface InsightsResponse {
+  days: number
+  messages: number
+  sessions: number
 }
 
 export interface JobCompletePayload {
@@ -2382,6 +2547,77 @@ export interface MessageStartPayload {
   turn_id?: string
 }
 
+export interface ModelBuildResponse {
+  model_id: string
+  presentation?: null | Record<string, unknown>
+  renarrated?: boolean
+  status: string
+  version?: null | number
+}
+
+export interface ModelChatRequest {
+  id: string
+  message: string
+  params: null | ModelParameters
+  session_id: null | string
+}
+
+export interface ModelCreateRequest {
+  params: null | ModelParameters
+  question: string
+  session_id: null | string
+}
+
+export interface ModelDeleteResponse {
+  deleted: boolean
+}
+
+export interface ModelDisconnectRequest {
+  slug: string
+}
+
+export interface ModelDisconnectResponse {
+  disconnected: boolean
+  name: string
+  slug: string
+}
+
+export interface ModelExportResponse {
+  bytes: number
+  path: string
+}
+
+export interface ModelForecastResponse {
+  model_id: string
+  model_run_id: null | string
+  question_id: null | string
+  reference_class_id: null | string
+  seed: null | Record<string, unknown>
+}
+
+export interface ModelGetRequest {
+  id: string
+  session_id: null | string
+  version: null | number
+}
+
+export interface ModelGetResponse {
+  packet: Record<string, unknown>
+}
+
+export interface ModelIdentityRequest {
+  id: string
+}
+
+export interface ModelListRequest {
+  limit: number
+  status: null | string
+}
+
+export interface ModelListResponse {
+  models: Record<string, unknown>[]
+}
+
 export interface ModelOptionProvider {
   auth_type?: string
   authenticated?: boolean
@@ -2398,6 +2634,7 @@ export interface ModelOptionProvider {
 }
 
 export interface ModelOptionsRequest {
+  session_id: null | string
 }
 
 export interface ModelOptionsResponse {
@@ -2405,6 +2642,56 @@ export interface ModelOptionsResponse {
   provider?: string
   providers?: ModelOptionProvider[]
   reasoning_effort?: string
+}
+
+export interface ModelParameters {
+  analysis_type: string
+  assumptions: string
+  depth: string
+  horizon: string
+  question: string
+  tags?: string[]
+  tickers: string[]
+  title?: string
+}
+
+export interface ModelSaveKeyRequest {
+  api_key: string
+  session_id: null | string
+  slug: string
+}
+
+export interface ModelSessionRequest {
+  id: string
+  session_id: null | string
+}
+
+export interface NewsArticle {
+  source: string
+  summary: string
+  title: string
+}
+
+export interface NewsSearchRequest {
+  articles: NewsArticle[]
+  limit: number
+  query: string
+}
+
+export interface NewsSearchResponse {
+  engine: string
+  results: Record<string, unknown>[]
+}
+
+export interface ObsidianAppendRequest {
+  rel_path: string
+  text: string
+}
+
+export interface ObsidianCreateRequest {
+  content: string
+  rel_path: string
+  title: string
 }
 
 export interface ObsidianNote {
@@ -2429,6 +2716,7 @@ export interface ObsidianNoteResponse {
 }
 
 export interface ObsidianSearchRequest {
+  limit: number
   query: null | string
 }
 
@@ -2447,7 +2735,15 @@ export interface ObsidianSearchResult {
   title?: string
 }
 
+export interface ObsidianSetupResponse {
+  created: string[]
+  ok: boolean
+  skipped: string[]
+  vault: string
+}
+
 export interface ObsidianStatusRequest {
+  limit: number
 }
 
 export interface ObsidianStatusResponse {
@@ -2455,6 +2751,32 @@ export interface ObsidianStatusResponse {
   exists?: boolean
   notes?: ObsidianNote[]
   vault?: null | string
+}
+
+export interface ObsidianWriteRequest {
+  content: string
+  rel_path: string
+}
+
+export interface ObsidianWriteResponse {
+  ok: boolean
+  rel_path: string
+  size?: number
+}
+
+export interface OneShotRequest {
+  input: string
+  instructions: string
+  max_tokens: number
+  session_id: null | string
+  task: string
+  temperature: null | number
+  template: null | string
+  variables: null | Record<string, unknown>
+}
+
+export interface OperationSessionRequest {
+  session_id: null | string
 }
 
 export interface PMDistributionDTO {
@@ -2562,6 +2884,26 @@ export interface PMTickPayload {
   market_id: string
   payload: Record<string, unknown>
   venue: string
+}
+
+export interface PasteCollapseRequest {
+  text: string
+}
+
+export interface PasteCollapseResponse {
+  lines: number
+  path: string
+  placeholder: string
+}
+
+export interface PluginItem {
+  enabled: boolean
+  name: string
+  version: string
+}
+
+export interface PluginsResponse {
+  plugins: PluginItem[]
 }
 
 export interface PmBookRequest {
@@ -2686,6 +3028,9 @@ export interface ReloadEnvResponse {
 }
 
 export interface ReloadMcpRequest {
+  always: boolean
+  confirm: boolean
+  session_id: null | string
 }
 
 export interface ReloadMcpResponse {
@@ -2696,6 +3041,7 @@ export interface ReloadMcpResponse {
 export interface RespondRequest {
   request_id: null | string
   session_id: null | string
+  value: string
 }
 
 export interface ReviewSummaryPayload {
@@ -2718,6 +3064,7 @@ export interface RollbackCheckpoint {
 
 export interface RollbackDiffRequest {
   hash: null | string
+  session_id: null | string
 }
 
 export interface RollbackDiffResponse {
@@ -2727,6 +3074,7 @@ export interface RollbackDiffResponse {
 }
 
 export interface RollbackListRequest {
+  session_id: null | string
 }
 
 export interface RollbackListResponse {
@@ -2735,7 +3083,9 @@ export interface RollbackListResponse {
 }
 
 export interface RollbackRestoreRequest {
+  file_path: null | string
   hash: null | string
+  session_id: null | string
 }
 
 export interface RollbackRestoreResponse {
@@ -2758,6 +3108,14 @@ export interface SecretRespondResponse {
   ok?: boolean
 }
 
+export interface SecretResult {
+  value: string
+}
+
+export interface SectionsResponse {
+  sections: Record<string, unknown>[]
+}
+
 export interface SessionBranchRequest {
   name: string
   session_id: null | string
@@ -2778,6 +3136,7 @@ export interface SessionCloseResponse {
 }
 
 export interface SessionCompressRequest {
+  focus_topic: null | string
   session_id: null | string
 }
 
@@ -2826,6 +3185,7 @@ export interface SessionCreateInfo {
 
 export interface SessionCreateRequest {
   cols: null | number
+  server_requests: boolean
 }
 
 export interface SessionCreateResponse {
@@ -2884,7 +3244,7 @@ export interface SessionInfoPayload {
   service_tier: string
   skills: Record<string, unknown>
   tools: Record<string, unknown>
-  update_behind: null | boolean
+  update_behind: null | number
   update_command: string
   usage: Record<string, unknown>
   version: string
@@ -2909,6 +3269,7 @@ export interface SessionListItem {
 }
 
 export interface SessionListRequest {
+  limit: number
 }
 
 export interface SessionListResponse {
@@ -2916,6 +3277,7 @@ export interface SessionListResponse {
 }
 
 export interface SessionMostRecentRequest {
+  limit: null | number
 }
 
 export interface SessionMostRecentResponse {
@@ -2928,6 +3290,7 @@ export interface SessionMostRecentResponse {
 export interface SessionResumeRequest {
   cols: null | number
   replace_session_id: null | string
+  server_requests: boolean
   session_id: string
 }
 
@@ -2935,6 +3298,7 @@ export interface SessionResumeResponse {
   info?: SessionInfo
   message_count?: number
   messages: GatewayTranscriptMessage[]
+  open_requests?: Record<string, unknown>[]
   recovery?: Record<string, unknown>
   resumed?: string
   session_id: string
@@ -2968,6 +3332,7 @@ export interface SessionSteerResponse {
 
 export interface SessionTitleRequest {
   session_id: null | string
+  title: null | string
 }
 
 export interface SessionTitleResponse {
@@ -3066,6 +3431,41 @@ export interface ShellExecResponse {
   stdout?: string
 }
 
+export interface SkillItem {
+  description?: string
+  name: string
+  source?: string
+  trust?: string
+}
+
+export interface SkillsManageRequest {
+  action: 'browse' | 'inspect' | 'install' | 'list' | 'search'
+  page: number
+  page_size: number
+  query: string
+  session_id: null | string
+}
+
+export interface SkillsManageResponse {
+  info?: Record<string, unknown>
+  installed?: boolean
+  items?: SkillItem[]
+  name?: string
+  page?: number
+  results?: SkillItem[]
+  skills?: Record<string, string[]>
+  total?: number
+  total_pages?: number
+}
+
+export interface SkillsReloadRequest {
+}
+
+export interface SkillsReloadResponse {
+  output: string
+  result: Record<string, unknown>
+}
+
 export interface SkinPayload {
   appearance?: string
   banner_hero?: string
@@ -3102,6 +3502,9 @@ export interface SpawnTreeListEntry {
 }
 
 export interface SpawnTreeListRequest {
+  cross_session: boolean
+  limit: number
+  session_id: null | string
 }
 
 export interface SpawnTreeListResponse {
@@ -3118,6 +3521,18 @@ export interface SpawnTreeLoadResponse {
   session_id?: string
   started_at?: null | number
   subagents?: unknown[]
+}
+
+export interface SpawnTreeSaveRequest {
+  finished_at: null | number
+  label: string
+  session_id: null | string
+  started_at: null | number
+  subagents: unknown[]
+}
+
+export interface SpawnTreeSaveResponse {
+  path: string
 }
 
 export interface StatusUpdatePayload {
@@ -3202,6 +3617,10 @@ export interface SudoRespondResponse {
   ok?: boolean
 }
 
+export interface SudoResult {
+  password: string
+}
+
 export interface TerminalResizeRequest {
   cols: null | number
   rows: null | number
@@ -3210,6 +3629,10 @@ export interface TerminalResizeRequest {
 
 export interface TerminalResizeResponse {
   ok?: boolean
+}
+
+export interface TextResponse {
+  text: string
 }
 
 export interface ThemeListRequest {
@@ -3294,6 +3717,10 @@ export interface ToolsConfigureResponse {
   unknown?: string[]
 }
 
+export interface ToolsetsResponse {
+  toolsets: Record<string, unknown>[]
+}
+
 export interface Usage {
   calls: number
   compressions?: number
@@ -3309,6 +3736,7 @@ export interface Usage {
 }
 
 export interface VoiceRecordRequest {
+  action: string
   session_id: null | string
 }
 
@@ -3322,6 +3750,7 @@ export interface VoiceStatusPayload {
 }
 
 export interface VoiceToggleRequest {
+  action: string
   session_id: null | string
 }
 
@@ -3339,3 +3768,1043 @@ export interface VoiceTranscriptPayload {
   no_speech_limit?: boolean
   text?: string
 }
+
+export interface VoiceTtsRequest {
+  session_id: null | string
+  text: string
+}
+
+export interface VoiceTtsResponse {
+  status: string
+}
+
+export const SERVER_REQUEST_NAMES = ['approval', 'clarify', 'secret', 'sudo'] as const
+
+export interface ServerRequestMethods {
+  'approval': { params: Omit<ApprovalRequestPayload, 'request_id'> & { session_id: string }; result: ApprovalResult }
+  'clarify': { params: Omit<ClarifyRequestPayload, 'request_id'> & { session_id: string }; result: ClarifyResult }
+  'secret': { params: Omit<SecretRequestPayload, 'request_id'> & { session_id: string }; result: SecretResult }
+  'sudo': { params: Omit<SudoRequestPayload, 'request_id'> & { session_id: string }; result: SudoResult }
+}
+
+export interface RpcMethods {
+  'agents.active.summary': {
+    params: Record<string, never>
+    result: AgentsActiveSummaryResponse
+  }
+  'agents.list': {
+    params: Record<string, never>
+    result: AgentsListResponse
+  }
+  'approval.respond': {
+    params: {
+      all?: boolean
+      choice?: string
+      request_id?: null | string
+      session_id?: null | string
+    }
+    result: ApprovalRespondResponse
+  }
+  'auth.poll': {
+    params: {
+      cancel?: boolean
+      session_id?: null | string
+    }
+    result: AuthPollResponse
+  }
+  'auth.start': {
+    params: {
+      provider?: string
+      session_id?: null | string
+    }
+    result: AuthStartResponse
+  }
+  'browser.manage': {
+    params: {
+      action?: null | string
+      session_id?: null | string
+      url?: null | string
+    }
+    result: BrowserManageResponse
+  }
+  'clarify.respond': {
+    params: {
+      answer?: string
+      request_id?: null | string
+      session_id?: null | string
+    }
+    result: ClarifyRespondResponse
+  }
+  'cli.exec': {
+    params: {
+      argv?: string[]
+      timeout?: number
+    }
+    result: CliExecResponse
+  }
+  'clipboard.paste': {
+    params: {
+      session_id?: null | string
+    }
+    result: ClipboardPasteResponse
+  }
+  'command.dispatch': {
+    params: {
+      arg?: string
+      name: string
+      session_id?: null | string
+    }
+    result: CommandDispatchResponse
+  }
+  'command.resolve': {
+    params: {
+      name: string
+    }
+    result: CommandResolveResponse
+  }
+  'commands.catalog': {
+    params: Record<string, never>
+    result: CommandsCatalogResponse
+  }
+  'complete.path': {
+    params: {
+      text?: null | string
+      word?: null | string
+    }
+    result: CompletionResponse
+  }
+  'complete.slash': {
+    params: {
+      text?: null | string
+      word?: null | string
+    }
+    result: CompletionResponse
+  }
+  'config.get': {
+    params: {
+      key?: null | string
+      session_id?: null | string
+    }
+    result: ConfigFullResponse
+  }
+  'config.set': {
+    params: {
+      key?: null | string
+      session_id?: null | string
+      value?: null | string
+    }
+    result: ConfigSetResponse
+  }
+  'config.show': {
+    params: {
+      session_id?: null | string
+    }
+    result: SectionsResponse
+  }
+  'cron.manage': {
+    params: {
+      action?: string
+      name?: string
+      prompt?: string
+      schedule?: string
+    }
+    result: CronManageResponse
+  }
+  'delegation.pause': {
+    params: {
+      paused?: null | boolean
+      session_id?: string
+    }
+    result: DelegationPauseResponse
+  }
+  'delegation.status': {
+    params: {
+      session_id?: string
+    }
+    result: DelegationStatusResponse
+  }
+  'events.replay': {
+    params: {
+      limit?: number
+      session_id: string
+      since_id?: number
+      types?: null | string | string[]
+    }
+    result: EventsReplayResponse
+  }
+  'forecast.bench': {
+    params: {
+      limit?: null | number
+    }
+    result: ForecastBenchResponse
+  }
+  'forecast.calibration': {
+    params: {
+      domain?: null | string
+      origin?: null | string
+    }
+    result: ForecastCalibrationResponse
+  }
+  'forecast.command': {
+    params: {
+      arg?: null | string
+      argv?: null | string[]
+    }
+    result: ForecastCommandResponse
+  }
+  'forecast.config': {
+    params: {
+      id?: null | string
+      question_id?: null | string
+    }
+    result: ForecastConfigResponse
+  }
+  'forecast.config.set': {
+    params: {
+      decision?: null | Record<string, unknown>
+      hooks?: null | Record<string, unknown>
+      id?: null | string
+      question_id?: null | string
+      review_cadence?: null | string
+    }
+    result: ForecastConfigResponse
+  }
+  'forecast.dashboard': {
+    params: {
+      fast?: null | boolean
+      limit?: null | number
+      summary_only?: null | boolean
+    }
+    result: ForecastDashboardResponse
+  }
+  'forecast.desk.task': {
+    params: {
+      instruction?: null | string
+      max_iterations?: null | number
+      model?: null | string
+      provider?: null | string
+      question_ids?: null | string[]
+      session_id?: null | string
+    }
+    result: ForecastReforecastStartResponse
+  }
+  'forecast.hooks': {
+    params: {
+      question_id?: null | string
+    }
+    result: ForecastHooksResponse
+  }
+  'forecast.hooks.preview': {
+    params: {
+      max_scan?: null | number
+      rule?: null | Record<string, unknown>
+    }
+    result: ForecastHooksPreviewResponse
+  }
+  'forecast.hooks.remove_rule': {
+    params: {
+      id?: null | string
+    }
+    result: ForecastHooksRemoveRuleResponse
+  }
+  'forecast.hooks.save_rule': {
+    params: {
+      edit_id?: null | string
+      rule?: null | Record<string, unknown>
+    }
+    result: ForecastHooksSaveRuleResponse
+  }
+  'forecast.hooks.set': {
+    params: {
+      rule_id?: null | string
+      target?: null | string
+      value?: null | unknown
+    }
+    result: ForecastHooksSetResponse
+  }
+  'forecast.onboard_commit': {
+    params: {
+      spec?: null | Record<string, unknown>
+    }
+    result: ForecastOnboardCommitResponse
+  }
+  'forecast.onboard_propose': {
+    params: {
+      prompt?: null | string
+      spec?: null | Record<string, unknown>
+    }
+    result: ForecastOnboardProposeResponse
+  }
+  'forecast.operation': {
+    params: {
+      arg?: null | string
+      argv?: null | string[]
+      operation: string
+    }
+    result: ForecastOperationResponse
+  }
+  'forecast.question': {
+    params: {
+      id?: null | string
+    }
+    result: ForecastQuestionPacketResponse
+  }
+  'forecast.question.readiness': {
+    params: {
+      question_id?: null | string
+    }
+    result: ForecastQuestionReadinessResponse
+  }
+  'forecast.quorum.status': {
+    params: {
+      run_id?: null | string
+    }
+    result: ForecastQuorumStatusResponse
+  }
+  'forecast.reforecast': {
+    params: {
+      id?: null | string
+    }
+    result: ForecastReforecastMarkResponse
+  }
+  'forecast.reforecast.active': {
+    params: {
+      limit?: null | number
+    }
+    result: ForecastReforecastActiveResponse
+  }
+  'forecast.reforecast.start': {
+    params: {
+      max_iterations?: null | number
+      model?: null | string
+      provider?: null | string
+      question_ids?: null | string[]
+      session_id?: null | string
+    }
+    result: ForecastReforecastStartResponse
+  }
+  'forecast.reforecast.status': {
+    params: {
+      run_id?: null | string
+    }
+    result: ForecastReforecastStatusResponse
+  }
+  'forecast.resolve': {
+    params: {
+      auto_score?: boolean
+      confidence?: null | number
+      confirmed_by?: null | string
+      correction_ref?: null | string
+      criteria_satisfied?: boolean
+      outcome: unknown
+      question_id: string
+      resolution_source?: null | string
+      resolution_source_snapshot_ref?: null | string
+      resolution_status?: string
+      resolver_notes?: null | string
+      resolver_type?: string
+      scoreable?: boolean
+      trusted_policy_id?: null | string
+    }
+    result: ForecastResolveResponse
+  }
+  'forecast.review': {
+    params: {
+      confidence_above?: null | number
+      confidence_below?: null | number
+      domain?: null | string
+      horizon?: null | string
+      large_delta_threshold?: null | number
+      last_days?: number
+      now?: null | string
+      stale?: boolean
+      topic?: null | string
+    }
+    result: ForecastReviewResponse
+  }
+  'forecast.reviews.next': {
+    params: Record<string, never>
+    result: ForecastReviewsNextResponse
+  }
+  'forecast.schedule.status': {
+    params: {
+      limit?: null | number
+    }
+    result: ForecastScheduleStatusResponse
+  }
+  'forecast.theses': {
+    params: Record<string, never>
+    result: ForecastThesesResponse
+  }
+  'forecast.triage.contested': {
+    params: {
+      limit?: null | number
+      question?: null | string
+      question_id?: null | string
+    }
+    result: ForecastTriageContestedResponse
+  }
+  'forecast.triage.relabel': {
+    params: {
+      adjudications?: null | Record<string, unknown>[]
+      label?: null | string
+      label_id?: null | string
+    }
+    result: ForecastTriageRelabelResponse
+  }
+  'forecast.warnings.aggregate': {
+    params: {
+      reason?: null | string
+      scope?: null | string
+    }
+    result: ForecastWarningsAggregateResponse
+  }
+  'forecast.warnings.automode.cancel': {
+    params: {
+      job_id: string
+    }
+    result: AutomodeCancelResponse
+  }
+  'forecast.warnings.automode.run': {
+    params: {
+      dry_run?: null | boolean
+      limit?: null | number
+      reason?: null | string
+      scope?: null | string
+      session_id?: null | string
+    }
+    result: ForecastWarningsAutomodeRunResponse
+  }
+  'forecast.warnings.dismiss': {
+    params: {
+      actor?: null | string
+      alert_id?: null | string
+      alert_ids?: null | string[]
+      kind?: null | unknown
+      kinds?: null | unknown
+      note?: null | string
+      now?: null | string
+      reason?: null | string | string[]
+      scope?: null | string
+      ttl_days?: null | number
+    }
+    result: ForecastWarningsDismissResponse
+  }
+  'forecast.warnings.list': {
+    params: {
+      limit?: null | number
+      reason?: null | string
+      scope?: null | string
+    }
+    result: ForecastWarningsListResponse
+  }
+  'forecast.warnings.resolve': {
+    params: {
+      alert_id?: null | string
+      now?: null | string
+    }
+    result: ForecastWarningsResolveResponse
+  }
+  'forecast.workspace': {
+    params: {
+      limit?: null | number
+    }
+    result: ForecastWorkspaceResponse
+  }
+  'host.negotiate': {
+    params: {
+      protocol_version: number
+      required_capabilities?: string[]
+    }
+    result: HostNegotiateResponse
+  }
+  'image.attach': {
+    params: {
+      path?: null | string
+      session_id?: null | string
+    }
+    result: ImageAttachResponse
+  }
+  'input.detect_drop': {
+    params: {
+      session_id?: null | string
+      text?: null | string
+    }
+    result: InputDetectDropResponse
+  }
+  'insights.get': {
+    params: {
+      days?: number
+      source?: null | string
+    }
+    result: InsightsResponse
+  }
+  'jobs.active': {
+    params: {
+      types?: null | string[]
+    }
+    result: JobsActiveResponse
+  }
+  'jobs.cancel': {
+    params: {
+      job_id: string
+    }
+    result: JobsCancelResponse
+  }
+  'jobs.start': {
+    params: {
+      session_id?: null | string
+      spec?: null | Record<string, unknown>
+      type: string
+    }
+    result: JobsStartResponse
+  }
+  'jobs.status': {
+    params: {
+      job_id: string
+    }
+    result: JobsStatusResponse
+  }
+  'llm.oneshot': {
+    params: {
+      input?: string
+      instructions?: string
+      max_tokens?: number
+      session_id?: null | string
+      task?: string
+      temperature?: null | number
+      template?: null | string
+      variables?: null | Record<string, unknown>
+    }
+    result: TextResponse
+  }
+  'market.quotes': {
+    params: {
+      series: MarketSeriesRef[]
+    }
+    result: MarketQuotesResponse
+  }
+  'market.search': {
+    params: {
+      query: string
+    }
+    result: MarketSearchResponse
+  }
+  'markets.model.chat': {
+    params: {
+      id: string
+      message: string
+      params?: null | ModelParameters
+      session_id?: null | string
+    }
+    result: ModelBuildResponse
+  }
+  'markets.model.create': {
+    params: {
+      params?: null | ModelParameters
+      question: string
+      session_id?: null | string
+    }
+    result: ModelBuildResponse
+  }
+  'markets.model.delete': {
+    params: {
+      id: string
+    }
+    result: ModelDeleteResponse
+  }
+  'markets.model.export': {
+    params: {
+      id: string
+    }
+    result: ModelExportResponse
+  }
+  'markets.model.get': {
+    params: {
+      id: string
+      session_id?: null | string
+      version?: null | number
+    }
+    result: ModelGetResponse
+  }
+  'markets.model.list': {
+    params: {
+      limit?: number
+      status?: null | string
+    }
+    result: ModelListResponse
+  }
+  'markets.model.renarrate': {
+    params: {
+      id: string
+    }
+    result: ModelBuildResponse
+  }
+  'markets.model.retry': {
+    params: {
+      id: string
+      session_id?: null | string
+    }
+    result: ModelBuildResponse
+  }
+  'markets.model.to_forecast': {
+    params: {
+      id: string
+    }
+    result: ModelForecastResponse
+  }
+  'model.disconnect': {
+    params: {
+      slug: string
+    }
+    result: ModelDisconnectResponse
+  }
+  'model.options': {
+    params: {
+      session_id?: null | string
+    }
+    result: ModelOptionsResponse
+  }
+  'model.save_key': {
+    params: {
+      api_key: string
+      session_id?: null | string
+      slug: string
+    }
+    result: ModelOptionProvider
+  }
+  'news.search': {
+    params: {
+      articles: NewsArticle[]
+      limit?: number
+      query: string
+    }
+    result: NewsSearchResponse
+  }
+  'obsidian.append': {
+    params: {
+      rel_path: string
+      text: string
+    }
+    result: ObsidianWriteResponse
+  }
+  'obsidian.create': {
+    params: {
+      content?: string
+      rel_path: string
+      title?: string
+    }
+    result: ObsidianWriteResponse
+  }
+  'obsidian.note': {
+    params: {
+      rel_path?: null | string
+    }
+    result: ObsidianNoteResponse
+  }
+  'obsidian.search': {
+    params: {
+      limit?: number
+      query?: null | string
+    }
+    result: ObsidianSearchResponse
+  }
+  'obsidian.setup': {
+    params: {
+      limit?: number
+    }
+    result: ObsidianSetupResponse
+  }
+  'obsidian.status': {
+    params: {
+      limit?: number
+    }
+    result: ObsidianStatusResponse
+  }
+  'obsidian.write': {
+    params: {
+      content: string
+      rel_path: string
+    }
+    result: ObsidianWriteResponse
+  }
+  'paste.collapse': {
+    params: {
+      text: string
+    }
+    result: PasteCollapseResponse
+  }
+  'plugins.list': {
+    params: Record<string, never>
+    result: PluginsResponse
+  }
+  'pm.book': {
+    params: {
+      market_id: string
+      venue: string
+    }
+    result: PmBookResponse
+  }
+  'pm.detail': {
+    params: {
+      event_id: string
+      venue: string
+    }
+    result: PmDetailResponse
+  }
+  'pm.history': {
+    params: {
+      interval?: null | string
+      market_id: string
+      max_points?: null | number
+      period_interval?: null | number
+      range?: null | string
+      series_ticker?: null | string
+      venue: string
+    }
+    result: PmHistoryResponse
+  }
+  'pm.list': {
+    params: {
+      limit?: null | number
+      query?: null | string
+      tag?: null | string
+      venue?: null | string
+    }
+    result: PmListResponse
+  }
+  'pm.stream.start': {
+    params: {
+      market_ids?: null | string[]
+      venue: string
+    }
+    result: PMStreamStart
+  }
+  'pm.stream.stop': {
+    params: {
+      market_ids?: null | string[]
+      venue: string
+    }
+    result: PmStreamStopResponse
+  }
+  'process.stop': {
+    params: {
+      session_id?: string
+    }
+    result: ProcessStopResponse
+  }
+  'prompt.background': {
+    params: {
+      session_id?: null | string
+      text?: null | string
+    }
+    result: BackgroundStartResponse
+  }
+  'prompt.submit': {
+    params: {
+      session_id?: null | string
+      text?: null | string
+    }
+    result: PromptSubmitResponse
+  }
+  'reload.env': {
+    params: Record<string, never>
+    result: ReloadEnvResponse
+  }
+  'reload.mcp': {
+    params: {
+      always?: boolean
+      confirm?: boolean
+      session_id?: null | string
+    }
+    result: ReloadMcpResponse
+  }
+  'rollback.diff': {
+    params: {
+      hash?: null | string
+      session_id?: null | string
+    }
+    result: RollbackDiffResponse
+  }
+  'rollback.list': {
+    params: {
+      session_id?: null | string
+    }
+    result: RollbackListResponse
+  }
+  'rollback.restore': {
+    params: {
+      file_path?: null | string
+      hash?: null | string
+      session_id?: null | string
+    }
+    result: RollbackRestoreResponse
+  }
+  'secret.respond': {
+    params: {
+      request_id?: null | string
+      session_id?: null | string
+      value?: string
+    }
+    result: SecretRespondResponse
+  }
+  'session.branch': {
+    params: {
+      name?: string
+      session_id?: null | string
+    }
+    result: SessionBranchResponse
+  }
+  'session.branch_replace': {
+    params: {
+      name?: string
+      session_id?: null | string
+    }
+    result: SessionBranchResponse
+  }
+  'session.close': {
+    params: {
+      session_id?: null | string
+    }
+    result: SessionCloseResponse
+  }
+  'session.compress': {
+    params: {
+      focus_topic?: null | string
+      session_id?: null | string
+    }
+    result: SessionCompressResponse
+  }
+  'session.create': {
+    params: {
+      cols?: null | number
+      server_requests?: boolean
+    }
+    result: SessionCreateResponse
+  }
+  'session.delete': {
+    params: {
+      session_id: string
+    }
+    result: SessionDeleteResponse
+  }
+  'session.history': {
+    params: {
+      session_id?: null | string
+    }
+    result: SessionHistoryResponse
+  }
+  'session.interrupt': {
+    params: {
+      session_id?: null | string
+    }
+    result: SessionInterruptResponse
+  }
+  'session.list': {
+    params: {
+      limit?: number
+    }
+    result: SessionListResponse
+  }
+  'session.most_recent': {
+    params: {
+      limit?: null | number
+    }
+    result: SessionMostRecentResponse
+  }
+  'session.resume': {
+    params: {
+      cols?: null | number
+      replace_session_id?: null | string
+      server_requests?: boolean
+      session_id: string
+    }
+    result: SessionResumeResponse
+  }
+  'session.save': {
+    params: {
+      session_id?: null | string
+    }
+    result: SessionSaveResponse
+  }
+  'session.status': {
+    params: {
+      session_id?: null | string
+    }
+    result: SessionStatusResponse
+  }
+  'session.steer': {
+    params: {
+      session_id?: null | string
+      text?: null | string
+    }
+    result: SessionSteerResponse
+  }
+  'session.title': {
+    params: {
+      session_id?: null | string
+      title?: null | string
+    }
+    result: SessionTitleResponse
+  }
+  'session.undo': {
+    params: {
+      session_id?: null | string
+    }
+    result: SessionUndoResponse
+  }
+  'session.usage': {
+    params: {
+      session_id?: null | string
+    }
+    result: SessionUsageResponse
+  }
+  'setup.status': {
+    params: Record<string, never>
+    result: SetupStatusResponse
+  }
+  'shell.exec': {
+    params: {
+      command?: null | string
+    }
+    result: ShellExecResponse
+  }
+  'skills.manage': {
+    params: {
+      action?: 'browse' | 'inspect' | 'install' | 'list' | 'search'
+      page?: number
+      page_size?: number
+      query?: string
+      session_id?: null | string
+    }
+    result: SkillsManageResponse
+  }
+  'skills.reload': {
+    params: Record<string, never>
+    result: SkillsReloadResponse
+  }
+  'slash.exec': {
+    params: {
+      command?: null | string
+      session_id?: null | string
+    }
+    result: SlashExecResponse
+  }
+  'spawn_tree.list': {
+    params: {
+      cross_session?: boolean
+      limit?: number
+      session_id?: null | string
+    }
+    result: SpawnTreeListResponse
+  }
+  'spawn_tree.load': {
+    params: {
+      path?: null | string
+    }
+    result: SpawnTreeLoadResponse
+  }
+  'spawn_tree.save': {
+    params: {
+      finished_at?: null | number
+      label?: string
+      session_id?: null | string
+      started_at?: null | number
+      subagents: unknown[]
+    }
+    result: SpawnTreeSaveResponse
+  }
+  'subagent.interrupt': {
+    params: {
+      session_id?: string
+      subagent_id?: null | string
+    }
+    result: SubagentInterruptResponse
+  }
+  'sudo.respond': {
+    params: {
+      password?: string
+      request_id?: null | string
+      session_id?: null | string
+    }
+    result: SudoRespondResponse
+  }
+  'superforecasting_agent.tooling.toolsets.list': {
+    params: {
+      session_id?: null | string
+    }
+    result: ToolsetsResponse
+  }
+  'terminal.resize': {
+    params: {
+      cols?: null | number
+      rows?: null | number
+      session_id?: null | string
+    }
+    result: TerminalResizeResponse
+  }
+  'theme.list': {
+    params: Record<string, never>
+    result: ThemeListResponse
+  }
+  'tools.configure': {
+    params: {
+      action?: null | string
+      names?: null | string[]
+      session_id?: null | string
+    }
+    result: ToolsConfigureResponse
+  }
+  'tools.list': {
+    params: {
+      session_id?: null | string
+    }
+    result: ToolsetsResponse
+  }
+  'tools.show': {
+    params: {
+      session_id?: null | string
+    }
+    result: SectionsResponse
+  }
+  'toolsets.list': {
+    params: {
+      session_id?: null | string
+    }
+    result: ToolsetsResponse
+  }
+  'voice.record': {
+    params: {
+      action?: string
+      session_id?: null | string
+    }
+    result: VoiceRecordResponse
+  }
+  'voice.stop': {
+    params: {
+      action?: string
+      session_id?: null | string
+    }
+    result: VoiceRecordResponse
+  }
+  'voice.toggle': {
+    params: {
+      action?: string
+      session_id?: null | string
+    }
+    result: VoiceToggleResponse
+  }
+  'voice.tts': {
+    params: {
+      session_id?: null | string
+      text: string
+    }
+    result: VoiceTtsResponse
+  }
+}
+
+export type RpcMethod = keyof RpcMethods
+
+export type RpcArgs<M extends RpcMethod> = {} extends RpcMethods[M]['params'] ? [params?: RpcMethods[M]['params']] : [params: RpcMethods[M]['params']]
+
+export type RpcRequest = <M extends RpcMethod>(method: M, ...args: RpcArgs<M>) => Promise<RpcMethods[M]['result']>
