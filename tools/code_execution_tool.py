@@ -24,7 +24,7 @@ Architecture (two transports):
 In both cases, only the script's stdout is returned to the LLM; intermediate
 tool results never enter the context window.
 
-Platform: Linux / macOS only (Unix domain sockets for local). Disabled on Windows.
+Platform: Unix domain sockets on Linux/macOS, loopback TCP on Windows.
 Remote execution additionally requires Python 3 in the terminal backend.
 """
 
@@ -45,6 +45,9 @@ import time
 import uuid
 
 from typing import Any, Dict, List, Optional
+from superforecasting_agent.tooling.call_context import CallContext
+from superforecasting_agent.tooling.interrupts import is_interrupted as _rpc_interrupted
+
 from tools.registry import registry, tool_error
 
 _IS_WINDOWS = platform.system() == "Windows"
@@ -480,6 +483,14 @@ def _call(tool_name, args):
 _TERMINAL_BLOCKED_PARAMS = {"background", "pty", "notify_on_complete", "watch_patterns"}
 
 
+def _serve_rpc_in_context(context, server, *args):
+    """A retired background call exits quietly, including cancellation before start."""
+    try:
+        context.run(server, *args)
+    except InterruptedError:
+        pass
+
+
 def _rpc_server_loop(
     server_sock: socket.socket,
     task_id: str,
@@ -502,7 +513,7 @@ def _rpc_server_loop(
         conn.settimeout(300)
 
         buf = b""
-        while True:
+        while not _rpc_interrupted():
             try:
                 chunk = conn.recv(65536)
             except socket.timeout:
@@ -513,6 +524,8 @@ def _rpc_server_loop(
 
             # Process all complete newline-delimited messages in the buffer
             while b"\n" in buf:
+                if _rpc_interrupted():
+                    return
                 line, buf = buf.split(b"\n", 1)
                 line = line.strip()
                 if not line:
@@ -766,7 +779,7 @@ def _rpc_poll_loop(
     poll_interval = 0.1  # 100 ms
 
     quoted_rpc_dir = shlex.quote(rpc_dir)
-    while not stop_event.is_set():
+    while not stop_event.is_set() and not _rpc_interrupted():
         try:
             # List pending request files (skip .tmp partials)
             ls_result = env.execute(
@@ -787,7 +800,7 @@ def _rpc_poll_loop(
             ])
 
             for req_file in req_files:
-                if stop_event.is_set():
+                if stop_event.is_set() or _rpc_interrupted():
                     break
 
                 call_start = time.monotonic()
@@ -909,11 +922,10 @@ def _execute_remote(
     timeout = _cfg.get("timeout", DEFAULT_TIMEOUT)
     max_tool_calls = _cfg.get("max_tool_calls", DEFAULT_MAX_TOOL_CALLS)
 
-    session_tools = set(enabled_tools) if enabled_tools else set()
+    session_tools = set(enabled_tools) if enabled_tools is not None else set(SANDBOX_ALLOWED_TOOLS)
     sandbox_tools = frozenset(SANDBOX_ALLOWED_TOOLS & session_tools)
-    if not sandbox_tools:
-        sandbox_tools = SANDBOX_ALLOWED_TOOLS
 
+    rpc_context = CallContext()
     effective_task_id = task_id or "default"
     env, env_type = _get_or_create_env(effective_task_id)
 
@@ -962,9 +974,9 @@ def _execute_remote(
 
         # Start RPC polling thread
         rpc_thread = threading.Thread(
-            target=_rpc_poll_loop,
+            target=_serve_rpc_in_context,
             args=(
-                env, f"{sandbox_dir}/rpc", effective_task_id,
+                rpc_context, _rpc_poll_loop, env, f"{sandbox_dir}/rpc", effective_task_id,
                 tool_call_log, tool_call_counter, max_tool_calls,
                 sandbox_tools, forecast_commit_policy, stop_event,
             ),
@@ -1020,7 +1032,8 @@ def _execute_remote(
         }, ensure_ascii=False)
 
     finally:
-        # Stop the polling thread
+        # Retire tool authority before stopping the transport worker.
+        rpc_context.retire()
         stop_event.set()
         if rpc_thread is not None:
             rpc_thread.join(timeout=5)
@@ -1134,7 +1147,8 @@ def execute_code(
             code, task_id, enabled_tools, forecast_commit_policy
         )
 
-    # --- Local execution path (UDS) --- below this line is unchanged ---
+    # Local execution owns a fresh RPC authority even when invoked by a worker.
+    rpc_context = CallContext()
 
     # Import per-thread interrupt check (cooperative cancellation)
     from tools.interrupt import is_interrupted as _is_interrupted
@@ -1145,11 +1159,8 @@ def execute_code(
     max_tool_calls = _cfg.get("max_tool_calls", DEFAULT_MAX_TOOL_CALLS)
 
     # Determine which tools the sandbox can call
-    session_tools = set(enabled_tools) if enabled_tools else set()
+    session_tools = set(enabled_tools) if enabled_tools is not None else set(SANDBOX_ALLOWED_TOOLS)
     sandbox_tools = frozenset(SANDBOX_ALLOWED_TOOLS & session_tools)
-
-    if not sandbox_tools:
-        sandbox_tools = SANDBOX_ALLOWED_TOOLS
 
     # --- Set up temp directory with hermes_tools.py and script.py ---
     tmpdir = tempfile.mkdtemp(prefix="forecast_sandbox_")
@@ -1225,9 +1236,9 @@ def execute_code(
         server_sock.listen(1)
 
         rpc_thread = threading.Thread(
-            target=_rpc_server_loop,
+            target=_serve_rpc_in_context,
             args=(
-                server_sock, task_id, tool_call_log,
+                rpc_context, _rpc_server_loop, server_sock, task_id, tool_call_log,
                 tool_call_counter, max_tool_calls, sandbox_tools,
                 forecast_commit_policy,
             ),
@@ -1401,10 +1412,12 @@ def execute_code(
         }
         while proc.poll() is None:
             if _is_interrupted():
+                rpc_context.retire()
                 _kill_process_group(proc)
                 status = "interrupted"
                 break
             if time.monotonic() > deadline:
+                rpc_context.retire()
                 _kill_process_group(proc, escalate=True)
                 status = "timeout"
                 break
@@ -1456,7 +1469,8 @@ def execute_code(
         exit_code = proc.returncode if proc.returncode is not None else -1
         duration = round(time.monotonic() - exec_start, 2)
 
-        # Wait for RPC thread to finish
+        # Retire per-call authority before waiting for its RPC worker.
+        rpc_context.retire()
         server_sock.close()  # break accept() so thread exits promptly
         server_sock = None  # prevent double close in finally
         rpc_thread.join(timeout=3)
@@ -1527,6 +1541,7 @@ def execute_code(
         }, ensure_ascii=False)
 
     finally:
+        rpc_context.retire()
         if proc is not None:
             try:
                 if proc.poll() is None:

@@ -75,3 +75,17 @@ eager schemas. `direct_tools` cannot enable an unselected tool. Batch execution 
 sequential and reports completed results if cancellation or selection changes stop
 the remainder. JSON Schema references resolve locally only; invalid or externally
 referenced schemas cannot execute through the bridge.
+
+## Execution call authority
+
+[call_context.py](call_context.py) captures a submitting call's context variables
+and approval/sudo callbacks. Each worker invocation gets an isolated context copy
+and restores the worker's prior callbacks on every exit. Retiring the call rejects
+later dispatch and signals cooperative cancellation to work already inside it.
+Nested calls also retain their parent's cancellation scope. No cancellation state
+is attached to a reusable thread ID by this owner.
+
+Code-execution socket and remote-file RPC workers use this boundary. Tool
+selection remains an intersection with the sandbox allow-list: `None` retains the
+compatibility default, while an explicit empty or non-overlapping selection grants
+no RPC tools. Process lifetime and confirmed cleanup remain separate concerns.

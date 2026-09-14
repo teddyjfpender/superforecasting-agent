@@ -16,6 +16,9 @@ Usage in tools:
 
 import logging
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 from superforecasting_agent.environment import env_var_alias_enabled
 
@@ -39,6 +42,19 @@ if _DEBUG_INTERRUPT:
 # Set of thread idents that have been interrupted.
 _interrupted_threads: set[int] = set()
 _lock = threading.Lock()
+_scope_interrupt: ContextVar[tuple[threading.Event, ...]] = ContextVar(
+    "tool_scope_interrupt", default=()
+)
+
+
+@contextmanager
+def cancellation_scope(event: threading.Event) -> Iterator[None]:
+    """Bind cancellation to an owned call without retaining reusable thread IDs."""
+    token = _scope_interrupt.set((*_scope_interrupt.get(), event))
+    try:
+        yield
+    finally:
+        _scope_interrupt.reset(token)
 
 
 def set_interrupt(active: bool, thread_id: int | None = None) -> None:
@@ -74,6 +90,9 @@ def is_interrupted() -> bool:
     interrupt state.
     """
     tid = threading.get_ident()
+    scoped = _scope_interrupt.get()
+    if any(event.is_set() for event in scoped):
+        return True
     with _lock:
         return tid in _interrupted_threads
 

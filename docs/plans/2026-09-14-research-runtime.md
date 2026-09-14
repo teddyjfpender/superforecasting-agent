@@ -97,3 +97,16 @@ adopts history only for agents exposing that field. The focused fix set passed
 109 tests. Result references were also tightened to require an inline original;
 a saved-output marker alone cannot prove that its bytes remain available.
 Context publication remains pending a clean full-suite run.
+
+### Kernel prerequisite: execution call authority
+
+Local and remote code-execution RPC workers now capture the submitting context and
+approval/sudo callbacks. Cancellation is scoped to each call and inherited by
+nested calls, without poisoning recycled worker threads. Explicit empty and
+non-overlapping tool selections no longer expand to the sandbox default. Real
+local subprocess tests exercise caller routing and refusal through the generated
+RPC client. Persistent kernels and authenticated/bounded RPC framing remain in
+progress; this prerequisite does not yet extend interpreter lifetime.
+
+The execution-authority prerequisite passed 120 focused tests, including the
+existing code-execution/mode cases and new real-RPC permission/context cases.
