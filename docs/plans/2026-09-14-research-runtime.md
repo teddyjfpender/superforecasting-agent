@@ -54,3 +54,13 @@ complete until its wiring and boundary tests demonstrate the acceptance above.
   Focused reference/guardrail set: 32 passed. Full suite remains pending.
 - Actual agent delegation dispatch now forwards images and background mode;
   previous direct tool tests did not cover this missing dispatcher wiring.
+
+### Progressive discovery milestone
+
+The copied catalog and agent adapter are implemented and wired before four
+provider transports. Core forecasts and clarify remain direct; optional calls
+reuse policy hooks, guardrails, memory/context-engine owners and registry dispatch.
+Whole-batch validation and per-effect selection/cancellation checks are tested.
+The latest focused milestone set passed 50 tests; the expanded runtime set passed
+17 tests including the four transport branches. Documentation states the native
+provider-owned runtime boundary. Full-suite and product integration remain pending.

@@ -357,3 +357,89 @@ def test_agent_delegate_dispatch_forwards_images_and_background():
     assert delegate.call_args.kwargs['images'] == ['chart.png']
     assert delegate.call_args.kwargs['background'] is True
     assert delegate.call_args.kwargs['parent_agent'] is agent
+
+
+def test_progressive_tools_reach_provider_wire_and_normal_dispatch():
+    agent = _make_agent('forecast_ledger','clarify','mcp_weather_read')
+    agent.tool_discovery_config = {'enabled':True}
+    kwargs = agent._build_api_kwargs([{'role':'user','content':'Research'}])
+    names = {entry['function']['name'] for entry in kwargs['tools']}
+    assert 'forecast_ledger' in names and 'clarify' in names
+    assert 'tool_call' in names and 'mcp_weather_read' not in names
+    assert 'mcp_weather_read' in agent.valid_tool_names
+    call = _mock_tool_call('tool_call', json.dumps({'calls':[{'name':'mcp_weather_read','arguments':{}}]}), 'bridge')
+    messages = []
+    with patch('run_agent.handle_function_call', return_value='{"observed": 12}') as execute:
+        agent._execute_tool_calls_sequential(SimpleNamespace(content='',tool_calls=[call]), messages, 'discovery')
+    assert execute.call_args.args[0] == 'mcp_weather_read'
+    assert messages[0]['tool_call_id'] == 'bridge'
+    assert 'untrusted_tool_result' in messages[0]['content']
+    assert 'observed' in messages[0]['content']
+
+
+def test_discovery_validates_whole_batch_before_effects_and_checks_real_tool_hooks():
+    agent = _make_agent('mcp_weather_read')
+    agent.tool_discovery_config = {'enabled':True}
+    from agent.tool_discovery import execute_discovery
+    with patch('run_agent.handle_function_call') as execute:
+        result = execute_discovery(agent, 'tool_call', {'calls':[{'name':'mcp_weather_read','arguments':{}},{'name':'not_selected','arguments':{}}]}, 'task', 'batch', [])
+        assert 'error' in json.loads(result)
+        execute.assert_not_called()
+    with patch('superforecasting_agent.runtime.plugins.get_pre_tool_call_block_message', return_value='Blocked by policy'), patch('run_agent.handle_function_call') as execute:
+        result = execute_discovery(agent, 'tool_call', {'calls':[{'name':'mcp_weather_read','arguments':{}}]}, 'task', 'batch', [])
+        assert 'Blocked by policy' in result
+        execute.assert_not_called()
+
+
+def test_discovery_cancellation_prevents_remaining_batch_calls():
+    from agent.tool_discovery import execute_discovery
+    agent = _make_agent('mcp_weather_read')
+    agent.tool_discovery_config = {'enabled':True}
+    def stop(*args, **kwargs):
+        agent._interrupt_requested = True
+        return '{"observed":12}'
+    with patch('run_agent.handle_function_call', side_effect=stop) as execute:
+        result = json.loads(execute_discovery(agent, 'tool_call', {'calls':[{'name':'mcp_weather_read','arguments':{}},{'name':'mcp_weather_read','arguments':{}}]}, 'task', 'batch', []))
+    assert execute.call_count == 1
+    assert len(result['results']) == 1 and 'interrupted' in result['error']
+
+
+def test_discovery_stops_when_tool_selection_changes_mid_batch():
+    from agent.tool_discovery import execute_discovery
+    agent = _make_agent('mcp_weather_read')
+    agent.tool_discovery_config = {'enabled':True}
+    def remove(*args, **kwargs):
+        agent.tools = []
+        return '{"observed":12}'
+    with patch('run_agent.handle_function_call', side_effect=remove) as execute:
+        result = json.loads(execute_discovery(agent, 'tool_call', {'calls':[{'name':'mcp_weather_read','arguments':{}},{'name':'mcp_weather_read','arguments':{}}]}, 'task', 'batch', []))
+    assert execute.call_count == 1
+    assert len(result['results']) == 1 and 'selection changed' in result['error']
+
+
+def test_discovery_preserves_memory_provider_tool_ownership():
+    from agent.tool_discovery import execute_discovery
+    agent = _make_agent('custom_memory_recall')
+    agent.tool_discovery_config = {'enabled':True}
+    memory = agent._memory_manager = MagicMock()
+    memory.has_tool.return_value = True
+    memory.handle_tool_call.return_value = '{"evidence":"retained"}'
+    with patch('run_agent.handle_function_call') as registry:
+        result = execute_discovery(agent, 'tool_call', {'calls':[{'name':'custom_memory_recall','arguments':{}}]}, 'task', 'batch', [])
+    assert 'retained' in result
+    memory.handle_tool_call.assert_called_once_with('custom_memory_recall', {})
+    registry.assert_not_called()
+
+
+def test_discovery_is_applied_before_each_provider_transport():
+    for mode in ('chat_completions', 'anthropic_messages', 'bedrock_converse', 'codex_responses'):
+        agent = _make_agent('forecast_ledger', 'mcp_weather_read')
+        agent.tool_discovery_config = {'enabled':True}
+        agent.api_mode = mode
+        transport = MagicMock()
+        transport.build_kwargs.side_effect = lambda **kwargs: kwargs
+        agent._get_transport = lambda: transport
+        kwargs = agent._build_api_kwargs([{'role':'user','content':'Research'}])
+        names = {tool['function']['name'] for tool in kwargs['tools']}
+        assert 'forecast_ledger' in names and 'tool_call' in names, mode
+        assert 'mcp_weather_read' not in names, mode

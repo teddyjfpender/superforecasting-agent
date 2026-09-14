@@ -300,3 +300,9 @@ and whole-record compare-before-cleanup. Repeated tool-result references adapt
 `761990b780` while retaining normal tool execution and requiring a retained original.
 These are focused-tested milestones; the full capability set and release gates
 are not yet complete.
+
+Progressive discovery adapts the `369075dc95` → `e455e4afd0` → `e16ad33a9d`
+family through the fork's tooling owner. The direct set retains all core tools,
+forecast tools and clarification. Deferred batches are schema-validated before
+effects, with no network schema retrieval, and selection is rechecked during
+execution. Search uses bounded multi-query BM25 with thread-owned stemming.

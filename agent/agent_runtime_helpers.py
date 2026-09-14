@@ -1529,6 +1529,11 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
     if block_message is not None:
         return json.dumps({"error": block_message}, ensure_ascii=False)
 
+    from superforecasting_agent.tooling.disclosure import BRIDGE_NAMES
+    if function_name in BRIDGE_NAMES:
+        from agent.tool_discovery import execute_discovery
+        return execute_discovery(agent, function_name, function_args, effective_task_id, tool_call_id, messages)
+
     if function_name == "todo":
         from tools.todo_tool import todo_tool as _todo_tool
         return _todo_tool(
@@ -1589,6 +1594,10 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
         )
     elif function_name == "delegate_task":
         return agent._dispatch_delegate_task(function_args)
+    elif getattr(agent, "_context_engine_tool_names", None) and function_name in agent._context_engine_tool_names:
+        return agent.context_compressor.handle_tool_call(function_name, function_args, messages=messages)
+    elif agent._memory_manager and agent._memory_manager.has_tool(function_name):
+        return agent._memory_manager.handle_tool_call(function_name, function_args)
     else:
         return _ra().handle_function_call(
             function_name, function_args, effective_task_id,

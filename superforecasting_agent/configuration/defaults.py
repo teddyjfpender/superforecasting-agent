@@ -3,6 +3,7 @@
 from typing import Any
 
 DEFAULT_CONFIG: dict[str, Any] = {
+    "tool_discovery": {"enabled": True, "direct_tools": [], "listing_chars": 8000},
     "model": "",
     "providers": {},
     "fallback_providers": [],

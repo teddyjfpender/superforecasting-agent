@@ -596,6 +596,9 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
             # tool result for the original tool_call_id without executing.
             function_result = agent._guardrail_block_result(_guardrail_block_decision)
             tool_duration = 0.0
+        elif function_name in {"tool_search", "tool_describe", "tool_call"}:
+            function_result = agent._invoke_tool(function_name, function_args, effective_task_id, tool_call_id=tool_call.id, messages=messages, pre_tool_block_checked=True)
+            tool_duration = time.time() - tool_start_time
         elif function_name == "todo":
             from tools.todo_tool import todo_tool as _todo_tool
             function_result = _todo_tool(

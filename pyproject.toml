@@ -11,6 +11,9 @@ requires-python = ">=3.11,<3.14"
 authors = [{ name = "Superforecasting Agent Contributors" }]
 license = "MIT"
 dependencies = [
+  "snowballstemmer==3.1.1",
+  "jsonschema==4.26.0",
+  "referencing==0.37.0",
   # Core — every direct dep is exact-pinned to ==X.Y.Z (no ranges).
   # Rationale: ranges allow PyPI to ship a fresh version of a transitive
   # at any time without a code review on our side. Exact pins mean the

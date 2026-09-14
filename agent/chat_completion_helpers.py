@@ -667,7 +667,8 @@ def interruptible_api_call(agent, api_kwargs: dict):
 
 def build_api_kwargs(agent, api_messages: list) -> dict:
     """Build the keyword arguments dict for the active API mode."""
-    tools_for_api = agent.tools
+    from agent.tool_discovery import wire_tools
+    tools_for_api = wire_tools(agent)
 
     if agent.api_mode == "anthropic_messages":
         _transport = agent._get_transport()
