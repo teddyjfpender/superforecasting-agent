@@ -14,7 +14,7 @@ qualification backlog in TODO.md. Upstream reference: `5eb99eb284`.
   invalidate on history/model/schema changes; preserve forecast identifiers,
   source references and unresolved assumptions at compaction; runnable recall
   evaluation with an uncompacted control and synthetic fixtures.
-- [ ] Persistent Python kernels: opt-in session state with explicit reset,
+- [x] Persistent Python kernels: opt-in session state with explicit reset,
   reproducible calculation records, per-cell permissions/budgets, timeout and
   cancellation teardown, parent death and profile/owner isolation. Exercise real
   execution and the supported local/remote execution boundaries.
@@ -33,6 +33,22 @@ qualification backlog in TODO.md. Upstream reference: `5eb99eb284`.
 - [ ] Directory guides, configuration/reference documentation and upstream
   provenance updated. Strict gates cover new owners. Canonical full suite passes
   before publication; merged tree matches the tested tree.
+
+## Native acceptance and publication
+
+All seven implementation acceptance items are satisfied. The canonical suite at
+`87b0cde5a5` passed **32,394 tests** with 149 explicit skips. The kernel/replay
+step subsequently passed on native Windows, Linux and macOS in
+[Product quality run 34846178443](https://github.com/teddyjfpender/superforecasting-agent/actions/runs/34846178443).
+This verifies the Windows startup-process correction against the failures in the
+prior run, while retaining descendant cleanup and sibling-isolation coverage.
+The remaining publication gate above requires the final documentation tree to
+pass its canonical push checks and [PR #51](https://github.com/teddyjfpender/superforecasting-agent/pull/51)
+to merge with the same tested tree. It is separate from implementation acceptance.
+
+The [research runtime guide](../research-runtime.md) is the current user reference.
+The notes below are historical checkpoints; statements of incompleteness describe
+those checkpoints, not the current implementation acceptance list.
 
 ## Progress
 

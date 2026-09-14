@@ -85,7 +85,7 @@ arguments. A remote response-delivery failure retains the result for delivery
 retry, so polling cannot repeat the tool effect. These receipts last for the
 execution call; they do not promise exactly-once external effects after host death.
 
-### Persistent analysis (in development)
+### Persistent analysis
 
 The default remains one interpreter per call. To opt into a session
 kernel, set `code_execution.kernel_mode: session` in the active profile's config.
@@ -149,8 +149,11 @@ Windows runners establish a private, non-inherited Job Object before accepting
 cells. Its kill-on-close policy owns normal subprocess descendants through owner
 EOF and forced interpreter termination; failure to establish it aborts startup.
 The product-quality native matrix exercises these paths and sibling isolation.
-Native Windows results and credential-dependent remote services remain
-qualification work until their platform evidence is recorded.
+The kernel/replay suites passed on native Windows, Linux and macOS in
+[run 34846178443](https://github.com/teddyjfpender/superforecasting-agent/actions/runs/34846178443).
+Startup launcher descendants remain owned for cleanup and do not retire a cell;
+new cell-created processes still do. Credential-dependent remote services remain
+separate qualification work.
 
 Worker output suppression is context-scoped through the agent output owner;
 accepted sockets and borrowed terminal streams have separate disposal owners.
