@@ -58,6 +58,14 @@
       ],
       "token": "\\.hermes",
       "reason": "Exercise an isolated legacy profile directory in the installed upgrade matrix."
+    },
+    {
+      "category": "compatibility",
+      "paths": [
+        "nix/README.md"
+      ],
+      "token": "hermes-agent\\.nix",
+      "reason": "Names the existing Nix import adapter in the directory ownership table; not a new product entrypoint."
     }
   ]
 }

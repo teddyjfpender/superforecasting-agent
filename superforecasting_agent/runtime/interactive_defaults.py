@@ -1,7 +1,9 @@
 """Fresh default values for the interactive CLI configuration loader."""
 
+from typing import Any
 
-def default_cli_config():
+
+def default_cli_config() -> dict[str, Any]:
     from copy import deepcopy
 
     from superforecasting_agent.runtime.config import DEFAULT_CONFIG
@@ -31,8 +33,8 @@ def default_cli_config():
             "engine": "auto",  # Browser engine: auto (Chrome), lightpanda, chrome
         },
         "compression": {
-            "enabled": True,      # Auto-compress when approaching context limit
-            "threshold": 0.50,    # Compress at 50% of model's context limit
+            "enabled": True,  # Auto-compress when approaching context limit
+            "threshold": 0.50,  # Compress at 50% of model's context limit
         },
         "agent": {
             "max_turns": 200,  # Soft cap per turn; a breach checkpoints + continues, not a hard stop
@@ -53,7 +55,6 @@ def default_cli_config():
                 "executive": "You are a decision-support forecaster. Summarize probabilities, deltas, drivers, deadlines, and action-relevant caveats for a busy operator.",
             },
         },
-
         "display": {
             "compact": False,
             "resume_display": "full",
@@ -62,14 +63,13 @@ def default_cli_config():
             "busy_input_mode": "interrupt",
             "persistent_output": True,
             "persistent_output_max_lines": 200,
-
             "skin": "forecast",
         },
         "clarify": {
             "timeout": 120,  # Seconds to wait for a clarify answer before auto-proceeding
         },
         "code_execution": {
-            "timeout": 300,    # Max seconds a sandbox script can run before being killed (5 min)
+            "timeout": 300,  # Max seconds a sandbox script can run before being killed (5 min)
             "max_tool_calls": 50,  # Max RPC tool calls per execution
         },
         "auxiliary": {

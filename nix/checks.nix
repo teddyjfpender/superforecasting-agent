@@ -2,7 +2,7 @@
 #
 # Checks are Linux-only: the full Python venv (via uv2nix) includes
 # transitive deps like onnxruntime that lack compatible wheels on
-# aarch64-darwin. The package and devShell still work on macOS.
+# aarch64-darwin. Cross-evaluation alone does not qualify macOS installation.
 { inputs, ... }: {
   perSystem = { pkgs, lib, self', ... }:
     let
@@ -62,6 +62,8 @@ json.dump(sorted(leaf_paths(DEFAULT_CONFIG)), sys.stdout, indent=2)
         # Verify binaries exist and are executable
         package-contents = pkgs.runCommand "superforecasting-agent-package-contents" { } ''
           set -e
+          export HOME=$TMPDIR/home
+          mkdir -p "$HOME"
           echo "=== Checking binaries ==="
           test -x ${superforecastingAgent}/bin/forecast || (echo "FAIL: forecast binary missing"; exit 1)
           test -x ${superforecastingAgent}/bin/superforecasting-agent || (echo "FAIL: superforecasting-agent binary missing"; exit 1)
@@ -104,6 +106,42 @@ json.dump(sorted(leaf_paths(DEFAULT_CONFIG)), sys.stdout, indent=2)
           echo "PASS: All subcommands accessible"
 
           echo "=== All CLI checks passed ==="
+          mkdir -p $out
+          echo "ok" > $out/result
+        '';
+
+        # Exercise the installed wrapper and durable ledger without credentials.
+        forecast-lifecycle = pkgs.runCommand "superforecasting-agent-forecast-lifecycle" { } ''
+          export HOME=$TMPDIR/home
+          mkdir -p "$HOME"
+          export SUPERFORECASTING_AGENT_HOME=$HOME/.superforecasting-agent
+          ${superforecastingAgentVenv}/bin/python3 - <<'PYTHON'
+import os
+from pathlib import Path
+import re
+import subprocess
+
+exe = "${superforecastingAgent}/bin/superforecasting-agent"
+def forecast(*args):
+    result = subprocess.run([exe, "forecast", *args], text=True, capture_output=True, timeout=90)
+    if result.returncode:
+        raise RuntimeError(result.stdout + result.stderr)
+    return result.stdout
+
+note = Path(os.environ["HOME"]) / "observation.txt"
+note.write_text("Synthetic packaging fixture, not a prospective outcome.\n")
+created = forecast("new", "Did the Nix fixture record its observation?", "--resolution-criteria", "Yes if the local observation file exists.", "--domain", "release-rehearsal")
+qid = re.search(r"fq_[a-f0-9]+", created).group()
+evidence = forecast("research", qid, str(note), "--claim", "The fixture observation exists.")
+eid = re.search(r"ev_[a-f0-9]+", evidence).group()
+forecast("update", qid, "--probability", "0.6", "--rationale", "Synthetic installation fixture.", "--reason-up", "Observation exists.", "--reason-down", "Persistence may fail.", "--change-my-mind", "Missing durable evidence.", "--evidence-ref", eid, "--calibration-ineligible")
+forecast("resolve", qid, "--outcome", "yes", "--source", str(note))
+assert "brier_score:" in forecast("score", qid)
+assert "brier_score:" in forecast("score", qid)
+forecast("postmortem", qid, "--summary", "Installed lifecycle completed.", "--what-happened", "Synthetic observation recorded.", "--what-was-expected", "Durable lifecycle.", "--lesson", "Keep installation fixtures separate from prospective evaluation.")
+assert qid in forecast("show", qid)
+print("PASS: installed forecast create/research/update/resolve/score/postmortem")
+PYTHON
           mkdir -p $out
           echo "ok" > $out/result
         '';

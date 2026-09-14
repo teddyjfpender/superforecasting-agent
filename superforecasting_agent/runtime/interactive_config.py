@@ -20,11 +20,11 @@ def _read_cli_config(
 ) -> tuple[Dict[str, Any], bool]:
     """
     Load CLI configuration from config files.
-    
+
     Config lookup order:
     1. ~/.superforecasting-agent/config.yaml (user config - preferred)
     2. ./cli-config.yaml (project config - fallback)
-    
+
     Environment variables take precedence over config file values.
     Returns default values if no config file exists.
 
@@ -38,7 +38,7 @@ def _read_cli_config(
     behavioral/config settings.
     """
     # Check user config first ({HERMES_HOME}/config.yaml)
-    user_config_path = agent_home / 'config.yaml'
+    user_config_path = agent_home / "config.yaml"
 
     # --ignore-user-config: force-skip the user config.yaml (still honor project
     # config as a fallback so defaults stay sensible).
@@ -62,12 +62,23 @@ def _read_cli_config(
     if config_path.exists():
         try:
             with open(config_path, "r", encoding="utf-8") as f:
-                file_config = yaml.safe_load(f) or {}
+                file_config = yaml.safe_load(f)
+                if file_config is None:
+                    file_config = {}
+
+            if not isinstance(file_config, dict):
+                raise ValueError("configuration root must be a mapping")
+            for section in ("terminal", "browser", "auxiliary"):
+                if section in file_config and not isinstance(
+                    file_config[section], dict
+                ):
+                    raise ValueError(f"{section} configuration must be a mapping")
 
             _file_has_terminal_config = "terminal" in file_config
 
             from superforecasting_agent.runtime.model_configuration import model_section
-            defaults['model'].update(model_section(file_config))
+
+            defaults["model"].update(model_section(file_config))
 
             from superforecasting_agent.runtime.config import _deep_merge
 
@@ -77,7 +88,9 @@ def _read_cli_config(
                 if key == "model":
                     continue  # Already handled above
                 if key in file_config:
-                    if isinstance(defaults[key], dict) and isinstance(file_config[key], dict):
+                    if isinstance(defaults[key], dict) and isinstance(
+                        file_config[key], dict
+                    ):
                         defaults[key] = _deep_merge(defaults[key], file_config[key])
                     else:
                         defaults[key] = file_config[key]
@@ -97,17 +110,22 @@ def _read_cli_config(
             ):
                 defaults["agent"]["max_turns"] = file_config["max_turns"]
         except Exception as e:
-            logger.warning("Failed to load cli-config.yaml: %s", e)
+            defaults = default_cli_config()
+            _file_has_terminal_config = False
+            logger.warning("Failed to load %s: %s", config_path, e)
 
     # Expand ${ENV_VAR} references in config values before bridging to env vars.
     from superforecasting_agent.runtime.config import _expand_env_vars
+
     defaults = _expand_env_vars(defaults)
 
     return defaults, _file_has_terminal_config
 
 
 def read_cli_config(
-    agent_home: Path, project_config_path: Path, ignore_user_config: bool = False,
+    agent_home: Path,
+    project_config_path: Path,
+    ignore_user_config: bool = False,
 ) -> Dict[str, Any]:
     """Read shared interactive defaults and overrides without mutating the process."""
     config, _ = _read_cli_config(agent_home, project_config_path, ignore_user_config)
@@ -122,7 +140,9 @@ def load_cli_config(
 ) -> Dict[str, Any]:
     """Load interactive settings and explicitly bridge them into this process."""
     defaults, _file_has_terminal_config = _read_cli_config(
-        agent_home, project_config_path, ignore_user_config,
+        agent_home,
+        project_config_path,
+        ignore_user_config,
     )
 
     # Apply terminal config to environment variables (so terminal_tool picks them up)

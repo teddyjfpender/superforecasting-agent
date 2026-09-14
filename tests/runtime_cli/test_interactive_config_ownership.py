@@ -40,3 +40,14 @@ def test_gateway_personalities_do_not_import_cli_or_mutate_environment(tmp_path,
     before = dict(os.environ)
     assert server._available_personalities()['analyst'] == 'careful'
     assert dict(os.environ) == before
+
+
+@pytest.mark.parametrize("payload", ["false", "[]", "terminal: local", "browser: true", "auxiliary: bad", "terminal: {timeout: 42}\nmodel: {provider: 123}"])
+def test_malformed_config_has_no_partial_environment_bridge(tmp_path, monkeypatch, caplog, payload):
+    path = tmp_path / "config.yaml"
+    path.write_text(payload)
+    monkeypatch.setenv("TERMINAL_TIMEOUT", "999")
+    loaded = load_cli_config(tmp_path, tmp_path / "missing.yaml", False, lambda _: None)
+    assert isinstance(loaded["terminal"], dict)
+    assert os.environ["TERMINAL_TIMEOUT"] == "999"
+    assert str(path) in caplog.text

@@ -1,0 +1,62 @@
+{
+  "kind": "experimental-nix-installation-qualification",
+  "source_base": "44a081a15152066af89250f990aa3eed086b2dab",
+  "source_state": "working tree; exact changed source and lockfile hashes below",
+  "system": "x86_64-linux",
+  "kernel": "6.8.0-138-generic",
+  "os_release": "PRETTY_NAME=\"Ubuntu 24.04.4 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.4 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nPRIVACY_POLICY_URL=\"https://www.ubuntu.com/legal/terms-and-policies/privacy-policy\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo\n",
+  "nix_version": "nix (Nix) 2.18.1",
+  "package_path": "/nix/store/fh75zw5zxi2x6zm23vrk74vsfrkl0h1c-profile",
+  "checks": {
+    "bundled-plugins": "/nix/store/n0llih0fbqgls5hs676n9dmw0irhind5-superforecasting-agent-bundled-plugins",
+    "bundled-skills": "/nix/store/1qipv6vd6q94ds7as5lmg1rbfwzqc7rb-superforecasting-agent-bundled-skills",
+    "bundled-tui": "/nix/store/qh2hd8sy0yvibbv8nrcf7pfax5vpdjnl-superforecasting-agent-bundled-tui",
+    "cli-commands": "/nix/store/xnpmia2l12prqi2fd0lpkq4l2fqmw9ra-superforecasting-agent-cli-commands",
+    "config-roundtrip": "/nix/store/8a8nfkxph914p9g8lshil7c84b7mwpf1-superforecasting-agent-config-roundtrip",
+    "cross-eval": "/nix/store/96svvrmf60xj25dirbrhdkhrxsydpx68-superforecasting-agent-cross-eval",
+    "entry-points-sync": "/nix/store/g9rhp0mp41jhrkca6y56nnyxwfd94v8f-superforecasting-agent-entry-points-sync",
+    "extra-dependency-groups": "/nix/store/zrnhrl03z53bxjfvpmpib1q3lxq1rskp-superforecasting-agent-extra-dependency-groups",
+    "extra-python-packages": "/nix/store/0n36h0xhwlgrixcxiv645fbm0j1hpz1h-superforecasting-agent-extra-python-packages",
+    "forecast-lifecycle": "/nix/store/aid72hcwgjn6jb7lhxlnr54kgb8yiqw5-superforecasting-agent-forecast-lifecycle",
+    "managed-guard": "/nix/store/7lh8i1xfcqkgxvxfb232nkdwibma3zd6-superforecasting-agent-managed-guard",
+    "node-wrapper": "/nix/store/w8hnn65n8wil1njiznzbr972lcxldl90-superforecasting-agent-node-version",
+    "package-contents": "/nix/store/9dsh7v7qn1mhws002r7jpmicn90wbqr7-superforecasting-agent-package-contents",
+    "revision-env-aliases": "/nix/store/knfmvw03wmpg8rf8rnagss83lqg1wnz1-superforecasting-agent-revision-env-aliases"
+  },
+  "profile_install_exit_code": 0,
+  "installed_version_output": "warning: Git tree '/root/sf' is dirty\nSuperforecasting Agent v0.22.4 (2026.09.14)\nProject: /nix/store/vh4qg4s5yc7v8j7yaa1b48bx7s80rrm8-superforecasting-agent-0.22.4/lib/python3.12/site-packages\nPython: 3.12.13\nOpenAI SDK: 2.24.0\nUp to date\n",
+  "terminal": {
+    "startup": "setup required",
+    "resize": [
+      35,
+      120
+    ],
+    "shutdown_exit_code": 0,
+    "provider_calls": 0
+  },
+  "source_sha256": {
+    "flake.lock": "eeaf9d45d3699f0baebfd99f3a7ce824497009b3a2f6fbbd0ca483779219e23b",
+    "flake.nix": "7aeb02b766b5ac51d8c0917bb090db37f8d93e2753533f3f4c918623c59ee808",
+    "gateway/command_dispatch.py": "6877c5e3b2bb39818fb9cf5c34921dd69194153eb8c9c109b5f5db1bc2974788",
+    "gateway/hooks.py": "f4eb605fd072092b1d156cdd81b345d64bf5293757f035dc99344d0347a2433e",
+    "nix/checks.nix": "e58056da33394e2a94d33c522ab75a90ea2f4f5b3d829ddfba7d82555348c4e7",
+    "nix/tui.nix": "238f87b55c447e4866114180a639f1206b4e927a371fe48b13629477a9ff59ad",
+    "nix/web.nix": "69b6eb5f2775911b3ff673b7181f323ffa80f722042313488fa45fc79dae40fe",
+    "pyproject.toml": "4a6ebe184d5b58f9c4eea95a7829a95392c610b894e36115bb2a94fc3d06934a",
+    "scripts/dev.py": "76f55d9c8e32407dcc43ac63d1d2f09f93a075c428a549b496d89d8a6317bf71",
+    "superforecasting_agent/runtime/interactive_config.py": "44dd4fa032b0a519a6f3e1ccfaa0275cced27d55c4bc7939c1f9bea7732d98a7",
+    "superforecasting_agent/runtime/interactive_defaults.py": "43ba354f1a48585094d6fbe4c5334a6ad5e8d5a30a1a1b467f57c668613c229a",
+    "superforecasting_agent/runtime/model_configuration.py": "0adadd770fc6387bb90a3604855f3d5a94954f7045f0928b7fa7fad9b17fc896",
+    "tests/gateway/test_hooks.py": "c4e122013734ad6e350579020a502b5c9c315e6645f1a7751b0ec73c2be89a0a",
+    "tests/runtime_cli/test_interactive_config_ownership.py": "8fa61d824db4011420ad2a4ab6d08ba65a80105461ddd79b244dd838a10a7c06",
+    "tests/runtime_cli/test_model_configuration_shared.py": "0482b9f113bf05dd68beab118c9330ef20e90f46686e6cf88e2dc6c4b154dcab",
+    "ui-tui/package-lock.json": "9252da8e0cb8374d07ca7aaf95037b647dfd06feadfccfe02f307d6f5182dc27",
+    "uv.lock": "c8d4a30783dd38a5720d42d64f6e1956b210e6ad62b2de5abbc2c0387203bff8",
+    "web/package-lock.json": "b4ac4439715bc28250903f4804c3e72a95142c2a07e4bcff36ea4477bbd82c13"
+  },
+  "limits": [
+    "No macOS or ARM installation qualification",
+    "No live provider calls",
+    "Synthetic lifecycle does not measure forecasting skill"
+  ]
+}

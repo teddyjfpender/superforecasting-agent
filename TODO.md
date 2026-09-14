@@ -5,15 +5,10 @@ Completed work and verification receipts live in the
 The [ownership map](docs/architecture/ownership-map.md) defines current boundaries;
 the [beta scope](website/docs/getting-started/beta-scope.md) defines supported products.
 
-## Actionable maintenance
+## Deferred qualification — non-blocking
 
-- [ ] Extend strict typing through remaining classic CLI and messaging shells
-  when correcting concrete behavior. Shared owners are checked; the entire
-  inherited orchestration modules are not yet strictly typed.
-- [ ] Refresh Nix fixed-output hashes and qualify its package before proposing
-  supported status or required merge checks. Nix is experimental and non-blocking.
-
-## Qualification requiring external evidence
+These items do not block the supported desktop/VPS beta scope. Resume them when
+the required device, service credentials or original diagnostic artifacts exist.
 
 - [ ] Qualify a real Android/Termux device with installation, upgrade and recovery
   receipts. Desktop Linux or a Hetzner VPS cannot establish Android compatibility.
@@ -23,6 +18,10 @@ the [beta scope](website/docs/getting-started/beta-scope.md) defines supported p
   did not reproduce it; original binary and CA hashes are absent.
 
 ## Maintenance rules
+
+Continue extending strict typing when concrete fixes touch inherited CLI or
+messaging orchestration. Shared configuration and hook owners are checked; this
+is not a claim that every inherited shell is fully typed.
 
 Prefer behavioral fixes over cosmetic file moves. New files in configuration,
 storage, hosting, application, credentials and tooling receive strict checks

@@ -89,3 +89,20 @@ cancellation still exits the wizard rather than continuing with partial setup.
 classic transcript and clipboard consumers. All three receive blocking lint,
 formatting and type checks; the containing orchestration shells remain incremental
 maintenance targets.
+
+
+### Interactive configuration and hook execution
+
+The blocking quality scope includes `runtime/interactive_config.py`,
+`runtime/interactive_defaults.py`, `runtime/model_env.py` and
+`runtime/model_configuration.py` under `superforecasting_agent/`, plus
+`gateway/hooks.py`. Interactive configuration rejects malformed bridge sections
+and returns fresh defaults after a failed read, preventing partial environment
+overrides. Model selection uses the same persistence owner in classic CLI and
+messaging, validates optional endpoints without truthiness coercion, and compares
+normalized routes before retaining or removing bound credentials.
+
+Hook emission and result collection share one invocation path. Both await
+coroutines and other awaitables, and discovery validates the entire event list
+before registering any handlers. Opaque plugin return values remain an explicit
+`object` boundary and command dispatch validates them before execution.
