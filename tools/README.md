@@ -137,8 +137,12 @@ exits on owner-pipe EOF, but unconfirmed cleanup remains pending on the host.
 Real POSIX subprocess tests cover transport, abrupt supervisor death, owner
 leases and sibling-process isolation. They do not qualify hosted services or
 claim containment of hostile code that deliberately escapes its process group.
-Parent-death behavior on native Windows and credential-dependent remote services
-remain qualification work.
+Windows runners establish a private, non-inherited Job Object before accepting
+cells. Its kill-on-close policy owns normal subprocess descendants through owner
+EOF and forced interpreter termination; failure to establish it aborts startup.
+The product-quality native matrix exercises these paths and sibling isolation.
+Native Windows results and credential-dependent remote services remain
+qualification work until their platform evidence is recorded.
 
 Worker output suppression is context-scoped through the agent output owner;
 accepted sockets and borrowed terminal streams have separate disposal owners.

@@ -36,6 +36,17 @@ qualification backlog in TODO.md. Upstream reference: `5eb99eb284`.
 
 ## Progress
 
+### Windows kernel descendant ownership
+
+The standalone runner now creates an unnamed, non-inheritable Windows Job Object
+with kill-on-close before accepting a cell, and assigns only itself. The OS owns
+descendant teardown when the interpreter exits, including forced termination.
+Setup failure closes any unassigned handle and aborts startup. Native regressions
+exercise owner EOF and forced exit while preserving an unrelated sibling. The
+existing product-quality matrix now runs the kernel/replay suites on its Node 22
+platform jobs. Local verification passed 50 tests with two native Windows cases
+explicitly skipped; native qualification is pending and kernel acceptance stays open.
+
 ### Kernel acceptance audit
 
 The local kernel, standalone runner, remote shell transport, supervisor and

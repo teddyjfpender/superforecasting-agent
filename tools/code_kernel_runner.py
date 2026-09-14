@@ -26,6 +26,77 @@ MAX_REQUEST_BYTES = 1_048_576
 MAX_OUTPUT_CHARS = 250_000
 
 
+def own_windows_process_tree() -> int | None:
+    """Own an unnamed, non-inherited kill-on-close job before accepting cells.
+
+    The runner holds the sole handle. Windows closes it on normal exit or
+    forced termination, killing descendants without PID-based cleanup races.
+    https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects
+    """
+    if os.name != "nt":
+        return None
+    import ctypes
+    from ctypes import wintypes
+
+    class BasicLimits(ctypes.Structure):
+        _fields_ = [
+            ("process_time", ctypes.c_int64),
+            ("job_time", ctypes.c_int64),
+            ("flags", wintypes.DWORD),
+            ("min_working_set", ctypes.c_size_t),
+            ("max_working_set", ctypes.c_size_t),
+            ("active_processes", wintypes.DWORD),
+            ("affinity", ctypes.c_size_t),
+            ("priority", wintypes.DWORD),
+            ("scheduling", wintypes.DWORD),
+        ]
+
+    class ExtendedLimits(ctypes.Structure):
+        _fields_ = [
+            ("basic", BasicLimits),
+            ("io_counters", ctypes.c_uint64 * 6),
+            ("process_memory", ctypes.c_size_t),
+            ("job_memory", ctypes.c_size_t),
+            ("peak_process_memory", ctypes.c_size_t),
+            ("peak_job_memory", ctypes.c_size_t),
+        ]
+
+    api = ctypes.WinDLL("kernel32", use_last_error=True)
+    api.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
+    api.CreateJobObjectW.restype = wintypes.HANDLE
+    api.SetInformationJobObject.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_int,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+    ]
+    api.SetInformationJobObject.restype = wintypes.BOOL
+    api.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+    api.AssignProcessToJobObject.restype = wintypes.BOOL
+    api.GetCurrentProcess.argtypes = []
+    api.GetCurrentProcess.restype = wintypes.HANDLE
+    api.CloseHandle.argtypes = [wintypes.HANDLE]
+    api.CloseHandle.restype = wintypes.BOOL
+    handle = api.CreateJobObjectW(None, None)
+    if not handle:
+        raise ctypes.WinError(ctypes.get_last_error())
+    limits = ExtendedLimits()
+    limits.basic.flags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE; no breakaway.
+    if not api.SetInformationJobObject(
+        handle, 9, ctypes.byref(limits), ctypes.sizeof(limits)
+    ):
+        error = ctypes.WinError(ctypes.get_last_error())
+        api.CloseHandle(handle)
+        raise error
+    if not api.AssignProcessToJobObject(handle, api.GetCurrentProcess()):
+        error = ctypes.WinError(ctypes.get_last_error())
+        api.CloseHandle(handle)
+        raise error
+    # Do not close a successfully assigned job: that would terminate this
+    # interpreter. Its sole handle lives until the OS disposes the process.
+    return handle
+
+
 def owner_exit(code: int) -> None:
     """Only a verified, dedicated POSIX session may terminate its own group."""
     if (
@@ -105,6 +176,7 @@ def _read_requests(inbox: queue.Queue[dict[str, Any]]) -> None:
 
 
 def main() -> None:
+    _windows_job = own_windows_process_tree()
     # Own a duplicate, never close the host's borrowed stream object. fd 1
     # becomes raw diagnostic output; Python print is captured per cell below.
     protocol_fd = os.dup(sys.stdout.fileno())
