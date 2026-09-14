@@ -98,3 +98,8 @@ synthetic fixture is a regression aid, not evidence of improved forecasting.
 Repeated-result compaction requires the full original bytes inline. A saved-output
 pointer alone is insufficient proof: the next observation is emitted in full and
 can be persisted again through the normal output-storage path.
+
+[thread_scoped_output.py](thread_scoped_output.py) routes Python output by execution
+context. Silencing a tool worker leaves other sessions visible, supports nested
+scopes, and never closes borrowed stdout/stderr streams. It does not redirect
+native file-descriptor writes.

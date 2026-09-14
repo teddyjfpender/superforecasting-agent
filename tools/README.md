@@ -46,3 +46,20 @@ Update this guide when entry points or ownership change. See the
 and [engineering backlog](../TODO.md) for cross-package context.
 
 [↑ Parent directory](../README.md)
+
+## Code execution RPC
+
+[code_execution_tool.py](code_execution_tool.py) selects the execution environment
+and owns script lifetime. [code_execution_rpc.py](code_execution_rpc.py) owns the
+shared authenticated request pipeline for local sockets and remote files. Both
+transports validate request shape and size, preserve the selected tool allow-list
+and forecast commit policy, and charge the call budget before dispatch.
+
+Local children receive an ephemeral token. Remote tokens are generated in a
+private directory and read from a private file; their values never appear in shell
+arguments. A remote response-delivery failure retains the result for delivery
+retry, so polling cannot repeat the tool effect. These receipts last for the
+execution call; they do not promise exactly-once external effects after host death.
+
+Worker output suppression is context-scoped through the agent output owner;
+accepted sockets and borrowed terminal streams have separate disposal owners.

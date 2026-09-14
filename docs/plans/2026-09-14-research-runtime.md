@@ -110,3 +110,19 @@ progress; this prerequisite does not yet extend interpreter lifetime.
 
 The execution-authority prerequisite passed 120 focused tests, including the
 existing code-execution/mode cases and new real-RPC permission/context cases.
+
+### Kernel prerequisite: shared authenticated RPC
+
+The local socket and remote file servers now share one typed request pipeline.
+It bounds frames, authenticates ephemeral tokens, validates envelope types,
+preserves forecast policy, and charges before effects. Remote tokens are created
+inside a private directory and kept out of command arguments. Failed remote
+response writes retry delivery from retained receipts instead of executing tools
+again. Python output suppression is context-scoped and never closes borrowed
+streams. The existing execution integration set passed 109 tests; the new socket,
+remote-shell and output boundary set passed 14 tests before adding the nonfinite
+JSON regression. Persistent process lifetime remains outstanding.
+
+The complete focused RPC/execution/context set passed 128 tests, including the
+finite-JSON check and real remote file-RPC dispatch. New RPC and output owners
+pass strict lint, formatting and typing.

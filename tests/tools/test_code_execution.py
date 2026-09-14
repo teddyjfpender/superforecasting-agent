@@ -157,6 +157,8 @@ class TestExecuteCodeRemoteTempDir(unittest.TestCase):
                 self.commands.append((command, cwd, timeout))
                 if "command -v python3" in command:
                     return {"output": "OK\n"}
+                if "secrets.token_urlsafe" in command:
+                    return {"output": "x" * 43, "returncode": 0}
                 if "python3 script.py" in command:
                     return {"output": "hello\n", "returncode": 0}
                 return {"output": ""}
