@@ -20,6 +20,8 @@ from pathlib import Path
 from typing import Iterable
 
 from forecasting.models import ValidationError
+from superforecasting_agent.storage.environment import clear_environment_cache
+from superforecasting_agent.storage.files import atomic_text_write, yaml_update_lock
 
 
 @dataclass(frozen=True)
@@ -198,11 +200,12 @@ def _write_env_file(path: Path, lines: Iterable[str]) -> None:
         text += "\n"
     # Restrict to user-only when we create or update so secrets don't sit
     # world-readable. Best-effort: chmod can fail on some filesystems.
-    path.write_text(text, encoding="utf-8")
     try:
         os.chmod(path, 0o600)
     except OSError:
         pass
+    atomic_text_write(path, text)
+    clear_environment_cache()
 
 
 def _quote_value(value: str) -> str:
@@ -236,21 +239,22 @@ def set_api_key(provider_name: str, value: str, *, env_path: Path | None = None)
     if not value:
         raise ValidationError("api-key value cannot be empty (use `forecast api-key unset` to clear)")
     path = env_path or default_env_path()
-    lines = _read_env_file(path)
-    new_lines: list[str] = []
-    replaced = False
-    for line in lines:
-        if _key_of(line) == provider.env_var:
-            if not replaced:
-                new_lines.append(_format_line(provider.env_var, value))
-                replaced = True
-            # Drop duplicate later assignments to keep the file tidy.
-            continue
-        new_lines.append(line)
-    if not replaced:
-        new_lines.append(_format_line(provider.env_var, value))
-    _write_env_file(path, new_lines)
-    os.environ[provider.env_var] = value
+    with yaml_update_lock(path):
+        lines = _read_env_file(path)
+        new_lines: list[str] = []
+        replaced = False
+        for line in lines:
+            if _key_of(line) == provider.env_var:
+                if not replaced:
+                    new_lines.append(_format_line(provider.env_var, value))
+                    replaced = True
+                # Drop duplicate later assignments to keep the file tidy.
+                continue
+            new_lines.append(line)
+        if not replaced:
+            new_lines.append(_format_line(provider.env_var, value))
+        _write_env_file(path, new_lines)
+        os.environ[provider.env_var] = value
     return provider
 
 
@@ -259,11 +263,12 @@ def unset_api_key(provider_name: str, *, env_path: Path | None = None) -> ApiKey
 
     provider = lookup_provider(provider_name)
     path = env_path or default_env_path()
-    lines = _read_env_file(path)
-    kept = [line for line in lines if _key_of(line) != provider.env_var]
-    if len(kept) != len(lines):
-        _write_env_file(path, kept)
-    os.environ.pop(provider.env_var, None)
+    with yaml_update_lock(path):
+        lines = _read_env_file(path)
+        kept = [line for line in lines if _key_of(line) != provider.env_var]
+        if len(kept) != len(lines):
+            _write_env_file(path, kept)
+        os.environ.pop(provider.env_var, None)
     return provider
 
 

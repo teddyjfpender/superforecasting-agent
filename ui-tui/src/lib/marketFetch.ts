@@ -1,19 +1,10 @@
 import type { MarketSeries } from '../content/marketProviders.js'
 import type { RpcRequest } from '../protocol/generated.js'
-import type { MarketSeriesRef } from '../protocol/generated.js'
+import type { DataEvents, MarketProviderStatus, MarketSeriesRef } from '../protocol/generated.js'
 
-// Every market provider is parsed SERVER-SIDE (Arc C — DONE at C3): their series
-// route through the gateway's `market.quotes` RPC (one shared key store + the
-// estimator-honesty tests that could finally SEE the quote math) instead of a
-// client parser. Yahoo — the highest-volume provider — was the last to move; with
-// it there is ZERO fetch/parse logic left in the TUI. This file is the thin
-// transport wrapper the plan promised: group the series, make ONE RPC call, hand
-// the quotes back. No `fetch`, no per-provider parser, no pooling remains.
-//
-// DEFAULT_SERVER_SIDE is the plan's per-provider `marketdata.server_side` flag:
-// an operator can revert a provider by dropping it from `opts.serverSide`, and
-// that provider's series are simply excluded from the batch (there is no client
-// path to fall back to — the fallback is "don't fetch it").
+// The connected backend owns all fetching, credentials and parsing. This
+// adapter limits provider RPC concurrency and paints each completed group.
+// Retained for compatibility tests; unspecified serverSide allows the catalog.
 export const DEFAULT_SERVER_SIDE = ['yahoo', 'frankfurter', 'bea', 'coingecko', 'fred', 'bls', 'stooq'] as const
 
 // A quote carries a latest value plus the change vs the prior close/observation
@@ -22,6 +13,23 @@ export const DEFAULT_SERVER_SIDE = ['yahoo', 'frankfurter', 'bea', 'coingecko', 
 // LAW holds: a missing measurement is `null`, never a fabricated 0.
 export interface MarketQuote {
   asOf: number // epoch ms, 0 if unknown
+  retrieved_at?: string | null
+  refresh_seconds?: number
+  kind?: string
+  published_at?: string | null
+  issue_time?: string | null
+  valid_from?: string | null
+  valid_until?: string | null
+  revision_policy?: string
+  source_url?: string | null
+  source_family?: string | null
+  dated_history?: {
+    period_start: string
+    period_end: string
+    value: number | null
+    published_at: string | null
+    status: string | null
+  }[]
   category: string
   change: null | number
   changePct: null | number
@@ -59,7 +67,10 @@ export interface FetchOpts {
   // pm section degrades without a gateway.
   gw?: QuotesTransport
   onBatch: (quotes: MarketQuote[]) => void
-  // Providers to route through market.quotes; defaults to DEFAULT_SERVER_SIDE.
+  onEvents?: (data: DataEvents) => void
+  onStatus?: (status: MarketProviderStatus[]) => void
+  signal?: AbortSignal
+  // Optional explicit provider allowlist; absent means all selected providers.
   serverSide?: readonly string[]
 }
 
@@ -67,6 +78,7 @@ export interface FetchOpts {
 // BEA `line` override when present).
 const toSeriesRef = (s: MarketSeries): MarketSeriesRef => ({
   category: s.category,
+  ...(s.catalog_id ? { catalog_id: s.catalog_id } : {}),
   ...((s as { line?: string }).line ? { line: (s as { line?: string }).line } : {}),
   name: s.name,
   provider: s.provider,
@@ -74,31 +86,85 @@ const toSeriesRef = (s: MarketSeries): MarketSeriesRef => ({
   ...(s.unit ? { unit: s.unit } : {})
 })
 
-// Fetch every server-side series in ONE `market.quotes` call and hand the quotes
-// back via onBatch. A provider dropped from `serverSide` is excluded from the
-// batch; with no gateway (or no server-side series) nothing is fetched. One
-// provider failing server-side never blanks the tape — its series just come back
-// with honest nulls (or absent), never a fabricated 0.
+// Cancellation discards late responses and stops scheduling additional groups.
+// Already-running backend refreshes remain backend-owned and may warm its cache.
 export const fetchQuotes = async (seriesList: MarketSeries[], opts: FetchOpts): Promise<void> => {
-  const serverSide = new Set(opts.serverSide ?? DEFAULT_SERVER_SIDE)
-  const serverSeries = seriesList.filter(s => serverSide.has(s.provider))
+  const gateway = opts.gw
 
-  if (!serverSeries.length || !opts.gw) {
+  if (!gateway) {
     return
   }
 
-  try {
-    const res = await opts.gw.request('market.quotes', {
-      series: serverSeries.map(toSeriesRef)
-    })
+  const allowed = opts.serverSide ? new Set(opts.serverSide) : null
+  const groups = new Map<string, MarketSeries[]>()
 
-    if (res?.quotes?.length) {
-      // A server Quote is a structural drop-in for MarketQuote (same
-      // field-for-field shape, honest nulls preserved).
-      opts.onBatch(res.quotes as MarketQuote[])
+  for (const series of seriesList) {
+    if (allowed && !allowed.has(series.provider)) {
+      continue
     }
-  } catch {
-    // One provider (or the whole RPC) down never blanks the tape — the cache
-    // keeps the prior values, exactly as the client's getJson→null did.
+
+    const group = groups.get(series.provider) ?? []
+    group.push(series)
+    groups.set(series.provider, group)
   }
+
+  // Each provider paints as it finishes. Bound concurrent requests; providers
+  // own batching and quotas, and one slow source cannot hold the whole screen.
+  const queue = [...groups.entries()]
+
+  const worker = async () => {
+    while (queue.length && !opts.signal?.aborted) {
+      const next = queue.shift()
+
+      if (!next) {
+        return
+      }
+
+      const [provider, series] = next
+
+      try {
+        if (series[0]?.kind === 'event') {
+          for (const ref of series) {
+            if (opts.signal?.aborted || !ref.catalog_id) {
+              break
+            }
+
+            const result = await gateway.request('market.events.list', { series_id: ref.catalog_id })
+
+            if (opts.signal?.aborted) {
+              return
+            }
+
+            if (result.data) {
+              opts.onEvents?.(result.data)
+            }
+
+            opts.onStatus?.([result.status])
+          }
+
+          continue
+        }
+
+        const result = await gateway.request('market.quotes', { series: series.map(toSeriesRef) })
+
+        if (opts.signal?.aborted) {
+          return
+        }
+
+        if (result.quotes.length) {
+          opts.onBatch(result.quotes)
+        }
+
+        opts.onStatus?.(result.statuses ?? [])
+      } catch {
+        if (!opts.signal?.aborted) {
+          opts.onStatus?.([
+            { provider, status: 'unavailable', message: 'Unable to retrieve data. Try refreshing.', retry_after: null }
+          ])
+        }
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(4, queue.length) }, worker))
 }

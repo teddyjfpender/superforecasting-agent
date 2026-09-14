@@ -4,6 +4,8 @@ injected for determinism."""
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from forecasting.marketdata.model import Quote, SeriesRef
@@ -124,10 +126,10 @@ def test_unknown_provider_yields_no_quotes():
 # ── C2 service integration: the four new providers wired end-to-end ───────────
 
 
-def test_default_providers_include_all_seven():
+def test_default_providers_cover_legacy_and_catalog_measurements():
     from forecasting.marketdata.service import _default_providers
 
-    assert set(_default_providers()) == {
+    assert set(_default_providers()) >= {
         "frankfurter",
         "bea",
         "coingecko",
@@ -136,6 +138,9 @@ def test_default_providers_include_all_seven():
         "stooq",
         "yahoo",
     }
+
+    from forecasting.marketdata.catalog import load_catalog
+    assert {entry.provider for entry in load_catalog().series if entry.kind != "event"} <= set(_default_providers())
 
 
 def test_service_routes_the_four_new_providers_with_real_parsers_no_network(monkeypatch):
@@ -161,7 +166,7 @@ def test_service_routes_the_four_new_providers_with_real_parsers_no_network(monk
         get_text=lambda url: "DATE,X\n2026-05-01,5.10\n2026-06-01,4.90\n",
     )
     bls = BlsProvider(
-        get_json=lambda url, **kw: {"Results": {"series": [{"data": [{"period": "M05", "value": "320.1", "year": "2026"}]}]}}
+        get_json=lambda url, **kw: {"Results": {"series": [{"seriesID": "CUUR0000SA0", "data": [{"period": "M05", "value": "320.1", "year": "2026"}]}]}}
     )
     stooq = StooqProvider(get_text=lambda url: "Date,Open,High,Low,Close,Volume\n2026-07-01,1,1,1,10.4,5\n2026-07-02,1,1,1,10.8,5\n")
 
@@ -247,3 +252,81 @@ def test_service_search_empty_query_is_empty_and_never_fetches():
     svc = MarketDataService(providers={"yahoo": YahooProvider(get_json=_get)}, clock=lambda: 0.0)
     assert svc.search("   ") == []
     assert called["hit"] is False
+
+
+def test_independent_series_failure_preserves_successes_and_cache():
+    from forecasting.marketdata.provider import IndependentSeries, ProviderFailure
+
+    class Partial(IndependentSeries, _StubProvider):
+        def fetch(self, series, *, api_key=None):
+            if series[0].symbol == 'broken':
+                raise ProviderFailure('authentication', 'Provider rejected access')
+            return super().fetch(series,api_key=api_key)
+
+    provider=Partial('example')
+    svc=MarketDataService(providers={'example':provider},key_resolver=lambda _:None)
+    refs=[_ref('example','working'),_ref('example','broken')]
+    values,statuses=svc.quote_result(refs)
+    assert [q.symbol for q in values]==['working']
+    assert statuses[0]['status']=='partial'
+    assert '1 series available' in statuses[0]['message']
+    assert svc.quotes([refs[0]])==values
+    assert provider.calls==1
+
+
+def test_search_failure_is_not_cached_as_no_matches():
+    from forecasting.marketdata.provider import ProviderFailure
+
+    class Search(_StubProvider):
+        def search(self,query):
+            raise RuntimeError('secret URL must not escape')
+
+    svc=MarketDataService(providers={'yahoo':Search('yahoo')})
+    with pytest.raises(ProviderFailure,match='Live ticker search is unavailable'):
+        svc.search('example')
+
+
+def test_fresh_retrieval_does_not_hide_an_outdated_observation():
+    from datetime import datetime, timezone
+
+    from forecasting.marketdata.catalog import load_catalog
+    from forecasting.marketdata.model import DatedValue
+
+    entry = next(s for s in load_catalog().series if s.provider == "eurostat")
+    boundary = datetime(2026, 8, 31, tzinfo=timezone.utc).timestamp()
+    now = [boundary + 30 * 86400]
+
+    class Source(_StubProvider):
+        def fetch(self, series, *, api_key=None):
+            values = super().fetch(series, api_key=api_key)
+            values[0] = replace(values[0], dated_history=[DatedValue(
+                period_start="2026-08-01", period_end="2026-08-31", value=2.1
+            )])
+            return values
+
+    source = Source("eurostat")
+    service = MarketDataService(
+        providers={"eurostat": source}, clock=lambda: 0, wall_clock=lambda: now[0]
+    )
+    ref = SeriesRef(provider=entry.provider, symbol=entry.symbol, catalog_id=entry.id)
+    quotes, statuses = service.quote_result([ref])
+    assert statuses[0]["status"] == "ready"
+    now[0] = boundary + (entry.expected_lag_seconds or 0) + 1
+    cached, statuses = service.quote_result([ref])
+    assert source.calls == 1  # freshness is evaluated even on a cache hit
+    assert cached == quotes  # retain useful history and original retrieval time
+    assert statuses[0]["status"] == "stale"
+    assert "Source retrieved" in statuses[0]["message"]
+
+
+def test_provider_cannot_return_an_unrequested_identity():
+    class WrongSource(_StubProvider):
+        def fetch(self, series, *, api_key=None):
+            values = super().fetch(series, api_key=api_key)
+            values[0] = replace(values[0], symbol="WRONG")
+            return values
+
+    service = MarketDataService(providers={"yahoo": WrongSource("yahoo")})
+    quotes, statuses = service.quote_result([_ref("yahoo", "AAPL")])
+    assert quotes == []
+    assert statuses[0]["status"] == "invalid_response"

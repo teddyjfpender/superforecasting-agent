@@ -12,6 +12,9 @@ import type { MarketQuote } from './marketFetch.js'
 // the table paints instantly on reopen, then refreshes.
 
 export interface MarketConfig {
+  catalogSeries?: MarketSeries[]
+  revision?: string
+  setupState?: 'unconfigured' | 'empty' | 'custom' | 'preset'
   categories: string[]
   // User-added line items that live in their own category (the default when you
   // add a searched ticker), distinct from the explicit watchlist.
@@ -75,9 +78,7 @@ export const loadMarketConfig = (file = marketConfigFile()): MarketConfig => {
       providers: Array.isArray(data.providers) ? data.providers.filter(p => typeof p === 'string') : [],
       // Preserve an explicit override; leave undefined so marketFetch applies
       // its default (a hand-edited file can pin the list per-provider).
-      ...(Array.isArray(data.serverSide)
-        ? { serverSide: data.serverSide.filter(p => typeof p === 'string') }
-        : {}),
+      ...(Array.isArray(data.serverSide) ? { serverSide: data.serverSide.filter(p => typeof p === 'string') } : {}),
       watchlist: seriesList(data.watchlist)
     }
   } catch {

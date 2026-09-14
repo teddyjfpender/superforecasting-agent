@@ -8,13 +8,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { openExternalUrl } from './openExternalUrl.js'
-import {
-  fetchPMListResult,
-  type PMHistoryRange,
-  type PMListItem,
-  type PMOutcomeDTO,
-  type PMVenue
-} from './pmData.js'
+import { fetchPMListResult, type PMHistoryRange, type PMListItem, type PMOutcomeDTO, type PMVenue } from './pmData.js'
 import {
   DEFAULT_PM_FILTER,
   filterPMItems,
@@ -130,7 +124,7 @@ export function usePmSection(
   // DISCOVERED events persist across sessions (deep '/' search compounds the
   // tape's coverage): the fold / persist / chunked-hydrate lifecycle lives in
   // its own hook, so this section stays layout + input.
-  const { discovered, foldDiscovered, removeDiscovered: dropDiscovered } = usePmDiscovered(gw, tabActive)
+  const { discovered, foldDiscovered, removeDiscovered: dropDiscovered } = usePmDiscovered(gw, tabActive, setFlash)
 
   // DEEP venue search: the browse list is one liquidity-ranked page, so the
   // local '/' filter can only ever match what happens to be loaded — the
@@ -201,19 +195,19 @@ export function usePmSection(
   }, [gw, tabActive, query, venue])
 
   const pool = useMemo(() => {
-    const seen = new Set(items.map(i => i.event.event_id))
+    const seen = new Set(items.map(pmRowId))
     const merged = [...items]
 
     for (const item of discovered.values()) {
-      if (!seen.has(item.event.event_id)) {
-        seen.add(item.event.event_id)
+      if (!seen.has(pmRowId(item))) {
+        seen.add(pmRowId(item))
         merged.push(item)
       }
     }
 
     for (const item of searchItems ?? []) {
-      if (!seen.has(item.event.event_id)) {
-        seen.add(item.event.event_id)
+      if (!seen.has(pmRowId(item))) {
+        seen.add(pmRowId(item))
         merged.push(item)
       }
     }
@@ -226,11 +220,11 @@ export function usePmSection(
   // marked (it isn't distinct from the browse feed). These get the subtle "+"
   // marker in the table and are the only rows `x` can remove.
   const discoveredKeys = useMemo(() => {
-    const browse = new Set(items.map(i => i.event.event_id))
+    const browse = new Set(items.map(pmRowId))
     const keys = new Set<string>()
 
     for (const item of discovered.values()) {
-      if (!browse.has(item.event.event_id)) {
+      if (!browse.has(pmRowId(item))) {
         keys.add(pmRowId(item))
       }
     }
@@ -267,7 +261,7 @@ export function usePmSection(
       return
     }
 
-    dropDiscovered(selectedRow.item.event.event_id)
+    dropDiscovered(pmRowId(selectedRow.item))
     setFlash('removed from saved markets')
   }
 

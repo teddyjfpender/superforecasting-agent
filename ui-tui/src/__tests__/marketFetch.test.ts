@@ -37,13 +37,32 @@ describe('fetchQuotes routing (Arc C3: every provider goes through market.quotes
     ...over
   })
 
-  it('batches EVERY provider (incl. yahoo) into ONE market.quotes call, never fetch', async () => {
+  it('loads providers progressively through backend RPCs, never client fetch', async () => {
     const fetchFn = vi.fn()
     vi.stubGlobal('fetch', fetchFn)
 
     const request = vi.fn().mockResolvedValue({
       quotes: [
-        { asOf: 0, category: 'Indices', change: null, changePct: null, currency: null, dayHigh: null, dayLow: null, exchange: null, history: [], name: 'S&P 500', prevClose: null, provider: 'yahoo', symbol: '^GSPC', unit: '', value: 7420.1, volume: null, week52High: null, week52Low: null }
+        {
+          asOf: 0,
+          category: 'Indices',
+          change: null,
+          changePct: null,
+          currency: null,
+          dayHigh: null,
+          dayLow: null,
+          exchange: null,
+          history: [],
+          name: 'S&P 500',
+          prevClose: null,
+          provider: 'yahoo',
+          symbol: '^GSPC',
+          unit: '',
+          value: 7420.1,
+          volume: null,
+          week52High: null,
+          week52Low: null
+        }
       ]
     })
 
@@ -62,13 +81,17 @@ describe('fetchQuotes routing (Arc C3: every provider goes through market.quotes
       opts({ gw: { request }, onBatch: q => batches.push(...q) })
     )
 
-    // ONE batched RPC carries all seven providers; NONE touch the network.
-    expect(request).toHaveBeenCalledTimes(1)
+    // Each provider request can finish independently; no client networking.
+    expect(request).toHaveBeenCalledTimes(7)
     expect(request.mock.calls[0][0]).toBe('market.quotes')
-    const sent = (request.mock.calls[0][1] as { series: { line?: string; provider: string }[] }).series
+
+    const sent = request.mock.calls.flatMap(
+      call => (call[1] as { series: { line?: string; provider: string }[] }).series
+    )
+
     expect(sent.map(r => r.provider)).toEqual(['yahoo', 'frankfurter', 'coingecko', 'fred', 'bls', 'stooq', 'bea'])
     expect(sent.find(r => r.provider === 'bea')?.line).toBe('31') // BEA line override carried
-    expect(batches).toHaveLength(1)
+    expect(batches).toHaveLength(7)
     expect((batches[0] as { value: number }).value).toBeCloseTo(7420.1)
     expect(fetchFn).not.toHaveBeenCalled()
   })
@@ -95,7 +118,10 @@ describe('fetchQuotes routing (Arc C3: every provider goes through market.quotes
     vi.stubGlobal('fetch', fetchFn)
     const batches: unknown[] = []
 
-    await fetchQuotes([s({ category: 'Indices', provider: 'yahoo', symbol: '^GSPC' })], opts({ onBatch: q => batches.push(...q) }))
+    await fetchQuotes(
+      [s({ category: 'Indices', provider: 'yahoo', symbol: '^GSPC' })],
+      opts({ onBatch: q => batches.push(...q) })
+    )
 
     expect(batches).toHaveLength(0)
     expect(fetchFn).not.toHaveBeenCalled()
@@ -106,8 +132,38 @@ describe('fetchQuotes routing (Arc C3: every provider goes through market.quotes
     const batches: unknown[] = []
 
     await expect(
-      fetchQuotes([s({ category: 'FX', provider: 'frankfurter', symbol: 'EUR' })], opts({ gw: { request }, onBatch: q => batches.push(...q) }))
+      fetchQuotes(
+        [s({ category: 'FX', provider: 'frankfurter', symbol: 'EUR' })],
+        opts({ gw: { request }, onBatch: q => batches.push(...q) })
+      )
     ).resolves.toBeUndefined()
     expect(batches).toHaveLength(0)
   })
+})
+
+it('stops scheduling and ignores late responses when the view is cancelled', async () => {
+  const controller = new AbortController()
+  const pending: Array<() => void> = []
+
+  const request = vi.fn(
+    () => new Promise(resolve => pending.push(() => resolve({ quotes: [{ value: 1 }], statuses: [] })))
+  )
+
+  const batch = vi.fn()
+
+  const operation = fetchQuotes(
+    Array.from({ length: 8 }, (_, i) => s({ provider: `provider-${i}` })),
+    {
+      gw: { request: request as never },
+      onBatch: batch,
+      signal: controller.signal
+    }
+  )
+
+  expect(request).toHaveBeenCalledTimes(4)
+  controller.abort()
+  pending.forEach(resolve => resolve())
+  await operation
+  expect(request).toHaveBeenCalledTimes(4)
+  expect(batch).not.toHaveBeenCalled()
 })

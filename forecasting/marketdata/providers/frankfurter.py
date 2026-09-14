@@ -16,7 +16,14 @@ from __future__ import annotations
 import re
 from datetime import datetime, timedelta, timezone
 
-from forecasting.marketdata.model import Quote, SeriesRef, change_columns, epoch_ms, num
+from forecasting.marketdata.model import (
+    DatedValue,
+    Quote,
+    SeriesRef,
+    change_columns,
+    epoch_ms,
+    num,
+)
 from forecasting.marketdata.provider import JsonGetter, default_get_json
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -53,15 +60,16 @@ def parse_frankfurter(payload: object, series_list: list[SeriesRef]) -> list[Quo
         ]
 
     # ── date-range payload: value + day change + the 1MO sparkline ────────────
-    as_of = epoch_ms(date_keys[-1])
     quotes: list[Quote] = []
     for s in series_list:
         closes: list[float] = []
+        points: list[DatedValue] = []
         for d in date_keys:
             row = rates.get(d)
             v = num(row.get(s.symbol)) if isinstance(row, dict) else None
             if v is not None:
                 closes.append(v)
+                points.append(DatedValue(period_start=d, period_end=d, value=v))
         value = closes[-1] if closes else None
         prev_close = closes[-2] if len(closes) > 1 else None
         change, change_pct = change_columns(value, prev_close)
@@ -75,9 +83,10 @@ def parse_frankfurter(payload: object, series_list: list[SeriesRef]) -> list[Quo
                 change=change,
                 changePct=change_pct,
                 prevClose=prev_close,
-                asOf=as_of,
+                asOf=epoch_ms(points[-1].period_start) if points else 0,
                 unit=s.unit,
                 history=closes,
+                dated_history=points,
             )
         )
     return quotes
@@ -91,11 +100,15 @@ class FrankfurterProvider:
         self._get_json = get_json or default_get_json
 
     def _url(self, symbols: list[str]) -> str:
-        start = (datetime.now(timezone.utc) - timedelta(days=RANGE_DAYS)).strftime("%Y-%m-%d")
+        start = (datetime.now(timezone.utc) - timedelta(days=RANGE_DAYS)).strftime(
+            "%Y-%m-%d"
+        )
         joined = ",".join(symbols)
         return f"https://api.frankfurter.app/{start}..?base=USD&symbols={joined}"
 
-    def fetch(self, series: list[SeriesRef], *, api_key: str | None = None) -> list[Quote]:
+    def fetch(
+        self, series: list[SeriesRef], *, api_key: str | None = None
+    ) -> list[Quote]:
         if not series:
             return []
         payload = self._get_json(self._url([s.symbol for s in series]))

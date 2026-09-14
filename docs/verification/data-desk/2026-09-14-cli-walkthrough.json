@@ -1,0 +1,9 @@
+{
+  "scope": "Fresh isolated profile, real CLI subprocesses; no live user data or credentials",
+  "initial_state": "unconfigured",
+  "empty_survived_restart": true,
+  "previewed_additions": 114,
+  "applied_series": 114,
+  "repeat_apply_identical": true,
+  "weather_locations": []
+}

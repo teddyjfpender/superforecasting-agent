@@ -79,3 +79,7 @@ Application operations with an existing strict shared request validator can decl
 They must validate before effects; their successful input and output still undergo
 contract checks. Field-specific exceptions use `handler_validated_parameters`.
 The forecast operation parity tests cover both malformed input and absence of writes.
+
+## Data desk
+
+Pure data-desk schemas live in `data_desk.py`; RPC envelopes live in `rpc/markets.py`. They import no application, credential, filesystem or provider owners. TypeScript generation includes nested catalog and selection types.

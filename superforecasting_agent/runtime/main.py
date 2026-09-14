@@ -8659,7 +8659,7 @@ _BUILTIN_SUBCOMMANDS = frozenset(
     {
         "acp", "auth", "backup", "bundles", "checkpoints", "claw", "completion",
         "computer-use",
-        "config", "cron", "curator", "dashboard", "debug", "doctor",
+        "config", "cron", "curator", "dashboard", "data", "debug", "doctor",
         "dump", "fallback", "forecast", "gateway", "hooks", "import", "insights",
         "kanban", "login", "logout", "logs", "lsp", "mcp", "memory",
         "model", "pairing", "plugins", "postinstall", "profile", "proxy",
@@ -8794,6 +8794,9 @@ def _main():
 
     register_forecast_cli(subparsers)
     register_collaboration_cli(subparsers)
+    from superforecasting_agent.runtime.data_desk import register_cli as register_data_cli
+
+    register_data_cli(subparsers)
 
     # =========================================================================
     # model command

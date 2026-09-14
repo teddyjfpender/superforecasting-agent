@@ -207,6 +207,12 @@ def _atomic_text_writer(path: Union[str, Path]) -> Iterator[TextIO]:
         raise
 
 
+def atomic_text_write(path: Union[str, Path], text: str) -> None:
+    """Commit UTF-8 text through the shared descriptor and replacement owner."""
+    with _atomic_text_writer(path) as handle:
+        handle.write(text)
+
+
 def atomic_json_write(
     path: Union[str, Path],
     data: Any,

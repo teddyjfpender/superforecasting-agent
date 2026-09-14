@@ -27,8 +27,16 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
-from forecasting.marketdata.model import Quote, SeriesRef, change_columns, num
+from forecasting.marketdata.model import (
+    DatedValue,
+    Quote,
+    SeriesRef,
+    change_columns,
+    num,
+)
+from forecasting.marketdata.provider import IndependentSeries
 from forecasting.marketdata.provider import JsonGetter, default_get_json
 
 POOL = 6  # max concurrent per-symbol chart fetches (client's pool size)
@@ -54,7 +62,11 @@ def parse_yahoo(payload: object, series: SeriesRef) -> Quote:
 
     chart = payload.get("chart") if isinstance(payload, dict) else None
     results = chart.get("result") if isinstance(chart, dict) else None
-    result = results[0] if isinstance(results, list) and results and isinstance(results[0], dict) else {}
+    result = (
+        results[0]
+        if isinstance(results, list) and results and isinstance(results[0], dict)
+        else {}
+    )
     meta = result.get("meta") if isinstance(result.get("meta"), dict) else {}
 
     value = num(meta.get("regularMarketPrice"))
@@ -64,12 +76,34 @@ def parse_yahoo(payload: object, series: SeriesRef) -> Quote:
     change, change_pct = change_columns(value, prev)
 
     # Daily closes (drop nulls); keep the last 40 as the sparkline, only when >1.
-    indicators = result.get("indicators") if isinstance(result.get("indicators"), dict) else {}
-    quote_arr = indicators.get("quote") if isinstance(indicators.get("quote"), list) else []
+    indicators = (
+        result.get("indicators") if isinstance(result.get("indicators"), dict) else {}
+    )
+    quote_arr = (
+        indicators.get("quote") if isinstance(indicators.get("quote"), list) else []
+    )
     first_quote = quote_arr[0] if quote_arr and isinstance(quote_arr[0], dict) else {}
-    raw_closes = first_quote.get("close") if isinstance(first_quote.get("close"), list) else []
+    raw_closes = (
+        first_quote.get("close") if isinstance(first_quote.get("close"), list) else []
+    )
     closes = [c for c in (num(x) for x in raw_closes) if c is not None]
     history = closes[-40:] if len(closes) > 1 else []
+
+    # Keep each timestamp paired with its own close before dropping nulls.
+    timestamps = result.get("timestamp")
+    points = []
+    if isinstance(timestamps, list) and len(timestamps) == len(raw_closes):
+        for stamp, close in zip(timestamps, raw_closes):
+            timestamp, measurement = num(stamp), num(close)
+            if timestamp is None or measurement is None:
+                continue
+            try:
+                instant = datetime.fromtimestamp(timestamp, timezone.utc).isoformat()
+            except (ValueError, OverflowError, OSError):
+                continue
+            points.append(
+                DatedValue(period_start=instant, period_end=instant, value=measurement)
+            )
 
     market_time = num(meta.get("regularMarketTime"))
     as_of = int((market_time if market_time is not None else 0) * 1000)
@@ -86,8 +120,11 @@ def parse_yahoo(payload: object, series: SeriesRef) -> Quote:
         asOf=as_of,
         unit=series.unit,
         history=history,
+        dated_history=points[-40:],
         currency=_str(meta.get("currency")) or None,
-        exchange=_str(meta.get("fullExchangeName")) or _str(meta.get("exchangeName")) or None,
+        exchange=_str(meta.get("fullExchangeName"))
+        or _str(meta.get("exchangeName"))
+        or None,
         dayHigh=num(meta.get("regularMarketDayHigh")),
         dayLow=num(meta.get("regularMarketDayLow")),
         volume=num(meta.get("regularMarketVolume")),
@@ -156,7 +193,7 @@ def parse_yahoo_search(payload: object) -> list[SearchResult]:
     return out
 
 
-class YahooProvider:
+class YahooProvider(IndependentSeries):
     name = "yahoo"
     needs_key = False
 
@@ -179,7 +216,9 @@ class YahooProvider:
             f"?q={_urlquote(query, safe='')}&quotesCount=10&newsCount=0"
         )
 
-    def fetch(self, series: list[SeriesRef], *, api_key: str | None = None) -> list[Quote]:
+    def fetch(
+        self, series: list[SeriesRef], *, api_key: str | None = None
+    ) -> list[Quote]:
         """Resolve every series via a bounded pool; skip symbols whose fetch fails.
 
         A ``None`` payload (network / non-2xx) drops the symbol from the batch —

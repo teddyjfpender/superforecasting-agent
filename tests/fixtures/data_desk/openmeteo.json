@@ -1,0 +1,76 @@
+{
+  "captured_at": "2026-09-14T18:00:04.797486+00:00",
+  "series_id": "openmeteo:london/temperature_2m_max",
+  "catalog_revision": "5638c99283e0b86c5e70a30d5637b3d048c28074b92441712fc2cb32e34f9ffb",
+  "requests": [
+    {
+      "url": "https://api.open-meteo.com/v1/forecast?latitude=51.5074&longitude=-0.1278&daily=temperature_2m_max%2Ctemperature_2m_min%2Cprecipitation_sum%2Cwind_speed_10m_max&timezone=UTC&forecast_days=7",
+      "format": "json",
+      "body": {
+        "latitude": 51.51147,
+        "longitude": -0.13078308,
+        "generationtime_ms": 269.816517829895,
+        "utc_offset_seconds": 0,
+        "timezone": "GMT",
+        "timezone_abbreviation": "GMT",
+        "elevation": 16.0,
+        "daily_units": {
+          "time": "iso8601",
+          "temperature_2m_max": "°C",
+          "temperature_2m_min": "°C",
+          "precipitation_sum": "mm",
+          "wind_speed_10m_max": "km/h"
+        },
+        "daily": {
+          "time": [
+            "2026-09-14",
+            "2026-09-15",
+            "2026-09-16",
+            "2026-09-17",
+            "2026-09-18",
+            "2026-09-19",
+            "2026-09-20"
+          ],
+          "temperature_2m_max": [
+            24.4,
+            21.8,
+            18.7,
+            20.4,
+            19.3,
+            22.9,
+            22.5
+          ],
+          "temperature_2m_min": [
+            18.2,
+            15.8,
+            13.8,
+            13.8,
+            11.9,
+            15.5,
+            17.7
+          ],
+          "precipitation_sum": [
+            0.0,
+            0.3,
+            0.0,
+            0.9,
+            0.0,
+            0.3,
+            0.0
+          ],
+          "wind_speed_10m_max": [
+            15.8,
+            16.6,
+            15.8,
+            19.8,
+            18.4,
+            19.8,
+            22.0
+          ]
+        }
+      }
+    }
+  ],
+  "expected_value": 24.4,
+  "expected_points": 7
+}

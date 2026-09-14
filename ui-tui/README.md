@@ -391,3 +391,7 @@ tui_gateway/
   commands_rpc.py        native command dispatch
   command_routes.py      backend/terminal command ownership
 ```
+
+## Data desk
+
+The Markets view consumes its connected backend catalog. Add data offers Starter sets, Browse data and Sources; preview precedes apply. `src/lib/dataDesk.ts` projects catalog rows and sends scoped selection edits. Credentials use correlated gateway secret prompts and never local client file writes.

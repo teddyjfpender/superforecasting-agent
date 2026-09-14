@@ -1,22 +1,13 @@
-"""CoinGecko (crypto spot) provider — ported one-to-one from ``marketFetch.ts``.
+"""CoinGecko spot quotes, preserving source time and exact change arithmetic.
 
-The client parser's exact semantics carried over verbatim:
-* ONE batched call — ``/simple/price?ids=a,b,c&vs_currencies=usd&include_24hr_change=true``
-  resolves every coin in the group in a single request (``parseCoingecko`` mapped
-  over the same list).
-* ``value`` is the ``usd`` spot; ``changePct`` is the raw ``usd_24h_change``;
-  ``change`` is DERIVED — ``value * (pct / 100)`` — NOT ``value - prevClose``
-  (CoinGecko gives the percentage, not a prior close, so there is no ``prevClose``
-  and no ``history``).
-* ``asOf`` is the fetch instant (``Date.now()``): CoinGecko's simple/price has no
-  observation timestamp.
-* A missing / error payload yields ``value = None`` (THE LAW) — absence renders
-  "—", never a fabricated ``0``.
+The simple-price endpoint supplies percentage change, not an absolute delta.
+Recover the previous value as price / (1 + return), then subtract. Unknown source
+timestamps stay unknown; retrieval time is attached separately by the service.
 """
 
 from __future__ import annotations
 
-import time
+from urllib.parse import urlencode
 
 from forecasting.marketdata.model import Quote, SeriesRef, num
 from forecasting.marketdata.provider import JsonGetter, default_get_json
@@ -27,7 +18,6 @@ def parse_coingecko(
 ) -> list[Quote]:
     """Parse a CoinGecko ``simple/price`` response into one :class:`Quote` per series."""
 
-    now = now_ms if now_ms is not None else int(time.time() * 1000)
     data = payload if isinstance(payload, dict) else {}
 
     quotes: list[Quote] = []
@@ -36,7 +26,15 @@ def parse_coingecko(
         row = row if isinstance(row, dict) else {}
         value = num(row.get("usd"))
         pct = num(row.get("usd_24h_change"))
-        change = value * (pct / 100.0) if value is not None and pct is not None else None
+        previous = (
+            value / (1 + pct / 100.0)
+            if value is not None and pct is not None and pct > -100
+            else None
+        )
+        change = (
+            value - previous if value is not None and previous is not None else None
+        )
+        timestamp = num(row.get("last_updated_at"))
         quotes.append(
             Quote(
                 symbol=s.symbol,
@@ -47,7 +45,9 @@ def parse_coingecko(
                 change=change,
                 changePct=pct,
                 prevClose=None,
-                asOf=now,
+                asOf=int(timestamp * 1000)
+                if timestamp is not None and timestamp > 0
+                else 0,
                 unit=s.unit,
                 history=[],
             )
@@ -63,15 +63,16 @@ class CoingeckoProvider:
         self._get_json = get_json or default_get_json
 
     def _url(self, ids: list[str]) -> str:
-        # ids are coin slugs ("bitcoin","ethereum") — joined un-encoded, exactly
-        # as the client did (``crypto.map(s => s.symbol).join(',')``).
-        joined = ",".join(ids)
-        return (
-            "https://api.coingecko.com/api/v3/simple/price"
-            f"?ids={joined}&vs_currencies=usd&include_24hr_change=true"
-        )
+        return "https://api.coingecko.com/api/v3/simple/price?" + urlencode({
+            "ids": ",".join(ids),
+            "vs_currencies": "usd",
+            "include_24hr_change": "true",
+            "include_last_updated_at": "true",
+        })
 
-    def fetch(self, series: list[SeriesRef], *, api_key: str | None = None) -> list[Quote]:
+    def fetch(
+        self, series: list[SeriesRef], *, api_key: str | None = None
+    ) -> list[Quote]:
         if not series:
             return []
         payload = self._get_json(self._url([s.symbol for s in series]))

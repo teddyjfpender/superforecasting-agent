@@ -92,3 +92,7 @@ claims and terminal receipts. Version 2 claims retain local process identity;
 confirmed exited owners become interrupted without automatic effect retries.
 Legacy or foreign owners are retained conservatively. `process_identity.py`
 centralizes the host identity also used by background research ownership.
+
+## Data desk
+
+`market_selection.py` owns locked, atomic `markets.json` updates and revision comparisons. `files.atomic_text_write` reuses the atomic replacement lifecycle for credential text; callers own locking and file permissions.

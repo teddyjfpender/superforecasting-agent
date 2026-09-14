@@ -19,7 +19,15 @@ from __future__ import annotations
 import re
 from urllib.parse import quote as _urlquote
 
-from forecasting.marketdata.model import Quote, SeriesRef, change_columns, epoch_ms, num
+from forecasting.marketdata.model import (
+    DatedValue,
+    Quote,
+    SeriesRef,
+    change_columns,
+    epoch_ms,
+    num,
+)
+from forecasting.marketdata.provider import IndependentSeries
 from forecasting.marketdata.provider import TextGetter, default_get_text
 
 _LINE_RE = re.compile(r"\r?\n")
@@ -92,11 +100,16 @@ def parse_stooq(csv_text: str, series: SeriesRef) -> Quote:
         prevClose=prev_close,
         asOf=as_of,
         unit=series.unit,
-        history=closes,
+        history=closes[-36:],
+        dated_history=[
+            DatedValue(period_start=day, period_end=day, value=value)
+            for day, value in zip(dates[-36:], closes[-36:])
+            if epoch_ms(day)
+        ],
     )
 
 
-class StooqProvider:
+class StooqProvider(IndependentSeries):
     name = "stooq"
     needs_key = False
 
@@ -107,7 +120,9 @@ class StooqProvider:
         # Stooq symbols are lowercased in the query, exactly as the source adapter.
         return f"https://stooq.com/q/d/l/?s={_urlquote(symbol.lower(), safe='')}&i=d"
 
-    def fetch(self, series: list[SeriesRef], *, api_key: str | None = None) -> list[Quote]:
+    def fetch(
+        self, series: list[SeriesRef], *, api_key: str | None = None
+    ) -> list[Quote]:
         quotes: list[Quote] = []
         for s in series:
             csv_text = self._get_text(self._url(s.symbol))

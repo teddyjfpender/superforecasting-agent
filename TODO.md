@@ -17,6 +17,16 @@ the required device, service credentials or original diagnostic artifacts exist.
   artifacts or a credible reproducer become available. Existing native evidence
   did not reproduce it; original binary and CA hashes are absent.
 
+## Data-source expansion — non-blocking
+
+- [ ] Qualify optional e-Stat and INEGI measurements with registered API credentials.
+- [ ] Establish reproducible SAMA query bindings and direct UAE/African numeric
+  feeds before admitting them to the starter. IMF access currently returns 403.
+- [ ] Extend source-specific release-lag policies and historical coverage where
+  the publisher supplies reliable metadata; CoinGecko starter rows remain spot-only.
+
+See [qualification evidence](docs/verification/data-desk/qualification.md).
+
 ## Maintenance rules
 
 Continue extending strict typing when concrete fixes touch inherited CLI or

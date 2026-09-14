@@ -49,3 +49,7 @@ Update this guide when entry points or ownership change. See the
 and [engineering backlog](../../TODO.md) for cross-package context.
 
 [↑ Parent directory](../README.md)
+
+## Data desk
+
+`data_desk.py` owns catalog selection preview/apply, scoped edits, saved prediction-event merges and credential connection. All clients use these operations; presets never overwrite existing personal selections.

@@ -1,0 +1,37 @@
+{
+  "catalog_revision": "8bf773c72ad62e60d1f1eed2f343ae3e788b43ce223561e992ed1aec01a02673",
+  "checked_at": "2026-09-14T17:51:28.891454+00:00",
+  "scope": "Recheck only the two failed source families after batching and binding fixes",
+  "results": [
+    {
+      "provider": "worldbank",
+      "status": [
+        {
+          "provider": "worldbank",
+          "status": "ready",
+          "message": null,
+          "retry_after": null
+        }
+      ],
+      "requested": 50,
+      "usable": 50,
+      "missing": []
+    },
+    {
+      "provider": "eurostat",
+      "status": [
+        {
+          "provider": "eurostat",
+          "status": "partial",
+          "message": "11 series available; Eurostat returned invalid dimension sizes",
+          "retry_after": null
+        }
+      ],
+      "requested": 12,
+      "usable": 11,
+      "missing": [
+        "eurostat:prc_hicp_manr:EA21"
+      ]
+    }
+  ]
+}

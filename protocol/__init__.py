@@ -304,6 +304,41 @@ RPC_SPECS: list[RpcSpec] = [
     RpcSpec("jobs.cancel", _rpc_jobs.JobsCancelRequest, _rpc_jobs.JobsCancelResponse),
     # ── market.* — the server-side data plane (Arc C) ────────────────────────
     RpcSpec(
+        "market.catalog",
+        _rpc_markets.MarketCatalogRequest,
+        _rpc_markets.MarketCatalogResponse,
+    ),
+    RpcSpec(
+        "market.provider.connect",
+        _rpc_markets.MarketProviderConnectRequest,
+        _rpc_markets.MarketProviderConnectResponse,
+    ),
+    RpcSpec(
+        "market.selection.preview",
+        _rpc_markets.MarketSelectionPreviewRequest,
+        _rpc_markets.MarketSelectionPreviewResponse,
+    ),
+    RpcSpec(
+        "market.selection.apply",
+        _rpc_markets.MarketSelectionApplyRequest,
+        _rpc_markets.MarketSelectionApplyResponse,
+    ),
+    RpcSpec(
+        "market.selection.update",
+        _rpc_markets.MarketSelectionUpdateRequest,
+        _rpc_markets.MarketSelectionApplyResponse,
+    ),
+    RpcSpec(
+        "market.selection.events.update",
+        _rpc_markets.MarketEventsEditRequest,
+        _rpc_markets.MarketSelectionApplyResponse,
+    ),
+    RpcSpec(
+        "market.events.list",
+        _rpc_markets.MarketEventsRequest,
+        _rpc_markets.MarketEventsResponse,
+    ),
+    RpcSpec(
         "market.quotes",
         _rpc_markets.MarketQuotesRequest,
         _rpc_markets.MarketQuotesResponse,

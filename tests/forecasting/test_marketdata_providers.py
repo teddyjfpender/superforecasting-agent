@@ -176,10 +176,10 @@ def test_coingecko_reads_usd_price_and_derives_change_from_24h_pct():
     (q,) = parse_coingecko(payload, [_cg("bitcoin")], now_ms=1_700_000_000_000)
     assert q.value == pytest.approx(64239)
     assert q.changePct == pytest.approx(-1.05)
-    # change is DERIVED (value * pct/100), NOT value - prevClose.
-    assert q.change == pytest.approx(64239 * -0.0105, abs=0.5)
+    # Percentage change is relative to the prior price, not today's price.
+    assert q.change == pytest.approx(64239 - 64239 / .9895)
     assert q.prevClose is None and q.history == []
-    assert q.asOf == 1_700_000_000_000  # the fetch instant, injected for determinism
+    assert q.asOf == 0  # no provider timestamp; retrieval is not observation time
 
 
 def test_coingecko_batches_all_ids_and_maps_each():
@@ -312,7 +312,7 @@ def test_bls_reads_latest_datapoint_change_and_maps_period_to_date():
     payload = {
         "Results": {
             "series": [
-                {"data": [{"period": "M05", "value": "320.1", "year": "2026"}, {"period": "M04", "value": "319.0", "year": "2026"}]}
+                {"seriesID": "CUUR0000SA0", "data": [{"period": "M05", "value": "320.1", "year": "2026"}, {"period": "M04", "value": "319.0", "year": "2026"}]}
             ]
         }
     }
@@ -324,8 +324,9 @@ def test_bls_reads_latest_datapoint_change_and_maps_period_to_date():
 
 
 def test_bls_error_payload_is_null_never_zero():
-    err = parse_bls({"status": "REQUEST_NOT_PROCESSED", "Results": {}}, _bls())
-    assert err.value is None and err.change is None and err.asOf == 0
+    from forecasting.marketdata.provider import ProviderFailure
+    with pytest.raises(ProviderFailure, match="BLS"):
+        parse_bls({"status": "REQUEST_NOT_PROCESSED", "Results": {}}, _bls())
 
 
 # ── Stooq (daily OHLC CSV) ────────────────────────────────────────────────────

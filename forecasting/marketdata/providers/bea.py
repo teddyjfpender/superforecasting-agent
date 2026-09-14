@@ -19,7 +19,7 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 
-from forecasting.marketdata.model import Quote, SeriesRef, num
+from forecasting.marketdata.model import DatedValue, Quote, SeriesRef, num
 
 _QUARTER_RE = re.compile(r"^(\d{4})Q([1-4])$")
 _YEAR_RE = re.compile(r"^\d{4}$")
@@ -52,7 +52,11 @@ def parse_bea(payload: object, series: SeriesRef) -> Quote:
     """Parse a BEA NIPA response into a single headline-line :class:`Quote`."""
 
     data = payload if isinstance(payload, dict) else {}
-    results = (((data.get("BEAAPI") or {}).get("Results") or {}) if isinstance(data.get("BEAAPI"), dict) else {})
+    results = (
+        ((data.get("BEAAPI") or {}).get("Results") or {})
+        if isinstance(data.get("BEAAPI"), dict)
+        else {}
+    )
     rows = results.get("Data") if isinstance(results, dict) else None
     rows = rows if isinstance(rows, list) else []
 
@@ -61,7 +65,9 @@ def parse_bea(payload: object, series: SeriesRef) -> Quote:
         (
             r
             for r in rows
-            if isinstance(r, dict) and str(r.get("LineNumber") or "1") == line and r.get("TimePeriod")
+            if isinstance(r, dict)
+            and str(r.get("LineNumber") or "1") == line
+            and r.get("TimePeriod")
         ),
         key=lambda r: str(r.get("TimePeriod")),
     )
@@ -70,11 +76,29 @@ def parse_bea(payload: object, series: SeriesRef) -> Quote:
     prev = line_rows[-2] if len(line_rows) > 1 else None
     value = _parse_val(last)
     prev_value = _parse_val(prev)
-    change = value - prev_value if value is not None and prev_value is not None else None
-    change_pct = (change / prev_value * 100.0) if change is not None and prev_value else None
+    change = (
+        value - prev_value if value is not None and prev_value is not None else None
+    )
+    change_pct = (
+        (change / prev_value * 100.0) if change is not None and prev_value else None
+    )
 
     period = str(last.get("TimePeriod")) if last and last.get("TimePeriod") else ""
     history = [v for v in (_parse_val(r) for r in line_rows) if v is not None][-12:]
+
+    from forecasting.marketdata.parsing import observation_quote, period_bounds
+
+    points = []
+    for row in line_rows:
+        declared = str(row["TimePeriod"])
+        if _QUARTER_RE.fullmatch(declared):
+            declared = declared[:4] + "-" + declared[4:]
+        start, end = period_bounds(declared)
+        points.append(
+            DatedValue(period_start=start, period_end=end, value=_parse_val(row))
+        )
+    # Shared assembly rejects conflicting duplicate periods.
+    dated = observation_quote(series, points).dated_history
 
     return Quote(
         symbol=series.symbol,
@@ -88,6 +112,7 @@ def parse_bea(payload: object, series: SeriesRef) -> Quote:
         asOf=_period_as_of(period),
         unit=series.unit,
         history=history,
+        dated_history=dated,
     )
 
 
@@ -109,7 +134,9 @@ class BeaProvider:
             f"&datasetname=NIPA&TableName={table}&Frequency=Q&Year={years}&ResultFormat=JSON"
         )
 
-    def fetch(self, series: list[SeriesRef], *, api_key: str | None = None) -> list[Quote]:
+    def fetch(
+        self, series: list[SeriesRef], *, api_key: str | None = None
+    ) -> list[Quote]:
         if not api_key:
             return []  # keyed provider with no key → skipped (client parity)
         quotes: list[Quote] = []

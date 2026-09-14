@@ -1,0 +1,76 @@
+{
+  "checked_at": "2026-09-14T17:53:31.034534+00:00",
+  "catalog_revision": "5638c99283e0b86c5e70a30d5637b3d048c28074b92441712fc2cb32e34f9ffb",
+  "source_documentation": "https://ec.europa.eu/eurostat/web/hicp/information-data",
+  "finding": "Legacy HICP dataset stopped at December 2025. New bindings use prc_hicp_minr, ECOICOP version 2, coicop18 TOTAL and EA21.",
+  "statuses": [
+    {
+      "provider": "eurostat",
+      "status": "ready",
+      "message": null,
+      "retry_after": null
+    }
+  ],
+  "rows": [
+    {
+      "id": "eurostat:prc_hicp_minr:EA21",
+      "value": 3.2,
+      "period": "2026-08-01"
+    },
+    {
+      "id": "eurostat:une_rt_m:EA21",
+      "value": 6.4,
+      "period": "2026-08-01"
+    },
+    {
+      "id": "eurostat:prc_hicp_minr:DE",
+      "value": 2.9,
+      "period": "2026-08-01"
+    },
+    {
+      "id": "eurostat:une_rt_m:DE",
+      "value": 4.0,
+      "period": "2026-08-01"
+    },
+    {
+      "id": "eurostat:prc_hicp_minr:FR",
+      "value": 2.7,
+      "period": "2026-08-01"
+    },
+    {
+      "id": "eurostat:une_rt_m:FR",
+      "value": 8.3,
+      "period": "2026-08-01"
+    },
+    {
+      "id": "eurostat:prc_hicp_minr:IT",
+      "value": 3.2,
+      "period": "2026-08-01"
+    },
+    {
+      "id": "eurostat:une_rt_m:IT",
+      "value": 5.8,
+      "period": "2026-08-01"
+    },
+    {
+      "id": "eurostat:prc_hicp_minr:ES",
+      "value": 4.5,
+      "period": "2026-08-01"
+    },
+    {
+      "id": "eurostat:une_rt_m:ES",
+      "value": 10.0,
+      "period": "2026-08-01"
+    },
+    {
+      "id": "eurostat:prc_hicp_minr:NL",
+      "value": 2.8,
+      "period": "2026-08-01"
+    },
+    {
+      "id": "eurostat:une_rt_m:NL",
+      "value": 4.0,
+      "period": "2026-08-01"
+    }
+  ]
+}

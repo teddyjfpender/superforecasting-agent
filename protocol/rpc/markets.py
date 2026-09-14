@@ -13,7 +13,64 @@ measurement (``value`` / ``change`` / ``changePct`` / ``prevClose``) is
 
 from __future__ import annotations
 
+from protocol.data_desk import (
+    DataCatalog,
+    DataEvents,
+    DatedValue,
+    DeskEdit,
+    DeskPatch,
+    DeskPreview,
+    DeskSavedEvent,
+    DeskSelection,
+)
 from protocol.types import WireModel, wire_optional
+
+
+class MarketCatalogRequest(WireModel):
+    pass
+
+
+class MarketCatalogResponse(WireModel):
+    catalog: DataCatalog
+    catalog_revision: str
+    selection: DeskSelection
+    configured_providers: list[str]
+
+
+class MarketSelectionPreviewRequest(WireModel):
+    edit: DeskEdit
+
+
+class MarketSelectionPreviewResponse(WireModel):
+    preview: DeskPreview
+
+
+class MarketSelectionApplyRequest(WireModel):
+    edit: DeskEdit
+    expected_revision: str
+
+
+class MarketSelectionApplyResponse(WireModel):
+    selection: DeskSelection
+
+
+class MarketProviderConnectRequest(WireModel):
+    provider: str
+    session_id: str
+
+
+class MarketProviderConnectResponse(WireModel):
+    stored: bool
+
+
+class MarketSelectionUpdateRequest(WireModel):
+    patch: DeskPatch
+    expected_revision: str
+
+
+class MarketEventsEditRequest(WireModel):
+    add: list[DeskSavedEvent]
+    remove: list[DeskSavedEvent]
 
 
 class MarketSeriesRef(WireModel):
@@ -27,6 +84,7 @@ class MarketSeriesRef(WireModel):
     category: str | None = wire_optional()
     unit: str | None = wire_optional()
     line: str | None = wire_optional()
+    catalog_id: str | None = wire_optional()
 
 
 class Quote(WireModel):
@@ -53,6 +111,18 @@ class Quote(WireModel):
     volume: float | None
     week52High: float | None
     week52Low: float | None
+    catalog_id: str | None = None
+    retrieved_at: str | None = None
+    published_at: str | None = None
+    issue_time: str | None = None
+    valid_from: str | None = None
+    valid_until: str | None = None
+    revision_policy: str = "unknown"
+    source_url: str | None = None
+    source_family: str | None = None
+    kind: str = "quote"
+    refresh_seconds: int = 60
+    dated_history: list[DatedValue] = []
 
 
 class MarketQuotesRequest(WireModel):
@@ -61,10 +131,27 @@ class MarketQuotesRequest(WireModel):
     series: list[MarketSeriesRef]
 
 
+class MarketProviderStatus(WireModel):
+    provider: str
+    status: str
+    message: str | None = None
+    retry_after: float | None = None
+
+
+class MarketEventsRequest(WireModel):
+    series_id: str
+
+
+class MarketEventsResponse(WireModel):
+    data: DataEvents | None
+    status: MarketProviderStatus
+
+
 class MarketQuotesResponse(WireModel):
     TS_NAME = "MarketQuotesResponse"
 
     quotes: list[Quote]
+    statuses: list[MarketProviderStatus] = []
 
 
 class MarketSearchRequest(WireModel):

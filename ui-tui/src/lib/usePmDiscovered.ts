@@ -6,8 +6,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 
-import { loadMarketConfig, PM_SAVED_CAP, saveMarketConfig } from './marketStore.js'
 import { fetchPMDetail, type PMListItem, type PMVenue } from './pmData.js'
+import { pmRowId } from './pmRows.js'
 import { type PMHookGateway } from './usePmMarkets.js'
 
 // Re-hydrate the saved store with a bounded-concurrency WORKER POOL: keep this
@@ -61,85 +61,115 @@ export async function runHydrationPool<T, R>(
 
 export interface PmDiscovered {
   discovered: ReadonlyMap<string, PMListItem>
-  // Merge freshly-found events into the pool (deduped by event_id) + persist.
+  // Merge freshly-found events into the pool (deduped by venue and event_id) + persist.
   foldDiscovered: (found: PMListItem[]) => void
   // Drop one event from the pool AND markets.json's pmSaved (a mis-search must
   // not pollute the tape until cap-eviction).
-  removeDiscovered: (eventId: string) => void
+  removeDiscovered: (rowId: string) => void
 }
 
-export function usePmDiscovered(gw: PMHookGateway | undefined, active: boolean): PmDiscovered {
+export function usePmDiscovered(
+  gw: PMHookGateway | undefined,
+  active: boolean,
+  onError?: (message: string) => void
+): PmDiscovered {
   // DISCOVERED events persist: searches COMPOUND the tape's coverage instead of
   // evaporating when the query clears (the operator: "the searched markets should
   // persist... so we maximally cover the markets"). Session state here; refs saved
-  // to markets.json (cap 100 LRU) + re-hydrated via pm.detail on mount, with
-  // dead/gone events pruning themselves on failed hydration.
+  // to markets.json (cap 100 LRU) + re-hydrated via pm.detail on mount, without deleting references when a provider is unavailable.
   const [discovered, setDiscovered] = useState<ReadonlyMap<string, PMListItem>>(() => new Map())
 
-  const persist = (next: ReadonlyMap<string, PMListItem>) => {
-    const cfg = loadMarketConfig()
-    const refs = [...next.values()].map(i => ({ event_id: i.event.event_id, venue: i.event.venue }))
-    saveMarketConfig({ ...cfg, pmSaved: refs.slice(-PM_SAVED_CAP) })
-  }
+  const generation = useRef(0)
+  useEffect(() => {
+    generation.current += 1
 
-  const foldDiscovered = (found: PMListItem[]) => {
-    setDiscovered(prev => {
-      const next = new Map(prev)
+    return () => {
+      generation.current += 1
+    }
+  }, [gw])
+
+  const fold = (found: PMListItem[]) =>
+    setDiscovered(previous => {
+      const next = new Map(previous)
 
       for (const item of found) {
-        next.set(item.event.event_id, item)
+        next.set(pmRowId(item), item)
       }
-
-      if (next.size === prev.size) {
-        return prev
-      }
-
-      persist(next)
 
       return next
     })
+
+  const foldDiscovered = (found: PMListItem[]) => {
+    if (!gw || !found.length) {
+      return
+    }
+
+    const add = found.map(item => ({ event_id: item.event.event_id, venue: item.event.venue }))
+    const owner = generation.current
+    gw.request('market.selection.events.update', { add, remove: [] })
+      .then(() => {
+        if (generation.current === owner) {
+          fold(found)
+        }
+      })
+      .catch(() => onError?.('Could not save discovered markets. Retry the search to save them.'))
   }
 
-  const removeDiscovered = (eventId: string) => {
-    setDiscovered(prev => {
-      if (!prev.has(eventId)) {
-        return prev
-      }
+  const removeDiscovered = (rowId: string) => {
+    const item = discovered.get(rowId)
 
-      const next = new Map(prev)
-      next.delete(eventId)
-      persist(next)
+    if (!gw || !item) {
+      return
+    }
 
-      return next
+    const owner = generation.current
+    gw.request('market.selection.events.update', {
+      add: [],
+      remove: [{ event_id: item.event.event_id, venue: item.event.venue }]
     })
+      .then(() => {
+        if (generation.current === owner) {
+          setDiscovered(previous => {
+            const next = new Map(previous)
+            next.delete(rowId)
+
+            return next
+          })
+        }
+      })
+      .catch(() => onError?.('Could not remove the saved market. Try again.'))
   }
 
   // Re-hydrate persisted discoveries once per mount (server-cached + cheap) via
   // a bounded-concurrency pool (HYDRATE_CONCURRENCY in flight), folding results
   // in small groups (progressive fill) instead of one setState per item. Events
-  // that no longer resolve are pruned from the store once the pool drains.
+  // that do not resolve remain saved for a subsequent retry.
   const hydratedRef = useRef(false)
+  useEffect(() => {
+    hydratedRef.current = false
+    setDiscovered(new Map())
+  }, [gw])
   useEffect(() => {
     if (!gw || !active || hydratedRef.current) {
       return
     }
 
     hydratedRef.current = true
-    const refs = loadMarketConfig().pmSaved ?? []
-
-    if (!refs.length) {
-      return
-    }
-
     let cancelled = false
 
     void (async () => {
-      const live = new Set<string>()
+      const result = await gw.request('market.catalog', {})
+
+      if (cancelled) {
+        return
+      }
+
+      const refs = result.selection.pm_saved
       let buffer: PMListItem[] = []
 
       const flush = () => {
         if (buffer.length) {
-          foldDiscovered(buffer)
+          fold(buffer)
           buffer = []
         }
       }
@@ -148,9 +178,8 @@ export function usePmDiscovered(gw: PMHookGateway | undefined, active: boolean):
         refs,
         HYDRATE_CONCURRENCY,
         r => fetchPMDetail(gw, r.venue as PMVenue, r.event_id).then(item => ({ item, ref: r })),
-        ({ item, ref }) => {
+        ({ item }) => {
           if (item) {
-            live.add(ref.event_id)
             buffer.push(item)
 
             if (buffer.length >= HYDRATE_FLUSH) {
@@ -160,21 +189,28 @@ export function usePmDiscovered(gw: PMHookGateway | undefined, active: boolean):
         },
         () => cancelled
       )
-      flush()
+
+      if (!cancelled) {
+        flush()
+      }
 
       if (cancelled) {
         return
       }
 
-      // Prune refs that failed to hydrate (closed/gone) from the store.
-      if (live.size < refs.length) {
-        const cfg = loadMarketConfig()
-        saveMarketConfig({ ...cfg, pmSaved: (cfg.pmSaved ?? []).filter(r => live.has(r.event_id)) })
+      // A missing detail response can mean a transient outage. Only explicit
+      // user removal deletes a saved reference; hydration is read-only.
+    })().catch(() => {
+      hydratedRef.current = false
+
+      if (!cancelled) {
+        onError?.('Could not load saved markets. Reopen Prediction to retry.')
       }
-    })()
+    })
 
     return () => {
       cancelled = true
+      hydratedRef.current = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gw, active])
