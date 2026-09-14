@@ -73,6 +73,7 @@ class LocalKernel:
         self.sequence = 0
         self.process: subprocess.Popen[bytes] | None = None
         self.children: dict[tuple[int, float], psutil.Process] = {}
+        self.startup_children: set[tuple[int, float]] = set()
         self.identity: psutil.Process | None = None
         self.python = _resolve_child_python(mode)
         self.cwd = _resolve_child_cwd(mode, str(self.directory))
@@ -113,6 +114,11 @@ class LocalKernel:
             ):
                 raise RuntimeError("Kernel did not acknowledge protocol version 1")
             self.runtime = ready["runtime"]
+            # Windows venv launchers may own the actual interpreter as a child.
+            # Capture before admitting any cell: these processes belong to the
+            # runtime, not to a calculation. They remain owned for teardown.
+            self._capture_children()
+            self.startup_children = set(self.children)
         except BaseException:
             self.cancelled.set()
             self.close()
@@ -315,7 +321,11 @@ class LocalKernel:
                 "stdout": _redact(raw["stdout"]),
                 "stderr": _redact(raw["stderr"]),
             }
-            if any(child.is_running() for child in self.children.values()):
+            if any(
+                child.is_running()
+                for identity, child in self.children.items()
+                if identity not in self.startup_children
+            ):
                 result.update(
                     state_preserved=False,
                     retirement_reason="cell_left_running_processes",

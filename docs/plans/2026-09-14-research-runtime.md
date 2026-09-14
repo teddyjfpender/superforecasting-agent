@@ -18,10 +18,10 @@ qualification backlog in TODO.md. Upstream reference: `5eb99eb284`.
   reproducible calculation records, per-cell permissions/budgets, timeout and
   cancellation teardown, parent death and profile/owner isolation. Exercise real
   execution and the supported local/remote execution boundaries.
-- [ ] Background research: batch admission, independent and grouped completion,
+- [x] Background research: batch admission, independent and grouped completion,
   early failures, durable/display truthfulness, cancellation and resource cleanup
   including partial admission and interrupted parent execution.
-- [ ] Event research jobs: authenticated webhook binding to existing jobs using
+- [x] Event research jobs: authenticated webhook binding to existing jobs using
   shared claims/execution; delivery deduplication, no stored-prompt mutation, no
   silent active-forecast probability changes. Exercise real HTTP and fake runs.
 - [x] Repeated result references: still execute tools, compact only identical
@@ -35,6 +35,40 @@ qualification backlog in TODO.md. Upstream reference: `5eb99eb284`.
   before publication; merged tree matches the tested tree.
 
 ## Progress
+
+### Native Windows kernel qualification follow-up
+
+Product-quality run `34844114056` at `589a7396e0` passed Linux and macOS,
+including the kernel suites. Windows passed the runner's native descendant
+termination tests but failed retained-state and replay tests with premature
+kernel retirement. The host counted startup descendants as cell-created work;
+Windows venv launchers can put the interpreter in that category. The host now
+captures startup process identities before admitting any cell, excludes only those
+identities from leak retirement, and retains them for exact cleanup. A regression
+also checks that a later process reusing a startup PID is not exempt. Local kernel
+qualification passed 51 tests with two Windows-only skips, and strict checks passed.
+Windows requalification remains required before kernel acceptance.
+
+### Background and event implementation acceptance
+
+The public `delegate_task` batch regression releases three real worker threads
+independently: the ungrouped result arrives early, grouped members produce one
+ordered barrier result, and rejected admission produces an early failure without
+orphaning the remaining workers. Journal tests cover atomic result/event writes,
+reopen, duplicate acknowledgement, owner death and uncertain ownership. Captured
+profile context survives parent cancellation while each child remains independently
+cancellable. Host tests cover durable admission before acknowledgement, idle
+redelivery, session routing, stale status, cleanup retries and interrupted CLI resume.
+Receiving-turn interruption requires review before resubmission; it never authorizes
+automatic repetition of tools that may already have produced effects.
+
+Event acceptance includes signed HTTP requests through the actual webhook adapter,
+durable binding, scheduler claim and both script and real-agent-loop execution with
+controlled model replies. Tests verify frozen job inputs, rejected altered retries,
+revoked jobs, unchanged cadence, evidence writes and proposal-only probability
+updates. Real scripts cannot commit probabilities, and duplicate deliveries do not
+repeat execution. The focused event/profile tests passed 26; the previous wider
+event/scheduler/journal run passed 412. Final merged-tree verification remains separate.
 
 ### Missing execution profiles fail closed
 

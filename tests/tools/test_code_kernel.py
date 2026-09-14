@@ -53,6 +53,37 @@ def test_persistent_state_receipts_errors_and_explicit_reset(owner):
     assert Path(first["calculation_record"]).exists()
 
 
+def test_startup_descendants_are_retained_but_cell_descendants_retire(owner, monkeypatch):
+    """A venv launcher child is runtime state, but later children remain unsafe."""
+    from unittest.mock import Mock
+
+    from tools.code_kernel import LocalKernel
+
+    startup = Mock()
+    startup.is_running.return_value = True
+    startup.kill.side_effect = lambda: setattr(startup.is_running, 'return_value', False)
+    spawned = Mock()
+    spawned.is_running.return_value = True
+    spawned.kill.side_effect = lambda: setattr(spawned.is_running, 'return_value', False)
+    capture = LocalKernel._capture_children
+    def with_launcher(kernel):
+        capture(kernel)
+        if startup.is_running():
+            kernel.children[(123, 1.0)] = startup
+    monkeypatch.setattr(LocalKernel, '_capture_children', with_launcher)
+    first = run(owner, 'value = 7')
+    assert first['state_preserved']
+    assert run(owner, 'print(value)')['stdout'] == '7\n'
+    # A reused PID has a different creation identity and is not exempted.
+    owner.kernel.children[(123, 2.0)] = spawned
+    leaked = run(owner, 'print(value)')
+    assert leaked['retirement_reason'] == 'cell_left_running_processes'
+    assert not leaked['state_preserved']
+    owner.close()
+    startup.kill.assert_called_once()
+    spawned.kill.assert_called_once()
+
+
 @pytest.mark.parametrize("failure", ["cancel", "deadline"])
 def test_interrupted_admission_never_sends_code_to_interpreter(owner, monkeypatch, failure):
     from superforecasting_agent.tooling.interrupts import cancellation_scope
