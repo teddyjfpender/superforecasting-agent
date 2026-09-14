@@ -86,3 +86,9 @@ It never reruns research automatically: partial external effects may already
 exist. Foreign hosts, inaccessible processes and version 1 admissions without
 identity remain unconfirmed. Saved terminal results remain available after
 restart; absence from an in-memory worker registry is not proof of completion.
+
+`research_jobs.py` owns frozen scheduled/event trigger admission, exclusive job
+claims and terminal receipts. Version 2 claims retain local process identity;
+confirmed exited owners become interrupted without automatic effect retries.
+Legacy or foreign owners are retained conservatively. `process_identity.py`
+centralizes the host identity also used by background research ownership.

@@ -337,3 +337,55 @@ class TestGitHubCommentDelivery:
         # Delivery info is retained after send() so interim status messages
         # don't strand the final response (TTL-based cleanup happens on POST).
         assert chat_id in adapter._delivery_info
+
+
+@pytest.mark.asyncio
+async def test_authenticated_job_binding_is_durable_and_does_not_run_route_prompt(monkeypatch, tmp_path):
+    from cron import jobs
+    from superforecasting_agent.constants import get_agent_home
+    from superforecasting_agent.storage.research_jobs import JobTriggerJournal
+
+    home = get_agent_home()
+    monkeypatch.setattr(jobs, 'JOBS_FILE', home / 'cron' / 'jobs.json')
+    monkeypatch.setattr(jobs, 'get_job', lambda identity: {'id': identity, 'prompt': 'Stored research', 'enabled': True})
+    adapter = _make_adapter({'source': {'secret': 'fixture-secret', 'cron_job': 'job', 'prompt': 'Must not run'}})
+    body = b'{"event_type":"published"}'
+    headers = {'X-Hub-Signature-256': _github_signature(body, 'fixture-secret'), 'X-Request-ID': 'delivery'}
+    async with TestClient(TestServer(_create_app(adapter))) as client:
+        unauthorized = await client.post('/webhooks/source', data=body)
+        assert unauthorized.status == 401
+        first = await client.post('/webhooks/source', data=body, headers=headers)
+        assert first.status == 202
+        receipt = await first.json()
+        repeat = await client.post('/webhooks/source', data=body, headers=headers)
+        assert (await repeat.json())['trigger_id'] == receipt['trigger_id']
+        changed = b'{"event_type":"revised"}'
+        bad = await client.post('/webhooks/source', data=changed, headers={**headers, 'X-Hub-Signature-256': _github_signature(changed, 'fixture-secret')})
+        assert bad.status == 409
+    saved = JobTriggerJournal(home).get(receipt['trigger_id'])
+    assert saved['state'] == 'accepted'
+    assert saved['specification']['prompt'] == 'Stored research'
+
+
+@pytest.mark.asyncio
+async def test_job_route_reads_and_admits_only_its_explicit_profile(monkeypatch, tmp_path):
+    from cron import jobs
+    from superforecasting_agent.constants import get_agent_home
+    from superforecasting_agent import profile_paths
+    from superforecasting_agent.storage.research_jobs import JobTriggerJournal
+
+    target = tmp_path / 'target'
+    with jobs.storage_home(target):
+        jobs.save_jobs([{'id': 'shared', 'prompt': 'Target research', 'enabled': True}])
+    with jobs.storage_home(get_agent_home()):
+        jobs.save_jobs([{'id': 'shared', 'prompt': 'Wrong profile', 'enabled': True}])
+    monkeypatch.setattr(profile_paths, 'resolve_profile_env', lambda name: str(target) if name == 'target' else pytest.fail('unexpected profile'))
+    adapter = _make_adapter({'source': {'secret': 'fixture-secret', 'cron_job': 'shared', 'profile': 'target'}})
+    body = b'{}'
+    async with TestClient(TestServer(_create_app(adapter))) as client:
+        response = await client.post('/webhooks/source', data=body, headers={
+            'X-Hub-Signature-256': _github_signature(body, 'fixture-secret'), 'X-Request-ID': 'event'})
+        assert response.status == 202
+        identity = (await response.json())['trigger_id']
+    assert JobTriggerJournal(target).get(identity)['specification']['prompt'] == 'Target research'
+    assert not (get_agent_home() / 'research-job-triggers.db').exists()

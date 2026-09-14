@@ -398,3 +398,71 @@ storage/recovery/adapter set: 48 passed (earlier adjacent set: 62 passed). Stric
 checks and 76 architecture contracts passed. Full push gate follows. Remaining
 acceptance includes complete gateway failure injection, interrupted receiving UX,
 profile multiplexing and event-triggered job implementation.
+
+Event-job worktree checkpoint (`/tmp/sfa-event-research`): scheduler execution/save/
+delivery/marking has been lifted into shared `process_job`; existing scheduler
+regressions pass. New `JobTriggerJournal` freezes first-admitted specifications,
+compares SHA-256 input identities on duplicate delivery, and serializes scheduled
+and event claims for the same job with a partial unique running-job index. Claims
+use separate ownership tokens and terminal updates reject stale owners/conflicting
+outcomes. Reopen and concurrent claim tests pass. This store is NOT wired into
+scheduler/webhook execution yet and has no owner-death reconciliation; neither
+claims nor event-job acceptance is complete. Next: shared execution claim wiring,
+authenticated route binding, durable dispatch/recovery, no-probability-mutation
+checks and actual HTTP/controlled-provider integration tests.
+
+Shared execution claim wiring: `process_job` now admits a frozen trigger, obtains
+its exclusive job claim, executes/saves/delivers/marks once, and persists the
+terminal result. Duplicate or competing claims do not execute. A failed job-status
+write is not attempted twice; failure to save the terminal trigger receipt does
+not reclassify an already processed model outcome or rerun effects. Scheduler ticks
+drain accepted triggers even with no due schedule, then refresh due-job state.
+Controlled scheduler tests prove a saved event executes once across two ticks and
+that an interrupted status write does not repeat model execution or status marking.
+Combined scheduler/storage checks: 138 passed; strict gates passed. Still required:
+HTTP route binding, event-vs-scheduled cadence semantics, process-owner recovery,
+configuration/profile binding and full integration acceptance.
+
+HTTP binding checkpoint: authenticated routes with `cron_job` durably admit the
+exact stored job before prompt/skill rendering or volatile deduplication. Delivery
+IDs are mandatory/bounded, route-scoped, and conflicting body hashes are rejected.
+Unsigned/insecure job routes, disabled/missing jobs, conflicting delivery-only mode
+and mismatched job-store profile fail closed. Explicit route-profile overrides are
+currently rejected pending proper profile-scoped dispatch. Job runs preserve
+recurrence/repetition fields for webhook triggers while recording outcome metadata.
+A real aiohttp client/server test verifies signature refusal, accepted admission,
+duplicate identity, conflicting replay and unchanged stored prompt. Seven focused
+HTTP/shared-execution tests passed; the adjacent set passed 136. Root push gate
+failed one partial-startup fixture (32,355 passed); c5b0bdfe29 fixes watcher lookup,
+66 startup/routing tests pass, and the canonical push retry runs separately under
+session 66595, log /tmp/research-background-recovery-retry-push.log.
+
+Job owner recovery checkpoint: version 2 trigger claims capture host/PID/process
+creation time. Scheduler recovery terminalizes only positively exited local owners,
+never reexecutes those triggers, and leaves legacy/foreign/unverifiable claims
+unchanged. Host identity is shared with background research. Tests cover a real
+child process exiting after claim, PID reuse, live owners, foreign owners and v1
+migration with no invented identity. The first expanded test run exposed unclosed
+SQLite connections in the new test fixtures; their context managers now explicitly
+close connections instead of only committing transactions. The corrected expanded
+storage/scheduler/HTTP set is recorded in /tmp/research-job-owner-final2.log.
+Profile routing and broader recovery/product acceptance remain unfinished.
+
+Profile-scoped job storage: reads/writes/output paths now honor `storage_home()`
+without changing compatibility globals. Scheduler ticks bind their owning storage;
+webhook adapters capture their launch profile and may resolve an explicit existing
+route profile for exact job lookup/admission. The target profile requires its own
+active scheduler; accepted HTTP state does not claim execution. Two-profile tests
+exercise identical job IDs, separate frozen input/output paths and unchanged event
+recurrence/repeat counters. Actual HTTP verifies explicit target-profile admission
+without creating a trigger journal in the launching profile. Background milestone
+push through c5b0bdfe29 succeeded after the canonical full Python and frontend gates.
+Remaining event acceptance includes route-edit/redelivery policy, runtime-profile
+credential isolation, job-status write/recovery semantics, and full HTTP-to-execution
+failure injection; interrupted-receipt UI/resume and broader capability audits also
+remain open.
+
+Event-job checkpoint verification: the full cron directory plus trigger/background
+storage and webhook integration/adapter/direct-delivery sets passed 477 tests in
+6.98 seconds. Strict checks passed. This is a checkpoint, not final capability
+acceptance or full-suite verification of the event-job changes.

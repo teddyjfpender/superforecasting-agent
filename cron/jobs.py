@@ -6,6 +6,8 @@ Output is saved under cron/output/{job_id}/{timestamp}.md.
 """
 
 import copy
+from contextlib import contextmanager
+from contextvars import ContextVar
 import json
 import logging
 import shutil
@@ -44,6 +46,26 @@ JOBS_FILE = CRON_DIR / "jobs.json"
 _jobs_file_lock = threading.Lock()
 OUTPUT_DIR = CRON_DIR / "output"
 ONESHOT_GRACE_SECONDS = 120
+
+_storage_home: ContextVar[Path | None] = ContextVar("cron_storage_home", default=None)
+
+
+@contextmanager
+def storage_home(home: Path):
+    """Bind job files to an explicit owner without mutating module globals."""
+    token = _storage_home.set(home.resolve())
+    try:
+        yield
+    finally:
+        _storage_home.reset(token)
+
+
+def _storage_path(kind: str) -> Path:
+    home = _storage_home.get()
+    if home is None:
+        return {"cron": CRON_DIR, "jobs": JOBS_FILE, "output": OUTPUT_DIR}[kind]
+    return home / "cron" / {"cron": "", "jobs": "jobs.json", "output": "output"}[kind]
+
 
 
 def _normalize_skill_list(skill: Optional[str] = None, skills: Optional[Any] = None) -> List[str]:
@@ -153,10 +175,10 @@ def _secure_file(path: Path):
 
 def ensure_dirs():
     """Ensure cron directories exist with secure permissions."""
-    CRON_DIR.mkdir(parents=True, exist_ok=True)
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    _secure_dir(CRON_DIR)
-    _secure_dir(OUTPUT_DIR)
+    _storage_path("cron").mkdir(parents=True, exist_ok=True)
+    _storage_path("output").mkdir(parents=True, exist_ok=True)
+    _secure_dir(_storage_path("cron"))
+    _secure_dir(_storage_path("output"))
 
 
 # =============================================================================
@@ -404,17 +426,17 @@ def compute_next_run(schedule: Dict[str, Any], last_run_at: Optional[str] = None
 def load_jobs() -> List[Dict[str, Any]]:
     """Load all jobs from storage."""
     ensure_dirs()
-    if not JOBS_FILE.exists():
+    if not _storage_path("jobs").exists():
         return []
     
     try:
-        with open(JOBS_FILE, 'r', encoding='utf-8') as f:
+        with open(_storage_path("jobs"), 'r', encoding='utf-8') as f:
             data = json.load(f)
             return data.get("jobs", [])
     except json.JSONDecodeError:
         # Retry with strict=False to handle bare control chars in string values
         try:
-            with open(JOBS_FILE, 'r', encoding='utf-8') as f:
+            with open(_storage_path("jobs"), 'r', encoding='utf-8') as f:
                 data = json.loads(f.read(), strict=False)
                 jobs = data.get("jobs", [])
                 if jobs:
@@ -433,14 +455,14 @@ def load_jobs() -> List[Dict[str, Any]]:
 def save_jobs(jobs: List[Dict[str, Any]]):
     """Save all jobs to storage."""
     ensure_dirs()
-    fd, tmp_path = tempfile.mkstemp(dir=str(JOBS_FILE.parent), suffix='.tmp', prefix='.jobs_')
+    fd, tmp_path = tempfile.mkstemp(dir=str(_storage_path("jobs").parent), suffix='.tmp', prefix='.jobs_')
     try:
         with os.fdopen(fd, 'w', encoding='utf-8') as f:
             json.dump({"jobs": jobs, "updated_at": _hermes_now().isoformat()}, f, indent=2)
             f.flush()
             os.fsync(f.fileno())
-        atomic_replace(tmp_path, JOBS_FILE)
-        _secure_file(JOBS_FILE)
+        atomic_replace(tmp_path, _storage_path("jobs"))
+        _secure_file(_storage_path("jobs"))
     except BaseException:
         try:
             os.unlink(tmp_path)
@@ -847,7 +869,7 @@ def remove_job(job_id: str) -> bool:
     if len(jobs) < original_len:
         save_jobs(jobs)
         # Clean up output directory to prevent orphaned dirs accumulating
-        job_output_dir = OUTPUT_DIR / canonical_id
+        job_output_dir = _storage_path("output") / canonical_id
         if job_output_dir.exists():
             shutil.rmtree(job_output_dir)
         return True
@@ -855,7 +877,7 @@ def remove_job(job_id: str) -> bool:
 
 
 def mark_job_run(job_id: str, success: bool, error: Optional[str] = None,
-                 delivery_error: Optional[str] = None):
+                 delivery_error: Optional[str] = None, *, advance_schedule: bool = True):
     """
     Mark a job as having been run.
     
@@ -876,6 +898,10 @@ def mark_job_run(job_id: str, success: bool, error: Optional[str] = None,
                 # Track delivery failures separately — cleared on successful delivery
                 job["last_delivery_error"] = delivery_error
                 
+                if not advance_schedule:
+                    save_jobs(jobs)
+                    return
+
                 # Increment completed count
                 if job.get("repeat"):
                     job["repeat"]["completed"] = job["repeat"].get("completed", 0) + 1
@@ -1084,7 +1110,7 @@ def _get_due_jobs_locked() -> List[Dict[str, Any]]:
 def save_job_output(job_id: str, output: str):
     """Save job output to file."""
     ensure_dirs()
-    job_output_dir = OUTPUT_DIR / job_id
+    job_output_dir = _storage_path("output") / job_id
     job_output_dir.mkdir(parents=True, exist_ok=True)
     _secure_dir(job_output_dir)
     

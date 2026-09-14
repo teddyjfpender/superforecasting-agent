@@ -7,10 +7,8 @@ successful delivery. This store never retries model calls or external effects.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
-import socket
 import sqlite3
 import time
 import uuid
@@ -19,6 +17,9 @@ from contextlib import closing, contextmanager
 from pathlib import Path
 from typing import Any
 
+from superforecasting_agent.storage.process_identity import (
+    host_identity as _host_identity,
+)
 from superforecasting_agent.storage.sqlite import apply_wal_with_fallback
 
 TERMINAL = frozenset({"completed", "error", "interrupted", "rejected"})
@@ -26,13 +27,6 @@ TERMINAL = frozenset({"completed", "error", "interrupted", "rejected"})
 
 def _json(value: Any) -> str:
     return json.dumps(value, sort_keys=True, ensure_ascii=True, allow_nan=False)
-
-
-def _host_identity() -> str:
-    """Scope PID observations to the same named machine and network identity."""
-    return hashlib.sha256(
-        f"{socket.gethostname()}:{uuid.getnode()}".encode()
-    ).hexdigest()
 
 
 class BackgroundResearchJournal:

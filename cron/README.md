@@ -35,3 +35,18 @@ Update this guide when entry points or ownership change. See the
 and [engineering backlog](../TODO.md) for cross-package context.
 
 [↑ Parent directory](../README.md)
+
+## Event-triggered research
+
+Authenticated webhook routes may bind `cron_job` to an existing exact job ID and
+optionally select `profile`. Admission snapshots the stored job and records the
+route/delivery identity and body digest; it does not substitute the route prompt
+or payload for the job prompt. The owning profile's scheduler drains accepted
+triggers through the same `process_job` operation as scheduled runs. That profile
+needs an active scheduler; HTTP acceptance means durably queued, not executed.
+
+Event runs record outcomes but preserve the scheduled recurrence and repetition
+counter. `storage_home()` binds job files and outputs without global path mutation.
+Trigger receipts live in the profile's `research-job-triggers.db`; a confirmed dead
+execution owner becomes interrupted and is never automatically rerun. Operators
+must inspect possible external effects before starting a new trigger.
