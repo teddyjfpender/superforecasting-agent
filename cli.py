@@ -7796,6 +7796,26 @@ class ForecastCLI:
             except Exception:
                 pass
 
+    def _deliver_background_notification(self, notification):
+        from superforecasting_agent.hosting.notifications import execute_background_notification
+        from tools.async_delegation import acknowledge_notification
+
+        def execute(prompt):
+            self._last_turn_outcome = None
+            self.chat(prompt)
+            return self._last_turn_outcome
+
+        self._agent_running = True
+        self._invalidate()
+        try:
+            return execute_background_notification(
+                self._session_db, notification, self.session_id,
+                acknowledge=acknowledge_notification, execute=execute,
+            )
+        finally:
+            self._agent_running = False
+            self._invalidate()
+
     def chat(self, message, images: list = None) -> Optional[str]:
         """
         Send a message to the agent and get a response.
@@ -7815,6 +7835,7 @@ class ForecastCLI:
         Returns:
             The agent's response, or None on error
         """
+        self._last_turn_outcome = None
         # Single-query and direct chat callers do not go through run(), so
         # register secure secret capture here as well.
         set_secret_capture_callback(self._secret_capture_callback)
@@ -8160,6 +8181,11 @@ class ForecastCLI:
             if self._prompt_start_time is not None:
                 self._prompt_duration = max(0.0, time.time() - self._prompt_start_time)
                 self._prompt_start_time = None
+
+            self._last_turn_outcome = {
+                key: result.get(key) for key in
+                ("completed", "failed", "interrupted", "error", "final_response")
+            } if result else None
 
             # Proactively clean up async clients whose event loop is dead.
             # The agent thread may have created AsyncOpenAI clients bound
@@ -10613,18 +10639,29 @@ class ForecastCLI:
                             # Check for background process notifications (completions
                             # and watch pattern matches) while agent is idle.
                             try:
-                                from tools.process_registry import process_registry
-                                for _evt, _synth in process_registry.drain_notifications():
-                                    from superforecasting_agent.hosting.notifications import route_notification
+                                from tools.process_registry import process_registry, format_process_notification
+                                from tools.async_delegation import pending_notifications
+                                notifications = process_registry.drain_notifications()
+                                recovered = pending_notifications(self.session_id)
+                                if recovered:
+                                    notifications.append((recovered[0], format_process_notification(recovered[0])))
+                                for _evt, _synth in notifications:
+                                    from superforecasting_agent.hosting.notifications import BackgroundNotification, route_notification
                                     if route_notification(_evt, self.session_id) != "consume":
                                         process_registry.completion_queue.put(_evt)
                                         continue
-                                    self._pending_input.put(_synth)
+                                    self._pending_input.put(
+                                    BackgroundNotification(_evt, _synth) if _evt.get("journal_event_id") else _synth
+                                )
                             except Exception:
                                 pass
                         continue
                     
                     if not user_input:
+                        continue
+                    from superforecasting_agent.hosting.notifications import BackgroundNotification
+                    if isinstance(user_input, BackgroundNotification):
+                        self._deliver_background_notification(user_input)
                         continue
 
                     # The user has typed and submitted something, so any
@@ -10728,11 +10765,13 @@ class ForecastCLI:
                         try:
                             from tools.process_registry import process_registry
                             for _evt, _synth in process_registry.drain_notifications():
-                                from superforecasting_agent.hosting.notifications import route_notification
+                                from superforecasting_agent.hosting.notifications import BackgroundNotification, route_notification
                                 if route_notification(_evt, self.session_id) != "consume":
                                     process_registry.completion_queue.put(_evt)
                                     continue
-                                self._pending_input.put(_synth)
+                                self._pending_input.put(
+                                    BackgroundNotification(_evt, _synth) if _evt.get("journal_event_id") else _synth
+                                )
                         except Exception:
                             pass  # Non-fatal — don't break the main loop
 

@@ -360,3 +360,16 @@ tests cover CLI fallback, inherited nested ownership and explicit gateway routin
 Focused combined verification: 54 passed. CLI queue envelopes and receiving-turn
 execution/recovery integration are still pending; the shared primitive alone does
 not complete delivery there.
+
+Classic CLI receiving integration: both completion drains now enqueue an explicit
+background envelope rather than discarding event identity. Idle delivery queries
+saved journal events as well as queue hints. Background envelopes bypass slash/file
+submission dispatch and use shared receiving admission before chat; reported model
+completion, failure or interruption becomes the durable receiving state. Duplicate
+admissions never invoke chat again. An early chat return without a model outcome is
+interrupted, not success. The CLI adapter test verifies running state during chat,
+completed persisted text, idle restoration and duplicate delivery. Shared execution
+tests cover completed/failed/interrupted/missing outcomes. Focused combined set:
+49 passed; strict gates and 76 architecture contracts passed. Explicit CLI display
+and resumption of interrupted receiving receipts still need integration testing;
+this checkpoint does not claim full recovery UX or messaging acceptance.

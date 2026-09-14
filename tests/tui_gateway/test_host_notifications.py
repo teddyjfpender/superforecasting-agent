@@ -162,3 +162,26 @@ def test_receiving_admission_never_acknowledges_unpersisted_or_foreign_work():
         admit_background_notification(db, event, 'other', 'Research', acknowledge=acknowledged)
     db._execute_write.assert_not_called()
     acknowledged.assert_not_called()
+
+
+@pytest.mark.parametrize('outcome,status', [
+    ({'completed': True, 'final_response': 'Research integrated'}, 'complete'),
+    ({'completed': False, 'failed': True, 'error': 'Provider unavailable'}, 'error'),
+    ({'completed': False, 'interrupted': True}, 'interrupted'),
+    (None, 'interrupted'),
+])
+def test_receiving_execution_persists_outcome_and_never_reexecutes(tmp_path, outcome, status):
+    from superforecasting_agent.hosting.notifications import BackgroundNotification, execute_background_notification
+    from superforecasting_agent.storage import turns
+    from superforecasting_agent.storage.session import SessionDB
+
+    db = SessionDB(tmp_path / 'state.db')
+    notification = BackgroundNotification({'session_key': 'desk', 'journal_event_id': 'result'}, 'Saved evidence')
+    execute = Mock(return_value=outcome)
+    try:
+        first = execute_background_notification(db, notification, 'desk', acknowledge=Mock(), execute=execute)
+        assert turns.latest(db, 'desk')['status'] == status
+        assert execute_background_notification(db, notification, 'desk', acknowledge=Mock(), execute=execute) == first
+        execute.assert_called_once_with('Saved evidence')
+    finally:
+        db.close()

@@ -6,6 +6,7 @@ import queue
 import threading
 import time
 from collections.abc import Callable, Mapping, MutableMapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
@@ -74,6 +75,58 @@ def admit_background_notification(
             "Background acknowledgement pending; receiving turn is durable"
         )
     return receipt
+
+
+@dataclass(frozen=True)
+class BackgroundNotification:
+    event: Mapping[str, object]
+    prompt: str
+
+
+def execute_background_notification(
+    db: turns.TurnStore | None,
+    notification: BackgroundNotification,
+    session_key: str,
+    *,
+    acknowledge: Callable[[str, str], None],
+    execute: Callable[[str], Mapping[str, object] | None],
+) -> str:
+    """Execute only a newly admitted receipt and persist its actual outcome."""
+    turn_id, created = admit_background_notification(
+        db,
+        notification.event,
+        session_key,
+        notification.prompt,
+        acknowledge=acknowledge,
+    )
+    if not created:
+        return turn_id
+    assert db is not None  # Admission rejects unavailable storage.
+    turns.transition(db, turn_id, "running")
+    try:
+        result = execute(notification.prompt) or {}
+    except BaseException as exc:
+        turns.transition(db, turn_id, "interrupted", error=type(exc).__name__)
+        raise
+    status = (
+        "interrupted"
+        if result.get("interrupted") is True
+        else "error"
+        if result.get("failed") is True or result.get("error")
+        else "complete"
+        if result.get("completed") is True
+        else "interrupted"
+    )
+    text = result.get("final_response")
+    error = result.get("error")
+    turns.transition(
+        db,
+        turn_id,
+        status,
+        text=text if isinstance(text, str) else None,
+        error=error if isinstance(error, str) else None,
+    )
+    return turn_id
 
 
 def poll_notifications(
