@@ -277,3 +277,15 @@ Controlled-provider and real SQLite tests exercise these paths without live
 credentials. Mount detection uses Linux mountinfo fixtures; this does not claim
 qualification of every host filesystem. Unknown filesystems retain reactive
 fallback. The forecast ledger uses FULL synchronization outside WAL.
+
+The full-suite audit also exercised frozen trial compatibility. The storage
+change modifies the evaluation fingerprint because it includes the ledger core.
+Review verified that every other evaluation-owned file is byte-identical and the
+ledger AST is identical after excluding `_new_connection`. The explicit review
+in `forecasting/trial_compatibility.json` admits the former
+`64b923127b0ebde0396abe83c218b151ceaa54eff2ea311c5f21084afd20a35f` identity and
+previously reviewed identities to
+`e7a4646be77d6fcff0994686c30147aec4c4f1a30b5925c537eac65981a80837`.
+Historical trial packets and receipts remain unchanged; unknown source identities
+still fail closed. Regression tests exercise both legacy packets and the prior
+current identity through actual paired evaluation.
