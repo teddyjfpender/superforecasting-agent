@@ -1,8 +1,7 @@
 """Normalize visible assistant content for the CLI transcript and clipboard."""
 
 import re
-from typing import Any
-
+from typing import cast
 
 _REASONING_TAGS = (
     "REASONING_SCRATCHPAD",
@@ -58,8 +57,13 @@ def _strip_reasoning_tags(text: str) -> str:
             flags=re.IGNORECASE,
         )
     # Tool-call XML blocks (openclaw/openclaw#67318).
-    for tc_tag in ("tool_call", "tool_calls", "tool_result",
-                   "function_call", "function_calls"):
+    for tc_tag in (
+        "tool_call",
+        "tool_calls",
+        "tool_result",
+        "function_call",
+        "function_calls",
+    ):
         cleaned = re.sub(
             rf"<{tc_tag}\b[^>]*>.*?</{tc_tag}>\s*",
             "",
@@ -68,37 +72,38 @@ def _strip_reasoning_tags(text: str) -> str:
         )
     # <function name="..."> — boundary + attribute gated to avoid prose FPs.
     cleaned = re.sub(
-        r'(?:(?<=^)|(?<=[\n\r.!?:]))[ \t]*'
-        r'<function\b[^>]*\bname\s*=[^>]*>'
-        r'(?:(?:(?!</function>).)*)</function>\s*',
-        '',
+        r"(?:(?<=^)|(?<=[\n\r.!?:]))[ \t]*"
+        r"<function\b[^>]*\bname\s*=[^>]*>"
+        r"(?:(?:(?!</function>).)*)</function>\s*",
+        "",
         cleaned,
         flags=re.DOTALL | re.IGNORECASE,
     )
     # Stray tool-call close tags.
     cleaned = re.sub(
-        r'</(?:tool_call|tool_calls|tool_result|function_call|function_calls|function)>\s*',
-        '',
+        r"</(?:tool_call|tool_calls|tool_result|function_call|function_calls|function)>\s*",
+        "",
         cleaned,
         flags=re.IGNORECASE,
     )
     return cleaned.strip()
 
 
-def _assistant_content_as_text(content: Any) -> str:
+def _assistant_content_as_text(content: object) -> str:
     if content is None:
         return ""
     if isinstance(content, str):
         return content
     if isinstance(content, list):
-        parts = [
-            str(part.get("text", ""))
-            for part in content
-            if isinstance(part, dict) and part.get("type") == "text"
-        ]
+        parts: list[str] = []
+        for part in cast(list[object], content):
+            if isinstance(part, dict):
+                block = cast(dict[object, object], part)
+                if block.get("type") == "text":
+                    parts.append(str(block.get("text", "")))
         return "\n".join(p for p in parts if p)
     return str(content)
 
 
-def _assistant_copy_text(content: Any) -> str:
+def _assistant_copy_text(content: object) -> str:
     return _strip_reasoning_tags(_assistant_content_as_text(content))

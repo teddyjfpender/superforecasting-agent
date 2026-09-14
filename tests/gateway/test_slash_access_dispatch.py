@@ -566,3 +566,29 @@ async def test_hook_rewrite_cannot_bypass_target_command_access():
     result = await runner._handle_message(_make_event('/status', _make_source(user_id='999')))
     assert '/stop is admin-only here' in result
     runner._handle_stop_command.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("target,args", [(None, ""), (42, ""), ("help", {}), ("help restart", ""), ("/", ""), ("help@other", "")])
+async def test_malformed_hook_rewrite_fails_before_dispatch(target, args):
+    from gateway.command_dispatch import dispatch_command_hooks
+
+    runner = _make_runner()
+    runner.hooks.emit_collect.return_value = [{"decision": "rewrite", "command_name": target, "raw_args": args}]
+    event = _make_event("/help", _make_source())
+    result = await dispatch_command_hooks(runner, event, "help", "help")
+    assert result.intercepted
+    assert result.response == "Invalid command rewrite from hook."
+    assert event.text == "/help"
+
+
+@pytest.mark.asyncio
+async def test_hook_rewrite_checks_access_to_canonical_alias():
+    from gateway.command_dispatch import dispatch_command_hooks
+
+    runner = _make_runner(platform_extra={"allow_admin_from": ["admin"], "user_allowed_commands": ["help"]})
+    runner.hooks.emit_collect.return_value = [{"decision": "rewrite", "command_name": "/reset", "raw_args": ""}]
+    event = _make_event("/help", _make_source())
+    result = await dispatch_command_hooks(runner, event, "help", "help")
+    assert result.intercepted
+    assert result.response

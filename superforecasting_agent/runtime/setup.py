@@ -161,6 +161,7 @@ def print_header(title: str):
 
 
 from superforecasting_agent.runtime.cli_output import (  # noqa: E402
+    parse_confirmation,
     print_error,
     print_info,
     print_success,
@@ -295,13 +296,11 @@ def prompt_yes_no(question: str, default: bool = True) -> bool:
             print()
             sys.exit(1)
 
-        if not value:
-            return default
-        if value in {"y", "yes"}:
-            return True
-        if value in {"n", "no"}:
-            return False
-        print_error("Please enter 'y' or 'n'")
+        try:
+            return parse_confirmation(value, default)
+        except ValueError as exc:
+            print_error(str(exc))
+
 
 
 def prompt_checklist(title: str, items: list, pre_selected: list = None) -> list:
