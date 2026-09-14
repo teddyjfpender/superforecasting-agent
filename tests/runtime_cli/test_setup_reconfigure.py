@@ -114,6 +114,7 @@ class TestExistingInstallDefault:
                 agent="superforecasting_agent.runtime.setup.setup_agent_settings",
                 gateway="superforecasting_agent.runtime.setup.setup_gateway",
                 tools="superforecasting_agent.runtime.setup.setup_tools",
+                data_desk="superforecasting_agent.runtime.data_desk.setup_data_desk",
             )
             from superforecasting_agent.runtime.setup import run_setup_wizard
             run_setup_wizard(args)
@@ -122,12 +123,13 @@ class TestExistingInstallDefault:
         m["prompt_choice"].assert_not_called()
         # Quick-setup path NOT taken.
         m["quick"].assert_not_called()
-        # All five sections ran.
+        # All setup sections ran.
         m["model"].assert_called_once()
         m["terminal"].assert_called_once()
         m["agent"].assert_called_once()
         m["gateway"].assert_called_once()
         m["tools"].assert_called_once()
+        m["data_desk"].assert_called_once()
 
     def test_reconfigure_flag_is_backwards_compat_noop(self, existing_install):
         """`hermes setup --reconfigure` behaves the same as bare `hermes setup`."""
@@ -142,6 +144,7 @@ class TestExistingInstallDefault:
                 agent="superforecasting_agent.runtime.setup.setup_agent_settings",
                 gateway="superforecasting_agent.runtime.setup.setup_gateway",
                 tools="superforecasting_agent.runtime.setup.setup_tools",
+                data_desk="superforecasting_agent.runtime.data_desk.setup_data_desk",
             )
             from superforecasting_agent.runtime.setup import run_setup_wizard
             run_setup_wizard(args)
@@ -152,6 +155,7 @@ class TestExistingInstallDefault:
         m["agent"].assert_called_once()
         m["gateway"].assert_called_once()
         m["tools"].assert_called_once()
+        m["data_desk"].assert_called_once()
 
 
 class TestQuickFlag:
@@ -169,6 +173,7 @@ class TestQuickFlag:
                 agent="superforecasting_agent.runtime.setup.setup_agent_settings",
                 gateway="superforecasting_agent.runtime.setup.setup_gateway",
                 tools="superforecasting_agent.runtime.setup.setup_tools",
+                data_desk="superforecasting_agent.runtime.data_desk.setup_data_desk",
             )
             from superforecasting_agent.runtime.setup import run_setup_wizard
             run_setup_wizard(args)
@@ -180,6 +185,7 @@ class TestQuickFlag:
         m["agent"].assert_not_called()
         m["gateway"].assert_not_called()
         m["tools"].assert_not_called()
+        m["data_desk"].assert_not_called()
 
 
 class TestFreshInstall:

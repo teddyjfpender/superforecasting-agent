@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough } from 'stream'
@@ -7,6 +7,7 @@ import React from 'react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import type { ForecastWorkspaceResponse } from '../gatewayTypes.js'
+import { dataDeskGateway } from '../testing/dataDesk.js'
 
 const ESC = String.fromCharCode(27)
 const BEL = String.fromCharCode(7)
@@ -118,9 +119,9 @@ describe('MarketsView column sort', () => {
 
     const stdout = writeStream(columns, 40)
     const stdin = writeStream(columns, 40, true)
-    const gw = { off: () => undefined, on: () => undefined, request: () => Promise.resolve({}) } as never
+    const gw = dataDeskGateway(JSON.parse(readFileSync(join(process.env.FORECAST_HOME!, 'markets.json'), 'utf8')).watchlist) as never
 
-    const instance = render(
+    const instance = await render(
       React.createElement(MarketsView, { gw, onAsk: () => undefined, onClose: () => undefined, t: DARK_THEME }),
       { exitOnCtrlC: false, patchConsole: false, stdin: stdin.stream, stdout: stdout.stream }
     )
@@ -202,7 +203,7 @@ describe('single shortcuts row (no duplicate prose hint row)', () => {
     const [{ render }, { stripAnsi }] = await Promise.all([import('@superforecasting/ink'), import('../lib/text.js')])
     const stdout = writeStream(columns, 40)
     const stdin = writeStream(columns, 40, true)
-    const instance = render(element, { exitOnCtrlC: false, patchConsole: false, stdin: stdin.stream, stdout: stdout.stream })
+    const instance = await render(element, { exitOnCtrlC: false, patchConsole: false, stdin: stdin.stream, stdout: stdout.stream })
     await tick(70)
 
     return {
@@ -244,7 +245,7 @@ describe('single shortcuts row (no duplicate prose hint row)', () => {
       JSON.stringify({ categories: [], custom: [], providers: [], watchlist: [{ category: 'Stocks', name: 'Apple', provider: 'yahoo', symbol: 'AAPL' }] })
     )
     const [{ MarketsView }, { DARK_THEME }] = await Promise.all([import('../components/marketsView.js'), import('../theme.js')])
-    const gw = { off: () => undefined, on: () => undefined, request: () => Promise.resolve({}) } as never
+    const gw = dataDeskGateway(JSON.parse(readFileSync(join(process.env.FORECAST_HOME!, 'markets.json'), 'utf8')).watchlist) as never
     const view = await mountView(React.createElement(MarketsView, { gw, onAsk: () => undefined, onClose: () => undefined, t: DARK_THEME }))
     const text = view.text()
     expect(text).toContain('o Sort')

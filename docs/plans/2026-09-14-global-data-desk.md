@@ -7,17 +7,17 @@ whole goal; completing a foundation or a small provider subset does not complete
 
 | Requirement | Completion evidence | Status |
 | --- | --- | --- |
-| Global starter and intentional empty setup | Setup and first-run TUI tests; actual isolated profile walkthrough | Implemented; final gate pending |
-| Roughly 120–180 qualified, geographically diverse series | Validated preset manifest, coverage audit and provider qualification receipts | Implemented; final gate pending |
-| Preview/customize, apply later, preserve personal selections | Atomic/concurrent/idempotent profile tests; modal walkthrough | Implemented; final gate pending |
-| Real dated history and progressive acquisition | Parser fixtures; slow-provider, cancellation, quota and partial-delivery tests | Implemented; final gate pending |
-| Separate topic, geography and observation kind | Backend catalog contracts and UI filters; no unsupported categories advertised | Implemented; final gate pending |
-| Starter sets, Browse data and Sources modal | Keyboard and narrow-terminal verification; explicit apply and Escape cancel | Implemented; final gate pending |
-| Backend owns settings and secrets on local/VPS sessions | Remote-profile parity and secret-prompt tests; no client credential/config writes | Implemented; final gate pending |
-| Release-aware freshness and honest failure states | Deterministic time/status tests; original publication/revision meaning retained | Implemented; final gate pending |
-| Shared parsing and semantic admission | Provenance/identity/unit/revision fixtures; display never authorizes settlement | Implemented; final gate pending |
-| CLI/TUI/gateway shared operations and generated contracts | Contract tests and strict quality gates | Implemented; final gate pending |
-| Current documentation and clean publication | Owner READMEs, final consolidated verification receipt, commits/push | Implemented; final gate pending |
+| Global starter and intentional empty setup | Setup and first-run TUI tests; actual isolated profile walkthrough | Verified in focused checks |
+| Roughly 120–180 qualified, geographically diverse series | Validated preset manifest, coverage audit and provider qualification receipts | Verified in focused checks |
+| Preview/customize, apply later, preserve personal selections | Atomic/concurrent/idempotent profile tests; modal walkthrough | Verified in focused checks |
+| Real dated history and progressive acquisition | Parser fixtures; slow-provider, cancellation, quota and partial-delivery tests | Verified in focused checks |
+| Separate topic, geography and observation kind | Backend catalog contracts and UI filters; no unsupported categories advertised | Verified in focused checks |
+| Starter sets, Browse data and Sources modal | Keyboard and narrow-terminal verification; explicit apply and Escape cancel | Verified in focused checks |
+| Backend owns settings and secrets on local/VPS sessions | Remote-profile parity and secret-prompt tests; no client credential/config writes | Verified in focused checks |
+| Release-aware freshness and honest failure states | Deterministic time/status tests; original publication/revision meaning retained | Verified in focused checks |
+| Shared parsing and semantic admission | Provenance/identity/unit/revision fixtures; display never authorizes settlement | Verified in focused checks |
+| CLI/TUI/gateway shared operations and generated contracts | Contract tests and strict quality gates | Verified in focused checks |
+| Current documentation and clean publication | Owner READMEs and qualification receipts committed; final gate recorded on the PR | Publication gate pending |
 
 ## Provider qualification scope
 
@@ -78,3 +78,13 @@ loading, fetching, persistence and credentials remain in their existing owners.
 See [source qualification](../verification/data-desk/qualification.md) for exact
 coverage, live failures and conditional candidates. First delivery does not claim
 credentialed e-Stat/INEGI or direct SAMA/UAE/African integrations are complete.
+
+## Consolidated validation follow-up
+
+The first full Python run passed 32,489 cases and found five outdated setup/wire
+expectations. The affected TUI run passed 2,100 cases and found eight older
+product-view assumptions about client-local storage and the former modal.
+These harnesses now use a controlled backend, preserve quote status envelopes,
+and isolate setup sections correctly. All 21 affected Python cases and 21
+product-view cases pass after correction. The push gate reruns full validation;
+its final result belongs in the PR verification record.

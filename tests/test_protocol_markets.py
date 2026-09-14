@@ -77,7 +77,7 @@ def _yahoo_rich_quote() -> dict:
 @pytest.mark.parametrize("frame", [_fx_quote(), _bea_null_quote(), _yahoo_rich_quote()])
 def test_quote_frame_is_wire_identical(frame):
     spec = RPC_BY_METHOD["market.quotes"]
-    result = {"quotes": [frame]}
+    result = {"quotes": [frame], "statuses": []}
     model = spec.response.model_validate(result)
     dumped = model.model_dump(mode="json", exclude_none=spec.exclude_none)
     assert dumped == result

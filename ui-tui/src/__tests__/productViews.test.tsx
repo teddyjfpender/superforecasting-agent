@@ -4,6 +4,8 @@ import React from 'react'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
 import { getOverlayState, resetOverlayState } from '../app/overlayStore.js'
+import { catalogSeries } from '../lib/dataDesk.js'
+import { dataDeskGateway, testDataCatalog } from '../testing/dataDesk.js'
 import { waitForText } from '../testing/settle.js'
 
 // Smoke tests for the three "serious product" views — Markets, News, and
@@ -67,7 +69,7 @@ const renderComponent = async (component: React.ComponentType<{ onClose: () => v
   const stdout = writeStream(110, 40)
   const stdin = writeStream(110, 40, true)
 
-  const instance = render(React.createElement(component, { onClose: () => undefined, t: DARK_THEME }), {
+  const instance = await render(React.createElement(component, { onClose: () => undefined, t: DARK_THEME }), {
     exitOnCtrlC: false,
     patchConsole: false,
     stdin: stdin.stream,
@@ -125,7 +127,7 @@ describe('MarketsView', () => {
     const stdout = writeStream(120, 36)
     const stdin = writeStream(120, 36, true)
 
-    const instance = render(React.createElement(MarketsView, { onClose: () => undefined, t: DARK_THEME }), {
+    const instance = await render(React.createElement(MarketsView, { gw: dataDeskGateway() as never, onClose: () => undefined, t: DARK_THEME }), {
       exitOnCtrlC: false,
       patchConsole: false,
       stdin: stdin.stream,
@@ -154,7 +156,7 @@ describe('MarketsView', () => {
     expect(text).toContain('MARKETS')
     expect(text).toContain('no providers')
     expect(text).toContain('Press d')
-    expect(text).toContain('add providers')
+    expect(text).toContain('global starter set')
     expect(text).toContain('search')
     // The close affordance now lives only in the FooterChips row (the duplicate
     // prose hint line — which read "… · Esc/q close" — was removed).
@@ -167,10 +169,10 @@ describe('MarketsView', () => {
     const text = m.text()
     m.cleanup()
 
-    expect(text).toContain('Add market data')
-    expect(text).toContain('PROVIDERS')
-    expect(text).toContain('Yahoo Finance')
-    expect(text).toContain('CATEGORIES')
+    expect(text).toContain('Add data')
+    expect(text).toContain('Starter sets')
+    expect(text).toContain('Browse data')
+    expect(text).toContain('Sources')
   })
 
   it('h opens the unified Help modal — and ← (venue/expand nav) does not', async () => {
@@ -191,20 +193,18 @@ describe('MarketsView', () => {
     const m = await renderMarkets()
     await m.press('d')
 
-    // The PM entry sits at the catalog tail: walk the provider list down to it,
-    // toggle it on, save. The operator's discovery path is the add-data flow, so
-    // enabling must land them ON the Prediction section of the Data tape, not
-    // silently save a no-op — and NOT a separate '[Prediction]' mode chip.
-    // The PM entry is the catalog TAIL and the cursor clamps at the last row,
-    // so a fixed run of downs deterministically lands on it (the cumulative
-    // stdout buffer makes visibility checks unreliable for cursor position).
-    for (let i = 0; i < 30; i += 1) {
+    await m.press('\t')
+    await m.press('\t')
+
+    // Use the catalog identity to locate the source; regional additions can
+    // appear after it without changing prediction-market navigation.
+    for (let i = 0; i < testDataCatalog.providers.findIndex(provider => provider.id === 'predictionmarkets'); i += 1) {
       await m.press('\u001b[B')
     }
 
     expect(m.text()).toContain('Prediction Mar')
     await m.press('\r') // ⏎ toggles the highlighted provider on
-    await m.press('\u001b') // Esc = save & close (the modal's commit key)
+    await m.press('\u001b') // Escape closes after the explicit source-enable operation
     const text = m.text()
     m.cleanup()
 
@@ -217,8 +217,8 @@ describe('MarketsView', () => {
     expect(text).toContain('Prediction')
     expect(text).toContain('MARKET')
     expect(text).toContain('PROB')
-    // Keyless, no gateway wired in this smoke test → the honest empty line.
-    expect(text).toContain('Prediction markets need the gateway')
+    // The controlled backend has no open prediction events.
+    expect(text).toContain('No open markets')
   })
 })
 
@@ -238,12 +238,13 @@ describe('AddProviderModal', () => {
 
     // The modal renders through ModalOverlay (an absolute box), so it needs a
     // sized ancestor to anchor to — exactly how the real view mounts it.
-    const instance = render(
+    const instance = await render(
       React.createElement(
         Box as never,
         { flexDirection: 'column', height: 32, width: 120 } as never,
         React.createElement(AddProviderModal, {
           cols: 120,
+          gw: dataDeskGateway() as never,
           initial,
           onCancel: () => undefined,
           onSaved: () => undefined,
@@ -255,6 +256,10 @@ describe('AddProviderModal', () => {
     )
 
     await tick(50)
+    stdin.stream.write('\t')
+    await tick(30)
+    stdin.stream.write('\t')
+    await tick(30)
     const text = normalize(stdout.text(), stripAnsi)
     instance.unmount?.()
     instance.cleanup?.()
@@ -262,7 +267,7 @@ describe('AddProviderModal', () => {
     return text
   }
 
-  it('lists every provider and the full breadth of categories', async () => {
+  it('exposes readable sources alongside starter and browse navigation', async () => {
     const text = await renderModal({ categories: [], custom: [], providers: [], watchlist: [] })
 
     // all providers
@@ -270,13 +275,10 @@ describe('AddProviderModal', () => {
       expect(text).toContain(p)
     }
 
-    // full category breadth (not just Indices/FX/Crypto/Commodities)
-    for (const c of ['Indices', 'Commodities', 'Rates', 'Inflation', 'Employment', 'GDP', 'Trade']) {
-      expect(text).toContain(c)
-    }
+    expect(text).toContain('Starter sets')
+    expect(text).toContain('Browse data')
+    expect(text).toContain('Sources')
 
-    // keyed providers are flagged
-    expect(text).toContain('key')
   })
 })
 
@@ -297,12 +299,13 @@ describe('MarketSearchModal', () => {
 
     // The modal renders through ModalOverlay (an absolute box), so it needs a
     // sized ancestor to anchor to — exactly how the real view mounts it.
-    const instance = render(
+    const instance = await render(
       React.createElement(
         Box as never,
         { flexDirection: 'column', height: 28, width: 120 } as never,
         React.createElement(MarketSearchModal, {
           cols: 120,
+          catalog: catalogSeries(testDataCatalog),
           isAdded: () => false,
           isWatched: () => false,
           onClose: () => undefined,
@@ -370,7 +373,7 @@ describe('NewsView', () => {
     const stdout = writeStream(120, 40)
     const stdin = writeStream(120, 40, true)
 
-    const instance = render(React.createElement(NewsView, { onClose: () => undefined, t: DARK_THEME }), {
+    const instance = await render(React.createElement(NewsView, { onClose: () => undefined, t: DARK_THEME }), {
       exitOnCtrlC: false,
       patchConsole: false,
       stdin: stdin.stream,
@@ -491,7 +494,7 @@ describe('MessagingView', () => {
     const stdout = writeStream(120, 36)
     const stdin = writeStream(120, 36, true)
 
-    const instance = render(
+    const instance = await render(
       React.createElement(
         Box,
         { height: 36 },
