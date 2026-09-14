@@ -210,3 +210,25 @@ async def test_no_pending_cleans_up_normally():
     assert sk not in adapter._pending_messages
 
     await adapter.cancel_background_tasks()
+
+
+@pytest.mark.asyncio
+async def test_busy_adapter_leaves_journal_delivery_pending_without_merging_user_text():
+    adapter = _make_adapter()
+    adapter._message_handler = AsyncMock()
+    key = _sk()
+    interrupt = asyncio.Event()
+    adapter._active_sessions[key] = interrupt
+    adapter._session_tasks[key] = asyncio.current_task()
+    user_message = _make_event('User follow-up')
+    adapter._pending_messages[key] = user_message
+    background = _make_event('Saved research')
+    background.internal = True
+    background.background_notification = {'journal_event_id': 'saved', 'session_key': key}
+    await adapter.handle_message(background)
+    assert adapter._pending_messages[key] is user_message
+    assert user_message.text == 'User follow-up'
+    assert not interrupt.is_set()
+    adapter._message_handler.assert_not_called()
+    adapter._session_tasks.clear()
+    adapter._active_sessions.clear()

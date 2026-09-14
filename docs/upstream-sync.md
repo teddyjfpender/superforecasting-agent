@@ -1,5 +1,12 @@
 # Upstream sync — harvesting value from `hermes-agent`
 
+Current remotes: `upstream` is the original repository linked below; `origin`
+is the Superforecasting Agent fork. Fetch and compare `upstream/main` when reviewing
+inbound changes. Fork PRs target `superforecasting-agent-snapshot`, not the
+inherited `main` mirror. Always specify the fork repository in `gh` commands.
+The dated notes below retain their historical remote names and audit boundaries;
+they are not evidence that every intervening upstream change has been reviewed.
+
 > **2026-08-11 spot audit:** fetched `origin/main` at `a31be48030f6`; the fork
 > is 1,305 commits ahead and 12,640 behind from `edb2d910577b`. This is not a
 > full incremental audit, so the reviewed-through audit head below is unchanged.
@@ -28,14 +35,14 @@ fork, not a *tracking* fork.
 **2. Run the audit on a cadence (monthly, or before touching a subsystem).**
 Two reusable passes:
 
-- **Classify** — profile `git log <audit-head>..origin/main` (the *incremental*
+- **Classify** — profile `git log <audit-head>..upstream/main` (the *incremental*
   delta since the last audit — see the Ledger's "Audit head" marker; use the
   `merge-base` only for a from-scratch re-audit) by conventional-commit type, scope,
   and diff size; keep only the fork-relevant scopes (`gateway`, `cli`, `tui`,
   `agent`, `codex`, `mcp`, `skills`, `security`, `file-safety`, `prompt`, `patch`).
   Drop web/kanban/docker/dashboard-auth/Nous-portal/chat-adapter/xAI/image-gen —
   ~70% of churn, zero forecasting payoff. **When the audit finishes, bump the audit
-  head to the new `origin/main` tip.**
+  head to the new `upstream/main` tip.**
 - **Assess against our tree** — for each candidate PR, read the *actual diff*,
   check how diverged our copy of the touched files is, and decide
   bring / adapt / skip / investigate / **already-have**. Verify claims against the
@@ -93,8 +100,9 @@ Remotes in this checkout: `origin` = upstream `NousResearch/hermes-agent`,
 
 ```sh
 git fetch origin
-git log --oneline d62979a6f..origin/main          # everything new since this audit
-git log --oneline d62979a6f..origin/main | wc -l  # how many new commits
+git fetch upstream main
+git log --oneline d62979a6f..upstream/main          # everything new since this audit
+git log --oneline d62979a6f..upstream/main | wc -l  # how many new commits
 ```
 
 Then re-run the classify → assess passes on that delta only (not the full
@@ -289,3 +297,23 @@ previously reviewed identities to
 Historical trial packets and receipts remain unchanged; unknown source identities
 still fail closed. Regression tests exercise both legacy packets and the prior
 current identity through actual paired evaluation.
+
+### Research runtime follow-on
+
+The acceptance checklist is
+[research-runtime implementation](plans/2026-09-14-research-runtime.md).
+Issuer binding adapts `d9e88e19e2` with an additional token-endpoint binding,
+fail-closed handling for unproven legacy refresh grants, fixed profile ownership,
+and whole-record compare-before-cleanup. Repeated tool-result references adapt
+`761990b780` while retaining normal tool execution and requiring a retained original.
+All seven implementation acceptance items are now recorded in that plan. The
+canonical suite passed 32,394 tests at `87b0cde5a5`; native kernel/replay steps
+passed on Windows, Linux and macOS in run `34846178443`. Final publication is
+tracked by fork PR #51. The [user guide](research-runtime.md) describes the
+supported behavior and explicit replay/recovery limits.
+
+Progressive discovery adapts the `369075dc95` → `e455e4afd0` → `e16ad33a9d`
+family through the fork's tooling owner. The direct set retains all core tools,
+forecast tools and clarification. Deferred batches are schema-validated before
+effects, with no network schema retrieval, and selection is rechecked during
+execution. Search uses bounded multi-query BM25 with thread-owned stemming.

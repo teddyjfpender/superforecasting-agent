@@ -7,6 +7,34 @@ from rich.console import Console
 from .assistant_text import _strip_reasoning_tags
 from .console_output import _record_output_history_entry, _suspend_output_history
 
+def _display_durable_recovery(self):
+    """Expose interrupted receiving work without automatically repeating effects."""
+    from rich.text import Text
+
+    from superforecasting_agent.storage import turns
+
+    db = getattr(self, "_session_db", None)
+    if not callable(getattr(db, "_execute_write", None)):
+        return
+    try:
+        receipt = turns.latest(db, self.session_id, recover=True)
+    except Exception:
+        self._console_print("Saved turn recovery state is unavailable; check session diagnostics.")
+        return
+    if not isinstance(receipt, dict) or receipt.get("status") == "complete":
+        return
+    if receipt.get("owner_active"):
+        self._console_print("A saved turn is still owned by a running process; it has not been replayed.")
+        return
+    self._console_print(Text(
+        f"Saved turn {receipt['id']} is {receipt['status']}. "
+        "Review its saved request and any partial response before resubmitting; "
+        "tools may already have run."
+    ))
+    self._console_print(Text("Saved request:\n" + receipt["prompt"]))
+    if receipt.get("partial_text"):
+        self._console_print(Text("Partial response:\n" + receipt["partial_text"]))
+
 def _display_resumed_history(self):
     """Render a compact recap of previous forecast-session messages.
 

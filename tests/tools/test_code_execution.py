@@ -157,6 +157,8 @@ class TestExecuteCodeRemoteTempDir(unittest.TestCase):
                 self.commands.append((command, cwd, timeout))
                 if "command -v python3" in command:
                     return {"output": "OK\n"}
+                if "secrets.token_urlsafe" in command:
+                    return {"output": "x" * 43, "returncode": 0}
                 if "python3 script.py" in command:
                     return {"output": "hello\n", "returncode": 0}
                 return {"output": ""}
@@ -851,35 +853,27 @@ class TestExecuteCodeEdgeCases(unittest.TestCase):
         self.assertIn("all imports ok", result["output"])
 
     @unittest.skipIf(sys.platform == "win32", "UDS not available on Windows")
-    def test_empty_enabled_tools_uses_all(self):
-        """When enabled_tools is [] (empty), all sandbox tools should be available."""
-        code = (
-            "from hermes_tools import terminal, web_search\n"
-            "print('imports ok')\n"
-        )
-        with patch("superforecasting_agent.tooling.runtime.handle_function_call",
-                    return_value=json.dumps({"ok": True})):
-            result = json.loads(execute_code(code, task_id="test-empty",
-                                             enabled_tools=[]))
+    def test_empty_enabled_tools_exposes_no_tools(self):
+        """An explicit empty selection must never expand into default access."""
+        code = 'import forecast_tools; print(hasattr(forecast_tools, "terminal"))'
+        with patch("superforecasting_agent.tooling.runtime.handle_function_call") as dispatch:
+            result = json.loads(execute_code(code, task_id="test-empty", enabled_tools=[]))
         self.assertEqual(result["status"], "success")
-        self.assertIn("imports ok", result["output"])
+        self.assertEqual(result["output"].strip(), "False")
+        dispatch.assert_not_called()
 
     @unittest.skipIf(sys.platform == "win32", "UDS not available on Windows")
-    def test_nonoverlapping_tools_fallback(self):
-        """When enabled_tools has no overlap with SANDBOX_ALLOWED_TOOLS,
-        should fall back to all allowed tools."""
-        code = (
-            "from hermes_tools import terminal\n"
-            "print('fallback ok')\n"
-        )
-        with patch("superforecasting_agent.tooling.runtime.handle_function_call",
-                    return_value=json.dumps({"ok": True})):
+    def test_nonoverlapping_tools_cannot_call_default_tools(self):
+        """Selected capabilities outside the sandbox allow-list grant no RPC tools."""
+        code = 'import forecast_tools; print(forecast_tools._call("terminal", {"command": "forbidden"}))'
+        with patch("superforecasting_agent.tooling.runtime.handle_function_call") as dispatch:
             result = json.loads(execute_code(
                 code, task_id="test-nonoverlap",
                 enabled_tools=["vision_analyze", "browser_snapshot"],
             ))
         self.assertEqual(result["status"], "success")
-        self.assertIn("fallback ok", result["output"])
+        self.assertIn("not available", result["output"])
+        dispatch.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

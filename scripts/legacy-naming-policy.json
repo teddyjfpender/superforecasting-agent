@@ -66,6 +66,14 @@
       ],
       "token": "hermes-agent\\.nix",
       "reason": "Names the existing Nix import adapter in the directory ownership table; not a new product entrypoint."
+    },
+    {
+      "category": "compatibility",
+      "paths": [
+        "tools/code_kernel.py"
+      ],
+      "token": "hermes_tools\\.py",
+      "reason": "Generated one-line import adapter preserves saved analysis scripts; canonical functions and RPC state live exclusively in forecast_tools."
     }
   ]
 }

@@ -53,3 +53,15 @@ Update this guide when entry points or ownership change. See the
 and [engineering backlog](../TODO.md) for cross-package context.
 
 [↑ Parent directory](../README.md)
+
+## Synthetic context recall evaluation
+
+[evaluate_context_recall.py](evaluate_context_recall.py) compares exact forecast
+fact retention under uncompacted, lossy-summary and indexed-summary conditions.
+Run it as `python -m scripts.evaluate_context_recall --output /tmp/recall.json`.
+The default is offline. `--provider` and `--model` together opt into paid model
+calls for answer recall, with isolated prompts per fact and policy. The fixture
+is synthetic: this command never queries or mutates a live forecast ledger.
+Model mode uses the configured provider credentials.
+Reports include fixture and implementation hashes; retain the report alongside
+the tested commit. Mechanical retention alone does not establish model quality.

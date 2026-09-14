@@ -59,3 +59,47 @@ ordinary prompt text for a text-only model.
 blocks. Compatible text fragments can join, but conflicting identities, signatures
 and opaque blocks remain intact. Session storage preserves that metadata for
 resume; it is separate from visible reasoning text.
+
+[result_references.py](result_references.py) reduces repeated observation payloads
+without suppressing execution. It requires an original tool result still retained
+in the transcript and resets on changed or failed observations. Sequential and
+concurrent executors use the same helper; references survive normal session replay.
+
+## Context continuity
+
+[context_usage.py](context_usage.py) prices the retained conversation using a
+provider-measured input baseline plus estimates for subsequent messages. The
+baseline is bound to the whole priced prefix, session, model/provider, system
+context and disclosed tool schemas. Rewinds, edits and changed request identities
+fall back to a fresh estimate. Session storage persists only hashes and counts;
+missing or incompatible records never prevent resume. Hidden billed reasoning
+counts are not added to the context estimate. TUI context usage uses this same
+owner; billing totals remain separate.
+
+[compaction_recall.py](compaction_recall.py) mechanically retains bounded exact
+forecast identifiers, source references, measurement contracts and assumption
+quotes from the compacted region. These are historical claims, not verified
+outcomes or new instructions. Whole records that exceed the budget are omitted
+explicitly, with retrieval guidance. The forecast ledger and original session
+transcript remain authoritative. Prior index entries survive another compaction
+subject to the same bound.
+
+Run the synthetic recall comparison with:
+
+```sh
+.venv/bin/python -m scripts.evaluate_context_recall --output /tmp/recall.json
+```
+
+The default checks exact retention against uncompacted and lossy-summary
+controls. Adding `--provider NAME --model MODEL` makes provider calls to measure
+answer recall too. Reports identify the fixture and implementation hashes. One
+synthetic fixture is a regression aid, not evidence of improved forecasting.
+
+Repeated-result compaction requires the full original bytes inline. A saved-output
+pointer alone is insufficient proof: the next observation is emitted in full and
+can be persisted again through the normal output-storage path.
+
+[thread_scoped_output.py](thread_scoped_output.py) routes Python output by execution
+context. Silencing a tool worker leaves other sessions visible, supports nested
+scopes, and never closes borrowed stdout/stderr streams. It does not redirect
+native file-descriptor writes.

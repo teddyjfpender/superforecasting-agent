@@ -985,6 +985,8 @@ def _wait_agent(session: dict, rid: str, timeout: float = 30.0) -> dict | None:
 
 def _initialize_built_agent(sid: str, session: dict, agent) -> None:
     key = session["session_key"]
+    if hasattr(agent, "_session_messages"):
+        agent._session_messages = list(session.get("history", []))
     try:
         from tools.approval import register_gateway_notify, load_permanent_allowlist
 
@@ -1417,8 +1419,6 @@ def _compress_session_history(
     before_messages: list | None = None,
     history_version: int | None = None,
 ) -> tuple[int, dict]:
-    from agent.model_metadata import estimate_request_tokens_rough
-
     agent = session["agent"]
     # Snapshot history under the lock so the LLM-bound compression call
     # below does NOT hold history_lock for the duration of the request —
@@ -1435,11 +1435,8 @@ def _compress_session_history(
     if approx_tokens is None:
         # Include system prompt + tool schemas so the figure reflects real
         # request pressure, not a transcript-only underestimate (#6217).
-        _sys_prompt = getattr(agent, "_cached_system_prompt", "") or ""
-        _tools = getattr(agent, "tools", None) or None
-        approx_tokens = estimate_request_tokens_rough(
-            history, system_prompt=_sys_prompt, tools=_tools
-        )
+        from agent.context_usage import context_tokens
+        approx_tokens = context_tokens(agent, history)
     # Pass system_message=None so AIAgent._compress_context rebuilds the
     # system prompt cleanly via _build_system_prompt(None). Passing the
     # cached prompt (which already contains the agent identity block)
@@ -1478,7 +1475,7 @@ def _compress_session_history(
             if not is_prefix:
                 # Concurrent mutation truncated/rewrote history. Keep the
                 # concurrent state and drop our now-stale compaction work.
-                usage = _get_usage(agent)
+                usage = _get_usage(agent, current)
                 return 0, usage
             tail = list(current[snap_len:])
             merged = list(compressed) + tail
@@ -1490,7 +1487,8 @@ def _compress_session_history(
             session["history_version"] = (
                 int(session.get("history_version", 0)) + 1
             )
-            usage = _get_usage(agent)
+            agent._session_messages = merged
+            usage = _get_usage(agent, merged)
             # True net removal relative to the snapshot: the snapshot held
             # len(before_messages) messages; the session now holds len(merged)
             # (compressed prefix + folded tail). `len(history) - len(compressed)`
@@ -1501,7 +1499,8 @@ def _compress_session_history(
             return max(0, len(before_messages) - len(merged)), usage
         session["history"] = compressed
         session["history_version"] = history_version + 1
-    usage = _get_usage(agent)
+        agent._session_messages = compressed
+    usage = _get_usage(agent, compressed)
     return len(history) - len(compressed), usage
 
 
@@ -1577,7 +1576,7 @@ def _sync_session_key_after_compress(
     _emit("session.info", sid, _session_info(agent))
 
 
-def _get_usage(agent) -> dict:
+def _get_usage(agent, messages: list | None = None) -> dict:
     g = lambda k, fb=None: getattr(agent, k, 0) or (getattr(agent, fb, 0) if fb else 0)
     usage = {
         "model": getattr(agent, "model", "") or "",
@@ -1593,7 +1592,13 @@ def _get_usage(agent) -> dict:
     }
     comp = getattr(agent, "context_compressor", None)
     if comp:
-        ctx_used = getattr(comp, "last_prompt_tokens", 0) or usage["total"] or 0
+        from agent.context_usage import context_tokens
+        if messages is None:
+            messages = getattr(agent, "_session_messages", None)
+        if isinstance(messages, list):
+            ctx_used = context_tokens(agent, messages)
+        else:
+            ctx_used = getattr(comp, "last_prompt_tokens", 0) or 0
         ctx_max = getattr(comp, "context_length", 0) or 0
         if ctx_max:
             usage["context_used"] = ctx_used
@@ -2201,12 +2206,12 @@ def _reset_session_agent(sid: str, session: dict, *, reserved: bool = False) -> 
         "show_reasoning": _load_show_reasoning(),
         "tool_progress_mode": _load_tool_progress_mode(), "tool_started_at": {},
     }
-    info = _session_info(session["agent"])
     with session["history_lock"]:
         session.update(updates)
         session["history"] = []
+        session["agent"]._session_messages = []
         session["history_version"] = int(session.get("history_version", 0)) + 1
-    return info
+    return _session_info(session["agent"])
 
 
 def _session_runtime(sid: str) -> dict:
@@ -2282,6 +2287,8 @@ def _make_agent(sid: str, key: str, session_id: str | None = None):
     )
 
 def _init_session(sid: str, key: str, agent, history: list, cols: int = 80, *, pending_handoff: bool = False):
+    if hasattr(agent, "_session_messages"):
+        agent._session_messages = list(history)
     _host.sessions.register(sid, {
         "agent": agent,
         "session_key": key,
@@ -2918,6 +2925,8 @@ def _(rid, params: dict) -> dict:
         plan = prepare_undo(session.get("history", []))
         if plan is not None:
             session["history"] = plan.history
+            if session.get("agent") is not None:
+                session["agent"]._session_messages = list(plan.history)
             session["history_version"] = int(session.get("history_version", 0)) + 1
     return _ok(rid, {"removed": plan.removed if plan is not None else 0})
 
@@ -2935,22 +2944,14 @@ def _(rid, params: dict) -> dict:
     focus_topic = str(params.get("focus_topic", "") or "").strip()
     try:
         from agent.manual_compression_feedback import summarize_manual_compression
-        from agent.model_metadata import estimate_request_tokens_rough
+        from agent.context_usage import context_tokens
 
         with session["history_lock"]:
             before_messages = list(session.get("history", []))
             history_version = int(session.get("history_version", 0))
         before_count = len(before_messages)
         _agent = session["agent"]
-        _sys_prompt = getattr(_agent, "_cached_system_prompt", "") or ""
-        _tools = getattr(_agent, "tools", None) or None
-        before_tokens = (
-            estimate_request_tokens_rough(
-                before_messages, system_prompt=_sys_prompt, tools=_tools
-            )
-            if before_count
-            else 0
-        )
+        before_tokens = context_tokens(_agent, before_messages) if before_count else 0
 
         if before_count >= 4:
             focus_suffix = f', focus: "{focus_topic}"' if focus_topic else ""
@@ -2972,21 +2973,7 @@ def _(rid, params: dict) -> dict:
             with session["history_lock"]:
                 messages = list(session.get("history", []))
             after_count = len(messages)
-            # Re-read system prompt + tools after compression — _compress_context
-            # may have rebuilt the system prompt (_cached_system_prompt=None).
-            _sys_prompt_after = (
-                getattr(_agent, "_cached_system_prompt", "") or _sys_prompt
-            )
-            _tools_after = getattr(_agent, "tools", None) or _tools
-            after_tokens = (
-                estimate_request_tokens_rough(
-                    messages,
-                    system_prompt=_sys_prompt_after,
-                    tools=_tools_after,
-                )
-                if after_count
-                else 0
-            )
+            after_tokens = context_tokens(_agent, messages) if after_count else 0
             agent = session["agent"]
             _sync_session_key_after_compress(sid, session)
             summary = summarize_manual_compression(
@@ -3350,13 +3337,18 @@ def _notification_poller_loop(
     from superforecasting_agent.hosting.notifications import poll_notifications
     from tools.process_registry import process_registry, format_process_notification
 
-    def dispatch(text: str) -> None:
+    def dispatch(text: str, event: dict | None = None) -> None:
         rid = f"__notif__{int(time.time() * 1000)}"
         try:
             _emit("status.update", sid, {"kind": "process", "text": text})
         except Exception:
             logger.exception("Notification status display failed")
-        _run_prompt_submit(rid, sid, session, text)
+        if event and event.get("journal_event_id"):
+            _run_prompt_submit(rid, sid, session, text, notification_event=event)
+        else:
+            _run_prompt_submit(rid, sid, session, text)
+
+    from tools.async_delegation import pending_notifications
 
     poll_notifications(
         stop_event, session, process_registry.completion_queue,
@@ -3364,6 +3356,8 @@ def _notification_poller_loop(
         format_event=format_process_notification,
         host_stopping=lambda: _host.workers.stopping,
         dispatch=dispatch,
+        dispatch_event=dispatch,
+        recover=lambda: pending_notifications(session["session_key"]),
     )
 
 
@@ -3374,7 +3368,7 @@ def _start_notification_poller(sid: str, session: dict) -> threading.Event:
     return stop
 
 
-def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
+def _run_prompt_submit(rid, sid: str, session: dict, text: Any, *, notification_event: dict | None = None) -> None:
     with session["history_lock"]:
         history = list(session["history"])
         history_version = int(session.get("history_version", 0))
@@ -3383,7 +3377,20 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
     agent = session["agent"]
     from superforecasting_agent.storage import turns as turn_journal
     db = _get_db()
-    if db is not None:
+    event_id = (notification_event or {}).get("journal_event_id")
+    if event_id:
+        from superforecasting_agent.hosting.notifications import admit_background_notification
+        from tools.async_delegation import acknowledge_notification
+        notification_turn, created = admit_background_notification(
+            db, notification_event or {}, session["session_key"], text,
+            acknowledge=acknowledge_notification,
+        )
+        if not created:
+            with session["history_lock"]:
+                session["running"] = False
+            return
+        session["turn_id"] = notification_turn
+    if db is not None and not event_id:
         receipt = _turn_recovery(db, session["session_key"])
         if not session.get("turn_id") or not receipt or receipt["status"] in turn_journal.TERMINAL:
             session["turn_id"] = turn_journal.start(db, session["session_key"], text)
@@ -3745,6 +3752,10 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
             from tools.process_registry import process_registry
 
             for _evt, synth in process_registry.drain_notifications():
+                if _evt.get("journal_event_id"):
+                    # The poller owns durable background admission and routing.
+                    process_registry.completion_queue.put(_evt)
+                    continue
                 with session["history_lock"]:
                     if session.get("running"):
                         process_registry.completion_queue.put(_evt)

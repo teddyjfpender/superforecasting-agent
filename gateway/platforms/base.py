@@ -952,6 +952,9 @@ class MessageEvent:
     # completion notifications) that must bypass user authorization checks.
     internal: bool = False
 
+    # Set only by the local background journal delivery adapter, never platform input.
+    background_notification: Optional[Dict[str, Any]] = None
+
     # Timestamps
     timestamp: datetime = field(default_factory=datetime.now)
     
@@ -2853,6 +2856,10 @@ class BasePlatformAdapter(ABC):
 
         # Check if there's already an active handler for this session
         if session_key in self._active_sessions:
+            if event.background_notification is not None:
+                # Keep journal-backed work pending at its durable source. Never
+                # merge it into user input or interrupt the running conversation.
+                return
             # Certain commands must bypass the active-session guard and be
             # dispatched directly to the gateway runner.  Without this, they
             # are queued as pending messages and either:

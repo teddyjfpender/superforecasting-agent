@@ -5,8 +5,12 @@ init_session() failure handling, and the CWD marker contract.
 """
 
 import uuid
+import os
+import shlex
+import subprocess
 from unittest.mock import MagicMock
 
+import pytest
 from tools.environments.base import BaseEnvironment, _cwd_marker
 
 
@@ -23,6 +27,44 @@ class _TestableEnv(BaseEnvironment):
         pass
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX shell state contract")
+def test_control_execution_borrows_snapshot_without_overwriting_state(tmp_path):
+    class ShellEnv(_TestableEnv):
+        def _run_bash(self, cmd_string, **kwargs):
+            return subprocess.run(
+                ["bash", "-c", cmd_string], capture_output=True, text=True, timeout=10
+            )
+
+        def _wait_for_process(self, proc, **kwargs):
+            return {"output": proc.stdout, "returncode": proc.returncode}
+
+    env = ShellEnv(cwd=str(tmp_path))
+    snapshot = tmp_path / "snapshot.sh"
+    cwd_file = tmp_path / "cwd"
+    snapshot.write_text("export FORECAST_TEST_SNAPSHOT_VALUE=original\n")
+    cwd_file.write_text(str(tmp_path))
+    env._snapshot_path = str(snapshot)
+    env._cwd_file = str(cwd_file)
+    env._snapshot_ready = True
+    other = tmp_path / "other"
+    other.mkdir()
+    result = env.execute(
+        'printf "%s" "$FORECAST_TEST_SNAPSHOT_VALUE"; '
+        f"export FORECAST_TEST_SNAPSHOT_VALUE=control; cd {shlex.quote(str(other))}; false",
+        update_cwd=False,
+    )
+    assert result == {"output": "original", "returncode": 1}
+    assert snapshot.read_text() == "export FORECAST_TEST_SNAPSHOT_VALUE=original\n"
+    assert cwd_file.read_text() == str(tmp_path)
+    assert env.cwd == str(tmp_path)
+    env.execute(
+        f"export FORECAST_TEST_SNAPSHOT_VALUE=user; cd {shlex.quote(str(other))}"
+    )
+    assert env.cwd == str(other.resolve())
+    assert cwd_file.read_text().strip() == str(other.resolve())
+    assert env.execute('printf "%s" "$FORECAST_TEST_SNAPSHOT_VALUE"')["output"] == "user"
+
+
 class TestWrapCommand:
     def test_basic_shape(self):
         env = _TestableEnv()
@@ -32,11 +74,11 @@ class TestWrapCommand:
         assert "source" in wrapped
         assert "cd -- /tmp" in wrapped or "cd -- '/tmp'" in wrapped
         assert "eval 'echo hello'" in wrapped
-        assert "__hermes_ec=$?" in wrapped
+        assert "__forecast_exit_code=$?" in wrapped
         assert "export -p >" in wrapped
         assert "pwd -P >" in wrapped
         assert env._cwd_marker in wrapped
-        assert "exit $__hermes_ec" in wrapped
+        assert "exit $__forecast_exit_code" in wrapped
 
     def test_no_snapshot_skips_source(self):
         env = _TestableEnv()

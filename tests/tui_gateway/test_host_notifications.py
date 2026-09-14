@@ -43,3 +43,145 @@ def test_broken_queue_is_not_silently_spun_forever():
                            format_event=lambda _: "unused", host_stopping=lambda: False,
                            dispatch=Mock())
     pending.get.assert_called_once()
+
+
+def test_idle_poller_recovers_durable_events_with_identity():
+    stop = threading.Event()
+    session = {"history_lock": threading.Lock(), "session_key": "owner"}
+    pending = queue.Queue()
+    event = {"session_key": "owner", "journal_event_id": "durable-event"}
+    seen = []
+    def dispatch(text, original):
+        seen.append((text, original))
+        stop.set()
+    poll_notifications(stop, session, pending, consumed=lambda _: False,
+                       format_event=lambda _: "recovered result", host_stopping=lambda: False,
+                       dispatch=lambda _: pytest.fail("event identity was discarded"),
+                       dispatch_event=dispatch, recover=lambda: [event])
+    assert seen == [("recovered result", event)]
+
+
+def test_profile_routing_distinguishes_identical_session_names(tmp_path):
+    from superforecasting_agent.hosting.notifications import notification_profile_key, route_notification
+
+    first = notification_profile_key(tmp_path / 'first')
+    second = notification_profile_key(tmp_path / 'second')
+    event = {'session_key': 'desk', 'profile_key': first}
+    assert route_notification(event, 'desk', profile_key=first) == 'consume'
+    assert route_notification(event, 'desk', profile_key=second) == 'requeue'
+    assert route_notification(event, 'other', profile_key=first) == 'requeue'
+    assert route_notification({'session_key': 'desk'}, 'desk', profile_key=second) == 'consume'
+    assert str(tmp_path) not in first
+
+
+def test_poller_preserves_another_profiles_result(monkeypatch):
+    from superforecasting_agent.hosting import notifications
+
+    monkeypatch.setattr(notifications, 'notification_profile_key', lambda: 'local')
+    pending = queue.Queue()
+    foreign = {'session_key': 'desk', 'profile_key': 'foreign'}
+    local = {'session_key': 'desk', 'profile_key': 'local'}
+    pending.put(foreign)
+    pending.put(local)
+    stop = threading.Event()
+    seen = []
+    def dispatch(text, event):
+        seen.append(event)
+        stop.set()
+    poll_notifications(stop, {'session_key': 'desk', 'history_lock': threading.Lock()}, pending,
+                       consumed=lambda _: False, format_event=lambda _: 'research',
+                       host_stopping=lambda: False, dispatch=lambda _: None, dispatch_event=dispatch)
+    assert seen == [local]
+    assert pending.get_nowait() == foreign
+
+
+def test_foreign_queue_cannot_starve_durable_recovery(monkeypatch):
+    from superforecasting_agent.hosting import notifications
+
+    monkeypatch.setattr(notifications, 'notification_profile_key', lambda: 'local')
+    stop = threading.Event()
+    pending = queue.Queue()
+    foreign = {'session_key': 'desk', 'profile_key': 'foreign'}
+    local = {'session_key': 'desk', 'profile_key': 'local', 'journal_event_id': 'saved'}
+    pending.put(foreign)
+    seen = []
+    def dispatch(text, event):
+        seen.append(event)
+        stop.set()
+    poll_notifications(stop, {'session_key': 'desk', 'history_lock': threading.Lock()}, pending,
+                       consumed=lambda _: False, format_event=lambda _: 'saved research',
+                       host_stopping=lambda: False, dispatch=lambda _: None,
+                       dispatch_event=dispatch, recover=lambda: [local, {**local, 'journal_event_id': 'later'}])
+    assert seen == [local]
+    assert pending.qsize() == 1
+    assert pending.get_nowait() == foreign
+
+
+def test_receiving_admission_survives_ack_failure_and_database_reopen(tmp_path):
+    from superforecasting_agent.hosting.notifications import admit_background_notification
+    from superforecasting_agent.storage import turns
+    from superforecasting_agent.storage.session import SessionDB
+
+    path = tmp_path / 'state.db'
+    event = {'session_key': 'desk', 'journal_event_id': 'result-1'}
+    db = SessionDB(path)
+    def fail_after_commit(event_id, session):
+        assert turns.latest(db, session)['prompt'] == 'Saved research'
+        raise OSError('source temporarily unavailable')
+    try:
+        turn, created = admit_background_notification(db, event, 'desk', 'Saved research', acknowledge=fail_after_commit)
+        assert created
+    finally:
+        db.close()
+    db = SessionDB(path)
+    acknowledged = []
+    try:
+        assert admit_background_notification(db, event, 'desk', 'Saved research',
+            acknowledge=lambda *args: acknowledged.append(args)) == (turn, False)
+        assert acknowledged == [('result-1', 'desk')]
+        assert turns.latest(db, 'desk')['status'] == 'starting'
+        with pytest.raises(ValueError, match='conflicts'):
+            admit_background_notification(db, event, 'desk', 'Altered payload', acknowledge=Mock())
+    finally:
+        db.close()
+
+
+def test_receiving_admission_never_acknowledges_unpersisted_or_foreign_work():
+    from superforecasting_agent.hosting.notifications import admit_background_notification
+
+    acknowledged = Mock()
+    event = {'session_key': 'desk', 'journal_event_id': 'result-1'}
+    db = Mock()
+    db._execute_write.side_effect = OSError('disk full')
+    with pytest.raises(OSError, match='disk full'):
+        admit_background_notification(db, event, 'desk', 'Research', acknowledge=acknowledged)
+    db.reset_mock()
+    with pytest.raises(ValueError, match='profile'):
+        admit_background_notification(db, {**event, 'profile_key': 'foreign'}, 'desk', 'Research', acknowledge=acknowledged)
+    with pytest.raises(ValueError, match='session'):
+        admit_background_notification(db, event, 'other', 'Research', acknowledge=acknowledged)
+    db._execute_write.assert_not_called()
+    acknowledged.assert_not_called()
+
+
+@pytest.mark.parametrize('outcome,status', [
+    ({'completed': True, 'final_response': 'Research integrated'}, 'complete'),
+    ({'completed': False, 'failed': True, 'error': 'Provider unavailable'}, 'error'),
+    ({'completed': False, 'interrupted': True}, 'interrupted'),
+    (None, 'interrupted'),
+])
+def test_receiving_execution_persists_outcome_and_never_reexecutes(tmp_path, outcome, status):
+    from superforecasting_agent.hosting.notifications import BackgroundNotification, execute_background_notification
+    from superforecasting_agent.storage import turns
+    from superforecasting_agent.storage.session import SessionDB
+
+    db = SessionDB(tmp_path / 'state.db')
+    notification = BackgroundNotification({'session_key': 'desk', 'journal_event_id': 'result'}, 'Saved evidence')
+    execute = Mock(return_value=outcome)
+    try:
+        first = execute_background_notification(db, notification, 'desk', acknowledge=Mock(), execute=execute)
+        assert turns.latest(db, 'desk')['status'] == status
+        assert execute_background_notification(db, notification, 'desk', acknowledge=Mock(), execute=execute) == first
+        execute.assert_called_once_with('Saved evidence')
+    finally:
+        db.close()

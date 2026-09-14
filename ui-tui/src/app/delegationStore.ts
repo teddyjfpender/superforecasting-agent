@@ -111,5 +111,57 @@ export const applyDelegationStatus = (r: DelegationStatusResponse | null | undef
     }
   }
 
+  if (Array.isArray(r.background)) {
+    patch.backgroundStatusError = null
+    patch.backgroundAgents ??= []
+
+    const explanations: Record<string, string> = {
+      unconfirmed: 'Worker activity cannot be verified. Review saved output before restarting research.',
+      completion_pending:
+        'Research ended, but saving its result is pending. Status refresh retries the save without rerunning research.',
+      cleanup_pending: 'Resource cleanup is pending. Status refresh retries cleanup; ownership is retained.',
+      interrupted:
+        'Research was interrupted. Partial external effects may exist; review the saved result before retrying.'
+    }
+
+    for (const entry of r.background) {
+      const status =
+        entry.status === 'completed'
+          ? 'completed'
+          : entry.status === 'running'
+            ? 'running'
+            : entry.status === 'accepted'
+              ? 'queued'
+              : entry.status === 'interrupted'
+                ? 'interrupted'
+                : entry.status === 'completion_pending'
+                  ? 'completion_pending'
+                  : entry.status === 'cleanup_pending'
+                    ? 'cleanup_pending'
+                    : entry.status === 'unconfirmed'
+                      ? 'unconfirmed'
+                      : 'error'
+
+      const summary = entry.result?.summary
+      const detail = explanations[status]
+      patch.backgroundAgents.push({
+        id: entry.delegation_id,
+        index: patch.backgroundAgents.length,
+        depth: 0,
+        parentId: null,
+        goal: `${entry.goal ?? 'Background research'}${detail ? ` · ${status.replaceAll('_', ' ')}` : ''}`,
+        model: entry.model ?? undefined,
+        startedAt: (entry.dispatched_at ?? 0) * 1000,
+        status,
+        summary: [detail, typeof summary === 'string' ? summary : undefined].filter(Boolean).join('\n') || undefined,
+        notes: [],
+        thinking: [],
+        tools: [],
+        toolCount: 0,
+        taskCount: 1
+      })
+    }
+  }
+
   patchDelegationState(patch)
 }

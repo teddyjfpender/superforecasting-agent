@@ -344,6 +344,9 @@ def make_tool_result_message(name: str, content: Any, tool_call_id: str) -> dict
 # instructions. Skipped for very short outputs where the wrapper overhead
 # outweighs the indirect-injection risk.
 _UNTRUSTED_TOOL_NAMES = frozenset({
+    "tool_call",
+    "tool_search",
+    "tool_describe",
     "web_extract",
     "web_search",
 })

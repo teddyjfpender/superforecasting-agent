@@ -1175,6 +1175,9 @@ This compaction should PRIORITISE preserving all information related to the focu
             # Redact the summary output as well — the summarizer LLM may
             # ignore prompt instructions and echo back secrets verbatim.
             summary = redact_sensitive_text(content.strip())
+            from agent.compaction_recall import build_recall_index
+            if summary:
+                summary += build_recall_index(turns_to_summarize, self._previous_summary or "")
             # Store for iterative updates on next compaction
             self._previous_summary = summary
             self._summary_failure_cooldown_until = 0.0

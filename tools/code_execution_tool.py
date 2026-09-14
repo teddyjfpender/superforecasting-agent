@@ -24,7 +24,7 @@ Architecture (two transports):
 In both cases, only the script's stdout is returned to the LLM; intermediate
 tool results never enter the context window.
 
-Platform: Linux / macOS only (Unix domain sockets for local). Disabled on Windows.
+Platform: Unix domain sockets on Linux/macOS, loopback TCP on Windows.
 Remote execution additionally requires Python 3 in the terminal backend.
 """
 
@@ -35,6 +35,7 @@ import logging
 import os
 import platform
 import shlex
+import secrets
 import signal
 import socket
 import subprocess
@@ -45,6 +46,14 @@ import time
 import uuid
 
 from typing import Any, Dict, List, Optional
+from superforecasting_agent.tooling.call_context import CallContext
+
+from tools.code_execution_rpc import (
+    prepare_remote_rpc,
+    _rpc_server_loop as _rpc_server_loop,
+    _rpc_poll_loop as _rpc_poll_loop,
+    _TERMINAL_BLOCKED_PARAMS as _TERMINAL_BLOCKED_PARAMS,
+)
 from tools.registry import registry, tool_error
 
 _IS_WINDOWS = platform.system() == "Windows"
@@ -376,7 +385,7 @@ def _connect():
 
 def _call(tool_name, args):
     """Send a tool call to the parent process and return the parsed result."""
-    request = json.dumps({"tool": tool_name, "args": args}) + "\\n"
+    request = json.dumps({"tool": tool_name, "args": args, "token": _runtime_env("RPC_TOKEN")}) + "\\n"
     with _call_lock:
         conn = _connect()
         conn.sendall(request.encode())
@@ -439,8 +448,10 @@ def _call(tool_name, args):
     # (or any non-UTF-8 locale) the default open() mode would mangle
     # non-ASCII chars in tool args when encoding them as JSON.
     tmp = req_file + ".tmp"
+    with open(os.path.join(_RPC_DIR, ".token"), encoding="utf-8") as token_file:
+        token = token_file.read()
     with open(tmp, "w", encoding="utf-8") as f:
-        json.dump({"tool": tool_name, "args": args, "seq": seq}, f)
+        json.dump({"tool": tool_name, "args": args, "seq": seq, "token": token}, f)
     os.rename(tmp, req_file)
 
     # Wait for response with adaptive polling
@@ -477,131 +488,16 @@ def _call(tool_name, args):
 # ---------------------------------------------------------------------------
 
 # Terminal parameters that must not be used from ephemeral sandbox scripts
-_TERMINAL_BLOCKED_PARAMS = {"background", "pty", "notify_on_complete", "watch_patterns"}
 
 
-def _rpc_server_loop(
-    server_sock: socket.socket,
-    task_id: str,
-    tool_call_log: list,
-    tool_call_counter: list,   # mutable [int] so the thread can increment
-    max_tool_calls: int,
-    allowed_tools: frozenset,
-    forecast_commit_policy: str | None = None,
-):
-    """
-    Accept one client connection and dispatch tool-call requests until
-    the client disconnects or the call limit is reached.
-    """
-    from superforecasting_agent.tooling.runtime import handle_function_call
-
-    conn = None
+def _serve_rpc_in_context(context, server, *args):
+    """A retired background call exits quietly, including cancellation before start."""
     try:
-        server_sock.settimeout(5)
-        conn, _ = server_sock.accept()
-        conn.settimeout(300)
+        context.run(server, *args)
+    except InterruptedError:
+        pass
 
-        buf = b""
-        while True:
-            try:
-                chunk = conn.recv(65536)
-            except socket.timeout:
-                break
-            if not chunk:
-                break
-            buf += chunk
 
-            # Process all complete newline-delimited messages in the buffer
-            while b"\n" in buf:
-                line, buf = buf.split(b"\n", 1)
-                line = line.strip()
-                if not line:
-                    continue
-
-                call_start = time.monotonic()
-                try:
-                    request = json.loads(line.decode())
-                except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-                    resp = tool_error(f"Invalid RPC request: {exc}")
-                    conn.sendall((resp + "\n").encode())
-                    continue
-
-                tool_name = request.get("tool", "")
-                tool_args = request.get("args", {})
-
-                # Enforce the allow-list
-                if tool_name not in allowed_tools:
-                    available = ", ".join(sorted(allowed_tools))
-                    resp = json.dumps({
-                        "error": (
-                            f"Tool '{tool_name}' is not available in execute_code. "
-                            f"Available: {available}"
-                        )
-                    })
-                    conn.sendall((resp + "\n").encode())
-                    continue
-
-                # Enforce tool call limit
-                if tool_call_counter[0] >= max_tool_calls:
-                    resp = json.dumps({
-                        "error": (
-                            f"Tool call limit reached ({max_tool_calls}). "
-                            "No more tool calls allowed in this execution."
-                        )
-                    })
-                    conn.sendall((resp + "\n").encode())
-                    continue
-
-                # Strip forbidden terminal parameters
-                if tool_name == "terminal" and isinstance(tool_args, dict):
-                    for param in _TERMINAL_BLOCKED_PARAMS:
-                        tool_args.pop(param, None)
-
-                # Dispatch through the standard tool handler.
-                # Suppress stdout/stderr from internal tool handlers so
-                # their status prints don't leak into the CLI spinner.
-                try:
-                    _real_stdout, _real_stderr = sys.stdout, sys.stderr
-                    devnull = open(os.devnull, "w", encoding="utf-8")
-                    try:
-                        sys.stdout = devnull
-                        sys.stderr = devnull
-                        call_kwargs: dict[str, Any] = {"task_id": task_id}
-                        if forecast_commit_policy:
-                            call_kwargs["main_runtime"] = {
-                                "forecast_commit_policy": forecast_commit_policy
-                            }
-                        result = handle_function_call(tool_name, tool_args, **call_kwargs)
-                    finally:
-                        sys.stdout, sys.stderr = _real_stdout, _real_stderr
-                        devnull.close()
-                except Exception as exc:
-                    logger.error("Tool call failed in sandbox: %s", exc, exc_info=True)
-                    result = tool_error(str(exc))
-
-                tool_call_counter[0] += 1
-                call_duration = time.monotonic() - call_start
-
-                # Log for observability
-                args_preview = str(tool_args)[:80]
-                tool_call_log.append({
-                    "tool": tool_name,
-                    "args_preview": args_preview,
-                    "duration": round(call_duration, 2),
-                })
-
-                conn.sendall((result + "\n").encode())
-
-    except socket.timeout:
-        logger.debug("RPC listener socket timeout")
-    except OSError as e:
-        logger.debug("RPC listener socket error: %s", e, exc_info=True)
-    finally:
-        if conn:
-            try:
-                conn.close()
-            except OSError as e:
-                logger.debug("RPC conn close error: %s", e)
 
 
 # ---------------------------------------------------------------------------
@@ -744,152 +640,6 @@ def _env_temp_dir(env: Any) -> str:
     return "/tmp"
 
 
-def _rpc_poll_loop(
-    env,
-    rpc_dir: str,
-    task_id: str,
-    tool_call_log: list,
-    tool_call_counter: list,
-    max_tool_calls: int,
-    allowed_tools: frozenset,
-    forecast_commit_policy: str | None,
-    stop_event: threading.Event,
-):
-    """Poll the remote filesystem for tool call requests and dispatch them.
-
-    Runs in a background thread.  Each ``env.execute()`` spawns an
-    independent process, so these calls run safely concurrent with the
-    script-execution thread.
-    """
-    from superforecasting_agent.tooling.runtime import handle_function_call
-
-    poll_interval = 0.1  # 100 ms
-
-    quoted_rpc_dir = shlex.quote(rpc_dir)
-    while not stop_event.is_set():
-        try:
-            # List pending request files (skip .tmp partials)
-            ls_result = env.execute(
-                f"ls -1 {quoted_rpc_dir}/req_* 2>/dev/null || true",
-                cwd="/",
-                timeout=10,
-            )
-            output = ls_result.get("output", "").strip()
-            if not output:
-                stop_event.wait(poll_interval)
-                continue
-
-            req_files = sorted([
-                f.strip() for f in output.split("\n")
-                if f.strip()
-                and not f.strip().endswith(".tmp")
-                and "/req_" in f.strip()
-            ])
-
-            for req_file in req_files:
-                if stop_event.is_set():
-                    break
-
-                call_start = time.monotonic()
-
-                quoted_req_file = shlex.quote(req_file)
-                # Read request
-                read_result = env.execute(
-                    f"cat {quoted_req_file}",
-                    cwd="/",
-                    timeout=10,
-                )
-                try:
-                    request = json.loads(read_result.get("output", ""))
-                except (json.JSONDecodeError, ValueError):
-                    logger.debug("Malformed RPC request in %s", req_file)
-                    # Remove bad request to avoid infinite retry
-                    env.execute(f"rm -f {quoted_req_file}", cwd="/", timeout=5)
-                    continue
-
-                tool_name = request.get("tool", "")
-                tool_args = request.get("args", {})
-                seq = request.get("seq", 0)
-                seq_str = f"{seq:06d}"
-                res_file = f"{rpc_dir}/res_{seq_str}"
-                quoted_res_file = shlex.quote(res_file)
-
-                # Enforce allow-list
-                if tool_name not in allowed_tools:
-                    available = ", ".join(sorted(allowed_tools))
-                    tool_result = json.dumps({
-                        "error": (
-                            f"Tool '{tool_name}' is not available in execute_code. "
-                            f"Available: {available}"
-                        )
-                    })
-                # Enforce tool call limit
-                elif tool_call_counter[0] >= max_tool_calls:
-                    tool_result = json.dumps({
-                        "error": (
-                            f"Tool call limit reached ({max_tool_calls}). "
-                            "No more tool calls allowed in this execution."
-                        )
-                    })
-                else:
-                    # Strip forbidden terminal parameters
-                    if tool_name == "terminal" and isinstance(tool_args, dict):
-                        for param in _TERMINAL_BLOCKED_PARAMS:
-                            tool_args.pop(param, None)
-
-                    # Dispatch through the standard tool handler
-                    try:
-                        _real_stdout, _real_stderr = sys.stdout, sys.stderr
-                        devnull = open(os.devnull, "w", encoding="utf-8")
-                        try:
-                            sys.stdout = devnull
-                            sys.stderr = devnull
-                            call_kwargs: dict[str, Any] = {"task_id": task_id}
-                            if forecast_commit_policy:
-                                call_kwargs["main_runtime"] = {
-                                    "forecast_commit_policy": forecast_commit_policy
-                                }
-                            tool_result = handle_function_call(
-                                tool_name, tool_args, **call_kwargs
-                            )
-                        finally:
-                            sys.stdout, sys.stderr = _real_stdout, _real_stderr
-                            devnull.close()
-                    except Exception as exc:
-                        logger.error("Tool call failed in remote sandbox: %s",
-                                     exc, exc_info=True)
-                        tool_result = tool_error(str(exc))
-
-                    tool_call_counter[0] += 1
-                    call_duration = time.monotonic() - call_start
-                    tool_call_log.append({
-                        "tool": tool_name,
-                        "args_preview": str(tool_args)[:80],
-                        "duration": round(call_duration, 2),
-                    })
-
-                # Write response atomically (tmp + rename).
-                # Use echo piping (not stdin_data) because Modal doesn't
-                # reliably deliver stdin to chained commands.
-                encoded_result = base64.b64encode(
-                    tool_result.encode("utf-8")
-                ).decode("ascii")
-                env.execute(
-                    f"echo '{encoded_result}' | base64 -d > {quoted_res_file}.tmp"
-                    f" && mv {quoted_res_file}.tmp {quoted_res_file}",
-                    cwd="/",
-                    timeout=60,
-                )
-
-                # Remove the request file
-                env.execute(f"rm -f {quoted_req_file}", cwd="/", timeout=5)
-
-        except Exception as e:
-            if not stop_event.is_set():
-                logger.debug("RPC poll error: %s", e, exc_info=True)
-
-        if not stop_event.is_set():
-            stop_event.wait(poll_interval)
 
 
 def _execute_remote(
@@ -909,11 +659,11 @@ def _execute_remote(
     timeout = _cfg.get("timeout", DEFAULT_TIMEOUT)
     max_tool_calls = _cfg.get("max_tool_calls", DEFAULT_MAX_TOOL_CALLS)
 
-    session_tools = set(enabled_tools) if enabled_tools else set()
+    session_tools = set(enabled_tools) if enabled_tools is not None else set(SANDBOX_ALLOWED_TOOLS)
     sandbox_tools = frozenset(SANDBOX_ALLOWED_TOOLS & session_tools)
-    if not sandbox_tools:
-        sandbox_tools = SANDBOX_ALLOWED_TOOLS
 
+    rpc_context = CallContext()
+    rpc_token = secrets.token_urlsafe(32)
     effective_task_id = task_id or "default"
     env, env_type = _get_or_create_env(effective_task_id)
 
@@ -949,8 +699,9 @@ def _execute_remote(
 
         # Create sandbox directory on remote
         env.execute(
-            f"mkdir -p {quoted_rpc_dir}", cwd="/", timeout=10,
+            f"umask 077 && mkdir -p {quoted_rpc_dir}", cwd="/", timeout=10,
         )
+        rpc_token = prepare_remote_rpc(env, f"{sandbox_dir}/rpc")
 
         # Generate and ship files
         tools_src = generate_forecast_tools_module(
@@ -962,11 +713,11 @@ def _execute_remote(
 
         # Start RPC polling thread
         rpc_thread = threading.Thread(
-            target=_rpc_poll_loop,
+            target=_serve_rpc_in_context,
             args=(
-                env, f"{sandbox_dir}/rpc", effective_task_id,
+                rpc_context, _rpc_poll_loop, env, f"{sandbox_dir}/rpc", effective_task_id,
                 tool_call_log, tool_call_counter, max_tool_calls,
-                sandbox_tools, forecast_commit_policy, stop_event,
+                sandbox_tools, forecast_commit_policy, stop_event, rpc_token,
             ),
             daemon=True,
         )
@@ -1020,7 +771,8 @@ def _execute_remote(
         }, ensure_ascii=False)
 
     finally:
-        # Stop the polling thread
+        # Retire tool authority before stopping the transport worker.
+        rpc_context.retire()
         stop_event.set()
         if rpc_thread is not None:
             rpc_thread.join(timeout=5)
@@ -1095,11 +847,81 @@ def _execute_remote(
 # Main entry point
 # ---------------------------------------------------------------------------
 
+def build_child_env(tmpdir: str, rpc_endpoint: str, rpc_token: str, forecast_commit_policy: str | None) -> dict[str, str]:
+    # Build a minimal environment for the child. We intentionally exclude
+    # API keys and tokens to prevent credential exfiltration from LLM-
+    # generated scripts. The child accesses tools via RPC, not direct API.
+    # Exception: env vars declared by loaded skills (via env_passthrough
+    # registry) or explicitly allowed by the user in config.yaml
+    # (terminal.env_passthrough) are passed through.  On Windows, a small
+    # OS-essential allowlist (SYSTEMROOT, WINDIR, COMSPEC, ...) is also
+    # passed through — without those, the child can't create a socket
+    # or spawn a subprocess.  See ``_scrub_child_env`` for the rules.
+    child_env = _scrub_child_env(os.environ)
+    child_env["SUPERFORECASTING_AGENT_RPC_TOKEN"] = rpc_token
+    child_env["SUPERFORECASTING_AGENT_RPC_SOCKET"] = rpc_endpoint
+    child_env["FORECAST_RPC_SOCKET"] = rpc_endpoint
+    child_env["HERMES_RPC_SOCKET"] = rpc_endpoint
+    child_env["PYTHONDONTWRITEBYTECODE"] = "1"
+    if (forecast_commit_policy or "").strip().lower() == "proposal_only":
+        child_env["FORECAST_COMMIT_POLICY"] = "proposal_only"
+    # Force UTF-8 for the child's stdio and default file encoding.
+    #
+    # Without this, on Windows sys.stdout is bound to the console code
+    # page (cp1252 on US-locale installs), and any script that does
+    # ``print("café")`` or ``print("→")`` crashes with:
+    #
+    #   UnicodeEncodeError: 'charmap' codec can't encode character
+    #   '\u2192' in position N: character maps to <undefined>
+    #
+    # PYTHONIOENCODING fixes sys.stdin/stdout/stderr.
+    # PYTHONUTF8=1 enables "UTF-8 mode" (PEP 540) which additionally
+    # makes ``open()``'s default encoding UTF-8, so user scripts that
+    # write files without specifying encoding= also work correctly.
+    #
+    # On POSIX both values usually match the locale default already,
+    # so setting them is harmless belt-and-suspenders for environments
+    # with a C/POSIX locale (containers, minimal base images).
+    child_env["PYTHONIOENCODING"] = "utf-8"
+    child_env["PYTHONUTF8"] = "1"
+    # Ensure the repository root is importable in the sandbox so
+    # repo-root modules are available to child scripts.  We also prepend
+    # the staging tmpdir so ``from hermes_tools import ...`` resolves even
+    # when the subprocess CWD is not tmpdir (project mode).
+    _hermes_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    _existing_pp = child_env.get("PYTHONPATH", "")
+    _pp_parts = [tmpdir, _hermes_root]
+    if _existing_pp:
+        _pp_parts.append(_existing_pp)
+    child_env["PYTHONPATH"] = os.pathsep.join(_pp_parts)
+    # Inject user's configured timezone so datetime.now() in sandboxed
+    # code reflects the correct wall-clock time.  Only TZ is set —
+    # Timezone override aliases are internal agent settings and must not
+    # leak into child processes.
+    _tz_name = _timezone_env_value()
+    if _tz_name:
+        child_env["TZ"] = _tz_name
+    for _tz_env_name in _TIMEZONE_ENV_NAMES:
+        child_env.pop(_tz_env_name, None)
+
+    # Per-profile HOME isolation: redirect system tool configs into the
+    # active profile's ``home/`` directory when that directory exists.
+    from superforecasting_agent.constants import get_subprocess_home
+    _profile_home = get_subprocess_home()
+    if _profile_home:
+        child_env["HOME"] = _profile_home
+
+    return child_env
+
+
 def execute_code(
     code: str,
     task_id: Optional[str] = None,
     enabled_tools: Optional[List[str]] = None,
     forecast_commit_policy: Optional[str] = None,
+    *,
+    kernel_owner: Any = None,
+    reset: bool = False,
 ) -> str:
     """
     Run a Python script in a sandboxed child process with RPC access
@@ -1126,6 +948,32 @@ def execute_code(
     if not code or not code.strip():
         return tool_error("No code provided.")
 
+    if type(reset) is not bool:
+        return tool_error("reset must be a boolean")
+    kernel_mode = _load_config().get("kernel_mode", "per_call")
+    if kernel_mode not in {"per_call", "session"}:
+        return tool_error("code_execution.kernel_mode must be per_call or session")
+    if kernel_mode == "session":
+        from tools.terminal_tool import _get_env_config
+        backend = _get_env_config()["env_type"]
+        if kernel_owner is None:
+            return tool_error("Persistent execution requires an agent-owned session")
+        selected = SANDBOX_ALLOWED_TOOLS if enabled_tools is None else frozenset(enabled_tools)
+        config = _load_config()
+        try:
+            return json.dumps(kernel_owner.run(
+                code, task_id or "", SANDBOX_ALLOWED_TOOLS & selected,
+                forecast_commit_policy, _get_execution_mode(),
+                config.get("timeout", DEFAULT_TIMEOUT),
+                config.get("max_tool_calls", DEFAULT_MAX_TOOL_CALLS), reset,
+                backend=backend,
+            ))
+        except Exception as exc:
+            from agent.redact import redact_sensitive_text
+            return tool_error(redact_sensitive_text(str(exc), force=True))
+    if reset:
+        return tool_error("reset requires code_execution.kernel_mode=session")
+
     # Dispatch: remote backends use file-based RPC, local uses UDS
     from tools.terminal_tool import _get_env_config
     env_type = _get_env_config()["env_type"]
@@ -1134,7 +982,9 @@ def execute_code(
             code, task_id, enabled_tools, forecast_commit_policy
         )
 
-    # --- Local execution path (UDS) --- below this line is unchanged ---
+    # Local execution owns a fresh RPC authority even when invoked by a worker.
+    rpc_context = CallContext()
+    rpc_token = secrets.token_urlsafe(32)
 
     # Import per-thread interrupt check (cooperative cancellation)
     from tools.interrupt import is_interrupted as _is_interrupted
@@ -1145,11 +995,8 @@ def execute_code(
     max_tool_calls = _cfg.get("max_tool_calls", DEFAULT_MAX_TOOL_CALLS)
 
     # Determine which tools the sandbox can call
-    session_tools = set(enabled_tools) if enabled_tools else set()
+    session_tools = set(enabled_tools) if enabled_tools is not None else set(SANDBOX_ALLOWED_TOOLS)
     sandbox_tools = frozenset(SANDBOX_ALLOWED_TOOLS & session_tools)
-
-    if not sandbox_tools:
-        sandbox_tools = SANDBOX_ALLOWED_TOOLS
 
     # --- Set up temp directory with hermes_tools.py and script.py ---
     tmpdir = tempfile.mkdtemp(prefix="forecast_sandbox_")
@@ -1225,78 +1072,18 @@ def execute_code(
         server_sock.listen(1)
 
         rpc_thread = threading.Thread(
-            target=_rpc_server_loop,
+            target=_serve_rpc_in_context,
             args=(
-                server_sock, task_id, tool_call_log,
+                rpc_context, _rpc_server_loop, server_sock, task_id, tool_call_log,
                 tool_call_counter, max_tool_calls, sandbox_tools,
-                forecast_commit_policy,
+                forecast_commit_policy, rpc_token, rpc_context.cancelled,
             ),
             daemon=True,
         )
         rpc_thread.start()
 
         # --- Spawn child process ---
-        # Build a minimal environment for the child. We intentionally exclude
-        # API keys and tokens to prevent credential exfiltration from LLM-
-        # generated scripts. The child accesses tools via RPC, not direct API.
-        # Exception: env vars declared by loaded skills (via env_passthrough
-        # registry) or explicitly allowed by the user in config.yaml
-        # (terminal.env_passthrough) are passed through.  On Windows, a small
-        # OS-essential allowlist (SYSTEMROOT, WINDIR, COMSPEC, ...) is also
-        # passed through — without those, the child can't create a socket
-        # or spawn a subprocess.  See ``_scrub_child_env`` for the rules.
-        child_env = _scrub_child_env(os.environ)
-        child_env["SUPERFORECASTING_AGENT_RPC_SOCKET"] = rpc_endpoint
-        child_env["FORECAST_RPC_SOCKET"] = rpc_endpoint
-        child_env["HERMES_RPC_SOCKET"] = rpc_endpoint
-        child_env["PYTHONDONTWRITEBYTECODE"] = "1"
-        if (forecast_commit_policy or "").strip().lower() == "proposal_only":
-            child_env["FORECAST_COMMIT_POLICY"] = "proposal_only"
-        # Force UTF-8 for the child's stdio and default file encoding.
-        #
-        # Without this, on Windows sys.stdout is bound to the console code
-        # page (cp1252 on US-locale installs), and any script that does
-        # ``print("café")`` or ``print("→")`` crashes with:
-        #
-        #   UnicodeEncodeError: 'charmap' codec can't encode character
-        #   '\u2192' in position N: character maps to <undefined>
-        #
-        # PYTHONIOENCODING fixes sys.stdin/stdout/stderr.
-        # PYTHONUTF8=1 enables "UTF-8 mode" (PEP 540) which additionally
-        # makes ``open()``'s default encoding UTF-8, so user scripts that
-        # write files without specifying encoding= also work correctly.
-        #
-        # On POSIX both values usually match the locale default already,
-        # so setting them is harmless belt-and-suspenders for environments
-        # with a C/POSIX locale (containers, minimal base images).
-        child_env["PYTHONIOENCODING"] = "utf-8"
-        child_env["PYTHONUTF8"] = "1"
-        # Ensure the repository root is importable in the sandbox so
-        # repo-root modules are available to child scripts.  We also prepend
-        # the staging tmpdir so ``from hermes_tools import ...`` resolves even
-        # when the subprocess CWD is not tmpdir (project mode).
-        _hermes_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        _existing_pp = child_env.get("PYTHONPATH", "")
-        _pp_parts = [tmpdir, _hermes_root]
-        if _existing_pp:
-            _pp_parts.append(_existing_pp)
-        child_env["PYTHONPATH"] = os.pathsep.join(_pp_parts)
-        # Inject user's configured timezone so datetime.now() in sandboxed
-        # code reflects the correct wall-clock time.  Only TZ is set —
-        # Timezone override aliases are internal agent settings and must not
-        # leak into child processes.
-        _tz_name = _timezone_env_value()
-        if _tz_name:
-            child_env["TZ"] = _tz_name
-        for _tz_env_name in _TIMEZONE_ENV_NAMES:
-            child_env.pop(_tz_env_name, None)
-
-        # Per-profile HOME isolation: redirect system tool configs into the
-        # active profile's ``home/`` directory when that directory exists.
-        from superforecasting_agent.constants import get_subprocess_home
-        _profile_home = get_subprocess_home()
-        if _profile_home:
-            child_env["HOME"] = _profile_home
+        child_env = build_child_env(tmpdir, rpc_endpoint, rpc_token, forecast_commit_policy)
 
         # Resolve interpreter + CWD based on execute_code mode.
         #   - strict : today's behavior (sys.executable + tmpdir CWD).
@@ -1401,10 +1188,12 @@ def execute_code(
         }
         while proc.poll() is None:
             if _is_interrupted():
+                rpc_context.retire()
                 _kill_process_group(proc)
                 status = "interrupted"
                 break
             if time.monotonic() > deadline:
+                rpc_context.retire()
                 _kill_process_group(proc, escalate=True)
                 status = "timeout"
                 break
@@ -1456,7 +1245,8 @@ def execute_code(
         exit_code = proc.returncode if proc.returncode is not None else -1
         duration = round(time.monotonic() - exec_start, 2)
 
-        # Wait for RPC thread to finish
+        # Retire per-call authority before waiting for its RPC worker.
+        rpc_context.retire()
         server_sock.close()  # break accept() so thread exits promptly
         server_sock = None  # prevent double close in finally
         rpc_thread.join(timeout=3)
@@ -1527,6 +1317,7 @@ def execute_code(
         }, ensure_ascii=False)
 
     finally:
+        rpc_context.retire()
         if proc is not None:
             try:
                 if proc.poll() is None:
@@ -1911,6 +1702,10 @@ def build_execute_code_schema(enabled_sandbox_tools: set[str] | frozenset[str] |
         "parameters": {
             "type": "object",
             "properties": {
+                "reset": {
+                    "type": "boolean",
+                    "description": "In opt-in session kernel mode, explicitly discard prior interpreter state before executing this cell. Defaults to false.",
+                },
                 "code": {
                     "type": "string",
                     "description": (
@@ -1940,6 +1735,8 @@ registry.register(
         code=args.get("code", ""),
         task_id=kw.get("task_id"),
         enabled_tools=kw.get("enabled_tools"),
+        kernel_owner=kw.get("kernel_owner"),
+        reset=args.get("reset", False),
         forecast_commit_policy=(kw.get("main_runtime") or {}).get(
             "forecast_commit_policy"
         )),

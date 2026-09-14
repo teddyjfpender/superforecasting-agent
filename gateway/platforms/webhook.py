@@ -100,6 +100,8 @@ class WebhookAdapter(BasePlatformAdapter):
 
     def __init__(self, config: PlatformConfig):
         super().__init__(config, Platform.WEBHOOK)
+        from superforecasting_agent.constants import get_agent_home
+        self._job_home = get_agent_home().resolve()
         self._host: str = config.extra.get("host", DEFAULT_HOST)
         self._port: int = int(config.extra.get("port", DEFAULT_PORT))
         self._global_secret: str = config.extra.get("secret", "")
@@ -388,6 +390,9 @@ class WebhookAdapter(BasePlatformAdapter):
                     {"error": "Cannot parse body"}, status=400
                 )
 
+        if not isinstance(payload, dict):
+            return web.json_response({"error": "Webhook payload must be an object"}, status=400)
+
         # Check event type filter
         event_type = (
             request.headers.get("X-GitHub-Event", "")
@@ -406,6 +411,48 @@ class WebhookAdapter(BasePlatformAdapter):
             return web.json_response(
                 {"status": "ignored", "event": event_type}
             )
+
+        if "cron_job" in route_config:
+            if not secret or secret == _INSECURE_NO_AUTH:
+                return web.json_response({"error": "Job triggers require authenticated delivery"}, status=401)
+            job_id = route_config["cron_job"]
+            if (not isinstance(job_id, str) or not job_id.strip()
+                    or route_config.get("deliver_only")):
+                return web.json_response({"error": "Invalid job route binding"}, status=400)
+            delivery_id = request.headers.get("X-GitHub-Delivery") or request.headers.get("X-Request-ID")
+            if not delivery_id or len(delivery_id) > 512:
+                return web.json_response({"error": "A bounded delivery ID is required"}, status=400)
+            from cron import jobs
+            from superforecasting_agent.storage.research_jobs import JobTriggerJournal
+            home = self._job_home
+            try:
+                profile = route_config.get("profile")
+                if profile is not None:
+                    from superforecasting_agent.profile_paths import resolve_profile_env
+                    from pathlib import Path
+                    if not isinstance(profile, str) or not profile.strip():
+                        raise ValueError("Invalid job profile")
+                    home = Path(resolve_profile_env(profile)).resolve()
+                    if not home.is_dir():
+                        raise ValueError("Job profile does not exist")
+                with jobs.storage_home(home):
+                    job = jobs.get_job(job_id)
+                if job is None:
+                    return web.json_response({"error": "Unknown job"}, status=404)
+                if not job.get("enabled", True) or job.get("state") == "paused":
+                    return web.json_response({"error": "Job is disabled"}, status=409)
+                trigger = "webhook:" + hashlib.sha256((route_name + "\0" + delivery_id).encode()).hexdigest()
+                digest = hashlib.sha256(raw_body).hexdigest()
+                JobTriggerJournal(self._job_home).bind_webhook(job_id, trigger, digest, home)
+                journal = JobTriggerJournal(home)
+                identity = journal.admit(job, trigger, digest)
+                receipt = journal.get(identity)
+            except ValueError as exc:
+                return web.json_response({"error": str(exc)}, status=409)
+            except Exception:
+                logger.exception("Job trigger admission failed")
+                return web.json_response({"error": "Durable job admission unavailable"}, status=503)
+            return web.json_response({"status": receipt["state"], "trigger_id": identity}, status=202)
 
         # Format prompt from template
         prompt_template = route_config.get("prompt", "")

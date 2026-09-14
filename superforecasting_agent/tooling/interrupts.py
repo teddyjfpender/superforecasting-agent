@@ -16,6 +16,9 @@ Usage in tools:
 
 import logging
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 from superforecasting_agent.environment import env_var_alias_enabled
 
@@ -39,6 +42,34 @@ if _DEBUG_INTERRUPT:
 # Set of thread idents that have been interrupted.
 _interrupted_threads: set[int] = set()
 _lock = threading.Lock()
+_scope_interrupt: ContextVar[tuple[threading.Event, ...]] = ContextVar(
+    "tool_scope_interrupt", default=()
+)
+_scope_owns_cancellation: ContextVar[bool] = ContextVar(
+    "tool_scope_owns_cancellation", default=False
+)
+
+
+@contextmanager
+def cancellation_scope(
+    event: threading.Event, *, inherit: bool = True
+) -> Iterator[None]:
+    """Bind cancellation to an owned call without retaining reusable thread IDs.
+
+    Resource maintenance may use inherit=False with its own stop event. This
+    preserves profile context while excluding a finished caller's cancellation;
+    normal tool execution must retain the default inherited authority.
+    """
+    parents = _scope_interrupt.get() if inherit else ()
+    token = _scope_interrupt.set((*parents, event))
+    owner_token = _scope_owns_cancellation.set(
+        _scope_owns_cancellation.get() or not inherit
+    )
+    try:
+        yield
+    finally:
+        _scope_interrupt.reset(token)
+        _scope_owns_cancellation.reset(owner_token)
 
 
 def set_interrupt(active: bool, thread_id: int | None = None) -> None:
@@ -74,6 +105,11 @@ def is_interrupted() -> bool:
     interrupt state.
     """
     tid = threading.get_ident()
+    scoped = _scope_interrupt.get()
+    if any(event.is_set() for event in scoped):
+        return True
+    if _scope_owns_cancellation.get():
+        return False
     with _lock:
         return tid in _interrupted_threads
 
@@ -105,3 +141,17 @@ class _ThreadAwareEventProxy:
 
 
 _interrupt_event = _ThreadAwareEventProxy()
+
+
+def detached_execution_context():
+    """Copy routing metadata without retaining a completed parent's stop scope.
+
+    The new worker remains subject to its own thread interrupts and any nested
+    call scopes. Only explicit detached execution owners should use this.
+    """
+    from contextvars import copy_context
+
+    context = copy_context()
+    context.run(_scope_interrupt.set, ())
+    context.run(_scope_owns_cancellation.set, False)
+    return context

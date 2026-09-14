@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Callable, Optional, TypeVar
 
 from superforecasting_agent.constants import get_agent_home
+from superforecasting_agent.storage import context_usage as _context_usage
 from superforecasting_agent.storage import handoff as _handoff
 from superforecasting_agent.storage import listing as _listing
 from superforecasting_agent.storage import messages as _messages
@@ -268,6 +269,8 @@ class SessionDB:
     end_session = _sessions.end_session
     reopen_session = _sessions.reopen_session
     update_system_prompt = _sessions.update_system_prompt
+    save_context_usage = _context_usage.save_context_usage
+    load_context_usage = _context_usage.load_context_usage
     update_token_counts = _sessions.update_token_counts
     ensure_session = _sessions.ensure_session
     prune_empty_ghost_sessions = _retention.prune_empty_ghost_sessions

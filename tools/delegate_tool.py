@@ -2103,6 +2103,98 @@ def _recover_tasks_from_json_string(
     return parsed, None
 
 
+def _close_unstarted_child(parent_agent, child):
+    """Release an allocation only after close succeeds; otherwise parent owns it."""
+    from contextlib import nullcontext
+
+    child.close()
+    lock = getattr(parent_agent, "_active_children_lock", None)
+    with lock if lock is not None else nullcontext():
+        active = getattr(parent_agent, "_active_children", [])
+        if child in active:
+            active.remove(child)
+
+
+def _dispatch_background_children(children, parent_agent, toolsets, top_role, creds, reservation):
+    from contextlib import nullcontext
+    from tools.approval import get_current_session_key
+    from tools.async_delegation import admit_background_batch, dispatch_async_delegation
+
+    session_key = get_current_session_key(default="") or _delegation_session_key(parent_agent)
+    handles = []
+    accepted = set()
+    submitted = set()
+    admissions = []
+    try:
+        specifications = [{
+            "goal": task["goal"], "context": task.get("context"),
+            "toolsets": task.get("toolsets") or toolsets,
+            "role": _normalize_role(task.get("role") or top_role),
+            "model": creds["model"], "delivery_group": task.get("delivery_group"),
+        } for _, task, _ in children]
+        admissions = admit_background_batch(specifications, session_key)
+        for (index, task, child), admission in zip(children, admissions):
+            def runner(_index=index, _child=child, _goal=task["goal"]):
+                result = _run_single_child(_index, _goal, _child, parent_agent)
+                _apply_summary_budget([result], parent_agent)
+                return result
+
+            def interrupt(_child=child):
+                if hasattr(_child, "interrupt"):
+                    _child.interrupt("Background research cancelled")
+                else:
+                    _child._interrupt_requested = True
+
+            handle = dispatch_async_delegation(
+                **{key: value for key, value in admission["specification"].items()
+                   if key != "delivery_group"},
+                session_key=session_key, runner=runner, interrupt_fn=interrupt,
+                max_async_children=reservation.limit, reservation=reservation,
+                admission=admission,
+                abandon_fn=lambda _child=child: _close_unstarted_child(parent_agent, _child),
+            )
+            handles.append({**handle, "task_index": index, "goal": task["goal"]})
+            submitted.add(index)
+            if handle.get("status") == "dispatched":
+                accepted.add(index)
+                lock = getattr(parent_agent, "_active_children_lock", None)
+                with lock if lock is not None else nullcontext():
+                    active = getattr(parent_agent, "_active_children", [])
+                    if child in active:
+                        active.remove(child)
+        status = "dispatched" if len(accepted) == len(children) else "partial" if accepted else "rejected"
+        response = {
+            "status": status, "mode": "background", "delegations": handles,
+            "note": "Independent results arrive as they finish; named groups arrive together. Failures surface early.",
+        }
+        if len(handles) == 1:
+            response.update(handles[0])
+        if status == "rejected":
+            response["error"] = "; ".join(handle.get("error", "Rejected") for handle in handles)
+        return json.dumps(response, ensure_ascii=False)
+    except Exception as exc:
+        # Accepted workers keep their handles: never tell the caller that an
+        # entire batch failed when some research is already running.
+        return json.dumps({"status": "partial" if accepted else "rejected",
+                           "delegations": handles, "error": str(exc)})
+    finally:
+        reservation.release()
+        for (index, _, _), admission in zip(children, admissions):
+            if index not in submitted:
+                try:
+                    admission["journal"].finish(admission["id"], admission["owner"], "rejected", {
+                        "error": "Batch dispatch interrupted before scheduling this member",
+                    })
+                except Exception:
+                    logger.exception("Unscheduled background admission remains unconfirmed")
+        for index, _, child in children:
+            if index not in accepted:
+                try:
+                    _close_unstarted_child(parent_agent, child)
+                except Exception:
+                    logger.exception("Unstarted child cleanup pending; parent retains ownership")
+
+
 def delegate_task(
     goal: Optional[str] = None,
     context: Optional[str] = None,
@@ -2145,18 +2237,7 @@ def delegate_task(
     # Normalise the top-level role once; per-task overrides re-normalise.
     top_role = _normalize_role(role)
 
-    # Async (background) delegation is single-task only in v1. A batch carries
-    # fan-out semantics (N handles, partial completion) that double the state
-    # model — reject early with a clear message rather than silently running
-    # the batch synchronously.
     background = is_truthy_value(background, default=False) if background is not None else False
-    if background and tasks and isinstance(tasks, list) and len(tasks) > 1:
-        return tool_error(
-            "background=true is single-task only. Dispatch one background "
-            "subagent per delegate_task call (each returns its own handle and "
-            "re-enters the conversation independently), or run the batch "
-            "synchronously with background=false."
-        )
 
     # Depth limit — configurable via delegation.max_spawn_depth,
     # default 2 for parity with the original MAX_DEPTH constant.
@@ -2242,6 +2323,9 @@ def delegate_task(
             )
         if not isinstance(task.get("goal"), str) or not task["goal"].strip():
             return tool_error(f"Task {i} is missing a 'goal'.")
+        group = task.get("delivery_group")
+        if group is not None and (not isinstance(group, str) or not 1 <= len(group) <= 128):
+            return tool_error(f"Task {i}: delivery_group must be a nonempty string up to 128 characters")
         try:
             task["images"] = validate_images(task.get("images", images))
         except ValueError as exc:
@@ -2260,6 +2344,14 @@ def delegate_task(
     from superforecasting_agent.tooling import runtime as _model_tools
 
     _parent_tool_names = list(_model_tools.definitions._last_resolved_tool_names)
+
+    reservation = None
+    if background:
+        from tools.async_delegation import CapacityReservation
+        try:
+            reservation = CapacityReservation(n_tasks, _get_max_async_children())
+        except ValueError as exc:
+            return tool_error(str(exc))
 
     # Build all child agents on the main thread (thread-safe construction)
     # Wrapped in try/finally so the global is always restored even if a
@@ -2298,115 +2390,24 @@ def delegate_task(
             # Override with correct parent tool names (before child construction mutated global)
             child._delegate_saved_tool_names = _parent_tool_names
             children.append((i, t, child))
+    except BaseException:
+        if reservation is not None:
+            reservation.release()
+        for _, _, allocated in children:
+            try:
+                _close_unstarted_child(parent_agent, allocated)
+            except Exception:
+                logger.exception("Unstarted child cleanup pending; parent retains ownership")
+        raise
     finally:
         # Authoritative restore: reset global to parent's tool names after all children built
         _model_tools.definitions._last_resolved_tool_names = _parent_tool_names
 
+    if background:
+        return _dispatch_background_children(children, parent_agent, toolsets, top_role, creds, reservation)
+
     if n_tasks == 1:
-        # Single task -- run directly (no thread pool overhead)
         _i, _t, child = children[0]
-
-        # ----- Async / background dispatch -----
-        # When background=true, hand the already-built child to the async
-        # delegation registry and return a handle immediately. The child runs
-        # on a daemon executor; its result re-enters the conversation as a
-        # fresh turn via process_registry.completion_queue (see
-        # tools/async_delegation.py). Batch async is intentionally NOT
-        # supported in v1 — the rejection is handled before we get here.
-        if background:
-            from tools.approval import get_current_session_key
-            from tools.async_delegation import dispatch_async_delegation
-
-            # Capture the gateway routing key on THIS (parent) thread — the
-            # daemon worker won't carry the session contextvar.
-            _session_key = get_current_session_key(default="")
-
-            # Detach the child from the parent's interrupt-propagation list.
-            # _build_child_agent registered it there (correct for sync
-            # children, which block the parent's turn), but a BACKGROUND
-            # child must survive parent-turn interrupts (Ctrl+C, mid-turn
-            # steering), cache evicts (release_clients), and session close
-            # (/new) — otherwise the detached subagent dies with whatever
-            # the parent was doing when it was dispatched. Its lifecycle is
-            # owned by the async-delegation registry (interrupt_fn below),
-            # and _run_single_child's finally block closes its resources
-            # when it finishes.
-            if hasattr(parent_agent, "_active_children"):
-                try:
-                    _ac_lock = getattr(parent_agent, "_active_children_lock", None)
-                    if _ac_lock:
-                        with _ac_lock:
-                            parent_agent._active_children.remove(child)
-                    else:
-                        parent_agent._active_children.remove(child)
-                except ValueError:
-                    pass
-
-            def _async_runner(_child=child, _goal=_t["goal"]):
-                _result = _run_single_child(0, _goal, _child, parent_agent)
-                # Background delegations bypass the synchronous results.sort
-                # path entirely: this child's final_response folds back into
-                # the parent as a NEW turn via the async completion queue
-                # (tools/async_delegation._push_completion_event reads
-                # _result["summary"]). Budget it HERE, on the worker thread,
-                # against the parent's context headroom so a long background
-                # summary can't blow the parent's window on re-entry — the
-                # same protection the sync path gets. Mutates _result in place;
-                # full text still spills to cache/delegation. See PR #9126.
-                try:
-                    if isinstance(_result, dict):
-                        _apply_summary_budget([_result], parent_agent)
-                except Exception:
-                    logger.debug(
-                        "Async summary budgeting failed; returning untrimmed",
-                        exc_info=True,
-                    )
-                return _result
-
-            def _async_interrupt(_child=child):
-                try:
-                    if hasattr(_child, "interrupt"):
-                        _child.interrupt("Async delegation cancelled")
-                    elif hasattr(_child, "_interrupt_requested"):
-                        _child._interrupt_requested = True
-                except Exception:
-                    pass
-
-            dispatch = dispatch_async_delegation(
-                goal=_t["goal"],
-                context=_t.get("context"),
-                toolsets=_t.get("toolsets") or toolsets,
-                role=_normalize_role(_t.get("role") or top_role),
-                model=creds["model"],
-                session_key=_session_key,
-                runner=_async_runner,
-                interrupt_fn=_async_interrupt,
-                max_async_children=_get_max_async_children(),
-            )
-
-            if dispatch.get("status") == "dispatched":
-                return json.dumps(
-                    {
-                        "status": "dispatched",
-                        "delegation_id": dispatch["delegation_id"],
-                        "goal": _t["goal"],
-                        "mode": "background",
-                        "note": (
-                            "Subagent is running in the background. You and the "
-                            "user can keep working; the full task source and "
-                            "result will re-enter the conversation as a new "
-                            "message when it finishes. Do not wait or poll — "
-                            "just continue."
-                        ),
-                    },
-                    ensure_ascii=False,
-                )
-            # Rejected (at capacity or schedule failure) — surface as a tool
-            # error so the model can fall back to synchronous delegation.
-            return tool_error(
-                dispatch.get("error", "Async delegation could not be scheduled.")
-            )
-
         result = _run_single_child(0, _t["goal"], child, parent_agent)
         results.append(result)
     else:
@@ -3034,6 +3035,10 @@ DELEGATE_TASK_SCHEMA = {
                             "type": "array",
                             "items": {"type": "string"},
                             "description": f"Toolsets for this specific task. Available: {_TOOLSET_LIST_STR}. Use 'web' for network access, 'terminal' for shell, 'browser' for web interaction.",
+                        },
+                        "delivery_group": {
+                            "type": "string",
+                            "description": "Background tasks sharing this name deliver their results together. Omit for independent early completion.",
                         },
                         "acp_command": {
                             "type": "string",

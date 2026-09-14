@@ -1647,6 +1647,7 @@ class GatewayRunner:
             _run_store_path = None
         self._execution_store = ExecutionStore(_run_store_path)
         self._running = False
+        self._background_recovery_task = None
         self._gateway_loop: Optional[asyncio.AbstractEventLoop] = None
         self._shutdown_event = asyncio.Event()
         self._exit_cleanly = False
@@ -4949,10 +4950,51 @@ class GatewayRunner:
         # destination platform's home channel, then forges a synthetic user
         # turn so the agent kicks off the new chat.
         asyncio.create_task(self._handoff_watcher())
+        recovery_task = getattr(self, "_background_recovery_task", None)
+        if recovery_task is None or recovery_task.done():
+            self._background_recovery_task = asyncio.create_task(self._background_recovery_watcher())
 
         logger.info("Press Ctrl+C to stop")
         
         return True
+
+    async def _recover_background_notifications(self) -> None:
+        """Recover saved research for known messaging sessions without queue hints."""
+        from superforecasting_agent.constants import get_agent_home
+        from superforecasting_agent.storage.background_research import BackgroundResearchJournal
+        from tools.async_delegation import pending_notifications
+
+        home = get_agent_home()
+        if not (home / "background-research.db").exists():
+            return
+        keys = {entry.session_key for entry in self.session_store.list_sessions()}
+        def collect():
+            journal = BackgroundResearchJournal(home)
+            events = []
+            for key in journal.pending_sessions():
+                if key in keys:
+                    pending = pending_notifications(key, journal=journal)
+                    if pending:
+                        events.append(pending[0])
+            return events
+        events = await asyncio.to_thread(collect)
+        for event in events:
+            if not self._running or self._draining:
+                return
+            key = event["session_key"]
+            if key in self._running_agents:
+                continue
+            text = _format_gateway_process_notification(event)
+            if text:
+                await self._inject_watch_notification(text, event)
+
+    async def _background_recovery_watcher(self) -> None:
+        while self._running:
+            try:
+                await self._recover_background_notifications()
+            except Exception:
+                logger.exception("Background research recovery unavailable")
+            await asyncio.sleep(2.0)
 
     async def _handoff_watcher(self, interval: float = 2.0) -> None:
         """Background task that processes pending CLI→gateway session handoffs.
@@ -6469,6 +6511,15 @@ class GatewayRunner:
 
             self._running = False
             self._draining = True
+            recovery_task = getattr(self, "_background_recovery_task", None)
+            if recovery_task is not None:
+                recovery_task.cancel()
+                try:
+                    await recovery_task
+                except asyncio.CancelledError:
+                    pass
+                if self._background_recovery_task is recovery_task:
+                    self._background_recovery_task = None
 
             # Notify all chats with active agents BEFORE draining.
             # Adapters are still connected here, so messages can be sent.
@@ -9229,6 +9280,15 @@ class GatewayRunner:
             run_generation,
         )
 
+        _background_event = getattr(event, "background_notification", None)
+        if _background_event is not None:
+            from superforecasting_agent.hosting.notifications import route_notification
+            if (not event.internal or _background_event.get("session_key") != session_key
+                    or route_notification(_background_event, session_key) != "consume"
+                    or not isinstance(_background_event.get("journal_event_id"), str)
+                    or not _background_event["journal_event_id"]):
+                self._clear_session_env(_session_env_tokens)
+                raise ValueError("Invalid background delivery ownership")
         _durable_run_id = f"gateway_{uuid.uuid4().hex}"
         _durable_status = None
         _durable_error = None
@@ -9239,16 +9299,24 @@ class GatewayRunner:
                 session_id=session_entry.session_id,
                 data={"status": "queued", "platform": _platform_name},
                 platform=_platform_name,
+                verify_duplicate=_background_event is not None,
                 initial_message={
                     "message_id": f"{_durable_run_id}:input",
                     "client_message_id": (
-                        f"{_platform_name}:{event.message_id}" if event.message_id else None
+                        f"background:{_background_event['journal_event_id']}" if _background_event is not None
+                        else f"{_platform_name}:{event.message_id}" if event.message_id else None
                     ),
                     "role": "user",
-                    "parts": message_text,
+                    "parts": event.text if _background_event is not None else message_text,
                     "metadata": {"platform": _platform_name},
                 },
             )
+            if _background_event is not None:
+                try:
+                    from tools.async_delegation import acknowledge_notification
+                    acknowledge_notification(_background_event["journal_event_id"], session_key)
+                except Exception:
+                    logger.exception("Background acknowledgement pending; gateway input is durable")
             if _created is None:
                 logger.info(
                     "Ignoring duplicate %s delivery %s for session %s",
@@ -9266,6 +9334,9 @@ class GatewayRunner:
             # Hosted operators should alert on this log and fail closed at the
             # service layer if durable execution is mandatory.
             logger.exception("Could not persist gateway execution state")
+            if _background_event is not None:
+                self._clear_session_env(_session_env_tokens)
+                raise
             _durable_run_id = None
 
         try:
@@ -9292,7 +9363,9 @@ class GatewayRunner:
                 channel_prompt=event.channel_prompt,
                 event=event,
             )
-            if agent_result.get("failed"):
+            if agent_result.get("interrupted"):
+                _durable_status = "interrupted"
+            elif agent_result.get("failed"):
                 _durable_status = "failed"
                 _durable_error = str(agent_result.get("error") or "agent run failed")[:300]
 
@@ -9442,8 +9515,12 @@ class GatewayRunner:
             try:
                 from tools.process_registry import process_registry as _pr
                 _watch_events = []
-                while not _pr.completion_queue.empty():
+                from superforecasting_agent.hosting.notifications import route_notification
+                for _ in range(_pr.completion_queue.qsize()):
                     evt = _pr.completion_queue.get_nowait()
+                    if route_notification(evt, session_key) != "consume":
+                        _pr.completion_queue.put(evt)
+                        continue
                     evt_type = evt.get("type", "completion")
                     if evt_type in {"watch_match", "watch_disabled", "async_delegation"}:
                         _watch_events.append(evt)
@@ -15169,6 +15246,7 @@ class GatewayRunner:
                 message_type=MessageType.TEXT,
                 source=source,
                 internal=True,
+                background_notification=dict(evt) if evt.get("journal_event_id") else None,
                 message_id=str(evt.get("message_id") or "").strip() or None,
             )
             logger.info(

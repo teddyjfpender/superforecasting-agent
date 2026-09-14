@@ -32,9 +32,10 @@ def test_linter_process_failure_stops_the_quality_pipeline(tmp_path):
     tool.parent.mkdir(parents=True)
     tool.write_text("#!/bin/sh\necho 'fixture lint rejection' >&2\nexit 17\n", encoding="utf-8")
     tool.chmod(0o755)
-    # This fixture isolates the linter failure after successful naming admission.
+    # Isolate linter rejection after successful naming and platform admission.
     tool.with_name("python").symlink_to(sys.executable)
     (script.parent / "check_naming.py").write_text("", encoding="utf-8")
+    (script.parent / "check-windows-footguns.py").write_text("", encoding="utf-8")
     result = subprocess.run([sys.executable, str(script), "check", "--python-only"],
                             capture_output=True, text=True)
     assert result.returncode != 0

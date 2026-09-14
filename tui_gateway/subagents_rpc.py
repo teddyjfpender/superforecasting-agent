@@ -98,14 +98,16 @@ def _(rid, params: dict) -> dict:
         from tools.async_delegation import list_async_delegations
 
         async_delegations = list_async_delegations(session_key=session_key)
-    except Exception:
-        async_delegations = []
+    except Exception as exc:
+        from agent.redact import redact_sensitive_text
+        return _err(rid, 5000, "Background status unavailable: " + redact_sensitive_text(str(exc), force=True))
 
     return _ok(
         rid,
         {
             "active": list_active_subagents(session_key=session_key),
-            "async": async_delegations,
+            "background": async_delegations,
+            "async": async_delegations,  # Compatibility for older RPC consumers.
             "paused": is_spawn_paused(session_key=session_key),
             "max_spawn_depth": _get_max_spawn_depth(),
             "max_concurrent_children": _get_max_concurrent_children(),
@@ -139,7 +141,10 @@ def _(rid, params: dict) -> dict:
     subagent_id = str(params.get("subagent_id") or "").strip()
     if not subagent_id:
         return _err(rid, 4000, "subagent_id required")
+    from tools.async_delegation import interrupt_delegation
     ok = interrupt_subagent(subagent_id, session_key=session_key)
+    if not ok:
+        ok = interrupt_delegation(subagent_id, session_key)
     return _ok(rid, {"found": ok, "subagent_id": subagent_id})
 
 

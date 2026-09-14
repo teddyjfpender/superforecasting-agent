@@ -143,6 +143,11 @@ def release_clients(self) -> None:
     """
     with getattr(self, "_resource_close_lock", _partial_agent_close_lock):
         reviews_for(self).stop()
+        # Kernel RPC workers may still own terminal operations. Dispose this
+        # exact owner before tearing down the resources those calls depend on.
+        kernel_owner = getattr(self, "_code_kernel_owner", None)
+        if kernel_owner is not None:
+            kernel_owner.close()
         if getattr(self, "_resources_closed", False):
             return
         _release_clients(self)
@@ -226,6 +231,9 @@ def close(self) -> None:
     """
     with getattr(self, "_resource_close_lock", _partial_agent_close_lock):
         reviews_for(self).stop()
+        kernel_owner = getattr(self, "_code_kernel_owner", None)
+        if kernel_owner is not None:
+            kernel_owner.close()
         if getattr(self, "_resources_closed", False):
             # Retry only retained object handles, never session/task-ID lookups.
             _close_children(self, release_only=False, collect_active=False)

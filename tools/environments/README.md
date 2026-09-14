@@ -6,6 +6,13 @@ Implements local, container, SSH and hosted terminal backends with shared config
 
 Track the exact remote or local allocation and confirm termination before retiring it. Keep credentials and working directories profile-aware.
 
+Persistent analysis borrows a terminal environment through [leases.py](leases.py).
+Leases bind the exact object, prevent idle and manual cleanup, and release only
+after kernel termination is confirmed. They do not transfer ownership of the
+environment to the kernel or allow a retry to clean a replacement allocation.
+Shared `execute(update_cwd=False)` supports internal control traffic without
+overwriting the user's saved shell environment or working directory.
+
 ## Start here
 
 These are entry points and representative modules, not an exhaustive inventory.

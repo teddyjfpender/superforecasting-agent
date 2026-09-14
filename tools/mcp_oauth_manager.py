@@ -110,6 +110,7 @@ def _make_agent_provider_class() -> Optional[type]:
         def __init__(self, *args: Any, server_name: str = "", **kwargs: Any):
             super().__init__(*args, **kwargs)
             self._hermes_server_name = server_name
+            self._refresh_record: dict | None = None
 
         async def _initialize(self) -> None:
             """Load stored tokens + client info AND seed token_expiry_time.
@@ -187,6 +188,108 @@ def _make_agent_provider_class() -> Optional[type]:
                         self._hermes_server_name,
                         exc,
                     )
+
+        def _check_refresh_binding(self) -> bool:
+            """Fail closed before a refresh grant can leave this process."""
+            from tools.mcp_oauth import AgentTokenStorage
+
+            storage = self.context.storage
+            tokens = self.context.current_tokens
+            if (
+                not isinstance(storage, AgentTokenStorage)
+                or tokens is None
+                or not tokens.refresh_token
+            ):
+                return True
+            meta = self.context.oauth_metadata
+            current = (
+                (str(meta.issuer), str(meta.token_endpoint))
+                if meta is not None and meta.token_endpoint
+                else (None, None)
+            )
+            if all(current) and current == storage.loaded_binding:
+                storage.bind_authorization_server(*current)
+                return True
+            # Stop the wire request even if disk cleanup fails. Never log tokens.
+            tokens.refresh_token = None
+            storage.discard_loaded_refresh()
+            logger.warning(
+                "MCP OAuth '%s': refresh issuer or endpoint is unverified or changed; reauthorization required",
+                storage._server_name,
+            )
+            return False
+
+        async def _refresh_token(self):
+            from mcp.client.auth.exceptions import OAuthTokenError
+
+            from tools.mcp_oauth import AgentTokenStorage
+
+            self._refresh_record = None
+            if not self._check_refresh_binding():
+                raise OAuthTokenError(
+                    "MCP refresh grant requires reauthorization: authorization server binding changed or is missing"
+                )
+            storage = self.context.storage
+            if (
+                isinstance(storage, AgentTokenStorage)
+                and storage._loaded_record is not None
+            ):
+                self._refresh_record = dict(storage._loaded_record)
+            return await super()._refresh_token()
+
+        async def _handle_token_response(self, response):
+            from tools.mcp_oauth import AgentTokenStorage
+
+            storage = self.context.storage
+            meta = self.context.oauth_metadata
+            if isinstance(storage, AgentTokenStorage):
+                storage.bind_authorization_server(
+                    str(meta.issuer) if meta is not None else None,
+                    str(meta.token_endpoint)
+                    if meta is not None and meta.token_endpoint
+                    else None,
+                )
+            await super()._handle_token_response(response)
+
+        async def _handle_refresh_response(self, response):
+            # Non-rotating authorization servers may omit refresh_token and scope.
+            # Preserve the bound grant rather than losing it at the next expiry.
+            from mcp.client.auth.exceptions import OAuthTokenError
+            from mcp.shared.auth import OAuthToken
+            from pydantic import ValidationError
+
+            from tools.mcp_oauth import AgentTokenStorage
+
+            expected = self._refresh_record
+            self._refresh_record = None
+            if response.status_code != 200:
+                self.context.clear_tokens()
+                return False
+            try:
+                tokens = OAuthToken.model_validate_json(await response.aread())
+            except ValidationError:
+                logger.warning("MCP OAuth: invalid refresh response")
+                self.context.clear_tokens()
+                return False
+            prior = self.context.current_tokens
+            if prior is not None:
+                if tokens.refresh_token is None:
+                    tokens.refresh_token = prior.refresh_token
+                if tokens.scope is None:
+                    tokens.scope = prior.scope
+            storage = self.context.storage
+            if isinstance(storage, AgentTokenStorage):
+                if not storage.save_refreshed_tokens(tokens, expected):
+                    self.context.clear_tokens()
+                    self._initialized = False
+                    raise OAuthTokenError(
+                        "MCP refresh response was superseded by newer credentials; retry"
+                    )
+            else:
+                await storage.set_tokens(tokens)
+            self.context.current_tokens = tokens
+            self.context.update_token_expiry(tokens)
+            return True
 
         async def _prefetch_oauth_metadata(self) -> None:
             """Fetch PRM + ASM from the well-known endpoints, cache on context.

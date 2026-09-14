@@ -188,13 +188,10 @@ def _job_profile_context(job_id: str, profile: Optional[str]):
     try:
         profile_home = Path(resolve_profile_env(normalized_profile)).resolve()
     except (FileNotFoundError, ValueError) as exc:
-        logger.warning(
-            "Job '%s': configured profile %r no longer valid (%s) — "
-            "falling back to scheduler default",
-            job_id, raw_profile, exc,
-        )
-        yield None
-        return
+        raise ValueError(
+            f"Job '{job_id}': configured profile {raw_profile!r} is unavailable; "
+            "execution refused to preserve profile ownership"
+        ) from exc
 
     override_token = None
     try:
@@ -951,6 +948,10 @@ def _run_job_script(
 
     run_env = os.environ.copy()
     run_env["HERMES_HOME"] = str(_get_agent_home())
+    # Pre-checks and script-only jobs run without AIAgent's runtime policy.
+    # Apply the same unattended commit restriction at their subprocess boundary,
+    # overriding any permissive policy inherited from the launching shell.
+    run_env["FORECAST_COMMIT_POLICY"] = "proposal_only"
     if str(model or "").strip():
         set_env_aliases(run_env, INFERENCE_MODEL_ENV_NAMES, model)
     if str(provider or "").strip():
@@ -1868,7 +1869,114 @@ def _run_job_impl(job: dict) -> tuple[bool, str, str, Optional[str]]:
             logger.debug("Job '%s': failed to reap stale auxiliary clients: %s", job_id, e)
 
 
+def process_job(job: dict, *, verbose: bool = True, adapters=None, loop=None,
+                trigger_key: str | None = None, input_digest: str | None = None) -> bool:
+    """Claim and execute one frozen job; shared by scheduled and event delivery."""
+    import hashlib
+    import uuid
+    from superforecasting_agent.storage.research_jobs import JobTriggerJournal
+
+    journal = JobTriggerJournal(get_agent_home())
+    trigger_key = trigger_key or f"scheduled:{job.get('next_run_at') or uuid.uuid4().hex}"
+    input_digest = input_digest or hashlib.sha256(
+        json.dumps(job, sort_keys=True, allow_nan=False).encode()
+    ).hexdigest()
+    identity = journal.admit(job, trigger_key, input_digest)
+    owner = journal.claim(identity)
+    if owner is None:
+        return False
+    job = journal.get(identity)["specification"]
+    if trigger_key.startswith("webhook:"):
+        from cron.jobs import get_job, storage_home
+
+        # A durable admission freezes inputs, not permission to run forever.
+        # Recheck availability after acquiring the execution claim. Do not mark
+        # or recreate the current job when an operator has revoked queued work.
+        blocked = None
+        try:
+            with storage_home(get_agent_home()):
+                current_job = get_job(job["id"])
+            if current_job is None:
+                blocked = "Job was deleted before event execution"
+            elif not current_job.get("enabled", True) or current_job.get("state") == "paused":
+                blocked = "Job was disabled or paused before event execution"
+        except Exception as exc:
+            logger.exception("Cannot verify event job %s before execution", job["id"])
+            blocked = f"Cannot verify current job availability: {type(exc).__name__}"
+        if blocked:
+            journal.finish(identity, owner, "failed", {
+                "error": blocked, "execution_started": False, "automatic_retry": False,
+            })
+            return False
+    mark_attempted = False
+    try:
+        success, output, final_response, error = run_job(job)
+
+        output_file = save_job_output(job["id"], output)
+        if verbose:
+            logger.info("Output saved to: %s", output_file)
+
+        # Deliver the final response to the origin/target chat.
+        # If the agent responded with [SILENT], skip delivery (but
+        # output is already saved above).  Failed jobs always deliver.
+        deliver_content = final_response if success else f"⚠️ Cron job '{job.get('name', job['id'])}' failed:\n{error}"
+        # Treat whitespace-only final responses the same as empty
+        # responses: do not deliver a blank message, and let the
+        # empty-response guard below mark the run as a soft failure.
+        should_deliver = bool(deliver_content.strip())
+        if should_deliver and success and SILENT_MARKER in deliver_content.strip().upper():
+            logger.info("Job '%s': agent returned %s — skipping delivery", job["id"], SILENT_MARKER)
+            should_deliver = False
+
+        delivery_error = None
+        if should_deliver:
+            try:
+                delivery_error = _deliver_result(job, deliver_content, adapters=adapters, loop=loop)
+            except Exception as de:
+                delivery_error = str(de)
+                logger.error("Delivery failed for job %s: %s", job["id"], de)
+
+        # Treat empty final_response as a soft failure so last_status
+        # is not "ok" — the agent ran but produced nothing useful.
+        # (issue #8585)
+        if success and not final_response.strip():
+            success = False
+            error = "Agent completed but produced empty response (model error, timeout, or misconfiguration)"
+
+        mark_attempted = True
+        mark_job_run(job["id"], success, error, delivery_error=delivery_error,
+                     **({"advance_schedule": False} if trigger_key.startswith("webhook:") else {}))
+
+    except Exception as e:
+        logger.error("Error processing job %s: %s", job['id'], e)
+        try:
+            if not mark_attempted:
+                mark_job_run(job["id"], False, str(e),
+                             **({"advance_schedule": False} if trigger_key.startswith("webhook:") else {}))
+        finally:
+            journal.finish(identity, owner, "failed", {"error": str(e)})
+        return False
+    except BaseException as exc:
+        journal.finish(identity, owner, "interrupted", {"error": type(exc).__name__})
+        raise
+
+    else:
+        journal.finish(identity, owner, "completed" if success else "failed", {
+            "output_file": str(output_file), "final_response": final_response,
+            "error": error, "delivery_error": delivery_error,
+        })
+        return True
+
+
 def tick(verbose: bool = True, adapters=None, loop=None) -> int:
+    """Run one profile's scheduled and event jobs under its storage ownership."""
+    from cron.jobs import storage_home
+
+    with storage_home(_get_agent_home()):
+        return _tick(verbose=verbose, adapters=adapters, loop=loop)
+
+
+def _tick(verbose: bool = True, adapters=None, loop=None) -> int:
     """
     Check and run all due jobs.
     
@@ -1902,10 +2010,23 @@ def tick(verbose: bool = True, adapters=None, loop=None) -> int:
 
     try:
         due_jobs = get_due_jobs()
+        from superforecasting_agent.storage.research_jobs import JobTriggerJournal
+        trigger_journal = JobTriggerJournal(get_agent_home())
+        trigger_journal.recover()
+        pending_triggers = trigger_journal.pending()
+        recovered_results = [
+            process_job(trigger["specification"], verbose=verbose, adapters=adapters, loop=loop,
+                        trigger_key=trigger["trigger_key"], input_digest=trigger["input_digest"])
+            for trigger in pending_triggers
+        ]
+        # A recovered trigger may have completed/deleted a due job or moved its
+        # recurrence. Re-read before admitting any scheduled work.
+        if pending_triggers:
+            due_jobs = get_due_jobs()
 
         if verbose and not due_jobs:
             logger.info("%s - No jobs due", _hermes_now().strftime('%H:%M:%S'))
-            return 0
+            return sum(recovered_results)
 
         if verbose:
             logger.info("%s - %s job(s) due", _hermes_now().strftime('%H:%M:%S'), len(due_jobs))
@@ -1928,48 +2049,7 @@ def tick(verbose: bool = True, adapters=None, loop=None) -> int:
             )
 
         def _process_job(job: dict) -> bool:
-            """Run one due job end-to-end: execute, save, deliver, mark."""
-            try:
-                success, output, final_response, error = run_job(job)
-
-                output_file = save_job_output(job["id"], output)
-                if verbose:
-                    logger.info("Output saved to: %s", output_file)
-
-                # Deliver the final response to the origin/target chat.
-                # If the agent responded with [SILENT], skip delivery (but
-                # output is already saved above).  Failed jobs always deliver.
-                deliver_content = final_response if success else f"⚠️ Cron job '{job.get('name', job['id'])}' failed:\n{error}"
-                # Treat whitespace-only final responses the same as empty
-                # responses: do not deliver a blank message, and let the
-                # empty-response guard below mark the run as a soft failure.
-                should_deliver = bool(deliver_content.strip())
-                if should_deliver and success and SILENT_MARKER in deliver_content.strip().upper():
-                    logger.info("Job '%s': agent returned %s — skipping delivery", job["id"], SILENT_MARKER)
-                    should_deliver = False
-
-                delivery_error = None
-                if should_deliver:
-                    try:
-                        delivery_error = _deliver_result(job, deliver_content, adapters=adapters, loop=loop)
-                    except Exception as de:
-                        delivery_error = str(de)
-                        logger.error("Delivery failed for job %s: %s", job["id"], de)
-
-                # Treat empty final_response as a soft failure so last_status
-                # is not "ok" — the agent ran but produced nothing useful.
-                # (issue #8585)
-                if success and not final_response.strip():
-                    success = False
-                    error = "Agent completed but produced empty response (model error, timeout, or misconfiguration)"
-
-                mark_job_run(job["id"], success, error, delivery_error=delivery_error)
-                return True
-
-            except Exception as e:
-                logger.error("Error processing job %s: %s", job['id'], e)
-                mark_job_run(job["id"], False, str(e))
-                return False
+            return process_job(job, verbose=verbose, adapters=adapters, loop=loop)
 
         # Partition due jobs: jobs with a per-job workdir and/or profile touch
         # process-global runtime state inside run_job. Workdir jobs temporarily
@@ -1987,7 +2067,7 @@ def tick(verbose: bool = True, adapters=None, loop=None) -> int:
             if not ((j.get("workdir") or "").strip() or (j.get("profile") or "").strip())
         ]
 
-        _results: list = []
+        _results: list = list(recovered_results)
 
         # Sequential pass for env/context-mutating jobs.
         for job in sequential_jobs:

@@ -54,3 +54,21 @@ it('never carries backend background records into a replacement session', () => 
   patchUiState({ sid: 'second' })
   expect(getDelegationState().backgroundAgents).toEqual([])
 })
+
+it('shows durable research recovery states without claiming workers are running', () => {
+  applyDelegationStatus({
+    active: [],
+    background: [
+      { delegation_id: 'uncertain', goal: 'Source comparison', status: 'unconfirmed' },
+      { delegation_id: 'saving', goal: 'Base rate', status: 'completion_pending' },
+      { delegation_id: 'done', goal: 'Resolved research', status: 'completed', result: { summary: 'Saved finding' } }
+    ]
+  })
+  const agents = getDelegationState().backgroundAgents
+  expect(agents.map(agent => agent.status)).toEqual(['unconfirmed', 'completion_pending', 'completed'])
+  expect(agents[0]?.summary).toContain('cannot be verified')
+  expect(agents[1]?.summary).toContain('without rerunning')
+  expect(agents[2]?.summary).toBe('Saved finding')
+  applyDelegationStatus({ background: [] })
+  expect(getDelegationState().backgroundAgents).toEqual([])
+})

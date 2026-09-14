@@ -50,6 +50,7 @@ residue, not the product.
 | [forecasting-methodology.md](forecasting-methodology.md) | The desk process and **how to let it learn** — questions → evidence/triage → panels → quorum/Delphi → commit gates → calibration → lessons. |
 | [cli.md](cli.md) | Task-oriented CLI walkthroughs — the laziest path and the hand-driven path. |
 | [scheduled-routines.md](scheduled-routines.md) | Scheduled reviews, watched sources, and proposal-only refreshes. |
+| [research-runtime.md](research-runtime.md) | Optional tool discovery, persistent calculations, background findings, event jobs and recovery. |
 | [development.md](development.md) | Contributing, the build/release path, the test and staleness gates. |
 | [Runtime import migration](architecture/runtime-layout.md) | Native module paths and retained user-data compatibility. |
 | [decisions.md](decisions.md) | The design-decision record — 14 ADRs, each with the evidence that drove it (the drift bugs, the event storm, the fabricated zeros…). |

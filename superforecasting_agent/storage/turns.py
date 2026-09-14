@@ -35,10 +35,39 @@ def _schema(conn: sqlite3.Connection) -> None:
 
 
 def start(db: TurnStore, session_id: str, prompt: str) -> str:
-    turn_id = uuid.uuid4().hex
+    return _start(db, session_id, prompt)[0]
+
+
+def admit_notification(
+    db: TurnStore, session_id: str, prompt: str, event_id: str
+) -> tuple[str, bool]:
+    """Persist receiving turn once; caller acknowledges only after this commits."""
+    if not isinstance(event_id, str) or not 1 <= len(event_id) <= 128:
+        raise ValueError("Invalid notification event identity")
+    return _start(db, session_id, prompt, event_id)
+
+
+def _start(
+    db: TurnStore, session_id: str, prompt: str, event_id: str | None = None
+) -> tuple[str, bool]:
+    turn_id = (
+        uuid.uuid5(uuid.NAMESPACE_URL, f"background:{session_id}:{event_id}").hex
+        if event_id is not None
+        else uuid.uuid4().hex
+    )
 
     def write(conn: sqlite3.Connection):
         _schema(conn)
+        if event_id is not None:
+            existing = conn.execute(
+                "SELECT session_id,prompt FROM tui_turns WHERE id=?", (turn_id,)
+            ).fetchone()
+            if existing is not None:
+                if existing[0] != session_id or existing[1] != str(prompt):
+                    raise ValueError(
+                        "Notification identity conflicts with a persisted turn"
+                    )
+                return False
         handoff = conn.execute(
             "SELECT handoff_state FROM sessions WHERE id = ?", (session_id,)
         ).fetchone()
@@ -60,8 +89,9 @@ def start(db: TurnStore, session_id: str, prompt: str) -> str:
             ),
         )
 
-    db._execute_write(write)
-    return turn_id
+        return True
+
+    return turn_id, db._execute_write(write)
 
 
 def transition(

@@ -36,6 +36,7 @@ def handle_function_call(
     enabled_tools: Optional[List[str]] = None,
     skip_pre_tool_call_hook: bool = False,
     main_runtime: Optional[Dict[str, Any]] = None,
+    kernel_owner: Any = None,
 ) -> str:
     """
     Main function call dispatcher that routes calls to the tool registry.
@@ -145,6 +146,7 @@ def handle_function_call(
                 function_args,
                 task_id=task_id,
                 enabled_tools=sandbox_enabled,
+                kernel_owner=kernel_owner,
                 main_runtime=main_runtime,
             )
         else:

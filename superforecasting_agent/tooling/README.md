@@ -44,3 +44,48 @@ Update this guide when entry points or ownership change. See the
 and [engineering backlog](../../TODO.md) for cross-package context.
 
 [↑ Parent directory](../README.md)
+
+## Progressive discovery
+
+[disclosure.py](disclosure.py) builds a copied, session-scoped view of already
+selected schemas. Core tools, forecast-prefixed tools and clarification remain
+directly available. Optional tools are exposed through `tool_search`,
+`tool_describe` and `tool_call`; discovery never loads a new tool or widens the
+selection. Search uses BM25 ranking with thread-owned English stemmers and a
+bounded catalog excerpt. Schemas and descriptions remain untrusted data.
+
+The [agent adapter](../../agent/tool_discovery.py) applies this view before the
+Chat Completions, Responses, Anthropic and Bedrock transports and routes calls
+through normal tool owners and policy hooks. It validates an entire batch before
+execution and rechecks selection before each effect. Native provider-owned
+runtimes that do not expose the agent's selected tools retain their own catalog.
+
+Configuration in `config.yaml`:
+
+```yaml
+tool_discovery:
+  enabled: true
+  direct_tools: []  # Additional selected tools to keep directly visible.
+  listing_chars: 8000  # 0–24000; bounds the embedded optional-tool excerpt.
+```
+
+Settings are captured at agent construction; selection/schema changes on that
+agent are checked at request and dispatch boundaries. Disabling discovery restores
+eager schemas. `direct_tools` cannot enable an unselected tool. Batch execution is
+sequential and reports completed results if cancellation or selection changes stop
+the remainder. JSON Schema references resolve locally only; invalid or externally
+referenced schemas cannot execute through the bridge.
+
+## Execution call authority
+
+[call_context.py](call_context.py) captures a submitting call's context variables
+and approval/sudo callbacks. Each worker invocation gets an isolated context copy
+and restores the worker's prior callbacks on every exit. Retiring the call rejects
+later dispatch and signals cooperative cancellation to work already inside it.
+Nested calls also retain their parent's cancellation scope. No cancellation state
+is attached to a reusable thread ID by this owner.
+
+Code-execution socket and remote-file RPC workers use this boundary. Tool
+selection remains an intersection with the sandbox allow-list: `None` retains the
+compatibility default, while an explicit empty or non-overlapping selection grants
+no RPC tools. Process lifetime and confirmed cleanup remain separate concerns.

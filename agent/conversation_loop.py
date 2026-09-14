@@ -64,6 +64,7 @@ from agent.prompt_caching import apply_anthropic_cache_control
 from agent.retry_utils import jittered_backoff
 from agent.trajectory import has_incomplete_scratchpad
 from agent.usage_pricing import estimate_usage_cost, normalize_usage
+from agent.context_usage import context_tokens, record_usage, snapshot_request
 from superforecasting_agent.constants import display_agent_home as _dhh_fn
 from superforecasting_agent.logging import set_session_context
 from tools.schema_sanitizer import strip_pattern_and_format
@@ -441,6 +442,8 @@ def run_conversation(
         _restore_or_build_system_prompt(agent, system_message, conversation_history)
 
     active_system_prompt = agent._cached_system_prompt
+    # Prior transient memory/plugin injections must not price a new turn.
+    agent._context_usage_overhead = None
 
     # ── Preflight context compression ──
     # Before entering the main loop, check if the loaded conversation
@@ -456,11 +459,7 @@ def run_conversation(
     ):
         # Include tool schema tokens — with many tools these can add
         # 20-30K+ tokens that the old sys+msg estimate missed entirely.
-        _preflight_tokens = estimate_request_tokens_rough(
-            messages,
-            system_prompt=active_system_prompt or "",
-            tools=agent.tools or None,
-        )
+        _preflight_tokens = context_tokens(agent, messages)
 
         if _preflight_tokens >= agent.context_compressor.threshold_tokens:
             logger.info(
@@ -502,11 +501,7 @@ def run_conversation(
                 agent._last_content_tools_all_housekeeping = False
                 agent._mute_post_response = False
                 # Re-estimate after compression
-                _preflight_tokens = estimate_request_tokens_rough(
-                    messages,
-                    system_prompt=active_system_prompt or "",
-                    tools=agent.tools or None,
-                )
+                _preflight_tokens = context_tokens(agent, messages)
                 if _preflight_tokens < agent.context_compressor.threshold_tokens:
                     break  # Under threshold
 
@@ -603,6 +598,11 @@ def run_conversation(
             _ext_prefetch_cache = agent._memory_manager.prefetch_all(_query) or ""
         except Exception:
             pass
+
+    agent._context_usage_overhead = (
+        (_ext_prefetch_cache, _plugin_user_context)
+        if _ext_prefetch_cache or _plugin_user_context else None
+    )
 
     # Optional opt-in runtime: if api_mode == codex_app_server, hand the
     # turn to the codex app-server subprocess (terminal/file ops/patching
@@ -1042,7 +1042,9 @@ def run_conversation(
 
             try:
                 agent._reset_stream_delivery_tracking()
+                agent._session_messages = messages
                 api_kwargs = agent._build_api_kwargs(api_messages)
+                _usage_snapshot = snapshot_request(agent, messages)
                 if agent._force_ascii_payload:
                     _sanitize_structure_non_ascii(api_kwargs)
                 if agent.api_mode == "codex_responses":
@@ -1611,6 +1613,7 @@ def run_conversation(
                         "total_tokens": total_tokens,
                     }
                     agent.context_compressor.update_from_response(usage_dict)
+                    record_usage(agent, _usage_snapshot, prompt_tokens)
 
                     # Cache discovered context length after successful call.
                     # Only persist limits confirmed by the provider (parsed
@@ -3591,42 +3594,17 @@ def run_conversation(
                 if _tc_names == {"execute_code"}:
                     agent.iteration_budget.refund()
                 
-                # Use real token counts from the API response to decide
-                # compression.  prompt_tokens + completion_tokens is the
-                # actual context size the provider reported plus the
-                # assistant turn — a tight lower bound for the next prompt.
-                # Tool results appended above aren't counted yet, but the
-                # threshold (default 50%) leaves ample headroom; if tool
-                # results push past it, the next API call will report the
-                # real total and trigger compression then.
-                #
-                # If last_prompt_tokens is 0 (stale after API disconnect
-                # or provider returned no usage data), fall back to rough
-                # estimate to avoid missing compression.  Without this,
-                # a session can grow unbounded after disconnects because
-                # should_compress(0) never fires.  (#2153)
+                # Price new visible output and tool results on top of the
+                # provider-measured prefix. Hidden billed reasoning is excluded.
+                # Prefix edits, model/schema changes and compaction invalidate it.
                 _compressor = agent.context_compressor
-                if _compressor.last_prompt_tokens > 0:
-                    # Only use prompt_tokens — completion/reasoning
-                    # tokens don't consume context window space.
-                    # Thinking models (GLM-5.1, QwQ, DeepSeek R1)
-                    # inflate completion_tokens with reasoning,
-                    # causing premature compression.  (#12026)
-                    _real_tokens = _compressor.last_prompt_tokens
-                else:
-                    # Include tool schemas — with 50+ tools enabled
-                    # these add 20-30K tokens the messages-only
-                    # estimate misses, which can skip compression
-                    # past the configured threshold (#14695).
-                    _real_tokens = estimate_request_tokens_rough(
-                        messages, tools=agent.tools or None
-                    )
+                _real_tokens = context_tokens(agent, messages)
 
                 if agent.compression_enabled and _compressor.should_compress(_real_tokens):
                     agent._safe_print("  ⟳ compacting context…")
                     messages, active_system_prompt = agent._compress_context(
                         messages, system_message,
-                        approx_tokens=agent.context_compressor.last_prompt_tokens,
+                        approx_tokens=_real_tokens,
                         task_id=effective_task_id,
                     )
                     # Compression created a new session — clear history so
@@ -4249,6 +4227,7 @@ def run_conversation(
         "completion_tokens": agent.session_completion_tokens,
         "total_tokens": agent.session_total_tokens,
         "last_prompt_tokens": getattr(agent.context_compressor, "last_prompt_tokens", 0) or 0,
+        "context_used": context_tokens(agent, messages),
         "estimated_cost_usd": agent.session_estimated_cost_usd,
         "cost_status": agent.session_cost_status,
         "cost_source": agent.session_cost_source,

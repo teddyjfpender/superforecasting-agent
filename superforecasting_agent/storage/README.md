@@ -54,3 +54,41 @@ mounts retain the reactive compatibility fallback.
 Regression coverage: `tests/test_storage_sqlite.py`,
 `tests/forecasting/test_cross_vm_sqlite.py` and
 `tests/forecasting/test_ledger_wal.py`.
+
+## Context usage baselines
+
+[context_usage.py](context_usage.py) stores a versioned context baseline under a
+reserved session-model metadata key. Updates run inside the existing SQLite
+write transaction and preserve unrelated settings. Reads reject malformed
+metadata, and a missing session is never recreated solely for accounting. The
+agent owner validates the entire priced prefix and request identity before
+using a restored baseline; storage does not infer that an old count still applies.
+
+## Background research journal
+
+[background_research.py](background_research.py) stores batch admission, member
+outcomes and pending delivery events in the active profile's
+`background-research.db`. Admission freezes every member before execution;
+completion and its notification commit together. Independent members can deliver
+immediately, grouped members retain their input order and wait for their group,
+and failures generate an early event even while siblings run.
+
+Execution adapters own redaction, capacity, worker liveness and cancellation.
+The journal requires the original owner token to start or finish a task and
+never re-executes a model call. An accepted/running record after a restart is
+unconfirmed work, not proof of live execution. Consumers acknowledge an event
+only after durable delivery; querying pending events never acknowledges them.
+These primitives are being integrated into background dispatch and TUI recovery.
+
+Journal version 2 retains the admitting process identity. Recovery verifies PID
+creation time on the same machine before marking an unfinished task interrupted.
+It never reruns research automatically: partial external effects may already
+exist. Foreign hosts, inaccessible processes and version 1 admissions without
+identity remain unconfirmed. Saved terminal results remain available after
+restart; absence from an in-memory worker registry is not proof of completion.
+
+`research_jobs.py` owns frozen scheduled/event trigger admission, exclusive job
+claims and terminal receipts. Version 2 claims retain local process identity;
+confirmed exited owners become interrupted without automatic effect retries.
+Legacy or foreign owners are retained conservatively. `process_identity.py`
+centralizes the host identity also used by background research ownership.

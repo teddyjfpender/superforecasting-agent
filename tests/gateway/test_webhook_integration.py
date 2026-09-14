@@ -337,3 +337,243 @@ class TestGitHubCommentDelivery:
         # Delivery info is retained after send() so interim status messages
         # don't strand the final response (TTL-based cleanup happens on POST).
         assert chat_id in adapter._delivery_info
+
+
+@pytest.mark.asyncio
+async def test_authenticated_job_binding_is_durable_and_does_not_run_route_prompt(monkeypatch, tmp_path):
+    from cron import jobs
+    from superforecasting_agent.constants import get_agent_home
+    from superforecasting_agent.storage.research_jobs import JobTriggerJournal
+
+    home = get_agent_home()
+    monkeypatch.setattr(jobs, 'JOBS_FILE', home / 'cron' / 'jobs.json')
+    monkeypatch.setattr(jobs, 'get_job', lambda identity: {'id': identity, 'prompt': 'Stored research', 'enabled': True})
+    adapter = _make_adapter({'source': {'secret': 'fixture-secret', 'cron_job': 'job', 'prompt': 'Must not run'}})
+    body = b'{"event_type":"published"}'
+    headers = {'X-Hub-Signature-256': _github_signature(body, 'fixture-secret'), 'X-Request-ID': 'delivery'}
+    async with TestClient(TestServer(_create_app(adapter))) as client:
+        unauthorized = await client.post('/webhooks/source', data=body)
+        assert unauthorized.status == 401
+        first = await client.post('/webhooks/source', data=body, headers=headers)
+        assert first.status == 202
+        receipt = await first.json()
+        repeat = await client.post('/webhooks/source', data=body, headers=headers)
+        assert (await repeat.json())['trigger_id'] == receipt['trigger_id']
+        changed = b'{"event_type":"revised"}'
+        bad = await client.post('/webhooks/source', data=changed, headers={**headers, 'X-Hub-Signature-256': _github_signature(changed, 'fixture-secret')})
+        assert bad.status == 409
+    saved = JobTriggerJournal(home).get(receipt['trigger_id'])
+    assert saved['state'] == 'accepted'
+    assert saved['specification']['prompt'] == 'Stored research'
+
+
+@pytest.mark.asyncio
+async def test_job_route_reads_and_admits_only_its_explicit_profile(monkeypatch, tmp_path):
+    from cron import jobs
+    from superforecasting_agent.constants import get_agent_home
+    from superforecasting_agent import profile_paths
+    from superforecasting_agent.storage.research_jobs import JobTriggerJournal
+
+    target = tmp_path / 'target'
+    with jobs.storage_home(target):
+        jobs.save_jobs([{'id': 'shared', 'prompt': 'Target research', 'enabled': True}])
+    with jobs.storage_home(get_agent_home()):
+        jobs.save_jobs([{'id': 'shared', 'prompt': 'Wrong profile', 'enabled': True}])
+    monkeypatch.setattr(profile_paths, 'resolve_profile_env', lambda name: str(target) if name == 'target' else pytest.fail('unexpected profile'))
+    adapter = _make_adapter({'source': {'secret': 'fixture-secret', 'cron_job': 'shared', 'profile': 'target'}})
+    body = b'{}'
+    async with TestClient(TestServer(_create_app(adapter))) as client:
+        response = await client.post('/webhooks/source', data=body, headers={
+            'X-Hub-Signature-256': _github_signature(body, 'fixture-secret'), 'X-Request-ID': 'event'})
+        assert response.status == 202
+        identity = (await response.json())['trigger_id']
+    assert JobTriggerJournal(target).get(identity)['specification']['prompt'] == 'Target research'
+    # The ingress profile keeps only the immutable delivery binding; execution
+    # remains owned by the requested target profile.
+    assert not JobTriggerJournal(get_agent_home()).pending()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('change', ['job', 'profile'])
+async def test_replayed_delivery_cannot_follow_edited_route_after_restart(monkeypatch, tmp_path, change):
+    from cron import jobs
+    from superforecasting_agent.constants import get_agent_home
+    from superforecasting_agent import profile_paths
+    from superforecasting_agent.storage.research_jobs import JobTriggerJournal
+
+    home = get_agent_home()
+    other = tmp_path / 'other'
+    for target in (home, other):
+        with jobs.storage_home(target):
+            jobs.save_jobs([{'id': name, 'prompt': name, 'enabled': True}
+                            for name in ('original', 'replacement')])
+    monkeypatch.setattr(profile_paths, 'resolve_profile_env', lambda name: str(other))
+    route = {'secret': 'fixture-secret', 'cron_job': 'original'}
+    body = b'{"event_type":"published"}'
+    headers = {'X-Hub-Signature-256': _github_signature(body, 'fixture-secret'),
+               'X-Request-ID': 'same-delivery'}
+    adapter = _make_adapter({'source': route})
+    async with TestClient(TestServer(_create_app(adapter))) as client:
+        response = await client.post('/webhooks/source', data=body, headers=headers)
+        assert response.status == 202
+        identity = (await response.json())['trigger_id']
+    changed = {**route, **({'cron_job': 'replacement'} if change == 'job' else {'profile': 'other'})}
+    restarted = _make_adapter({'source': changed})
+    async with TestClient(TestServer(_create_app(restarted))) as client:
+        replay = await client.post('/webhooks/source', data=body, headers=headers)
+        assert replay.status == 409
+    assert [row['id'] for row in JobTriggerJournal(home).pending()] == [identity]
+    assert not JobTriggerJournal(other).pending()
+
+
+@pytest.mark.asyncio
+async def test_failed_target_admission_retries_only_original_binding(monkeypatch):
+    from cron import jobs
+    from superforecasting_agent.constants import get_agent_home
+    from superforecasting_agent.storage.research_jobs import JobTriggerJournal
+
+    home = get_agent_home()
+    with jobs.storage_home(home):
+        jobs.save_jobs([{'id': name, 'prompt': name} for name in ('original', 'replacement')])
+    original_admit = JobTriggerJournal.admit
+    calls = []
+    def interrupted_admit(self, *args):
+        calls.append(args)
+        if len(calls) == 1:
+            raise OSError('Injected target write failure')
+        return original_admit(self, *args)
+    monkeypatch.setattr(JobTriggerJournal, 'admit', interrupted_admit)
+    body = b'{}'
+    headers = {'X-Hub-Signature-256': _github_signature(body, 'fixture-secret'),
+               'X-Request-ID': 'retry'}
+    for name, expected in [('original', 503), ('replacement', 409), ('original', 202)]:
+        adapter = _make_adapter({'source': {'secret': 'fixture-secret', 'cron_job': name}})
+        async with TestClient(TestServer(_create_app(adapter))) as client:
+            response = await client.post('/webhooks/source', data=body, headers=headers)
+            assert response.status == expected
+    pending = JobTriggerJournal(home).pending()
+    assert len(pending) == 1
+    assert pending[0]['job_id'] == 'original'
+    assert len(calls) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('execution', ['script', 'agent'])
+async def test_signed_job_cannot_commit_forecast_and_replay_does_not_rerun(monkeypatch, tmp_path, execution):
+    """Exercise HTTP, scheduler, real execution and ledger with controlled model replies."""
+    from pathlib import Path
+
+    from cron import jobs, scheduler
+    from forecasting.ledger import ForecastLedger, allow_ledger_writes
+    from superforecasting_agent.constants import get_agent_home
+    from superforecasting_agent.storage.research_jobs import JobTriggerJournal
+
+    home = get_agent_home()
+    monkeypatch.setattr(scheduler, '_agent_home', None)
+    # A permissive launching shell must not weaken an unattended job's policy.
+    monkeypatch.setenv('FORECAST_COMMIT_POLICY', 'commit')
+    ledger_path = home / 'forecast-test.db'
+    ledger = ForecastLedger(ledger_path)
+    with allow_ledger_writes('seed active forecast'):
+        question = ledger.create_question(
+            title='Will the synthetic observation occur?',
+            resolution_criteria='YES if the fixture observes the event by 2099-01-01.',
+            close_time='2099-01-01T00:00:00Z',
+        )
+        ledger.create_snapshot(question_id=question.id, probability_or_distribution=0.4,
+                               rationale='Initial synthetic estimate.')
+    scripts = home / 'scripts'
+    scripts.mkdir(exist_ok=True)
+    attempts = tmp_path / 'attempts'
+    script = scripts / 'attempt_update.py'
+    script.write_text(
+        'import sys\nfrom pathlib import Path\n'
+        f'sys.path.insert(0, {str(Path(__file__).resolve().parents[2])!r})\n'
+        'from forecasting.ledger import ForecastLedger, allow_ledger_writes\n'
+        f'with Path({str(attempts)!r}).open("a") as f: f.write("attempt\\n")\n'
+        f'ledger = ForecastLedger({str(ledger_path)!r})\n'
+        'with allow_ledger_writes("unattended script"):\n'
+        f'    ledger.create_snapshot(question_id={question.id!r}, '
+        'probability_or_distribution=0.9, rationale="Unattended changed estimate.")\n',
+        encoding='utf-8',
+    )
+    job = {'id': 'source-job', 'prompt': 'Collect source observations', 'enabled': True,
+           'no_agent': True, 'script': script.name, 'deliver': 'local',
+           'schedule': {'kind': 'interval', 'minutes': 60},
+           'next_run_at': '2099-01-01T00:00:00+00:00'}
+    if execution == 'agent':
+        from tests.run_agent.test_tool_call_guardrail_runtime import (
+            _make_agent, _mock_response, _mock_tool_call,
+        )
+
+        agent = _make_agent('forecast_ledger')
+        arguments = {'db': str(ledger_path), 'action': 'update_forecast',
+                     'question_id': question.id, 'probability': 0.9,
+                     'rationale': 'New synthetic observation warrants a proposed revision.',
+                     'reference_class': {'name': 'Synthetic events', 'inclusion_criteria': 'Comparable fixtures', 'base_rate': 0.4},
+                     'require_components': False, 'require_structured_reasoning': False,
+                     'require_panel': False}
+        model_calls = agent.client.chat.completions.create
+        evidence = {'db': str(ledger_path), 'action': 'add_evidence',
+                    'question_id': question.id, 'source_or_note': 'Synthetic source release',
+                    'claim': 'The controlled source reports a new positive observation.'}
+        model_calls.side_effect = [
+            _mock_response(content='', finish_reason='tool_calls', tool_calls=[
+                _mock_tool_call('forecast_ledger', json.dumps(evidence), 'evidence')]),
+            _mock_response(content='', finish_reason='tool_calls', tool_calls=[
+                _mock_tool_call('forecast_ledger', json.dumps(arguments), 'propose')]),
+            _mock_response(content='Research complete; proposed revision awaits approval.'),
+        ]
+        class PreparedAgent(type(agent)):
+            def __new__(cls, **kwargs):
+                agent._session_db = kwargs['session_db']
+                agent.session_id = kwargs['session_id']
+                return agent
+        monkeypatch.setattr('run_agent.AIAgent', PreparedAgent)
+        monkeypatch.setattr('tools.mcp_tool.discover_mcp_tools', lambda: [])
+        monkeypatch.setattr(
+            'superforecasting_agent.runtime.runtime_provider.resolve_runtime_provider',
+            lambda **kwargs: {'provider': 'openrouter', 'api_key': 'test-key',
+                              'base_url': 'https://example.invalid/v1'},
+        )
+        job.pop('script')
+        job.pop('no_agent')
+    with jobs.storage_home(home):
+        jobs.save_jobs([job])
+    adapter = _make_adapter({'source': {'secret': 'fixture-secret', 'cron_job': job['id']}})
+    body = b'{"event_type":"published"}'
+    headers = {'X-Hub-Signature-256': _github_signature(body, 'fixture-secret'),
+               'X-Request-ID': 'source-release'}
+    async with TestClient(TestServer(_create_app(adapter))) as client:
+        response = await client.post('/webhooks/source', data=body, headers=headers)
+        assert response.status == 202
+        identity = (await response.json())['trigger_id']
+        assert await asyncio.to_thread(scheduler.tick, verbose=False) == 1
+        receipt = JobTriggerJournal(home).get(identity)
+        if execution == 'script':
+            assert receipt['state'] == 'failed'
+            assert 'proposal-only' in receipt['result']['error']
+        else:
+            assert receipt['state'] == 'completed', receipt['result']
+            assert model_calls.call_count == 3
+            messages = model_calls.call_args.kwargs['messages']
+            outcomes = [json.loads(message['content']) for message in messages
+                        if message.get('role') == 'tool']
+            assert len(outcomes) == 2
+            assert outcomes[1].get('status') == 'proposal_created', outcomes
+            assert outcomes[1]['proposal']['status'] == 'pending'
+        repeated = await client.post('/webhooks/source', data=body, headers=headers)
+        assert (await repeated.json())['trigger_id'] == identity
+        assert await asyncio.to_thread(scheduler.tick, verbose=False) == 0
+    if execution == 'script':
+        assert attempts.read_text() == 'attempt\n'
+    else:
+        assert model_calls.call_count == 3
+        reopened = ForecastLedger(ledger_path)
+        proposal = reopened.get_forecast_update_proposal(outcomes[1]['proposal']['id'])
+        assert proposal['status'] == 'pending'
+        assert len(reopened.list_evidence(question.id)) == 1
+    assert len(ledger.list_snapshots(question.id)) == 1
+    assert ledger.get_current_snapshot(question.id).probability_or_distribution == 0.4
+    with jobs.storage_home(home):
+        assert jobs.get_job(job['id'])['next_run_at'] == job['next_run_at']

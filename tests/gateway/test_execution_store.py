@@ -170,3 +170,25 @@ def test_terminal_run_cannot_be_resurrected(tmp_path):
     result = store.update_run("run_1", "running", output="late callback")
     assert result["status"] == "completed"
     assert result["output"] == "done"
+
+
+def test_verified_duplicate_delivery_survives_reopen_and_rejects_changed_input(tmp_path):
+    path = tmp_path / 'background.db'
+    message = {'message_id': 'first-input', 'client_message_id': 'background:event',
+               'role': 'user', 'parts': 'Saved research', 'metadata': {'platform': 'fixture'}}
+    store = ExecutionStore(path)
+    store.create_run('first', thread_key='desk', session_id='session', data={'status': 'queued'},
+                     initial_message=message, verify_duplicate=True)
+    store.close()
+    store = ExecutionStore(path)
+    try:
+        assert store.create_run('duplicate', thread_key='desk', session_id='session', data={'status': 'queued'},
+            initial_message={**message, 'message_id': 'duplicate-input'}, verify_duplicate=True) is None
+        with pytest.raises(ValueError, match='conflicts'):
+            store.create_run('changed', thread_key='desk', session_id='session', data={'status': 'queued'},
+                initial_message={**message, 'parts': 'Different evidence'}, verify_duplicate=True)
+        assert store.get_run('changed') is None
+        assert store.get_run('duplicate') is None
+        assert store.list_messages('desk')[0]['parts'] == 'Saved research'
+    finally:
+        store.close()

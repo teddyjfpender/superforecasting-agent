@@ -1062,7 +1062,7 @@ def connect(
             # falls back to DELETE with one WARNING so kanban stays usable there.
             # See superforecasting_agent.storage.session._WAL_INCOMPAT_MARKERS for detection logic.
             from superforecasting_agent.storage.session import apply_wal_with_fallback
-            apply_wal_with_fallback(conn, db_label=f"kanban.db ({path.name})")
+            apply_wal_with_fallback(conn, db_label=str(path.resolve()))
             conn.execute("PRAGMA synchronous=NORMAL")
             conn.execute("PRAGMA foreign_keys=ON")
             needs_init = resolved not in _INITIALIZED_PATHS

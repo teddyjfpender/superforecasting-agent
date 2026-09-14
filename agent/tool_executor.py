@@ -365,6 +365,7 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
                     function_args,
                     function_result,
                     failed=is_error,
+                    tool_call_id=tc.id, messages=messages,
                 )
 
             if is_error:
@@ -595,6 +596,9 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
             # tool result for the original tool_call_id without executing.
             function_result = agent._guardrail_block_result(_guardrail_block_decision)
             tool_duration = 0.0
+        elif function_name in {"tool_search", "tool_describe", "tool_call"}:
+            function_result = agent._invoke_tool(function_name, function_args, effective_task_id, tool_call_id=tool_call.id, messages=messages, pre_tool_block_checked=True)
+            tool_duration = time.time() - tool_start_time
         elif function_name == "todo":
             from tools.todo_tool import todo_tool as _todo_tool
             function_result = _todo_tool(
@@ -798,6 +802,7 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                 function_args,
                 function_result,
                 failed=_is_error_result,
+                tool_call_id=tool_call.id, messages=messages,
             )
             result_preview = function_result if agent.verbose_logging else (
                 function_result[:200] if len(function_result) > 200 else function_result
