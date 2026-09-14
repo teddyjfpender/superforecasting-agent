@@ -877,6 +877,7 @@ def _build_child_agent(
     # 'leaf' (default) cannot; 'orchestrator' retains the delegation
     # toolset subject to depth/kill-switch bounds applied below.
     role: str = "leaf",
+    images: Optional[List[str]] = None,
 ):
     """
     Build a child AIAgent on the main thread (thread-safe construction).
@@ -1138,6 +1139,7 @@ def _build_child_agent(
     child._subagent_id = subagent_id
     child._parent_subagent_id = parent_subagent_id
     child._subagent_goal = goal
+    child._delegated_images = list(images or [])
 
     # Share a credential pool with the child when possible so subagents can
     # rotate credentials on rate limits instead of getting pinned to one key.
@@ -1153,6 +1155,12 @@ def _build_child_agent(
                 parent_agent._active_children.append(child)
         else:
             parent_agent._active_children.append(child)
+
+    # An interrupt may have taken its child snapshot before this registration.
+    # Reuse the same message semantics as the parent's normal fan-out: None is
+    # cancellation, a message retains the redirect context. Steer is a separate API.
+    if getattr(parent_agent, "_interrupt_requested", False) is True:
+        child.interrupt(getattr(parent_agent, "_interrupt_message", None))
 
     # Announce the spawn immediately — the child may sit in a queue
     # for seconds if max_concurrent_children is saturated, so the TUI
@@ -1680,8 +1688,21 @@ def _run_single_child(
 
         def _run_with_thread_capture():
             _worker_thread_holder["t"] = threading.current_thread()
+            from agent.delegation_images import goal_with_images
+            from superforecasting_agent.runtime.config import load_config
+            image_goal = goal
+            requested_images = getattr(child, "_delegated_images", [])
+            if isinstance(requested_images, list) and requested_images:
+                try:
+                    image_goal = goal_with_images(
+                        goal, requested_images,
+                        provider=getattr(child, "provider", "") or "",
+                        model=getattr(child, "model", "") or "", config=load_config(),
+                    )
+                except Exception:
+                    logger.warning("Delegated image forwarding failed; continuing with text goal", exc_info=True)
             return child.run_conversation(
-                user_message=goal,
+                user_message=image_goal,
                 task_id=child_task_id,
             )
 
@@ -2093,6 +2114,7 @@ def delegate_task(
     role: Optional[str] = None,
     background: Optional[bool] = None,
     parent_agent=None,
+    images: Optional[List[str]] = None,
 ) -> str:
     """
     Spawn one or more child agents to handle delegated tasks.
@@ -2195,10 +2217,10 @@ def delegate_task(
                 f"delegate_task calls, or increase "
                 f"delegation.max_concurrent_children in config.yaml."
             )
-        task_list = tasks
+        task_list = [dict(task) if isinstance(task, dict) else task for task in tasks]
     elif goal and isinstance(goal, str) and goal.strip():
         task_list = [
-            {"goal": goal, "context": context, "toolsets": toolsets, "role": top_role}
+            {"goal": goal, "context": context, "toolsets": toolsets, "role": top_role, "images": images}
         ]
     else:
         return tool_error("Provide either 'goal' (single task) or 'tasks' (batch).")
@@ -2206,14 +2228,24 @@ def delegate_task(
     if not task_list:
         return tool_error("No tasks provided.")
 
+    from agent.delegation_images import validate_images
+    try:
+        validate_images(images)
+    except ValueError as exc:
+        return tool_error(str(exc))
+
     # Validate each task has a goal
     for i, task in enumerate(task_list):
         if not isinstance(task, dict):
             return tool_error(
                 f"Task {i} must be an object, got {type(task).__name__}."
             )
-        if not task.get("goal", "").strip():
+        if not isinstance(task.get("goal"), str) or not task["goal"].strip():
             return tool_error(f"Task {i} is missing a 'goal'.")
+        try:
+            task["images"] = validate_images(task.get("images", images))
+        except ValueError as exc:
+            return tool_error(f"Task {i}: {exc}")
 
     overall_start = time.monotonic()
     results = []
@@ -2242,6 +2274,7 @@ def delegate_task(
             child = _build_child_agent(
                 task_index=i,
                 goal=t["goal"],
+                images=t["images"],
                 context=t.get("context"),
                 toolsets=t.get("toolsets") or toolsets,
                 model=creds["model"],
@@ -3079,6 +3112,14 @@ DELEGATE_TASK_SCHEMA = {
 }
 
 
+# One attachment contract for both the single-task and batch forms.
+_IMAGE_SCHEMA = {
+    "type": "array", "maxItems": 8, "items": {"type": "string", "minLength": 1},
+    "description": "Image evidence: local paths, HTTP(S) URLs or inline data:image URLs. Vision children receive pixels; text children receive usable image handles.",
+}
+DELEGATE_TASK_SCHEMA["parameters"]["properties"]["images"] = _IMAGE_SCHEMA
+DELEGATE_TASK_SCHEMA["parameters"]["properties"]["tasks"]["items"]["properties"]["images"] = _IMAGE_SCHEMA
+
 # --- Registry ---
 from tools.registry import registry, tool_error
 
@@ -3088,6 +3129,7 @@ registry.register(
     schema=DELEGATE_TASK_SCHEMA,
     handler=lambda args, **kw: delegate_task(
         goal=args.get("goal"),
+        images=args.get("images"),
         context=args.get("context"),
         toolsets=args.get("toolsets"),
         tasks=args.get("tasks"),

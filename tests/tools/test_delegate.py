@@ -15,6 +15,8 @@ import sys
 import threading
 import time
 import unittest
+
+import pytest
 from unittest.mock import MagicMock, patch
 
 from tools.delegate_tool import (
@@ -2671,3 +2673,68 @@ class TestFallbackModelInheritance(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@pytest.mark.parametrize('message', [None, 'Redirect to the revised evidence'])
+def test_child_attached_after_parent_stop_inherits_exact_signal(message):
+    parent = _make_mock_parent(depth=0)
+    parent._interrupt_requested = True
+    parent._interrupt_message = message
+    with patch('run_agent.AIAgent') as constructor:
+        child = constructor.return_value
+        built = _build_child_agent(0, 'Research', None, None, None, 3, 1, parent)
+    assert built is child
+    child.interrupt.assert_called_once_with(message)
+
+
+@pytest.mark.parametrize('images', ['image.png', [42], [''], ['x.png'] * 9])
+def test_invalid_images_rejected_before_any_child_allocation(images):
+    parent = _make_mock_parent(depth=0)
+    with patch('tools.delegate_tool._build_child_agent') as build:
+        result = json.loads(delegate_task(tasks=[{'goal':'valid'}, {'goal':'bad', 'images':images}], parent_agent=parent))
+    assert 'error' in result
+    build.assert_not_called()
+
+
+@pytest.mark.parametrize('message', [None, 'Use the corrected outcome criteria'])
+def test_parent_stop_during_child_construction_reaches_late_child(message):
+    from run_agent import AIAgent
+    parent = _make_mock_parent(depth=0)
+    parent._execution_thread_id = None
+    parent._tool_worker_threads = None
+    parent._interrupt_requested = False
+    child = MagicMock()
+
+    def stop_before_registration(**kwargs):
+        # Real fanout sees no child: registration has not happened yet.
+        assert parent._active_children == []
+        AIAgent.interrupt(parent, message)
+        return child
+
+    with patch('run_agent.AIAgent', side_effect=stop_before_registration):
+        built = _build_child_agent(0, 'Research', None, None, None, 3, 1, parent)
+    assert built is child
+    assert parent._active_children == [child]
+    child.interrupt.assert_called_once_with(message)
+
+
+@pytest.mark.parametrize('batch', [False, True])
+@pytest.mark.parametrize('mode', ['native', 'text'])
+def test_delegated_images_reach_child_execution(batch, mode):
+    parent = _make_mock_parent(depth=0)
+    child = MagicMock()
+    child.provider = 'openrouter'
+    child.model = 'test/model'
+    child.run_conversation.return_value = {'final_response':'done', 'completed':True, 'api_calls':1}
+    url = 'https://example.org/evidence.png'
+    tasks = [{'goal':'Read chart', 'images':[url]}]
+    arguments = {'tasks':tasks} if batch else {'goal':'Read chart', 'images':[url]}
+    with patch('run_agent.AIAgent', return_value=child), patch('superforecasting_agent.runtime.config.load_config', return_value={'agent':{'image_input_mode':mode}}):
+        result = json.loads(delegate_task(parent_agent=parent, **arguments))
+    assert result['results'][0]['status'] == 'completed'
+    payload = child.run_conversation.call_args.kwargs['user_message']
+    if mode == 'native':
+        assert payload == [{'type':'text','text':'Read chart'}, {'type':'image_url','image_url':{'url':url}}]
+    else:
+        assert isinstance(payload, str) and url in payload and 'vision_analyze' in payload
+    assert tasks == [{'goal':'Read chart', 'images':[url]}]

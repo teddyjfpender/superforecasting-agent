@@ -136,6 +136,70 @@ _JSON_FIELD_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Adapted from upstream repr-redaction fixes; provenance: docs/upstream-sync.md.
+_PYTHON_REPR_SECRET_KEYS = frozenset({
+    "access_token",
+    "refresh_token",
+    "id_token",
+    "auth_token",
+    "token",
+    "api_key",
+    "apikey",
+    "client_secret",
+    "secret",
+    "password",
+    "passwd",
+    "private_key",
+    "credential",
+    "credentials",
+    "authorization",
+    "bearer",
+    "secret_value",
+    "raw_secret",
+    "secret_input",
+    "key_material",
+})
+_PYTHON_REPR_ENV_SUFFIXES = (
+    "_API_KEY",
+    "_TOKEN",
+    "_SECRET",
+    "_PASSWORD",
+    "_PASSWD",
+    "_CREDENTIAL",
+    "_CREDENTIALS",
+)
+# Casefolded credential suffixes for mixed/camel-case key names
+# (``UserPassword``, ``sessionToken``, ``clientApiKey``). Suffix-only so
+# ``token_count`` / ``password_policy`` metadata keys never match. Widened per
+# OpenHands/software-agent-sdk#4508.
+_PYTHON_REPR_CREDENTIAL_SUFFIXES = (
+    "apikey",
+    "api_key",
+    "token",
+    "secret",
+    "password",
+    "passwd",
+    "credential",
+    "credentials",
+)
+_PYTHON_REPR_FIELD_RE = re.compile(
+    r"'(?P<key>[A-Za-z_][A-Za-z0-9_]*)'(?P<sep>\s*:\s*)"
+    r"(?:"
+    r"(?P<single_prefix>[bB]?)'(?P<single_value>(?:\\.|[^'\\])+)'"
+    r"|(?P<double_prefix>[bB]?)\"(?P<double_value>(?:\\.|[^\"\\])+)\""
+    r")"
+)
+
+# Terminal/process output normally uses ``code_file=True`` to preserve source.
+# Add repr masking only to high-confidence diagnostic lines: pytest assertion
+# introspection (``E       ...``) and final Python exception lines.
+_PYTEST_DIAGNOSTIC_LINE_RE = re.compile(r"^(?P<prefix>[ \t]*E[ \t]{2,})(?P<body>.*)$")
+_PYTHON_EXCEPTION_LINE_RE = re.compile(
+    r"^(?P<prefix>(?:[A-Za-z_]\w*\.)*[A-Za-z_]\w*"
+    r"(?:Error|Exception|Warning):[ \t]*)(?P<body>.*)$"
+)
+
+
 # Authorization headers
 #
 # The credential class excludes quote characters (``"`` / ``'``): a token sitting
@@ -340,6 +404,82 @@ def _redact_form_body(text: str) -> str:
     return _redact_query_string(text.strip())
 
 
+_ENV_LOOKUP_VALUE_RE = re.compile(r"^(?:os\.(?:getenv|environ)|process\.env|\$ENV\{)")
+
+def _is_python_repr_secret_key(key: str) -> bool:
+    """Return True for exact secret keys or credential-suffixed key names."""
+    folded = key.casefold()
+    if folded in _PYTHON_REPR_SECRET_KEYS:
+        return True
+    if key.isupper() and key.endswith(_PYTHON_REPR_ENV_SUFFIXES):
+        return True
+    # Mixed/camel-case keys ending in a credential word (``UserPassword``,
+    # ``sessionToken``, ``clientApiKey``) — the exact-set and uppercase-suffix
+    # rules above miss these. Suffix-only matching keeps metadata names like
+    # ``TOKEN_COUNT`` / ``PASSWORD_POLICY`` / ``SECRET_NAME`` untouched.
+    # Class widened per OpenHands/software-agent-sdk#4508 (their dict-entry
+    # redaction was uppercase-only and leaked mixed-case keys).
+    return folded.endswith(_PYTHON_REPR_CREDENTIAL_SUFFIXES)
+
+
+def _redact_python_repr_fields(text: str) -> str:
+    """Fully mask credential fields in Python mapping ``repr`` output."""
+    def _sub(match: re.Match) -> str:
+        key = match.group("key")
+        if not _is_python_repr_secret_key(key):
+            return match.group(0)
+
+        single_value = match.group("single_value")
+        if single_value is not None:
+            prefix = match.group("single_prefix") or ""
+            quote = "'"
+            value = single_value
+        else:
+            prefix = match.group("double_prefix") or ""
+            quote = '"'
+            value = match.group("double_value")
+
+        # Mapping repr can contain code-shaped fixture values too. Preserve
+        # programmatic env lookups just like the ENV/JSON/YAML passes do.
+        if _ENV_LOOKUP_VALUE_RE.match(value):
+            return match.group(0)
+        # An upstream pass (MCP probe header scrub, _mask_token) already masked this
+        # value; re-masking would erase the scheme word it deliberately kept
+        # (``'Authorization': 'Digest ***'`` → ``'***'``).
+        if re.fullmatch(r"(?:[A-Za-z]+ )?\*{3}", value) or (value.startswith("«redacted:") and value.endswith("»")):
+            return match.group(0)
+        # Do not retain head/tail characters here: escaped repr atoms can cross
+        # a slicing boundary and leave an unescaped quote behind. A full mask is
+        # parseable for both str and bytes values and leaks no opaque bytes.
+        return f"'{key}'{match.group('sep')}{prefix}{quote}***{quote}"
+
+    return _PYTHON_REPR_FIELD_RE.sub(_sub, text)
+
+
+def _redact_python_diagnostic_repr_fields(text: str) -> str:
+    """Mask repr fields only on pytest/error lines in source-preserving output."""
+    lines = text.splitlines(keepends=True)
+    for index, line in enumerate(lines):
+        ending = ""
+        body_line = line
+        if line.endswith("\r\n"):
+            body_line, ending = line[:-2], "\r\n"
+        elif line.endswith("\n") or line.endswith("\r"):
+            body_line, ending = line[:-1], line[-1:]
+
+        match = _PYTEST_DIAGNOSTIC_LINE_RE.match(body_line)
+        if match is None:
+            match = _PYTHON_EXCEPTION_LINE_RE.match(body_line)
+        if match is not None:
+            lines[index] = (
+                match.group("prefix")
+                + _redact_python_repr_fields(match.group("body"))
+                + ending
+            )
+    return "".join(lines)
+
+
+
 def redact_sensitive_text(text: str, *, force: bool = False, code_file: bool = False) -> str:
     """Apply all redaction patterns to a block of text.
 
@@ -389,6 +529,9 @@ def redact_sensitive_text(text: str, *, force: bool = False, code_file: bool = F
                 key, value = m.group(1), m.group(2)
                 return f'{key}: "{_mask_token(value)}"'
             text = _JSON_FIELD_RE.sub(_redact_json, text)
+
+        if ":" in text and "'" in text:
+            text = _redact_python_repr_fields(text)
 
     # Authorization headers — _AUTH_HEADER_RE is "Authorization: Bearer ..."
     # case-insensitive, so "uthorization" is the cheapest substring gate that
@@ -521,7 +664,10 @@ def redact_terminal_output(
     if not output:
         return output
     code_file = not is_env_dump_command(command or "")
-    return redact_sensitive_text(output, force=force, code_file=code_file)
+    text = redact_sensitive_text(output, force=force, code_file=code_file)
+    if code_file and (force or _REDACT_ENABLED):
+        text = _redact_python_diagnostic_repr_fields(text)
+    return text
 
 
 # Substrings used to gate ``_PREFIX_RE`` execution. If none of these appear in

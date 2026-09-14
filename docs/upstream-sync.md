@@ -257,3 +257,35 @@ audit head moves.
   `teddyjfpender.github.io`); `test_auxiliary_client_azure_foundry` expects
   `"hermes doctor"` vs the emitted `"superforecasting-agent doctor"`.
   (The `test_steer.py` args_hint drift from `ac3ab85b7` was fixed 2026-06-12.)
+
+## 2026-09-14 targeted runtime adoption
+
+Reviewed upstream `5eb99eb2844b22ebb723711b8e6a0bbb80bb5f04` for selected
+cross-cutting improvements. This is a targeted review, not a new full-history
+reviewed-through watermark. The fork adopts behavior through its existing owners.
+
+| Adopted behavior | Upstream commits | Fork integration and regression evidence |
+| --- | --- | --- |
+| Python mapping repr and exception credential masking | `47668280e7`, `92d4c0233e`, `5280dec0ee` | `agent/redact.py`: mixed-case credential keys, bytes and escaped values, source preservation, masked authorization schemes; partial masks do not exempt raw secrets. |
+| Terminal spending-cap classification | `3ed62fc5e8` | `agent/error_classifier.py`: structured billing codes take precedence over HTTP 429; rotate/fallback remains possible, transient rate limits retain retry behavior. |
+| Streamed reasoning replay | `0ddb62bce6` | `agent/reasoning_details.py`: merge compatible text fragments, retain distinct metadata and opaque blocks; streaming to assistant message to closed/reopened session replay is tested. |
+| Late child stop propagation | `dd497c3d59`, `60559d4e0e` | Registration replays the parent's pending interrupt, including its redirect message. The fork's separate `steer` API remains unchanged. Tests stop the parent inside child construction before registration. |
+| Delegated image evidence | `f3f5c4f7c7`, `230ca004a7` | `agent/delegation_images.py`: at most eight images per child, validate the entire batch before allocation, use shared vision routing, forward local/remote/inline pixels, or usable text handles without base64 leakage. |
+| Cross-VM SQLite admission | `d8dcdfd620` | Shared storage owner recognizes virtiofs/9p before WAL setup. New databases retain rollback journaling; existing WAL databases are refused with offline relocation guidance, never downgraded live. Session, kanban and forecast ledgers share admission. |
+
+Controlled-provider and real SQLite tests exercise these paths without live
+credentials. Mount detection uses Linux mountinfo fixtures; this does not claim
+qualification of every host filesystem. Unknown filesystems retain reactive
+fallback. The forecast ledger uses FULL synchronization outside WAL.
+
+The full-suite audit also exercised frozen trial compatibility. The storage
+change modifies the evaluation fingerprint because it includes the ledger core.
+Review verified that every other evaluation-owned file is byte-identical and the
+ledger AST is identical after excluding `_new_connection`. The explicit review
+in `forecasting/trial_compatibility.json` admits the former
+`64b923127b0ebde0396abe83c218b151ceaa54eff2ea311c5f21084afd20a35f` identity and
+previously reviewed identities to
+`e7a4646be77d6fcff0994686c30147aec4c4f1a30b5925c537eac65981a80837`.
+Historical trial packets and receipts remain unchanged; unknown source identities
+still fail closed. Regression tests exercise both legacy packets and the prior
+current identity through actual paired evaluation.

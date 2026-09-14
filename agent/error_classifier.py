@@ -91,6 +91,13 @@ class ClassifiedError:
 
 # ── Provider-specific patterns ──────────────────────────────────────────
 
+# Structured spending caps are terminal for this credential, even with HTTP 429.
+_BILLING_ERROR_CODES = frozenset({
+    "insufficient_quota", "billing_not_active", "payment_required",
+    "credit_balance_exhausted", "organization_spend_limit_exceeded",
+    "organization_usage_limit_exceeded", "project_spend_limit_exceeded",
+})
+
 # Patterns that indicate billing exhaustion (not transient rate limit)
 _BILLING_PATTERNS = [
     "insufficient credits",
@@ -505,6 +512,12 @@ def classify_api_error(
         }
         defaults.update(overrides)
         return ClassifiedError(**defaults)
+
+    if error_code.lower() in _BILLING_ERROR_CODES:
+        return _result(
+            FailoverReason.billing, retryable=False,
+            should_rotate_credential=True, should_fallback=True,
+        )
 
     # ── 1. Provider-specific patterns (highest priority) ────────────
 
@@ -991,7 +1004,7 @@ def _classify_by_error_code(
             should_rotate_credential=True,
         )
 
-    if code_lower in {"insufficient_quota", "billing_not_active", "payment_required"}:
+    if code_lower in _BILLING_ERROR_CODES:
         return result_fn(
             FailoverReason.billing,
             retryable=False,

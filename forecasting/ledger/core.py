@@ -531,9 +531,14 @@ class ForecastLedger:
             # pairing under WAL. On :memory: WAL is a silent no-op, and on a read-only
             # filesystem the PRAGMA can raise — degrade quietly rather than break
             # connectivity (the DB still works in its prior journal mode).
+            from superforecasting_agent.storage.sqlite import (
+                UnsafeWalFilesystemError, apply_wal_with_fallback,
+            )
             try:
-                conn.execute("PRAGMA journal_mode = WAL")
-                conn.execute("PRAGMA synchronous = NORMAL")
+                mode = apply_wal_with_fallback(conn, db_label="forecasting.db")
+                conn.execute("PRAGMA synchronous = NORMAL" if mode == "wal" else "PRAGMA synchronous = FULL")
+            except UnsafeWalFilesystemError:
+                raise
             except Exception:  # pragma: no cover - read-only FS / stripped build
                 logger.debug("could not set WAL journal mode", exc_info=True)
             # Connection-level write gate. This is the REAL chokepoint: the

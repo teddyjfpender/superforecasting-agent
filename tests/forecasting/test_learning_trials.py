@@ -378,3 +378,20 @@ def test_extracted_scoring_source_changes_invalidate_frozen_evaluation(trial_set
     monkeypatch.setattr(Path, 'read_bytes', changed_source)
     assert trial_report(ledger, tid)['exclusions'] == {'scoring_version_changed': 2}
     assert trial_records(ledger, tid) == before
+
+
+def test_pre_storage_admission_trial_remains_evaluable_without_rewriting(trial_setup):
+    """A reviewed connection-only change preserves the previous frozen identity."""
+    ledger, questions, _, tid, now = trial_setup
+    run_trial(ledger, tid, runner=fixture_runner)
+    trial, _, _ = trial_records(ledger, tid)
+    config = json.loads(trial['config'])
+    config['evaluation_identity'] = '64b923127b0ebde0396abe83c218b151ceaa54eff2ea311c5f21084afd20a35f'
+    with ledger._connect() as conn:
+        conn.execute('UPDATE learning_trials SET config=? WHERE id=?', (json.dumps(config), tid))
+    frozen = trial_records(ledger, tid)
+    now[0] = '2026-10-02T00:00:00Z'
+    for question in questions:
+        ledger.resolve_question(question_id=question.id, outcome='yes')
+    assert len(trial_report(ledger, tid)['comparisons']) == 2
+    assert trial_records(ledger, tid) == frozen

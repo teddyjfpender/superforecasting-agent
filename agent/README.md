@@ -45,3 +45,17 @@ Update this guide when entry points or ownership change. See the
 and [engineering backlog](../TODO.md) for cross-package context.
 
 [↑ Parent directory](../README.md)
+
+## Delegation and provider continuity
+
+[delegation_images.py](delegation_images.py) validates bounded child attachments
+and uses [image_routing.py](image_routing.py) for the same vision policy as
+interactive turns. The delegation tool owns child allocation and cancellation;
+the image helper owns only payload preparation. Batch validation precedes any
+allocation. Unreadable files are reported, and inline image bytes never become
+ordinary prompt text for a text-only model.
+
+[reasoning_details.py](reasoning_details.py) accumulates structured provider replay
+blocks. Compatible text fragments can join, but conflicting identities, signatures
+and opaque blocks remain intact. Session storage preserves that metadata for
+resume; it is separate from visible reasoning text.

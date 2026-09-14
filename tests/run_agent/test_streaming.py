@@ -1872,3 +1872,44 @@ class TestCodexStreamNoneOutputFallback:
         )
 
         assert response.output == []
+
+
+@patch('run_agent.AIAgent._create_request_openai_client')
+@patch('run_agent.AIAgent._close_request_openai_client')
+def test_structured_reasoning_stream_survives_assistant_replay(mock_close, mock_create, tmp_path):
+    from run_agent import AIAgent
+    from agent.chat_completion_helpers import build_assistant_message
+    chunks = [_make_stream_chunk(), _make_stream_chunk(), _make_stream_chunk(content='answer', finish_reason='stop')]
+    chunks[0].choices[0].delta.model_extra = {'reasoning_details': [{'type':'reasoning.text','text':'first ', 'index':0}]}
+    chunks[1].choices[0].delta.reasoning_details = [{'type':'reasoning.text','text':'second','signature':'signed','index':0}, {'type':'reasoning.encrypted','data':'opaque','id':'block'}]
+    client = MagicMock()
+    client.chat.completions.create.return_value = iter(chunks)
+    mock_create.return_value = client
+    agent = AIAgent(api_key='test', base_url='https://openrouter.ai/api/v1', model='test/model', quiet_mode=True, skip_context_files=True, skip_memory=True)
+    agent.api_mode = 'chat_completions'
+    response = agent._interruptible_streaming_api_call({})
+    message = build_assistant_message(agent, response.choices[0].message, 'stop')
+    assert message['reasoning_details'] == [{'type':'reasoning.text','text':'first second','index':0,'signature':'signed'}, {'type':'reasoning.encrypted','data':'opaque','id':'block'}]
+    assert message['content'] == 'answer'
+    from superforecasting_agent.storage.session import SessionDB
+    database = SessionDB(db_path=tmp_path / "replay.db")
+    try:
+        database.create_session("streamed", source="cli")
+        database.replace_messages("streamed", [{"role": "user", "content": "question"}, message])
+    finally:
+        database.close()
+    reopened = SessionDB(db_path=tmp_path / "replay.db")
+    try:
+        replay = reopened.get_messages_as_conversation("streamed")
+        assert replay[-1]["reasoning_details"] == message["reasoning_details"]
+        assert replay[-1]["content"] == "answer"
+    finally:
+        reopened.close()
+
+
+def test_reasoning_blocks_with_distinct_identities_are_not_merged():
+    from agent.reasoning_details import append_reasoning_detail
+    details = []
+    for value in [{'type':'reasoning.text','text':'A','id':'a'}, {'type':'reasoning.text','text':'B','id':'b'}, {'type':'reasoning.text','text':'C','id':'b','custom':1}, {'type':'reasoning.text','text':'D','id':'b','custom':2}]:
+        append_reasoning_detail(details, value)
+    assert [d['text'] for d in details] == ['A','BC','D']

@@ -1430,3 +1430,16 @@ class TestMultimodalToolContentUnsupported:
         e = MockAPIError("bad request: missing field 'model'", status_code=400)
         result = classify_api_error(e, provider="openrouter", model="anthropic/claude-sonnet-4")
         assert result.reason != FailoverReason.multimodal_tool_content_unsupported
+
+
+@pytest.mark.parametrize('code', ['credit_balance_exhausted', 'organization_spend_limit_exceeded', 'organization_usage_limit_exceeded', 'project_spend_limit_exceeded'])
+@pytest.mark.parametrize('status', [429, 400, None])
+def test_structured_spending_cap_is_terminal_even_without_explanatory_message(code, status):
+    class ProviderError(Exception):
+        status_code = status
+        body = {'error': {'code': code, 'message': 'Provider returned error'}}
+    result = classify_api_error(ProviderError('Provider returned error'))
+    assert result.reason == FailoverReason.billing
+    assert not result.retryable
+    assert result.should_rotate_credential
+    assert result.should_fallback
