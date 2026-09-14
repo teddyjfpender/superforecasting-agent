@@ -65,7 +65,7 @@ class RemoteKernel(LocalKernel):
         for offset in range(0, max(1, len(data)), 24000):
             chunk = base64.b64encode(data[offset : offset + 24000]).decode()
             operation = "wb" if offset == 0 else "ab"
-            source = f"import base64,sys; open(sys.argv[1], {operation!r}).write(base64.b64decode(sys.argv[2]))"
+            source = f"import base64,sys; open(sys.argv[1], {operation!r}).write(base64.b64decode(sys.argv[2]))"  # windows-footgun: ok — mode is always binary (wb/ab).
             self._command(
                 f"python3 -c {shlex.quote(source)} {path} {shlex.quote(chunk)}"
             )

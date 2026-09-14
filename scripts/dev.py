@@ -152,6 +152,7 @@ def venv_tool(name: str) -> str:
 
 def check(*, python_only: bool = False) -> None:
     run(venv_tool("python"), "scripts/check_naming.py")
+    run(venv_tool("python"), "scripts/check-windows-footguns.py", "--all")
     run(venv_tool("ruff"), "check", ".")
     run(venv_tool("ruff"), "check", "--select", "E4,E7,E9,F", *CORRECTNESS_PYTHON)
     run(venv_tool("ruff"), "check", "--select", "E4,E7,E9,F,I", *STRICT_PYTHON)

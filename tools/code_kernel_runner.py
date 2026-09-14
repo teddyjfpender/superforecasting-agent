@@ -104,7 +104,7 @@ def owner_exit(code: int) -> None:
         and os.environ.get("SUPERFORECASTING_AGENT_KERNEL_OWN_GROUP") == "1"
         and os.getpid() == os.getpgrp() == os.getsid(0)
     ):
-        os.killpg(os.getpgrp(), signal.SIGKILL)
+        os.killpg(os.getpgrp(), signal.SIGKILL)  # windows-footgun: ok
     os._exit(code)
 
 

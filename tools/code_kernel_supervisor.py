@@ -138,7 +138,7 @@ class Supervisor:
         # still our unreaped child, so its process-group ID cannot be reused.
         if self.process.returncode is None:
             try:
-                os.killpg(self.process.pid, signal.SIGKILL)
+                os.killpg(self.process.pid, signal.SIGKILL)  # windows-footgun: ok
             except ProcessLookupError:
                 pass
         self.process.wait(timeout=5)
