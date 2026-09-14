@@ -9,6 +9,8 @@ from collections.abc import Callable, Mapping, MutableMapping
 from pathlib import Path
 from typing import Any, Literal
 
+from superforecasting_agent.storage import turns
+
 
 def notification_profile_key(home: Path | None = None) -> str:
     """Opaque routing identity for the owning profile, without exposing its path."""
@@ -37,6 +39,41 @@ def route_notification(
     if owner and owner != session_key:
         return "requeue"
     return "consume"
+
+
+def admit_background_notification(
+    db: turns.TurnStore | None,
+    event: Mapping[str, object],
+    session_key: str,
+    prompt: str,
+    *,
+    acknowledge: Callable[[str, str], None],
+) -> tuple[str, bool]:
+    """Commit an idempotent receiving turn before acknowledging its source.
+
+    A duplicate returns the original identity without authorizing another model
+    execution. Failure to acknowledge leaves the source retryable; the receiving
+    turn still owns the work. Adapters retain responsibility for turn transitions.
+    """
+    if not session_key or event.get("session_key") != session_key:
+        raise ValueError("Background result belongs to another session")
+    if route_notification(event, session_key) != "consume":
+        raise ValueError("Background result belongs to another profile")
+    event_id = event.get("journal_event_id")
+    if not isinstance(event_id, str) or not event_id:
+        raise ValueError("Background result requires a durable event identity")
+    if db is None:
+        raise RuntimeError(
+            "Background result delivery requires durable session storage"
+        )
+    receipt = turns.admit_notification(db, session_key, prompt, event_id)
+    try:
+        acknowledge(event_id, session_key)
+    except Exception:
+        logging.getLogger(__name__).exception(
+            "Background acknowledgement pending; receiving turn is durable"
+        )
+    return receipt
 
 
 def poll_notifications(

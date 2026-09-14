@@ -3379,19 +3379,12 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any, *, notification_
     db = _get_db()
     event_id = (notification_event or {}).get("journal_event_id")
     if event_id:
-        from superforecasting_agent.hosting.notifications import route_notification
-        if route_notification(notification_event or {}, session["session_key"]) != "consume":
-            raise ValueError("Background result belongs to another profile or session")
-        if (notification_event or {}).get("session_key") != session["session_key"]:
-            raise ValueError("Background result belongs to another session")
-        if db is None:
-            raise RuntimeError("Background result delivery requires durable session storage")
-        notification_turn, created = turn_journal.admit_notification(db, session["session_key"], text, event_id)
-        try:
-            from tools.async_delegation import acknowledge_notification
-            acknowledge_notification(event_id, session["session_key"])
-        except Exception:
-            logger.exception("Background delivery acknowledgement pending; receiving turn is durable")
+        from superforecasting_agent.hosting.notifications import admit_background_notification
+        from tools.async_delegation import acknowledge_notification
+        notification_turn, created = admit_background_notification(
+            db, notification_event or {}, session["session_key"], text,
+            acknowledge=acknowledge_notification,
+        )
         if not created:
             with session["history_lock"]:
                 session["running"] = False

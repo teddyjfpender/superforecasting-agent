@@ -576,3 +576,32 @@ def test_status_recovers_completed_results_and_marks_unowned_live_work_unconfirm
     assert rows[second]["status"] == "unconfirmed"
     assert rows[second]["durable_status"] == "running"
     assert ad.list_async_delegations(session_key="other-session") == []
+
+
+@pytest.mark.parametrize('approval_owner,inherited_owner,expected', [
+    ('gateway-root', None, 'gateway-root'),
+    ('', None, 'cli-session'),
+    ('', 'root-session', 'root-session'),
+])
+def test_background_dispatch_preserves_parent_session_without_approval_context(monkeypatch, approval_owner, inherited_owner, expected):
+    import json
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from tools import approval, delegate_tool
+
+    parent = SimpleNamespace(session_id='cli-session', _active_children=[])
+    if inherited_owner is not None:
+        parent._delegation_owner_key = inherited_owner
+    child = SimpleNamespace(close=Mock())
+    parent._active_children.append(child)
+    monkeypatch.setattr(approval, 'get_current_session_key', lambda **kwargs: approval_owner)
+    monkeypatch.setattr(delegate_tool, '_run_single_child', lambda *args: {'status': 'completed', 'summary': 'Evidence'})
+    monkeypatch.setattr(delegate_tool, '_apply_summary_budget', lambda *args: None)
+    reservation = ad.CapacityReservation(1, 2)
+    result = json.loads(delegate_tool._dispatch_background_children(
+        [(0, {'goal': 'Check evidence'}, child)], parent, [], None, {'model': 'fixture'}, reservation))
+    assert result['status'] == 'dispatched'
+    event = _drain_one()
+    assert event['session_key'] == expected
+    assert ad.pending_notifications(expected)[0]['session_key'] == expected
+    assert parent._active_children == []

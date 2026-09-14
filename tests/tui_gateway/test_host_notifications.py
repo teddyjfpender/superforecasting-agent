@@ -115,3 +115,50 @@ def test_foreign_queue_cannot_starve_durable_recovery(monkeypatch):
     assert seen == [local]
     assert pending.qsize() == 1
     assert pending.get_nowait() == foreign
+
+
+def test_receiving_admission_survives_ack_failure_and_database_reopen(tmp_path):
+    from superforecasting_agent.hosting.notifications import admit_background_notification
+    from superforecasting_agent.storage import turns
+    from superforecasting_agent.storage.session import SessionDB
+
+    path = tmp_path / 'state.db'
+    event = {'session_key': 'desk', 'journal_event_id': 'result-1'}
+    db = SessionDB(path)
+    def fail_after_commit(event_id, session):
+        assert turns.latest(db, session)['prompt'] == 'Saved research'
+        raise OSError('source temporarily unavailable')
+    try:
+        turn, created = admit_background_notification(db, event, 'desk', 'Saved research', acknowledge=fail_after_commit)
+        assert created
+    finally:
+        db.close()
+    db = SessionDB(path)
+    acknowledged = []
+    try:
+        assert admit_background_notification(db, event, 'desk', 'Saved research',
+            acknowledge=lambda *args: acknowledged.append(args)) == (turn, False)
+        assert acknowledged == [('result-1', 'desk')]
+        assert turns.latest(db, 'desk')['status'] == 'starting'
+        with pytest.raises(ValueError, match='conflicts'):
+            admit_background_notification(db, event, 'desk', 'Altered payload', acknowledge=Mock())
+    finally:
+        db.close()
+
+
+def test_receiving_admission_never_acknowledges_unpersisted_or_foreign_work():
+    from superforecasting_agent.hosting.notifications import admit_background_notification
+
+    acknowledged = Mock()
+    event = {'session_key': 'desk', 'journal_event_id': 'result-1'}
+    db = Mock()
+    db._execute_write.side_effect = OSError('disk full')
+    with pytest.raises(OSError, match='disk full'):
+        admit_background_notification(db, event, 'desk', 'Research', acknowledge=acknowledged)
+    db.reset_mock()
+    with pytest.raises(ValueError, match='profile'):
+        admit_background_notification(db, {**event, 'profile_key': 'foreign'}, 'desk', 'Research', acknowledge=acknowledged)
+    with pytest.raises(ValueError, match='session'):
+        admit_background_notification(db, event, 'other', 'Research', acknowledge=acknowledged)
+    db._execute_write.assert_not_called()
+    acknowledged.assert_not_called()

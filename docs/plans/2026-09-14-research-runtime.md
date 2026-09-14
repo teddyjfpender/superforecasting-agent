@@ -348,3 +348,15 @@ duplicate local hints while busy. Focused async/notification/turn verification:
 49 passed; strict checks and 76 architecture contracts pass. Live CLI/messaging
 acknowledgement still needs durable receiving admission; routing alone does not
 establish crash-safe delivery. Cross-interface integration and full gate remain.
+
+Receiving-admission consolidation: the shared notification owner now validates
+session/profile/event identity and commits the receiving turn before invoking the
+source acknowledgement callback. TUI uses this owner. Tests reopen the session DB
+after an acknowledgement failure and prove duplicate admission returns the same
+turn without new execution; changed payloads, foreign ownership and failed writes
+never acknowledge. Background dispatch also falls back to its parent/root session
+when classic CLI execution has no approval-session context. Real worker/journal
+tests cover CLI fallback, inherited nested ownership and explicit gateway routing.
+Focused combined verification: 54 passed. CLI queue envelopes and receiving-turn
+execution/recovery integration are still pending; the shared primitive alone does
+not complete delivery there.

@@ -2120,7 +2120,7 @@ def _dispatch_background_children(children, parent_agent, toolsets, top_role, cr
     from tools.approval import get_current_session_key
     from tools.async_delegation import admit_background_batch, dispatch_async_delegation
 
-    session_key = get_current_session_key(default="")
+    session_key = get_current_session_key(default="") or _delegation_session_key(parent_agent)
     handles = []
     accepted = set()
     submitted = set()
