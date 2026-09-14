@@ -19,6 +19,9 @@ ROOT = Path(__file__).resolve().parents[1]
 # The stricter scope grows with ownership extractions. Legacy code still runs
 # the repository-wide encoding gate; no silent baseline hides new-layer errors.
 STRICT_PYTHON = (
+    "gateway/command_dispatch.py",
+    "superforecasting_agent/runtime/cli_output.py",
+    "superforecasting_agent/runtime/assistant_text.py",
     "scripts/check_naming.py",
     "scripts/push_plan.py",
     "superforecasting_agent/runtime/diagnostic_service.py",

@@ -1,3 +1,6 @@
+# Experimental, outside beta qualification: these jobs must not be required
+# merge checks. Keep failures visible for Nix maintainers instead of masking them.
+# See website/docs/getting-started/beta-scope.md.
 name: Nix
 
 on:

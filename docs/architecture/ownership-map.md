@@ -74,3 +74,18 @@ The package guides describe local entry points, extension rules and checks:
 Follow the child-directory links for focused implementation guidance. Update the
 nearest guide when moving ownership or changing an entrypoint; keep historical
 qualification claims in linked verification records with their source revision.
+
+
+### Command boundary checks
+
+`gateway/command_dispatch.py` owns hook-result validation and authorization after
+rewrites. Its typed result permits absent commands for ordinary messages; plugin
+rewrite names and arguments must be strings and the target must be one command.
+`superforecasting_agent/runtime/cli_output.py` owns shared input confirmation:
+cancellation declines, an empty submitted answer uses the declared default.
+Setup and gateway setup reuse its answer parser and error message; wizard
+cancellation still exits the wizard rather than continuing with partial setup.
+`superforecasting_agent/runtime/assistant_text.py` normalizes provider content for
+classic transcript and clipboard consumers. All three receive blocking lint,
+formatting and type checks; the containing orchestration shells remain incremental
+maintenance targets.

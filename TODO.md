@@ -1,107 +1,34 @@
 # Engineering backlog
 
-Product boundaries, shared TUI/CLI operations, independent distributions and
-contributor gates are delivered. This list tracks current work only; prior detail
-is in [the history](docs/plans/2026-09-13-todo-history.md). See the
-[ownership map](docs/architecture/ownership-map.md) for implementation boundaries.
+Completed work and verification receipts live in the
+[implementation history](docs/plans/2026-09-13-todo-history.md).
+The [ownership map](docs/architecture/ownership-map.md) defines current boundaries;
+the [beta scope](website/docs/getting-started/beta-scope.md) defines supported products.
 
-## Delivered runtime correctness batch
+## Actionable maintenance
 
-- [x] Retain failed SDK cleanup and partial browser allocations; require daemon
-  identity and confirmed exit before retirement.
-- [x] Enforce conversation deadlines and Skills Hub HTTP cancellation, including
-  parallel source search and prevention of publication after cancellation.
-- [x] Exercise nested delegation and interrupted handoff recovery
-  through the real TUI and repeated authenticated remote/dashboard reconnects.
-- [x] Enforce shared blocking quality checks and the full Python suite before pushing.
-- [x] Verify economic lexical/duplicate safeguards through settlement admission.
+- [ ] Extend strict typing through remaining classic CLI and messaging shells
+  when correcting concrete behavior. Shared owners are checked; the entire
+  inherited orchestration modules are not yet strictly typed.
+- [ ] Refresh Nix fixed-output hashes and qualify its package before proposing
+  supported status or required merge checks. Nix is experimental and non-blocking.
 
-Implementation and focused evidence are recorded in
-[the runtime closeout](docs/plans/2026-09-13-runtime-closeout.md). The pre-push hook requires the full suite;
-focused checks do not substitute for that publication gate.
+## Qualification requiring external evidence
 
-## Qualification follow-up
-
-- [x] Verify installed backend and terminal on macOS ARM64 and Linux ARM64
-  (Debian container on a native ARM64 Linux VM), including backend 0.19.0 →
-  0.22.1 and terminal 0.1.0 → 0.1.1 upgrades and authenticated reconnects.
-- [x] Fix Node 20 remote WebSocket launch and prerequisite checks; add a native
-  Linux/macOS/Windows installation matrix for Node 20 and 22 with explicit skips.
-- [x] Make explicitly selected live-service tests reachable through the canonical
-  runner while preserving ordinary-suite credential isolation.
-- [x] Prepare 0.22.1 release artifacts, validated manifest and checksums. Existing
-  0.22.0 tag remains unchanged.
-- [x] Recover native Linux x86-64 qualification receipts and trace the native Windows
-  service-home failure; add ConPTY and real terminal/host recovery exercises.
-- [x] Qualify native Linux x86-64, Windows AMD64 and macOS ARM64 on Node 20/22,
-  including ConPTY input, resize, cancellation, durable reconnect and shutdown.
-  See [native platform evidence](docs/verification/2026-09-13-native-platforms/README.md).
-- [ ] Qualify a real Android/Termux device; none is available in this environment.
-- [ ] Run Daytona/Modal checks with service credentials; neither is configured here.
-- [x] Merge the release fixes and publish **v0.22.4 beta** through the formal
-  workflow. Verify downloaded checksums, native fresh installations, upgrades and
-  recovery; preserve stable aliases. See [release receipts](docs/verification/2026-09-13-beta-release/README.md).
+- [ ] Qualify a real Android/Termux device with installation, upgrade and recovery
+  receipts. Desktop Linux or a Hetzner VPS cannot establish Android compatibility.
+- [ ] Run Daytona/Modal integration checks with dedicated service credentials.
 - [ ] Attribute the historical native SSL crash if original runtime/certificate
-  artifacts or a credible reproducer become available. Recovered native evidence
+  artifacts or a credible reproducer become available. Existing native evidence
   did not reproduce it; original binary and CA hashes are absent.
 
-See [qualification evidence and commands](docs/verification/2026-09-13-products/README.md).
+## Maintenance rules
 
-## Canonical naming and quality coverage
+Prefer behavioral fixes over cosmetic file moves. New files in configuration,
+storage, hosting, application, credentials and tooling receive strict checks
+through `scripts/dev.py`. Run the canonical full suite before pushing.
+Preserve forecast provenance and fail closed on unsupported source semantics.
+Pending cancellation retains resource ownership until execution exits.
 
-- [x] Move the three remaining bundled product skills to canonical directories,
-  retaining command aliases and published URLs; test alias resolution, managed
-  profile migration, deletion intent, custom copies and concurrent synchronization.
-- [x] Put skill synchronization, profile constants, Windows bootstrap, file-safety and request-tag helpers
-  under blocking lint, formatting and type checks.
-- [x] Canonicalize inherited runtime helper names and public APIs with legacy
-  exports; fix LSP profile resolution, gateway executable preference and Windows
-  PATH ownership boundaries. Expose `forecast_tools` with a shared legacy adapter.
-- [x] Record retained identities and their owners in the
-  [compatibility reference](docs/architecture/compatibility.md).
-
-## Current quality and upgrade batch
-
-- [x] Extend blocking lint, formatting and type checks to MCP OAuth, Skills Hub,
-  classic command completion/menu adapters, gateway access/display policy and
-  TUI command dispatch. Inherited CLI and messaging orchestration shells remain
-  outside full strict typing; extracted command owners are checked.
-- [x] Resolve the push destination's actual default branch and check every pushed
-  ref; reject differing trees rather than testing the wrong checkout. Run the
-  full suite once for an admitted push tree.
-- [x] Enforce naming-debt checks with an explicit reviewed compatibility baseline
-  and narrow, reasoned exceptions.
-- [x] Share board command parsing across interfaces; reject malformed wire fields
-  and quoting before execution. Keep declined destructive commands in the CLI.
-- [x] Add package and subpackage guides and reconcile stale distribution claims.
-- [x] Add pinned historical upgrade inputs, real old-wheel profile/skill/plugin
-  fixtures, and separate fresh/upgrade native matrix runs. Local macOS ARM64
-  qualification passed; see [upgrade evidence](docs/verification/2026-09-13-upgrade-matrix/README.md).
-- [x] Verify all six native upgrade/migration jobs in [run 34768085661](https://github.com/teddyjfpender/superforecasting-agent/actions/runs/34768085661).
-
-## Beta onboarding and support
-
-- [x] Consolidate pinned installation, provider setup, synthetic lifecycle, recovery
-  and support instructions in the [beta guide](website/docs/getting-started/tester-pilot.md).
-- [x] Declare the [supported scope](website/docs/getting-started/beta-scope.md);
-  Android/Termux is experimental and Daytona/Modal are outside supported beta operation.
-- [x] Share installed-version reporting and final payload redaction across CLI,
-  TUI and messaging diagnostics, with regression tests for secrets in system dumps.
-  Local diagnostics do not contact the paste service.
-- [x] Require reproducible assigned releases in tester reports instead of asking
-  testers to update to a moving snapshot.
-
-## Maintenance policy
-
-Expand strict lint/format/type coverage when touching inherited owners; prefer
-behavioral fixes over cosmetic file moves. New files in configuration, storage,
-hosting, application, credentials and tooling receive strict checks automatically.
-Keep protocol generation, extension documentation and compatibility aliases aligned
-with code. Preserve forecast provenance and fail closed on unsupported source semantics.
-
-Cancellation remains cooperative inside provider/plugin code: pending work retains
-ownership until it exits. Do not report a non-cooperative call as stopped or dispose
-its resources beneath it. Cross-platform evidence must identify the actual platform.
-
-Live forecasting cohorts, settlements and learning evaluation belong in the ledger
-and operational archive; they are not prerequisites for these engineering tasks.
+Live forecasting cohorts, settlements and learning evaluation belong in the
+ledger and operational archive, not this engineering backlog.

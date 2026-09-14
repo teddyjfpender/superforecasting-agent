@@ -17,7 +17,7 @@ Python backend. Use the [beta tester guide](./tester-pilot.md) and its pinned
 | Windows AMD64 | Supported | Native ConPTY input, resize, cancellation, shutdown and installed upgrades on Node 20/22. |
 | Linux VPS | Supported for the qualified headless host | Authenticated remote terminal reconnect and durable session recovery. VPS deployment requires operator-managed network access and credentials. |
 | Linux ARM64 | Limited support | Earlier container/VM and upgrade evidence; not a member of the latest six-job native matrix. |
-| Nix packaging | Experimental, outside supported beta | Security lockfile updates require refreshed Nix fixed-output hashes; the earlier version-content check was also unqualified. Use the qualified wheels for beta installation. |
+| Nix packaging | Experimental, outside supported beta | Security lockfile updates require refreshed Nix fixed-output hashes; the earlier version-content check was also unqualified. Its Linux/macOS workflow jobs are informational, not required merge checks. Use the qualified wheels for beta installation. |
 | macOS Intel | Experimental | No current native qualification receipt. |
 | Android/Termux | Experimental, outside supported beta | No real-device qualification. Existing installation notes are exploratory. |
 | Daytona and Modal execution backends | Unavailable as supported beta integrations | Credential-dependent verification has not run. Their presence in the code or setup UI is not a support claim. |
