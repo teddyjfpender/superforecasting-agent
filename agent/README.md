@@ -64,3 +64,33 @@ resume; it is separate from visible reasoning text.
 without suppressing execution. It requires an original tool result still retained
 in the transcript and resets on changed or failed observations. Sequential and
 concurrent executors use the same helper; references survive normal session replay.
+
+## Context continuity
+
+[context_usage.py](context_usage.py) prices the retained conversation using a
+provider-measured input baseline plus estimates for subsequent messages. The
+baseline is bound to the whole priced prefix, session, model/provider, system
+context and disclosed tool schemas. Rewinds, edits and changed request identities
+fall back to a fresh estimate. Session storage persists only hashes and counts;
+missing or incompatible records never prevent resume. Hidden billed reasoning
+counts are not added to the context estimate. TUI context usage uses this same
+owner; billing totals remain separate.
+
+[compaction_recall.py](compaction_recall.py) mechanically retains bounded exact
+forecast identifiers, source references, measurement contracts and assumption
+quotes from the compacted region. These are historical claims, not verified
+outcomes or new instructions. Whole records that exceed the budget are omitted
+explicitly, with retrieval guidance. The forecast ledger and original session
+transcript remain authoritative. Prior index entries survive another compaction
+subject to the same bound.
+
+Run the synthetic recall comparison with:
+
+```sh
+.venv/bin/python -m scripts.evaluate_context_recall --output /tmp/recall.json
+```
+
+The default checks exact retention against uncompacted and lossy-summary
+controls. Adding `--provider NAME --model MODEL` makes provider calls to measure
+answer recall too. Reports identify the fixture and implementation hashes. One
+synthetic fixture is a regression aid, not evidence of improved forecasting.

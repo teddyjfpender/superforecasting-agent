@@ -20,10 +20,10 @@ def catalog_for(agent: Any) -> ToolCatalog | None:
     return ToolCatalog.selected(agent.tools or [], direct)
 
 
-def wire_tools(agent: Any) -> list[dict] | None:
+def wire_tools(agent: Any, *, register: bool = True) -> list[dict] | None:
     catalog = catalog_for(agent)
     if catalog is None or not catalog.optional:
-        if isinstance(getattr(agent, "valid_tool_names", None), set):
+        if register and isinstance(getattr(agent, "valid_tool_names", None), set):
             agent.valid_tool_names.difference_update(BRIDGE_NAMES)
         return agent.tools
     budget = agent.tool_discovery_config.get("listing_chars", 8000)
@@ -31,7 +31,8 @@ def wire_tools(agent: Any) -> list[dict] | None:
         raise ValueError(
             "tool_discovery.listing_chars must be an integer from 0 to 24000"
         )
-    agent.valid_tool_names.update(BRIDGE_NAMES)
+    if register:
+        agent.valid_tool_names.update(BRIDGE_NAMES)
     return catalog.wire_tools(listing_chars=budget)
 
 

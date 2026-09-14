@@ -64,3 +64,28 @@ Whole-batch validation and per-effect selection/cancellation checks are tested.
 The latest focused milestone set passed 50 tests; the expanded runtime set passed
 17 tests including the four transport branches. Documentation states the native
 provider-owned runtime boundary. Full-suite and product integration remain pending.
+
+### Context continuity milestone
+
+Provider input baselines now persist under versioned session metadata. Full-prefix
+and request-identity hashes reject stale counts after edits, rewinds, model/tool
+changes or compaction. Retained additions are estimated separately from billed
+completion totals. Atomic metadata updates preserve unrelated model settings.
+The TUI uses the same estimator, adopts resumed history before its first request,
+and updates context reporting after undo/reset/manual compaction.
+
+A bounded mechanical compaction index retains exact forecast/source/measurement
+records and unresolved assumptions as quoted historical claims. Records are whole
+or explicitly omitted with retrieval guidance; prior index records can survive
+another compaction. The ledger remains authoritative.
+
+Focused coverage passed 263 tests, with 248 passing after the final manual-command
+accounting consolidation. The offline synthetic recall comparison retained 8/8
+facts for the uncompacted and indexed conditions, 0/8 for the deliberately lossy
+control. This is mechanical retention evidence, not a live-model or forecasting
+quality result. Optional provider/model recall runs use independent prompts and
+record fixture/implementation hashes. Full-suite verification for this milestone
+remains pending.
+
+The earlier MCP/reference/discovery milestone passed the canonical full suite:
+32,222 passed, 147 skipped, in 525.88 seconds, and was pushed at `80a951a393`.

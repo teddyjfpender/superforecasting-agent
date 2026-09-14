@@ -54,3 +54,12 @@ mounts retain the reactive compatibility fallback.
 Regression coverage: `tests/test_storage_sqlite.py`,
 `tests/forecasting/test_cross_vm_sqlite.py` and
 `tests/forecasting/test_ledger_wal.py`.
+
+## Context usage baselines
+
+[context_usage.py](context_usage.py) stores a versioned context baseline under a
+reserved session-model metadata key. Updates run inside the existing SQLite
+write transaction and preserve unrelated settings. Reads reject malformed
+metadata, and a missing session is never recreated solely for accounting. The
+agent owner validates the entire priced prefix and request identity before
+using a restored baseline; storage does not infer that an old count still applies.
