@@ -36,6 +36,14 @@ qualification backlog in TODO.md. Upstream reference: `5eb99eb284`.
 
 ## Progress
 
+### Missing execution profiles fail closed
+
+Jobs whose explicit runtime profile has disappeared no longer fall back to the
+scheduler's default identity. Resolution fails before agent construction, and the
+shared execution wrapper records the failure. The profile and event execution
+suites passed 26 tests; strict Python checks passed. This closes the missing-profile
+fallback but does not establish concurrent isolation of legacy environment readers.
+
 ### Classic CLI receiving-turn recovery
 
 Both startup resume and `/resume` now consult the durable turn journal. An

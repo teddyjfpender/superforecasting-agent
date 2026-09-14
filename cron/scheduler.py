@@ -188,13 +188,10 @@ def _job_profile_context(job_id: str, profile: Optional[str]):
     try:
         profile_home = Path(resolve_profile_env(normalized_profile)).resolve()
     except (FileNotFoundError, ValueError) as exc:
-        logger.warning(
-            "Job '%s': configured profile %r no longer valid (%s) — "
-            "falling back to scheduler default",
-            job_id, raw_profile, exc,
-        )
-        yield None
-        return
+        raise ValueError(
+            f"Job '{job_id}': configured profile {raw_profile!r} is unavailable; "
+            "execution refused to preserve profile ownership"
+        ) from exc
 
     override_token = None
     try:
