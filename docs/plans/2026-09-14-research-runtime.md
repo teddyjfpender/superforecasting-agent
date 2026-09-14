@@ -225,3 +225,81 @@ kernel group exits while an unrelated sibling survives; no false termination
 receipt is synthesized. The expanded kernel/execution/interrupt set passed 174
 tests in 9.79 seconds. Directory guides now describe the remote protocol and
 unconfirmed cleanup limits. Full-suite publication remains required.
+
+### Background admission prerequisite
+
+The isolated `feat/research-background-batches` worktree reserves capacity under
+the async registry mutex before allocating children. Reservations account for
+running and not-yet-built work together and convert directly into running records.
+Release is idempotent. Executor creation failures now remove the admitted record.
+Children remain attached to the parent until scheduling succeeds; rejected
+children detach only after close succeeds, so failed cleanup preserves ownership.
+Construction failures release reservations and close previously allocated children.
+The existing single-task guard now runs after JSON task normalization.
+
+Focused async/delegation coverage passed 161 tests, including capacity rejection
+before child construction, reserved batch capacity, atomic slot conversion and
+executor failure cleanup. This is an admission prerequisite: batch grouping,
+durable outcomes, delivery recovery and TUI integration remain outstanding.
+The completion queue only checkpoints processes; its old module documentation
+must not be treated as evidence of durable delegation results.
+
+### Durable batch journal prerequisite
+
+A strict storage owner now freezes whole-batch admission and records outcomes
+and delivery events in one transaction. Independent completions arrive early;
+grouped completions preserve input order and wait for every member, with early
+failure events. Owner checks reject unstarted completion, repeated start and
+conflicting results. Identical terminal retries are idempotent. Delivery events
+survive reopening and require acknowledgement by the originating session.
+Fault injection verifies outcome/event rollback together. The journal does not
+infer worker liveness or retry external effects. Runtime dispatch, owner recovery,
+redaction and TUI delivery wiring remain required before this capability is usable.
+
+Single background dispatch now persists admission before worker start and writes
+terminal outcomes before publishing notification hints. Task specifications and
+results pass through redaction before storage. A dropped notification leaves a
+queryable pending event. Failed result writes retain an explicit
+completion_pending state and retry persistence without running research again;
+per-record serialization prevents concurrent retry notifications. If durable
+start fails, an unstarted-child cleanup callback runs; failures retain ownership
+and capacity until cleanup succeeds. The original process-queue durability claim
+in async_delegation's module guide has been corrected.
+
+The combined journal/async/delegation set passed 168 tests, including missing
+notifications, failed result writes and failed start cleanup. Strict checks pass.
+Whole-batch runtime admission, incremental grouped delivery, durable owner-death
+reconciliation, and CLI/gateway/TUI acknowledgement and recovery remain required.
+
+Public background delegation now accepts task batches. One transaction freezes
+all member specifications and delivery groups before any submission; the reserved
+capacity converts into individual running handles. Partial scheduling returns
+accepted handles alongside rejected members rather than reporting a false total
+failure. Unsubmitted members are durably rejected on an interrupted dispatch and
+unstarted child allocations retain cleanup ownership. The tool schema exposes
+per-task delivery_group; omitted groups return independently.
+
+Notification hints now follow journal events: a completed grouped member does
+not notify before its barrier, group results retain input order, and failures
+surface early. In-process event IDs suppress duplicate hints from simultaneous
+member completion. This does not replace durable consumer acknowledgement or
+reconnect recovery, which remain outstanding, along with owner-death reconciliation
+and profile/cancellation propagation audit for detached workers.
+
+### TUI durable delivery integration
+
+The TUI notification poller now recovers journal events for its exact session
+when notification hints are absent. Live and recovered hints share one canonical
+formatter. A deterministic event-bound receiving turn commits in the session
+journal before acknowledgement. Duplicate hints acknowledge the existing receipt
+without starting another model call; conflicting prompt content fails closed.
+Acknowledgement failure does not prevent an already-durable turn from starting.
+Unavailable session storage refuses delivery and leaves the research event pending.
+The secondary end-of-turn drain leaves these events to the owner-aware poller.
+
+The focused notification, turn-journal, async and journal set passed 38 tests;
+strict checks pass. A real SessionDB-backed TUI submission test proves one worker
+admission across duplicate hints and a saved receiving prompt before event
+acknowledgement. CLI/messaging acknowledgement, detached-worker profile propagation,
+owner-death reconciliation, durable TUI task status and full integration/release
+gates remain outstanding. This is not complete background capability acceptance.

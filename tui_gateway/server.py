@@ -3337,13 +3337,15 @@ def _notification_poller_loop(
     from superforecasting_agent.hosting.notifications import poll_notifications
     from tools.process_registry import process_registry, format_process_notification
 
-    def dispatch(text: str) -> None:
+    def dispatch(text: str, event: dict | None = None) -> None:
         rid = f"__notif__{int(time.time() * 1000)}"
         try:
             _emit("status.update", sid, {"kind": "process", "text": text})
         except Exception:
             logger.exception("Notification status display failed")
-        _run_prompt_submit(rid, sid, session, text)
+        _run_prompt_submit(rid, sid, session, text, notification_event=event)
+
+    from tools.async_delegation import pending_notifications
 
     poll_notifications(
         stop_event, session, process_registry.completion_queue,
@@ -3351,6 +3353,8 @@ def _notification_poller_loop(
         format_event=format_process_notification,
         host_stopping=lambda: _host.workers.stopping,
         dispatch=dispatch,
+        dispatch_event=dispatch,
+        recover=lambda: pending_notifications(session["session_key"]),
     )
 
 
@@ -3361,7 +3365,7 @@ def _start_notification_poller(sid: str, session: dict) -> threading.Event:
     return stop
 
 
-def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
+def _run_prompt_submit(rid, sid: str, session: dict, text: Any, *, notification_event: dict | None = None) -> None:
     with session["history_lock"]:
         history = list(session["history"])
         history_version = int(session.get("history_version", 0))
@@ -3370,7 +3374,24 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
     agent = session["agent"]
     from superforecasting_agent.storage import turns as turn_journal
     db = _get_db()
-    if db is not None:
+    event_id = (notification_event or {}).get("journal_event_id")
+    if event_id:
+        if (notification_event or {}).get("session_key") != session["session_key"]:
+            raise ValueError("Background result belongs to another session")
+        if db is None:
+            raise RuntimeError("Background result delivery requires durable session storage")
+        notification_turn, created = turn_journal.admit_notification(db, session["session_key"], text, event_id)
+        try:
+            from tools.async_delegation import acknowledge_notification
+            acknowledge_notification(event_id, session["session_key"])
+        except Exception:
+            logger.exception("Background delivery acknowledgement pending; receiving turn is durable")
+        if not created:
+            with session["history_lock"]:
+                session["running"] = False
+            return
+        session["turn_id"] = notification_turn
+    if db is not None and not event_id:
         receipt = _turn_recovery(db, session["session_key"])
         if not session.get("turn_id") or not receipt or receipt["status"] in turn_journal.TERMINAL:
             session["turn_id"] = turn_journal.start(db, session["session_key"], text)
@@ -3732,6 +3753,10 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
             from tools.process_registry import process_registry
 
             for _evt, synth in process_registry.drain_notifications():
+                if _evt.get("journal_event_id"):
+                    # The poller owns durable background admission and routing.
+                    process_registry.completion_queue.put(_evt)
+                    continue
                 with session["history_lock"]:
                     if session.get("running"):
                         process_registry.completion_queue.put(_evt)

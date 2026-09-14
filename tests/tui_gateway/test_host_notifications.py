@@ -43,3 +43,19 @@ def test_broken_queue_is_not_silently_spun_forever():
                            format_event=lambda _: "unused", host_stopping=lambda: False,
                            dispatch=Mock())
     pending.get.assert_called_once()
+
+
+def test_idle_poller_recovers_durable_events_with_identity():
+    stop = threading.Event()
+    session = {"history_lock": threading.Lock(), "session_key": "owner"}
+    pending = queue.Queue()
+    event = {"session_key": "owner", "journal_event_id": "durable-event"}
+    seen = []
+    def dispatch(text, original):
+        seen.append((text, original))
+        stop.set()
+    poll_notifications(stop, session, pending, consumed=lambda _: False,
+                       format_event=lambda _: "recovered result", host_stopping=lambda: False,
+                       dispatch=lambda _: pytest.fail("event identity was discarded"),
+                       dispatch_event=dispatch, recover=lambda: [event])
+    assert seen == [("recovered result", event)]

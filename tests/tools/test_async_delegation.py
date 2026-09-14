@@ -229,24 +229,82 @@ def test_completed_records_pruned_to_cap():
 # ── Fork-adapted integration tests ─────────────────────────────────────────
 
 
-def test_delegate_task_background_rejects_batch():
-    """background=True with a multi-item tasks batch is rejected (v1: single-task only)."""
+@pytest.mark.parametrize("reject_second", [False, True])
+def test_public_background_batch_delivers_independent_and_grouped_results(monkeypatch, reject_second):
     import json
-    from unittest.mock import MagicMock
+    from types import SimpleNamespace
+    from unittest.mock import Mock
     import tools.delegate_tool as dt
 
-    parent = MagicMock()
-    parent._delegate_depth = 0
-    parent.session_id = "sess"
+    parent = SimpleNamespace(_delegate_depth=0, _active_children=[])
+    gates = [threading.Event() for _ in range(3)]
+    finished = [threading.Event() for _ in range(3)]
+    monkeypatch.setattr(dt, "is_spawn_paused", lambda **_: False)
+    monkeypatch.setattr(dt, "_delegation_session_key", lambda _: "s")
+    monkeypatch.setattr(dt, "_load_config", lambda: {})
+    monkeypatch.setattr(dt, "_get_max_async_children", lambda: 3)
+    monkeypatch.setattr(dt, "_get_max_concurrent_children", lambda: 3)
+    monkeypatch.setattr(dt, "_get_max_spawn_depth", lambda: 2)
+    monkeypatch.setattr(dt, "_resolve_delegation_credentials", lambda *_: dict.fromkeys(
+        ["model", "provider", "base_url", "api_key", "api_mode"]
+    ))
+    monkeypatch.setattr(dt, "_apply_summary_budget", lambda *_: None)
+    def build(**kwargs):
+        child = Mock()
+        parent._active_children.append(child)
+        return child
+    def run(index, goal, child, parent):
+        try:
+            assert gates[index].wait(5)
+            return {"status": "completed", "summary": goal}
+        finally:
+            child.close()
+            finished[index].set()
+    monkeypatch.setattr(dt, "_build_child_agent", build)
+    monkeypatch.setattr(dt, "_run_single_child", run)
+    if reject_second:
+        executor = ad._get_executor(3)
+        submit = executor.submit
+        submitted = []
+        def limited(operation):
+            submitted.append(True)
+            if len(submitted) == 2:
+                finished[1].set()
+                raise RuntimeError("controlled second-member scheduling failure")
+            return submit(operation)
+        monkeypatch.setattr(executor, "submit", limited)
+    try:
+        result = json.loads(dt.delegate_task(tasks=[
+            {"goal": "independent"},
+            {"goal": "first", "delivery_group": "group"},
+            {"goal": "second", "delivery_group": "group"},
+        ], background=True, parent_agent=parent))
+        assert result["status"] == ("partial" if reject_second else "dispatched")
+        assert len(result["delegations"]) == 3 and ad.active_count() == (2 if reject_second else 3)
+        if reject_second:
+            early_failure = _drain_one()
+            assert early_failure["delivery_kind"] == "member_failure"
+            assert early_failure["status"] == "rejected"
+        gates[0].set()
+        assert _drain_one()["summary"] == "independent"
+        gates[1].set()
+        assert finished[1].wait(3)
+        deadline = time.monotonic() + 3
+        while ad.active_count() != 1 and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert ad.active_count() == 1
+        assert process_registry.completion_queue.empty()
+        gates[2].set()
+        grouped = _drain_one()
+        assert grouped["delivery_kind"] == "group_complete"
+        assert [member["goal"] for member in json.loads(grouped["summary"])] == ["first", "second"]
+        assert process_registry.completion_queue.empty()
+    finally:
+        for gate in gates:
+            gate.set()
+        for done in finished:
+            done.wait(3)
 
-    out = dt.delegate_task(
-        tasks=[{"goal": "a"}, {"goal": "b"}],
-        background=True,
-        parent_agent=parent,
-    )
-    parsed = json.loads(out)
-    assert "error" in parsed
-    assert "single-task only" in parsed["error"]
 
 
 def test_gateway_formatter_renders_async_block():
@@ -267,3 +325,181 @@ def test_gateway_formatter_renders_async_block():
     assert "ASYNC DELEGATION COMPLETE" in text
     assert "Investigate Y" in text
     assert "all done" in text
+
+
+def test_reserved_batch_capacity_is_atomic_and_release_is_idempotent():
+    reservation = ad.CapacityReservation(2, 3)
+    try:
+        with pytest.raises(ValueError, match="capacity reached"):
+            ad.CapacityReservation(2, 3)
+        spare = ad.CapacityReservation(1, 3)
+        try:
+            with pytest.raises(ValueError, match="capacity reached"):
+                ad.CapacityReservation(1, 3)
+        finally:
+            spare.release()
+            spare.release()
+    finally:
+        reservation.release()
+    assert not ad._reservations
+
+
+def test_reservation_converts_to_running_without_releasing_capacity():
+    reserved = ad.CapacityReservation(2, 2)
+    gate = threading.Event()
+    try:
+        result = ad.dispatch_async_delegation(
+            goal="first", context=None, toolsets=None, role="leaf", model=None,
+            session_key="session", runner=lambda: gate.wait(5) and {"status": "completed"},
+            max_async_children=2, reservation=reserved,
+        )
+        assert result["status"] == "dispatched"
+        assert reserved.remaining == 1
+        with pytest.raises(ValueError, match="capacity reached"):
+            ad.CapacityReservation(1, 2)
+    finally:
+        reserved.release()
+        gate.set()
+        _drain_one()
+
+
+@pytest.mark.parametrize("failure", ["capacity", "executor"])
+def test_public_admission_never_orphans_unstarted_children(monkeypatch, failure):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from tools import delegate_tool as delegate
+
+    parent = SimpleNamespace(_delegate_depth=0, _active_children=[])
+    built = []
+    child = Mock()
+
+    def build(**kwargs):
+        built.append(child)
+        parent._active_children.append(child)
+        return child
+
+    monkeypatch.setattr(delegate, "is_spawn_paused", lambda **_: False)
+    monkeypatch.setattr(delegate, "_delegation_session_key", lambda _: "session")
+    monkeypatch.setattr(delegate, "_load_config", lambda: {})
+    monkeypatch.setattr(delegate, "_get_max_async_children", lambda: 1)
+    monkeypatch.setattr(delegate, "_get_max_spawn_depth", lambda: 2)
+    monkeypatch.setattr(delegate, "_get_max_concurrent_children", lambda: 3)
+    monkeypatch.setattr(delegate, "_resolve_delegation_credentials", lambda *_: dict.fromkeys(
+        ["model", "provider", "base_url", "api_key", "api_mode"]
+    ))
+    monkeypatch.setattr(delegate, "_build_child_agent", build)
+    held = ad.CapacityReservation(1, 1) if failure == "capacity" else None
+    if failure == "executor":
+        def unavailable(*_):
+            raise RuntimeError("executor unavailable")
+        monkeypatch.setattr(ad, "_get_executor", unavailable)
+    try:
+        result = delegate.delegate_task(goal="bounded research", parent_agent=parent, background=True)
+        assert "error" in result
+        assert not parent._active_children
+        if failure == "capacity":
+            assert not built
+        else:
+            assert built == [child]
+            child.close.assert_called_once()
+            assert ad.active_count() == 0
+            assert not ad._reservations
+    finally:
+        if held is not None:
+            held.release()
+
+
+def test_worker_observes_durable_admission_and_dropped_notice_keeps_result(tmp_path, monkeypatch):
+    from superforecasting_agent import constants
+    from superforecasting_agent.storage.background_research import BackgroundResearchJournal
+
+    monkeypatch.setattr(constants, "get_agent_home", lambda: tmp_path)
+    monkeypatch.setattr(ad, "_push_completion_event", lambda *_: None)
+    seen = []
+    done = threading.Event()
+    def runner():
+        seen.extend(BackgroundResearchJournal(tmp_path).tasks("session"))
+        done.set()
+        return {"status": "completed", "summary": "retained finding"}
+    result = ad.dispatch_async_delegation(
+        goal="inspect", context=None, toolsets=None, role="leaf", model=None,
+        session_key="session", runner=runner,
+    )
+    assert result["status"] == "dispatched"
+    assert done.wait(3)
+    deadline = time.monotonic() + 3
+    journal = BackgroundResearchJournal(tmp_path)
+    while not journal.pending("session") and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert seen[0]["status"] == "running"
+    pending = journal.pending("session")
+    assert pending[0]["tasks"][0]["result"]["summary"] == "retained finding"
+    assert process_registry.completion_queue.empty()
+
+
+def test_failed_completion_persistence_retries_without_rerunning_research(tmp_path, monkeypatch):
+    from superforecasting_agent import constants
+    from superforecasting_agent.storage.background_research import BackgroundResearchJournal
+
+    monkeypatch.setattr(constants, "get_agent_home", lambda: tmp_path)
+    original = BackgroundResearchJournal.finish
+    unavailable = threading.Event()
+    unavailable.set()
+    attempts = []
+    def finish(self, *args, **kwargs):
+        if unavailable.is_set():
+            raise OSError("journal temporarily unavailable")
+        return original(self, *args, **kwargs)
+    monkeypatch.setattr(BackgroundResearchJournal, "finish", finish)
+    def runner():
+        attempts.append("executed")
+        return {"status": "completed", "summary": "once"}
+    handle = ad.dispatch_async_delegation(
+        goal="inspect", context=None, toolsets=None, role="leaf", model=None,
+        session_key="session", runner=runner,
+    )
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline:
+        with ad._records_lock:
+            pending = ad._records[handle["delegation_id"]]["status"] == "completion_pending"
+        if pending:
+            break
+        time.sleep(0.01)
+    assert pending and process_registry.completion_queue.empty()
+    unavailable.clear()
+    ad.retry_pending_completions()
+    ad.retry_pending_completions()
+    assert attempts == ["executed"]
+    assert len(BackgroundResearchJournal(tmp_path).pending("session")) == 1
+    assert _drain_one()["summary"] == "once"
+    assert process_registry.completion_queue.empty()
+
+
+def test_failed_durable_start_retains_cleanup_until_retry(monkeypatch):
+    from superforecasting_agent.storage.background_research import BackgroundResearchJournal
+
+    def fail_start(*_):
+        raise OSError("start admission unavailable")
+    monkeypatch.setattr(BackgroundResearchJournal, "start", fail_start)
+    unavailable = threading.Event()
+    unavailable.set()
+    closed = []
+    def cleanup():
+        if unavailable.is_set():
+            raise OSError("cleanup transport unavailable")
+        closed.append(True)
+    result = ad.dispatch_async_delegation(
+        goal="inspect", context=None, toolsets=None, role="leaf", model=None,
+        session_key="session", runner=lambda: pytest.fail("unadmitted research ran"),
+        abandon_fn=cleanup,
+    )
+    assert _drain_one()["status"] == "error"
+    with ad._records_lock:
+        assert ad._records[result["delegation_id"]]["status"] == "cleanup_pending"
+    assert ad.active_count() == 1
+    unavailable.clear()
+    ad.retry_pending_completions()
+    ad.retry_pending_completions()
+    assert ad.active_count() == 0
+    assert closed == [True]
+    assert ad.list_async_delegations(session_key="session")[0]["status"] == "error"

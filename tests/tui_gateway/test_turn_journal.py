@@ -144,3 +144,39 @@ def test_compression_continuation_keeps_inflight_receipt(tmp_path, monkeypatch):
     assert turn_journal.latest(db, 'parent') is None
     assert turn_journal.latest(db, 'child')['partial_text'] == 'prefix'
     db.close()
+
+
+def test_background_turn_admission_survives_replay_and_acknowledges_after_commit(tmp_path, monkeypatch):
+    from contextlib import closing
+    from tui_gateway import server
+    from superforecasting_agent import constants
+    from superforecasting_agent.storage.background_research import BackgroundResearchJournal
+    from tools.async_delegation import pending_notifications
+    from tools.process_registry import format_process_notification
+
+    monkeypatch.setattr(constants, "get_agent_home", lambda: tmp_path)
+    journal = BackgroundResearchJournal(tmp_path)
+    task = journal.admit([{"goal": "research", "role": "leaf"}], session="s", owner="worker")[0]
+    journal.start(task, "worker")
+    journal.finish(task, "worker", "completed", {"summary": "finding"})
+    event = pending_notifications("s")[0]
+    text = format_process_notification(event)
+    starts = []
+    monkeypatch.setattr(server._host.workers, "start", lambda *args, **kwargs: starts.append(args))
+    monkeypatch.setattr(server, "_emit", lambda *args, **kwargs: None)
+    with closing(SessionDB(tmp_path / "state.db")) as db:
+        monkeypatch.setattr(server, "_get_db", lambda: db)
+        session = {"session_key": "s", "history": [], "history_lock": threading.RLock(),
+                   "agent": object(), "running": True}
+        server._run_prompt_submit("one", "sid", session, text, notification_event=event)
+        assert len(starts) == 1
+        receipt = turn_journal.latest(db, "s")
+        assert receipt["prompt"] == text
+        assert not journal.pending("s")
+        # Simulate a duplicate queue hint after the durable acknowledgement.
+        session["running"] = True
+        server._run_prompt_submit("duplicate", "sid", session, text, notification_event=event)
+        assert len(starts) == 1 and not session["running"]
+        assert turn_journal.latest(db, "s")["id"] == receipt["id"]
+        with pytest.raises(ValueError, match="conflicts"):
+            turn_journal.admit_notification(db, "s", "different result", event["journal_event_id"])

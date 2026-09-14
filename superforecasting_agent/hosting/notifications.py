@@ -30,6 +30,8 @@ def poll_notifications(
     format_event: Callable[[dict], str],
     host_stopping: Callable[[], bool],
     dispatch: Callable[[str], None],
+    recover: Callable[[], list[dict]] | None = None,
+    dispatch_event: Callable[[str, dict], None] | None = None,
 ) -> None:
     """Own queue admission and session exclusion; adapters supply delivery.
 
@@ -40,6 +42,14 @@ def poll_notifications(
         try:
             event = pending.get(timeout=0.5)
         except queue.Empty:
+            if recover is not None:
+                try:
+                    for recovered in recover():
+                        pending.put(recovered)
+                except Exception:
+                    logging.getLogger(__name__).exception(
+                        "Notification recovery unavailable"
+                    )
             continue
         if stop.is_set() or session.get("_finalized"):
             pending.put(event)
@@ -70,7 +80,10 @@ def poll_notifications(
             stop.wait(0.02)
             continue
         try:
-            dispatch(text)
+            if dispatch_event is not None:
+                dispatch_event(text, event)
+            else:
+                dispatch(text)
         except Exception:
             logging.getLogger(__name__).exception("Notification dispatch failed")
             with session["history_lock"]:
