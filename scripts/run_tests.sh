@@ -23,6 +23,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# Hooks export repository-local Git variables. Tests create temporary repositories;
+# inheriting GIT_DIR or GIT_INDEX_FILE would mutate the caller's repository instead.
+while IFS= read -r git_local_env; do
+  unset "$git_local_env"
+done < <(git rev-parse --local-env-vars)
+
 # Only explicit service selections may retain their own credentials. The normal
 # suite always remains hermetic; selection also changes pytest collection below.
 LIVE_DAYTONA=0
@@ -90,6 +96,10 @@ PYTHON="$VENV/bin/python"
 if [ -f "$VENV/Scripts/python.exe" ]; then
   PYTHON="$VENV/Scripts/python.exe"
 fi
+
+# Source-tree launchers and subprocess imports must use this selected checkout.
+export PATH="$(dirname "$PYTHON"):$PATH"
+export PYTHONPATH="$REPO_ROOT:$SCRIPT_DIR${PYTHONPATH:+:$PYTHONPATH}"
 
 # ── Ensure pytest-split is installed (required for shard-equivalent runs) ──
 if ! "$PYTHON" -c "import pytest_split" 2>/dev/null; then
