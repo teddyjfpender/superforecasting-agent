@@ -36,6 +36,15 @@ qualification backlog in TODO.md. Upstream reference: `5eb99eb284`.
 
 ## Progress
 
+### Classic CLI receiving-turn recovery
+
+Both startup resume and `/resume` now consult the durable turn journal. An
+interrupted receiving turn exposes its saved request and partial response even
+when no conversation messages were written. Live owners are reported without
+replaying their work. A database close/reopen regression verifies interruption,
+literal rendering of saved text and duplicate admission without another execution.
+The CLI background and resume suites passed 43 tests; strict Python checks passed.
+
 ### Bulk background cancellation ownership
 
 Regression tests reproduced session-key collisions cancelling work across profiles

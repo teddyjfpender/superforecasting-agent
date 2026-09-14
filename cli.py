@@ -3304,6 +3304,7 @@ class ForecastCLI:
             if resolved_meta:
                 session_meta = resolved_meta
 
+        self._display_durable_recovery()
         restored = self._session_db.get_messages_as_conversation(self.session_id)
         if restored:
             restored = [m for m in restored if m.get("role") != "session_meta"]
@@ -3341,6 +3342,8 @@ class ForecastCLI:
         return True
 
     from superforecasting_agent.runtime.resume_display import _display_resumed_history as _display_resumed_history
+
+    from superforecasting_agent.runtime.resume_display import _display_durable_recovery as _display_durable_recovery
 
     from superforecasting_agent.runtime.resume_display import _render_resume_history_panel_lines as _render_resume_history_panel_lines
 
@@ -4264,6 +4267,7 @@ class ForecastCLI:
             )
         else:
             _cprint(f"  ↻ Resumed session {target_id}{title_part} — no messages, starting fresh.")
+        self._display_durable_recovery()
 
     def _handle_sessions_command(self, cmd_original: str) -> None:
         """Handle /sessions [list|<id_or_title>] — browse or resume previous forecast sessions.
