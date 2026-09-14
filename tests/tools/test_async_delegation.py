@@ -503,7 +503,16 @@ def test_failed_completion_persistence_retries_without_rerunning_research(tmp_pa
             break
         time.sleep(0.01)
     assert pending and process_registry.completion_queue.empty()
-    unavailable.clear()
+    # Pending is visible before the failed finalizer releases ownership. Model
+    # that contention explicitly rather than assuming logging has already ended.
+    lock = ad._records[handle["delegation_id"]]["_finalize_lock"]
+    assert lock.acquire(timeout=3)
+    try:
+        unavailable.clear()
+        ad.retry_pending_completions()
+        assert not BackgroundResearchJournal(tmp_path).pending("session")
+    finally:
+        lock.release()
     ad.retry_pending_completions()
     ad.retry_pending_completions()
     assert attempts == ["executed"]

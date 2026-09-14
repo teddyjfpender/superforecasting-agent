@@ -61,6 +61,13 @@ jobs:
           scripts/run_tests.sh tests/tools/test_code_kernel.py
           tests/tools/test_code_kernel_runner.py tests/tools/test_code_calculations.py
           tests/tools/test_code_kernel_remote.py tests/tools/test_code_kernel_supervisor.py
+      - name: Verify durable background and event recovery
+        if: matrix.node == '22'
+        shell: bash
+        run: >-
+          scripts/run_tests.sh tests/storage/test_process_identity.py
+          tests/storage/test_background_research.py tests/storage/test_research_jobs.py
+          tests/tools/test_async_delegation.py
       - name: Verify installed backend, terminal and authenticated host
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: python scripts/verify_profiles.py dist/profiles --python 3.11.15 --report qualification/report.json

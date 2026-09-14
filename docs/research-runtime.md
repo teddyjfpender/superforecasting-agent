@@ -67,6 +67,11 @@ cleanup are distinct from successful completion. Interrupted receiving turns nee
 review before resubmission because tools may already have run. CLI resume displays
 the saved request and partial response; the TUI uses durable recovery state.
 
+Linux owner identity uses the boot and PID namespace, independent of network
+interfaces. Records from an earlier boot, another namespace, or the previous
+identity format remain unconfirmed; they never authorize automatic reexecution.
+When local identity cannot be established, new durable work fails closed.
+
 ## Start saved research when a source publishes
 
 Configure an authenticated webhook route under

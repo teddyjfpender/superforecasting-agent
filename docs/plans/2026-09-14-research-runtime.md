@@ -36,7 +36,9 @@ qualification backlog in TODO.md. Upstream reference: `5eb99eb284`.
 
 ## Native acceptance and publication
 
-All seven implementation acceptance items are satisfied. The canonical suite at
+The seven implementation paths are present. Linux CI subsequently exposed an
+owner-identity recovery defect; the correction and new native recovery step below
+must pass before final acceptance. The canonical suite at
 `87b0cde5a5` passed **32,394 tests** with 149 explicit skips. The kernel/replay
 step subsequently passed on native Windows, Linux and macOS in
 [Product quality run 34846178443](https://github.com/teddyjfpender/superforecasting-agent/actions/runs/34846178443).
@@ -51,6 +53,24 @@ The notes below are historical checkpoints; statements of incompleteness describ
 those checkpoints, not the current implementation acceptance list.
 
 ## Progress
+
+### Linux owner identity and completion retry qualification
+
+The Linux full-suite run at `9531f286a2` exposed two owner-death recovery failures.
+`uuid.getnode()` can generate a different random identifier in each process when
+no network address is discoverable. A real Linux container without networking
+reproduced both journal failures: an exited child recovered zero background tasks
+and zero job triggers. With boot/PID-namespace identity, the same experiment
+recovered one of each. This is Linux container evidence, not native x86-64
+qualification. Native Linux/Windows/macOS now run the affected recovery suites in
+the Node 22 product matrix. Old-identity, earlier-boot and foreign-namespace
+records remain unconfirmed, with no automatic reexecution.
+
+A third Linux failure was a retry-test race: pending state becomes visible before
+the failed finalizer releases its lock. The test now exercises contention explicitly,
+then verifies one persisted completion after lock release without rerunning work.
+The focused set passed 46 tests and strict Python gates passed. Final full-suite,
+native recovery and merged-tree verification remain required.
 
 ### Native Windows kernel qualification follow-up
 
