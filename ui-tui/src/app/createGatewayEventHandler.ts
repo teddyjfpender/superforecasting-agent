@@ -22,7 +22,7 @@ import type { Msg, SubagentProgress, SubagentStatus } from '../types.js'
 
 import { agentsActiveFromResult, setAgentsActive } from './agentsActiveStore.js'
 import { applyCommandEvent } from './commandStore.js'
-import { applyDelegationStatus, getDelegationState } from './delegationStore.js'
+import { applyDelegationStatus, getDelegationState, patchDelegationState } from './delegationStore.js'
 import { forecastDeskRailSections, forecastDeskStatusLabel } from './forecastPanel.js'
 import { getGatewayLink, markLinkLive, takeResumeSid } from './gatewayLinkStore.js'
 import type { GatewayEventHandlerContext } from './interfaces.js'
@@ -73,6 +73,9 @@ const pushNote = pushUnique(6)
 const pushTool = pushUnique(8)
 
 const KNOWN_SUBAGENT_STATUSES = new Set<SubagentStatus>([
+  'unconfirmed',
+  'completion_pending',
+  'cleanup_pending',
   'completed',
   'error',
   'failed',
@@ -189,12 +192,21 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
     lastDelegationFetchAt = now
     const sessionId = getUiState().sid
 
-    if (!sessionId) {return}
+    if (!sessionId) {
+      return
+    }
+
     rpc<DelegationStatusResponse>('delegation.status', { session_id: sessionId })
       .then(r => {
-        if (getUiState().sid === sessionId) {applyDelegationStatus(r)}
+        if (getUiState().sid === sessionId) {
+          applyDelegationStatus(r)
+        }
       })
-      .catch(() => {})
+      .catch(() => {
+        if (getUiState().sid === sessionId) {
+          patchDelegationState({ backgroundStatusError: 'Background status unavailable; showing last observed state.' })
+        }
+      })
   }
 
   const setStatus = (status: string) => {

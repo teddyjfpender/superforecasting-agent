@@ -3343,7 +3343,10 @@ def _notification_poller_loop(
             _emit("status.update", sid, {"kind": "process", "text": text})
         except Exception:
             logger.exception("Notification status display failed")
-        _run_prompt_submit(rid, sid, session, text, notification_event=event)
+        if event and event.get("journal_event_id"):
+            _run_prompt_submit(rid, sid, session, text, notification_event=event)
+        else:
+            _run_prompt_submit(rid, sid, session, text)
 
     from tools.async_delegation import pending_notifications
 
@@ -3376,6 +3379,9 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any, *, notification_
     db = _get_db()
     event_id = (notification_event or {}).get("journal_event_id")
     if event_id:
+        from superforecasting_agent.hosting.notifications import route_notification
+        if route_notification(notification_event or {}, session["session_key"]) != "consume":
+            raise ValueError("Background result belongs to another profile or session")
         if (notification_event or {}).get("session_key") != session["session_key"]:
             raise ValueError("Background result belongs to another session")
         if db is None:

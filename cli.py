@@ -10615,6 +10615,10 @@ class ForecastCLI:
                             try:
                                 from tools.process_registry import process_registry
                                 for _evt, _synth in process_registry.drain_notifications():
+                                    from superforecasting_agent.hosting.notifications import route_notification
+                                    if route_notification(_evt, self.session_id) != "consume":
+                                        process_registry.completion_queue.put(_evt)
+                                        continue
                                     self._pending_input.put(_synth)
                             except Exception:
                                 pass
@@ -10724,6 +10728,10 @@ class ForecastCLI:
                         try:
                             from tools.process_registry import process_registry
                             for _evt, _synth in process_registry.drain_notifications():
+                                from superforecasting_agent.hosting.notifications import route_notification
+                                if route_notification(_evt, self.session_id) != "consume":
+                                    process_registry.completion_queue.put(_evt)
+                                    continue
                                 self._pending_input.put(_synth)
                         except Exception:
                             pass  # Non-fatal — don't break the main loop

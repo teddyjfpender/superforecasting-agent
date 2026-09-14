@@ -303,3 +303,48 @@ admission across duplicate hints and a saved receiving prompt before event
 acknowledgement. CLI/messaging acknowledgement, detached-worker profile propagation,
 owner-death reconciliation, durable TUI task status and full integration/release
 gates remain outstanding. This is not complete background capability acceptance.
+
+### Detached worker and owner recovery follow-up
+
+The recovery worktree captures session/profile context for detached workers while
+removing only inherited parent cancellation. Profile home is pinned from durable
+admission; the child still honors its own thread interrupts and nested scopes.
+Cleanup retries run under that same captured context. Two real worker threads
+verify distinct profile/session routing after the parent is cancelled.
+
+Journal version 2 adds process-owner identity. Recovery checks saved PID creation
+time only on the same named machine/network identity and marks positively exited
+owners interrupted without retrying effects. Foreign hosts, inaccessible processes
+and legacy records without identity remain unconfirmed. Tests cover real owner
+process exit, simulated PID reuse, live owners and foreign-host refusal.
+Status reads now include durable results and explicitly label active records with
+no locally observed worker unconfirmed. Unresolved work is not removed by the
+completed-result retention limit.
+
+The combined async/storage/context/TUI notification set passed 48 tests; strict
+checks and 76 architecture contracts pass. CLI/messaging delivery acknowledgement,
+TUI presentation of recovery diagnostics, cross-profile notification routing and
+full integration gates remain outstanding.
+
+
+Recovery presentation now maps durable results and pending/unconfirmed states
+through the typed status RPC into the agents overlay. Failed event-driven refreshes
+retain last-observed results with an unavailable notice; late failures from a
+replaced session cannot change its state. Background cancellation checks the exact
+session and profile before invoking the captured worker callback. Updated ownership
+fixtures reflect journal-backed admission instead of incomplete in-memory records.
+Focused Python verification: 54 recovery/ownership tests and 34 command/notification/
+protocol tests passed. Frontend verification: 96 delegation/event/history/reconnect
+tests passed. The original full-suite notification compatibility failure is fixed
+in the focused set; a fresh full-suite gate remains required before pushing.
+
+Profile notification routing follow-up: journal-generated events carry an opaque
+hash of the resolved owning home. Shared routing checks both profile and session;
+CLI drains, messaging drains and TUI durable admission use that policy. Messaging
+reads a bounded queue snapshot so requeued foreign events cannot loop indefinitely.
+The TUI polls its durable journal independently of queue emptiness and selects one
+saved event directly, preventing foreign hints from starving recovery or accumulating
+duplicate local hints while busy. Focused async/notification/turn verification:
+49 passed; strict checks and 76 architecture contracts pass. Live CLI/messaging
+acknowledgement still needs durable receiving admission; routing alone does not
+establish crash-safe delivery. Cross-interface integration and full gate remain.

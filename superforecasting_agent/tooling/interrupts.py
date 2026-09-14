@@ -141,3 +141,17 @@ class _ThreadAwareEventProxy:
 
 
 _interrupt_event = _ThreadAwareEventProxy()
+
+
+def detached_execution_context():
+    """Copy routing metadata without retaining a completed parent's stop scope.
+
+    The new worker remains subject to its own thread interrupts and any nested
+    call scopes. Only explicit detached execution owners should use this.
+    """
+    from contextvars import copy_context
+
+    context = copy_context()
+    context.run(_scope_interrupt.set, ())
+    context.run(_scope_owns_cancellation.set, False)
+    return context

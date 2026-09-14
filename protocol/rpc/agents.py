@@ -16,7 +16,8 @@ from typing import Any, Literal
 from protocol.types import WireModel, wire_optional
 
 _SubagentStatus = Literal[
-    "completed", "error", "failed", "interrupted", "queued", "running", "timeout"
+    "completed", "error", "failed", "interrupted", "queued", "running", "timeout",
+    "unconfirmed", "completion_pending", "cleanup_pending"
 ]
 
 
@@ -125,10 +126,24 @@ class DelegationActiveEntry(WireModel):
     tool_count: int | None = wire_optional()
 
 
+class DelegationBackgroundEntry(WireModel):
+    TS_NAME = "DelegationBackgroundEntry"
+
+    delegation_id: str
+    goal: str | None = wire_optional()
+    model: str | None = wire_optional(nullable=True)
+    status: str
+    durable_status: str | None = wire_optional()
+    dispatched_at: float | None = wire_optional()
+    result: dict[str, Any] | None = wire_optional(nullable=True)
+
+
 class DelegationStatusResponse(WireModel):
     TS_NAME = "DelegationStatusResponse"
 
     active: list[DelegationActiveEntry] | None = wire_optional()
+    background: list[DelegationBackgroundEntry] | None = wire_optional()
+    max_async_children: int | None = wire_optional()
     max_concurrent_children: int | None = wire_optional()
     max_spawn_depth: int | None = wire_optional()
     paused: bool | None = wire_optional()

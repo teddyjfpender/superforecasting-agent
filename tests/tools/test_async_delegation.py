@@ -503,3 +503,76 @@ def test_failed_durable_start_retains_cleanup_until_retry(monkeypatch):
     assert ad.active_count() == 0
     assert closed == [True]
     assert ad.list_async_delegations(session_key="session")[0]["status"] == "error"
+
+
+def test_detached_workers_keep_profile_and_routing_but_not_parent_cancellation(tmp_path):
+    import contextvars
+    from superforecasting_agent.constants import (
+        get_agent_home, set_agent_home_override, reset_agent_home_override,
+    )
+    from superforecasting_agent.tooling.interrupts import (
+        cancellation_scope, is_interrupted, set_interrupt,
+    )
+    from tools.approval import get_current_session_key
+
+    tenant = contextvars.ContextVar("background-test-tenant", default="missing")
+    release = threading.Event()
+    parent_cancel = threading.Event()
+    observed = []
+    finished = [threading.Event(), threading.Event()]
+    def runner(index, expected):
+        try:
+            assert release.wait(3)
+            observed.append((get_agent_home(), get_current_session_key(), tenant.get(), is_interrupted()))
+            set_interrupt(True)
+            assert is_interrupted(), "child thread cancellation was masked"
+            set_interrupt(False)
+            return {"status": "completed", "summary": expected}
+        finally:
+            set_interrupt(False)
+            finished[index].set()
+    try:
+        for index, name in enumerate(("first", "second")):
+            token = set_agent_home_override(tmp_path / name)
+            tenant_token = tenant.set(name)
+            try:
+                with cancellation_scope(parent_cancel):
+                    result = ad.dispatch_async_delegation(
+                        goal=name, context=None, toolsets=None, role="leaf", model=None,
+                        session_key=name, runner=lambda i=index, n=name: runner(i, n),
+                    )
+                    assert result["status"] == "dispatched"
+            finally:
+                tenant.reset(tenant_token)
+                reset_agent_home_override(token)
+        parent_cancel.set()
+        release.set()
+        assert all(done.wait(3) for done in finished)
+        assert sorted(observed) == [
+            (tmp_path / "first", "first", "first", False),
+            (tmp_path / "second", "second", "second", False),
+        ]
+        assert _drain_one() is not None
+        assert _drain_one() is not None
+    finally:
+        release.set()
+        for done in finished:
+            done.wait(3)
+
+
+def test_status_recovers_completed_results_and_marks_unowned_live_work_unconfirmed(tmp_path, monkeypatch):
+    from superforecasting_agent import constants
+    from superforecasting_agent.storage.background_research import BackgroundResearchJournal
+
+    monkeypatch.setattr(constants, "get_agent_home", lambda: tmp_path)
+    journal = BackgroundResearchJournal(tmp_path)
+    first, second = journal.admit([{"goal": "done"}, {"goal": "elsewhere"}], session="s", owner="other-worker")
+    journal.start(first, "other-worker")
+    journal.finish(first, "other-worker", "completed", {"summary": "saved finding"})
+    journal.start(second, "other-worker")
+    rows = {row["delegation_id"]: row for row in ad.list_async_delegations(session_key="s")}
+    assert rows[first]["status"] == "completed"
+    assert rows[first]["result"]["summary"] == "saved finding"
+    assert rows[second]["status"] == "unconfirmed"
+    assert rows[second]["durable_status"] == "running"
+    assert ad.list_async_delegations(session_key="other-session") == []

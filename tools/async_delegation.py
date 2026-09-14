@@ -284,6 +284,15 @@ def dispatch_async_delegation(
         journal.finish(delegation_id, owner, "rejected", {"error": str(exc)})
         return {"status": "rejected", "error": str(exc)}
 
+    from superforecasting_agent.constants import set_agent_home_override
+    from superforecasting_agent.tooling.interrupts import detached_execution_context
+    from tools.approval import set_current_session_key
+
+    worker_context = detached_execution_context()
+    worker_context.run(set_agent_home_override, journal.path.parent)
+    worker_context.run(set_current_session_key, session_key)
+    record["_worker_context"] = worker_context
+
     def _worker() -> None:
         result: Dict[str, Any] = {}
         status = "error"
@@ -315,7 +324,7 @@ def dispatch_async_delegation(
 
     try:
         executor = _get_executor(max_async_children)
-        executor.submit(_worker)
+        executor.submit(lambda: worker_context.run(_worker))
     except Exception as exc:  # pragma: no cover — pool submit failure is rare
         _finalize(delegation_id, {"error": str(exc)}, "rejected")
         with _records_lock:
@@ -413,6 +422,9 @@ def pending_notifications(session_key: str, *, journal=None) -> list[dict]:
         if not (home / "background-research.db").exists():
             return []
         journal = BackgroundResearchJournal(home)
+    from superforecasting_agent.hosting.notifications import notification_profile_key
+
+    journal.recover(session_key or "cli")
     notifications = []
     for event in journal.pending(session_key or "cli"):
         members = event["tasks"]
@@ -421,6 +433,7 @@ def pending_notifications(session_key: str, *, journal=None) -> list[dict]:
         grouped = event["kind"] == "group_complete"
         notifications.append({
             "type": "async_delegation", "session_key": session_key,
+            "profile_key": notification_profile_key(journal.path.parent),
             "delegation_id": first["batch_id"] if grouped else first["delegation_id"],
             "journal_event_id": event["event_id"], "delivery_kind": event["kind"],
             "delegation_ids": [task["delegation_id"] for task in members],
@@ -467,7 +480,7 @@ def retry_pending_completions() -> None:
             callback = record.get("_abandon_fn")
             if callback is None:
                 continue
-            callback()
+            record["_worker_context"].copy().run(callback)
             with _records_lock:
                 record.pop("_cleanup_pending", None)
                 record["_abandon_fn"] = None
@@ -485,13 +498,57 @@ def list_async_delegations(*, session_key: str | None = None) -> List[Dict[str, 
 
     Safe to call from any thread. Excludes the non-serialisable interrupt_fn.
     """
+    from superforecasting_agent.constants import get_agent_home
+    from superforecasting_agent.storage.background_research import BackgroundResearchJournal
+
     retry_pending_completions()
+    home = get_agent_home()
     with _records_lock:
-        return [
-            {k: v for k, v in r.items() if k != "interrupt_fn" and not k.startswith("_")}
-            for r in _records.values()
-            if session_key is None or r.get("session_key") == session_key
-        ]
+        live = {
+            key: {k: v for k, v in record.items() if k != "interrupt_fn" and not k.startswith("_")}
+            for key, record in _records.items()
+            if record["_journal"].path.parent == home
+            and (session_key is None or record.get("session_key") == session_key)
+        }
+    if not (home / "background-research.db").exists():
+        return list(live.values())
+    journal = BackgroundResearchJournal(home)
+    rows = journal.tasks(None if session_key is None else session_key or "cli")
+    for session in {row["session_key"] for row in rows}:
+        journal.recover(session)
+    rows = journal.tasks(None if session_key is None else session_key or "cli")
+    records = {}
+    for row in rows:
+        specification = row["specification"]
+        records[row["delegation_id"]] = {
+            **specification, **row,
+            "session_key": "" if row["session_key"] == "cli" else row["session_key"],
+            "durable_status": row["status"],
+            "status": "unconfirmed" if row["status"] in {"accepted", "running"} else row["status"],
+        }
+    records.update(live)
+    ordered = sorted(records.values(), key=lambda row: row.get("dispatched_at", 0))
+    unresolved = [row for row in ordered if row.get("status") in {
+        "running", "accepted", "unconfirmed", "completion_pending", "cleanup_pending",
+    }]
+    completed = [row for row in ordered if row not in unresolved]
+    return unresolved + completed[-_MAX_RETAINED_COMPLETED:]
+
+
+def interrupt_delegation(delegation_id: str, session_key: str) -> bool:
+    """Signal only an observed worker belonging to this session and profile."""
+    from superforecasting_agent.constants import get_agent_home
+
+    with _records_lock:
+        record = _records.get(delegation_id)
+        if (record is None or record.get("session_key") != session_key
+                or record["_journal"].path.parent != get_agent_home()):
+            return False
+        callback = record.get("interrupt_fn")
+    if not callable(callback):
+        return False
+    record["_worker_context"].copy().run(callback)
+    return True
 
 
 def interrupt_all(reason: str = "shutdown", *, session_key: str | None = None) -> int:

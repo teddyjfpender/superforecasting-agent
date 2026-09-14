@@ -46,7 +46,17 @@ export interface ActivityItem {
   tone: 'error' | 'info' | 'warn'
 }
 
-export type SubagentStatus = 'completed' | 'error' | 'failed' | 'interrupted' | 'queued' | 'running' | 'timeout'
+export type SubagentStatus =
+  | 'unconfirmed'
+  | 'completion_pending'
+  | 'cleanup_pending'
+  | 'completed'
+  | 'error'
+  | 'failed'
+  | 'interrupted'
+  | 'queued'
+  | 'running'
+  | 'timeout'
 
 export interface SubagentProgress {
   apiCalls?: number

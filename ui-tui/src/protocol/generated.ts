@@ -327,6 +327,16 @@ export interface DelegationActiveEntry {
   tool_count?: number
 }
 
+export interface DelegationBackgroundEntry {
+  delegation_id: string
+  dispatched_at?: number
+  durable_status?: string
+  goal?: string
+  model?: null | string
+  result?: null | Record<string, unknown>
+  status: string
+}
+
 export interface DelegationPauseRequest {
   paused: null | boolean
   session_id?: string
@@ -342,6 +352,8 @@ export interface DelegationStatusRequest {
 
 export interface DelegationStatusResponse {
   active?: DelegationActiveEntry[]
+  background?: DelegationBackgroundEntry[]
+  max_async_children?: number
   max_concurrent_children?: number
   max_spawn_depth?: number
   paused?: boolean
@@ -3154,7 +3166,7 @@ export interface SubagentEventPayload {
   output_tokens?: number
   parent_id?: null | string
   reasoning_tokens?: number
-  status?: 'completed' | 'error' | 'failed' | 'interrupted' | 'queued' | 'running' | 'timeout'
+  status?: 'cleanup_pending' | 'completed' | 'completion_pending' | 'error' | 'failed' | 'interrupted' | 'queued' | 'running' | 'timeout' | 'unconfirmed'
   subagent_id?: string
   summary?: string
   task_count?: number

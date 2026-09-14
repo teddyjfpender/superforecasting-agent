@@ -1,4 +1,5 @@
 """Dashboard delegation requests cannot operate outside their live session."""
+from contextvars import copy_context
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -22,8 +23,15 @@ def owners(monkeypatch):
         key: {'subagent_id': key, 'session_key': key, 'agent': agent}
         for key, agent in agents.items()
     })
+    from superforecasting_agent.constants import get_agent_home
+    from superforecasting_agent.storage.background_research import BackgroundResearchJournal
+
+    journal = BackgroundResearchJournal(get_agent_home())
     monkeypatch.setattr(async_delegation, '_records', {
-        key: {'delegation_id': key, 'session_key': key, 'status': 'running'} for key in agents
+        key: {'delegation_id': key, 'session_key': key, 'status': 'running',
+              '_journal': journal, '_worker_context': copy_context(),
+              'interrupt_fn': agent.interrupt}
+        for key, agent in agents.items()
     })
     return agents
 
@@ -119,3 +127,30 @@ def test_session_lookup_uses_the_registered_server_not_a_package_alias(owners, m
     response = rpc('delegation.status')
     assert [row['subagent_id'] for row in response['result']['active']] == ['root-desk']
     foreign_lookup.assert_not_called()
+
+
+def test_background_storage_failure_returns_error_instead_of_empty_tasks(owners, monkeypatch):
+    from tools import async_delegation
+    def unavailable(**kwargs):
+        raise OSError("journal unavailable")
+    monkeypatch.setattr(async_delegation, "list_async_delegations", unavailable)
+    response = rpc('delegation.status')
+    assert response['error']['code'] == 5000
+    assert 'Background status unavailable' in response['error']['message']
+    assert 'result' not in response
+
+
+def test_background_interrupt_uses_exact_session_and_profile_owner(owners, monkeypatch, tmp_path):
+    from superforecasting_agent.storage.background_research import BackgroundResearchJournal
+
+    monkeypatch.setattr(delegations, '_active_subagents', {})
+    assert rpc('subagent.interrupt', subagent_id='root-other')['result']['found'] is False
+    owners['root-other'].interrupt.assert_not_called()
+    record = async_delegation._records['root-desk']
+    original = record['_journal']
+    record['_journal'] = BackgroundResearchJournal(tmp_path / 'foreign-profile')
+    assert rpc('subagent.interrupt', subagent_id='root-desk')['result']['found'] is False
+    owners['root-desk'].interrupt.assert_not_called()
+    record['_journal'] = original
+    assert rpc('subagent.interrupt', subagent_id='root-desk')['result']['found'] is True
+    owners['root-desk'].interrupt.assert_called_once()

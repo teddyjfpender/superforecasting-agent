@@ -1,4 +1,5 @@
 """Native background commands touch only their host session's registry entries."""
+from contextvars import copy_context
 from unittest.mock import Mock
 
 import pytest
@@ -13,6 +14,10 @@ def background(monkeypatch):
     registry = processes.ProcessRegistry()
     monkeypatch.setattr(processes, 'process_registry', registry)
     calls = []
+    from superforecasting_agent.constants import get_agent_home
+    from superforecasting_agent.storage.background_research import BackgroundResearchJournal
+
+    journal = BackgroundResearchJournal(get_agent_home())
     records = {}
     for owner in ('desk', 'other', ''):
         registry._running[owner] = processes.ProcessSession(
@@ -20,6 +25,7 @@ def background(monkeypatch):
         )
         records[owner] = {
             'delegation_id': owner, 'session_key': owner, 'status': 'running',
+            '_journal': journal, '_worker_context': copy_context(),
             'goal': f'goal-{owner}', 'interrupt_fn': lambda key=owner: calls.append(key),
         }
     monkeypatch.setattr(async_delegation, '_records', records)

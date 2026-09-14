@@ -59,3 +59,59 @@ def test_idle_poller_recovers_durable_events_with_identity():
                        dispatch=lambda _: pytest.fail("event identity was discarded"),
                        dispatch_event=dispatch, recover=lambda: [event])
     assert seen == [("recovered result", event)]
+
+
+def test_profile_routing_distinguishes_identical_session_names(tmp_path):
+    from superforecasting_agent.hosting.notifications import notification_profile_key, route_notification
+
+    first = notification_profile_key(tmp_path / 'first')
+    second = notification_profile_key(tmp_path / 'second')
+    event = {'session_key': 'desk', 'profile_key': first}
+    assert route_notification(event, 'desk', profile_key=first) == 'consume'
+    assert route_notification(event, 'desk', profile_key=second) == 'requeue'
+    assert route_notification(event, 'other', profile_key=first) == 'requeue'
+    assert route_notification({'session_key': 'desk'}, 'desk', profile_key=second) == 'consume'
+    assert str(tmp_path) not in first
+
+
+def test_poller_preserves_another_profiles_result(monkeypatch):
+    from superforecasting_agent.hosting import notifications
+
+    monkeypatch.setattr(notifications, 'notification_profile_key', lambda: 'local')
+    pending = queue.Queue()
+    foreign = {'session_key': 'desk', 'profile_key': 'foreign'}
+    local = {'session_key': 'desk', 'profile_key': 'local'}
+    pending.put(foreign)
+    pending.put(local)
+    stop = threading.Event()
+    seen = []
+    def dispatch(text, event):
+        seen.append(event)
+        stop.set()
+    poll_notifications(stop, {'session_key': 'desk', 'history_lock': threading.Lock()}, pending,
+                       consumed=lambda _: False, format_event=lambda _: 'research',
+                       host_stopping=lambda: False, dispatch=lambda _: None, dispatch_event=dispatch)
+    assert seen == [local]
+    assert pending.get_nowait() == foreign
+
+
+def test_foreign_queue_cannot_starve_durable_recovery(monkeypatch):
+    from superforecasting_agent.hosting import notifications
+
+    monkeypatch.setattr(notifications, 'notification_profile_key', lambda: 'local')
+    stop = threading.Event()
+    pending = queue.Queue()
+    foreign = {'session_key': 'desk', 'profile_key': 'foreign'}
+    local = {'session_key': 'desk', 'profile_key': 'local', 'journal_event_id': 'saved'}
+    pending.put(foreign)
+    seen = []
+    def dispatch(text, event):
+        seen.append(event)
+        stop.set()
+    poll_notifications(stop, {'session_key': 'desk', 'history_lock': threading.Lock()}, pending,
+                       consumed=lambda _: False, format_event=lambda _: 'saved research',
+                       host_stopping=lambda: False, dispatch=lambda _: None,
+                       dispatch_event=dispatch, recover=lambda: [local, {**local, 'journal_event_id': 'later'}])
+    assert seen == [local]
+    assert pending.qsize() == 1
+    assert pending.get_nowait() == foreign

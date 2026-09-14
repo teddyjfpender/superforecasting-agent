@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createGatewayEventHandler } from '../app/createGatewayEventHandler.js'
+import { applyDelegationStatus, getDelegationState, resetDelegationState } from '../app/delegationStore.js'
 import { getOverlayState, resetOverlayState } from '../app/overlayStore.js'
 import { turnController } from '../app/turnController.js'
 import { getTurnState, resetTurnState } from '../app/turnStore.js'
@@ -105,10 +106,45 @@ describe('createGatewayEventHandler', () => {
 
   beforeEach(() => {
     resetOverlayState()
+    resetDelegationState()
     resetUiState()
     resetTurnState()
     turnController.fullReset()
     patchUiState({ showReasoning: true })
+  })
+
+  it.each([false, true])('preserves saved background state on refresh failure, replacement=%s', async replacement => {
+    patchUiState({ sid: 'original' })
+    applyDelegationStatus({
+      background: [{ delegation_id: 'saved', status: 'completed', result: { summary: 'Finding' } }]
+    })
+    let rejectRefresh!: (error: Error) => void
+    const ctx = buildCtx([])
+    ctx.gateway.rpc = vi.fn(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectRefresh = reject
+        })
+    )
+    const handler = createGatewayEventHandler(ctx)
+    handler({ type: 'subagent.spawn_requested', payload: { subagent_id: 'child', goal: 'research' } } as any)
+    expect(ctx.gateway.rpc).toHaveBeenCalledWith('delegation.status', { session_id: 'original' })
+
+    if (replacement) {
+      patchUiState({ sid: 'replacement' })
+    }
+
+    rejectRefresh(new Error('transport unavailable'))
+    await Promise.resolve()
+    await Promise.resolve()
+
+    if (replacement) {
+      expect(getDelegationState().backgroundStatusError).toBeNull()
+      expect(getDelegationState().backgroundAgents).toEqual([])
+    } else {
+      expect(getDelegationState().backgroundStatusError).toContain('last observed')
+      expect(getDelegationState().backgroundAgents[0]?.summary).toBe('Finding')
+    }
   })
 
   it('archives incomplete todos into transcript flow at end of turn so they scroll up', () => {
@@ -1067,37 +1103,40 @@ describe('createGatewayEventHandler', () => {
     expect(resumeById).not.toHaveBeenCalled()
   })
 
-  it.each(['reject', 'null'])('session.most_recent %s preserves startup failure without creating a replacement', async mode => {
-    const appended: Msg[] = []
-    const newSession = vi.fn()
-    const resumeById = vi.fn()
-    const ctx = buildCtx(appended)
+  it.each(['reject', 'null'])(
+    'session.most_recent %s preserves startup failure without creating a replacement',
+    async mode => {
+      const appended: Msg[] = []
+      const newSession = vi.fn()
+      const resumeById = vi.fn()
+      const ctx = buildCtx(appended)
 
-    ctx.session.newSession = newSession
-    ctx.session.resumeById = resumeById
-    ctx.session.STARTUP_RESUME_ID = ''
-    ctx.gateway.rpc = vi.fn(async (method: string) => {
-      if (method === 'config.get') {
-        return { config: { display: { tui_auto_resume_recent: true } } }
-      }
-
-      if (method === 'session.most_recent') {
-        if (mode === 'null') {
-          return null
+      ctx.session.newSession = newSession
+      ctx.session.resumeById = resumeById
+      ctx.session.STARTUP_RESUME_ID = ''
+      ctx.gateway.rpc = vi.fn(async (method: string) => {
+        if (method === 'config.get') {
+          return { config: { display: { tui_auto_resume_recent: true } } }
         }
 
-        throw new Error('db locked')
-      }
+        if (method === 'session.most_recent') {
+          if (mode === 'null') {
+            return null
+          }
 
-      return null
-    })
+          throw new Error('db locked')
+        }
 
-    createGatewayEventHandler(ctx)({ payload: {}, type: 'gateway.ready' } as any)
+        return null
+      })
 
-    await vi.waitFor(() => expect(getUiState().status).toBe('session startup unavailable'))
-    expect(newSession).not.toHaveBeenCalled()
-    expect(resumeById).not.toHaveBeenCalled()
-  })
+      createGatewayEventHandler(ctx)({ payload: {}, type: 'gateway.ready' } as any)
+
+      await vi.waitFor(() => expect(getUiState().status).toBe('session startup unavailable'))
+      expect(newSession).not.toHaveBeenCalled()
+      expect(resumeById).not.toHaveBeenCalled()
+    }
+  )
 
   it('ignores a stale startup failure after a newer ready starts a session', async () => {
     const ctx = buildCtx([])
@@ -1105,7 +1144,11 @@ describe('createGatewayEventHandler', () => {
     ctx.session.newSession = newSession
     ctx.session.STARTUP_RESUME_ID = ''
     let rejectOld!: (reason: Error) => void
-    const oldLookup = new Promise((_, reject) => { rejectOld = reject })
+
+    const oldLookup = new Promise((_, reject) => {
+      rejectOld = reject
+    })
+
     let reads = 0
     ctx.gateway.rpc = vi.fn(async (method: string) => {
       if (method === 'config.get') {

@@ -9442,8 +9442,12 @@ class GatewayRunner:
             try:
                 from tools.process_registry import process_registry as _pr
                 _watch_events = []
-                while not _pr.completion_queue.empty():
+                from superforecasting_agent.hosting.notifications import route_notification
+                for _ in range(_pr.completion_queue.qsize()):
                     evt = _pr.completion_queue.get_nowait()
+                    if route_notification(evt, session_key) != "consume":
+                        _pr.completion_queue.put(evt)
+                        continue
                     evt_type = evt.get("type", "completion")
                     if evt_type in {"watch_match", "watch_disabled", "async_delegation"}:
                         _watch_events.append(evt)

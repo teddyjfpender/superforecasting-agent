@@ -61,6 +61,9 @@ const FILTER_LABEL: Record<FilterMode, string> = {
 }
 
 const STATUS_RANK: Record<Status, number> = {
+  unconfirmed: 1,
+  completion_pending: 1,
+  cleanup_pending: 1,
   error: 0,
   failed: 0,
   interrupted: 1,
@@ -91,6 +94,9 @@ const FILTER_PREDICATES: Record<FilterMode, (n: SubagentNode) => boolean> = {
 }
 
 const STATUS_GLYPH: Record<Status, { color: (t: Theme) => string; glyph: string }> = {
+  unconfirmed: { color: t => t.color.muted, glyph: '?' },
+  completion_pending: { color: t => t.color.warn, glyph: '○' },
+  cleanup_pending: { color: t => t.color.warn, glyph: '○' },
   running: { color: t => t.color.accent, glyph: '●' },
   queued: { color: t => t.color.muted, glyph: '○' },
   completed: { color: t => t.color.statusGood, glyph: '✓' },
@@ -872,6 +878,7 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
       gw.request<DelegationPauseResponse>('delegation.pause', { paused: !delegation.paused, session_id: sessionId })
         .then(raw => {
           if (getUiState().sid !== sessionId) {return}
+
           const r = asRpcResult<DelegationPauseResponse>(raw)
           applyDelegationStatus({ paused: r?.paused })
           setFlash(r?.paused ? 'spawning paused' : 'spawning resumed')

@@ -86,3 +86,52 @@ def test_admission_and_outcome_ownership_fail_closed(tmp_path):
     with pytest.raises(ValueError):
         journal.acknowledge(event["event_id"], "replacement-session")
     assert journal.pending("s")
+
+
+def test_recovery_after_real_owner_exit_preserves_uncertainty_and_never_reexecutes(tmp_path):
+    import os
+    import subprocess
+    import sys
+    import json
+
+    source = '''
+import json, sys
+from pathlib import Path
+from superforecasting_agent.storage.background_research import BackgroundResearchJournal
+journal = BackgroundResearchJournal(Path(sys.argv[1]))
+task = journal.admit([{"goal": "interrupted research"}], session="session", owner="child-owner")[0]
+journal.start(task, "child-owner")
+print(json.dumps(task), flush=True)
+'''
+    completed = subprocess.run([sys.executable, "-c", source, str(tmp_path)],
+                               cwd=os.getcwd(), capture_output=True, text=True, timeout=10, check=True)
+    task = json.loads(completed.stdout)
+    journal = BackgroundResearchJournal(tmp_path)
+    assert journal.recover("session") == 1
+    assert journal.recover("session") == 0
+    row = journal.tasks("session")[0]
+    assert row["delegation_id"] == task and row["status"] == "interrupted"
+    assert row["result"]["automatic_retry"] is False
+    assert len(journal.pending("session")) == 1
+
+
+def test_recovery_does_not_steal_live_or_unknown_owners(tmp_path, monkeypatch):
+    import superforecasting_agent.storage.background_research as storage
+    journal = BackgroundResearchJournal(tmp_path)
+    task = journal.admit([{"goal": "still alive"}], session="s", owner="live")[0]
+    journal.start(task, "live")
+    assert journal.recover("s") == 0
+    monkeypatch.setattr(storage, "_host_identity", lambda: "different-machine")
+    assert journal.recover("s") == 0
+    assert journal.tasks("s")[0]["status"] == "running"
+
+
+def test_reused_pid_cannot_keep_old_owner_running(tmp_path, monkeypatch):
+    from superforecasting_agent.storage import turns
+    journal = BackgroundResearchJournal(tmp_path)
+    task = journal.admit([{"goal": "old owner"}], session="s", owner="old")[0]
+    journal.start(task, "old")
+    original = turns._process_started
+    monkeypatch.setattr(turns, "_process_started", lambda pid: original(pid) + 1)
+    assert journal.recover("s") == 1
+    assert journal.tasks("s")[0]["status"] == "interrupted"

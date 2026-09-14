@@ -22,6 +22,9 @@ export interface SpawnDiffPair {
 const HISTORY_LIMIT = 10
 
 const KNOWN_SUBAGENT_STATUSES = new Set<SubagentStatus>([
+  'unconfirmed',
+  'completion_pending',
+  'cleanup_pending',
   'completed',
   'error',
   'failed',

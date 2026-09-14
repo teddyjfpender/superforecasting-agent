@@ -7,7 +7,10 @@ successful delivery. This store never retries model calls or external effects.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
+import socket
 import sqlite3
 import time
 import uuid
@@ -25,6 +28,13 @@ def _json(value: Any) -> str:
     return json.dumps(value, sort_keys=True, ensure_ascii=True, allow_nan=False)
 
 
+def _host_identity() -> str:
+    """Scope PID observations to the same named machine and network identity."""
+    return hashlib.sha256(
+        f"{socket.gethostname()}:{uuid.getnode()}".encode()
+    ).hexdigest()
+
+
 class BackgroundResearchJournal:
     def __init__(self, home: Path):
         self.path = home / "background-research.db"
@@ -32,7 +42,7 @@ class BackgroundResearchJournal:
         with closing(sqlite3.connect(self.path)) as db:
             apply_wal_with_fallback(db, db_label=str(self.path))
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1):
+            if version not in (0, 1, 2):
                 raise ValueError("Unsupported background research journal version")
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS tasks (
@@ -49,7 +59,11 @@ class BackgroundResearchJournal:
                     session TEXT NOT NULL, payload TEXT NOT NULL,
                     created REAL NOT NULL, acknowledged REAL
                 );
-                PRAGMA user_version=1;
+                CREATE TABLE IF NOT EXISTS owners (
+                    id TEXT PRIMARY KEY, host TEXT NOT NULL, pid INTEGER NOT NULL,
+                    started REAL NOT NULL
+                );
+                PRAGMA user_version=2;
             """)
 
     @contextmanager
@@ -81,7 +95,18 @@ class BackgroundResearchJournal:
             specifications.append((_json(task), group))
         batch, created = uuid.uuid4().hex, time.time()
         ids = [f"deleg_{uuid.uuid4().hex}" for _ in tasks]
+        from superforecasting_agent.storage.turns import _process_started
+
         with self._transaction() as db:
+            identity = (_host_identity(), os.getpid(), _process_started(os.getpid()))
+            previous = db.execute(
+                "SELECT host,pid,started FROM owners WHERE id=?", (owner,)
+            ).fetchone()
+            if previous is not None and tuple(previous) != identity:
+                raise ValueError("Background owner identity cannot be replaced")
+            db.execute(
+                "INSERT OR IGNORE INTO owners VALUES (?,?,?,?)", (owner, *identity)
+            )
             db.executemany(
                 "INSERT INTO tasks VALUES (?, ?, ?, ?, ?, ?, 'accepted', NULL, ?, ?, NULL)",
                 [
@@ -186,15 +211,62 @@ class BackgroundResearchJournal:
             "completed_at": row["finished"],
         }
 
-    def tasks(self, session: str) -> list[dict[str, Any]]:
+    def tasks(self, session: str | None) -> list[dict[str, Any]]:
         with self._transaction() as db:
             return [
                 self._task(row)
                 for row in db.execute(
-                    "SELECT * FROM tasks WHERE session=? ORDER BY created,position,id",
-                    (session,),
+                    "SELECT * FROM tasks WHERE (? IS NULL OR session=?) ORDER BY created,position,id",
+                    (session, session),
                 )
             ]
+
+    def recover(self, session: str) -> int:
+        """Mark only positively dead local owners interrupted; never rerun work.
+
+        Foreign hosts, legacy admissions without identity and inaccessible
+        processes remain unconfirmed. Their absence from a local registry does
+        not prove death.
+        """
+        import psutil
+
+        from superforecasting_agent.storage.turns import _process_started
+
+        with self._transaction() as db:
+            candidates = list(
+                db.execute(
+                    "SELECT t.id,t.owner,o.host,o.pid,o.started FROM tasks t JOIN owners o ON o.id=t.owner "
+                    "WHERE t.session=? AND t.state IN ('accepted','running')",
+                    (session,),
+                )
+            )
+        recovered = 0
+        for row in candidates:
+            if row["host"] != _host_identity():
+                continue
+            try:
+                dead = _process_started(row["pid"]) != row["started"]
+            except psutil.NoSuchProcess:
+                dead = True
+            except (psutil.AccessDenied, OSError):
+                continue
+            if dead:
+                try:
+                    self.finish(
+                        row["id"],
+                        row["owner"],
+                        "interrupted",
+                        {
+                            "error": "Execution owner exited before durable completion; external effects may have occurred",
+                            "recovery": "owner_exited",
+                            "automatic_retry": False,
+                        },
+                    )
+                except ValueError:
+                    # A concurrent recovery or final outcome may have committed.
+                    continue
+                recovered += 1
+        return recovered
 
     def pending(self, session: str) -> list[dict[str, Any]]:
         with self._transaction() as db:
