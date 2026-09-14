@@ -36,6 +36,19 @@ qualification backlog in TODO.md. Upstream reference: `5eb99eb284`.
 
 ## Progress
 
+### Event script policy regression
+
+A signed HTTP webhook now has a regression through durable admission, the actual
+scheduler and a Python subprocess attempting an active ledger update. It reproduced
+a missing policy bridge: pre-check and script-only subprocesses inherited a
+permissive shell policy. The shared script runner now forces `proposal_only`.
+The test verifies refusal, a durable failed receipt, no repeat execution on
+redelivery, unchanged snapshot count and preserved scheduled cadence. A second
+case uses the real agent loop and forecast tool with controlled SDK replies:
+evidence persists, an attempted update becomes a durable pending proposal, and
+redelivery performs no further model calls. The original probability remains
+unchanged. Route-edit replay and the remaining event recovery cases are still open.
+
 Implementation branch: `feat/research-runtime-capabilities`. No capability is
 complete until its wiring and boundary tests demonstrate the acceptance above.
 

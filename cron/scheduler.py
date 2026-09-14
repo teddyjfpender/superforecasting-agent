@@ -951,6 +951,10 @@ def _run_job_script(
 
     run_env = os.environ.copy()
     run_env["HERMES_HOME"] = str(_get_agent_home())
+    # Pre-checks and script-only jobs run without AIAgent's runtime policy.
+    # Apply the same unattended commit restriction at their subprocess boundary,
+    # overriding any permissive policy inherited from the launching shell.
+    run_env["FORECAST_COMMIT_POLICY"] = "proposal_only"
     if str(model or "").strip():
         set_env_aliases(run_env, INFERENCE_MODEL_ENV_NAMES, model)
     if str(provider or "").strip():

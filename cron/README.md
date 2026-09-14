@@ -50,3 +50,8 @@ counter. `storage_home()` binds job files and outputs without global path mutati
 Trigger receipts live in the profile's `research-job-triggers.db`; a confirmed dead
 execution owner becomes interrupted and is never automatically rerun. Operators
 must inspect possible external effects before starting a new trigger.
+
+All scheduler-launched scripts, including pre-checks and script-only jobs, inherit
+`FORECAST_COMMIT_POLICY=proposal_only`. The shared runner overrides a permissive
+launch-shell value so ledger APIs refuse unattended probability commits, just as
+they do for scheduled agents. This policy is not a sandbox for arbitrary scripts.
