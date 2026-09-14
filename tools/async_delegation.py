@@ -542,7 +542,7 @@ def interrupt_delegation(delegation_id: str, session_key: str) -> bool:
     with _records_lock:
         record = _records.get(delegation_id)
         if (record is None or record.get("session_key") != session_key
-                or record["_journal"].path.parent != get_agent_home()):
+                or record["_journal"].path.parent.resolve() != get_agent_home().resolve()):
             return False
         callback = record.get("interrupt_fn")
     if not callable(callback):
@@ -557,18 +557,26 @@ def interrupt_all(reason: str = "shutdown", *, session_key: str | None = None) -
     Used on ``/stop`` and gateway shutdown so a dangling background subagent
     can't keep burning tokens with no one listening. The child still emits a
     completion event (status='interrupted') via the normal finalize path.
+    A session key is scoped to the active profile (including an empty key);
+    only None requests process-wide shutdown. Callbacks retain worker context.
     """
+    from superforecasting_agent.constants import get_agent_home
+
+    profile_home = get_agent_home().resolve()
     count = 0
     with _records_lock:
         targets = [
             r for r in _records.values() if (r.get("status") in {"running", "cleanup_pending"} or r.get("_cleanup_pending", False))
-            and (session_key is None or r.get("session_key") == session_key)
+            and (session_key is None or (
+                r.get("session_key") == session_key
+                and r["_journal"].path.parent.resolve() == profile_home
+            ))
         ]
     for r in targets:
         fn = r.get("interrupt_fn")
         if callable(fn):
             try:
-                fn()
+                r["_worker_context"].copy().run(fn)
                 count += 1
             except Exception as exc:
                 logger.debug(

@@ -36,6 +36,15 @@ qualification backlog in TODO.md. Upstream reference: `5eb99eb284`.
 
 ## Progress
 
+### Bulk background cancellation ownership
+
+Regression tests reproduced session-key collisions cancelling work across profiles
+and callbacks executing in the caller's context. Bulk session interruption now
+filters by canonical profile path as well as session, while explicit process-wide
+shutdown retains all-profile scope. Both use each worker's captured context and
+leave completion status to the worker's durable finalization. The focused async
+delegation and TUI command suites passed 32 tests.
+
 ### Windows kernel descendant ownership
 
 The standalone runner now creates an unnamed, non-inheritable Windows Job Object

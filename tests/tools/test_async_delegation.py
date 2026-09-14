@@ -206,6 +206,43 @@ def test_interrupt_all_signals_running_children():
     assert evt["status"] == "interrupted"
 
 
+@pytest.mark.parametrize("global_shutdown", [False, True])
+def test_bulk_interrupt_respects_profile_and_runs_in_each_workers_context(tmp_path, monkeypatch, global_shutdown):
+    from contextvars import ContextVar, copy_context
+
+    from superforecasting_agent.constants import (
+        get_agent_home, set_agent_home_override, reset_agent_home_override,
+    )
+    from superforecasting_agent.storage.background_research import BackgroundResearchJournal
+
+    tenant = ContextVar("interrupt-owner", default="caller")
+    observed = []
+    records = {}
+    for name in ("first", "second"):
+        home_token = set_agent_home_override(tmp_path / name)
+        tenant_token = tenant.set(name)
+        try:
+            records[name] = {
+                "delegation_id": name, "session_key": "same-session", "status": "running",
+                "_journal": BackgroundResearchJournal(get_agent_home()),
+                "_worker_context": copy_context(),
+                "interrupt_fn": lambda: observed.append((get_agent_home(), tenant.get())),
+            }
+        finally:
+            tenant.reset(tenant_token)
+            reset_agent_home_override(home_token)
+    monkeypatch.setattr(ad, "_records", records)
+    caller_home = set_agent_home_override(tmp_path / "first")
+    try:
+        assert ad.interrupt_all(session_key=None if global_shutdown else "same-session") == (2 if global_shutdown else 1)
+        names = ("first", "second") if global_shutdown else ("first",)
+        assert observed == [(tmp_path / name, name) for name in names]
+        assert tenant.get() == "caller"
+        assert all(record["status"] == "running" for record in records.values())
+    finally:
+        reset_agent_home_override(caller_home)
+
+
 def test_completed_records_pruned_to_cap():
     # Run more than the retention cap quickly; ensure list doesn't grow forever.
     for i in range(ad._MAX_RETAINED_COMPLETED + 10):

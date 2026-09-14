@@ -37,6 +37,14 @@ when its request was constructed. If another authorization or refresh replaces
 that record, the late response is refused and the next flow reloads credentials.
 Non-rotating refresh responses retain the original refresh token and scope.
 
+## Background cancellation ownership
+
+Background delegation cancellation belongs to both the profile and session.
+`interrupt_all(session_key=...)` cannot stop a matching session in another
+profile; `session_key=None` is reserved for process-wide shutdown. Both forms
+invoke callbacks in the captured worker context. Sending a cancellation signal
+does not itself mark durable work completed or interrupted.
+
 ## Working in this directory
 
 Run checks from the repository root:
