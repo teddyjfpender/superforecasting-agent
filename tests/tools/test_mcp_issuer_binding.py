@@ -170,6 +170,41 @@ def test_storage_keeps_its_original_profile(tmp_path, monkeypatch):
     assert not (tmp_path / "two" / "mcp-tokens" / "test.json").exists()
 
 
+@pytest.mark.parametrize("reuse_refresh", [False, True])
+def test_late_refresh_response_cannot_overwrite_new_authorization(tmp_path, monkeypatch, reuse_refresh):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+
+    async def scenario():
+        initial = AgentTokenStorage("test")
+        await seed(initial)
+        stale_storage = AgentTokenStorage("test")
+        stale = provider(stale_storage)
+        await stale._initialize()
+        await stale._refresh_token()
+        replacement = AgentTokenStorage("test")
+        replacement.bind_authorization_server(
+            "https://new.example/", "https://new.example/token"
+        )
+        await replacement.set_tokens(OAuthToken(
+            access_token="new-authorization", token_type="Bearer",
+            refresh_token="refresh" if reuse_refresh else "replacement",
+        ))
+        expected = replacement._tokens_path().read_bytes()
+        # Even a reload of the storage object must not change the request's
+        # original compare-and-swap identity.
+        await stale_storage.get_tokens()
+        response = httpx.Response(200, json={
+            "access_token": "late-access", "refresh_token": "late-refresh",
+            "token_type": "Bearer", "expires_in": 3600,
+        })
+        with pytest.raises(OAuthTokenError, match="superseded"):
+            await stale._handle_refresh_response(response)
+        assert replacement._tokens_path().read_bytes() == expected
+        assert stale.context.current_tokens is None
+
+    asyncio.run(scenario())
+
+
 def test_compatibility_builder_uses_issuer_enforcing_provider(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     p = build_oauth_auth("compat", "https://resource.example/mcp")

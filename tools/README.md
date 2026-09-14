@@ -27,6 +27,16 @@ These are entry points and representative modules, not an exhaustive inventory.
 - [environments/](environments/README.md) — Execution environments.
 - [forecast_actions/](forecast_actions/README.md) — Forecast tool actions.
 
+## MCP authorization ownership
+
+`mcp_oauth.py` owns profile-bound credential storage; `mcp_oauth_manager.py`
+owns the SDK provider and refresh flow. Refresh grants are bound to both issuer
+and token endpoint. Legacy or changed bindings require reauthorization.
+A refresh response may replace only the exact stored credential record captured
+when its request was constructed. If another authorization or refresh replaces
+that record, the late response is refused and the next flow reloads credentials.
+Non-rotating refresh responses retain the original refresh token and scope.
+
 ## Working in this directory
 
 Run checks from the repository root:

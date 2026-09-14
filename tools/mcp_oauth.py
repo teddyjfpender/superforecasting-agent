@@ -290,6 +290,19 @@ class AgentTokenStorage:
             return None
 
     async def set_tokens(self, tokens: "OAuthToken") -> None:
+        self._persist_tokens(tokens)
+
+    def save_refreshed_tokens(
+        self, tokens: "OAuthToken", expected_record: dict | None
+    ) -> bool:
+        """Replace only the credential record that authorized this refresh."""
+        if expected_record is None:
+            return False
+        return self._persist_tokens(tokens, expected_record=expected_record)
+
+    def _persist_tokens(
+        self, tokens: "OAuthToken", *, expected_record: dict | None = None
+    ) -> bool:
         payload = tokens.model_dump(mode="json", exclude_none=True)
         # Persist an absolute ``expires_at`` so a process restart can
         # reconstruct the correct remaining TTL. Without this the MCP SDK's
@@ -307,6 +320,9 @@ class AgentTokenStorage:
                 # rather than fail persistence.
                 pass
         issuer, endpoint = self._bound_binding
+        if expected_record is not None:
+            issuer = expected_record.get("authorization_issuer")
+            endpoint = expected_record.get("authorization_token_endpoint")
         if issuer and endpoint:
             payload["authorization_issuer"] = issuer
             payload["authorization_token_endpoint"] = endpoint
@@ -318,10 +334,17 @@ class AgentTokenStorage:
             10,
             "MCP token lock timed out",
         ):
+            if (
+                expected_record is not None
+                and _read_json(self._tokens_path()) != expected_record
+            ):
+                return False
             _write_json(self._tokens_path(), payload)
-        self.loaded_binding = self._bound_binding
+        self.loaded_binding = (issuer, endpoint)
+        self._bound_binding = self.loaded_binding
         self._loaded_record = dict(payload)
         logger.debug("OAuth tokens saved for %s", self._server_name)
+        return True
 
     def bind_authorization_server(
         self, issuer: str | None, endpoint: str | None

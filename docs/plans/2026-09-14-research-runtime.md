@@ -36,6 +36,17 @@ qualification backlog in TODO.md. Upstream reference: `5eb99eb284`.
 
 ## Progress
 
+### Refresh response ownership
+
+The late-response regression reproduced an older refresh overwriting a newer
+authorization. The provider now captures the full credential record at request
+construction; storage compares it under the token-file lock before accepting a
+refresh response. Superseded responses clear stale runtime credentials and force
+reload without replacing disk state. Tests cover reused refresh-token strings,
+changed issuers and storage reload during the request. All 88 OAuth-focused tests
+passed. This closes stale response persistence, not the remaining controlled-HTTP
+acceptance exercise.
+
 ### Webhook destination binding
 
 Signed HTTP tests reproduced duplicate admission after route job/profile changes.
