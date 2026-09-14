@@ -660,3 +660,37 @@ async def test_background_event_keeps_journal_identity_separate_from_reply_ancho
     assert received.background_notification == event
     assert received.message_id == '777'
     assert received.background_notification is not event
+
+
+@pytest.mark.asyncio
+async def test_idle_recovery_uses_durable_results_and_preserves_unroutable_work(monkeypatch, tmp_path):
+    from unittest.mock import Mock
+    from superforecasting_agent.constants import get_agent_home
+    from superforecasting_agent.storage.background_research import BackgroundResearchJournal
+
+    journal = BackgroundResearchJournal(get_agent_home())
+    for key in ('known', 'unknown'):
+        task = journal.admit([{'goal': 'Review evidence'}], session=key, owner='worker')[0]
+        journal.start(task, 'worker')
+        journal.finish(task, 'worker', 'completed', {'summary': 'Saved finding'})
+    runner = GatewayRunner.__new__(GatewayRunner)
+    runner.session_store = SimpleNamespace(list_sessions=lambda: [SimpleNamespace(session_key='known')])
+    runner._running = True
+    runner._draining = False
+    runner._running_agents = {}
+    runner._inject_watch_notification = AsyncMock()
+    await runner._recover_background_notifications()
+    runner._inject_watch_notification.assert_awaited_once()
+    text, event = runner._inject_watch_notification.await_args.args
+    assert event['session_key'] == 'known'
+    assert 'Saved finding' in text
+    # Adapter admission is not a durable acknowledgement.
+    assert journal.pending('known') and journal.pending('unknown')
+    runner._running_agents['known'] = Mock()
+    await runner._recover_background_notifications()
+    assert runner._inject_watch_notification.await_count == 1
+    runner._running_agents.clear()
+    journal.acknowledge(event['journal_event_id'], 'known')
+    await runner._recover_background_notifications()
+    assert runner._inject_watch_notification.await_count == 1
+    assert journal.pending_sessions() == ['unknown']

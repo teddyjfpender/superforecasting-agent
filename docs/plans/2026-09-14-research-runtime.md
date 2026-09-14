@@ -385,3 +385,16 @@ checks plus adjacent routing/race tests passed (72 total); strict checks and 76
 architecture contracts passed. This does not yet prove the full handler under
 injected persistence/ack failures. Idle messaging recovery, queued-adapter crash
 boundaries, session/profile context and end-to-end delivery remain required.
+
+Idle messaging recovery checkpoint: the gateway owns a cancellable recovery task
+that reads journal sessions requiring reconciliation/delivery and dispatches one
+saved result per known idle session. Unknown/busy sessions retain their durable
+records. Startup avoids replacing a live watcher; shutdown cancels/awaits the exact
+owned task. Adapter busy handling leaves journal events pending instead of merging
+them with user text or interrupting active work. Recovery tests run without queue
+hints and verify acknowledgement remains downstream of adapter dispatch; the real
+base-adapter test preserves pending user text and its interrupt flag. Focused
+storage/recovery/adapter set: 48 passed (earlier adjacent set: 62 passed). Strict
+checks and 76 architecture contracts passed. Full push gate follows. Remaining
+acceptance includes complete gateway failure injection, interrupted receiving UX,
+profile multiplexing and event-triggered job implementation.

@@ -221,6 +221,17 @@ class BackgroundResearchJournal:
                 )
             ]
 
+    def pending_sessions(self) -> list[str]:
+        """Sessions needing worker reconciliation or durable event delivery."""
+        with self._transaction() as db:
+            return [
+                row[0]
+                for row in db.execute(
+                    "SELECT session FROM tasks WHERE state IN ('accepted','running') "
+                    "UNION SELECT session FROM events WHERE acknowledged IS NULL ORDER BY session"
+                )
+            ]
+
     def recover(self, session: str) -> int:
         """Mark only positively dead local owners interrupted; never rerun work.
 

@@ -1647,6 +1647,7 @@ class GatewayRunner:
             _run_store_path = None
         self._execution_store = ExecutionStore(_run_store_path)
         self._running = False
+        self._background_recovery_task = None
         self._gateway_loop: Optional[asyncio.AbstractEventLoop] = None
         self._shutdown_event = asyncio.Event()
         self._exit_cleanly = False
@@ -4949,10 +4950,50 @@ class GatewayRunner:
         # destination platform's home channel, then forges a synthetic user
         # turn so the agent kicks off the new chat.
         asyncio.create_task(self._handoff_watcher())
+        if self._background_recovery_task is None or self._background_recovery_task.done():
+            self._background_recovery_task = asyncio.create_task(self._background_recovery_watcher())
 
         logger.info("Press Ctrl+C to stop")
         
         return True
+
+    async def _recover_background_notifications(self) -> None:
+        """Recover saved research for known messaging sessions without queue hints."""
+        from superforecasting_agent.constants import get_agent_home
+        from superforecasting_agent.storage.background_research import BackgroundResearchJournal
+        from tools.async_delegation import pending_notifications
+
+        home = get_agent_home()
+        if not (home / "background-research.db").exists():
+            return
+        keys = {entry.session_key for entry in self.session_store.list_sessions()}
+        def collect():
+            journal = BackgroundResearchJournal(home)
+            events = []
+            for key in journal.pending_sessions():
+                if key in keys:
+                    pending = pending_notifications(key, journal=journal)
+                    if pending:
+                        events.append(pending[0])
+            return events
+        events = await asyncio.to_thread(collect)
+        for event in events:
+            if not self._running or self._draining:
+                return
+            key = event["session_key"]
+            if key in self._running_agents:
+                continue
+            text = _format_gateway_process_notification(event)
+            if text:
+                await self._inject_watch_notification(text, event)
+
+    async def _background_recovery_watcher(self) -> None:
+        while self._running:
+            try:
+                await self._recover_background_notifications()
+            except Exception:
+                logger.exception("Background research recovery unavailable")
+            await asyncio.sleep(2.0)
 
     async def _handoff_watcher(self, interval: float = 2.0) -> None:
         """Background task that processes pending CLI→gateway session handoffs.
@@ -6469,6 +6510,15 @@ class GatewayRunner:
 
             self._running = False
             self._draining = True
+            recovery_task = getattr(self, "_background_recovery_task", None)
+            if recovery_task is not None:
+                recovery_task.cancel()
+                try:
+                    await recovery_task
+                except asyncio.CancelledError:
+                    pass
+                if self._background_recovery_task is recovery_task:
+                    self._background_recovery_task = None
 
             # Notify all chats with active agents BEFORE draining.
             # Adapters are still connected here, so messages can be sent.
