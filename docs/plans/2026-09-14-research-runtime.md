@@ -89,3 +89,11 @@ remains pending.
 
 The earlier MCP/reference/discovery milestone passed the canonical full suite:
 32,222 passed, 147 skipped, in 525.88 seconds, and was pushed at `80a951a393`.
+
+The first context full-suite gate found three adapter compatibility failures
+(32,244 passed, 147 skipped). All three came from assigning optional context
+history to agent doubles that deliberately prohibit new attributes. Startup now
+adopts history only for agents exposing that field. The focused fix set passed
+109 tests. Result references were also tightened to require an inline original;
+a saved-output marker alone cannot prove that its bytes remain available.
+Context publication remains pending a clean full-suite run.

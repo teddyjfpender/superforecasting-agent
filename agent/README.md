@@ -94,3 +94,7 @@ The default checks exact retention against uncompacted and lossy-summary
 controls. Adding `--provider NAME --model MODEL` makes provider calls to measure
 answer recall too. Reports identify the fixture and implementation hashes. One
 synthetic fixture is a regression aid, not evidence of improved forecasting.
+
+Repeated-result compaction requires the full original bytes inline. A saved-output
+pointer alone is insufficient proof: the next observation is emitted in full and
+can be persisted again through the normal output-storage path.

@@ -56,13 +56,7 @@ class ResultReferences:
             and digest == self.digest
             and isinstance(content, str)
             and _MARKER not in content
-            and (
-                result in content
-                or (
-                    "<persisted-output>" in content
-                    and "Full output saved to:" in content
-                )
-            )
+            and result in content
             and "Full output could not be saved" not in content
         ):
             return (

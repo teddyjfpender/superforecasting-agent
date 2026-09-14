@@ -40,3 +40,12 @@ def test_intervening_call_resets_chain():
     history = [{"role": "tool", "tool_call_id": "a", "content": raw}]
     tracker.compact("other", {}, "small", "b", history, failed=False)
     assert tracker.compact("read", {}, raw, "c", history, failed=False) == raw
+
+
+def test_persisted_marker_does_not_prove_original_bytes_are_available():
+    tracker = ResultReferences()
+    raw = "original evidence " * 100
+    tracker.compact("read", {}, raw, "a", [], failed=False)
+    history = [{"role": "tool", "tool_call_id": "a", "content":
+                "<persisted-output>\nFull output saved to: /unrelated/other.txt\n</persisted-output>"}]
+    assert tracker.compact("read", {}, raw, "b", history, failed=False) == raw

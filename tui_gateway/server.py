@@ -985,7 +985,8 @@ def _wait_agent(session: dict, rid: str, timeout: float = 30.0) -> dict | None:
 
 def _initialize_built_agent(sid: str, session: dict, agent) -> None:
     key = session["session_key"]
-    agent._session_messages = list(session.get("history", []))
+    if hasattr(agent, "_session_messages"):
+        agent._session_messages = list(session.get("history", []))
     try:
         from tools.approval import register_gateway_notify, load_permanent_allowlist
 
@@ -2286,7 +2287,8 @@ def _make_agent(sid: str, key: str, session_id: str | None = None):
     )
 
 def _init_session(sid: str, key: str, agent, history: list, cols: int = 80, *, pending_handoff: bool = False):
-    agent._session_messages = list(history)
+    if hasattr(agent, "_session_messages"):
+        agent._session_messages = list(history)
     _host.sessions.register(sid, {
         "agent": agent,
         "session_key": key,
