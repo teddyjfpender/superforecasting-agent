@@ -442,8 +442,10 @@ class WebhookAdapter(BasePlatformAdapter):
                 if not job.get("enabled", True) or job.get("state") == "paused":
                     return web.json_response({"error": "Job is disabled"}, status=409)
                 trigger = "webhook:" + hashlib.sha256((route_name + "\0" + delivery_id).encode()).hexdigest()
+                digest = hashlib.sha256(raw_body).hexdigest()
+                JobTriggerJournal(self._job_home).bind_webhook(job_id, trigger, digest, home)
                 journal = JobTriggerJournal(home)
-                identity = journal.admit(job, trigger, hashlib.sha256(raw_body).hexdigest())
+                identity = journal.admit(job, trigger, digest)
                 receipt = journal.get(identity)
             except ValueError as exc:
                 return web.json_response({"error": str(exc)}, status=409)

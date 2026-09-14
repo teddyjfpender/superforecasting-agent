@@ -7,6 +7,42 @@ import pytest
 from superforecasting_agent.storage.research_jobs import JobTriggerJournal
 
 
+def test_concurrent_delivery_binding_has_one_destination_and_survives_restart(tmp_path):
+    journal = JobTriggerJournal(tmp_path)
+
+    def bind(name):
+        try:
+            journal.bind_webhook(name, 'webhook:event', 'a' * 64, tmp_path / name)
+            return name
+        except ValueError:
+            return None
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        winners = [name for name in pool.map(bind, ('first', 'second')) if name]
+    assert len(winners) == 1
+    winner = winners[0]
+    reopened = JobTriggerJournal(tmp_path)
+    reopened.bind_webhook(winner, 'webhook:event', 'a' * 64, tmp_path / winner)
+    with pytest.raises(ValueError, match='already bound'):
+        reopened.bind_webhook(winner, 'webhook:event', 'b' * 64, tmp_path / winner)
+    assert reopened.pending() == []  # Reservation alone never starts execution.
+
+
+def test_legacy_local_receipt_cannot_be_rebound_after_schema_upgrade(tmp_path):
+    import sqlite3
+
+    journal = JobTriggerJournal(tmp_path)
+    identity = journal.admit({'id': 'original'}, 'webhook:event', 'a' * 64)
+    with closing(sqlite3.connect(journal.path)) as db, db:
+        db.execute('DROP TABLE webhook_bindings')
+        db.execute('PRAGMA user_version=2')
+    reopened = JobTriggerJournal(tmp_path)
+    with pytest.raises(ValueError, match='existing local job receipt'):
+        reopened.bind_webhook('replacement', 'webhook:event', 'a' * 64, tmp_path)
+    reopened.bind_webhook('original', 'webhook:event', 'a' * 64, tmp_path)
+    assert reopened.get(identity)['state'] == 'accepted'
+
+
 def test_frozen_trigger_reopen_and_conflicting_redelivery(tmp_path):
     journal = JobTriggerJournal(tmp_path)
     identity = journal.admit({'id': 'job', 'prompt': 'Original'}, 'webhook:route:delivery', 'a' * 64)

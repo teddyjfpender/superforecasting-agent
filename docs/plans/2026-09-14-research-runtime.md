@@ -36,6 +36,26 @@ qualification backlog in TODO.md. Upstream reference: `5eb99eb284`.
 
 ## Progress
 
+### Webhook destination binding
+
+Signed HTTP tests reproduced duplicate admission after route job/profile changes.
+Journal schema v3 adds an ingress-owned delivery binding before target admission.
+Conflicting destinations or bodies fail closed across adapter restarts; a failed
+target write retains the binding and permits retry only to the original target.
+Concurrency and v2 local-receipt migration tests cover ownership and preservation.
+Historical cross-profile receipts without ingress bindings cannot reconstruct
+their original receiving route from the old schema and remain a migration audit
+item. The focused scheduler, webhook and journal suites passed 412 tests.
+
+### Queued event availability
+
+Regression tests reproduced queued triggers executing after their job was
+disabled, paused or deleted. Shared event execution now checks the current job
+after claiming the trigger and before running it. Rejection records a terminal
+receipt with `execution_started: false`, preserves current job settings and
+does not retry the delivery. Live job edits still leave admitted inputs frozen.
+This is an execution-boundary check, not cancellation of already-running work.
+
 ### Event script policy regression
 
 A signed HTTP webhook now has a regression through durable admission, the actual

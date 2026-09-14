@@ -388,7 +388,73 @@ async def test_job_route_reads_and_admits_only_its_explicit_profile(monkeypatch,
         assert response.status == 202
         identity = (await response.json())['trigger_id']
     assert JobTriggerJournal(target).get(identity)['specification']['prompt'] == 'Target research'
-    assert not (get_agent_home() / 'research-job-triggers.db').exists()
+    # The ingress profile keeps only the immutable delivery binding; execution
+    # remains owned by the requested target profile.
+    assert not JobTriggerJournal(get_agent_home()).pending()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('change', ['job', 'profile'])
+async def test_replayed_delivery_cannot_follow_edited_route_after_restart(monkeypatch, tmp_path, change):
+    from cron import jobs
+    from superforecasting_agent.constants import get_agent_home
+    from superforecasting_agent import profile_paths
+    from superforecasting_agent.storage.research_jobs import JobTriggerJournal
+
+    home = get_agent_home()
+    other = tmp_path / 'other'
+    for target in (home, other):
+        with jobs.storage_home(target):
+            jobs.save_jobs([{'id': name, 'prompt': name, 'enabled': True}
+                            for name in ('original', 'replacement')])
+    monkeypatch.setattr(profile_paths, 'resolve_profile_env', lambda name: str(other))
+    route = {'secret': 'fixture-secret', 'cron_job': 'original'}
+    body = b'{"event_type":"published"}'
+    headers = {'X-Hub-Signature-256': _github_signature(body, 'fixture-secret'),
+               'X-Request-ID': 'same-delivery'}
+    adapter = _make_adapter({'source': route})
+    async with TestClient(TestServer(_create_app(adapter))) as client:
+        response = await client.post('/webhooks/source', data=body, headers=headers)
+        assert response.status == 202
+        identity = (await response.json())['trigger_id']
+    changed = {**route, **({'cron_job': 'replacement'} if change == 'job' else {'profile': 'other'})}
+    restarted = _make_adapter({'source': changed})
+    async with TestClient(TestServer(_create_app(restarted))) as client:
+        replay = await client.post('/webhooks/source', data=body, headers=headers)
+        assert replay.status == 409
+    assert [row['id'] for row in JobTriggerJournal(home).pending()] == [identity]
+    assert not JobTriggerJournal(other).pending()
+
+
+@pytest.mark.asyncio
+async def test_failed_target_admission_retries_only_original_binding(monkeypatch):
+    from cron import jobs
+    from superforecasting_agent.constants import get_agent_home
+    from superforecasting_agent.storage.research_jobs import JobTriggerJournal
+
+    home = get_agent_home()
+    with jobs.storage_home(home):
+        jobs.save_jobs([{'id': name, 'prompt': name} for name in ('original', 'replacement')])
+    original_admit = JobTriggerJournal.admit
+    calls = []
+    def interrupted_admit(self, *args):
+        calls.append(args)
+        if len(calls) == 1:
+            raise OSError('Injected target write failure')
+        return original_admit(self, *args)
+    monkeypatch.setattr(JobTriggerJournal, 'admit', interrupted_admit)
+    body = b'{}'
+    headers = {'X-Hub-Signature-256': _github_signature(body, 'fixture-secret'),
+               'X-Request-ID': 'retry'}
+    for name, expected in [('original', 503), ('replacement', 409), ('original', 202)]:
+        adapter = _make_adapter({'source': {'secret': 'fixture-secret', 'cron_job': name}})
+        async with TestClient(TestServer(_create_app(adapter))) as client:
+            response = await client.post('/webhooks/source', data=body, headers=headers)
+            assert response.status == expected
+    pending = JobTriggerJournal(home).pending()
+    assert len(pending) == 1
+    assert pending[0]['job_id'] == 'original'
+    assert len(calls) == 2
 
 
 @pytest.mark.asyncio

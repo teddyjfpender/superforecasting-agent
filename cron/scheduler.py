@@ -1889,6 +1889,28 @@ def process_job(job: dict, *, verbose: bool = True, adapters=None, loop=None,
     if owner is None:
         return False
     job = journal.get(identity)["specification"]
+    if trigger_key.startswith("webhook:"):
+        from cron.jobs import get_job, storage_home
+
+        # A durable admission freezes inputs, not permission to run forever.
+        # Recheck availability after acquiring the execution claim. Do not mark
+        # or recreate the current job when an operator has revoked queued work.
+        blocked = None
+        try:
+            with storage_home(get_agent_home()):
+                current_job = get_job(job["id"])
+            if current_job is None:
+                blocked = "Job was deleted before event execution"
+            elif not current_job.get("enabled", True) or current_job.get("state") == "paused":
+                blocked = "Job was disabled or paused before event execution"
+        except Exception as exc:
+            logger.exception("Cannot verify event job %s before execution", job["id"])
+            blocked = f"Cannot verify current job availability: {type(exc).__name__}"
+        if blocked:
+            journal.finish(identity, owner, "failed", {
+                "error": blocked, "execution_started": False, "automatic_retry": False,
+            })
+            return False
     mark_attempted = False
     try:
         success, output, final_response, error = run_job(job)

@@ -25,7 +25,7 @@ class JobTriggerJournal:
         with closing(sqlite3.connect(self.path)) as db:
             apply_wal_with_fallback(db, db_label=str(self.path))
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2):
+            if version not in (0, 1, 2, 3):
                 raise ValueError("Unsupported job trigger journal version")
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS triggers (
@@ -36,6 +36,10 @@ class JobTriggerJournal:
                     UNIQUE(job_id, trigger_key)
                 );
                 CREATE UNIQUE INDEX IF NOT EXISTS one_running_job ON triggers(job_id) WHERE state='running';
+                CREATE TABLE IF NOT EXISTS webhook_bindings (
+                    trigger_key TEXT PRIMARY KEY, job_id TEXT NOT NULL,
+                    target_home TEXT NOT NULL, input_digest TEXT NOT NULL
+                );
             """)
             with db:
                 db.execute("BEGIN IMMEDIATE")
@@ -47,10 +51,10 @@ class JobTriggerJournal:
                 ):
                     if column not in columns:
                         db.execute(f"ALTER TABLE triggers ADD COLUMN {column} {kind}")
-                db.execute("PRAGMA user_version=2")
+                db.execute("PRAGMA user_version=3")
 
-    def admit(self, job: dict[str, Any], trigger_key: str, input_digest: str) -> str:
-        job_id = job.get("id")
+    @staticmethod
+    def _validate_identity(job_id: object, trigger_key: str, input_digest: str) -> None:
         if (
             not isinstance(job_id, str)
             or not 1 <= len(job_id) <= 256
@@ -63,6 +67,48 @@ class JobTriggerJournal:
             raise ValueError(
                 "Bounded job/trigger identities and a SHA-256 input digest are required"
             )
+
+    def bind_webhook(
+        self, job_id: str, trigger_key: str, input_digest: str, target_home: Path
+    ) -> None:
+        """Pin a delivery's destination at its ingress profile before admission.
+
+        A failed target admission leaves the binding intact. Retries may finish
+        that admission, but a route edit cannot redirect the same delivery.
+        """
+        self._validate_identity(job_id, trigger_key, input_digest)
+        target = str(target_home.resolve())
+        expected = (job_id, target, input_digest)
+        with closing(sqlite3.connect(self.path)) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            # Preserve local receipts written before ingress bindings existed.
+            legacy = db.execute(
+                "SELECT job_id,input_digest FROM triggers WHERE trigger_key=?",
+                (trigger_key,),
+            ).fetchall()
+            if legacy and (
+                target != str(self.path.parent.resolve())
+                or any(row != (job_id, input_digest) for row in legacy)
+            ):
+                raise ValueError(
+                    "Delivery conflicts with an existing local job receipt"
+                )
+            db.execute(
+                "INSERT OR IGNORE INTO webhook_bindings VALUES (?,?,?,?)",
+                (trigger_key, *expected),
+            )
+            bound = db.execute(
+                "SELECT job_id,target_home,input_digest FROM webhook_bindings WHERE trigger_key=?",
+                (trigger_key,),
+            ).fetchone()
+            if bound != expected:
+                raise ValueError(
+                    "Delivery is already bound to different job, profile or input"
+                )
+
+    def admit(self, job: dict[str, Any], trigger_key: str, input_digest: str) -> str:
+        job_id = job.get("id")
+        self._validate_identity(job_id, trigger_key, input_digest)
         specification = json.dumps(job, sort_keys=True, allow_nan=False)
         with closing(sqlite3.connect(self.path)) as db, db:
             db.execute("BEGIN IMMEDIATE")
