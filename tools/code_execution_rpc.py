@@ -144,10 +144,11 @@ def _rpc_server_loop(
     rpc_token: str = "",
     stop_event: threading.Event | None = None,
     accept_timeout: float = 5.0,
+    dispatch_override: Callable[[str, dict], str] | None = None,
 ) -> None:
     """Own one accepted connection, with bounded framing and responsive shutdown."""
     stop = stop_event or threading.Event()
-    dispatch = _dispatcher(task_id, forecast_commit_policy)
+    dispatch = dispatch_override or _dispatcher(task_id, forecast_commit_policy)
     conn = None
     try:
         server_sock.settimeout(0.1)

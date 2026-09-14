@@ -291,7 +291,12 @@ def test_cell_must_join_background_processes_before_next_authority(owner):
     )
     assert not result["state_preserved"]
     assert result["retirement_reason"] == "cell_left_running_processes"
-    assert not psutil.pid_exists(int(result["stdout"].strip()))
+    try:
+        status = psutil.Process(int(result["stdout"].strip())).status()
+    except psutil.NoSuchProcess:
+        pass
+    else:
+        assert status in {psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD}
 
 
 def test_changed_working_directory_requires_explicit_reset(

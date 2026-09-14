@@ -166,3 +166,26 @@ New owners pass strict checks. Remote persistence, comprehensive parent-death an
 descendant ownership qualification, complete reproducible input/environment
 records, and the final full-suite/product audit remain outstanding. This is a
 local integration milestone, not completion of the kernel requirement.
+
+The local integration full gate passed: 32,288 passed, 147 skipped, 479.25
+seconds. Commit `77e7668db2` was pushed with that receipt.
+
+### Recorded calculation inputs and replay
+
+Version 2 receipts bind complete retained cell metadata and ordered RPC inputs.
+Input admission is recorded before dispatch; interrupted or missing input writes
+cannot become replay evidence. Records include the actual child interpreter and
+installed-package metadata. An explicit module CLI verifies archives and replays
+trusted Python with frozen tool observations; it never dispatches live tools.
+The report separates output agreement from runtime agreement and preserves source
+receipts. Redacted or truncated original code/data/output fails exact verification.
+Large interactive output is bounded while full retained observations remain
+available for comparison. Direct Python I/O and randomness are explicitly outside
+the frozen RPC input boundary; this is not a universal environment snapshot.
+
+Real subprocess/CLI replay and the combined execution regression set passed 153
+tests, including output-mismatch exit status. New owners pass strict
+checks. Cleanup also stopped using bare-PID fallback probes for reparented child
+exit confirmation; retained process identity and terminal status are authoritative.
+Remote kernels, broader parent-death ownership qualification and final product
+acceptance remain outstanding.

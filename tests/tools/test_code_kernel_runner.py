@@ -23,7 +23,10 @@ def running_kernel():
         encoding="utf-8",
     )
     try:
-        assert json.loads(child.stdout.readline()) == {"ready": True, "version": 1}
+        ready = json.loads(child.stdout.readline())
+        assert ready["ready"] is True and ready["version"] == 1
+        assert ready["runtime"]["python"] == sys.version
+        assert isinstance(ready["runtime"]["packages"], list)
         yield child
     finally:
         with suppress(BrokenPipeError):

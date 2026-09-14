@@ -80,13 +80,39 @@ discard state. Failed cleanup retains exact resource handles and prevents reset
 from replacing them until cleanup completes. Agent shutdown owns final disposal.
 Interpreter variables do not survive agent eviction or application restart.
 
-Calculation receipts live under `<profile>/calculations/<kernel-id>/`. They record
-code, code/result hashes, sequence, interpreter path, working directory, selected
-tools, policy and completion status. Code and displayed output are redacted;
+Calculation receipts live under `<profile>/calculations/<kernel-id>/`. Version 2
+records code, code/result hashes, sequence, interpreter/package metadata, working
+directory, selected tools, policy and completion status. Each admitted RPC call
+gets a sealed input record before dispatch and a bounded response record afterward.
+Code and displayed output are redacted;
 `code_redacted` explicitly identifies receipts that cannot replay the original
 source. A running receipt after host death is unfinished, not proof of completion.
-These records do not freeze external data, installed packages or randomness;
-full deterministic replay and remote persistent kernels remain acceptance work.
+Verify an archive without executing code:
+
+```bash
+python -m tools.code_calculations verify /path/to/kernel-directory
+```
+
+Explicitly replay trusted recorded Python into a new output directory:
+
+```bash
+python -m tools.code_calculations replay /path/to/kernel-directory \
+  --output-directory /path/to/new-replay-directory
+```
+
+Replay validates the complete archive before execution and returns recorded RPC
+observations without live tool dispatch. Missing, redacted, truncated or changed
+inputs/outputs cannot establish exact replay. The report separates full retained
+output agreement from interpreter/package agreement; the TUI preview limit does
+not weaken comparison. Output mismatch exits with status 1. Original records stay
+unchanged. Checksums detect corruption; they do not authenticate a rewritten archive.
+
+Replay executes Python, including direct filesystem/network operations in that
+code. Only explicitly replay locally trusted calculations. Direct Python I/O,
+editable project files and randomness are not frozen by the RPC input archive:
+use recorded tool observations and explicit random seeds for reproducible analysis.
+Legacy version 1 receipts remain readable JSON but lack verifiable replay inputs.
+Remote persistent kernels remain acceptance work.
 Remote backends retain per-call execution and reject session mode explicitly.
 
 Worker output suppression is context-scoped through the agent output owner;

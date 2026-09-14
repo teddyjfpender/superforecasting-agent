@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import importlib.metadata
 import io
 import json
 import os
+import platform
 import queue
 import sys
 import threading
@@ -97,7 +99,19 @@ def main() -> None:
     reader = threading.Thread(target=_read_requests, args=(inbox,), daemon=True)
     reader.start()
     with os.fdopen(protocol_fd, "w", encoding="utf-8") as protocol:
-        protocol.write(json.dumps({"ready": True, "version": 1}) + "\n")
+        runtime = {
+            "python": sys.version,
+            "implementation": sys.implementation.name,
+            "platform": sys.platform,
+            "machine": platform.machine(),
+            "packages": sorted(
+                (distribution.metadata.get("Name", ""), distribution.version)
+                for distribution in importlib.metadata.distributions()
+            ),
+        }
+        protocol.write(
+            json.dumps({"ready": True, "version": 1, "runtime": runtime}) + "\n"
+        )
         protocol.flush()
         while True:
             request = inbox.get()
@@ -119,11 +133,17 @@ def main() -> None:
             with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
                 try:
                     exec(compile(request["code"], "<forecast-cell>", "exec"), namespace)
-                except BaseException:
+                except BaseException as exc:
                     # Python errors (including SystemExit) can leave assignments
                     # behind. Report that honestly; the host decides on reset.
                     error = True
-                    traceback.print_exc()
+                    # The private staging path is not part of the user's
+                    # calculation. Start at its first frame so a replay in a
+                    # new kernel preserves useful, comparable diagnostics.
+                    trace = exc.__traceback__
+                    traceback.print_exception(
+                        type(exc), exc, trace.tb_next if trace else None
+                    )
             sequence += 1
             # A Python thread left behind by a cell must never inherit the
             # next cell's tool authority or capture target. Retire this entire

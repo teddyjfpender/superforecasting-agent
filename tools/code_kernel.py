@@ -18,6 +18,7 @@ import subprocess
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +28,8 @@ from agent.redact import redact_sensitive_text
 from superforecasting_agent.storage.files import atomic_json_write
 from superforecasting_agent.tooling.call_context import CallContext
 from superforecasting_agent.tooling.interrupts import is_interrupted
+from tools import code_execution_rpc
+from tools.code_calculations import InputRecorder, display_output, sealed
 from tools.code_execution_rpc import _rpc_server_loop
 
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
@@ -64,6 +67,8 @@ class LocalKernel:
         self.diagnostics = bytearray()
         self.diagnostic_lock = threading.Lock()
         self.previous = ""
+        self.previous_record = ""
+        self.runtime: dict[str, Any] = {}
         self.sequence = 0
         self.process: subprocess.Popen[bytes] | None = None
         self.children: dict[tuple[int, float], psutil.Process] = {}
@@ -98,8 +103,13 @@ class LocalKernel:
                 self.readers.append(thread)
                 thread.start()
             ready = self._receive(time.monotonic() + 10)
-            if ready != {"ready": True, "version": 1}:
+            if (
+                ready.get("ready") is not True
+                or ready.get("version") != 1
+                or not isinstance(ready.get("runtime"), dict)
+            ):
                 raise RuntimeError("Kernel did not acknowledge protocol version 1")
+            self.runtime = ready["runtime"]
         except BaseException:
             self.cancelled.set()
             self.close()
@@ -157,7 +167,12 @@ class LocalKernel:
             return frame
 
     def run(
-        self, code: str, task_id: str, timeout: float, budget: int
+        self,
+        code: str,
+        task_id: str,
+        timeout: float,
+        budget: int,
+        dispatch_override: Callable[[str, dict], str] | None = None,
     ) -> dict[str, Any]:
         deadline = time.monotonic() + timeout
         while not self.lock.acquire(timeout=0.05):
@@ -166,6 +181,7 @@ class LocalKernel:
             if time.monotonic() >= deadline:
                 raise TimeoutError("Kernel execution deadline exceeded while queued")
         receipt: dict[str, Any] | None = None
+        recorder: InputRecorder | None = None
         context = CallContext()
         try:
             if self.cancelled.is_set():
@@ -175,7 +191,12 @@ class LocalKernel:
             self._finish_rpc()
             call_id = uuid.uuid4().hex
             receipt = {
-                "version": 1,
+                "version": 2,
+                "previous_record_sha256": self.previous_record,
+                "max_tool_calls": budget,
+                "runtime": self.runtime,
+                "runner_sha256": hashlib.sha256(self.runner.read_bytes()).hexdigest(),
+                "environment_keys": sorted(self.environment),
                 "kernel_id": self.id,
                 "cell_id": call_id,
                 "sequence": self.sequence + 1,
@@ -191,7 +212,12 @@ class LocalKernel:
                 "created_at": time.time(),
             }
             # Fail before execution if provenance cannot be made durable.
-            atomic_json_write(self.directory / f"{call_id}.json", receipt)
+            atomic_json_write(self.directory / f"{call_id}.json", sealed(receipt))
+            recorder = InputRecorder(
+                self.directory / f"{call_id}.inputs",
+                dispatch_override
+                or code_execution_rpc._dispatcher(task_id, self.policy),
+            )
             listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             try:
                 listener.bind(("127.0.0.1", 0))
@@ -217,6 +243,7 @@ class LocalKernel:
                         token,
                         context.cancelled,
                         timeout,
+                        recorder,
                     )
                 except InterruptedError:
                     pass
@@ -279,13 +306,24 @@ class LocalKernel:
                 "result_sha256": self.previous,
                 "finished_at": time.time(),
                 "result": result,
+                "result_redacted": result["stdout"] != raw["stdout"]
+                or result["stderr"] != raw["stderr"],
                 "tool_calls": log,
             })
+            receipt.update(recorder.snapshot())
+            receipt = sealed(receipt)
             atomic_json_write(self.directory / f"{call_id}.json", receipt)
+            self.previous_record = receipt["record_sha256"]
             if not result.get("state_preserved"):
                 self.cancelled.set()
+            stdout, stdout_omitted = display_output(result["stdout"], 50_000)
+            stderr, stderr_omitted = display_output(result["stderr"], 10_000)
             return {
                 **receipt["result"],
+                "stdout": stdout,
+                "stderr": stderr,
+                "display_stdout_omitted_bytes": stdout_omitted,
+                "display_stderr_omitted_bytes": stderr_omitted,
                 "kernel_id": self.id,
                 "calculation_record": str(self.directory / f"{call_id}.json"),
                 "tool_calls": log,
@@ -298,8 +336,10 @@ class LocalKernel:
                     error=_redact(str(exc)),
                     finished_at=time.time(),
                 )
+                if recorder is not None:
+                    receipt.update(recorder.snapshot())
                 atomic_json_write(
-                    self.directory / f"{receipt['cell_id']}.json", receipt
+                    self.directory / f"{receipt['cell_id']}.json", sealed(receipt)
                 )
             raise
         finally:
@@ -354,9 +394,28 @@ class LocalKernel:
                 except subprocess.TimeoutExpired:
                     self.process.kill()
                     self.process.wait(timeout=2)
-                _, alive = psutil.wait_procs(list(self.children.values()), timeout=2)
-                if alive:
-                    raise RuntimeError("Kernel child-process cleanup is pending")
+                deadline = time.monotonic() + 2
+                pending = list(self.children.values())
+                while pending:
+                    alive = []
+                    for child in pending:
+                        try:
+                            # A reparented grandchild is not waitpid()-owned by
+                            # this host. Inspect its acquired identity instead
+                            # of falling back to a bare PID existence probe.
+                            if child.is_running() and child.status() not in {
+                                psutil.STATUS_ZOMBIE,
+                                psutil.STATUS_DEAD,
+                            }:
+                                alive.append(child)
+                        except psutil.NoSuchProcess:
+                            pass
+                    if not alive:
+                        break
+                    if time.monotonic() >= deadline:
+                        raise RuntimeError("Kernel child-process cleanup is pending")
+                    pending = alive
+                    time.sleep(0.01)
                 self.children.clear()
             self._finish_rpc()
             for reader in self.readers:
@@ -393,6 +452,8 @@ class KernelOwner:
         timeout: float,
         budget: int,
         reset: bool,
+        *,
+        dispatch_override: Callable[[str, dict], str] | None = None,
     ) -> dict[str, Any]:
         if type(reset) is not bool:
             raise ValueError("reset must be a boolean")
@@ -432,7 +493,7 @@ class KernelOwner:
                 self.key = key
                 self.kernel.start()
             kernel = self.kernel
-        return kernel.run(code, task_id, timeout, budget)
+        return kernel.run(code, task_id, timeout, budget, dispatch_override)
 
     def close(self) -> None:
         with self.lock:
