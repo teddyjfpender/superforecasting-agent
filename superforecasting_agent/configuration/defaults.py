@@ -710,6 +710,15 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "timeout": 60,
             "extra_body": {},
         },
+        # Post-turn memory/skill maintenance; distinct from calibration lessons.
+        "background_review": {
+            "provider": "auto",
+            "model": "",
+            "base_url": "",
+            "max_iterations": 16,
+            "max_tokens": None,
+            "reasoning_effort": "",
+        },
         # Curator — skill-usage review fork. Timeout is generous because the
         # review pass can take several minutes on reasoning models (umbrella
         # building over hundreds of candidate skills). "auto" = use main chat
@@ -726,6 +735,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         },
     },
     "display": {
+        "model_switch_warning_tokens": 100_000,
         "compact": False,
         "personality": "neutral",
         "resume_display": "full",

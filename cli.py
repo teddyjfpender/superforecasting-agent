@@ -4807,6 +4807,11 @@ class ForecastCLI:
             _cprint(f"  ✗ {result.error_message}")
             return
 
+        from superforecasting_agent.application.model_switch_notice import (
+            attach_context_warning,
+        )
+
+        attach_context_warning(result, self.agent)
         old_model = self.model
         self.model = result.new_model
         self.provider = result.target_provider
@@ -4816,8 +4821,8 @@ class ForecastCLI:
         # the new provider's credential resolution on the next turn.
         self._explicit_api_key = result.api_key
         self._explicit_base_url = result.base_url
-        self.api_key = result.api_key or ''
-        self.base_url = result.base_url or ''
+        self.api_key = result.api_key or ""
+        self.base_url = result.base_url or ""
         self.api_mode = result.api_mode
 
         if self.agent is not None:
@@ -4830,7 +4835,9 @@ class ForecastCLI:
                     api_mode=result.api_mode,
                 )
             except Exception as exc:
-                _cprint(f"  ⚠ Agent swap failed ({exc}); change applied to next session.")
+                _cprint(
+                    f"  ⚠ Agent swap failed ({exc}); change applied to next session."
+                )
 
         self._pending_model_switch_note = (
             f"[Note: model was just switched from {old_model} to {result.new_model} "
@@ -4847,14 +4854,21 @@ class ForecastCLI:
         # (e.g. gpt-5.5 is 1.05M on openai but 272K on Codex OAuth).
         mi = result.model_info
         try:
-            from superforecasting_agent.runtime.model_switch import resolve_display_context_length
+            from superforecasting_agent.runtime.model_switch import (
+                resolve_display_context_length,
+            )
+
             ctx = resolve_display_context_length(
                 result.new_model,
                 result.target_provider,
                 base_url=result.base_url or self.base_url or "",
                 api_key=result.api_key or self.api_key or "",
                 model_info=mi,
-                config_context_length=getattr(self.agent, "_config_context_length", None) if self.agent else None,
+                config_context_length=getattr(
+                    self.agent, "_config_context_length", None
+                )
+                if self.agent
+                else None,
             )
             if ctx:
                 _cprint(f"    Context: {ctx:,} tokens")
@@ -4868,23 +4882,37 @@ class ForecastCLI:
             _cprint(f"    Capabilities: {mi.format_capabilities()}")
 
         cache_enabled = (
-            (base_url_host_matches(result.base_url or "", "openrouter.ai") and "claude" in result.new_model.lower())
-            or result.api_mode == "anthropic_messages"
-        )
+            base_url_host_matches(result.base_url or "", "openrouter.ai")
+            and "claude" in result.new_model.lower()
+        ) or result.api_mode == "anthropic_messages"
         if cache_enabled:
             _cprint("    Prompt caching: enabled")
         if result.warning_message:
             _cprint(f"    ⚠ {result.warning_message}")
         if persist_global:
-            from superforecasting_agent.runtime.model_configuration import persist_model_selection
-            user_config_path = _agent_home / 'config.yaml'
-            config_path = user_config_path if user_config_path.exists() else Path(__file__).parent / 'cli-config.yaml'
+            from superforecasting_agent.runtime.model_configuration import (
+                persist_model_selection,
+            )
+
+            user_config_path = _agent_home / "config.yaml"
+            config_path = (
+                user_config_path
+                if user_config_path.exists()
+                else Path(__file__).parent / "cli-config.yaml"
+            )
             try:
-                if persist_model_selection(config_path, model=result.new_model, provider=result.target_provider,
-                        base_url=result.base_url, api_mode=result.api_mode):
+                if persist_model_selection(
+                    config_path,
+                    model=result.new_model,
+                    provider=result.target_provider,
+                    base_url=result.base_url,
+                    api_mode=result.api_mode,
+                ):
                     _cprint("    Saved to config.yaml (--global)")
             except Exception as exc:
-                _cprint(f"    Session switched, but saving failed: {exc}. Check config.yaml and retry --global.")
+                _cprint(
+                    f"    Session switched, but saving failed: {exc}. Check config.yaml and retry --global."
+                )
         else:
             _cprint("    (session only — add --global to persist)")
 

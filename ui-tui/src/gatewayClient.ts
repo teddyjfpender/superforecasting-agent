@@ -9,7 +9,9 @@ import { CircularBuffer } from './lib/circularBuffer.js'
 import { tuiEnvValue } from './lib/envAlias.js'
 import { GatewayRpcError } from './lib/rpc.js'
 import { runtimeEnvValue } from './lib/runtimeEnv.js'
-import { PROTOCOL_VERSION, WireEvent } from './protocol/generated.js'
+import { SERVER_REQUEST_NAMES } from './protocol/generated.js'
+import type { ServerRequestMethods } from './protocol/generated.js'
+import { PROTOCOL_VERSION, type RpcMethod, type RpcMethods, WireEvent } from './protocol/generated.js'
 
 export const REQUIRED_HOST_CAPABILITIES = [
   'forecast.operation',
@@ -367,6 +369,13 @@ export class GatewayClient extends EventEmitter {
 
   private handleTransportExit(code: null | number, reason?: string) {
     this.clearReadyTimer()
+
+    for (const [requestId, pending] of this.serverRequests) {
+      this.emit('prompt.cancelled', { requestId, sessionId: pending.sessionId })
+    }
+
+    this.serverRequests.clear()
+    this.presentedPrompts.clear()
     this.closeSidecarSocket()
 
     const message = reason || `gateway exited${code === null ? '' : ` (${code})`}`
@@ -726,11 +735,162 @@ export class GatewayClient extends EventEmitter {
     return this.restartTimer !== null
   }
 
+  private acceptServerRequest(msg: Record<string, unknown>): boolean {
+    if (
+      typeof msg.id !== 'string' ||
+      typeof msg.method !== 'string' ||
+      !SERVER_REQUEST_NAMES.some(name => name === msg.method)
+    ) {
+      return false
+    }
+
+    if (this.finishedServerRequests.has(msg.id)) {
+      return true
+    }
+
+    const params = msg.params as Record<string, unknown> | undefined
+
+    if (!params || typeof params.session_id !== 'string') {
+      return false
+    }
+
+    const ws = this.ws
+    const proc = this.proc
+
+    const send = (frame: unknown) => {
+      const text = JSON.stringify(frame)
+
+      if (ws) {
+        if (this.ws !== ws || ws.readyState !== WS_OPEN) {
+          throw new Error('Prompt connection changed; reconnect to restore it')
+        }
+
+        ws.send(text)
+      } else {
+        if (this.proc !== proc || !proc?.stdin || proc.killed || proc.exitCode !== null) {
+          throw new Error('Prompt backend disconnected')
+        }
+
+        proc.stdin.write(text + '\n')
+      }
+    }
+
+    this.serverRequests.set(msg.id, { method: msg.method, sessionId: params.session_id, frame: msg, send })
+    this.replayPrompts(params.session_id, false)
+
+    return true
+  }
+
+  replayPrompts(sessionId: string, force = true) {
+    const entry = [...this.serverRequests.entries()].find(([, value]) => value.sessionId === sessionId)
+
+    if (!entry) {
+      return
+    }
+
+    const [id, pending] = entry
+
+    if (!force && this.presentedPrompts.get(sessionId) === id) {
+      return
+    }
+
+    this.presentedPrompts.set(sessionId, id)
+    const params = pending.frame.params as Record<string, unknown>
+
+    const event = asGatewayEvent({
+      type: pending.method + '.request',
+      session_id: sessionId,
+      payload: { ...params, request_id: id }
+    })
+
+    if (event) {
+      this.publish(event)
+    }
+  }
+
+  hasPrompt(requestId: string): boolean {
+    return this.serverRequests.has(requestId)
+  }
+
+  private finishPrompt(requestId: string) {
+    const pending = this.serverRequests.get(requestId)
+
+    if (pending && this.presentedPrompts.get(pending.sessionId) === requestId) {
+      this.presentedPrompts.delete(pending.sessionId)
+    }
+
+    this.serverRequests.delete(requestId)
+    this.finishedServerRequests.add(requestId)
+
+    while (this.finishedServerRequests.size > 256) {
+      const oldest = this.finishedServerRequests.values().next().value
+
+      if (oldest !== undefined) {
+        this.finishedServerRequests.delete(oldest)
+      }
+    }
+  }
+
+  async replyPrompt<M extends keyof ServerRequestMethods>(
+    kind: M,
+    requestId: string,
+    result: ServerRequestMethods[M]['result']
+  ): Promise<Record<string, unknown>> {
+    if (this.finishedServerRequests.has(requestId)) {
+      throw new Error('Prompt has already been answered or cancelled')
+    }
+
+    const pending = this.serverRequests.get(requestId)
+
+    if (!pending) {
+      return this.requestRaw(kind + '.respond', { ...result, request_id: requestId })
+    }
+
+    if (pending.method !== kind) {
+      throw new Error('Prompt kind does not match request')
+    }
+
+    pending.send({ jsonrpc: '2.0', id: requestId, result })
+    this.finishPrompt(requestId)
+    const timer = setTimeout(() => this.replayPrompts(pending.sessionId, false), 0)
+    timer.unref?.()
+
+    return { status: 'ok' }
+  }
+
   private dispatch(msg: Record<string, unknown>) {
+    if (this.acceptServerRequest(msg)) {
+      return
+    }
+
+    if (msg.method === 'request.cancel') {
+      const params = msg.params as { id?: string } | undefined
+      const pending = params?.id ? this.serverRequests.get(params.id) : undefined
+
+      if (pending && params?.id) {
+        this.finishPrompt(params.id)
+        this.emit('prompt.cancelled', { requestId: params.id, sessionId: pending.sessionId })
+        this.replayPrompts(pending.sessionId, false)
+      }
+
+      return
+    }
+
     const id = msg.id as string | undefined
     const p = id ? this.pending.get(id) : undefined
 
     if (p) {
+      const result = msg.result as { open_requests?: Record<string, unknown>[] } | undefined
+
+      if (p.method === 'session.resume' && Array.isArray(result?.open_requests)) {
+        for (const request of result.open_requests) {
+          // A send is not an acknowledgement. The current server's outstanding
+          // snapshot wins if the previous answer was lost with the connection.
+          if (typeof request.id === 'string') {this.finishedServerRequests.delete(request.id)}
+          this.dispatch(request)
+        }
+      }
+
       this.settle(p, msg.error ? this.toError(msg.error) : null, msg.result)
 
       return
@@ -749,7 +909,9 @@ export class GatewayClient extends EventEmitter {
   private trackCommand(ev: GatewayEvent) {
     const payload = ev.payload as Record<string, unknown> | undefined
 
-    if (!payload || typeof payload.command_id !== 'string' || !payload.command_id) {return}
+    if (!payload || typeof payload.command_id !== 'string' || !payload.command_id) {
+      return
+    }
 
     if (ev.type === WireEvent.COMMAND_STARTED && typeof payload.request_id === 'string') {
       const pending = this.pending.get(payload.request_id)
@@ -804,6 +966,13 @@ export class GatewayClient extends EventEmitter {
     this.logs.push(truncateLine(line))
   }
 
+  private presentedPrompts = new Map<string, string>()
+  private finishedServerRequests = new Set<string>()
+  private supportsServerRequests = false
+  private serverRequests = new Map<
+    string,
+    { method: string; sessionId: string; frame: Record<string, unknown>; send: (frame: unknown) => void }
+  >()
   private compatibilityError: Error | null = null
 
   private checkHostCompatibility(
@@ -818,6 +987,7 @@ export class GatewayClient extends EventEmitter {
     const version = payload?.protocol_version
     const minimum = payload?.min_protocol_version ?? version
     const capabilities = payload?.capabilities
+    this.supportsServerRequests = !!capabilities?.includes('rpc.server_requests')
     let reason = ''
 
     if (
@@ -961,7 +1131,18 @@ export class GatewayClient extends EventEmitter {
     )
   }
 
-  request<T = unknown>(method: string, params: Record<string, unknown> = {}): Promise<T> {
+  request<M extends RpcMethod>(
+    method: M,
+    ...args: {} extends RpcMethods[M]['params'] ? [params?: RpcMethods[M]['params']] : [params: RpcMethods[M]['params']]
+  ): Promise<RpcMethods[M]['result']> {
+    return this.requestRaw<RpcMethods[M]['result']>(method, args[0] ?? {})
+  }
+
+  private requestRaw<T>(method: string, params: Record<string, unknown>): Promise<T> {
+    if (this.supportsServerRequests && (method === 'session.create' || method === 'session.resume')) {
+      params = { ...params, server_requests: true }
+    }
+
     if (this.compatibilityError) {
       return Promise.reject(this.compatibilityError)
     }

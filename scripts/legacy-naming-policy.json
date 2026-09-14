@@ -74,6 +74,14 @@
       ],
       "token": "hermes_tools\\.py",
       "reason": "Generated one-line import adapter preserves saved analysis scripts; canonical functions and RPC state live exclusively in forecast_tools."
+    },
+    {
+      "category": "upstream",
+      "paths": [
+        "docs/architecture/research-runtime-controls.md"
+      ],
+      "token": "hermes-agent",
+      "reason": "Exact upstream commit URLs preserve attribution for the five adapted runtime improvements."
     }
   ]
 }

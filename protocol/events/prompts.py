@@ -1,8 +1,8 @@
 """Wire models for the blocking-prompt events (``tui_gateway/server.py``).
 
-Each raises a modal in the TUI and blocks the agent thread until an answer RPC
-returns. ``_block`` stamps a ``request_id`` into the payload; ``approval.request``
-comes from the gateway-notify callback and carries no request id.
+These are the compatibility notification payloads and the shared inputs for
+correlated requests. New prompts carry an owned request ID; legacy approval
+notifications may omit it. Answers are validated by protocol.server_requests.
 """
 
 from __future__ import annotations

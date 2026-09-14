@@ -17,6 +17,8 @@ class RollbackCheckpoint(WireModel):
 class RollbackListRequest(WireModel):
     TS_NAME = "RollbackListRequest"
 
+    session_id: str | None = None
+
 
 class RollbackListResponse(WireModel):
     TS_NAME = "RollbackListResponse"
@@ -27,6 +29,8 @@ class RollbackListResponse(WireModel):
 
 class RollbackDiffRequest(WireModel):
     TS_NAME = "RollbackDiffRequest"
+
+    session_id: str | None = None
 
     hash: str | None = None
 
@@ -41,6 +45,10 @@ class RollbackDiffResponse(WireModel):
 
 class RollbackRestoreRequest(WireModel):
     TS_NAME = "RollbackRestoreRequest"
+
+    file_path: str | None = None
+
+    session_id: str | None = None
 
     hash: str | None = None
 

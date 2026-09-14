@@ -14,7 +14,7 @@ now generated + validated.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Literal
 
 from protocol.events.gateway import BuildInfo
 from protocol.types import WireModel, wire_optional
@@ -105,6 +105,7 @@ class GatewayTranscriptMessage(WireModel):
 
 class SessionCreateRequest(WireModel):
     TS_NAME = "SessionCreateRequest"
+    server_requests: bool = False
 
     cols: int | None = None
 
@@ -121,6 +122,7 @@ class SessionCreateResponse(WireModel):
 
 class SessionResumeRequest(WireModel):
     TS_NAME = "SessionResumeRequest"
+    server_requests: bool = False
 
     session_id: str
     cols: int | None = None
@@ -129,6 +131,7 @@ class SessionResumeRequest(WireModel):
 
 class SessionResumeResponse(WireModel):
     TS_NAME = "SessionResumeResponse"
+    open_requests: list[dict] | None = wire_optional()
 
     session_id: str
     messages: list[GatewayTranscriptMessage]
@@ -144,6 +147,8 @@ class SessionResumeResponse(WireModel):
 class SessionListRequest(WireModel):
     TS_NAME = "SessionListRequest"
 
+    limit: int = 100
+
 
 class SessionListItem(WireModel):
     TS_NAME = "SessionListItem"
@@ -151,7 +156,7 @@ class SessionListItem(WireModel):
     id: str
     message_count: int
     preview: str
-    started_at: int
+    started_at: float
     title: str
     source: str | None = wire_optional()
 
@@ -183,13 +188,16 @@ class SessionDeleteResponse(WireModel):
 class SessionMostRecentRequest(WireModel):
     TS_NAME = "SessionMostRecentRequest"
 
+    # Accepted by older callers; the operation always selects one session.
+    limit: int | None = None
+
 
 class SessionMostRecentResponse(WireModel):
     TS_NAME = "SessionMostRecentResponse"
 
     session_id: str | None = wire_optional(nullable=True)
     source: str | None = wire_optional()
-    started_at: int | None = wire_optional()
+    started_at: float | None = wire_optional()
     title: str | None = wire_optional()
 
 
@@ -198,6 +206,8 @@ class SessionMostRecentResponse(WireModel):
 
 class SessionTitleRequest(WireModel):
     TS_NAME = "SessionTitleRequest"
+
+    title: str | None = None
 
     session_id: str | None = None
 
@@ -287,6 +297,8 @@ class SessionStatusResponse(WireModel):
 
 class SessionCompressRequest(WireModel):
     TS_NAME = "SessionCompressRequest"
+
+    focus_topic: str | None = None
 
     session_id: str | None = None
 

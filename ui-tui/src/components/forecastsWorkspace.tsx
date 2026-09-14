@@ -1,7 +1,11 @@
 import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdout } from '@superforecasting/ink'
 import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 
-import { FORECAST_PACKET_TAIL_TITLES, forecastQuestionDetailSections, forecastResolutionRows } from '../app/forecastPanel.js'
+import {
+  FORECAST_PACKET_TAIL_TITLES,
+  forecastQuestionDetailSections,
+  forecastResolutionRows
+} from '../app/forecastPanel.js'
 import { patchOverlayState } from '../app/overlayStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import type {
@@ -56,12 +60,7 @@ import type { Theme } from '../theme.js'
 import type { PanelSection as PanelSectionData } from '../types.js'
 
 import { OverlayScrollbar } from './agentsOverlay.js'
-import {
-  buildVoteShareSeries,
-  chartScale,
-  historyToBandPoints,
-  seriesRuns
-} from './forecast/charts.js'
+import { buildVoteShareSeries, chartScale, historyToBandPoints, seriesRuns } from './forecast/charts.js'
 import {
   deltaLabel,
   distributionBars,
@@ -80,8 +79,7 @@ import { windowItems } from './overlayControls.js'
 export const openForecastsWorkspace = (initialId: string | null = null) =>
   patchOverlayState({ forecasts: true, forecastsInitialId: initialId })
 
-export const closeForecastsWorkspace = () =>
-  patchOverlayState({ forecasts: false, forecastsInitialId: null })
+export const closeForecastsWorkspace = () => patchOverlayState({ forecasts: false, forecastsInitialId: null })
 
 const WIDE_COLS = 100
 
@@ -89,7 +87,6 @@ const WIDE_COLS = 100
 // header facts (question/Current Forecast/Ledger State), Recent Evidence, and
 // Resolution — ForecastDetail already shows those — so the tail is purely the
 // long-form content the desk view omits.
-
 
 interface ForecastsWorkspaceProps {
   gw: GatewayClient
@@ -116,7 +113,9 @@ const probabilityLike = (value: unknown): value is number => finite(value) && va
  * `_ensemble_component_rows`: either `{components: [{name, probability,
  * weight}, …]}` or a plain `{name: probability|{probability, weight}}` map.
  */
-const ensembleEstimates = (components: Record<string, unknown> | null | undefined): ForecastWorkspacePanelEstimate[] => {
+const ensembleEstimates = (
+  components: Record<string, unknown> | null | undefined
+): ForecastWorkspacePanelEstimate[] => {
   if (!components || typeof components !== 'object') {
     return []
   }
@@ -168,9 +167,7 @@ export interface EnsembleComponentRow {
  * `{name: probability|{probability, weight}}` map. Returns [] when the snapshot
  * carries no usable components.
  */
-export const ensembleComponentRows = (
-  packet: ForecastQuestionPacket | null | undefined
-): EnsembleComponentRow[] => {
+export const ensembleComponentRows = (packet: ForecastQuestionPacket | null | undefined): EnsembleComponentRow[] => {
   const history = packet?.forecast_history ?? []
   const latest = history.length ? history[history.length - 1] : null
   const components = latest?.ensemble_components
@@ -179,12 +176,11 @@ export const ensembleComponentRows = (
     return []
   }
 
-  const rawRows: Record<string, unknown>[] = Array.isArray(
-    (components as { components?: unknown }).components
-  )
-    ? ((components as { components: unknown[] }).components.filter(
-        row => row && typeof row === 'object'
-      ) as Record<string, unknown>[])
+  const rawRows: Record<string, unknown>[] = Array.isArray((components as { components?: unknown }).components)
+    ? ((components as { components: unknown[] }).components.filter(row => row && typeof row === 'object') as Record<
+        string,
+        unknown
+      >[])
     : Object.entries(components as Record<string, unknown>).map(([name, value]) =>
         value && typeof value === 'object' && !Array.isArray(value)
           ? { name, ...(value as Record<string, unknown>) }
@@ -255,7 +251,9 @@ export const panelFromPacket = (packet: ForecastQuestionPacket | null | undefine
   }
 
   return {
-    aggregate_probability: probabilityLike(latest.probability_or_distribution) ? latest.probability_or_distribution : null,
+    aggregate_probability: probabilityLike(latest.probability_or_distribution)
+      ? latest.probability_or_distribution
+      : null,
     aggregation_method: latest.method ?? 'ensemble',
     created_at: latest.as_of,
     estimates,
@@ -265,12 +263,7 @@ export const panelFromPacket = (packet: ForecastQuestionPacket | null | undefine
   }
 }
 
-export {
-  buildVoteShareSeries,
-  chartScale,
-  historyToBandPoints,
-  seriesRuns
-} from './forecast/charts.js'
+export { buildVoteShareSeries, chartScale, historyToBandPoints, seriesRuns } from './forecast/charts.js'
 export type { VoteShareSeriesResult } from './forecast/charts.js'
 // The headline/format lib and chart/series builders now live in
 // ./forecast/headlines.js and ./forecast/charts.js; re-exported here so
@@ -344,7 +337,7 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
     setLoading(!cachedWs)
     // Load the FULL active book so the list + `/` filter cover every question
     // (a small cap silently drops the oldest forecasts once the book grows).
-    gw.request<unknown>('forecast.workspace', { limit: 1000 })
+    gw.request('forecast.workspace', { limit: 1000 })
       .then(raw => {
         const result = asRpcResult<ForecastWorkspaceResponse>(raw)
 
@@ -432,7 +425,11 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
 
       // Scope to the lens FIRST, then rank by relevance within it (an empty query
       // keeps the lens order). Ranking can't leak items from outside the lens.
-      return filterRanked(items.filter(item => item.id != null && memberIds.has(item.id)), query, FORECAST_SEARCH_FIELDS)
+      return filterRanked(
+        items.filter(item => item.id != null && memberIds.has(item.id)),
+        query,
+        FORECAST_SEARCH_FIELDS
+      )
     }
 
     if (activeFactor) {
@@ -441,7 +438,11 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
 
       const memberIds = new Set(ecosystem.filter((id): id is string => Boolean(id)))
 
-      return filterRanked(items.filter(item => item.id != null && memberIds.has(item.id)), query, FORECAST_SEARCH_FIELDS)
+      return filterRanked(
+        items.filter(item => item.id != null && memberIds.has(item.id)),
+        query,
+        FORECAST_SEARCH_FIELDS
+      )
     }
 
     return filterRanked(items, query, FORECAST_SEARCH_FIELDS)
@@ -554,7 +555,7 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
     // Race guard: if the cursor moves before this resolves, drop the stale
     // result so the tail never shows a previous forecast's history/evidence.
     let cancelled = false
-    gw.request<unknown>('forecast.question', { id: selectedId })
+    gw.request('forecast.question', { id: selectedId })
       .then(raw => {
         if (cancelled) {
           return
@@ -1034,7 +1035,8 @@ function ForecastList({ cursor, factorLensId, focus, lensId, rows, t, visibleRow
         const showFactors = row.kind === 'factor' && (i === 0 || prev?.kind !== 'factor')
 
         const showBook =
-          row.kind === 'forecast' && (i === 0 || prev?.kind === 'all' || prev?.kind === 'thesis' || prev?.kind === 'factor')
+          row.kind === 'forecast' &&
+          (i === 0 || prev?.kind === 'all' || prev?.kind === 'thesis' || prev?.kind === 'factor')
 
         if (row.kind === 'all') {
           return (
@@ -1101,8 +1103,7 @@ function ForecastList({ cursor, factorLensId, focus, lensId, rows, t, visibleRow
 
 // Members in the book for a given lens (null = ALL). Used only for the ALL row's
 // count badge.
-const countForLens = (rows: LeftRow[], _lens: null): number =>
-  rows.filter(row => row.kind === 'forecast').length
+const countForLens = (rows: LeftRow[], _lens: null): number => rows.filter(row => row.kind === 'forecast').length
 
 // Health color: green ≥60%, amber ≥45%, red below; withheld (null) → muted.
 export const healthColor = (t: Theme, health?: null | number): string =>
@@ -1389,7 +1390,8 @@ export function ForecastDetail({
   const chart = useMemo(
     // Never exceed the pane width (clamps the chart on very narrow terminals so
     // the line-drawn axis/markers don't wrap and shred the layout).
-    () => (hasSeries ? bandChart(bandPoints, { height: 9, width: Math.min(56, Math.max(1, width - 1)), ...scale }) : null),
+    () =>
+      hasSeries ? bandChart(bandPoints, { height: 9, width: Math.min(56, Math.max(1, width - 1)), ...scale }) : null,
     [bandPoints, hasSeries, scale, width]
   )
 
@@ -1416,7 +1418,11 @@ export function ForecastDetail({
     if (pmf && pmf.length) {
       // fraction-scale vote shares are classified as a PMF here, so intervals must
       // attach on THIS branch too (not only the distributionBars fallback).
-      return pmf.map(row => ({ label: row.label, value: row.probability, interval: intervalForLabel(item.candidate_intervals, row.label) }))
+      return pmf.map(row => ({
+        label: row.label,
+        value: row.probability,
+        interval: intervalForLabel(item.candidate_intervals, row.label)
+      }))
     }
 
     return distributionBars(item.probability, item.candidate_intervals)
@@ -1509,11 +1515,16 @@ export function ForecastDetail({
       {isVoteShare && leader ? (
         <Text wrap="truncate-end">
           <Text color={t.color.muted}>leader </Text>
-          <Text bold color={t.color.primary}>{`${shortCandidateLabel(leader.label, 18)} ${(leader.value * voteScale).toFixed(1)}`}</Text>
+          <Text
+            bold
+            color={t.color.primary}
+          >{`${shortCandidateLabel(leader.label, 18)} ${(leader.value * voteScale).toFixed(1)}`}</Text>
           {leader.interval && finite(leader.interval.lo) && finite(leader.interval.hi) ? (
             <Text>
               <Text color={t.color.muted}>{'  ·  90% '}</Text>
-              <Text color={t.color.text}>{`[${(leader.interval.lo * voteScale).toFixed(1)}–${(leader.interval.hi * voteScale).toFixed(1)}]`}</Text>
+              <Text
+                color={t.color.text}
+              >{`[${(leader.interval.lo * voteScale).toFixed(1)}–${(leader.interval.hi * voteScale).toFixed(1)}]`}</Text>
             </Text>
           ) : (
             <Text color={t.color.muted}>{'  ·  no interval published'}</Text>
@@ -1526,7 +1537,9 @@ export function ForecastDetail({
         <Text color={t.color.muted}>{'  ·  ev '}</Text>
         <Text color={t.color.label}>{item.evidence_count ?? 0}</Text>
         <Text color={t.color.muted}>{'  ·  '}</Text>
-        <Text color={t.color.label}>{`${item.snapshot_count ?? 0} update${(item.snapshot_count ?? 0) === 1 ? '' : 's'}`}</Text>
+        <Text
+          color={t.color.label}
+        >{`${item.snapshot_count ?? 0} update${(item.snapshot_count ?? 0) === 1 ? '' : 's'}`}</Text>
         {item.method ? <Text color={t.color.muted}>{`  ·  ${item.method}`}</Text> : null}
       </Text>
 
@@ -1579,7 +1592,9 @@ export function ForecastDetail({
 
       {chart ? (
         <>
-          <SectionTitle t={t}>{isDistribution ? `mean over time${unit ? ` (${unit})` : ''}` : 'probability over time'}</SectionTitle>
+          <SectionTitle t={t}>
+            {isDistribution ? `mean over time${unit ? ` (${unit})` : ''}` : 'probability over time'}
+          </SectionTitle>
           {chart.rows.map((row, i) => (
             <Text color={t.color.accent} key={i}>
               {row}
@@ -1598,7 +1613,11 @@ export function ForecastDetail({
           ) : null}
           <Text color={t.color.label} wrap="truncate-end">
             {`  ${
-              isDistribution ? '● mean  ░ 90% interval' : item.panel ? '● forecast  ░ panel spread / confidence band' : '● forecast  ░ confidence band'
+              isDistribution
+                ? '● mean  ░ 90% interval'
+                : item.panel
+                  ? '● forecast  ░ panel spread / confidence band'
+                  : '● forecast  ░ confidence band'
             }${preview.downsampled ? `  ·  ${preview.note}` : ''}`}
           </Text>
         </>
@@ -1705,9 +1724,11 @@ export function ForecastDetail({
               } · bucket ${item.scores.last_bucket ?? '—'}`}
             />
           ) : null}
-          {item.resolution ? forecastResolutionRows(item.resolution as Record<string, unknown>).map(([label, value]) => (
-            <KV k={label} key={label} t={t} v={value} />
-          )) : null}
+          {item.resolution
+            ? forecastResolutionRows(item.resolution as Record<string, unknown>).map(([label, value]) => (
+                <KV k={label} key={label} t={t} v={value} />
+              ))
+            : null}
         </>
       ) : null}
     </Box>
@@ -1798,7 +1819,9 @@ function TailAuditSection({ audit, t, width }: { audit: ForecastTailAudit | null
         <Text bold color={fails ? t.color.error : t.color.ok}>
           {fails ? 'FAIL' : 'PASS'}
         </Text>
-        <Text color={t.color.muted}>{`  total ${tailPct(audit.total_mass)}  ·  threshold ${tailPct(audit.threshold)}`}</Text>
+        <Text
+          color={t.color.muted}
+        >{`  total ${tailPct(audit.total_mass)}  ·  threshold ${tailPct(audit.threshold)}`}</Text>
       </Text>
       {headline ? (
         <Text bold color={fails ? t.color.error : t.color.warn} wrap="truncate-end">
@@ -1837,7 +1860,14 @@ function TailAuditSection({ audit, t, width }: { audit: ForecastTailAudit | null
         </Text>
       ) : null}
       {(audit.issues ?? []).map((issue, i) => (
-        <WrapLine body={issue} bodyColor={t.color.warn} key={`issue${i}`} prefix="⚠ " prefixColor={t.color.warn} t={t} />
+        <WrapLine
+          body={issue}
+          bodyColor={t.color.warn}
+          key={`issue${i}`}
+          prefix="⚠ "
+          prefixColor={t.color.warn}
+          t={t}
+        />
       ))}
     </>
   )
@@ -1847,15 +1877,7 @@ function TailAuditSection({ audit, t, width }: { audit: ForecastTailAudit | null
 // was down-weighted for being thin/stale (a fraction of a liquid component's
 // weight) is visible. A market-looking source whose weight is conspicuously low
 // relative to the heaviest component is hinted "discounted".
-function EnsembleComponentsSection({
-  rows,
-  t,
-  width
-}: {
-  rows: EnsembleComponentRow[]
-  t: Theme
-  width: number
-}) {
+function EnsembleComponentsSection({ rows, t, width }: { rows: EnsembleComponentRow[]; t: Theme; width: number }) {
   if (rows.length < 2) {
     return null
   }
@@ -1876,8 +1898,7 @@ function EnsembleComponentsSection({
       {rows.map((row, i) => {
         // A market component whose weight is a small fraction of the heaviest is
         // flagged: it was likely discounted for being thin/stale.
-        const discounted =
-          looksLikeMarketSource(row.source) && maxWeight > 0 && row.weight <= maxWeight * 0.5
+        const discounted = looksLikeMarketSource(row.source) && maxWeight > 0 && row.weight <= maxWeight * 0.5
 
         return (
           <Box flexDirection="column" key={row.source ?? row.name ?? `c${i}`}>
@@ -1995,11 +2016,17 @@ const spreadDelta = (probability: null | number | undefined, aggregate: null | n
 // investigate (not average away). The scalar is computed server-side and
 // carried inside spread_summary (see forecasting/panel.disagreement_signal).
 function disagreementBand(index: number): 'calm' | 'moderate' | 'high' | 'severe' {
-  if (index < 0.15) {return 'calm'}
+  if (index < 0.15) {
+    return 'calm'
+  }
 
-  if (index < 0.4) {return 'moderate'}
+  if (index < 0.4) {
+    return 'moderate'
+  }
 
-  if (index < 0.65) {return 'high'}
+  if (index < 0.65) {
+    return 'high'
+  }
 
   return 'severe'
 }
@@ -2007,17 +2034,14 @@ function disagreementBand(index: number): 'calm' | 'moderate' | 'high' | 'severe
 export function DisagreementMeter({ spread, t }: { spread?: Record<string, number>; t: Theme }) {
   const index = spread?.disagreement_index
 
-  if (!finite(index)) {return null}
+  if (!finite(index)) {
+    return null
+  }
+
   const band = disagreementBand(index)
 
   const color =
-    band === 'calm'
-      ? t.color.ok
-      : band === 'moderate'
-        ? t.color.accent
-        : band === 'high'
-          ? t.color.warn
-          : t.color.error
+    band === 'calm' ? t.color.ok : band === 'moderate' ? t.color.accent : band === 'high' ? t.color.warn : t.color.error
 
   const cells = 10
   const filled = Math.max(0, Math.min(cells, Math.round(index * cells)))
@@ -2038,9 +2062,7 @@ export function PanelSection({ panel, t, width }: { panel: ForecastWorkspacePane
   const aggregate = panel.aggregate_probability
   const isEnsemble = panel.kind === 'ensemble'
 
-  const title = isEnsemble
-    ? `ensemble (${estimates.length} components)`
-    : `panel (${estimates.length} perspectives)`
+  const title = isEnsemble ? `ensemble (${estimates.length} components)` : `panel (${estimates.length} perspectives)`
 
   // A single aligned grid shared by the header rows (aggregate / range /
   // disagree) AND every estimate: [name][value][rail][delta][trailing]. Every
@@ -2134,12 +2156,7 @@ export function PanelSection({ panel, t, width }: { panel: ForecastWorkspacePane
         const delta = spreadDelta(estimate.probability, aggregate)
         const nameLines = wrapLines(estimate.perspective ?? '—', nameInner, 2)
 
-        const deltaColor =
-          !delta || delta === '·'
-            ? t.color.muted
-            : delta.startsWith('+')
-              ? t.color.ok
-              : t.color.error
+        const deltaColor = !delta || delta === '·' ? t.color.muted : delta.startsWith('+') ? t.color.ok : t.color.error
 
         return (
           <Box flexDirection="row" key={estimate.perspective ?? i}>
@@ -2162,7 +2179,9 @@ export function PanelSection({ panel, t, width }: { panel: ForecastWorkspacePane
               </Box>
             </Box>
             <Box flexShrink={0} width={valueW}>
-              <Text color={estimate.trimmed ? t.color.muted : t.color.text}>{pct(estimate.probability).padStart(valueW)}</Text>
+              <Text color={estimate.trimmed ? t.color.muted : t.color.text}>
+                {pct(estimate.probability).padStart(valueW)}
+              </Text>
             </Box>
             {hasRail ? (
               <Box flexShrink={0} width={railW + 2}>
@@ -2299,7 +2318,17 @@ function Rule({ t, width }: { t: Theme; width: number }) {
 // which both clipped the last characters and made the text reflow/jump as the
 // measurement settled. paddingLeft is the same mechanism the resolution-criteria
 // text uses, which wraps cleanly.
-function WrapText({ bold = false, children, color, t }: { bold?: boolean; children: string; color?: string; t: Theme }) {
+function WrapText({
+  bold = false,
+  children,
+  color,
+  t
+}: {
+  bold?: boolean
+  children: string
+  color?: string
+  t: Theme
+}) {
   return (
     <Box paddingLeft={2}>
       <Text bold={bold} color={color ?? t.color.text} wrap="wrap">
@@ -2346,7 +2375,11 @@ function WrapLine({
   )
 }
 
-const ANALYST_ANGLES: { key: 'be_aware' | 'how_it_feels' | 'how_it_thinks' | 'looking_for'; label: string; warn?: boolean }[] = [
+const ANALYST_ANGLES: {
+  key: 'be_aware' | 'how_it_feels' | 'how_it_thinks' | 'looking_for'
+  label: string
+  warn?: boolean
+}[] = [
   { key: 'how_it_feels', label: 'how it feels' },
   { key: 'how_it_thinks', label: 'how it thinks' },
   { key: 'looking_for', label: 'watching for', warn: true },
@@ -2704,7 +2737,13 @@ function ThesisComponentRow({ comp, t, width }: { comp: ForecastThesisComponent;
 // The §22 per-name read shares the thesis's health bands so a "well-suited" name
 // reads the same green as a healthy thesis.
 const suitabilityColor = (t: Theme, suitability?: null | number): string =>
-  !finite(suitability) ? t.color.muted : suitability >= 0.6 ? t.color.ok : suitability >= 0.45 ? t.color.warn : t.color.error
+  !finite(suitability)
+    ? t.color.muted
+    : suitability >= 0.6
+      ? t.color.ok
+      : suitability >= 0.45
+        ? t.color.warn
+        : t.color.error
 
 // One ENTITY SUITABILITY row: name (+kind), the 0..1 suitability (colored by
 // level), the stance/action read, the signed delta in pp, and the top driver.
@@ -2758,7 +2797,12 @@ function ThesisEntities({ entities, t, width }: { entities: ForecastThesisEntity
     <>
       <SectionTitle t={t}>ENTITY SUITABILITY</SectionTitle>
       {sorted.map((entity, i) => (
-        <ThesisEntityRow entity={entity} key={entity.top_driver_id ?? entity.name ?? entity.label ?? `e${i}`} t={t} width={width} />
+        <ThesisEntityRow
+          entity={entity}
+          key={entity.top_driver_id ?? entity.name ?? entity.label ?? `e${i}`}
+          t={t}
+          width={width}
+        />
       ))}
     </>
   )
@@ -2786,8 +2830,7 @@ function ThesisTriggers({ triggers, t }: { triggers: ForecastThesisTrigger[]; t:
           <Box flexDirection="row" key={trigger.member_id ?? `tr${i}`}>
             <Box flexShrink={0} width={2}>
               <Text bold color={glyphColor}>
-                {glyph}
-                {' '}
+                {glyph}{' '}
               </Text>
             </Box>
             <Box flexGrow={1} flexShrink={1} minWidth={0}>
@@ -2805,9 +2848,7 @@ function ThesisTriggers({ triggers, t }: { triggers: ForecastThesisTrigger[]; t:
 export function ThesisDeskRead({ thesis, t, width }: { thesis: ForecastThesis; t: Theme; width: number }) {
   const note = thesis.analyst_note ?? null
 
-  const comps = [...(thesis.components ?? [])].sort(
-    (a, b) => (b.contribution_pts ?? 0) - (a.contribution_pts ?? 0)
-  )
+  const comps = [...(thesis.components ?? [])].sort((a, b) => (b.contribution_pts ?? 0) - (a.contribution_pts ?? 0))
 
   const band = thesis.score_band
   const eventBand = thesis.event_band
@@ -2827,7 +2868,9 @@ export function ThesisDeskRead({ thesis, t, width }: { thesis: ForecastThesis; t
             {thesis.status}
           </Text>
         ) : null}
-        <Text color={t.color.muted}>{`${thesis.domain || thesis.status ? ' · ' : ''}${members} member${members === 1 ? '' : 's'}`}</Text>
+        <Text
+          color={t.color.muted}
+        >{`${thesis.domain || thesis.status ? ' · ' : ''}${members} member${members === 1 ? '' : 's'}`}</Text>
         {topics ? <Text color={t.color.muted}> · {topics}</Text> : null}
       </Text>
       {thesis.aggregate_stale ? (
@@ -2858,7 +2901,11 @@ export function ThesisDeskRead({ thesis, t, width }: { thesis: ForecastThesis; t
           />
         </>
       ) : null}
-      <KV k="health %" t={t} v={`${thesis.health_display ?? (finite(thesis.health_probability) ? pct(thesis.health_probability) : 'withheld')} alive`} />
+      <KV
+        k="health %"
+        t={t}
+        v={`${thesis.health_display ?? (finite(thesis.health_probability) ? pct(thesis.health_probability) : 'withheld')} alive`}
+      />
       <KV k="score /100" t={t} v={`${scoreText(thesis.thesis_score)} strength`} />
       <KV
         k="score band"
@@ -2886,13 +2933,7 @@ export function ThesisDeskRead({ thesis, t, width }: { thesis: ForecastThesis; t
       <SectionTitle t={t}>member contributions</SectionTitle>
       <Text color={t.color.muted} wrap="truncate-end">
         {'dir'.padEnd(6)}
-        {'member'.padEnd(Math.max(8, width - 32))}
-        {' '}
-        {'belief'.padStart(6)}
-        {' '}
-        {'signal'.padStart(5)}
-        {' '}
-        {'contrib'.padStart(7)}
+        {'member'.padEnd(Math.max(8, width - 32))} {'belief'.padStart(6)} {'signal'.padStart(5)} {'contrib'.padStart(7)}
       </Text>
       {comps.length ? (
         comps.map((comp, i) => <ThesisComponentRow comp={comp} key={comp.id ?? `c${i}`} t={t} width={width} />)
@@ -3008,9 +3049,7 @@ function FactorConstituentRow({ comp, t, width }: { comp: ForecastFactorConstitu
   const mean = (finite(comp.mean) ? trimNum(comp.mean) : '—').padStart(6)
   const sd = (finite(comp.sd) ? trimNum(comp.sd) : '—').padStart(5)
 
-  const contrib = finite(comp.contribution)
-    ? `${comp.contribution >= 0 ? '+' : ''}${trimNum(comp.contribution)}`
-    : '—'
+  const contrib = finite(comp.contribution) ? `${comp.contribution >= 0 ? '+' : ''}${trimNum(comp.contribution)}` : '—'
 
   const contribColor = signColor(t, comp.contribution)
   const stale = comp.status && comp.status !== 'ok'
@@ -3040,7 +3079,9 @@ export function FactorDeskRead({ factor, t, width }: { factor: ForecastFactor; t
   // Constituents sorted by |contribution| desc so the biggest movers lead;
   // withheld contributions sink to the bottom.
   const comps = [...(factor.constituents ?? [])].sort(
-    (a, b) => (finite(b.contribution) ? Math.abs(b.contribution) : -1) - (finite(a.contribution) ? Math.abs(a.contribution) : -1)
+    (a, b) =>
+      (finite(b.contribution) ? Math.abs(b.contribution) : -1) -
+      (finite(a.contribution) ? Math.abs(a.contribution) : -1)
   )
 
   const members = factor.member_count ?? comps.length
@@ -3053,7 +3094,9 @@ export function FactorDeskRead({ factor, t, width }: { factor: ForecastFactor; t
       </Text>
       <Text wrap="truncate-end">
         {factor.domain ? <Text color={t.color.label}>{factor.domain}</Text> : null}
-        <Text color={t.color.muted}>{`${factor.domain ? ' · ' : ''}${members} constituent${members === 1 ? '' : 's'}`}</Text>
+        <Text
+          color={t.color.muted}
+        >{`${factor.domain ? ' · ' : ''}${members} constituent${members === 1 ? '' : 's'}`}</Text>
         {factor.units ? <Text color={t.color.muted}> · {factor.units}</Text> : null}
         {topics ? <Text color={t.color.muted}> · {topics}</Text> : null}
       </Text>
@@ -3076,7 +3119,11 @@ export function FactorDeskRead({ factor, t, width }: { factor: ForecastFactor; t
       <KV
         k="90% band"
         t={t}
-        v={finite(factor.q05) && finite(factor.q95) ? `${trimNum(factor.q05)}${unit} – ${trimNum(factor.q95)}${unit}` : '—'}
+        v={
+          finite(factor.q05) && finite(factor.q95)
+            ? `${trimNum(factor.q05)}${unit} – ${trimNum(factor.q95)}${unit}`
+            : '—'
+        }
       />
       <KV k="downside" t={t} v={finite(factor.downside) ? `${trimNum(factor.downside)}${unit}` : '—'} />
       <KV k="CVaR" t={t} v={finite(factor.cvar) ? `${trimNum(factor.cvar)}${unit}` : '—'} />
@@ -3100,14 +3147,7 @@ export function FactorDeskRead({ factor, t, width }: { factor: ForecastFactor; t
       <SectionTitle t={t}>CONSTITUENTS</SectionTitle>
       <Text color={t.color.muted} wrap="truncate-end">
         {'dir'.padEnd(6)}
-        {'constituent'.padEnd(Math.max(8, width - 38))}
-        {' '}
-        {'w'.padStart(5)}
-        {' '}
-        {'μ'.padStart(6)}
-        {' '}
-        {'σ'.padStart(5)}
-        {' '}
+        {'constituent'.padEnd(Math.max(8, width - 38))} {'w'.padStart(5)} {'μ'.padStart(6)} {'σ'.padStart(5)}{' '}
         {'contrib'.padStart(7)}
       </Text>
       {comps.length ? (

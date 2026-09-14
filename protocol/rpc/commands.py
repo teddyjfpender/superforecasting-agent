@@ -1,13 +1,13 @@
-"""Wire models for the command-catalog / completion / slash RPCs (Arc A4).
+"""Command catalog, completions and discriminated dispatch outcomes.
 
-``SlashCategory`` moves here from ``ui-tui/src/types.ts`` (it was hand-written
-there and referenced by both ``CommandsCatalogResponse`` and the app-internal
-``SlashCatalog``); the protocol is now its source of truth and ``types.ts``
-re-exports it. NOTE: ``command.dispatch`` returns a 4-arm discriminated UNION
-(``CommandDispatchResponse``) that has no single-model form — it stays a TS-only
-alias in ``gatewayTypes.ts`` and is deliberately NOT modelled here."""
+Python declarations own the command variants and generated TypeScript consumers.
+"""
 
 from __future__ import annotations
+
+from typing import Literal
+
+from pydantic import RootModel
 
 from protocol.types import WireModel, wire_optional
 
@@ -45,6 +45,8 @@ class CommandsCatalogResponse(WireModel):
 class CompletionRequest(WireModel):
     TS_NAME = "CompletionRequest"
 
+    word: str | None = None
+
     text: str | None = None
 
 
@@ -79,3 +81,49 @@ __all__ = [
     "SlashExecRequest",
     "SlashExecResponse",
 ]
+
+
+class CommandDispatchRequest(WireModel):
+    name: str
+    arg: str = ""
+    session_id: str | None = None
+
+
+class CommandExecResult(WireModel):
+    type: Literal["exec", "plugin"]
+    output: str
+
+
+class CommandAliasResult(WireModel):
+    type: Literal["alias"]
+    target: str
+
+
+class CommandSkillResult(WireModel):
+    type: Literal["skill"]
+    name: str
+    message: str
+
+
+class CommandSendResult(WireModel):
+    type: Literal["send"]
+    message: str
+    notice: str | None = wire_optional()
+
+
+class CommandDispatchResponse(
+    RootModel[
+        CommandExecResult | CommandAliasResult | CommandSkillResult | CommandSendResult
+    ]
+):
+    """Discriminated command outcomes, shared by Python and TypeScript consumers."""
+
+
+class PasteCollapseRequest(WireModel):
+    text: str
+
+
+class PasteCollapseResponse(WireModel):
+    placeholder: str
+    path: str
+    lines: int

@@ -45,7 +45,7 @@ export function SessionPicker({ gw, onCancel, onSelect, t }: SessionPickerProps)
   useOverlayKeys({ onClose: onCancel })
 
   useEffect(() => {
-    gw.request<SessionListResponse>('session.list', { limit: 200 })
+    gw.request('session.list', { limit: 200 })
       .then(raw => {
         const r = asRpcResult<SessionListResponse>(raw)
 
@@ -74,7 +74,7 @@ export function SessionPicker({ gw, onCancel, onSelect, t }: SessionPickerProps)
     }
 
     setDeleting(true)
-    gw.request<SessionDeleteResponse>('session.delete', { session_id: target.id })
+    gw.request('session.delete', { session_id: target.id })
       .then(raw => {
         const r = asRpcResult<SessionDeleteResponse>(raw)
 
@@ -192,7 +192,7 @@ export function SessionPicker({ gw, onCancel, onSelect, t }: SessionPickerProps)
         Resume Forecast Session
       </Text>
 
-      {offset > 0 && <Text color={t.color.muted}>  ↑ {offset} more</Text>}
+      {offset > 0 && <Text color={t.color.muted}> ↑ {offset} more</Text>}
 
       {items.slice(offset, offset + VISIBLE).map((s, vi) => {
         const i = offset + vi
@@ -229,7 +229,7 @@ export function SessionPicker({ gw, onCancel, onSelect, t }: SessionPickerProps)
         )
       })}
 
-      {offset + VISIBLE < items.length && <Text color={t.color.muted}>  ↓ {items.length - offset - VISIBLE} more</Text>}
+      {offset + VISIBLE < items.length && <Text color={t.color.muted}> ↓ {items.length - offset - VISIBLE} more</Text>}
       {err && <Text color={t.color.label}>error: {err}</Text>}
       {deleting ? (
         <OverlayHint t={t}>deleting…</OverlayHint>

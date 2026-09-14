@@ -5,12 +5,7 @@ import { couldBeFileDrop } from '../domain/fileDrop.js'
 import { attachedImageNotice } from '../domain/messages.js'
 import { looksLikeSlashCommand } from '../domain/slash.js'
 import type { GatewayClient } from '../gatewayClient.js'
-import type {
-  InputDetectDropResponse,
-  PromptSubmitResponse,
-  SessionSteerResponse,
-  ShellExecResponse
-} from '../gatewayTypes.js'
+import type { SessionSteerResponse, ShellExecResponse } from '../gatewayTypes.js'
 import { asRpcResult } from '../lib/rpc.js'
 import { hasInterpolation, INTERPOLATION_RE } from '../protocol/interpolation.js'
 import { PASTE_SNIPPET_RE } from '../protocol/paste.js'
@@ -119,7 +114,7 @@ export function useSubmission(opts: UseSubmissionOptions) {
         turnController.bufRef = ''
         turnController.interrupted = false
 
-        gw.request<PromptSubmitResponse>('prompt.submit', { session_id: sid, text: submitText }).catch((e: Error) => {
+        gw.request('prompt.submit', { session_id: sid, text: submitText }).catch((e: Error) => {
           if (stale()) {
             return
           }
@@ -154,7 +149,7 @@ export function useSubmission(opts: UseSubmissionOptions) {
       // Path-shaped input: ask the backend to resolve it. The backend's
       // _detect_file_drop handles paths with spaces, quotes, Windows drive
       // letters, and escaped characters correctly.
-      gw.request<InputDetectDropResponse>('input.detect_drop', { session_id: sid, text })
+      gw.request('input.detect_drop', { session_id: sid, text })
         .then(r => {
           if (stale()) {
             return
@@ -185,7 +180,7 @@ export function useSubmission(opts: UseSubmissionOptions) {
       appendMessage({ role: 'user', text: `!${cmd}` })
       patchUiState({ busy: true, status: 'running…' })
 
-      gw.request<ShellExecResponse>('shell.exec', { command: cmd })
+      gw.request('shell.exec', { command: cmd })
         .then(raw => {
           if (stale()) {
             return
@@ -231,7 +226,7 @@ export function useSubmission(opts: UseSubmissionOptions) {
       Promise.all(
         matches.map(m =>
           gw
-            .request<ShellExecResponse>('shell.exec', { command: m[1]! })
+            .request('shell.exec', { command: m[1]! })
             .then(raw => {
               const r = asRpcResult<ShellExecResponse>(raw)
 
@@ -301,7 +296,7 @@ export function useSubmission(opts: UseSubmissionOptions) {
       }
 
       if (mode === 'steer' && live.sid) {
-        gw.request<SessionSteerResponse>('session.steer', { session_id: live.sid, text: full })
+        gw.request('session.steer', { session_id: live.sid, text: full })
           .then(raw => {
             const r = asRpcResult<SessionSteerResponse>(raw)
 

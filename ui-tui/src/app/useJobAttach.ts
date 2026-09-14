@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 
 import { asRpcResult } from '../lib/rpc.js'
+import type { RpcRequest } from '../protocol/generated.js'
 import { WireEvent } from '../protocol/generated.js'
 
 // The ONE detached-job attach hook (Arc B4). Every Desk background job — the A/T
@@ -46,7 +47,7 @@ export const JOB_POLL_MS = 5000
 type EventListener = (...args: any[]) => void
 
 export interface AttachGateway {
-  request: <T = unknown>(method: string, params?: Record<string, unknown>) => Promise<T>
+  request: RpcRequest
   off?: (event: string, listener: EventListener) => unknown
   on?: (event: string, listener: EventListener) => unknown
 }
@@ -98,7 +99,7 @@ export function attachJobLoop(
       return
     }
 
-    gw.request<unknown>('jobs.status', { job_id: id })
+    gw.request('jobs.status', { job_id: id })
       .then(raw => {
         // Guard a late resolve after stop() OR after we moved off this job.
         if (cancelled || jobId !== id) {
@@ -142,7 +143,7 @@ export function attachJobLoop(
   // Mount discovery: the newest live job of `types` (jobs.active returns newest
   // first). An explicit attach() that already fired wins the race (jobId set), so
   // discovery never clobbers a just-started job.
-  gw.request<unknown>('jobs.active', types.length ? { types } : {})
+  gw.request('jobs.active', types.length ? { types } : {})
     .then(raw => {
       if (cancelled || jobId) {
         return

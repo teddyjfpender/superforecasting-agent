@@ -32,7 +32,7 @@ const watchAuthFlow = (ctx: SlashRunCtx, intervalMs: number) => {
     }
 
     ctx.gateway
-      .rpc<AuthPollResponse>('auth.poll', {})
+      .rpc('auth.poll', {})
       .then(r => {
         if (!r || r.status === 'pending') {
           setTimeout(tick, intervalMs)
@@ -69,7 +69,7 @@ export const setupCommands: SlashCommand[] = [
       const provider = arg.trim() || 'openai-codex'
 
       ctx.gateway
-        .rpc<AuthStartResponse>('auth.start', { provider, session_id: ctx.sid })
+        .rpc('auth.start', { provider, session_id: ctx.sid })
         .then(
           ctx.guarded<AuthStartResponse>(r => {
             const intervalMs = Math.max(3, r.interval ?? 5) * 1000

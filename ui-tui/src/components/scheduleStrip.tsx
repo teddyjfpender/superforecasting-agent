@@ -34,7 +34,9 @@ export const relTime = (iso?: null | string, now: number = Date.now()): string =
   const diff = at - now
   const abs = Math.abs(diff)
   const mins = Math.round(abs / 60_000)
-  const unit = mins < 60 ? `${Math.max(0, mins)}m` : mins < 60 * 48 ? `${Math.round(mins / 60)}h` : `${Math.round(mins / 1440)}d`
+
+  const unit =
+    mins < 60 ? `${Math.max(0, mins)}m` : mins < 60 * 48 ? `${Math.round(mins / 60)}h` : `${Math.round(mins / 1440)}d`
 
   return diff >= 0 ? `in ${unit}` : `${unit} ago`
 }
@@ -112,7 +114,7 @@ export function ScheduleStrip({ gw, t, width }: ScheduleStripProps) {
     let live = true
 
     const load = () => {
-      gw.request<unknown>('forecast.schedule.status', {})
+      gw.request('forecast.schedule.status', {})
         .then(raw => {
           if (live) {
             setStatus(asRpcResult<ForecastScheduleStatusResponse>(raw))
@@ -143,7 +145,9 @@ export function ScheduleStrip({ gw, t, width }: ScheduleStripProps) {
   return (
     <Box flexDirection="column" flexShrink={0} width={width}>
       <Text wrap="truncate-end">
-        <Text bold color={t.color.primary}>SCHEDULE</Text>
+        <Text bold color={t.color.primary}>
+          SCHEDULE
+        </Text>
         <Text color={t.color.muted}>{'   '}</Text>
         <Text color={stateColor}>{`● ${verdict}`}</Text>
         {health.nextRun ? <Text color={t.color.muted}>{`  · next ${health.nextRun}`}</Text> : null}

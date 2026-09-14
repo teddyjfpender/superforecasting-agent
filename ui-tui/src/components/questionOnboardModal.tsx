@@ -88,7 +88,20 @@ const STEP_TITLE: Record<Step, string> = {
 
 // Order of steps; units/choices are conditional on the outcome type.
 const nextStep = (step: Step, a: OnboardAnswers): Step => {
-  const order: Step[] = ['title', 'criteria', 'outcome', 'units', 'choices', 'owner', 'threshold', 'evidence', 'source', 'panel', 'confirm']
+  const order: Step[] = [
+    'title',
+    'criteria',
+    'outcome',
+    'units',
+    'choices',
+    'owner',
+    'threshold',
+    'evidence',
+    'source',
+    'panel',
+    'confirm'
+  ]
+
   let i = order.indexOf(step) + 1
 
   while (i < order.length) {
@@ -155,17 +168,16 @@ export function QuestionOnboardModal({ gw, onClose, onDone, t }: QuestionOnboard
     setError('')
     const spec = specFromAnswers(answers)
     void gw
-      .request<{ committed?: boolean; issues?: { field: string; message: string }[]; question_id?: string }>(
-        'forecast.onboard_commit',
-        { spec }
-      )
+      .request('forecast.onboard_commit', { spec })
       .then(res => {
         if (res?.committed && res.question_id) {
           setResultId(res.question_id)
           setStep('done')
           onDone?.(res.question_id)
         } else {
-          setError((res?.issues ?? []).map(i => `${i.field}: ${i.message}`).join(' · ') || 'could not create the question')
+          setError(
+            (res?.issues ?? []).map(i => `${i.field}: ${i.message}`).join(' · ') || 'could not create the question'
+          )
         }
 
         setBusy(false)
@@ -197,7 +209,16 @@ export function QuestionOnboardModal({ gw, onClose, onDone, t }: QuestionOnboard
     }
 
     if (step === 'choices') {
-      return advance({ ...answers, choices: value.split(',').map(s => s.trim()).filter(Boolean) }, 'choices')
+      return advance(
+        {
+          ...answers,
+          choices: value
+            .split(',')
+            .map(s => s.trim())
+            .filter(Boolean)
+        },
+        'choices'
+      )
     }
 
     if (step === 'source') {
@@ -246,56 +267,59 @@ export function QuestionOnboardModal({ gw, onClose, onDone, t }: QuestionOnboard
     }
   }
 
-  useInput((ch, key) => {
-    if (key.escape) {
-      return onClose()
-    }
+  useInput(
+    (ch, key) => {
+      if (key.escape) {
+        return onClose()
+      }
 
-    if (step === 'done') {
-      return onClose()
-    }
+      if (step === 'done') {
+        return onClose()
+      }
 
-    if (step === 'confirm') {
+      if (step === 'confirm') {
+        if (key.return) {
+          return commit()
+        }
+
+        return
+      }
+
+      if (choices) {
+        if (key.upArrow) {
+          return setSel(s => (s - 1 + choices.length) % choices.length)
+        }
+
+        if (key.downArrow) {
+          return setSel(s => (s + 1) % choices.length)
+        }
+
+        if (key.return) {
+          return pickChoice()
+        }
+
+        return
+      }
+
+      // text steps
       if (key.return) {
-        return commit()
+        return submitText()
       }
 
-      return
-    }
-
-    if (choices) {
-      if (key.upArrow) {
-        return setSel(s => (s - 1 + choices.length) % choices.length)
+      if (key.backspace || key.delete) {
+        return setText(s => s.slice(0, -1))
       }
 
-      if (key.downArrow) {
-        return setSel(s => (s + 1) % choices.length)
+      if (ch && !key.ctrl && !key.meta) {
+        const printable = [...ch].filter(c => c >= ' ').join('')
+
+        if (printable) {
+          setText(s => s + printable)
+        }
       }
-
-      if (key.return) {
-        return pickChoice()
-      }
-
-      return
-    }
-
-    // text steps
-    if (key.return) {
-      return submitText()
-    }
-
-    if (key.backspace || key.delete) {
-      return setText(s => s.slice(0, -1))
-    }
-
-    if (ch && !key.ctrl && !key.meta) {
-      const printable = [...ch].filter(c => c >= ' ').join('')
-
-      if (printable) {
-        setText(s => s + printable)
-      }
-    }
-  }, { isActive: !globalModal })
+    },
+    { isActive: !globalModal }
+  )
 
   return (
     <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
@@ -315,15 +339,25 @@ export function QuestionOnboardModal({ gw, onClose, onDone, t }: QuestionOnboard
           {step === 'done' ? (
             <Box flexDirection="column" marginTop={1}>
               <Text color={sem.up}>{`Created forecast question ${resultId}.`}</Text>
-              <Text color={t.color.muted}>{answers.sources.length ? `${answers.sources.length} watched source(s) attached — re-runs can refresh them.` : 'Tip: add watched sources later so re-runs can refresh.'}</Text>
+              <Text color={t.color.muted}>
+                {answers.sources.length
+                  ? `${answers.sources.length} watched source(s) attached — re-runs can refresh them.`
+                  : 'Tip: add watched sources later so re-runs can refresh.'}
+              </Text>
             </Box>
           ) : step === 'confirm' ? (
             <Box flexDirection="column" marginTop={1}>
               <Text color={t.color.text}>{answers.title || '(untitled)'}</Text>
-              <Text color={t.color.muted}>{`outcome ${answers.outcome}${answers.units ? ` (${answers.units})` : ''} · owner ${answers.owner || '—'} · ${answers.threshold || 'no threshold'}`}</Text>
-              <Text color={t.color.muted}>{`evidence ${answers.evidence ? 'auto-fetch' : 'manual'} · panel ${answers.panel ? 'on' : 'off'} · ${answers.sources.length} source(s)`}</Text>
+              <Text
+                color={t.color.muted}
+              >{`outcome ${answers.outcome}${answers.units ? ` (${answers.units})` : ''} · owner ${answers.owner || '—'} · ${answers.threshold || 'no threshold'}`}</Text>
+              <Text
+                color={t.color.muted}
+              >{`evidence ${answers.evidence ? 'auto-fetch' : 'manual'} · panel ${answers.panel ? 'on' : 'off'} · ${answers.sources.length} source(s)`}</Text>
               {answers.sources.length ? (
-                <Text color={t.color.label} wrap="truncate-end">{answers.sources.map(s => s.source).join(', ')}</Text>
+                <Text color={t.color.label} wrap="truncate-end">
+                  {answers.sources.map(s => s.source).join(', ')}
+                </Text>
               ) : null}
             </Box>
           ) : choices ? (
@@ -355,12 +389,22 @@ export function QuestionOnboardModal({ gw, onClose, onDone, t }: QuestionOnboard
         <FooterChips
           chips={
             step === 'confirm'
-              ? [{ k: '⏎', label: busy ? 'creating…' : 'Create' }, { k: '⎋', label: 'Cancel' }]
+              ? [
+                  { k: '⏎', label: busy ? 'creating…' : 'Create' },
+                  { k: '⎋', label: 'Cancel' }
+                ]
               : step === 'done'
                 ? [{ k: '⏎', label: 'Close' }]
                 : choices
-                  ? [{ k: '↑↓', label: 'Choose' }, { k: '⏎', label: 'Select' }, { k: '⎋', label: 'Cancel' }]
-                  : [{ k: '⏎', label: step === 'source' ? 'Add / next' : 'Next' }, { k: '⎋', label: 'Cancel' }]
+                  ? [
+                      { k: '↑↓', label: 'Choose' },
+                      { k: '⏎', label: 'Select' },
+                      { k: '⎋', label: 'Cancel' }
+                    ]
+                  : [
+                      { k: '⏎', label: step === 'source' ? 'Add / next' : 'Next' },
+                      { k: '⎋', label: 'Cancel' }
+                    ]
           }
           disabled={globalModal}
           t={t}

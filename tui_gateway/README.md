@@ -40,3 +40,5 @@ Update this guide when entry points or ownership change. See the
 and [engineering backlog](../TODO.md) for cross-package context.
 
 [↑ Parent directory](../README.md)
+
+Interactive prompts share the correlated request owner in `server_requests.py`. See the [protocol and reconnect contract](../protocol/README.md) for capability negotiation, legacy adapters, cancellation, and reply ownership.

@@ -11,6 +11,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from pydantic import BaseModel
+
+from protocol import collab as _collab
 from protocol.events import commands as _events_commands
 from protocol.events import desk as _events_desk
 from protocol.events import gateway as _events_gateway
@@ -27,19 +30,22 @@ from protocol.rpc import agents as _rpc_agents
 from protocol.rpc import commands as _rpc_commands
 from protocol.rpc import config as _rpc_config
 from protocol.rpc import forecast as _rpc_forecast
-from protocol.rpc import interact as _rpc_interact
 from protocol.rpc import host as _rpc_host
+from protocol.rpc import interact as _rpc_interact
 from protocol.rpc import jobs as _rpc_jobs
+from protocol.rpc import market_models as _rpc_market_models
 from protocol.rpc import markets as _rpc_markets
 from protocol.rpc import model as _rpc_model
 from protocol.rpc import obsidian as _rpc_obsidian
+from protocol.rpc import operations as _rpc_operations
 from protocol.rpc import pm as _rpc_pm
 from protocol.rpc import rollback as _rpc_rollback
 from protocol.rpc import session as _rpc_session
+from protocol.rpc import skills as _rpc_skills
 from protocol.rpc import theme as _rpc_theme
 from protocol.rpc import voice as _rpc_voice
 from protocol.rpc import warnings as _rpc_warnings
-from protocol import collab as _collab
+from protocol.server_requests import SERVER_REQUESTS
 from protocol.types import WireModel
 from protocol.version import MIN_SUPPORTED, PROTOCOL_VERSION
 
@@ -56,8 +62,14 @@ class RpcSpec:
 
     method: str
     request: type[WireModel]
-    response: type[WireModel]
+    response: type[BaseModel]
     exclude_none: bool = False
+    invalid_params_code: int = 4000
+    parameter_error_codes: tuple[tuple[str, int], ...] = ()
+    handler_validated_parameters: tuple[str, ...] = ()
+    # Only for operations whose shared application validator rejects malformed
+    # input before effects and owns the public diagnostic across interfaces.
+    handler_validates_request: bool = False
 
 
 @dataclass(frozen=True)
@@ -69,22 +81,221 @@ class EventSpec:
 
 
 RPC_SPECS: list[RpcSpec] = [
-    RpcSpec("host.negotiate", _rpc_host.HostNegotiateRequest, _rpc_host.HostNegotiateResponse),
-    RpcSpec("pm.list", _rpc_pm.PmListRequest, _rpc_pm.PmListResponse),
-    RpcSpec("pm.detail", _rpc_pm.PmDetailRequest, _rpc_pm.PmDetailResponse),
-    RpcSpec("pm.book", _rpc_pm.PmBookRequest, _rpc_pm.PmBookResponse),
-    RpcSpec("pm.history", _rpc_pm.PmHistoryRequest, _rpc_pm.PmHistoryResponse),
+    RpcSpec(
+        "events.replay",
+        _rpc_operations.EventsReplayRequest,
+        _rpc_operations.EventsReplayResponse,
+    ),
+    RpcSpec(
+        "llm.oneshot", _rpc_operations.OneShotRequest, _rpc_operations.TextResponse
+    ),
+    RpcSpec(
+        "plugins.list", _rpc_operations.EmptyRequest, _rpc_operations.PluginsResponse
+    ),
+    RpcSpec(
+        "config.show",
+        _rpc_operations.OperationSessionRequest,
+        _rpc_operations.SectionsResponse,
+    ),
+    RpcSpec(
+        "cli.exec",
+        _rpc_operations.CliExecRequest,
+        _rpc_operations.CliExecResponse,
+        invalid_params_code=4003,
+    ),
+    RpcSpec(
+        "command.resolve",
+        _rpc_operations.CommandResolveRequest,
+        _rpc_operations.CommandResolveResponse,
+    ),
+    RpcSpec(
+        "tools.list",
+        _rpc_operations.OperationSessionRequest,
+        _rpc_operations.ToolsetsResponse,
+    ),
+    RpcSpec(
+        "tools.show",
+        _rpc_operations.OperationSessionRequest,
+        _rpc_operations.SectionsResponse,
+    ),
+    RpcSpec(
+        "toolsets.list",
+        _rpc_operations.OperationSessionRequest,
+        _rpc_operations.ToolsetsResponse,
+    ),
+    RpcSpec(
+        "superforecasting_agent.tooling.toolsets.list",
+        _rpc_operations.OperationSessionRequest,
+        _rpc_operations.ToolsetsResponse,
+    ),
+    RpcSpec(
+        "cron.manage",
+        _rpc_operations.CronManageRequest,
+        _rpc_operations.CronManageResponse,
+    ),
+    RpcSpec(
+        "voice.tts", _rpc_operations.VoiceTtsRequest, _rpc_operations.VoiceTtsResponse
+    ),
+    RpcSpec(
+        "insights.get",
+        _rpc_operations.InsightsRequest,
+        _rpc_operations.InsightsResponse,
+        invalid_params_code=4004,
+    ),
+    RpcSpec(
+        "news.search",
+        _rpc_operations.NewsSearchRequest,
+        _rpc_operations.NewsSearchResponse,
+    ),
+    RpcSpec("auth.start", _rpc_model.AuthStartRequest, _rpc_model.AuthStartResponse),
+    RpcSpec("auth.poll", _rpc_model.AuthPollRequest, _rpc_model.AuthPollResponse),
+    RpcSpec(
+        "skills.reload",
+        _rpc_skills.SkillsReloadRequest,
+        _rpc_skills.SkillsReloadResponse,
+    ),
+    RpcSpec(
+        "spawn_tree.save",
+        _rpc_agents.SpawnTreeSaveRequest,
+        _rpc_agents.SpawnTreeSaveResponse,
+    ),
+    RpcSpec(
+        "forecast.warnings.automode.cancel",
+        _rpc_warnings.AutomodeCancelRequest,
+        _rpc_warnings.AutomodeCancelResponse,
+    ),
+    RpcSpec(
+        "skills.manage",
+        _rpc_skills.SkillsManageRequest,
+        _rpc_skills.SkillsManageResponse,
+    ),
+    RpcSpec(
+        "markets.model.create",
+        _rpc_market_models.ModelCreateRequest,
+        _rpc_market_models.ModelBuildResponse,
+    ),
+    RpcSpec(
+        "markets.model.chat",
+        _rpc_market_models.ModelChatRequest,
+        _rpc_market_models.ModelBuildResponse,
+    ),
+    RpcSpec(
+        "markets.model.retry",
+        _rpc_market_models.ModelSessionRequest,
+        _rpc_market_models.ModelBuildResponse,
+    ),
+    RpcSpec(
+        "markets.model.list",
+        _rpc_market_models.ModelListRequest,
+        _rpc_market_models.ModelListResponse,
+    ),
+    RpcSpec(
+        "markets.model.get",
+        _rpc_market_models.ModelGetRequest,
+        _rpc_market_models.ModelGetResponse,
+    ),
+    RpcSpec(
+        "markets.model.renarrate",
+        _rpc_market_models.ModelIdentityRequest,
+        _rpc_market_models.ModelBuildResponse,
+    ),
+    RpcSpec(
+        "markets.model.export",
+        _rpc_market_models.ModelIdentityRequest,
+        _rpc_market_models.ModelExportResponse,
+    ),
+    RpcSpec(
+        "markets.model.to_forecast",
+        _rpc_market_models.ModelIdentityRequest,
+        _rpc_market_models.ModelForecastResponse,
+    ),
+    RpcSpec(
+        "markets.model.delete",
+        _rpc_market_models.ModelIdentityRequest,
+        _rpc_market_models.ModelDeleteResponse,
+    ),
+    RpcSpec(
+        "command.dispatch",
+        _rpc_commands.CommandDispatchRequest,
+        _rpc_commands.CommandDispatchResponse,
+        invalid_params_code=4004,
+    ),
+    RpcSpec(
+        "paste.collapse",
+        _rpc_commands.PasteCollapseRequest,
+        _rpc_commands.PasteCollapseResponse,
+    ),
+    RpcSpec(
+        "obsidian.setup",
+        _rpc_obsidian.ObsidianStatusRequest,
+        _rpc_obsidian.ObsidianSetupResponse,
+    ),
+    RpcSpec(
+        "obsidian.write",
+        _rpc_obsidian.ObsidianWriteRequest,
+        _rpc_obsidian.ObsidianWriteResponse,
+    ),
+    RpcSpec(
+        "obsidian.create",
+        _rpc_obsidian.ObsidianCreateRequest,
+        _rpc_obsidian.ObsidianWriteResponse,
+    ),
+    RpcSpec(
+        "obsidian.append",
+        _rpc_obsidian.ObsidianAppendRequest,
+        _rpc_obsidian.ObsidianWriteResponse,
+    ),
+    RpcSpec(
+        "model.save_key", _rpc_model.ModelSaveKeyRequest, _rpc_model.ModelOptionProvider
+    ),
+    RpcSpec(
+        "model.disconnect",
+        _rpc_model.ModelDisconnectRequest,
+        _rpc_model.ModelDisconnectResponse,
+    ),
+    RpcSpec(
+        "host.negotiate",
+        _rpc_host.HostNegotiateRequest,
+        _rpc_host.HostNegotiateResponse,
+        invalid_params_code=-32602,
+    ),
+    RpcSpec(
+        "pm.list",
+        _rpc_pm.PmListRequest,
+        _rpc_pm.PmListResponse,
+        invalid_params_code=-32602,
+    ),
+    RpcSpec(
+        "pm.detail",
+        _rpc_pm.PmDetailRequest,
+        _rpc_pm.PmDetailResponse,
+        invalid_params_code=-32602,
+    ),
+    RpcSpec(
+        "pm.book",
+        _rpc_pm.PmBookRequest,
+        _rpc_pm.PmBookResponse,
+        invalid_params_code=-32602,
+    ),
+    RpcSpec(
+        "pm.history",
+        _rpc_pm.PmHistoryRequest,
+        _rpc_pm.PmHistoryResponse,
+        invalid_params_code=-32602,
+    ),
     RpcSpec(
         "pm.stream.start",
         _rpc_pm.PmStreamStartRequest,
         _rpc_pm.PmStreamStartResponse,
         exclude_none=True,
+        invalid_params_code=-32602,
     ),
     RpcSpec(
         "pm.stream.stop",
         _rpc_pm.PmStreamStopRequest,
         _rpc_pm.PmStreamStopResponse,
         exclude_none=True,
+        invalid_params_code=-32602,
     ),
     # ── jobs.* — the detached-job runtime (Arc B) ────────────────────────────
     RpcSpec("jobs.start", _rpc_jobs.JobsStartRequest, _rpc_jobs.JobsStartResponse),
@@ -106,114 +317,466 @@ RPC_SPECS: list[RpcSpec] = [
     # Wrapped in tui_gateway/server.py with VALIDATE-ONLY semantics (the wrapper
     # logs drift and returns the original result untouched — the big partial
     # payloads never re-serialise, so the wire can never regress).
-    RpcSpec("forecast.dashboard", _rpc_forecast.ForecastDashboardRequest, _rpc_forecast.ForecastDashboardResponse),
-    RpcSpec("forecast.workspace", _rpc_forecast.ForecastWorkspaceRequest, _rpc_forecast.ForecastWorkspaceResponse),
-    RpcSpec("forecast.theses", _rpc_forecast.ForecastThesesRequest, _rpc_forecast.ForecastThesesResponse),
-    RpcSpec("forecast.bench", _rpc_forecast.ForecastBenchRequest, _rpc_forecast.ForecastBenchResponse),
-    RpcSpec("forecast.quorum.status", _rpc_forecast.ForecastQuorumStatusRequest, _rpc_forecast.ForecastQuorumStatusResponse),
-    RpcSpec("forecast.question.readiness", _rpc_forecast.ForecastQuestionReadinessRequest, _rpc_forecast.ForecastQuestionReadinessResponse),
-    RpcSpec("forecast.triage.contested", _rpc_forecast.ForecastTriageContestedRequest, _rpc_forecast.ForecastTriageContestedResponse),
-    RpcSpec("forecast.triage.relabel", _rpc_forecast.ForecastTriageRelabelRequest, _rpc_forecast.ForecastTriageRelabelResponse),
-    RpcSpec("forecast.schedule.status", _rpc_forecast.ForecastScheduleStatusRequest, _rpc_forecast.ForecastScheduleStatusResponse),
-    RpcSpec("forecast.reviews.next", _rpc_forecast.ForecastReviewsNextRequest, _rpc_forecast.ForecastReviewsNextResponse),
-    RpcSpec("forecast.calibration", _rpc_forecast.ForecastCalibrationRequest, _rpc_forecast.ForecastCalibrationResponse),
-    RpcSpec("forecast.operation", _rpc_forecast.ForecastOperationRequest, _rpc_forecast.ForecastOperationResponse),
-    RpcSpec("forecast.review", _rpc_forecast.ForecastReviewRequest, _rpc_forecast.ForecastReviewResponse),
-    RpcSpec("forecast.resolve", _rpc_forecast.ForecastResolveRequest, _rpc_forecast.ForecastResolveResponse),
-    RpcSpec("forecast.command", _rpc_forecast.ForecastCommandRequest, _rpc_forecast.ForecastCommandResponse),
-    RpcSpec("forecast.reforecast", _rpc_forecast.ForecastReforecastRequest, _rpc_forecast.ForecastReforecastMarkResponse),
-    RpcSpec("forecast.config", _rpc_forecast.ForecastConfigRequest, _rpc_forecast.ForecastConfigResponse),
-    RpcSpec("forecast.config.set", _rpc_forecast.ForecastConfigSetRequest, _rpc_forecast.ForecastConfigResponse),
-    RpcSpec("forecast.question", _rpc_forecast.ForecastQuestionRequest, _rpc_forecast.ForecastQuestionPacketResponse),
-    RpcSpec("forecast.onboard_propose", _rpc_forecast.ForecastOnboardProposeRequest, _rpc_forecast.ForecastOnboardProposeResponse),
-    RpcSpec("forecast.onboard_commit", _rpc_forecast.ForecastOnboardCommitRequest, _rpc_forecast.ForecastOnboardCommitResponse),
-    RpcSpec("forecast.hooks", _rpc_forecast.ForecastHooksRequest, _rpc_forecast.ForecastHooksResponse),
-    RpcSpec("forecast.hooks.set", _rpc_forecast.ForecastHooksSetRequest, _rpc_forecast.ForecastHooksSetResponse),
-    RpcSpec("forecast.hooks.save_rule", _rpc_forecast.ForecastHooksSaveRuleRequest, _rpc_forecast.ForecastHooksSaveRuleResponse),
-    RpcSpec("forecast.hooks.remove_rule", _rpc_forecast.ForecastHooksRemoveRuleRequest, _rpc_forecast.ForecastHooksRemoveRuleResponse),
-    RpcSpec("forecast.hooks.preview", _rpc_forecast.ForecastHooksPreviewRequest, _rpc_forecast.ForecastHooksPreviewResponse),
+    RpcSpec(
+        "forecast.dashboard",
+        _rpc_forecast.ForecastDashboardRequest,
+        _rpc_forecast.ForecastDashboardResponse,
+    ),
+    RpcSpec(
+        "forecast.workspace",
+        _rpc_forecast.ForecastWorkspaceRequest,
+        _rpc_forecast.ForecastWorkspaceResponse,
+    ),
+    RpcSpec(
+        "forecast.theses",
+        _rpc_forecast.ForecastThesesRequest,
+        _rpc_forecast.ForecastThesesResponse,
+    ),
+    RpcSpec(
+        "forecast.bench",
+        _rpc_forecast.ForecastBenchRequest,
+        _rpc_forecast.ForecastBenchResponse,
+    ),
+    RpcSpec(
+        "forecast.quorum.status",
+        _rpc_forecast.ForecastQuorumStatusRequest,
+        _rpc_forecast.ForecastQuorumStatusResponse,
+    ),
+    RpcSpec(
+        "forecast.question.readiness",
+        _rpc_forecast.ForecastQuestionReadinessRequest,
+        _rpc_forecast.ForecastQuestionReadinessResponse,
+    ),
+    RpcSpec(
+        "forecast.triage.contested",
+        _rpc_forecast.ForecastTriageContestedRequest,
+        _rpc_forecast.ForecastTriageContestedResponse,
+    ),
+    RpcSpec(
+        "forecast.triage.relabel",
+        _rpc_forecast.ForecastTriageRelabelRequest,
+        _rpc_forecast.ForecastTriageRelabelResponse,
+    ),
+    RpcSpec(
+        "forecast.schedule.status",
+        _rpc_forecast.ForecastScheduleStatusRequest,
+        _rpc_forecast.ForecastScheduleStatusResponse,
+    ),
+    RpcSpec(
+        "forecast.reviews.next",
+        _rpc_forecast.ForecastReviewsNextRequest,
+        _rpc_forecast.ForecastReviewsNextResponse,
+    ),
+    RpcSpec(
+        "forecast.calibration",
+        _rpc_forecast.ForecastCalibrationRequest,
+        _rpc_forecast.ForecastCalibrationResponse,
+        invalid_params_code=4003,
+    ),
+    RpcSpec(
+        "forecast.operation",
+        _rpc_forecast.ForecastOperationRequest,
+        _rpc_forecast.ForecastOperationResponse,
+    ),
+    RpcSpec(
+        "forecast.review",
+        _rpc_forecast.ForecastReviewRequest,
+        _rpc_forecast.ForecastReviewResponse,
+        handler_validates_request=True,
+    ),
+    RpcSpec(
+        "forecast.resolve",
+        _rpc_forecast.ForecastResolveRequest,
+        _rpc_forecast.ForecastResolveResponse,
+        handler_validates_request=True,
+    ),
+    RpcSpec(
+        "forecast.command",
+        _rpc_forecast.ForecastCommandRequest,
+        _rpc_forecast.ForecastCommandResponse,
+    ),
+    RpcSpec(
+        "forecast.reforecast",
+        _rpc_forecast.ForecastReforecastRequest,
+        _rpc_forecast.ForecastReforecastMarkResponse,
+    ),
+    RpcSpec(
+        "forecast.config",
+        _rpc_forecast.ForecastConfigRequest,
+        _rpc_forecast.ForecastConfigResponse,
+    ),
+    RpcSpec(
+        "forecast.config.set",
+        _rpc_forecast.ForecastConfigSetRequest,
+        _rpc_forecast.ForecastConfigResponse,
+    ),
+    RpcSpec(
+        "forecast.question",
+        _rpc_forecast.ForecastQuestionRequest,
+        _rpc_forecast.ForecastQuestionPacketResponse,
+    ),
+    RpcSpec(
+        "forecast.onboard_propose",
+        _rpc_forecast.ForecastOnboardProposeRequest,
+        _rpc_forecast.ForecastOnboardProposeResponse,
+    ),
+    RpcSpec(
+        "forecast.onboard_commit",
+        _rpc_forecast.ForecastOnboardCommitRequest,
+        _rpc_forecast.ForecastOnboardCommitResponse,
+    ),
+    RpcSpec(
+        "forecast.hooks",
+        _rpc_forecast.ForecastHooksRequest,
+        _rpc_forecast.ForecastHooksResponse,
+    ),
+    RpcSpec(
+        "forecast.hooks.set",
+        _rpc_forecast.ForecastHooksSetRequest,
+        _rpc_forecast.ForecastHooksSetResponse,
+    ),
+    RpcSpec(
+        "forecast.hooks.save_rule",
+        _rpc_forecast.ForecastHooksSaveRuleRequest,
+        _rpc_forecast.ForecastHooksSaveRuleResponse,
+    ),
+    RpcSpec(
+        "forecast.hooks.remove_rule",
+        _rpc_forecast.ForecastHooksRemoveRuleRequest,
+        _rpc_forecast.ForecastHooksRemoveRuleResponse,
+    ),
+    RpcSpec(
+        "forecast.hooks.preview",
+        _rpc_forecast.ForecastHooksPreviewRequest,
+        _rpc_forecast.ForecastHooksPreviewResponse,
+    ),
     # ── forecast.warnings.* ──────────────────────────────────────────────────
-    RpcSpec("forecast.warnings.list", _rpc_warnings.ForecastWarningsListRequest, _rpc_warnings.ForecastWarningsListResponse),
-    RpcSpec("forecast.warnings.aggregate", _rpc_warnings.ForecastWarningsAggregateRequest, _rpc_warnings.ForecastWarningsAggregateResponse),
-    RpcSpec("forecast.warnings.resolve", _rpc_warnings.ForecastWarningsResolveRequest, _rpc_warnings.ForecastWarningsResolveResponse),
-    RpcSpec("forecast.warnings.dismiss", _rpc_warnings.ForecastWarningsDismissRequest, _rpc_warnings.ForecastWarningsDismissResponse),
+    RpcSpec(
+        "forecast.warnings.list",
+        _rpc_warnings.ForecastWarningsListRequest,
+        _rpc_warnings.ForecastWarningsListResponse,
+    ),
+    RpcSpec(
+        "forecast.warnings.aggregate",
+        _rpc_warnings.ForecastWarningsAggregateRequest,
+        _rpc_warnings.ForecastWarningsAggregateResponse,
+    ),
+    RpcSpec(
+        "forecast.warnings.resolve",
+        _rpc_warnings.ForecastWarningsResolveRequest,
+        _rpc_warnings.ForecastWarningsResolveResponse,
+    ),
+    RpcSpec(
+        "forecast.warnings.dismiss",
+        _rpc_warnings.ForecastWarningsDismissRequest,
+        _rpc_warnings.ForecastWarningsDismissResponse,
+    ),
     # ── Arc-B ALIASES: handlers live in jobs_rpc.py (NOT wrapped here) — typed
     # + registered only so the desk/alerts views reference generated types. ───
-    RpcSpec("forecast.warnings.automode.run", _rpc_warnings.ForecastWarningsAutomodeRunRequest, _rpc_warnings.ForecastWarningsAutomodeRunResponse),
-    RpcSpec("forecast.reforecast.start", _rpc_forecast.ForecastReforecastStartRequest, _rpc_forecast.ForecastReforecastStartResponse),
-    RpcSpec("forecast.reforecast.status", _rpc_forecast.ForecastReforecastStatusRequest, _rpc_forecast.ForecastReforecastStatusResponse),
-    RpcSpec("forecast.reforecast.active", _rpc_forecast.ForecastReforecastActiveRequest, _rpc_forecast.ForecastReforecastActiveResponse),
-    RpcSpec("forecast.desk.task", _rpc_forecast.ForecastDeskTaskRequest, _rpc_forecast.ForecastReforecastStartResponse),
+    RpcSpec(
+        "forecast.warnings.automode.run",
+        _rpc_warnings.ForecastWarningsAutomodeRunRequest,
+        _rpc_warnings.ForecastWarningsAutomodeRunResponse,
+    ),
+    RpcSpec(
+        "forecast.reforecast.start",
+        _rpc_forecast.ForecastReforecastStartRequest,
+        _rpc_forecast.ForecastReforecastStartResponse,
+    ),
+    RpcSpec(
+        "forecast.reforecast.status",
+        _rpc_forecast.ForecastReforecastStatusRequest,
+        _rpc_forecast.ForecastReforecastStatusResponse,
+    ),
+    RpcSpec(
+        "forecast.reforecast.active",
+        _rpc_forecast.ForecastReforecastActiveRequest,
+        _rpc_forecast.ForecastReforecastActiveResponse,
+    ),
+    RpcSpec(
+        "forecast.desk.task",
+        _rpc_forecast.ForecastDeskTaskRequest,
+        _rpc_forecast.ForecastReforecastStartResponse,
+    ),
     # ── ARC A4 — the arc closer: session / config / agents / everything left ──
     # ── session.* — the session lifecycle family ─────────────────────────────
-    RpcSpec("session.create", _rpc_session.SessionCreateRequest, _rpc_session.SessionCreateResponse),
-    RpcSpec("session.resume", _rpc_session.SessionResumeRequest, _rpc_session.SessionResumeResponse),
-    RpcSpec("session.list", _rpc_session.SessionListRequest, _rpc_session.SessionListResponse),
-    RpcSpec("session.delete", _rpc_session.SessionDeleteRequest, _rpc_session.SessionDeleteResponse),
-    RpcSpec("session.most_recent", _rpc_session.SessionMostRecentRequest, _rpc_session.SessionMostRecentResponse),
-    RpcSpec("session.title", _rpc_session.SessionTitleRequest, _rpc_session.SessionTitleResponse),
-    RpcSpec("session.save", _rpc_session.SessionSaveRequest, _rpc_session.SessionSaveResponse),
-    RpcSpec("session.undo", _rpc_session.SessionUndoRequest, _rpc_session.SessionUndoResponse),
-    RpcSpec("session.usage", _rpc_session.SessionUsageRequest, _rpc_session.SessionUsageResponse),
-    RpcSpec("session.status", _rpc_session.SessionStatusRequest, _rpc_session.SessionStatusResponse),
-    RpcSpec("session.compress", _rpc_session.SessionCompressRequest, _rpc_session.SessionCompressResponse),
-    RpcSpec("session.branch", _rpc_session.SessionBranchRequest, _rpc_session.SessionBranchResponse),
-    RpcSpec("session.branch_replace", _rpc_session.SessionBranchRequest, _rpc_session.SessionBranchResponse),
-    RpcSpec("session.close", _rpc_session.SessionCloseRequest, _rpc_session.SessionCloseResponse),
-    RpcSpec("session.interrupt", _rpc_session.SessionInterruptRequest, _rpc_session.SessionInterruptResponse),
-    RpcSpec("session.steer", _rpc_session.SessionSteerRequest, _rpc_session.SessionSteerResponse),
-    RpcSpec("session.history", _rpc_session.SessionHistoryRequest, _rpc_session.SessionHistoryResponse),
+    RpcSpec(
+        "session.create",
+        _rpc_session.SessionCreateRequest,
+        _rpc_session.SessionCreateResponse,
+    ),
+    RpcSpec(
+        "session.resume",
+        _rpc_session.SessionResumeRequest,
+        _rpc_session.SessionResumeResponse,
+    ),
+    RpcSpec(
+        "session.list",
+        _rpc_session.SessionListRequest,
+        _rpc_session.SessionListResponse,
+    ),
+    RpcSpec(
+        "session.delete",
+        _rpc_session.SessionDeleteRequest,
+        _rpc_session.SessionDeleteResponse,
+    ),
+    RpcSpec(
+        "session.most_recent",
+        _rpc_session.SessionMostRecentRequest,
+        _rpc_session.SessionMostRecentResponse,
+    ),
+    RpcSpec(
+        "session.title",
+        _rpc_session.SessionTitleRequest,
+        _rpc_session.SessionTitleResponse,
+    ),
+    RpcSpec(
+        "session.save",
+        _rpc_session.SessionSaveRequest,
+        _rpc_session.SessionSaveResponse,
+    ),
+    RpcSpec(
+        "session.undo",
+        _rpc_session.SessionUndoRequest,
+        _rpc_session.SessionUndoResponse,
+    ),
+    RpcSpec(
+        "session.usage",
+        _rpc_session.SessionUsageRequest,
+        _rpc_session.SessionUsageResponse,
+    ),
+    RpcSpec(
+        "session.status",
+        _rpc_session.SessionStatusRequest,
+        _rpc_session.SessionStatusResponse,
+    ),
+    RpcSpec(
+        "session.compress",
+        _rpc_session.SessionCompressRequest,
+        _rpc_session.SessionCompressResponse,
+    ),
+    RpcSpec(
+        "session.branch",
+        _rpc_session.SessionBranchRequest,
+        _rpc_session.SessionBranchResponse,
+    ),
+    RpcSpec(
+        "session.branch_replace",
+        _rpc_session.SessionBranchRequest,
+        _rpc_session.SessionBranchResponse,
+    ),
+    RpcSpec(
+        "session.close",
+        _rpc_session.SessionCloseRequest,
+        _rpc_session.SessionCloseResponse,
+    ),
+    RpcSpec(
+        "session.interrupt",
+        _rpc_session.SessionInterruptRequest,
+        _rpc_session.SessionInterruptResponse,
+    ),
+    RpcSpec(
+        "session.steer",
+        _rpc_session.SessionSteerRequest,
+        _rpc_session.SessionSteerResponse,
+    ),
+    RpcSpec(
+        "session.history",
+        _rpc_session.SessionHistoryRequest,
+        _rpc_session.SessionHistoryResponse,
+    ),
     # ── config.* + setup.status ──────────────────────────────────────────────
-    # config.get is POLYMORPHIC (its shape depends on the `key` param) so it is
-    # registered for TS types only (handler stays @method, unwrapped); its two
-    # alternate shapes ride EXTRA_MODELS below.
-    RpcSpec("config.get", _rpc_config.ConfigGetValueRequest, _rpc_config.ConfigFullResponse),
-    RpcSpec("config.set", _rpc_config.ConfigSetRequest, _rpc_config.ConfigSetResponse),
-    RpcSpec("setup.status", _rpc_config.SetupStatusRequest, _rpc_config.SetupStatusResponse),
+    # config.get is polymorphic by key. Its shared response exposes the
+    # supported fields; every consumer now goes through the same method map.
+    RpcSpec(
+        "config.get", _rpc_config.ConfigGetValueRequest, _rpc_config.ConfigGetResponse
+    ),
+    RpcSpec(
+        "config.set",
+        _rpc_config.ConfigSetRequest,
+        _rpc_config.ConfigSetResponse,
+        handler_validated_parameters=("value",),
+    ),
+    RpcSpec(
+        "setup.status", _rpc_config.SetupStatusRequest, _rpc_config.SetupStatusResponse
+    ),
     # ── theme / model / voice ────────────────────────────────────────────────
     RpcSpec("theme.list", _rpc_theme.ThemeListRequest, _rpc_theme.ThemeListResponse),
-    RpcSpec("model.options", _rpc_model.ModelOptionsRequest, _rpc_model.ModelOptionsResponse),
-    RpcSpec("voice.toggle", _rpc_voice.VoiceToggleRequest, _rpc_voice.VoiceToggleResponse),
-    RpcSpec("voice.record", _rpc_voice.VoiceRecordRequest, _rpc_voice.VoiceRecordResponse),
-    RpcSpec("voice.stop", _rpc_voice.VoiceRecordRequest, _rpc_voice.VoiceRecordResponse),
+    RpcSpec(
+        "model.options", _rpc_model.ModelOptionsRequest, _rpc_model.ModelOptionsResponse
+    ),
+    RpcSpec(
+        "voice.toggle", _rpc_voice.VoiceToggleRequest, _rpc_voice.VoiceToggleResponse
+    ),
+    RpcSpec(
+        "voice.record", _rpc_voice.VoiceRecordRequest, _rpc_voice.VoiceRecordResponse
+    ),
+    RpcSpec(
+        "voice.stop", _rpc_voice.VoiceRecordRequest, _rpc_voice.VoiceRecordResponse
+    ),
     # ── obsidian.* ───────────────────────────────────────────────────────────
-    RpcSpec("obsidian.status", _rpc_obsidian.ObsidianStatusRequest, _rpc_obsidian.ObsidianStatusResponse),
-    RpcSpec("obsidian.note", _rpc_obsidian.ObsidianNoteRequest, _rpc_obsidian.ObsidianNoteResponse),
-    RpcSpec("obsidian.search", _rpc_obsidian.ObsidianSearchRequest, _rpc_obsidian.ObsidianSearchResponse),
+    RpcSpec(
+        "obsidian.status",
+        _rpc_obsidian.ObsidianStatusRequest,
+        _rpc_obsidian.ObsidianStatusResponse,
+    ),
+    RpcSpec(
+        "obsidian.note",
+        _rpc_obsidian.ObsidianNoteRequest,
+        _rpc_obsidian.ObsidianNoteResponse,
+    ),
+    RpcSpec(
+        "obsidian.search",
+        _rpc_obsidian.ObsidianSearchRequest,
+        _rpc_obsidian.ObsidianSearchResponse,
+    ),
     # ── agents.* / delegation.* / subagent.* / spawn_tree.* ──────────────────
-    RpcSpec("agents.list", _rpc_agents.AgentsListRequest, _rpc_agents.AgentsListResponse),
-    RpcSpec("agents.active.summary", _rpc_agents.AgentsActiveSummaryRequest, _rpc_agents.AgentsActiveSummaryResponse),
-    RpcSpec("delegation.status", _rpc_agents.DelegationStatusRequest, _rpc_agents.DelegationStatusResponse),
-    RpcSpec("delegation.pause", _rpc_agents.DelegationPauseRequest, _rpc_agents.DelegationPauseResponse),
-    RpcSpec("subagent.interrupt", _rpc_agents.SubagentInterruptRequest, _rpc_agents.SubagentInterruptResponse),
-    RpcSpec("spawn_tree.list", _rpc_agents.SpawnTreeListRequest, _rpc_agents.SpawnTreeListResponse),
-    RpcSpec("spawn_tree.load", _rpc_agents.SpawnTreeLoadRequest, _rpc_agents.SpawnTreeLoadResponse),
+    RpcSpec(
+        "agents.list", _rpc_agents.AgentsListRequest, _rpc_agents.AgentsListResponse
+    ),
+    RpcSpec(
+        "agents.active.summary",
+        _rpc_agents.AgentsActiveSummaryRequest,
+        _rpc_agents.AgentsActiveSummaryResponse,
+    ),
+    RpcSpec(
+        "delegation.status",
+        _rpc_agents.DelegationStatusRequest,
+        _rpc_agents.DelegationStatusResponse,
+    ),
+    RpcSpec(
+        "delegation.pause",
+        _rpc_agents.DelegationPauseRequest,
+        _rpc_agents.DelegationPauseResponse,
+        invalid_params_code=4004,
+    ),
+    RpcSpec(
+        "subagent.interrupt",
+        _rpc_agents.SubagentInterruptRequest,
+        _rpc_agents.SubagentInterruptResponse,
+    ),
+    RpcSpec(
+        "spawn_tree.list",
+        _rpc_agents.SpawnTreeListRequest,
+        _rpc_agents.SpawnTreeListResponse,
+    ),
+    RpcSpec(
+        "spawn_tree.load",
+        _rpc_agents.SpawnTreeLoadRequest,
+        _rpc_agents.SpawnTreeLoadResponse,
+    ),
     # ── commands / completion / slash ────────────────────────────────────────
-    RpcSpec("commands.catalog", _rpc_commands.CommandsCatalogRequest, _rpc_commands.CommandsCatalogResponse),
-    RpcSpec("complete.slash", _rpc_commands.CompletionRequest, _rpc_commands.CompletionResponse),
-    RpcSpec("complete.path", _rpc_commands.CompletionRequest, _rpc_commands.CompletionResponse),
-    RpcSpec("slash.exec", _rpc_commands.SlashExecRequest, _rpc_commands.SlashExecResponse),
+    RpcSpec(
+        "commands.catalog",
+        _rpc_commands.CommandsCatalogRequest,
+        _rpc_commands.CommandsCatalogResponse,
+    ),
+    RpcSpec(
+        "complete.slash",
+        _rpc_commands.CompletionRequest,
+        _rpc_commands.CompletionResponse,
+    ),
+    RpcSpec(
+        "complete.path",
+        _rpc_commands.CompletionRequest,
+        _rpc_commands.CompletionResponse,
+    ),
+    RpcSpec(
+        "slash.exec", _rpc_commands.SlashExecRequest, _rpc_commands.SlashExecResponse
+    ),
     # ── rollback.* ───────────────────────────────────────────────────────────
-    RpcSpec("rollback.list", _rpc_rollback.RollbackListRequest, _rpc_rollback.RollbackListResponse),
-    RpcSpec("rollback.diff", _rpc_rollback.RollbackDiffRequest, _rpc_rollback.RollbackDiffResponse),
-    RpcSpec("rollback.restore", _rpc_rollback.RollbackRestoreRequest, _rpc_rollback.RollbackRestoreResponse),
+    RpcSpec(
+        "rollback.list",
+        _rpc_rollback.RollbackListRequest,
+        _rpc_rollback.RollbackListResponse,
+    ),
+    RpcSpec(
+        "rollback.diff",
+        _rpc_rollback.RollbackDiffRequest,
+        _rpc_rollback.RollbackDiffResponse,
+    ),
+    RpcSpec(
+        "rollback.restore",
+        _rpc_rollback.RollbackRestoreRequest,
+        _rpc_rollback.RollbackRestoreResponse,
+    ),
     # ── interaction / utility RPCs ───────────────────────────────────────────
-    RpcSpec("prompt.submit", _rpc_interact.PromptSubmitRequest, _rpc_interact.PromptSubmitResponse),
-    RpcSpec("prompt.background", _rpc_interact.PromptBackgroundRequest, _rpc_interact.BackgroundStartResponse),
-    RpcSpec("clarify.respond", _rpc_interact.ClarifyRespondRequest, _rpc_interact.ClarifyRespondResponse),
-    RpcSpec("approval.respond", _rpc_interact.RespondRequest, _rpc_interact.ApprovalRespondResponse),
-    RpcSpec("sudo.respond", _rpc_interact.RespondRequest, _rpc_interact.SudoRespondResponse),
-    RpcSpec("secret.respond", _rpc_interact.RespondRequest, _rpc_interact.SecretRespondResponse),
-    RpcSpec("shell.exec", _rpc_interact.ShellExecRequest, _rpc_interact.ShellExecResponse),
-    RpcSpec("clipboard.paste", _rpc_interact.ClipboardPasteRequest, _rpc_interact.ClipboardPasteResponse),
-    RpcSpec("input.detect_drop", _rpc_interact.InputDetectDropRequest, _rpc_interact.InputDetectDropResponse),
-    RpcSpec("terminal.resize", _rpc_interact.TerminalResizeRequest, _rpc_interact.TerminalResizeResponse),
-    RpcSpec("image.attach", _rpc_interact.ImageAttachRequest, _rpc_interact.ImageAttachResponse),
-    RpcSpec("tools.configure", _rpc_interact.ToolsConfigureRequest, _rpc_interact.ToolsConfigureResponse),
-    RpcSpec("reload.mcp", _rpc_interact.ReloadMcpRequest, _rpc_interact.ReloadMcpResponse),
-    RpcSpec("reload.env", _rpc_interact.ReloadEnvRequest, _rpc_interact.ReloadEnvResponse),
-    RpcSpec("process.stop", _rpc_interact.ProcessStopRequest, _rpc_interact.ProcessStopResponse),
-    RpcSpec("browser.manage", _rpc_interact.BrowserManageRequest, _rpc_interact.BrowserManageResponse),
+    RpcSpec(
+        "prompt.submit",
+        _rpc_interact.PromptSubmitRequest,
+        _rpc_interact.PromptSubmitResponse,
+    ),
+    RpcSpec(
+        "prompt.background",
+        _rpc_interact.PromptBackgroundRequest,
+        _rpc_interact.BackgroundStartResponse,
+    ),
+    RpcSpec(
+        "clarify.respond",
+        _rpc_interact.ClarifyRespondRequest,
+        _rpc_interact.ClarifyRespondResponse,
+    ),
+    RpcSpec(
+        "approval.respond",
+        _rpc_interact.ApprovalRespondRequest,
+        _rpc_interact.ApprovalRespondResponse,
+    ),
+    RpcSpec(
+        "sudo.respond",
+        _rpc_interact.SudoRespondRequest,
+        _rpc_interact.SudoRespondResponse,
+    ),
+    RpcSpec(
+        "secret.respond",
+        _rpc_interact.SecretRespondRequest,
+        _rpc_interact.SecretRespondResponse,
+    ),
+    RpcSpec(
+        "shell.exec", _rpc_interact.ShellExecRequest, _rpc_interact.ShellExecResponse
+    ),
+    RpcSpec(
+        "clipboard.paste",
+        _rpc_interact.ClipboardPasteRequest,
+        _rpc_interact.ClipboardPasteResponse,
+    ),
+    RpcSpec(
+        "input.detect_drop",
+        _rpc_interact.InputDetectDropRequest,
+        _rpc_interact.InputDetectDropResponse,
+    ),
+    RpcSpec(
+        "terminal.resize",
+        _rpc_interact.TerminalResizeRequest,
+        _rpc_interact.TerminalResizeResponse,
+    ),
+    RpcSpec(
+        "image.attach",
+        _rpc_interact.ImageAttachRequest,
+        _rpc_interact.ImageAttachResponse,
+    ),
+    RpcSpec(
+        "tools.configure",
+        _rpc_interact.ToolsConfigureRequest,
+        _rpc_interact.ToolsConfigureResponse,
+        parameter_error_codes=(("action", 4017), ("names", 4018)),
+    ),
+    RpcSpec(
+        "reload.mcp", _rpc_interact.ReloadMcpRequest, _rpc_interact.ReloadMcpResponse
+    ),
+    RpcSpec(
+        "reload.env", _rpc_interact.ReloadEnvRequest, _rpc_interact.ReloadEnvResponse
+    ),
+    RpcSpec(
+        "process.stop",
+        _rpc_interact.ProcessStopRequest,
+        _rpc_interact.ProcessStopResponse,
+    ),
+    RpcSpec(
+        "browser.manage",
+        _rpc_interact.BrowserManageRequest,
+        _rpc_interact.BrowserManageResponse,
+        handler_validated_parameters=("url",),
+    ),
 ]
 
 # Models that MUST be emitted to TS but are not a single RPC's primary
@@ -301,17 +864,19 @@ EVENT_SPECS: list[EventSpec] = [
 RPC_BY_METHOD: dict[str, RpcSpec] = {spec.method: spec for spec in RPC_SPECS}
 
 
-def registered_models() -> list[type[WireModel]]:
+def registered_models() -> list[type[BaseModel]]:
     """Every top-level model in the registry (nested models are discovered by
     the codegen collector)."""
 
-    models: list[type[WireModel]] = []
+    models: list[type[BaseModel]] = []
     for spec in RPC_SPECS:
         models.append(spec.request)
         models.append(spec.response)
     for event in EVENT_SPECS:
         models.append(event.model)
     models.extend(EXTRA_MODELS)
+    for request, result in SERVER_REQUESTS.values():
+        models.extend((request, result))
     return models
 
 

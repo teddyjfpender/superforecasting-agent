@@ -1,10 +1,10 @@
+import type { RpcRequest } from '../protocol/generated.js'
 // Gateway-backed access to the prediction-markets subsystem (Polymarket +
 // Kalshi). Every type here mirrors the `to_dict()` shapes emitted by
 // `forecasting/pm/model.py` and surfaced through `tui_gateway/pm_rpc.py`
 // (`pm.list` / `pm.detail` / `pm.book` / `pm.history` / `pm.stream.*`). The TUI
 // is a pure consumer: the Python service is the one source of truth, so this
 // module only fetches, normalises light-touch, and formats for display.
-
 import type {
   PMEventDTO,
   PMHistoryPointDTO,
@@ -20,7 +20,7 @@ import { asRpcResult } from './rpc.js'
 
 // A gateway that can `request()`. Kept structural so tests can pass a fake.
 export interface PmGateway {
-  request: <T = unknown>(method: string, params?: Record<string, unknown>) => Promise<T>
+  request: RpcRequest
 }
 
 export type PMVenue = 'kalshi' | 'polymarket'
@@ -133,9 +133,7 @@ export async function startPMStream(gw: PmGateway, venue: string, marketIds: str
 }
 
 export async function stopPMStream(gw: PmGateway, venue: string, marketIds?: string[]): Promise<void> {
-  await gw
-    .request('pm.stream.stop', { venue, ...(marketIds ? { market_ids: marketIds } : {}) })
-    .catch(() => undefined)
+  await gw.request('pm.stream.stop', { venue, ...(marketIds ? { market_ids: marketIds } : {}) }).catch(() => undefined)
 }
 
 // ── venue-aware market reference ─────────────────────────────────────────────

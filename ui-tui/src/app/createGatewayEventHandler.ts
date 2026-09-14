@@ -2,16 +2,7 @@ import { STARTUP_IMAGE, STARTUP_QUERY } from '../config/env.js'
 import { GATEWAY_STDERR_COALESCE_MS, STREAM_BATCH_MS } from '../config/timing.js'
 import { AUTH_EXPIRED_RE, AUTH_EXPIRED_TITLE, buildAuthExpiredSections } from '../content/auth.js'
 import { buildSetupRequiredSections, SETUP_REQUIRED_TITLE } from '../content/setup.js'
-import type {
-  BuildInfoPayload,
-  CommandsCatalogResponse,
-  ConfigFullResponse,
-  DelegationStatusResponse,
-  ForecastDashboardResponse,
-  GatewayEvent,
-  GatewaySkin,
-  SessionMostRecentResponse
-} from '../gatewayTypes.js'
+import type { BuildInfoPayload, GatewayEvent, GatewaySkin } from '../gatewayTypes.js'
 import { rpcErrorMessage } from '../lib/rpc.js'
 import { topLevelSubagents } from '../lib/subagentTree.js'
 import { formatToolCall, stripAnsi } from '../lib/text.js'
@@ -196,7 +187,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
       return
     }
 
-    rpc<DelegationStatusResponse>('delegation.status', { session_id: sessionId })
+    rpc('delegation.status', { session_id: sessionId })
       .then(r => {
         if (getUiState().sid === sessionId) {
           applyDelegationStatus(r)
@@ -284,7 +275,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
   // transcript — that clobbered the clean landing. The full dashboard stays one
   // command away (`/forecast desk`).
   const pullForecastDeskRail = () => {
-    rpc<ForecastDashboardResponse>('forecast.dashboard', { fast: true, limit: 8 })
+    rpc('forecast.dashboard', { fast: true, limit: 8 })
       .then(r => {
         if (!r?.summary && !String(r?.output || '').trim()) {
           return
@@ -302,7 +293,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
   // The open contested-triage count that drives the Today feed's hand-label badge.
   // A cheap, separate read so a slow/failed triage query never perturbs the rail.
   const pullContestedCount = () => {
-    rpc<{ contested?: unknown[]; count?: number }>('forecast.triage.contested', { limit: 200 })
+    rpc('forecast.triage.contested', { limit: 200 })
       .then(r => {
         const count = typeof r?.count === 'number' ? r.count : Array.isArray(r?.contested) ? r.contested.length : 0
 
@@ -317,7 +308,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
   // aggregate over three local job stores, no network. Best-effort — a failed read
   // leaves the last summary in place (the interval poll will reconcile it).
   const pullAgentsActive = () => {
-    rpc<{ count?: number; headline?: string }>('agents.active.summary', {})
+    rpc('agents.active.summary', {})
       .then(r => setAgentsActive(agentsActiveFromResult(r)))
       .catch(() => {})
   }
@@ -382,7 +373,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
     // The session that was live when the transport died (single-use).
     const resumeSid = takeResumeSid()
 
-    rpc<CommandsCatalogResponse>('commands.catalog', {})
+    rpc('commands.catalog', {})
       .then(r => {
         if (!r?.pairs) {
           return
@@ -448,7 +439,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
     // and addresses the audit's "forecast session
     // unrecoverable after disconnection" gap.  Default off so existing
     // users aren't surprised.
-    rpc<ConfigFullResponse>('config.get', { key: 'full' })
+    rpc('config.get', { key: 'full' })
       .then(cfg => {
         if (!currentStartup()) {
           return
@@ -465,7 +456,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
           return
         }
 
-        return rpc<SessionMostRecentResponse>('session.most_recent', {}).then(r => {
+        return rpc('session.most_recent', {}).then(r => {
           if (!currentStartup()) {
             return
           }
@@ -862,7 +853,9 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
       case WireEvent.APPROVAL_REQUEST: {
         const description = String(ev.payload.description ?? 'dangerous command')
 
-        raisePrompt({ approval: { command: String(ev.payload.command ?? ''), description } })
+        raisePrompt({
+          approval: { command: String(ev.payload.command ?? ''), description, requestId: ev.payload.request_id }
+        })
         setStatus('approval needed')
 
         return

@@ -12,6 +12,8 @@ from protocol.types import WireModel, wire_optional
 class VoiceToggleRequest(WireModel):
     TS_NAME = "VoiceToggleRequest"
 
+    action: str = "status"
+
     session_id: str | None = None
 
 
@@ -29,6 +31,8 @@ class VoiceToggleResponse(WireModel):
 
 class VoiceRecordRequest(WireModel):
     TS_NAME = "VoiceRecordRequest"
+
+    action: str = "start"
 
     session_id: str | None = None
 

@@ -390,7 +390,13 @@ function OverlaySection({
 
   return (
     <Box flexDirection="column" marginTop={1}>
-      <Box onClick={() => { if (!globalModal) {toggleOverlaySection(title, defaultOpen)} }}>
+      <Box
+        onClick={() => {
+          if (!globalModal) {
+            toggleOverlaySection(title, defaultOpen)
+          }
+        }}
+      >
         <Text color={t.color.label}>
           <Text color={t.color.accent}>{open ? '▾ ' : '▸ '}</Text>
           {title}
@@ -657,11 +663,14 @@ function DiffView({
   // Go inert while the global palette / cheat-sheet stacks above the diff.
   const globalModal = useStore($globalModal)
 
-  useInput((ch, key) => {
-    if (key.escape || ch === 'q') {
-      onClose()
-    }
-  }, { isActive: !globalModal })
+  useInput(
+    (ch, key) => {
+      if (key.escape || ch === 'q') {
+        onClose()
+      }
+    },
+    { isActive: !globalModal }
+  )
 
   const round = (n: number) => String(Math.round(n))
   const sumTokens = (x: typeof aTotals) => x.inputTokens + x.outputTokens
@@ -810,7 +819,7 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
     let timer: ReturnType<typeof setTimeout> | undefined
 
     const refresh = () => {
-      gw.request<DelegationStatusResponse>('delegation.status', { session_id: sessionId })
+      gw.request('delegation.status', { session_id: sessionId ?? undefined })
         .then(r => {
           if (!cancelled && getUiState().sid === sessionId) {
             applyDelegationStatus(asRpcResult<DelegationStatusResponse>(r))
@@ -854,7 +863,8 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
     }
   }
 
-  const interrupt = (id: string) => gw.request<SubagentInterruptResponse>('subagent.interrupt', { subagent_id: id, session_id: sessionId })
+  const interrupt = (id: string) =>
+    gw.request('subagent.interrupt', { subagent_id: id, session_id: sessionId ?? undefined })
 
   const killOne = (id: string) =>
     guardLive(() => {
@@ -875,9 +885,11 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
 
   const togglePause = () =>
     guardLive(() => {
-      gw.request<DelegationPauseResponse>('delegation.pause', { paused: !delegation.paused, session_id: sessionId })
+      gw.request('delegation.pause', { paused: !delegation.paused, session_id: sessionId ?? undefined })
         .then(raw => {
-          if (getUiState().sid !== sessionId) {return}
+          if (getUiState().sid !== sessionId) {
+            return
+          }
 
           const r = asRpcResult<DelegationPauseResponse>(raw)
           applyDelegationStatus({ paused: r?.paused })
@@ -909,111 +921,114 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
   const wheelDetailDy = 3
   const scrollDetail = (dy: number) => detailScrollRef.current?.scrollBy(dy)
 
-  useInput((ch, key) => {
-    if (ch === 'q') {
-      return closeWithCleanup()
-    }
-
-    if (key.escape) {
-      return mode === 'detail' ? setMode('list') : closeWithCleanup()
-    }
-
-    // `h` (and the `?` alias) open the unified Help modal — consistent everywhere.
-    if (ch === 'h' || ch === '?') {
-      return openHelpOverlay()
-    }
-
-    // Shared actions (both modes).
-    if (ch === '<' || ch === '[') {
-      return stepHistory(1)
-    }
-
-    if (ch === '>' || ch === ']') {
-      return stepHistory(-1)
-    }
-
-    if (ch === 'p') {
-      return togglePause()
-    }
-
-    if (ch === 'x' && selected) {
-      return killOne(selected.item.id)
-    }
-
-    if (ch === 'X' && selected) {
-      return killSubtree(selected)
-    }
-
-    if (mode === 'detail') {
-      // ← steps back to the list; `h` is now Help (handled above).
-      if (key.leftArrow) {
-        return setMode('list')
+  useInput(
+    (ch, key) => {
+      if (ch === 'q') {
+        return closeWithCleanup()
       }
 
-      if (key.pageUp || (key.ctrl && ch === 'u')) {
-        return scrollDetail(-detailPageSize)
+      if (key.escape) {
+        return mode === 'detail' ? setMode('list') : closeWithCleanup()
       }
 
-      if (key.pageDown || (key.ctrl && ch === 'd')) {
-        return scrollDetail(detailPageSize)
+      // `h` (and the `?` alias) open the unified Help modal — consistent everywhere.
+      if (ch === 'h' || ch === '?') {
+        return openHelpOverlay()
       }
 
-      if (key.wheelUp) {
-        return scrollDetail(-wheelDetailDy)
+      // Shared actions (both modes).
+      if (ch === '<' || ch === '[') {
+        return stepHistory(1)
       }
 
-      if (key.wheelDown) {
-        return scrollDetail(wheelDetailDy)
+      if (ch === '>' || ch === ']') {
+        return stepHistory(-1)
       }
 
-      if (key.upArrow || ch === 'k') {
-        return scrollDetail(-2)
+      if (ch === 'p') {
+        return togglePause()
       }
 
-      if (key.downArrow || ch === 'j') {
-        return scrollDetail(2)
+      if (ch === 'x' && selected) {
+        return killOne(selected.item.id)
+      }
+
+      if (ch === 'X' && selected) {
+        return killSubtree(selected)
+      }
+
+      if (mode === 'detail') {
+        // ← steps back to the list; `h` is now Help (handled above).
+        if (key.leftArrow) {
+          return setMode('list')
+        }
+
+        if (key.pageUp || (key.ctrl && ch === 'u')) {
+          return scrollDetail(-detailPageSize)
+        }
+
+        if (key.pageDown || (key.ctrl && ch === 'd')) {
+          return scrollDetail(detailPageSize)
+        }
+
+        if (key.wheelUp) {
+          return scrollDetail(-wheelDetailDy)
+        }
+
+        if (key.wheelDown) {
+          return scrollDetail(wheelDetailDy)
+        }
+
+        if (key.upArrow || ch === 'k') {
+          return scrollDetail(-2)
+        }
+
+        if (key.downArrow || ch === 'j') {
+          return scrollDetail(2)
+        }
+
+        if (ch === 'g') {
+          return detailScrollRef.current?.scrollTo(0)
+        }
+
+        if (ch === 'G') {
+          return detailScrollRef.current?.scrollToBottom?.()
+        }
+
+        return
+      }
+
+      // List mode.
+      if ((key.return || key.rightArrow || ch === 'l') && selected) {
+        return setMode('detail')
+      }
+
+      if (key.upArrow || ch === 'k' || key.wheelUp) {
+        return setCursor(c => Math.max(0, c - 1))
+      }
+
+      if (key.downArrow || ch === 'j' || key.wheelDown) {
+        return setCursor(c => Math.min(Math.max(0, rows.length - 1), c + 1))
       }
 
       if (ch === 'g') {
-        return detailScrollRef.current?.scrollTo(0)
+        return setCursor(0)
       }
 
       if (ch === 'G') {
-        return detailScrollRef.current?.scrollToBottom?.()
+        return setCursor(Math.max(0, rows.length - 1))
       }
 
-      return
-    }
+      if (ch === 's') {
+        return setSort(m => cycle(SORT_ORDER, m))
+      }
 
-    // List mode.
-    if ((key.return || key.rightArrow || ch === 'l') && selected) {
-      return setMode('detail')
-    }
-
-    if (key.upArrow || ch === 'k' || key.wheelUp) {
-      return setCursor(c => Math.max(0, c - 1))
-    }
-
-    if (key.downArrow || ch === 'j' || key.wheelDown) {
-      return setCursor(c => Math.min(Math.max(0, rows.length - 1), c + 1))
-    }
-
-    if (ch === 'g') {
-      return setCursor(0)
-    }
-
-    if (ch === 'G') {
-      return setCursor(Math.max(0, rows.length - 1))
-    }
-
-    if (ch === 's') {
-      return setSort(m => cycle(SORT_ORDER, m))
-    }
-
-    if (ch === 'f') {
-      return setFilter(m => cycle(FILTER_ORDER, m))
-    }
-  }, { isActive: !globalModal })
+      if (ch === 'f') {
+        return setFilter(m => cycle(FILTER_ORDER, m))
+      }
+    },
+    { isActive: !globalModal }
+  )
 
   // ── Header assembly ────────────────────────────────────────────────
 

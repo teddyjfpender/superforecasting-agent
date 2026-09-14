@@ -10830,23 +10830,30 @@ class GatewayRunner:
           /model <name> --provider <provider> — switch provider + model
           /model --provider <provider>        — switch to provider, auto-detect model
         """
-        import yaml
         from superforecasting_agent.runtime.model_switch import (
-            switch_model as _switch_model, parse_model_flags,
             list_authenticated_providers,
             list_picker_providers,
+            parse_model_flags,
+        )
+        from superforecasting_agent.runtime.model_switch import (
+            switch_model as _switch_model,
         )
         from superforecasting_agent.runtime.providers import get_label
 
         raw_args = event.get_command_args().strip()
 
         # Parse --provider, --global, and --refresh flags
-        model_input, explicit_provider, persist_global, force_refresh = parse_model_flags(raw_args)
+        model_input, explicit_provider, persist_global, force_refresh = (
+            parse_model_flags(raw_args)
+        )
 
         # --refresh: bust the disk cache so the picker shows live data.
         if force_refresh:
             try:
-                from superforecasting_agent.runtime.models import clear_provider_models_cache
+                from superforecasting_agent.runtime.models import (
+                    clear_provider_models_cache,
+                )
+
                 clear_provider_models_cache()
             except Exception:
                 pass
@@ -10869,7 +10876,10 @@ class GatewayRunner:
                     current_base_url = model_cfg.get("base_url", "")
                 user_provs = cfg.get("providers")
                 try:
-                    from superforecasting_agent.runtime.config import get_compatible_custom_providers
+                    from superforecasting_agent.runtime.config import (
+                        get_compatible_custom_providers,
+                    )
+
                     custom_provs = get_compatible_custom_providers(cfg)
                 except Exception:
                     custom_provs = cfg.get("custom_providers")
@@ -10934,7 +10944,9 @@ class GatewayRunner:
                             custom_providers=custom_provs,
                         )
                         if not result.success:
-                            return t("gateway.model.error_prefix", error=result.error_message)
+                            return t(
+                                "gateway.model.error_prefix", error=result.error_message
+                            )
 
                         # Update cached agent in-place
                         cached_entry = None
@@ -10945,6 +10957,11 @@ class GatewayRunner:
                                 cached_entry = _cache.get(_session_key)
                         if cached_entry and cached_entry[0] is not None:
                             try:
+                                from superforecasting_agent.application.model_switch_notice import (
+                                    attach_context_warning,
+                                )
+
+                                attach_context_warning(result, cached_entry[0])
                                 cached_entry[0].switch_model(
                                     new_model=result.new_model,
                                     new_provider=result.target_provider,
@@ -10953,7 +10970,10 @@ class GatewayRunner:
                                     api_mode=result.api_mode,
                                 )
                             except Exception as exc:
-                                logger.warning("Picker model switch failed for cached agent: %s", exc)
+                                logger.warning(
+                                    "Picker model switch failed for cached agent: %s",
+                                    exc,
+                                )
 
                         # Store model note + session override
                         if not hasattr(_self, "_pending_model_notes"):
@@ -10981,7 +11001,10 @@ class GatewayRunner:
                         lines = [t("gateway.model.switched", model=result.new_model)]
                         lines.append(t("gateway.model.provider_label", provider=plabel))
                         mi = result.model_info
-                        from superforecasting_agent.runtime.model_switch import resolve_display_context_length
+                        from superforecasting_agent.runtime.model_switch import (
+                            resolve_display_context_length,
+                        )
+
                         _sw_config_ctx = None
                         try:
                             _sw_cfg = _load_gateway_config()
@@ -11002,17 +11025,33 @@ class GatewayRunner:
                             config_context_length=_sw_config_ctx,
                         )
                         if ctx:
-                            lines.append(t("gateway.model.context_label", tokens=f"{ctx:,}"))
+                            lines.append(
+                                t("gateway.model.context_label", tokens=f"{ctx:,}")
+                            )
                         if mi:
                             if mi.max_output:
-                                lines.append(t("gateway.model.max_output_label", tokens=f"{mi.max_output:,}"))
+                                lines.append(
+                                    t(
+                                        "gateway.model.max_output_label",
+                                        tokens=f"{mi.max_output:,}",
+                                    )
+                                )
                             if mi.has_cost_data():
-                                lines.append(t("gateway.model.cost_label", cost=mi.format_cost()))
-                            lines.append(t("gateway.model.capabilities_label", capabilities=mi.format_capabilities()))
+                                lines.append(
+                                    t("gateway.model.cost_label", cost=mi.format_cost())
+                                )
+                            lines.append(
+                                t(
+                                    "gateway.model.capabilities_label",
+                                    capabilities=mi.format_capabilities(),
+                                )
+                            )
                         lines.append(t("gateway.model.session_only_hint"))
                         return "\n".join(lines)
 
-                    metadata = self._thread_metadata_for_source(source, self._reply_anchor_for_event(event))
+                    metadata = self._thread_metadata_for_source(
+                        source, self._reply_anchor_for_event(event)
+                    )
                     result = await adapter.send_model_picker(
                         chat_id=source.chat_id,
                         providers=providers,
@@ -11027,7 +11066,14 @@ class GatewayRunner:
 
             # Fallback: text list (for platforms without picker or if picker failed)
             provider_label = get_label(current_provider)
-            lines = [t("gateway.model.current_label", model=current_model or "unknown", provider=provider_label), ""]
+            lines = [
+                t(
+                    "gateway.model.current_label",
+                    model=current_model or "unknown",
+                    provider=provider_label,
+                ),
+                "",
+            ]
 
             try:
                 providers = list_authenticated_providers(
@@ -11043,7 +11089,14 @@ class GatewayRunner:
                     lines.append(f"**{p['name']}** `--provider {p['slug']}`{tag}:")
                     if p["models"]:
                         model_strs = ", ".join(f"`{m}`" for m in p["models"])
-                        extra = t("gateway.model.more_models_suffix", count=p["total_models"] - len(p["models"])) if p["total_models"] > len(p["models"]) else ""
+                        extra = (
+                            t(
+                                "gateway.model.more_models_suffix",
+                                count=p["total_models"] - len(p["models"]),
+                            )
+                            if p["total_models"] > len(p["models"])
+                            else ""
+                        )
                         lines.append(f"  {model_strs}{extra}")
                     elif p.get("api_url"):
                         lines.append(f"  `{p['api_url']}`")
@@ -11082,6 +11135,11 @@ class GatewayRunner:
 
         if cached_entry and cached_entry[0] is not None:
             try:
+                from superforecasting_agent.application.model_switch_notice import (
+                    attach_context_warning,
+                )
+
+                attach_context_warning(result, cached_entry[0])
                 cached_entry[0].switch_model(
                     new_model=result.new_model,
                     new_provider=result.target_provider,
@@ -11119,9 +11177,17 @@ class GatewayRunner:
         persisted = False
         if persist_global:
             try:
-                from superforecasting_agent.runtime.model_configuration import persist_model_selection
-                persisted = persist_model_selection(config_path, model=result.new_model, provider=result.target_provider,
-                    base_url=result.base_url, api_mode=result.api_mode)
+                from superforecasting_agent.runtime.model_configuration import (
+                    persist_model_selection,
+                )
+
+                persisted = persist_model_selection(
+                    config_path,
+                    model=result.new_model,
+                    provider=result.target_provider,
+                    base_url=result.base_url,
+                    api_mode=result.api_mode,
+                )
             except Exception as e:
                 logger.warning("Failed to persist model switch: %s", e)
 
@@ -11133,7 +11199,10 @@ class GatewayRunner:
         # Context: always resolve via the provider-aware chain so Codex OAuth,
         # Copilot, and Nous-enforced caps win over the raw models.dev entry.
         mi = result.model_info
-        from superforecasting_agent.runtime.model_switch import resolve_display_context_length
+        from superforecasting_agent.runtime.model_switch import (
+            resolve_display_context_length,
+        )
+
         _sw2_config_ctx = None
         try:
             _sw2_cfg = _load_gateway_config()
@@ -11157,25 +11226,37 @@ class GatewayRunner:
             lines.append(t("gateway.model.context_label", tokens=f"{ctx:,}"))
         if mi:
             if mi.max_output:
-                lines.append(t("gateway.model.max_output_label", tokens=f"{mi.max_output:,}"))
+                lines.append(
+                    t("gateway.model.max_output_label", tokens=f"{mi.max_output:,}")
+                )
             if mi.has_cost_data():
                 lines.append(t("gateway.model.cost_label", cost=mi.format_cost()))
-            lines.append(t("gateway.model.capabilities_label", capabilities=mi.format_capabilities()))
+            lines.append(
+                t(
+                    "gateway.model.capabilities_label",
+                    capabilities=mi.format_capabilities(),
+                )
+            )
 
         # Cache notice
         cache_enabled = (
-            (base_url_host_matches(result.base_url or "", "openrouter.ai") and "claude" in result.new_model.lower())
-            or result.api_mode == "anthropic_messages"
-        )
+            base_url_host_matches(result.base_url or "", "openrouter.ai")
+            and "claude" in result.new_model.lower()
+        ) or result.api_mode == "anthropic_messages"
         if cache_enabled:
             lines.append(t("gateway.model.prompt_caching_enabled"))
 
         if result.warning_message:
-            lines.append(t("gateway.model.warning_prefix", warning=result.warning_message))
+            lines.append(
+                t("gateway.model.warning_prefix", warning=result.warning_message)
+            )
 
         if persist_global:
-            lines.append(t("gateway.model.saved_global") if persisted else
-                "Session switched, but config.yaml could not be saved. Check the configuration and retry --global.")
+            lines.append(
+                t("gateway.model.saved_global")
+                if persisted
+                else "Session switched, but config.yaml could not be saved. Check the configuration and retry --global."
+            )
         else:
             lines.append(t("gateway.model.session_only_hint"))
 

@@ -66,7 +66,7 @@ export const opsCommands: SlashCommand[] = [
     name: 'stop',
     run: (_arg, ctx) => {
       ctx.gateway
-        .rpc<SlashExecResponse>('slash.exec', { command: 'stop', session_id: ctx.sid })
+        .rpc('slash.exec', { command: 'stop', session_id: ctx.sid })
         .then(
           ctx.guarded<SlashExecResponse>(r => {
             ctx.transcript.sys(r.output ?? '(no output)')
@@ -97,7 +97,7 @@ export const opsCommands: SlashCommand[] = [
       }
 
       ctx.gateway
-        .rpc<ReloadMcpResponse>('reload.mcp', params)
+        .rpc('reload.mcp', params)
         .then(
           ctx.guarded<ReloadMcpResponse>(r => {
             if (r.status === 'confirm_required') {
@@ -128,7 +128,7 @@ export const opsCommands: SlashCommand[] = [
     name: 'reload',
     run: (_arg, ctx) => {
       ctx.gateway
-        .rpc<ReloadEnvResponse>('reload.env', {})
+        .rpc('reload.env', {})
         .then(
           ctx.guarded<ReloadEnvResponse>(r => {
             const n = Number(r.updated ?? 0)
@@ -162,7 +162,7 @@ export const opsCommands: SlashCommand[] = [
       }
 
       ctx.gateway
-        .rpc<BrowserManageResponse>('browser.manage', { action, session_id: sid, ...(url && { url }) })
+        .rpc('browser.manage', { action, session_id: sid, ...(url && { url }) })
         .then(
           ctx.guarded<BrowserManageResponse>(r => {
             // Without a forecast session we can't subscribe to streamed
@@ -208,7 +208,7 @@ export const opsCommands: SlashCommand[] = [
 
       if (!trimmed || lower === 'list' || lower === 'ls') {
         return ctx.gateway
-          .rpc<RollbackListResponse>('rollback.list', { session_id: ctx.sid })
+          .rpc('rollback.list', { session_id: ctx.sid ?? undefined })
           .then(
             ctx.guarded<RollbackListResponse>(r => {
               if (!r.enabled) {
@@ -242,7 +242,7 @@ export const opsCommands: SlashCommand[] = [
         }
 
         return ctx.gateway
-          .rpc<RollbackDiffResponse>('rollback.diff', { hash, session_id: ctx.sid })
+          .rpc('rollback.diff', { hash, session_id: ctx.sid ?? undefined })
           .then(
             ctx.guarded<RollbackDiffResponse>(r => {
               const body = (r.rendered || r.diff || '').trim()
@@ -262,7 +262,7 @@ export const opsCommands: SlashCommand[] = [
       const filePath = rest.join(' ').trim()
 
       return ctx.gateway
-        .rpc<RollbackRestoreResponse>('rollback.restore', {
+        .rpc('rollback.restore', {
           ...(filePath ? { file_path: filePath } : {}),
           hash,
           session_id: ctx.sid
@@ -299,11 +299,13 @@ export const opsCommands: SlashCommand[] = [
       if (sub === 'pause' || sub === 'resume' || sub === 'unpause') {
         const paused = sub === 'pause'
         ctx.gateway.gw
-          .request<DelegationPauseResponse>('delegation.pause', { paused, session_id: ctx.sid })
-          .then(ctx.guarded<DelegationPauseResponse>(r => {
-            applyDelegationStatus({ paused: r?.paused })
-            ctx.transcript.sys(`delegation · ${r?.paused ? 'paused' : 'resumed'}`)
-          }))
+          .request('delegation.pause', { paused, session_id: ctx.sid ?? undefined })
+          .then(
+            ctx.guarded<DelegationPauseResponse>(r => {
+              applyDelegationStatus({ paused: r?.paused })
+              ctx.transcript.sys(`delegation · ${r?.paused ? 'paused' : 'resumed'}`)
+            })
+          )
           .catch(ctx.guardedErr)
 
         return
@@ -333,7 +335,7 @@ export const opsCommands: SlashCommand[] = [
       // ── Disk-backed listing ─────────────────────────────────────
       if (lower === 'list' || lower === 'ls') {
         ctx.gateway
-          .rpc<SpawnTreeListResponse>('spawn_tree.list', {
+          .rpc('spawn_tree.list', {
             limit: 30,
             session_id: ctx.sid ?? 'default'
           })
@@ -369,7 +371,7 @@ export const opsCommands: SlashCommand[] = [
         }
 
         ctx.gateway
-          .rpc<SpawnTreeLoadResponse>('spawn_tree.load', { path })
+          .rpc('spawn_tree.load', { path })
           .then(
             ctx.guarded<SpawnTreeLoadResponse>(r => {
               if (!r.subagents?.length) {
@@ -449,12 +451,12 @@ export const opsCommands: SlashCommand[] = [
     name: 'reload-skills',
     run: (_arg, ctx) => {
       ctx.gateway
-        .rpc<SkillsReloadResponse>('skills.reload', {})
+        .rpc('skills.reload', {})
         .then(
           ctx.guarded<SkillsReloadResponse>(r => {
             ctx.transcript.page(r.output || 'skills reloaded', 'Reload Skills')
             ctx.gateway
-              .rpc<CommandsCatalogResponse>('commands.catalog', {})
+              .rpc('commands.catalog', {})
               .then(
                 ctx.guarded<CommandsCatalogResponse>(catalog => {
                   if (!catalog?.pairs) {
@@ -494,7 +496,7 @@ export const opsCommands: SlashCommand[] = [
 
       const runSharedSkillsCommand = () => {
         ctx.gateway.gw
-          .request<SlashExecResponse>('slash.exec', { command: cmd.slice(1), session_id: ctx.sid })
+          .request('slash.exec', { command: cmd.slice(1), session_id: ctx.sid })
           .then(r => {
             if (ctx.stale()) {
               return
@@ -510,7 +512,7 @@ export const opsCommands: SlashCommand[] = [
       }
 
       if (sub === 'list') {
-        rpc<SkillsListResponse>('skills.manage', { action: 'list' })
+        rpc('skills.manage', { action: 'list' })
           .then(
             ctx.guarded<SkillsListResponse>(r => {
               const cats = Object.entries(r.skills ?? {}).sort()
@@ -535,7 +537,7 @@ export const opsCommands: SlashCommand[] = [
           return sys('usage: /skills inspect <name>')
         }
 
-        rpc<SkillsInspectResponse>('skills.manage', { action: 'inspect', query })
+        rpc('skills.manage', { action: 'inspect', query })
           .then(
             ctx.guarded<SkillsInspectResponse>(r => {
               const info = r.info ?? {}
@@ -569,7 +571,7 @@ export const opsCommands: SlashCommand[] = [
           return sys('usage: /skills search <query>')
         }
 
-        rpc<SkillsSearchResponse>('skills.manage', { action: 'search', query })
+        rpc('skills.manage', { action: 'search', query })
           .then(
             ctx.guarded<SkillsSearchResponse>(r => {
               const results = r.results ?? []
@@ -593,7 +595,7 @@ export const opsCommands: SlashCommand[] = [
 
         sys(`installing ${query}…`)
 
-        rpc<SkillsInstallResponse>('skills.manage', { action: 'install', query })
+        rpc('skills.manage', { action: 'install', query })
           .then(
             ctx.guarded<SkillsInstallResponse>(r =>
               sys(r.installed ? `installed ${r.name ?? query}` : 'install failed')
@@ -613,7 +615,7 @@ export const opsCommands: SlashCommand[] = [
 
         sys('fetching community skills (scans 6 sources, may take ~15s)…')
 
-        rpc<SkillsBrowseResponse>('skills.manage', { action: 'browse', page: pageNum })
+        rpc('skills.manage', { action: 'browse', page: pageNum })
           .then(
             ctx.guarded<SkillsBrowseResponse>(r => {
               const items = r.items ?? []
@@ -664,7 +666,7 @@ export const opsCommands: SlashCommand[] = [
 
       if (subcommand !== 'disable' && subcommand !== 'enable') {
         ctx.gateway.gw
-          .request<SlashExecResponse>('slash.exec', { command: cmd.slice(1), session_id: ctx.sid })
+          .request('slash.exec', { command: cmd.slice(1), session_id: ctx.sid })
           .then(r => {
             if (ctx.stale()) {
               return
@@ -690,7 +692,7 @@ export const opsCommands: SlashCommand[] = [
       }
 
       ctx.gateway
-        .rpc<ToolsConfigureResponse>('tools.configure', { action: subcommand, names, session_id: ctx.sid })
+        .rpc('tools.configure', { action: subcommand, names, session_id: ctx.sid ?? undefined })
         .then(
           ctx.guarded<ToolsConfigureResponse>(r => {
             if (r.info) {

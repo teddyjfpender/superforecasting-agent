@@ -9,7 +9,6 @@ import { useCallback, useLayoutEffect, useMemo, useState } from 'react'
 
 import type { PasteEvent } from '../components/textInput.js'
 import { LARGE_PASTE } from '../config/limits.js'
-import type { ImageAttachResponse, InputDetectDropResponse } from '../gatewayTypes.js'
 import { useCompletion } from '../hooks/useCompletion.js'
 import { useInputHistory } from '../hooks/useInputHistory.js'
 import { useQueue } from '../hooks/useQueue.js'
@@ -184,7 +183,7 @@ export function useComposerState({
 
       if (sid && looksLikeDroppedPath(cleanedText)) {
         try {
-          const attached = await gw.request<ImageAttachResponse>('image.attach', {
+          const attached = await gw.request('image.attach', {
             path: cleanedText,
             session_id: sid
           })
@@ -204,7 +203,7 @@ export function useComposerState({
         }
 
         try {
-          const dropped = await gw.request<InputDetectDropResponse>('input.detect_drop', {
+          const dropped = await gw.request('input.detect_drop', {
             session_id: sid,
             text: cleanedText
           })
@@ -232,7 +231,7 @@ export function useComposerState({
       setPasteSnips(prev => trimSnips([...prev, { label, text: cleanedText }]))
 
       void gw
-        .request<{ path?: string }>('paste.collapse', { text: cleanedText })
+        .request('paste.collapse', { text: cleanedText })
         .then(r => {
           const path = r?.path
 

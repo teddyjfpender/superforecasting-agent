@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { getUiState, patchUiState } from '../app/uiStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
-import type { ConfigSetResponse, ThemeListResponse, ThemeOption } from '../gatewayTypes.js'
+import type { ThemeListResponse, ThemeOption } from '../gatewayTypes.js'
 import { asRpcResult, rpcErrorMessage } from '../lib/rpc.js'
 import { fromSkin, type Theme } from '../theme.js'
 
@@ -61,7 +61,7 @@ export function ThemePicker({ gw, onClose, t }: ThemePickerProps) {
   const width = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, (stdout?.columns ?? 80) - 6))
 
   useEffect(() => {
-    gw.request<ThemeListResponse>('theme.list', {})
+    gw.request('theme.list', {})
       .then(raw => {
         const r = asRpcResult<ThemeListResponse>(raw)
 
@@ -119,8 +119,8 @@ export function ThemePicker({ gw, onClose, t }: ThemePickerProps) {
     // already applied the theme; the launcher re-exports appearance as the
     // TUI THEME env so the light/dark choice also survives a restart.
     Promise.all([
-      gw.request<ConfigSetResponse>('config.set', { key: 'skin', value: option.name }),
-      gw.request<ConfigSetResponse>('config.set', { key: 'appearance', value: mode })
+      gw.request('config.set', { key: 'skin', value: option.name }),
+      gw.request('config.set', { key: 'appearance', value: mode })
     ])
       .then(() => onClose())
       .catch((e: unknown) => {
@@ -205,11 +205,7 @@ export function ThemePicker({ gw, onClose, t }: ThemePickerProps) {
             const optionTheme = themeFromOption(option, mode)
 
             return (
-              <Text
-                color={selected ? optionTheme.color.accent : t.color.text}
-                key={option.name}
-                wrap="truncate-end"
-              >
+              <Text color={selected ? optionTheme.color.accent : t.color.text} key={option.name} wrap="truncate-end">
                 {selected ? '❯ ' : '  '}
                 {option.name}
                 {option.source === 'user' ? ' *' : ''}

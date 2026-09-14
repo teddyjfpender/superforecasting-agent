@@ -3,29 +3,15 @@
 // `protocol/` pydantic models. Imported here for local use (Msg.info,
 // SlashCatalog.categories) AND re-exported so the whole app's historical
 // `import { SessionInfo } from './types.js'` sites keep one stable import.
-import type {
-  McpServerStatus,
-  SessionInfo,
-  SlashCategory,
-  Usage,
-} from './protocol/generated.js'
+import type { McpServerStatus, SessionInfo, SlashCategory, Usage } from './protocol/generated.js'
 
 export type { McpServerStatus, SessionInfo, SlashCategory, Usage }
 
 // ── forecast-desk value enums (TS-only; the generated interfaces widen these to
 // `string`, so the precise unions live here for consumers that switch on them).
-export type ForecastTriageLabel =
-  | 'irrelevant'
-  | 'relevant_interesting'
-  | 'relevant_uninteresting'
+export type ForecastTriageLabel = 'irrelevant' | 'relevant_interesting' | 'relevant_uninteresting'
 
-export type ForecastTailClassification =
-  | 'edge_case'
-  | 'live'
-  | 'live_ish'
-  | 'remote_tail'
-  | 'residual'
-  | 'unpriced'
+export type ForecastTailClassification = 'edge_case' | 'live' | 'live_ish' | 'remote_tail' | 'residual' | 'unpriced'
 
 export interface ActiveTool {
   context?: string
@@ -128,6 +114,7 @@ export interface DelegationStatus {
 }
 
 export interface ApprovalReq {
+  requestId?: string
   command: string
   description: string
 }

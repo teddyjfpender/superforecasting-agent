@@ -27,16 +27,22 @@ def test_runner_filters_credentials_and_selects_live_files(tmp_path, selection, 
     python.write_text(f'#!{sys.executable}\n' + '''import json, os, sys
 if '-m' in sys.argv:
     keys = ['DAYTONA_API_KEY', 'MODAL_TOKEN_ID', 'MODAL_TOKEN_SECRET', 'OPENAI_API_KEY']
-    print('RECEIPT ' + json.dumps({'keys': [k for k in keys if os.environ.get(k)], 'args': sys.argv[1:]}))
+    print('RECEIPT ' + json.dumps({'keys': [k for k in keys if os.environ.get(k)], 'args': sys.argv[1:], 'git_env': [k for k in ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR'] if k in os.environ], 'path': os.environ['PATH'].split(os.pathsep)[0], 'pythonpath': os.environ['PYTHONPATH'].split(os.pathsep)[:2]}))
 ''')
     python.chmod(0o755)
     env = {**os.environ, 'HOME': str(tmp_path),
            'DAYTONA_API_KEY': 'fixture', 'MODAL_TOKEN_ID': 'fixture',
-           'MODAL_TOKEN_SECRET': 'fixture', 'OPENAI_API_KEY': 'unrelated-fixture'}
+           'MODAL_TOKEN_SECRET': 'fixture', 'OPENAI_API_KEY': 'unrelated-fixture',
+           'GIT_DIR': str(tmp_path / 'foreign.git'), 'GIT_WORK_TREE': str(root),
+           'GIT_COMMON_DIR': str(tmp_path / 'foreign.git'),
+           'GIT_INDEX_FILE': str(tmp_path / 'foreign-index')}
     result = subprocess.run(['bash', str(scripts / 'run_tests.sh'), *selection],
                             env=env, capture_output=True, text=True, check=True)
     receipt = json.loads(next(line.removeprefix('RECEIPT ') for line in result.stdout.splitlines() if line.startswith('RECEIPT ')))
     assert receipt['keys'] == retained
+    assert receipt['git_env'] == []
+    assert Path(receipt['path']).resolve() == bins.resolve()
+    assert [Path(p).resolve() for p in receipt['pythonpath']] == [tmp_path.resolve(), scripts.resolve()]
     marker = receipt['args'][receipt['args'].index('-m', 2) + 1]
     assert marker == ('integration' if selection else 'not integration')
     if selection:

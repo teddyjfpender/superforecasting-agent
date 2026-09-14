@@ -2,18 +2,10 @@ import { useEffect, useRef } from 'react'
 
 import { resolveDetailsMode, resolveSections } from '../domain/details.js'
 import type { GatewayClient } from '../gatewayClient.js'
-import type {
-  ConfigFullResponse,
-  ConfigMtimeResponse,
-  ReloadMcpResponse
-} from '../gatewayTypes.js'
-import {
-  DEFAULT_VOICE_RECORD_KEY,
-  type ParsedVoiceRecordKey,
-  parseVoiceRecordKey
-} from '../lib/platform.js'
-import { asRpcResult } from '../lib/rpc.js'
+import type { ConfigFullResponse } from '../gatewayTypes.js'
+import { DEFAULT_VOICE_RECORD_KEY, type ParsedVoiceRecordKey, parseVoiceRecordKey } from '../lib/platform.js'
 import { runtimeEnvEnabled } from '../lib/runtimeEnv.js'
+import type { RpcArgs, RpcMethod, RpcMethods } from '../protocol/generated.js'
 
 import {
   type BusyInputMode,
@@ -85,13 +77,13 @@ export const normalizeMouseTracking = (display: { mouse_tracking?: unknown; tui_
 
 const MTIME_POLL_MS = 5000
 
-const quietRpc = async <T extends Record<string, any> = Record<string, any>>(
+const quietRpc = async <M extends RpcMethod>(
   gw: GatewayClient,
-  method: string,
-  params: Record<string, unknown> = {}
-): Promise<null | T> => {
+  method: M,
+  ...args: RpcArgs<M>
+): Promise<null | RpcMethods[M]['result']> => {
   try {
-    return asRpcResult<T>(await gw.request<T>(method, params))
+    return await gw.request(method, ...args)
   } catch {
     return null
   }
@@ -115,7 +107,7 @@ export async function hydrateFullConfig(
   setBell: (v: boolean) => void,
   setVoiceRecordKey?: (v: ParsedVoiceRecordKey) => void
 ): Promise<ConfigFullResponse | null> {
-  const cfg = await quietRpc<ConfigFullResponse>(gw, 'config.get', { key: 'full' })
+  const cfg = await quietRpc(gw, 'config.get', { key: 'full' })
   applyDisplay(cfg, setBell, setVoiceRecordKey)
 
   return cfg
@@ -176,7 +168,7 @@ export function useConfigSync({
     // Environment flags are enough to initialize the UI bit; the heavier status
     // check still runs when the user opens /voice.
     setVoiceEnabled(runtimeEnvEnabled('VOICE'))
-    quietRpc<ConfigMtimeResponse>(gw, 'config.get', { key: 'mtime' }).then(r => {
+    quietRpc(gw, 'config.get', { key: 'mtime' }).then(r => {
       mtimeRef.current = Number(r?.mtime ?? 0)
     })
     void hydrateFullConfig(gw, setBellOnComplete, setVoiceRecordKey)
@@ -188,7 +180,7 @@ export function useConfigSync({
     }
 
     const id = setInterval(() => {
-      quietRpc<ConfigMtimeResponse>(gw, 'config.get', { key: 'mtime' }).then(r => {
+      quietRpc(gw, 'config.get', { key: 'mtime' }).then(r => {
         const next = Number(r?.mtime ?? 0)
 
         if (!mtimeRef.current) {
@@ -205,7 +197,7 @@ export function useConfigSync({
 
         mtimeRef.current = next
 
-        quietRpc<ReloadMcpResponse>(gw, 'reload.mcp', { session_id: sid, confirm: true }).then(
+        quietRpc(gw, 'reload.mcp', { session_id: sid, confirm: true }).then(
           r => r && turnController.pushActivity('MCP reloaded after config change')
         )
         void hydrateFullConfig(gw, setBellOnComplete, setVoiceRecordKey)

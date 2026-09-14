@@ -42,13 +42,14 @@ const truncate = (value: string, max: number): string =>
 // raw they read as debug tokens. Sentence-case them for display — LENGTH-PRESERVING
 // (underscore→space, uppercase the first char) so every right-aligned count stays put.
 // Already-uppercase tier labels (FREE/STALE) have no underscores and are unaffected.
-const humanize = (value: string): string =>
-  value.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase())
+const humanize = (value: string): string => value.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase())
 
 // Thousands-grouped integer — an at-a-glance backlog reads "1,250", not "1250".
 // Hand-rolled (no Intl/ICU dependence) so it's deterministic under any runtime.
 const nf = (n: number): string => {
-  const abs = Math.trunc(Math.abs(n)).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+  const abs = Math.trunc(Math.abs(n))
+    .toString()
+    .replace(/\B(?=(\d{3})+(?!\d))/g, ',')
 
   return n < 0 ? `-${abs}` : abs
 }
@@ -108,11 +109,39 @@ const buildTiers = (agg: ForecastWarningsAggregateResponse | null): TierNode[] =
   const stale = agent?.stale
 
   return [
-    { affordance: 'auto', key: 'free', label: 'FREE', reasons: free?.reasons ?? [], subView: false, total: free?.total ?? 0 },
-    { affordance: 'needs-agent', key: 'agent', label: 'AGENT', reasons: agent?.reasons ?? [], subView: false, total: agent?.total ?? 0 },
-    { affordance: 'manual', key: 'manual', label: 'MANUAL', reasons: manual?.reasons ?? [], subView: false, total: manual?.total ?? 0 },
+    {
+      affordance: 'auto',
+      key: 'free',
+      label: 'FREE',
+      reasons: free?.reasons ?? [],
+      subView: false,
+      total: free?.total ?? 0
+    },
+    {
+      affordance: 'needs-agent',
+      key: 'agent',
+      label: 'AGENT',
+      reasons: agent?.reasons ?? [],
+      subView: false,
+      total: agent?.total ?? 0
+    },
+    {
+      affordance: 'manual',
+      key: 'manual',
+      label: 'MANUAL',
+      reasons: manual?.reasons ?? [],
+      subView: false,
+      total: manual?.total ?? 0
+    },
     // STALE is a VIEW over the AGENT tier (its reforecast reasons are a subset).
-    { affordance: 'needs-agent', key: 'stale', label: 'STALE', reasons: stale?.reasons ?? [], subView: true, total: stale?.total ?? 0 }
+    {
+      affordance: 'needs-agent',
+      key: 'stale',
+      label: 'STALE',
+      reasons: stale?.reasons ?? [],
+      subView: true,
+      total: stale?.total ?? 0
+    }
   ]
 }
 
@@ -310,16 +339,16 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
     // untruncated); the dashboard is still loaded for the review-queue / readiness
     // / stale-assumption sections kept below (out of scope to fold into the tree).
     Promise.all([
-      gw.request<unknown>('forecast.warnings.aggregate', {}),
+      gw.request('forecast.warnings.aggregate', {}),
       // fast: skip the full-build cost (backtests, live/pilot reports, stale-review
       // walk) — at 120q/1250 alerts the full build measured ~1s vs ~0.2s fast. This
       // view only reads review_queue + stale-{assumption,ref} counts (all carried in
       // fast mode); evidence_status.gaps is full-only, so the "Readiness gaps"
       // section below simply doesn't render under fast (it degrades to empty).
-      gw.request<unknown>('forecast.dashboard', { fast: true, limit: 50 }),
+      gw.request('forecast.dashboard', { fast: true, limit: 50 }),
       // The contested list is supplementary — a failure here must NOT nuke the
       // whole warnings view, so it resolves to null rather than rejecting the all.
-      gw.request<unknown>('forecast.triage.contested', { limit: 200 }).catch(() => null)
+      gw.request('forecast.triage.contested', { limit: 200 }).catch(() => null)
     ])
       .then(([aggRaw, dashRaw, contestedRaw]) => {
         const agg = asRpcResult<ForecastWarningsAggregateResponse>(aggRaw)
@@ -377,7 +406,7 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
       return
     }
 
-    gw.request<unknown>('jobs.active', { types: ['warnings'] })
+    gw.request('jobs.active', { types: ['warnings'] })
       .then(raw => {
         const res = asRpcResult<{ jobs?: Array<Record<string, unknown>> }>(raw)
         const live = res?.jobs?.[0]
@@ -396,7 +425,6 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
         }
       })
       .catch(() => undefined)
-
   }, [gw])
 
   // Belt-and-braces: drop the ownership flag if the view unmounts mid-pass. The job
@@ -586,7 +614,7 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
     }
 
     setFlash(`${label} starting…`)
-    gw.request<unknown>('forecast.warnings.automode.run', { session_id: sessionId, ...extra })
+    gw.request('forecast.warnings.automode.run', { session_id: sessionId, ...extra })
       .then(raw => {
         const res = asRpcResult<ForecastWarningsAutomodeRunResponse>(raw)
 
@@ -660,7 +688,7 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
 
     setContested(prev => prev.filter(row => row.id !== labelId))
     setFlash(`labeled ${LABEL_SHORT[label]} — alert closed`)
-    gw.request<unknown>('forecast.triage.relabel', { label, label_id: labelId })
+    gw.request('forecast.triage.relabel', { label, label_id: labelId })
       .then(raw => {
         const res = asRpcResult<ForecastTriageRelabelResponse>(raw)
 
@@ -708,7 +736,7 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
 
     const qid = refs[0]
     setFlash(`resolving ${truncate(qid, 14)} → ${outcome}…`)
-    gw.request<unknown>('forecast.command', { argv: ['resolve', qid, '--outcome', outcome] })
+    gw.request('forecast.command', { argv: ['resolve', qid, '--outcome', outcome] })
       .then(raw => {
         const res = asRpcResult<ForecastCommandResponse>(raw)
         setFlash(
@@ -793,7 +821,7 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
 
     closeDismiss()
     setFlash('dismissing…')
-    gw.request<unknown>('forecast.warnings.dismiss', { ...target.params, actor: 'tui', note })
+    gw.request('forecast.warnings.dismiss', { ...target.params, actor: 'tui', note })
       .then(raw => {
         const res = asRpcResult<ForecastWarningsDismissResponse>(raw)
         setFlash(`dismissed ${res?.count ?? 0}/${res?.matched ?? 0} — ${truncate(humanize(target.label), 24)}`)
@@ -867,159 +895,162 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
 
   const pageSize = Math.max(4, termRows - 10)
 
-  useInput((ch, key) => {
-    // ── Dismiss modal: it owns ALL input while open (the sheet-open guard). ──
-    if (dismissTarget) {
-      if (key.escape) {
-        return closeDismiss()
-      }
-
-      if (key.return) {
-        return submitDismiss()
-      }
-
-      if (key.backspace || key.delete) {
-        return setNoteBuffer(buf => buf.slice(0, -1))
-      }
-
-      // Accumulate printable input (spaces allowed; a multi-char paste lands as one
-      // `ch`, so strip control bytes rather than gating on length === 1).
-      if (ch && !key.ctrl && !key.meta) {
-        const printable = [...ch].filter(c => c >= ' ' && c !== '\x7f').join('')
-
-        if (printable) {
-          return setNoteBuffer(buf => buf + printable)
+  useInput(
+    (ch, key) => {
+      // ── Dismiss modal: it owns ALL input while open (the sheet-open guard). ──
+      if (dismissTarget) {
+        if (key.escape) {
+          return closeDismiss()
         }
-      }
 
-      return
-    }
+        if (key.return) {
+          return submitDismiss()
+        }
 
-    if (ch === 'q' || key.escape) {
-      return onClose()
-    }
+        if (key.backspace || key.delete) {
+          return setNoteBuffer(buf => buf.slice(0, -1))
+        }
 
-    // `h` (and the `?` alias) open the unified Help modal — consistent everywhere.
-    if (ch === 'h' || ch === '?') {
-      return openHelpOverlay()
-    }
+        // Accumulate printable input (spaces allowed; a multi-char paste lands as one
+        // `ch`, so strip control bytes rather than gating on length === 1).
+        if (ch && !key.ctrl && !key.meta) {
+          const printable = [...ch].filter(c => c >= ' ' && c !== '\x7f').join('')
 
-    // Bulk passes on the focused tier/reason. Shift-A = AGENT (reforecast) pass /
-    // cancel-while-running; R = FREE (non-LLM gated) pass.
-    if (ch === 'A') {
-      return agentPassOrCancel()
-    }
-
-    if (ch === 'R') {
-      return runFreePass()
-    }
-
-    // x — dismiss (silence) the focused group behind a required one-line note.
-    if (ch === 'x') {
-      return openDismiss()
-    }
-
-    // 1/2/3 — assign the three-way relevance label to the focused contested row
-    // (interesting / uninteresting / irrelevant). No-op unless the cursor is on a
-    // contested node, so the digits never steal input over the backlog tree.
-    if ((ch === '1' || ch === '2' || ch === '3') && selectedNode?.kind === 'contested') {
-      return relabelContested(CONTESTED_LABELS[ch])
-    }
-
-    // C — confirm the focused resolution proposal via the existing resolve flow.
-    // No-op unless the cursor is on a resolution-proposal reason row.
-    if (ch === 'C' && selectedNode?.kind === 'reason' && isResolutionProposal(selectedNode.group.reason)) {
-      return confirmResolution()
-    }
-
-    if (ch === 'r') {
-      return load(true)
-    }
-
-    // Collapse-all / expand-all the whole tree.
-    if (ch === 'c') {
-      return collapseAll()
-    }
-
-    if (ch === 'e') {
-      return expandAll()
-    }
-
-    // Tab / ] / [ — jump to the next / previous tier header.
-    if (key.tab || ch === ']') {
-      return jumpTier(1)
-    }
-
-    if (ch === '[') {
-      return jumpTier(-1)
-    }
-
-    // Selection over the flattened tier/reason node list. Move relative to the
-    // VISIBLE position (one keypress = one move) even after a collapse shrank the list.
-    if (key.upArrow || ch === 'k') {
-      return move(-1)
-    }
-
-    if (key.downArrow || ch === 'j') {
-      return move(1)
-    }
-
-    // Tree collapse/expand. Enter/Space toggles; ← collapses (and homes the
-    // cursor on the tier header), →/l expands. `h` is now Help (handled above),
-    // so ← is the sole collapse key.
-    if (key.return || ch === ' ') {
-      return toggleSelected()
-    }
-
-    if (key.leftArrow) {
-      if (selectedKey) {
-        setCollapse(selectedKey, true)
-
-        if (selectedNode?.kind === 'reason') {
-          const headerIdx = flat.findIndex(n => n.kind === 'tier' && n.tier.key === selectedKey)
-
-          if (headerIdx >= 0) {
-            setSel(headerIdx)
+          if (printable) {
+            return setNoteBuffer(buf => buf + printable)
           }
         }
+
+        return
       }
 
-      return
-    }
-
-    if (key.rightArrow || ch === 'l') {
-      if (selectedKey) {
-        setCollapse(selectedKey, false)
+      if (ch === 'q' || key.escape) {
+        return onClose()
       }
 
-      return
-    }
+      // `h` (and the `?` alias) open the unified Help modal — consistent everywhere.
+      if (ch === 'h' || ch === '?') {
+        return openHelpOverlay()
+      }
 
-    // Scrolling (the page is taller than the cursor's tree section).
-    if (key.wheelUp) {
-      return scrollRef.current?.scrollBy(-2)
-    }
+      // Bulk passes on the focused tier/reason. Shift-A = AGENT (reforecast) pass /
+      // cancel-while-running; R = FREE (non-LLM gated) pass.
+      if (ch === 'A') {
+        return agentPassOrCancel()
+      }
 
-    if (key.wheelDown) {
-      return scrollRef.current?.scrollBy(2)
-    }
+      if (ch === 'R') {
+        return runFreePass()
+      }
 
-    if (key.pageUp || (key.ctrl && ch === 'u')) {
-      return scrollRef.current?.scrollBy(-pageSize)
-    }
+      // x — dismiss (silence) the focused group behind a required one-line note.
+      if (ch === 'x') {
+        return openDismiss()
+      }
 
-    if (key.pageDown || (key.ctrl && ch === 'd')) {
-      return scrollRef.current?.scrollBy(pageSize)
-    }
+      // 1/2/3 — assign the three-way relevance label to the focused contested row
+      // (interesting / uninteresting / irrelevant). No-op unless the cursor is on a
+      // contested node, so the digits never steal input over the backlog tree.
+      if ((ch === '1' || ch === '2' || ch === '3') && selectedNode?.kind === 'contested') {
+        return relabelContested(CONTESTED_LABELS[ch])
+      }
 
-    if (ch === 'g') {
-      return scrollRef.current?.scrollTo(0)
-    }
+      // C — confirm the focused resolution proposal via the existing resolve flow.
+      // No-op unless the cursor is on a resolution-proposal reason row.
+      if (ch === 'C' && selectedNode?.kind === 'reason' && isResolutionProposal(selectedNode.group.reason)) {
+        return confirmResolution()
+      }
 
-    if (ch === 'G') {
-      return scrollRef.current?.scrollToBottom?.()
-    }
-  }, { isActive: !globalModal })
+      if (ch === 'r') {
+        return load(true)
+      }
+
+      // Collapse-all / expand-all the whole tree.
+      if (ch === 'c') {
+        return collapseAll()
+      }
+
+      if (ch === 'e') {
+        return expandAll()
+      }
+
+      // Tab / ] / [ — jump to the next / previous tier header.
+      if (key.tab || ch === ']') {
+        return jumpTier(1)
+      }
+
+      if (ch === '[') {
+        return jumpTier(-1)
+      }
+
+      // Selection over the flattened tier/reason node list. Move relative to the
+      // VISIBLE position (one keypress = one move) even after a collapse shrank the list.
+      if (key.upArrow || ch === 'k') {
+        return move(-1)
+      }
+
+      if (key.downArrow || ch === 'j') {
+        return move(1)
+      }
+
+      // Tree collapse/expand. Enter/Space toggles; ← collapses (and homes the
+      // cursor on the tier header), →/l expands. `h` is now Help (handled above),
+      // so ← is the sole collapse key.
+      if (key.return || ch === ' ') {
+        return toggleSelected()
+      }
+
+      if (key.leftArrow) {
+        if (selectedKey) {
+          setCollapse(selectedKey, true)
+
+          if (selectedNode?.kind === 'reason') {
+            const headerIdx = flat.findIndex(n => n.kind === 'tier' && n.tier.key === selectedKey)
+
+            if (headerIdx >= 0) {
+              setSel(headerIdx)
+            }
+          }
+        }
+
+        return
+      }
+
+      if (key.rightArrow || ch === 'l') {
+        if (selectedKey) {
+          setCollapse(selectedKey, false)
+        }
+
+        return
+      }
+
+      // Scrolling (the page is taller than the cursor's tree section).
+      if (key.wheelUp) {
+        return scrollRef.current?.scrollBy(-2)
+      }
+
+      if (key.wheelDown) {
+        return scrollRef.current?.scrollBy(2)
+      }
+
+      if (key.pageUp || (key.ctrl && ch === 'u')) {
+        return scrollRef.current?.scrollBy(-pageSize)
+      }
+
+      if (key.pageDown || (key.ctrl && ch === 'd')) {
+        return scrollRef.current?.scrollBy(pageSize)
+      }
+
+      if (ch === 'g') {
+        return scrollRef.current?.scrollTo(0)
+      }
+
+      if (ch === 'G') {
+        return scrollRef.current?.scrollToBottom?.()
+      }
+    },
+    { isActive: !globalModal }
+  )
 
   const width = Math.max(40, cols - 4)
   // The tree rows right-align a value (a tier's "+N", a reason's count) via a
@@ -1049,19 +1080,29 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
 
   const headlineLine = (
     <Text wrap="truncate-end">
-      <Text bold color={openTotal ? t.color.text : t.color.muted}>{nf(openTotal)}</Text>
+      <Text bold color={openTotal ? t.color.text : t.color.muted}>
+        {nf(openTotal)}
+      </Text>
       <Text color={t.color.muted}> open</Text>
       {dot}
-      <Text bold color={freeCount ? t.color.ok : t.color.muted}>{nf(freeCount)}</Text>
+      <Text bold color={freeCount ? t.color.ok : t.color.muted}>
+        {nf(freeCount)}
+      </Text>
       <Text color={t.color.muted}> free</Text>
       {dot}
-      <Text bold color={agentCount ? t.color.accent : t.color.muted}>{nf(agentCount)}</Text>
+      <Text bold color={agentCount ? t.color.accent : t.color.muted}>
+        {nf(agentCount)}
+      </Text>
       <Text color={t.color.muted}> agent</Text>
       {dot}
-      <Text bold color={manualCount ? t.color.warn : t.color.muted}>{nf(manualCount)}</Text>
+      <Text bold color={manualCount ? t.color.warn : t.color.muted}>
+        {nf(manualCount)}
+      </Text>
       <Text color={t.color.muted}> manual</Text>
       {dot}
-      <Text bold color={contested.length ? t.color.error : t.color.muted}>{nf(contested.length)}</Text>
+      <Text bold color={contested.length ? t.color.error : t.color.muted}>
+        {nf(contested.length)}
+      </Text>
       <Text color={t.color.muted}> contested</Text>
     </Text>
   )
@@ -1084,10 +1125,14 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
     body = (
       <Box flexDirection="column">
         <Text wrap="truncate-end">
-          <Text bold color={t.color.ok}>{'✓ Backlog clear'}</Text>
+          <Text bold color={t.color.ok}>
+            {'✓ Backlog clear'}
+          </Text>
           <Text color={t.color.muted}>{' — no alerts, nothing queued for review, no stale assumptions or gaps.'}</Text>
         </Text>
-        <Text color={t.color.muted} wrap="truncate-end">Automode keeps it that way · r to refresh</Text>
+        <Text color={t.color.muted} wrap="truncate-end">
+          Automode keeps it that way · r to refresh
+        </Text>
       </Box>
     )
   } else {
@@ -1120,7 +1165,10 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
                   const totalStr = `  ${nf(tier.total)}`
                   const affordStr = `  ${tier.affordance}`
                   const hidden = isCollapsed && tier.reasons.length ? `+${tier.reasons.length}` : ''
-                  const leftLen = marker.length + caret.length + 2 + tier.label.length + totalStr.length + affordStr.length
+
+                  const leftLen =
+                    marker.length + caret.length + 2 + tier.label.length + totalStr.length + affordStr.length
+
                   const fill = Math.max(1, rowW - leftLen - hidden.length)
 
                   return (
@@ -1132,8 +1180,12 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
                       <Text color={active ? sem.cursor : t.color.muted}>{marker}</Text>
                       <Text color={t.color.muted}>{caret}</Text>
                       <Text color={col}>{'● '}</Text>
-                      <Text bold color={col}>{tier.label}</Text>
-                      <Text bold color={tier.total ? t.color.text : t.color.muted}>{totalStr}</Text>
+                      <Text bold color={col}>
+                        {tier.label}
+                      </Text>
+                      <Text bold color={tier.total ? t.color.text : t.color.muted}>
+                        {totalStr}
+                      </Text>
                       <Text color={t.color.muted}>{affordStr}</Text>
                       <Text color={t.color.border}>{' '.repeat(fill)}</Text>
                       {hidden ? <Text color={t.color.muted}>{hidden}</Text> : null}
@@ -1157,8 +1209,13 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
                 const reasonStr = truncate(humanize(g.reason ?? '—'), 30)
                 const countStr = nf(g.count ?? 0)
                 const arrow = g.recommended_action ? ' → ' : ''
+
                 // Truncate the action so the right-aligned count is never clipped.
-                const actionMax = Math.max(0, rowW - marker.length - 2 - reasonStr.length - arrow.length - countStr.length - 2)
+                const actionMax = Math.max(
+                  0,
+                  rowW - marker.length - 2 - reasonStr.length - arrow.length - countStr.length - 2
+                )
+
                 const action = g.recommended_action ? truncate(g.recommended_action, actionMax) : ''
                 const leftLen = marker.length + 2 + reasonStr.length + arrow.length + action.length
                 const fill = Math.max(1, rowW - leftLen - countStr.length)
@@ -1214,7 +1271,9 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
                     <Box flexDirection="column" key={node.rowKey}>
                       <Text backgroundColor={active ? t.color.selectionBg : undefined} wrap="truncate-end">
                         <Text color={active ? sem.cursor : t.color.error}>{active ? '▸ ' : '● '}</Text>
-                        <Text bold color={t.color.text}>{truncate(head, 40)}</Text>
+                        <Text bold color={t.color.text}>
+                          {truncate(head, 40)}
+                        </Text>
                         {row.auto_label ? (
                           <Text color={t.color.muted}>{`  auto:${truncate(row.auto_label, 24)}`}</Text>
                         ) : null}
@@ -1223,7 +1282,10 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
                         ) : null}
                       </Text>
                       {row.rationale ? (
-                        <Text color={t.color.border} wrap="truncate-end">{`    ${truncate(row.rationale, Math.max(20, width - 6))}`}</Text>
+                        <Text
+                          color={t.color.border}
+                          wrap="truncate-end"
+                        >{`    ${truncate(row.rationale, Math.max(20, width - 6))}`}</Text>
                       ) : null}
                       {active ? (
                         // 1/2/3 are LIVE only on the focused contested row, so the
@@ -1255,7 +1317,10 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
                       <Text color={t.color.muted} wrap="wrap">{`  ${r.reasons.join(', ')}`}</Text>
                     ) : null}
                     {r.next_action ? (
-                      <Text color={t.color.label} wrap="truncate-end">{`  → ${truncate(r.next_action, width - 6)}`}</Text>
+                      <Text
+                        color={t.color.label}
+                        wrap="truncate-end"
+                      >{`  → ${truncate(r.next_action, width - 6)}`}</Text>
                     ) : null}
                   </Box>
                 ))}
@@ -1265,10 +1330,14 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
             {staleAssumptions > 0 || staleRefs > 0 ? (
               <Section t={t} title="Stale">
                 {staleAssumptions > 0 ? (
-                  <Text color={t.color.warn}>{`  ${staleAssumptions} stale assumption${staleAssumptions === 1 ? '' : 's'}`}</Text>
+                  <Text
+                    color={t.color.warn}
+                  >{`  ${staleAssumptions} stale assumption${staleAssumptions === 1 ? '' : 's'}`}</Text>
                 ) : null}
                 {staleRefs > 0 ? (
-                  <Text color={t.color.warn}>{`  ${staleRefs} stale reference class${staleRefs === 1 ? '' : 'es'}`}</Text>
+                  <Text
+                    color={t.color.warn}
+                  >{`  ${staleRefs} stale reference class${staleRefs === 1 ? '' : 'es'}`}</Text>
                 ) : null}
               </Section>
             ) : null}
@@ -1296,11 +1365,16 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
   const header = (
     <Box flexShrink={0} justifyContent="space-between" marginBottom={1}>
       <Text wrap="truncate-end">
-        <Text bold color={t.color.primary}>WARNINGS</Text>
+        <Text bold color={t.color.primary}>
+          WARNINGS
+        </Text>
         <Text color={t.color.muted}>{'   attention backlog'}</Text>
       </Text>
       {loading || automode ? (
-        <Text color={t.color.accent} wrap="truncate-end">{`${spinnerFrame(now)} ${automode ? 'automode' : 'loading'}`}</Text>
+        <Text
+          color={t.color.accent}
+          wrap="truncate-end"
+        >{`${spinnerFrame(now)} ${automode ? 'automode' : 'loading'}`}</Text>
       ) : null}
     </Box>
   )
@@ -1321,12 +1395,12 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
         <Text color={t.color.muted}>{'  '}</Text>
         <Text color={t.color.ok}>{progressBar(automode.done, automode.total)}</Text>
         <Text bold>{`  ${automode.done}/${automode.total || '…'}`}</Text>
-        {automode.reason ? <Text color={t.color.muted}>{`  ·  ${truncate(humanize(automode.reason), 28)}`}</Text> : null}
+        {automode.reason ? (
+          <Text color={t.color.muted}>{`  ·  ${truncate(humanize(automode.reason), 28)}`}</Text>
+        ) : null}
         <Text color={t.color.muted}>{'  ·  ⇧A cancel'}</Text>
       </Text>
-      {automodeFold ? (
-        <Text color={t.color.warn} wrap="truncate-end">{`  ↳ ${failureLine(automodeFold)}`}</Text>
-      ) : null}
+      {automodeFold ? <Text color={t.color.warn} wrap="truncate-end">{`  ↳ ${failureLine(automodeFold)}`}</Text> : null}
     </Box>
   ) : null
 
@@ -1342,7 +1416,9 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
         <Text color={t.color.text}>{noteBuffer}</Text>
         <Text color={t.color.accent}>▏</Text>
       </Text>
-      <Text color={t.color.muted} wrap="truncate-end">⏎ confirm · Esc cancel</Text>
+      <Text color={t.color.muted} wrap="truncate-end">
+        ⏎ confirm · Esc cancel
+      </Text>
     </Box>
   ) : null
 
@@ -1404,7 +1480,9 @@ function Keycap({ label, n, t }: { label: string; n: string; t: Theme }) {
   return (
     <Text>
       <Text color={t.color.muted}>[</Text>
-      <Text bold color={t.color.accent}>{n}</Text>
+      <Text bold color={t.color.accent}>
+        {n}
+      </Text>
       <Text color={t.color.muted}>]</Text>
       <Text color={t.color.label}>{` ${label}`}</Text>
     </Text>

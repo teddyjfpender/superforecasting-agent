@@ -378,7 +378,9 @@ def _(rid, params: dict) -> dict:
             configuration_text,
         )
 
-        result = _core._methods["config.show"](rid, params)
+        result = _core._methods["config.show"](
+            rid, {"session_id": params.get("session_id")}
+        )
         if "error" in result:
             return result
         return _ok(

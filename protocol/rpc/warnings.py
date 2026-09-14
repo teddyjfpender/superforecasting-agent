@@ -29,7 +29,6 @@ from typing import Any
 
 from protocol.types import WireModel, wire_optional
 
-
 # ── forecast.warnings.list ────────────────────────────────────────────────────
 
 
@@ -158,7 +157,7 @@ class ForecastWarningsDismissRequest(WireModel):
     note: str | None = None
     actor: str | None = None
     scope: str | None = None
-    reason: str | None = None
+    reason: str | list[str] | None = None
     kind: Any | None = None
     kinds: Any | None = None
     alert_id: str | None = None
@@ -213,3 +212,13 @@ __all__ = [
     "ForecastWarningsAutomodeRunRequest",
     "ForecastWarningsAutomodeRunResponse",
 ]
+
+
+class AutomodeCancelRequest(WireModel):
+    job_id: str
+
+
+class AutomodeCancelResponse(WireModel):
+    job_id: str
+    found: bool
+    cancelled: bool | None = wire_optional()

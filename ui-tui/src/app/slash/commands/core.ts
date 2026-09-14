@@ -5,8 +5,6 @@ import { dailyFortune, randomFortune } from '../../../content/fortunes.js'
 import { HOTKEYS } from '../../../content/hotkeys.js'
 import { isSectionName, nextDetailsMode, parseDetailsMode, SECTION_NAMES } from '../../../domain/details.js'
 import type {
-  ConfigGetValueResponse,
-  ConfigSetResponse,
   ForecastCommandResponse,
   ForecastDashboardResponse,
   SessionSaveResponse,
@@ -69,7 +67,7 @@ const FORECAST_ID_ARG = /^fq_[a-z0-9][a-z0-9_:-]*$/i
 
 const refreshForecastDeskStatus = (ctx: SlashRunCtx) => {
   ctx.gateway
-    .rpc<ForecastDashboardResponse>('forecast.dashboard', { limit: 8 })
+    .rpc('forecast.dashboard', { limit: 8 })
     .then(
       ctx.guarded<ForecastDashboardResponse>(r => {
         if (r.summary) {
@@ -110,8 +108,10 @@ const runForecastCommand = (ctx: SlashRunCtx, arg: string) => {
   const operation = /^(review|resolve|score)(?:\s+([\s\S]*))?$/.exec(arg.trim())
 
   ctx.gateway
-    .rpc<ForecastCommandResponse>(operation ? 'forecast.operation' : 'forecast.command',
-      operation ? { operation: operation[1], arg: operation[2] ?? '' } : { arg })
+    .rpc(
+      operation ? 'forecast.operation' : 'forecast.command',
+      operation ? { operation: operation[1], arg: operation[2] ?? '' } : { arg }
+    )
     .then(ctx.guarded<ForecastCommandResponse>(r => renderForecastCommandOutput(r, ctx)))
     .catch(ctx.guardedErr)
 }
@@ -120,8 +120,10 @@ const runForecastCommandArgv = (ctx: SlashRunCtx, argv: string[]) => {
   const operation = argv[0] === 'review' || argv[0] === 'resolve' || argv[0] === 'score'
 
   ctx.gateway
-    .rpc<ForecastCommandResponse>(operation ? 'forecast.operation' : 'forecast.command',
-      operation ? { operation: argv[0], argv: argv.slice(1) } : { argv })
+    .rpc(
+      operation ? 'forecast.operation' : 'forecast.command',
+      operation ? { operation: argv[0], argv: argv.slice(1) } : { argv }
+    )
     .then(ctx.guarded<ForecastCommandResponse>(r => renderForecastCommandOutput(r, ctx)))
     .catch(ctx.guardedErr)
 }
@@ -237,7 +239,7 @@ const renderForecastLedgerView = (response: ForecastDashboardResponse, view: str
 const runForecastLedgerView = (view: string, ctx: SlashRunCtx) => {
   const limit = searchNormalizeForLimit(view) ? 75 : 20
   ctx.gateway
-    .rpc<ForecastDashboardResponse>('forecast.dashboard', { limit })
+    .rpc('forecast.dashboard', { limit })
     .then(ctx.guarded<ForecastDashboardResponse>(r => renderForecastLedgerView(r, view, ctx)))
     .catch(ctx.guardedErr)
 }
@@ -255,7 +257,7 @@ const runForecastBook = (arg: string, ctx: SlashRunCtx) => {
     }
 
     ctx.gateway
-      .rpc<ForecastDashboardResponse>('forecast.dashboard', { limit: 50 })
+      .rpc('forecast.dashboard', { limit: 50 })
       .then(ctx.guarded<ForecastDashboardResponse>(r => renderForecastSearch(r, trimmed, ctx)))
       .catch(ctx.guardedErr)
 
@@ -275,7 +277,7 @@ const runForecastBook = (arg: string, ctx: SlashRunCtx) => {
   const limit = Math.max(openIndex ?? listLimit, listLimit)
 
   ctx.gateway
-    .rpc<ForecastDashboardResponse>('forecast.dashboard', { limit })
+    .rpc('forecast.dashboard', { limit })
     .then(
       ctx.guarded<ForecastDashboardResponse>(r => {
         if (!r.summary || openIndex === null || listMatch) {
@@ -288,7 +290,9 @@ const runForecastBook = (arg: string, ctx: SlashRunCtx) => {
         const row = r.summary.questions?.[openIndex - 1]
 
         if (!row?.id) {
-          ctx.transcript.sys(`no forecast row ${openIndex}; run /questions list ${limit} to inspect current forecast questions`)
+          ctx.transcript.sys(
+            `no forecast row ${openIndex}; run /questions list ${limit} to inspect current forecast questions`
+          )
 
           return
         }
@@ -323,7 +327,11 @@ const forecastViewShortcutCommands: SlashCommand[] = FORECAST_TUI_VIEW_SHORTCUTS
 
 type ForecastRefResolution =
   | { id: string; response: ForecastDashboardResponse; status: 'resolved' }
-  | { matches: ReturnType<typeof rankForecastQuestionMatches>; response: ForecastDashboardResponse; status: 'ambiguous' }
+  | {
+      matches: ReturnType<typeof rankForecastQuestionMatches>
+      response: ForecastDashboardResponse
+      status: 'ambiguous'
+    }
   | { response: ForecastDashboardResponse; status: 'missing' }
 
 const resolveForecastRef = (response: ForecastDashboardResponse, ref: string): ForecastRefResolution => {
@@ -380,7 +388,7 @@ const withForecastRef = (
   }
 
   ctx.gateway
-    .rpc<ForecastDashboardResponse>('forecast.dashboard', { limit: 75 })
+    .rpc('forecast.dashboard', { limit: 75 })
     .then(
       ctx.guarded<ForecastDashboardResponse>(response => {
         const resolved = resolveForecastRef(response, trimmed)
@@ -473,7 +481,10 @@ export const coreCommands: SlashCommand[] = [
             ],
             ['/heuristic [random|daily]', 'show a random or daily forecasting maxim'],
             ['/questions [row|list N|words]', 'show current forecast questions, search by words, or drill into a row'],
-            ['/ledger [view|search words]', 'jump between forecast book, review, alerts, evidence, learning, schedules, or search'],
+            [
+              '/ledger [view|search words]',
+              'jump between forecast book, review, alerts, evidence, learning, schedules, or search'
+            ],
             ['/1 … /9', 'portable forecast view shortcuts when Alt/Option is reserved by the terminal'],
             ['/find <words>', 'search active forecasts and review queue without needing a forecast id'],
             ['/open <row|id|words>', 'open one matching forecast ledger record'],
@@ -499,7 +510,10 @@ export const coreCommands: SlashCommand[] = [
             ['/news', 'open the live news feed reader'],
             ['/messaging', 'open the messaging view (your personal Signal client)'],
             ['/messaging-gateway', 'set up the agent messaging bridge (people message the system)'],
-            ['/calibration [args]', 'show calibration analytics; defaults to --by-origin; --visual opens the chart view'],
+            [
+              '/calibration [args]',
+              'show calibration analytics; defaults to --by-origin; --visual opens the chart view'
+            ],
             ['/panel [subcommand]', 'multi-perspective panel: perspectives, record, aggregate, show'],
             ['/bayes [args]', 'auditable Bayesian scratchpad (priors, LRs, pooling)'],
             ['/performance [args]', 'show recent backtest performance'],
@@ -564,7 +578,7 @@ export const coreCommands: SlashCommand[] = [
       }
 
       patchUiState({ mouseTracking: next })
-      ctx.gateway.rpc<ConfigSetResponse>('config.set', { key: 'mouse', value: next ? 'on' : 'off' }).catch(() => {})
+      ctx.gateway.rpc('config.set', { key: 'mouse', value: next ? 'on' : 'off' }).catch(() => {})
 
       queueMicrotask(() => ctx.transcript.sys(`mouse tracking ${next ? 'on' : 'off'}`))
     }
@@ -623,7 +637,7 @@ export const coreCommands: SlashCommand[] = [
       }
 
       ctx.gateway
-        .rpc<ForecastDashboardResponse>('forecast.dashboard', { limit: 75 })
+        .rpc('forecast.dashboard', { limit: 75 })
         .then(ctx.guarded<ForecastDashboardResponse>(r => renderForecastSearch(r, query, ctx)))
         .catch(ctx.guardedErr)
     }
@@ -674,9 +688,7 @@ export const coreCommands: SlashCommand[] = [
       const { ref, rest } = splitForecastRefAndRest(arg)
 
       if (!ref || !rest) {
-        return ctx.transcript.sys(
-          'usage: /revise <row|id|forecast words> -- --probability <0-1> --rationale <why>'
-        )
+        return ctx.transcript.sys('usage: /revise <row|id|forecast words> -- --probability <0-1> --rationale <why>')
       }
 
       runForecastUpdateShortcut(
@@ -698,7 +710,7 @@ export const coreCommands: SlashCommand[] = [
       // report — doctor gate, calibration, evidence status, the lot.
       if (/^(status|dashboard|report|overview)$/i.test(trimmed)) {
         ctx.gateway
-          .rpc<ForecastDashboardResponse>('forecast.dashboard', { limit: 20 })
+          .rpc('forecast.dashboard', { limit: 20 })
           .then(ctx.guarded<ForecastDashboardResponse>(r => renderForecastDashboard(r, ctx)))
           .catch(ctx.guardedErr)
 
@@ -864,14 +876,24 @@ export const coreCommands: SlashCommand[] = [
       // Peel an optional --type off the second reference.
       const typeMatch = rest.match(/--type\s+(related|component_of)\b/)
       const linkType = typeMatch?.[1] ?? 'related'
-      const toRef = rest.replace(/--type\s+\S+/, '').replace(/\s+/g, ' ').trim()
+
+      const toRef = rest
+        .replace(/--type\s+\S+/, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+
       withForecastRef(
         ctx,
         ref,
         fromId =>
-          withForecastRef(ctx, toRef, toId => runForecastCommandArgv(ctx, ['link', 'add', fromId, toId, '--type', linkType]), {
-            missingUsage: 'usage: /link <row|id|words> -- <row|id|words> [--type related|component_of]'
-          }),
+          withForecastRef(
+            ctx,
+            toRef,
+            toId => runForecastCommandArgv(ctx, ['link', 'add', fromId, toId, '--type', linkType]),
+            {
+              missingUsage: 'usage: /link <row|id|words> -- <row|id|words> [--type related|component_of]'
+            }
+          ),
         { missingUsage: 'usage: /link <row|id|words> -- <row|id|words> [--type related|component_of]' }
       )
     }
@@ -1144,8 +1166,12 @@ export const coreCommands: SlashCommand[] = [
       }
 
       ctx.gateway
-        .rpc<SessionStatusResponse>('session.status', { session_id: ctx.sid })
-        .then(ctx.guarded<SessionStatusResponse>(r => ctx.transcript.page(r.output || '(no status)', 'Forecast Desk Status')))
+        .rpc('session.status', { session_id: ctx.sid })
+        .then(
+          ctx.guarded<SessionStatusResponse>(r =>
+            ctx.transcript.page(r.output || '(no status)', 'Forecast Desk Status')
+          )
+        )
         .catch(ctx.guardedErr)
     }
   },
@@ -1174,7 +1200,7 @@ export const coreCommands: SlashCommand[] = [
 
       if (!arg) {
         ctx.gateway
-          .rpc<SessionTitleResponse>('session.title', { session_id: ctx.sid })
+          .rpc('session.title', { session_id: ctx.sid })
           .then(
             ctx.guarded<SessionTitleResponse>(r => {
               const current = (r?.title ?? '').trim()
@@ -1191,7 +1217,7 @@ export const coreCommands: SlashCommand[] = [
       }
 
       ctx.gateway
-        .rpc<SessionTitleResponse>('session.title', { session_id: ctx.sid, title })
+        .rpc('session.title', { session_id: ctx.sid, title })
         .then(
           ctx.guarded<SessionTitleResponse>(r => {
             const next = (r?.title ?? title).trim()
@@ -1214,7 +1240,7 @@ export const coreCommands: SlashCommand[] = [
       }
 
       patchUiState({ compact: next })
-      ctx.gateway.rpc<ConfigSetResponse>('config.set', { key: 'compact', value: next ? 'on' : 'off' }).catch(() => {})
+      ctx.gateway.rpc('config.set', { key: 'compact', value: next ? 'on' : 'off' }).catch(() => {})
 
       queueMicrotask(() => ctx.transcript.sys(`compact ${next ? 'on' : 'off'}`))
     }
@@ -1229,7 +1255,7 @@ export const coreCommands: SlashCommand[] = [
 
       if (!arg) {
         gateway
-          .rpc<ConfigGetValueResponse>('config.get', { key: 'details_mode' })
+          .rpc('config.get', { key: 'details_mode' })
           .then(r => {
             if (ctx.stale()) {
               return
@@ -1262,9 +1288,7 @@ export const coreCommands: SlashCommand[] = [
         const { [first]: _drop, ...rest } = ui.sections
 
         patchUiState({ sections: mode ? { ...rest, [first]: mode } : rest })
-        gateway
-          .rpc<ConfigSetResponse>('config.set', { key: `details_mode.${first}`, value: mode ?? '' })
-          .catch(() => {})
+        gateway.rpc('config.set', { key: `details_mode.${first}`, value: mode ?? '' }).catch(() => {})
         transcript.sys(`details ${first}: ${mode ?? 'reset'}`)
 
         return
@@ -1279,7 +1303,7 @@ export const coreCommands: SlashCommand[] = [
       const sections = Object.fromEntries(SECTION_NAMES.map(section => [section, next]))
 
       patchUiState({ detailsMode: next, detailsModeCommandOverride: true, sections })
-      gateway.rpc<ConfigSetResponse>('config.set', { key: 'details_mode', value: next }).catch(() => {})
+      gateway.rpc('config.set', { key: 'details_mode', value: next }).catch(() => {})
       transcript.sys(`details: ${next}`)
     }
   },
@@ -1473,7 +1497,7 @@ export const coreCommands: SlashCommand[] = [
       }
 
       ctx.gateway
-        .rpc<SessionSaveResponse>('session.save', { session_id: ctx.sid })
+        .rpc('session.save', { session_id: ctx.sid })
         .then(
           ctx.guarded<SessionSaveResponse>(r => {
             const file = r?.file
@@ -1511,7 +1535,7 @@ export const coreCommands: SlashCommand[] = [
       }
 
       patchUiState({ statusBar: next })
-      ctx.gateway.rpc<ConfigSetResponse>('config.set', { key: 'statusbar', value: next }).catch(() => {})
+      ctx.gateway.rpc('config.set', { key: 'statusbar', value: next }).catch(() => {})
 
       queueMicrotask(() => ctx.transcript.sys(`status bar ${next}`))
     }
@@ -1552,7 +1576,7 @@ export const coreCommands: SlashCommand[] = [
       }
 
       ctx.gateway
-        .rpc<SessionSteerResponse>('session.steer', { session_id: ctx.sid, text: payload })
+        .rpc('session.steer', { session_id: ctx.sid, text: payload })
         .then(
           ctx.guarded<SessionSteerResponse>(r => {
             if (r?.status === 'queued') {
@@ -1576,7 +1600,7 @@ export const coreCommands: SlashCommand[] = [
         return ctx.transcript.sys('nothing to undo')
       }
 
-      ctx.gateway.rpc<SessionUndoResponse>('session.undo', { session_id: ctx.sid }).then(
+      ctx.gateway.rpc('session.undo', { session_id: ctx.sid }).then(
         ctx.guarded<SessionUndoResponse>(r => {
           if ((r.removed ?? 0) > 0) {
             ctx.transcript.setHistoryItems((prev: Msg[]) => ctx.transcript.trimLastExchange(prev))
@@ -1603,7 +1627,7 @@ export const coreCommands: SlashCommand[] = [
         return ctx.transcript.send(last)
       }
 
-      ctx.gateway.rpc<SessionUndoResponse>('session.undo', { session_id: ctx.sid }).then(
+      ctx.gateway.rpc('session.undo', { session_id: ctx.sid }).then(
         ctx.guarded<SessionUndoResponse>(r => {
           if ((r.removed ?? 0) <= 0) {
             return ctx.transcript.sys('nothing to retry')

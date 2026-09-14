@@ -194,7 +194,7 @@ export function CalibrationView({ gw, onClose, t }: CalibrationViewProps) {
 
   const load = (announce = false) => {
     setLoading(!data)
-    gw.request<unknown>('forecast.calibration', {})
+    gw.request('forecast.calibration', {})
       .then(raw => {
         const result = asRpcResult<ForecastCalibrationResponse>(raw)
 
@@ -240,44 +240,47 @@ export function CalibrationView({ gw, onClose, t }: CalibrationViewProps) {
 
   const pageSize = Math.max(4, termRows - 10)
 
-  useInput((ch, key) => {
-    if (ch === 'q' || key.escape) {
-      return onClose()
-    }
+  useInput(
+    (ch, key) => {
+      if (ch === 'q' || key.escape) {
+        return onClose()
+      }
 
-    // `h` opens the unified Help modal — consistent on every view.
-    if (ch === 'h') {
-      return openHelpOverlay()
-    }
+      // `h` opens the unified Help modal — consistent on every view.
+      if (ch === 'h') {
+        return openHelpOverlay()
+      }
 
-    if (ch === 'r') {
-      return load(true)
-    }
+      if (ch === 'r') {
+        return load(true)
+      }
 
-    if (key.upArrow || ch === 'k' || key.wheelUp) {
-      return scrollRef.current?.scrollBy(-2)
-    }
+      if (key.upArrow || ch === 'k' || key.wheelUp) {
+        return scrollRef.current?.scrollBy(-2)
+      }
 
-    if (key.downArrow || ch === 'j' || key.wheelDown) {
-      return scrollRef.current?.scrollBy(2)
-    }
+      if (key.downArrow || ch === 'j' || key.wheelDown) {
+        return scrollRef.current?.scrollBy(2)
+      }
 
-    if (key.pageUp || (key.ctrl && ch === 'u')) {
-      return scrollRef.current?.scrollBy(-pageSize)
-    }
+      if (key.pageUp || (key.ctrl && ch === 'u')) {
+        return scrollRef.current?.scrollBy(-pageSize)
+      }
 
-    if (key.pageDown || (key.ctrl && ch === 'd')) {
-      return scrollRef.current?.scrollBy(pageSize)
-    }
+      if (key.pageDown || (key.ctrl && ch === 'd')) {
+        return scrollRef.current?.scrollBy(pageSize)
+      }
 
-    if (ch === 'g') {
-      return scrollRef.current?.scrollTo(0)
-    }
+      if (ch === 'g') {
+        return scrollRef.current?.scrollTo(0)
+      }
 
-    if (ch === 'G') {
-      return scrollRef.current?.scrollToBottom?.()
-    }
-  }, { isActive: !globalModal })
+      if (ch === 'G') {
+        return scrollRef.current?.scrollToBottom?.()
+      }
+    },
+    { isActive: !globalModal }
+  )
 
   const width = Math.max(40, cols - 4)
 
@@ -405,9 +408,13 @@ function TrendRow({ t, trend }: { t: Theme; trend: ForecastCalibrationTrend | un
       <Text color={t.color.muted}>{`Brier ${newest.period ?? ''}: `}</Text>
       <Text color={t.color.text}>{oldest.brier!.toFixed(3)}</Text>
       <Text color={t.color.muted}>{' → '}</Text>
-      <Text bold color={toneColor(t, tone)}>{newest.brier!.toFixed(3)}</Text>
+      <Text bold color={toneColor(t, tone)}>
+        {newest.brier!.toFixed(3)}
+      </Text>
       <Text color={t.color.accent}>{`  ${spark}  `}</Text>
-      <Text bold color={toneColor(t, tone)}>{direction}</Text>
+      <Text bold color={toneColor(t, tone)}>
+        {direction}
+      </Text>
     </Text>
   )
 }
@@ -415,7 +422,15 @@ function TrendRow({ t, trend }: { t: Theme; trend: ForecastCalibrationTrend | un
 // "Lessons correcting this": the active calibration lessons adjusting forecasts in
 // scope, each with its recommended adjustment + measured coverage. DORMANT lessons
 // (never yet encountered at a commit) are highlighted — the adjustment isn't biting.
-function LessonsCorrectingSection({ lessons, t, width }: { lessons: ForecastCalibrationLesson[]; t: Theme; width: number }) {
+function LessonsCorrectingSection({
+  lessons,
+  t,
+  width
+}: {
+  lessons: ForecastCalibrationLesson[]
+  t: Theme
+  width: number
+}) {
   const trunc = (value: string, max: number): string =>
     value.length > max ? `${value.slice(0, Math.max(0, max - 1))}…` : value
 
@@ -426,9 +441,7 @@ function LessonsCorrectingSection({ lessons, t, width }: { lessons: ForecastCali
       return ''
     }
 
-    return entries
-      .map(([k, v]) => `${k}=${typeof v === 'number' ? v : String(v)}`)
-      .join(' ')
+    return entries.map(([k, v]) => `${k}=${typeof v === 'number' ? v : String(v)}`).join(' ')
   }
 
   return (
@@ -442,11 +455,18 @@ function LessonsCorrectingSection({ lessons, t, width }: { lessons: ForecastCali
         return (
           <Box flexDirection="column" key={lesson.lesson_id ?? i} marginTop={i === 0 ? 0 : 1}>
             <Text wrap="truncate-end">
-              <Text bold color={lesson.dormant ? t.color.warn : t.color.ok}>{lesson.dormant ? '○ DORMANT' : '● active'}</Text>
+              <Text bold color={lesson.dormant ? t.color.warn : t.color.ok}>
+                {lesson.dormant ? '○ DORMANT' : '● active'}
+              </Text>
               <Text color={t.color.muted}>{`  ${lesson.scope ?? '*'}`}</Text>
             </Text>
-            <Text color={t.color.text} wrap="truncate-end">{`  ${trunc(lesson.lesson ?? '—', Math.max(20, width - 4))}`}</Text>
-            {adj ? <Text color={t.color.label} wrap="truncate-end">{`  → ${trunc(adj, Math.max(16, width - 6))}`}</Text> : null}
+            <Text
+              color={t.color.text}
+              wrap="truncate-end"
+            >{`  ${trunc(lesson.lesson ?? '—', Math.max(20, width - 4))}`}</Text>
+            {adj ? (
+              <Text color={t.color.label} wrap="truncate-end">{`  → ${trunc(adj, Math.max(16, width - 6))}`}</Text>
+            ) : null}
             <Text color={t.color.muted} wrap="truncate-end">
               {`  coverage ${cov.applied_count ?? 0}/${cov.in_scope_count ?? 0} applied · rate ${rate}`}
             </Text>
@@ -502,9 +522,7 @@ function CohortScoreboardSection({ board, t }: { board: ForecastCohortScoreboard
             <Text color={t.color.text}>{brier3(row.mean_brier)}</Text>
             <Text color={t.color.muted}>{'  adj '}</Text>
             <Text color={t.color.text}>
-              {finite(row.mean_brier_difficulty_adjusted)
-                ? brier3(row.mean_brier_difficulty_adjusted)
-                : 'n/a'}
+              {finite(row.mean_brier_difficulty_adjusted) ? brier3(row.mean_brier_difficulty_adjusted) : 'n/a'}
             </Text>
           </Text>
         )
@@ -630,7 +648,9 @@ function BucketTable({ curve, t }: { curve: ForecastCalibrationCurveRow[]; t: Th
   return (
     <>
       <SectionTitle t={t}>buckets (forecast probability deciles)</SectionTitle>
-      <Text color={t.color.label}>{`${'bucket'.padEnd(9)}${'n'.padStart(4)}  ${'pred'.padStart(5)}  ${'obs'.padStart(5)}  ${'gap'.padStart(5)}`}</Text>
+      <Text
+        color={t.color.label}
+      >{`${'bucket'.padEnd(9)}${'n'.padStart(4)}  ${'pred'.padStart(5)}  ${'obs'.padStart(5)}  ${'gap'.padStart(5)}`}</Text>
       {curve.map((row, i) => {
         const empty = !row.count
 
@@ -644,7 +664,14 @@ function BucketTable({ curve, t }: { curve: ForecastCalibrationCurveRow[]; t: Th
 
         const gap = row.calibration_gap
         const gapText = finite(gap) ? `${Math.round(gap * 100)}pt` : '—'
-        const gapColor = !finite(gap) ? t.color.muted : gap >= 0.1 ? t.color.error : gap >= 0.05 ? t.color.warn : t.color.ok
+
+        const gapColor = !finite(gap)
+          ? t.color.muted
+          : gap >= 0.1
+            ? t.color.error
+            : gap >= 0.05
+              ? t.color.warn
+              : t.color.ok
 
         return (
           <Text key={row.bucket ?? i} wrap="truncate-end">

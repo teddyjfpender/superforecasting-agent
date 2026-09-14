@@ -8,24 +8,10 @@ mirrors in ``ui-tui/src/gatewayTypes.ts``. Each model's ``TS_NAME`` equals the
 mirror's interface name so the generated type is a DROP-IN replacement — the TUI
 consumers only change their import source, not the type names.
 
-Modelling choices (the arc's pragmatic big-payload rule):
-* Response models are ``extra='ignore'`` tolerant (the ``WireModel`` default). The
-  server's dict is authoritative; the ``forecast.*`` gateway wrapper VALIDATES and
-  logs drift but returns the ORIGINAL result untouched (it never re-serialises this
-  family), so a richer real frame validates and the wire can never regress.
-* Fields follow the mirrors field-for-field: ``wire_optional()`` for ``field?: T``,
-  ``wire_optional(nullable=True)`` for ``field?: null | T``, a bare annotation for a
-  required key. Inline object types in the mirrors become NAMED sub-models here
-  (pydantic needs a class); the extra generated interfaces are harmless — consumers
-  use them structurally.
-* Two mirror features are not expressible via codegen (a TS index signature and the
-  ``extends``); ``ForecastQuorumStatusResult`` / ``ForecastSnapshotMetadata`` model
-  their NAMED fields and ``ForecastCalibrationSummary`` / ``ForecastWarningsAgentTier``
-  are flattened. Documented inline where it matters.
-* Request models are lenient (all params optional, ``extra='ignore'``): the handlers
-  own a richer error taxonomy (4003/4004/5008/5009), so the wrapper validates-and-logs
-  the request but NEVER short-circuits — the handler's own field checks stay the sole
-  gate and no error code changes.
+Responses accept additive fields, but declared fields are strictly validated by
+``protocol.validation``. Requests reject unknown fields and wrong JSON types;
+shared application validators retain documented domain errors. Code generation
+connects these declarations directly to the client method map.
 """
 
 from __future__ import annotations
@@ -382,10 +368,12 @@ class ForecastDashboardCalibration(WireModel):
     mean_sharpness: float | None = wire_optional(nullable=True)
     probability_movement_count: int | None = wire_optional()
     mean_probability_movement_before_close: float | None = wire_optional(nullable=True)
-    mean_abs_probability_movement_before_close: float | None = wire_optional(nullable=True)
-    question_type_breakdown: (
-        list[ForecastDashboardQuestionTypeCalibration] | None
-    ) = wire_optional()
+    mean_abs_probability_movement_before_close: float | None = wire_optional(
+        nullable=True
+    )
+    question_type_breakdown: list[ForecastDashboardQuestionTypeCalibration] | None = (
+        wire_optional()
+    )
 
 
 class ForecastDashboardBacktest(WireModel):
@@ -663,10 +651,12 @@ class ForecastCalibrationSummary(WireModel):
     mean_sharpness: float | None = wire_optional(nullable=True)
     probability_movement_count: int | None = wire_optional()
     mean_probability_movement_before_close: float | None = wire_optional(nullable=True)
-    mean_abs_probability_movement_before_close: float | None = wire_optional(nullable=True)
-    question_type_breakdown: (
-        list[ForecastDashboardQuestionTypeCalibration] | None
-    ) = wire_optional()
+    mean_abs_probability_movement_before_close: float | None = wire_optional(
+        nullable=True
+    )
+    question_type_breakdown: list[ForecastDashboardQuestionTypeCalibration] | None = (
+        wire_optional()
+    )
     # summary-only
     buckets: list[ForecastCalibrationBucketRow] | None = wire_optional()
     calibration_curve: list[ForecastCalibrationCurveRow] | None = wire_optional()
@@ -1457,7 +1447,9 @@ class ForecastWorkspaceItem(WireModel):
     analyst_note: ForecastAnalystNote | None = wire_optional(nullable=True)
     analyst_notes: list[ForecastAnalystNote] | None = wire_optional()
     as_of: str | None = wire_optional(nullable=True)
-    candidate_intervals: dict[str, ForecastCandidateInterval] | None = wire_optional(nullable=True)
+    candidate_intervals: dict[str, ForecastCandidateInterval] | None = wire_optional(
+        nullable=True
+    )
     change_my_mind: list[str] | None = wire_optional()
     close_time: str | None = wire_optional(nullable=True)
     closing_soon: bool | None = wire_optional()
@@ -1672,7 +1664,9 @@ class ForecastQuestionPacket(WireModel):
     panel_runs: list[ForecastQuestionPacketPanelRun] | None = wire_optional()
     postmortems: list[dict[str, Any]] | None = wire_optional()
     question: ForecastQuestionPacketQuestion | None = wire_optional()
-    reference_classes: list[ForecastQuestionPacketReferenceClass] | None = wire_optional()
+    reference_classes: list[ForecastQuestionPacketReferenceClass] | None = (
+        wire_optional()
+    )
     related_forecasts: list[ForecastRelatedView] | None = wire_optional()
     related_shared_sources: list[ForecastSharedSource] | None = wire_optional()
     resolution: dict[str, Any] | None = wire_optional(nullable=True)
@@ -1871,6 +1865,9 @@ class ForecastReforecastStartRequest(WireModel):
 
     question_ids: list[str] | None = None
     session_id: str | None = None
+    model: str | None = None
+    provider: str | None = None
+    max_iterations: int | None = None
 
 
 class ForecastReforecastStartResponse(WireModel):
@@ -1889,7 +1886,7 @@ class ForecastReforecastResultRow(WireModel):
     committed: bool | None = wire_optional()
     forecast_id: str | None = wire_optional(nullable=True)
     saturation: float | None = wire_optional(nullable=True)
-    quorum_autorun: bool | None = wire_optional(nullable=True)
+    quorum_autorun: dict[str, Any] | None = wire_optional(nullable=True)
     error: str | None = wire_optional(nullable=True)
 
 
@@ -1953,6 +1950,9 @@ class ForecastDeskTaskRequest(WireModel):
     instruction: str | None = None
     question_ids: list[str] | None = None
     session_id: str | None = None
+    model: str | None = None
+    provider: str | None = None
+    max_iterations: int | None = None
 
 
 # ══════════════════════════════════════════════════════════════════════════════

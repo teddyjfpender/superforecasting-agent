@@ -26,7 +26,7 @@ export function SkillsHub({ gw, onClose, t }: SkillsHubProps) {
   const width = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, (stdout?.columns ?? 80) - 6))
 
   useEffect(() => {
-    gw.request<{ skills?: Record<string, string[]> }>('skills.manage', { action: 'list' })
+    gw.request('skills.manage', { action: 'list' })
       .then(r => {
         setSkillsByCat(r?.skills ?? {})
         setErr('')
@@ -67,7 +67,7 @@ export function SkillsHub({ gw, onClose, t }: SkillsHubProps) {
     setInfo(null)
     setErr('')
 
-    gw.request<{ info?: SkillInfo }>('skills.manage', { action: 'inspect', query: name })
+    gw.request('skills.manage', { action: 'inspect', query: name })
       .then(r => setInfo(r?.info ?? { name }))
       .catch((e: unknown) => setErr(rpcErrorMessage(e)))
   }
@@ -76,7 +76,7 @@ export function SkillsHub({ gw, onClose, t }: SkillsHubProps) {
     setInstalling(true)
     setErr('')
 
-    gw.request<{ installed?: boolean; name?: string }>('skills.manage', { action: 'install', query: name })
+    gw.request('skills.manage', { action: 'install', query: name })
       .then(() => onClose())
       .catch((e: unknown) => setErr(rpcErrorMessage(e)))
       .finally(() => setInstalling(false))
