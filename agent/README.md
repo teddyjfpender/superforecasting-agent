@@ -59,3 +59,8 @@ ordinary prompt text for a text-only model.
 blocks. Compatible text fragments can join, but conflicting identities, signatures
 and opaque blocks remain intact. Session storage preserves that metadata for
 resume; it is separate from visible reasoning text.
+
+[result_references.py](result_references.py) reduces repeated observation payloads
+without suppressing execution. It requires an original tool result still retained
+in the transcript and resets on changed or failed observations. Sequential and
+concurrent executors use the same helper; references survive normal session replay.

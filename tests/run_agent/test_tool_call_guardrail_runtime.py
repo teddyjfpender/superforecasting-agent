@@ -304,3 +304,56 @@ def test_config_enabled_hard_stop_run_conversation_returns_controlled_guardrail_
         call_ids = [tc["id"] for tc in assistant_msg["tool_calls"]]
         following_results = [m for m in result["messages"] if m.get("role") == "tool" and m.get("tool_call_id") in call_ids]
         assert len(following_results) == len(call_ids)
+
+
+def test_repeated_observations_still_execute_and_replay_original(tmp_path):
+    from superforecasting_agent.storage.session import SessionDB
+    agent = _make_agent('web_search')
+    raw = json.dumps({'results': ['source evidence ' * 100]})
+    messages = []
+    with patch('run_agent.handle_function_call', return_value=raw) as execute:
+        for number in range(3):
+            call = _mock_tool_call('web_search', '{"query":"same"}', f'repeat-{number}')
+            messages.append({'role':'assistant', 'content':'', 'tool_calls':[{'id':call.id,'type':'function','function':{'name':'web_search','arguments':call.function.arguments}}]})
+            agent._execute_tool_calls_sequential(SimpleNamespace(content='', tool_calls=[call]), messages, 'references')
+    assert execute.call_count == 3
+    results = [m for m in messages if m['role'] == 'tool']
+    assert raw in results[0]['content']
+    assert all('repeat-0' in m['content'] and 'executed again' in m['content'] for m in results[1:])
+    assert all(raw not in m['content'] for m in results[1:])
+    db = SessionDB(db_path=tmp_path/'references.db')
+    try:
+        db.create_session('references', source='cli')
+        db.replace_messages('references', messages)
+    finally:
+        db.close()
+    db = SessionDB(db_path=tmp_path/'references.db')
+    try:
+        replay = db.get_messages_as_conversation('references')
+        results = [m for m in replay if m['role']=='tool']
+        assert raw in results[0]['content']
+        assert 'repeat-0' in results[-1]['content']
+    finally:
+        db.close()
+
+
+def test_concurrent_result_references_preserve_call_order_and_execute_every_call():
+    agent = _make_agent('web_search')
+    raw = json.dumps({'results': ['unchanged ' * 100]})
+    calls = [_mock_tool_call('web_search', '{"query":"same"}', f'parallel-{i}') for i in range(2)]
+    messages = []
+    with patch('run_agent.handle_function_call', return_value=raw) as execute:
+        agent._execute_tool_calls_concurrent(SimpleNamespace(content='',tool_calls=calls), messages, 'references')
+    assert execute.call_count == 2
+    assert [m['tool_call_id'] for m in messages] == ['parallel-0','parallel-1']
+    assert raw in messages[0]['content']
+    assert 'parallel-0' in messages[1]['content'] and raw not in messages[1]['content']
+
+
+def test_agent_delegate_dispatch_forwards_images_and_background():
+    agent = _make_agent('delegate_task')
+    with patch('tools.delegate_tool.delegate_task', return_value='{}') as delegate:
+        agent._dispatch_delegate_task({'goal':'Read chart', 'images':['chart.png'], 'background':True})
+    assert delegate.call_args.kwargs['images'] == ['chart.png']
+    assert delegate.call_args.kwargs['background'] is True
+    assert delegate.call_args.kwargs['parent_agent'] is agent

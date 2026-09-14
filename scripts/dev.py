@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # The stricter scope grows with ownership extractions. Legacy code still runs
 # the repository-wide encoding gate; no silent baseline hides new-layer errors.
 STRICT_PYTHON = (
+    "agent/result_references.py",
     "agent/delegation_images.py",
     "agent/reasoning_details.py",
     "gateway/hooks.py",

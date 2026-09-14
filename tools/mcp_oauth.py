@@ -208,6 +208,9 @@ def _write_json(path: Path, data: dict) -> None:
 # ---------------------------------------------------------------------------
 
 
+_oauth_file_locks = threading.local()
+
+
 class AgentTokenStorage:
     """Persist OAuth tokens and client registration to JSON files.
 
@@ -220,22 +223,35 @@ class AgentTokenStorage:
 
     def __init__(self, server_name: str):
         self._server_name = _safe_filename(server_name)
+        self._directory = _get_token_dir()
+        self.loaded_binding: tuple[str | None, str | None] = (None, None)
+        self._bound_binding: tuple[str | None, str | None] = (None, None)
+        self._loaded_record: dict | None = None
 
     def _tokens_path(self) -> Path:
-        return _get_token_dir() / f"{self._server_name}.json"
+        return self._directory / f"{self._server_name}.json"
 
     def _client_info_path(self) -> Path:
-        return _get_token_dir() / f"{self._server_name}.client.json"
+        return self._directory / f"{self._server_name}.client.json"
 
     def _meta_path(self) -> Path:
-        return _get_token_dir() / f"{self._server_name}.meta.json"
+        return self._directory / f"{self._server_name}.meta.json"
 
     # -- tokens ------------------------------------------------------------
 
     async def get_tokens(self) -> "OAuthToken | None":
+        self.loaded_binding = (None, None)
+        self._loaded_record = None
         data = _read_json(self._tokens_path())
-        if data is None:
+        if not isinstance(data, dict):
             return None
+        self._loaded_record = dict(data)
+        issuer = data.pop("authorization_issuer", None)
+        endpoint = data.pop("authorization_token_endpoint", None)
+        self.loaded_binding = (
+            issuer if isinstance(issuer, str) else None,
+            endpoint if isinstance(endpoint, str) else None,
+        )
         # Hermes records an absolute wall-clock ``expires_at`` alongside the
         # SDK's serialized token (see ``set_tokens``). On read we rewrite
         # ``expires_in`` to the remaining seconds so the SDK's downstream
@@ -290,8 +306,47 @@ class AgentTokenStorage:
                 # Mock tokens or unusual shapes: skip the expires_at write
                 # rather than fail persistence.
                 pass
-        _write_json(self._tokens_path(), payload)
+        issuer, endpoint = self._bound_binding
+        if issuer and endpoint:
+            payload["authorization_issuer"] = issuer
+            payload["authorization_token_endpoint"] = endpoint
+        from superforecasting_agent.storage.locking import file_lock
+
+        with file_lock(
+            self._tokens_path().with_suffix(".lock"),
+            _oauth_file_locks,
+            10,
+            "MCP token lock timed out",
+        ):
+            _write_json(self._tokens_path(), payload)
+        self.loaded_binding = self._bound_binding
+        self._loaded_record = dict(payload)
         logger.debug("OAuth tokens saved for %s", self._server_name)
+
+    def bind_authorization_server(
+        self, issuer: str | None, endpoint: str | None
+    ) -> None:
+        """Pin the discovered grant issuer and actual destination for future saves."""
+        self._bound_binding = (issuer, endpoint)
+
+    def discard_loaded_refresh(self) -> None:
+        """Remove only the rejected loaded grant, never a concurrently replaced one."""
+        from superforecasting_agent.storage.locking import file_lock
+
+        with file_lock(
+            self._tokens_path().with_suffix(".lock"),
+            _oauth_file_locks,
+            10,
+            "MCP token lock timed out",
+        ):
+            data = _read_json(self._tokens_path())
+            if not isinstance(data, dict):
+                return
+            if data != self._loaded_record:
+                return
+            data.pop("refresh_token", None)
+            _write_json(self._tokens_path(), data)
+        self._loaded_record = None
 
     # -- client info -------------------------------------------------------
 
@@ -672,7 +727,12 @@ def build_oauth_auth(
     client_metadata = _build_client_metadata(cfg)
     _maybe_preregister_client(storage, cfg, client_metadata)
 
-    return OAuthClientProvider(
+    from tools.mcp_oauth_manager import _AGENT_PROVIDER_CLS
+
+    if _AGENT_PROVIDER_CLS is None:
+        return None
+    return _AGENT_PROVIDER_CLS(
+        server_name=server_name,
         server_url=server_url,
         client_metadata=client_metadata,
         storage=storage,

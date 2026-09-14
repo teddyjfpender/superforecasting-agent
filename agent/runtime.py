@@ -2663,6 +2663,8 @@ class AIAgent:
         function_result: str,
         *,
         failed: bool,
+        tool_call_id: str = "",
+        messages: list | None = None,
     ) -> str:
         decision = self._tool_guardrails.after_call(
             tool_name,
@@ -2670,6 +2672,15 @@ class AIAgent:
             function_result,
             failed=failed,
         )
+        if messages is not None and tool_call_id:
+            from agent.result_references import ResultReferences
+            references = getattr(self, "_result_references", None)
+            if not isinstance(references, ResultReferences):
+                references = self._result_references = ResultReferences()
+            function_result = references.compact(
+                tool_name, function_args, function_result, tool_call_id, messages,
+                failed=failed,
+            )
         if decision.action in {"warn", "halt"}:
             function_result = append_toolguard_guidance(function_result, decision)
         if decision.should_halt:
@@ -2719,6 +2730,8 @@ class AIAgent:
             acp_command=function_args.get("acp_command"),
             acp_args=function_args.get("acp_args"),
             role=function_args.get("role"),
+            images=function_args.get("images"),
+            background=function_args.get("background"),
             parent_agent=self,
         )
 

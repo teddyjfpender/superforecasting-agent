@@ -289,3 +289,14 @@ previously reviewed identities to
 Historical trial packets and receipts remain unchanged; unknown source identities
 still fail closed. Regression tests exercise both legacy packets and the prior
 current identity through actual paired evaluation.
+
+### Research runtime follow-on (implementation in progress)
+
+The acceptance checklist is
+[research-runtime implementation](plans/2026-09-14-research-runtime.md).
+Issuer binding adapts `d9e88e19e2` with an additional token-endpoint binding,
+fail-closed handling for unproven legacy refresh grants, fixed profile ownership,
+and whole-record compare-before-cleanup. Repeated tool-result references adapt
+`761990b780` while retaining normal tool execution and requiring a retained original.
+These are focused-tested milestones; the full capability set and release gates
+are not yet complete.
