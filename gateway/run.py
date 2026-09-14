@@ -4950,7 +4950,8 @@ class GatewayRunner:
         # destination platform's home channel, then forges a synthetic user
         # turn so the agent kicks off the new chat.
         asyncio.create_task(self._handoff_watcher())
-        if self._background_recovery_task is None or self._background_recovery_task.done():
+        recovery_task = getattr(self, "_background_recovery_task", None)
+        if recovery_task is None or recovery_task.done():
             self._background_recovery_task = asyncio.create_task(self._background_recovery_watcher())
 
         logger.info("Press Ctrl+C to stop")
