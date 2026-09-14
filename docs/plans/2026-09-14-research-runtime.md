@@ -6,11 +6,11 @@ qualification backlog in TODO.md. Upstream reference: `5eb99eb284`.
 
 ## Acceptance
 
-- [ ] Progressive tool discovery: selected optional tools behind scoped
+- [x] Progressive tool discovery: selected optional tools behind scoped
   search/describe/call; core forecasts and clarification remain direct. Validate
   arguments and permissions through existing dispatch, preserve batching and
   cancellation, test dynamic selection and cross-session isolation.
-- [ ] Context continuity: durable provider-usage anchors, estimate additions,
+- [x] Context continuity: durable provider-usage anchors, estimate additions,
   invalidate on history/model/schema changes; preserve forecast identifiers,
   source references and unresolved assumptions at compaction; runnable recall
   evaluation with an uncompacted control and synthetic fixtures.
@@ -24,10 +24,10 @@ qualification backlog in TODO.md. Upstream reference: `5eb99eb284`.
 - [ ] Event research jobs: authenticated webhook binding to existing jobs using
   shared claims/execution; delivery deduplication, no stored-prompt mutation, no
   silent active-forecast probability changes. Exercise real HTTP and fake runs.
-- [ ] Repeated result references: still execute tools, compact only identical
+- [x] Repeated result references: still execute tools, compact only identical
   successful large results, retain resolvable originals and fresh observations;
   preserve transcript replay, error/polling behavior and provider call ordering.
-- [ ] MCP issuer binding: pin refresh grants, reject issuer/endpoint changes,
+- [x] MCP issuer binding: pin refresh grants, reject issuer/endpoint changes,
   explicit legacy handling, both construction paths, concurrent writes and
   profile isolation; verify refresh requests with controlled providers.
 - [ ] Directory guides, configuration/reference documentation and upstream
@@ -35,6 +35,50 @@ qualification backlog in TODO.md. Upstream reference: `5eb99eb284`.
   before publication; merged tree matches the tested tree.
 
 ## Progress
+
+### Kernel acceptance audit
+
+The local kernel, standalone runner, remote shell transport, supervisor and
+calculation replay suites passed 47 tests with real subprocesses. Coverage includes
+retained data, reset, fresh RPC budgets, permission changes, cancellation/deadlines,
+receipt write failures, disconnected cleanup, owner death, sibling isolation and
+frozen-observation replay. Kernel acceptance remains open: `owner_exit()` kills
+the owned POSIX group but only exits the interpreter on Windows. Native Windows
+descendant cleanup after owner death needs an ownership solution and qualification;
+the POSIX results cannot establish it.
+
+### Verified discovery and context acceptance
+
+Discovery qualification now uses the actual four provider adapters, replacing
+the previous mocked transport boundary. Their outgoing payloads retain forecast
+and clarification schemas, omit optional schemas, and preserve the batch-call
+schema. Companion catalog/executor tests cover selected-tool scope, local schema
+validation, hooks, cancellation, dynamic revocation and memory-provider ownership.
+
+Context qualification exercises real compaction, repeated lossy summaries,
+database reopen, TUI usage projection and actual agent-loop usage recording.
+The focused discovery/context run passed 26 tests. The runnable mechanical recall
+harness retained all eight fixture facts in the uncompacted control and exact
+index, versus none in the lossy control. It preserved IDs, source, period, entity,
+units, revision policy and unresolved assumptions. The harness's optional model
+path has independent-condition tests; no live-model improvement is claimed.
+Discovery and context implementation acceptance are satisfied. Final-tree checks
+and publication remain tracked separately below.
+
+### Verified reference and authorization acceptance
+
+The combined disclosure/runtime/reference/OAuth run passed 130 tests. Reference
+acceptance uses both real agent executor paths with counted tool effects and a
+closed/reopened session database: originals remain available, references preserve
+call order, and failed/changed/pruned/multimodal observations remain whole.
+
+OAuth acceptance now includes a local HTTP server driven by the real SDK auth
+flow. Matching grants refresh only at the pinned endpoint; changed issuer,
+changed endpoint and unbound legacy grants emit no HTTP request. A restarted
+provider reuses persisted access and retains a non-rotated refresh token.
+Companion tests cover both builders, profile ownership, concurrent replacement,
+and late responses after a storage reload. These two implementation checkboxes
+are satisfied; the separate final-tree publication gate remains open.
 
 ### Refresh response ownership
 
@@ -44,8 +88,7 @@ construction; storage compares it under the token-file lock before accepting a
 refresh response. Superseded responses clear stale runtime credentials and force
 reload without replacing disk state. Tests cover reused refresh-token strings,
 changed issuers and storage reload during the request. All 88 OAuth-focused tests
-passed. This closes stale response persistence, not the remaining controlled-HTTP
-acceptance exercise.
+passed. The later controlled-HTTP acceptance exercise above also passed.
 
 ### Webhook destination binding
 

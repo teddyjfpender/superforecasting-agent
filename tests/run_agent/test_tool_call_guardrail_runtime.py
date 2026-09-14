@@ -433,13 +433,21 @@ def test_discovery_preserves_memory_provider_tool_ownership():
 
 def test_discovery_is_applied_before_each_provider_transport():
     for mode in ('chat_completions', 'anthropic_messages', 'bedrock_converse', 'codex_responses'):
-        agent = _make_agent('forecast_ledger', 'mcp_weather_read')
+        agent = _make_agent('forecast_ledger', 'clarify', 'mcp_weather_read')
         agent.tool_discovery_config = {'enabled':True}
         agent.api_mode = mode
-        transport = MagicMock()
-        transport.build_kwargs.side_effect = lambda **kwargs: kwargs
-        agent._get_transport = lambda: transport
-        kwargs = agent._build_api_kwargs([{'role':'user','content':'Research'}])
-        names = {tool['function']['name'] for tool in kwargs['tools']}
-        assert 'forecast_ledger' in names and 'tool_call' in names, mode
-        assert 'mcp_weather_read' not in names, mode
+        try:
+            kwargs = agent._build_api_kwargs([{'role':'user','content':'Research'}])
+            if mode == 'chat_completions':
+                definitions = {tool['function']['name']: tool['function']['parameters'] for tool in kwargs['tools']}
+            elif mode == 'anthropic_messages':
+                definitions = {tool['name']: tool['input_schema'] for tool in kwargs['tools']}
+            elif mode == 'bedrock_converse':
+                definitions = {tool['toolSpec']['name']: tool['toolSpec']['inputSchema']['json'] for tool in kwargs['toolConfig']['tools']}
+            else:
+                definitions = {tool['name']: tool['parameters'] for tool in kwargs['tools']}
+            assert {'forecast_ledger', 'clarify', 'tool_search', 'tool_describe', 'tool_call'} <= definitions.keys(), mode
+            assert 'mcp_weather_read' not in definitions, mode
+            assert definitions['tool_call']['properties']['calls']['type'] == 'array', mode
+        finally:
+            agent.close()

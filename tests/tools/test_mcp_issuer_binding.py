@@ -30,9 +30,9 @@ async def unused(*args):
     raise AssertionError("No interactive authorization should run in this test")
 
 
-def provider(storage):
+def provider(storage, server_url="https://resource.example/mcp"):
     return _AGENT_PROVIDER_CLS(
-        server_url="https://resource.example/mcp",
+        server_url=server_url,
         server_name="test",
         client_metadata=OAuthClientMetadata(
             redirect_uris=["http://localhost:8080/callback"]
@@ -209,3 +209,64 @@ def test_compatibility_builder_uses_issuer_enforcing_provider(tmp_path, monkeypa
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     p = build_oauth_auth("compat", "https://resource.example/mcp")
     assert isinstance(p, _AGENT_PROVIDER_CLS)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("binding", ["matching", "issuer", "endpoint", "legacy"])
+async def test_sdk_http_refresh_sends_only_bound_grant_and_reloads_saved_access(
+    tmp_path, monkeypatch, binding
+):
+    from aiohttp import web
+    from aiohttp.test_utils import TestServer
+
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    received = []
+
+    async def endpoint(request):
+        received.append((request.path, dict(await request.post()), request.headers.get("Authorization")))
+        if request.path == "/token":
+            return web.json_response({"access_token": "renewed-access", "token_type": "Bearer", "expires_in": 3600})
+        return web.json_response({"ok": True})
+
+    app = web.Application()
+    app.router.add_route("*", "/{path:.*}", endpoint)
+    async with TestServer(app) as server:
+        base = str(server.make_url("/"))
+        meta = metadata(issuer=base, endpoint=base + "token")
+        storage = AgentTokenStorage("test")
+        if binding != "legacy":
+            storage.bind_authorization_server(
+                base + "different-issuer" if binding == "issuer" else base,
+                base + "different-token" if binding == "endpoint" else base + "token",
+            )
+        await storage.set_tokens(OAuthToken(
+            access_token="expired-access", refresh_token="bound-refresh",
+            token_type="Bearer", expires_in=0,
+        ))
+        await storage.set_client_info(OAuthClientInformationFull(
+            client_id="client", redirect_uris=["http://localhost:8080/callback"]
+        ))
+        storage.save_oauth_metadata(meta)
+        auth = provider(AgentTokenStorage("test"), base + "mcp")
+        async with httpx.AsyncClient(auth=auth, timeout=3, trust_env=False) as client:
+            if binding != "matching":
+                with pytest.raises(OAuthTokenError, match="reauthorization"):
+                    await client.get(base + "mcp")
+                assert received == []
+                saved = await AgentTokenStorage("test").get_tokens()
+                assert saved.access_token == "expired-access"
+                assert saved.refresh_token is None
+                return
+            assert (await client.get(base + "mcp")).json() == {"ok": True}
+        reopened = AgentTokenStorage("test")
+        assert (await reopened.get_tokens()).refresh_token == "bound-refresh"
+        assert reopened.loaded_binding == (base, base + "token")
+        # A fresh provider must use persisted access without refreshing again.
+        async with httpx.AsyncClient(
+            auth=provider(reopened, base + "mcp"), timeout=3, trust_env=False
+        ) as client:
+            assert (await client.get(base + "mcp")).status_code == 200
+    assert [item[0] for item in received] == ["/token", "/mcp", "/mcp"]
+    assert received[0][1]["grant_type"] == "refresh_token"
+    assert received[0][1]["refresh_token"] == "bound-refresh"
+    assert all(item[2] == "Bearer renewed-access" for item in received[1:])
