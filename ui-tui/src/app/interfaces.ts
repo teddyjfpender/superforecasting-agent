@@ -233,6 +233,9 @@ export interface UseComposerStateResult {
 }
 
 export interface InputHandlerActions {
+  answerApproval: (choice: string) => void
+  answerSecret: (value: string) => void
+  answerSudo: (password: string) => void
   answerClarify: (answer: string) => void
   appendMessage: (msg: Msg) => void
   die: () => void

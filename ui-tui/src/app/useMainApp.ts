@@ -624,9 +624,75 @@ export function useMainApp(gw: GatewayClient) {
     }
   }, [ui.sid, ui.busy, composerActions, composerRefs, sendQueued])
 
+  const answerApproval = useCallback(
+    (choice: string) => {
+      if (choice !== 'once' && choice !== 'session' && choice !== 'always' && choice !== 'deny') {
+        return
+      }
+
+      const requestId = overlay.approval?.requestId
+
+      const response =
+        requestId && gw.hasPrompt(requestId)
+          ? gw.replyPrompt('approval', requestId, { choice })
+          : rpc('approval.respond', { choice, session_id: ui.sid, ...(requestId && { request_id: requestId }) })
+
+      return response.then(r => {
+        if (!r) {
+          return
+        }
+
+        if ($overlayState.get().approval?.requestId === requestId) {
+          patchOverlayState({ approval: null })
+        }
+
+        patchTurnState({ outcome: choice === 'deny' ? 'denied' : `approved (${choice})` })
+        patchUiState({ status: 'running…' })
+      })
+    },
+    [gw, overlay.approval, rpc, ui.sid]
+  )
+
+  const answerSudo = useCallback(
+    (pw: string) => {
+      if (!overlay.sudo) {
+        return
+      }
+
+      return gw.replyPrompt('sudo', overlay.sudo.requestId, { password: pw }).then(() => {
+        if ($overlayState.get().sudo?.requestId === overlay.sudo?.requestId) {
+          patchOverlayState({ sudo: null })
+        }
+
+        patchUiState({ status: 'running…' })
+      })
+    },
+    [overlay.sudo, gw]
+  )
+
+  const answerSecret = useCallback(
+    (value: string) => {
+      if (!overlay.secret) {
+        return
+      }
+
+      return gw.replyPrompt('secret', overlay.secret.requestId, { value }).then(() => {
+        if ($overlayState.get().secret?.requestId === overlay.secret?.requestId) {
+          patchOverlayState({ secret: null })
+        }
+
+        patchUiState({ status: 'running…' })
+      })
+    },
+    [overlay.secret, gw]
+  )
+
   const { pagerPageSize } = useInputHandlers({
     actions: {
+      answerApproval,
       answerClarify,
+      answerSecret,
+      answerSudo,
       appendMessage,
       die,
       dispatchSubmission,
@@ -897,69 +963,6 @@ export function useMainApp(gw: GatewayClient) {
       gw.replayPrompts(ui.sid)
     }
   }, [gw, ui.sid])
-
-  const answerApproval = useCallback(
-    (choice: string) => {
-      if (choice !== 'once' && choice !== 'session' && choice !== 'always' && choice !== 'deny') {
-        return
-      }
-
-      const requestId = overlay.approval?.requestId
-
-      const response =
-        requestId && gw.hasPrompt(requestId)
-          ? gw.replyPrompt('approval', requestId, { choice })
-          : rpc('approval.respond', { choice, session_id: ui.sid, ...(requestId && { request_id: requestId }) })
-
-      return response.then(r => {
-        if (!r) {
-          return
-        }
-
-        if ($overlayState.get().approval?.requestId === requestId) {
-          patchOverlayState({ approval: null })
-        }
-
-        patchTurnState({ outcome: choice === 'deny' ? 'denied' : `approved (${choice})` })
-        patchUiState({ status: 'running…' })
-      })
-    },
-    [gw, overlay.approval, rpc, ui.sid]
-  )
-
-  const answerSudo = useCallback(
-    (pw: string) => {
-      if (!overlay.sudo) {
-        return
-      }
-
-      return gw.replyPrompt('sudo', overlay.sudo.requestId, { password: pw }).then(() => {
-        if ($overlayState.get().sudo?.requestId === overlay.sudo?.requestId) {
-          patchOverlayState({ sudo: null })
-        }
-
-        patchUiState({ status: 'running…' })
-      })
-    },
-    [overlay.sudo, gw]
-  )
-
-  const answerSecret = useCallback(
-    (value: string) => {
-      if (!overlay.secret) {
-        return
-      }
-
-      return gw.replyPrompt('secret', overlay.secret.requestId, { value }).then(() => {
-        if ($overlayState.get().secret?.requestId === overlay.secret?.requestId) {
-          patchOverlayState({ secret: null })
-        }
-
-        patchUiState({ status: 'running…' })
-      })
-    },
-    [overlay.secret, gw]
-  )
 
   const onModelSelect = useCallback((value: string, effort?: string) => {
     patchOverlayState({ modelPicker: false })

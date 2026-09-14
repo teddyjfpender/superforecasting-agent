@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   applyVoiceRecordResponse,
+  cancelInteractivePrompt,
   pageScrollStep,
   shouldFallThroughForScroll,
   shouldOpenHomeHelp,
@@ -133,5 +134,45 @@ describe('applyVoiceRecordResponse', () => {
 
     expect(setRecording).toHaveBeenCalledWith(false)
     expect(setProcessing).toHaveBeenCalledWith(false)
+  })
+})
+
+describe('keyboard prompt cancellation', () => {
+  it.each([
+    ['clarify', 'answerClarify', ''],
+    ['approval', 'answerApproval', 'deny'],
+    ['sudo', 'answerSudo', ''],
+    ['secret', 'answerSecret', '']
+  ] as const)('routes %s through the shared correlated answer action', (kind, action, value) => {
+    const actions = { answerClarify: vi.fn(), answerApproval: vi.fn(), answerSudo: vi.fn(), answerSecret: vi.fn() }
+
+    const overlay = {
+      clarify: null,
+      approval: null,
+      sudo: null,
+      secret: null,
+      [kind]: {
+        requestId: 'srq-1',
+        question: 'Question',
+        choices: [],
+        command: 'command',
+        description: 'description',
+        envVar: 'KEY',
+        prompt: 'Secret'
+      }
+    }
+
+    expect(cancelInteractivePrompt(overlay, actions)).toBe(true)
+    expect(actions[action]).toHaveBeenCalledExactlyOnceWith(value)
+    expect(Object.values(actions).reduce((n, handler) => n + handler.mock.calls.length, 0)).toBe(1)
+  })
+
+  it('leaves unrelated overlays to their own cancellation path', () => {
+    const actions = { answerClarify: vi.fn(), answerApproval: vi.fn(), answerSudo: vi.fn(), answerSecret: vi.fn() }
+    expect(cancelInteractivePrompt({ clarify: null, approval: null, sudo: null, secret: null }, actions)).toBe(false)
+
+    for (const action of Object.values(actions)) {
+      expect(action).not.toHaveBeenCalled()
+    }
   })
 })

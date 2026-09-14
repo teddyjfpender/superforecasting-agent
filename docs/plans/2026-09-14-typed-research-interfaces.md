@@ -28,15 +28,26 @@ Implementation preceded the consolidated verification pass. Strict validation
 exposed and corrected timestamp/count declarations, reforecast payloads, completion
 text serialization, and old tests that supplied incomplete wire fixtures.
 
-The actual local terminal/gateway/dashboard recovery group passed all 25 tests,
-including cancellation, process interruption, handoff and reconnect. Focused
-contract/application/market tests passed; the final whole-repository receipt is
-reported with the publishing commit, rather than retaining intermediate logs here.
+Final qualification on macOS:
 
-The final gate is `PATH="$PWD/.venv/bin:$PATH" PYTHONPATH="$PWD:$PWD/scripts" git push`, whose
-pre-push hook runs canonical quality checks, the full Python suite and affected TUI
-tests against the committed tree. Native Windows/Linux qualification is separate
-from this macOS receipt.
+- Canonical Python suite at `645948a655`: **32,432 passed, 150 skipped**
+  (519.51 seconds).
+- Full TUI suite after the Ctrl+C prompt-action consolidation: **2,100 passed,
+  one skipped**, across 192 files.
+- Actual local terminal/gateway/dashboard recovery after that consolidation:
+  **25 passed**, including cancellation, process interruption, handoff and reconnect.
+- Blocking lint, formatting, typing, generated-contract drift and 76 architecture
+  contracts passed.
+
+The push-time run also exposed inherited Git hook environment leaking into
+fixture repositories. The canonical runner now clears repository-local Git
+variables and selects this checkout's interpreter/import paths. Regression fixtures
+cover that isolation; accidental fixture metadata was removed from the worktree.
+
+The final follow-up changes only TUI code and this receipt. Its push reuses the full
+Python receipt above, with the repeated frontend and native recovery checks, instead
+of repeating the unchanged Python suite. Native Windows/Linux qualification remains
+separate from this macOS receipt.
 
 ## Explicit limits
 

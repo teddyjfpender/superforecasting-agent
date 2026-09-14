@@ -16,13 +16,32 @@ import { $chordPending, armChord, clearChord } from './chordStore.js'
 import { $commands, markCommandsCancelling } from './commandStore.js'
 import { getHomeFocus, type HomePane, setHomePane } from './homeFocusStore.js'
 import { getInputSelection } from './inputSelectionStore.js'
-import type { InputHandlerContext, InputHandlerResult } from './interfaces.js'
+import type { InputHandlerActions, InputHandlerContext, InputHandlerResult, OverlayState } from './interfaces.js'
 import { activeNavKey, canOpenGlobalOverlay, selectNavView } from './navRoutes.js'
 import { $isBlocked, $overlayState, patchOverlayState } from './overlayStore.js'
 import { pagerWindow } from './pager.js'
 import { turnController } from './turnController.js'
-import { patchTurnState } from './turnStore.js'
 import { getUiState } from './uiStore.js'
+
+/** Keyboard cancellation uses the same correlated reply owner as prompt buttons. */
+export function cancelInteractivePrompt(
+  overlay: Pick<OverlayState, 'clarify' | 'approval' | 'sudo' | 'secret'>,
+  actions: Pick<InputHandlerActions, 'answerClarify' | 'answerApproval' | 'answerSudo' | 'answerSecret'>
+): boolean {
+  if (overlay.clarify) {
+    actions.answerClarify('')
+  } else if (overlay.approval) {
+    actions.answerApproval('deny')
+  } else if (overlay.sudo) {
+    actions.answerSudo('')
+  } else if (overlay.secret) {
+    actions.answerSecret('')
+  } else {
+    return false
+  }
+
+  return true
+}
 
 const isCtrl = (key: { ctrl: boolean }, ch: string, target: string) => key.ctrl && ch.toLowerCase() === target
 
@@ -156,26 +175,8 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
   }
 
   const cancelOverlayFromCtrlC = () => {
-    if (overlay.clarify) {
-      return actions.answerClarify('')
-    }
-
-    if (overlay.approval) {
-      return gateway
-        .rpc('approval.respond', { choice: 'deny', session_id: getUiState().sid })
-        .then(r => r && (patchOverlayState({ approval: null }), patchTurnState({ outcome: 'denied' })))
-    }
-
-    if (overlay.sudo) {
-      return gateway
-        .rpc('sudo.respond', { password: '', request_id: overlay.sudo.requestId })
-        .then(r => r && (patchOverlayState({ sudo: null }), actions.sys('sudo cancelled')))
-    }
-
-    if (overlay.secret) {
-      return gateway
-        .rpc('secret.respond', { request_id: overlay.secret.requestId, value: '' })
-        .then(r => r && (patchOverlayState({ secret: null }), actions.sys('secret entry cancelled')))
+    if (cancelInteractivePrompt(overlay, actions)) {
+      return
     }
 
     if (overlay.modelPicker) {
