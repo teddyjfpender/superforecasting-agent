@@ -9229,6 +9229,15 @@ class GatewayRunner:
             run_generation,
         )
 
+        _background_event = getattr(event, "background_notification", None)
+        if _background_event is not None:
+            from superforecasting_agent.hosting.notifications import route_notification
+            if (not event.internal or _background_event.get("session_key") != session_key
+                    or route_notification(_background_event, session_key) != "consume"
+                    or not isinstance(_background_event.get("journal_event_id"), str)
+                    or not _background_event["journal_event_id"]):
+                self._clear_session_env(_session_env_tokens)
+                raise ValueError("Invalid background delivery ownership")
         _durable_run_id = f"gateway_{uuid.uuid4().hex}"
         _durable_status = None
         _durable_error = None
@@ -9239,16 +9248,24 @@ class GatewayRunner:
                 session_id=session_entry.session_id,
                 data={"status": "queued", "platform": _platform_name},
                 platform=_platform_name,
+                verify_duplicate=_background_event is not None,
                 initial_message={
                     "message_id": f"{_durable_run_id}:input",
                     "client_message_id": (
-                        f"{_platform_name}:{event.message_id}" if event.message_id else None
+                        f"background:{_background_event['journal_event_id']}" if _background_event is not None
+                        else f"{_platform_name}:{event.message_id}" if event.message_id else None
                     ),
                     "role": "user",
-                    "parts": message_text,
+                    "parts": event.text if _background_event is not None else message_text,
                     "metadata": {"platform": _platform_name},
                 },
             )
+            if _background_event is not None:
+                try:
+                    from tools.async_delegation import acknowledge_notification
+                    acknowledge_notification(_background_event["journal_event_id"], session_key)
+                except Exception:
+                    logger.exception("Background acknowledgement pending; gateway input is durable")
             if _created is None:
                 logger.info(
                     "Ignoring duplicate %s delivery %s for session %s",
@@ -9266,6 +9283,9 @@ class GatewayRunner:
             # Hosted operators should alert on this log and fail closed at the
             # service layer if durable execution is mandatory.
             logger.exception("Could not persist gateway execution state")
+            if _background_event is not None:
+                self._clear_session_env(_session_env_tokens)
+                raise
             _durable_run_id = None
 
         try:
@@ -9292,7 +9312,9 @@ class GatewayRunner:
                 channel_prompt=event.channel_prompt,
                 event=event,
             )
-            if agent_result.get("failed"):
+            if agent_result.get("interrupted"):
+                _durable_status = "interrupted"
+            elif agent_result.get("failed"):
                 _durable_status = "failed"
                 _durable_error = str(agent_result.get("error") or "agent run failed")[:300]
 
@@ -15173,6 +15195,7 @@ class GatewayRunner:
                 message_type=MessageType.TEXT,
                 source=source,
                 internal=True,
+                background_notification=dict(evt) if evt.get("journal_event_id") else None,
                 message_id=str(evt.get("message_id") or "").strip() or None,
             )
             logger.info(

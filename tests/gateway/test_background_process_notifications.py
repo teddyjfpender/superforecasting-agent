@@ -644,3 +644,19 @@ def test_parse_session_key_too_short():
 def test_parse_session_key_wrong_prefix():
     assert _parse_session_key("cron:main:telegram:dm:123") is None
     assert _parse_session_key("agent:cron:telegram:dm:123") is None
+
+
+@pytest.mark.asyncio
+async def test_background_event_keeps_journal_identity_separate_from_reply_anchor(monkeypatch, tmp_path):
+    from gateway.session import SessionSource
+    runner = _build_runner(monkeypatch, tmp_path, 'all')
+    key = 'agent:main:telegram:dm:123:24296'
+    runner.session_store._entries[key] = SimpleNamespace(origin=SessionSource(
+        platform=Platform.TELEGRAM, chat_id='123', chat_type='dm', thread_id='24296'))
+    event = {'session_key': key, 'journal_event_id': 'saved', 'profile_key': 'profile', 'message_id': '777'}
+    await runner._inject_watch_notification('Saved research', event)
+    received = runner.adapters[Platform.TELEGRAM].handle_message.await_args.args[0]
+    assert received.internal
+    assert received.background_notification == event
+    assert received.message_id == '777'
+    assert received.background_notification is not event

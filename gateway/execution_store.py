@@ -128,6 +128,7 @@ class ExecutionStore:
         idempotency_key: str | None = None,
         platform: str = "api_server",
         initial_message: dict[str, Any] | None = None,
+        verify_duplicate: bool = False,
     ) -> dict[str, Any] | None:
         now = time.time()
         payload = dict(data)
@@ -159,6 +160,20 @@ class ExecutionStore:
                     ),
                 )
                 if cursor.rowcount != 1:
+                    if verify_duplicate:
+                        existing = self._conn.execute(
+                            "SELECT role,parts,metadata FROM agent_messages WHERE thread_key=? AND (message_id=? OR client_message_id=?)",
+                            (thread_key, initial_message["message_id"], initial_message.get("client_message_id")),
+                        ).fetchone()
+                        expected = (
+                            initial_message.get("role", "user"),
+                            initial_message.get("parts"),
+                            initial_message.get("metadata") or {},
+                        )
+                        if existing is None or (
+                            existing["role"], json.loads(existing["parts"]), json.loads(existing["metadata"])
+                        ) != expected:
+                            raise ValueError("Duplicate delivery conflicts with persisted input")
                     return None
             self._conn.execute(
                 """INSERT INTO agent_executions

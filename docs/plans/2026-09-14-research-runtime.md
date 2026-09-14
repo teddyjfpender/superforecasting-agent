@@ -373,3 +373,15 @@ tests cover completed/failed/interrupted/missing outcomes. Focused combined set:
 49 passed; strict gates and 76 architecture contracts passed. Explicit CLI display
 and resumption of interrupted receiving receipts still need integration testing;
 this checkpoint does not claim full recovery UX or messaging acceptance.
+
+Messaging admission checkpoint: synthetic MessageEvent carries local journal
+metadata separately from its platform reply anchor. The existing gateway execution
+store remains the receiving owner: background input uses the journal event as its
+client deduplication key, verifies identical persisted payload on redelivery, and
+acknowledges only after create_run commits. Background persistence failure now
+fails closed; ordinary incoming messages retain their existing policy. Interrupted
+agent results terminalize as interrupted. Store reopen/conflict and adapter identity
+checks plus adjacent routing/race tests passed (72 total); strict checks and 76
+architecture contracts passed. This does not yet prove the full handler under
+injected persistence/ack failures. Idle messaging recovery, queued-adapter crash
+boundaries, session/profile context and end-to-end delivery remain required.
