@@ -50,7 +50,11 @@ and [engineering backlog](../TODO.md) for cross-package context.
 ## Code execution RPC
 
 [code_execution_tool.py](code_execution_tool.py) selects the execution environment
-and owns script lifetime. [code_execution_rpc.py](code_execution_rpc.py) owns the
+and owns script lifetime. [code_kernel_runner.py](code_kernel_runner.py) provides
+the standalone persistent cell protocol under development: retained variables,
+bounded Python output, ordered calculation hashes and owner-pipe shutdown. It is
+not yet selected by the public execution tool; host lifecycle and RPC integration
+must land before enabling persistent sessions. [code_execution_rpc.py](code_execution_rpc.py) owns the
 shared authenticated request pipeline for local sockets and remote files. Both
 transports validate request shape and size, preserve the selected tool allow-list
 and forecast commit policy, and charge the call budget before dispatch.

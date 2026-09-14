@@ -126,3 +126,21 @@ JSON regression. Persistent process lifetime remains outstanding.
 The complete focused RPC/execution/context set passed 128 tests, including the
 finite-JSON check and real remote file-RPC dispatch. New RPC and output owners
 pass strict lint, formatting and typing.
+
+### Persistent cell runner and full-gate follow-up
+
+The RPC/context full gate completed with 32,267 passed, 147 skipped, one failure
+and one follow-on resource error. Kanban's WAL warning key used only the database
+filename, suppressing warnings across profiles. It now uses the resolved path;
+the regression exercises two databases, reconnect deduplication and usable
+rollback journaling. Its connections now close even when assertions fail.
+
+The standalone persistent cell runner retains variables, records ordered code
+and result hashes, bounds Python output and separates native output from control
+frames. Python errors report preserved partial state; reset clears the namespace.
+Owner-pipe EOF terminates a running cell. Cells leaving Python threads alive
+retire the interpreter before another cell can acquire authority. Real subprocess
+coverage plus the Kanban suite passed 171 tests. This runner is not yet exposed
+through execute_code: host ownership, per-cell RPC binding, durable calculation
+records and local/remote integration remain required. No kernel acceptance box
+is complete and the failed full gate has not been waived.

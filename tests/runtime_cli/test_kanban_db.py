@@ -2036,23 +2036,21 @@ def test_connect_falls_back_to_delete_on_locking_protocol(kanban_home, caplog):
         )
 
     with _patch("superforecasting_agent.runtime.kanban_db.sqlite3.connect", side_effect=wal_blocking_connect):
-        with caplog.at_level("WARNING", logger="superforecasting_agent.storage.session"):
-            conn = kb.connect()
+        with caplog.at_level("WARNING", logger="superforecasting_agent.storage.sqlite"):
+            # Distinct profiles must each get a warning, while reconnecting the
+            # same database must not flood the operator's log.
+            for home in (kanban_home, kanban_home.parent / "second-profile"):
+                home.mkdir(exist_ok=True)
+                for _ in range(2):
+                    with kb.connection(db_path=home / "kanban.db") as conn:
+                        assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "delete"
+                        task = kb.create_task(conn, title="post-fallback task")
+                        assert any(row.id == task for row in kb.list_tasks(conn))
 
-    # One fallback warning, naming kanban.db
-    warnings = [
-        r for r in caplog.records
-        if r.levelname == "WARNING" and "kanban.db" in r.getMessage()
-    ]
-    assert len(warnings) >= 1, (
-        f"Expected a kanban.db WARNING, got: {[r.getMessage() for r in caplog.records]}"
-    )
-
-    # DB still usable end-to-end — create + list a task
-    t = kb.create_task(conn, title="post-fallback task")
-    tasks = kb.list_tasks(conn)
-    assert any(row.id == t for row in tasks)
-    conn.close()
+    warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 2
+    assert any(str(kanban_home.resolve()) in warning for warning in warnings)
+    assert any("second-profile" in warning for warning in warnings)
 
 
 def test_unlink_tasks_triggers_recompute_ready(kanban_home):
