@@ -50,11 +50,10 @@ and [engineering backlog](../TODO.md) for cross-package context.
 ## Code execution RPC
 
 [code_execution_tool.py](code_execution_tool.py) selects the execution environment
-and owns script lifetime. [code_kernel_runner.py](code_kernel_runner.py) provides
-the standalone persistent cell protocol under development: retained variables,
-bounded Python output, ordered calculation hashes and owner-pipe shutdown. It is
-not yet selected by the public execution tool; host lifecycle and RPC integration
-must land before enabling persistent sessions. [code_execution_rpc.py](code_execution_rpc.py) owns the
+and owns script lifetime. [code_kernel.py](code_kernel.py) owns the opt-in local
+persistent interpreter; [code_kernel_runner.py](code_kernel_runner.py) provides
+retained variables, bounded Python output, ordered calculation hashes and
+owner-pipe shutdown. [code_execution_rpc.py](code_execution_rpc.py) owns the
 shared authenticated request pipeline for local sockets and remote files. Both
 transports validate request shape and size, preserve the selected tool allow-list
 and forecast commit policy, and charge the call budget before dispatch.
@@ -64,6 +63,31 @@ private directory and read from a private file; their values never appear in she
 arguments. A remote response-delivery failure retains the result for delivery
 retry, so polling cannot repeat the tool effect. These receipts last for the
 execution call; they do not promise exactly-once external effects after host death.
+
+### Local persistent analysis (in development)
+
+The default remains one interpreter per call. To opt into the local session
+kernel, set `code_execution.kernel_mode: session` in the active profile's config.
+`execute_code` then retains variables and imports across calls made by the same
+agent. Its `reset: true` argument closes the old interpreter before running code
+in a new one. Changed tools, policy, working directory or interpreter require
+explicit reset. Environment values are captured at spawn; reset to adopt changes.
+Each cell receives fresh RPC authentication, caller context and tool-call budget.
+
+Cells must join their Python threads and subprocesses before returning. A cell
+that leaves work running retires the interpreter; timeout and cancellation also
+discard state. Failed cleanup retains exact resource handles and prevents reset
+from replacing them until cleanup completes. Agent shutdown owns final disposal.
+Interpreter variables do not survive agent eviction or application restart.
+
+Calculation receipts live under `<profile>/calculations/<kernel-id>/`. They record
+code, code/result hashes, sequence, interpreter path, working directory, selected
+tools, policy and completion status. Code and displayed output are redacted;
+`code_redacted` explicitly identifies receipts that cannot replay the original
+source. A running receipt after host death is unfinished, not proof of completion.
+These records do not freeze external data, installed packages or randomness;
+full deterministic replay and remote persistent kernels remain acceptance work.
+Remote backends retain per-call execution and reject session mode explicitly.
 
 Worker output suppression is context-scoped through the agent output owner;
 accepted sockets and borrowed terminal streams have separate disposal owners.

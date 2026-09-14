@@ -144,3 +144,25 @@ coverage plus the Kanban suite passed 171 tests. This runner is not yet exposed
 through execute_code: host ownership, per-cell RPC binding, durable calculation
 records and local/remote integration remain required. No kernel acceptance box
 is complete and the failed full gate has not been waived.
+
+The follow-up full gate passed: 32,276 passed, 147 skipped, 480.19 seconds.
+Commit `e798f51111` was pushed with that receipt.
+
+### Local persistent-kernel integration
+
+The local owner is attached to the actual agent object. Public execution dispatch
+now supports opt-in session kernels and explicit reset, including fresh per-cell
+RPC authority, deadlines, selected-tool validation and durable calculation
+receipts. Empty tool selections stay empty. Agent close and client eviction close
+the exact owner; cleanup failures retain handles rather than replacing a running
+component. Python-thread and observed subprocess leftovers retire the kernel.
+Working-directory/interpreter changes require reset rather than silently using
+stale state. The existing child environment builder is shared by both lifetimes.
+
+The focused local integration set passed 144 tests, including actual agent
+dispatch across two turn IDs, actual close, blocked RPC cleanup retries, profile
+separation, timeout/reset, background child-process cleanup and durable receipts.
+New owners pass strict checks. Remote persistence, comprehensive parent-death and
+descendant ownership qualification, complete reproducible input/environment
+records, and the final full-suite/product audit remain outstanding. This is a
+local integration milestone, not completion of the kernel requirement.

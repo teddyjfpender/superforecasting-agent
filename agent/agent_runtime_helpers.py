@@ -1599,6 +1599,12 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
     elif agent._memory_manager and agent._memory_manager.has_tool(function_name):
         return agent._memory_manager.handle_tool_call(function_name, function_args)
     else:
+        execution_kwargs = {}
+        if function_name == "execute_code":
+            from tools.code_execution_tool import _load_config
+            if _load_config().get("kernel_mode", "per_call") == "session":
+                from tools.code_kernel import owner_for
+                execution_kwargs["kernel_owner"] = owner_for(agent)
         return _ra().handle_function_call(
             function_name, function_args, effective_task_id,
             tool_call_id=tool_call_id,
@@ -1606,6 +1612,7 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
             enabled_tools=list(agent.valid_tool_names) if agent.valid_tool_names else None,
             skip_pre_tool_call_hook=True,
             main_runtime=agent._current_main_runtime(),
+            **execution_kwargs,
         )
 
 

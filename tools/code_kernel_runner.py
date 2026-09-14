@@ -64,11 +64,19 @@ def _read_requests(inbox: queue.Queue[dict[str, Any]]) -> None:
             request = json.loads(raw)
             if (
                 not isinstance(request, dict)
-                or set(request) != {"id", "code", "reset"}
+                or set(request)
+                not in ({"id", "code", "reset"}, {"id", "code", "reset", "rpc"})
                 or not isinstance(request["id"], str)
                 or not 1 <= len(request["id"]) <= 128
                 or not isinstance(request["code"], str)
                 or type(request["reset"]) is not bool
+            ):
+                os._exit(65)
+            rpc = request.get("rpc")
+            if rpc is not None and (
+                not isinstance(rpc, dict)
+                or set(rpc) != {"endpoint", "token"}
+                or not all(isinstance(value, str) and value for value in rpc.values())
             ):
                 os._exit(65)
             inbox.put_nowait(request)
@@ -93,6 +101,17 @@ def main() -> None:
         protocol.flush()
         while True:
             request = inbox.get()
+            if "rpc" in request:
+                for name in ("forecast_tools",):
+                    module = sys.modules.get(name)
+                    connection = getattr(module, "_sock", None)
+                    if connection is not None and module is not None:
+                        connection.close()
+                        setattr(module, "_sock", None)
+                os.environ["SUPERFORECASTING_AGENT_RPC_SOCKET"] = request["rpc"][
+                    "endpoint"
+                ]
+                os.environ["SUPERFORECASTING_AGENT_RPC_TOKEN"] = request["rpc"]["token"]
             if request["reset"]:
                 namespace = {"__name__": "__main__"}
             stdout, stderr = Capture(), Capture()

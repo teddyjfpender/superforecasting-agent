@@ -143,6 +143,7 @@ def _rpc_server_loop(
     forecast_commit_policy: str | None = None,
     rpc_token: str = "",
     stop_event: threading.Event | None = None,
+    accept_timeout: float = 5.0,
 ) -> None:
     """Own one accepted connection, with bounded framing and responsive shutdown."""
     stop = stop_event or threading.Event()
@@ -150,7 +151,7 @@ def _rpc_server_loop(
     conn = None
     try:
         server_sock.settimeout(0.1)
-        accept_deadline = time.monotonic() + 5
+        accept_deadline = time.monotonic() + accept_timeout
         while not stop.is_set() and not is_interrupted():
             try:
                 conn, _ = server_sock.accept()

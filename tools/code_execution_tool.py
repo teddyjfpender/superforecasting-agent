@@ -847,11 +847,81 @@ def _execute_remote(
 # Main entry point
 # ---------------------------------------------------------------------------
 
+def build_child_env(tmpdir: str, rpc_endpoint: str, rpc_token: str, forecast_commit_policy: str | None) -> dict[str, str]:
+    # Build a minimal environment for the child. We intentionally exclude
+    # API keys and tokens to prevent credential exfiltration from LLM-
+    # generated scripts. The child accesses tools via RPC, not direct API.
+    # Exception: env vars declared by loaded skills (via env_passthrough
+    # registry) or explicitly allowed by the user in config.yaml
+    # (terminal.env_passthrough) are passed through.  On Windows, a small
+    # OS-essential allowlist (SYSTEMROOT, WINDIR, COMSPEC, ...) is also
+    # passed through — without those, the child can't create a socket
+    # or spawn a subprocess.  See ``_scrub_child_env`` for the rules.
+    child_env = _scrub_child_env(os.environ)
+    child_env["SUPERFORECASTING_AGENT_RPC_TOKEN"] = rpc_token
+    child_env["SUPERFORECASTING_AGENT_RPC_SOCKET"] = rpc_endpoint
+    child_env["FORECAST_RPC_SOCKET"] = rpc_endpoint
+    child_env["HERMES_RPC_SOCKET"] = rpc_endpoint
+    child_env["PYTHONDONTWRITEBYTECODE"] = "1"
+    if (forecast_commit_policy or "").strip().lower() == "proposal_only":
+        child_env["FORECAST_COMMIT_POLICY"] = "proposal_only"
+    # Force UTF-8 for the child's stdio and default file encoding.
+    #
+    # Without this, on Windows sys.stdout is bound to the console code
+    # page (cp1252 on US-locale installs), and any script that does
+    # ``print("café")`` or ``print("→")`` crashes with:
+    #
+    #   UnicodeEncodeError: 'charmap' codec can't encode character
+    #   '\u2192' in position N: character maps to <undefined>
+    #
+    # PYTHONIOENCODING fixes sys.stdin/stdout/stderr.
+    # PYTHONUTF8=1 enables "UTF-8 mode" (PEP 540) which additionally
+    # makes ``open()``'s default encoding UTF-8, so user scripts that
+    # write files without specifying encoding= also work correctly.
+    #
+    # On POSIX both values usually match the locale default already,
+    # so setting them is harmless belt-and-suspenders for environments
+    # with a C/POSIX locale (containers, minimal base images).
+    child_env["PYTHONIOENCODING"] = "utf-8"
+    child_env["PYTHONUTF8"] = "1"
+    # Ensure the repository root is importable in the sandbox so
+    # repo-root modules are available to child scripts.  We also prepend
+    # the staging tmpdir so ``from hermes_tools import ...`` resolves even
+    # when the subprocess CWD is not tmpdir (project mode).
+    _hermes_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    _existing_pp = child_env.get("PYTHONPATH", "")
+    _pp_parts = [tmpdir, _hermes_root]
+    if _existing_pp:
+        _pp_parts.append(_existing_pp)
+    child_env["PYTHONPATH"] = os.pathsep.join(_pp_parts)
+    # Inject user's configured timezone so datetime.now() in sandboxed
+    # code reflects the correct wall-clock time.  Only TZ is set —
+    # Timezone override aliases are internal agent settings and must not
+    # leak into child processes.
+    _tz_name = _timezone_env_value()
+    if _tz_name:
+        child_env["TZ"] = _tz_name
+    for _tz_env_name in _TIMEZONE_ENV_NAMES:
+        child_env.pop(_tz_env_name, None)
+
+    # Per-profile HOME isolation: redirect system tool configs into the
+    # active profile's ``home/`` directory when that directory exists.
+    from superforecasting_agent.constants import get_subprocess_home
+    _profile_home = get_subprocess_home()
+    if _profile_home:
+        child_env["HOME"] = _profile_home
+
+    return child_env
+
+
 def execute_code(
     code: str,
     task_id: Optional[str] = None,
     enabled_tools: Optional[List[str]] = None,
     forecast_commit_policy: Optional[str] = None,
+    *,
+    kernel_owner: Any = None,
+    reset: bool = False,
 ) -> str:
     """
     Run a Python script in a sandboxed child process with RPC access
@@ -877,6 +947,32 @@ def execute_code(
 
     if not code or not code.strip():
         return tool_error("No code provided.")
+
+    if type(reset) is not bool:
+        return tool_error("reset must be a boolean")
+    kernel_mode = _load_config().get("kernel_mode", "per_call")
+    if kernel_mode not in {"per_call", "session"}:
+        return tool_error("code_execution.kernel_mode must be per_call or session")
+    if kernel_mode == "session":
+        from tools.terminal_tool import _get_env_config
+        if _get_env_config()["env_type"] != "local":
+            return tool_error("Persistent remote kernels are not yet available; use kernel_mode=per_call")
+        if kernel_owner is None:
+            return tool_error("Persistent execution requires an agent-owned session")
+        selected = SANDBOX_ALLOWED_TOOLS if enabled_tools is None else frozenset(enabled_tools)
+        config = _load_config()
+        try:
+            return json.dumps(kernel_owner.run(
+                code, task_id or "", SANDBOX_ALLOWED_TOOLS & selected,
+                forecast_commit_policy, _get_execution_mode(),
+                config.get("timeout", DEFAULT_TIMEOUT),
+                config.get("max_tool_calls", DEFAULT_MAX_TOOL_CALLS), reset,
+            ))
+        except Exception as exc:
+            from agent.redact import redact_sensitive_text
+            return tool_error(redact_sensitive_text(str(exc), force=True))
+    if reset:
+        return tool_error("reset requires code_execution.kernel_mode=session")
 
     # Dispatch: remote backends use file-based RPC, local uses UDS
     from tools.terminal_tool import _get_env_config
@@ -987,68 +1083,7 @@ def execute_code(
         rpc_thread.start()
 
         # --- Spawn child process ---
-        # Build a minimal environment for the child. We intentionally exclude
-        # API keys and tokens to prevent credential exfiltration from LLM-
-        # generated scripts. The child accesses tools via RPC, not direct API.
-        # Exception: env vars declared by loaded skills (via env_passthrough
-        # registry) or explicitly allowed by the user in config.yaml
-        # (terminal.env_passthrough) are passed through.  On Windows, a small
-        # OS-essential allowlist (SYSTEMROOT, WINDIR, COMSPEC, ...) is also
-        # passed through — without those, the child can't create a socket
-        # or spawn a subprocess.  See ``_scrub_child_env`` for the rules.
-        child_env = _scrub_child_env(os.environ)
-        child_env["SUPERFORECASTING_AGENT_RPC_TOKEN"] = rpc_token
-        child_env["SUPERFORECASTING_AGENT_RPC_SOCKET"] = rpc_endpoint
-        child_env["FORECAST_RPC_SOCKET"] = rpc_endpoint
-        child_env["HERMES_RPC_SOCKET"] = rpc_endpoint
-        child_env["PYTHONDONTWRITEBYTECODE"] = "1"
-        if (forecast_commit_policy or "").strip().lower() == "proposal_only":
-            child_env["FORECAST_COMMIT_POLICY"] = "proposal_only"
-        # Force UTF-8 for the child's stdio and default file encoding.
-        #
-        # Without this, on Windows sys.stdout is bound to the console code
-        # page (cp1252 on US-locale installs), and any script that does
-        # ``print("café")`` or ``print("→")`` crashes with:
-        #
-        #   UnicodeEncodeError: 'charmap' codec can't encode character
-        #   '\u2192' in position N: character maps to <undefined>
-        #
-        # PYTHONIOENCODING fixes sys.stdin/stdout/stderr.
-        # PYTHONUTF8=1 enables "UTF-8 mode" (PEP 540) which additionally
-        # makes ``open()``'s default encoding UTF-8, so user scripts that
-        # write files without specifying encoding= also work correctly.
-        #
-        # On POSIX both values usually match the locale default already,
-        # so setting them is harmless belt-and-suspenders for environments
-        # with a C/POSIX locale (containers, minimal base images).
-        child_env["PYTHONIOENCODING"] = "utf-8"
-        child_env["PYTHONUTF8"] = "1"
-        # Ensure the repository root is importable in the sandbox so
-        # repo-root modules are available to child scripts.  We also prepend
-        # the staging tmpdir so ``from hermes_tools import ...`` resolves even
-        # when the subprocess CWD is not tmpdir (project mode).
-        _hermes_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        _existing_pp = child_env.get("PYTHONPATH", "")
-        _pp_parts = [tmpdir, _hermes_root]
-        if _existing_pp:
-            _pp_parts.append(_existing_pp)
-        child_env["PYTHONPATH"] = os.pathsep.join(_pp_parts)
-        # Inject user's configured timezone so datetime.now() in sandboxed
-        # code reflects the correct wall-clock time.  Only TZ is set —
-        # Timezone override aliases are internal agent settings and must not
-        # leak into child processes.
-        _tz_name = _timezone_env_value()
-        if _tz_name:
-            child_env["TZ"] = _tz_name
-        for _tz_env_name in _TIMEZONE_ENV_NAMES:
-            child_env.pop(_tz_env_name, None)
-
-        # Per-profile HOME isolation: redirect system tool configs into the
-        # active profile's ``home/`` directory when that directory exists.
-        from superforecasting_agent.constants import get_subprocess_home
-        _profile_home = get_subprocess_home()
-        if _profile_home:
-            child_env["HOME"] = _profile_home
+        child_env = build_child_env(tmpdir, rpc_endpoint, rpc_token, forecast_commit_policy)
 
         # Resolve interpreter + CWD based on execute_code mode.
         #   - strict : today's behavior (sys.executable + tmpdir CWD).
@@ -1667,6 +1702,10 @@ def build_execute_code_schema(enabled_sandbox_tools: set[str] | frozenset[str] |
         "parameters": {
             "type": "object",
             "properties": {
+                "reset": {
+                    "type": "boolean",
+                    "description": "In opt-in session kernel mode, explicitly discard prior interpreter state before executing this cell. Defaults to false.",
+                },
                 "code": {
                     "type": "string",
                     "description": (
@@ -1696,6 +1735,8 @@ registry.register(
         code=args.get("code", ""),
         task_id=kw.get("task_id"),
         enabled_tools=kw.get("enabled_tools"),
+        kernel_owner=kw.get("kernel_owner"),
+        reset=args.get("reset", False),
         forecast_commit_policy=(kw.get("main_runtime") or {}).get(
             "forecast_commit_policy"
         )),

@@ -1399,6 +1399,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     # execute_code settings — controls the tool used for programmatic tool calls.
     "code_execution": {
+        "kernel_mode": "per_call",  # opt-in "session" retains local Python state
         # Execution mode:
         #   project (default) — scripts run in the session's working directory
         #     with the active virtualenv/conda env's python, so project deps
