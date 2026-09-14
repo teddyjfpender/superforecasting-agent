@@ -56,3 +56,20 @@ def test_stale_full_config_save_cannot_overwrite_a_model_switch(tmp_path, monkey
     fresh['display']['skin'] = 'slate'
     config.save_config(fresh)
     assert yaml.safe_load(path.read_text())['display']['skin'] == 'slate'
+
+
+@pytest.mark.parametrize("endpoint", [False, 0, [], {}])
+def test_invalid_endpoint_never_changes_saved_selection(tmp_path, endpoint):
+    path = tmp_path / "config.yaml"
+    original = "model: old-model\n"
+    path.write_text(original)
+    with pytest.raises(ValueError, match="model.base_url must be a string"):
+        persist_model_selection(path, model="new", provider="custom", base_url=endpoint)
+    assert path.read_text() == original
+
+
+def test_normalized_same_endpoint_retains_bound_credential(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text("model:\n  default: old\n  provider: custom\n  base_url: https://example.org/\n  api_key: ${BOUND_KEY}\n")
+    persist_model_selection(path, model="new", provider=" custom ", base_url=" https://example.org ")
+    assert yaml.safe_load(path.read_text())["model"]["api_key"] == "${BOUND_KEY}"

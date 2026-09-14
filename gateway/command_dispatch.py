@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from gateway.platforms.base import MessageEvent
 
@@ -64,6 +64,7 @@ async def dispatch_command_hooks(
         for hook_result in hook_results:
             if not isinstance(hook_result, dict):
                 continue
+            hook_result = cast(dict[object, object], hook_result)
             decision = str(hook_result.get("decision", "")).strip().lower()
             if not decision or decision == "allow":
                 continue

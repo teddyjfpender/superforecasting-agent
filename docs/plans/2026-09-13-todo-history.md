@@ -296,3 +296,22 @@ now receive blocking lint, formatting and type checks. Malformed rewrite payload
 fail before event mutation; rewritten command aliases still receive authorization.
 Cancelled shared confirmations decline, and setup/shared prompts use one answer
 parser and validation error. Full orchestration-shell typing remains incremental.
+
+## Configuration typing and Nix qualification (2026-09-14)
+
+Extended blocking checks to interactive configuration/defaults, model environment
+aliases, shared model-selection persistence and gateway hook execution. Optional
+endpoint values are validated without truthiness coercion, normalized equivalent
+routes preserve bound credentials, malformed config loads cannot partially bridge
+defaults into the environment, and both hook APIs await Futures as well as
+coroutines. Discovery validates event lists before registering any handlers.
+The focused regression batch passed 69 tests; shared Python quality and Windows
+checks passed. The large inherited shells remain subject to incremental typing
+when concrete fixes touch them, rather than a perpetual release prerequisite.
+
+Refreshed both npm dependency hashes and qualified the Nix Linux x86-64 package,
+all 14 flake checks, isolated profile installation and TUI startup/resize/shutdown.
+Added a repeatable installed-CLI lifecycle check and fixed the existing version
+check's unwritable-home assumption. See [the Nix qualification receipts](../verification/2026-09-14-nix-qualification/README.md).
+Android/Termux, Daytona/Modal and historical SSL attribution remain explicitly
+non-blocking deferred items requiring external evidence.

@@ -316,3 +316,32 @@ class TestEmitCollect:
         await reg.emit_collect("agent:start")  # no context arg
 
         assert captured == [("agent:start", {})]
+
+
+@pytest.mark.asyncio
+async def test_future_hook_result_is_awaited_by_both_dispatch_paths():
+    registry = HookRegistry()
+    completed = []
+
+    def handler(event, context):
+        future = asyncio.get_running_loop().create_future()
+        def finish():
+            completed.append(event)
+            future.set_result({"decision": "deny"})
+        asyncio.get_running_loop().call_soon(finish)
+        return future
+
+    registry._handlers["command:help"] = [handler]
+    assert await registry.emit_collect("command:help") == [{"decision": "deny"}]
+    await registry.emit("command:help")
+    assert completed == ["command:help", "command:help"]
+
+
+@pytest.mark.parametrize("events", ['"agent:start"', '["agent:start", 42]', '[""]'])
+def test_malformed_event_manifest_registers_no_partial_handlers(tmp_path, events):
+    _create_hook(tmp_path, "invalid", events, "def handle(event, context): pass\n")
+    registry = HookRegistry()
+    with patch("gateway.hooks.HOOKS_DIR", tmp_path):
+        registry.discover_and_load()
+    assert registry._handlers == {}
+    assert registry.loaded_hooks == []
