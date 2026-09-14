@@ -220,9 +220,10 @@ def _rpc_poll_loop(
     forecast_commit_policy: str | None,
     stop_event: threading.Event,
     rpc_token: str = "",
+    dispatch_override: Callable[[str, dict], str] | None = None,
 ) -> None:
     """Use the same admission rules for bounded remote request files."""
-    dispatch = _dispatcher(task_id, forecast_commit_policy)
+    dispatch = dispatch_override or _dispatcher(task_id, forecast_commit_policy)
     quoted_dir = shlex.quote(rpc_dir)
     pending: dict[int, tuple[str, str]] = {}
     settled: set[int] = set()

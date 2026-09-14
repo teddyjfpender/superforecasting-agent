@@ -189,3 +189,39 @@ checks. Cleanup also stopped using bare-PID fallback probes for reparented child
 exit confirmation; retained process identity and terminal status are authoritative.
 Remote kernels, broader parent-death ownership qualification and final product
 acceptance remain outstanding.
+
+### Remote kernel integration in progress
+
+The isolated `feat/research-remote-kernels` worktree now exercises the persistent
+protocol over a real POSIX shell transport. A remote supervisor owns the runner
+process group, authenticated control files, per-cell admission and completion,
+and an expiring owner lease. Host cleanup retains the environment and remote
+directory until termination is confirmed. This is controlled transport evidence,
+not credential-dependent Daytona/Modal qualification.
+
+Public execute_code dispatch retains state across turn IDs. Exact-object backend
+leases prevent idle or manual cleanup while the kernel owns the environment;
+subsequent calls reject a replaced environment. Releasing an old owner does not
+remove or clean its replacement. Control commands borrow the shell snapshot
+without writing either its environment or working-directory state. A real-shell
+regression verifies ordinary user commands still persist both.
+
+The initial combined runner/remote/local/shell set passed 48 tests; public dispatch
+and shell-state follow-up passed 25 tests. Strict lint, formatting, typing, all 76
+architecture contracts and protocol generation checks pass. Broader execution
+regressions, parent-death/resource ownership review, documentation and the full
+publication gate remain pending. These changes are not yet committed or pushed.
+
+The broader kernel, shell-state, code-execution and execution-mode regression set
+passed 157 tests in 8.87 seconds after the public-dispatch changes. Full-suite
+publication and the remaining ownership audit are still required.
+
+The ownership audit now rejects cancellation/deadline expiry after RPC setup but
+before sending code. Remote heartbeat and bounded cleanup use their own stop
+scopes while preserving profile context; retiring a call cannot cancel cleanup.
+Nested tool cancellation still propagates and the caller's original interrupt
+state is restored. A real abrupt supervisor-death test confirms its running
+kernel group exits while an unrelated sibling survives; no false termination
+receipt is synthesized. The expanded kernel/execution/interrupt set passed 174
+tests in 9.79 seconds. Directory guides now describe the remote protocol and
+unconfirmed cleanup limits. Full-suite publication remains required.

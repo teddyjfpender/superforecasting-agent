@@ -435,7 +435,7 @@ class BaseEnvironment(ABC):
             return f"$HOME/{shlex.quote(cwd[2:])}"
         return shlex.quote(cwd)
 
-    def _wrap_command(self, command: str, cwd: str) -> str:
+    def _wrap_command(self, command: str, cwd: str, *, persist: bool = True) -> str:
         """Build the full bash script that sources snapshot, cd's, runs command,
         re-dumps env vars, and emits CWD markers."""
         escaped = command.replace("'", "'\\''")
@@ -468,7 +468,12 @@ class BaseEnvironment(ABC):
 
         # Run the actual command
         parts.append(f"eval '{escaped}'")
-        parts.append("__hermes_ec=$?")
+        parts.append("__forecast_exit_code=$?")
+
+        # Control I/O borrows the shell snapshot without changing terminal state.
+        if not persist:
+            parts.append("exit $__forecast_exit_code")
+            return "\n".join(parts)
 
         # Re-dump env vars to snapshot (last-writer-wins for concurrent calls)
         if self._snapshot_ready:
@@ -483,7 +488,7 @@ class BaseEnvironment(ABC):
         parts.append(
             f"printf '\\n{self._cwd_marker}%s{self._cwd_marker}\\n' \"$(pwd -P)\""
         )
-        parts.append("exit $__hermes_ec")
+        parts.append("exit $__forecast_exit_code")
 
         return "\n".join(parts)
 
@@ -842,6 +847,7 @@ class BaseEnvironment(ABC):
         *,
         timeout: int | None = None,
         stdin_data: str | None = None,
+        update_cwd: bool = True,
     ) -> dict:
         """Execute a command, return {"output": str, "returncode": int}."""
         self._before_execute()
@@ -870,7 +876,7 @@ class BaseEnvironment(ABC):
             exec_command = self._embed_stdin_heredoc(exec_command, effective_stdin)
             effective_stdin = None
 
-        wrapped = self._wrap_command(exec_command, effective_cwd)
+        wrapped = self._wrap_command(exec_command, effective_cwd, persist=update_cwd)
 
         # Use login shell if snapshot failed (so user's profile still loads)
         login = not self._snapshot_ready
@@ -879,7 +885,8 @@ class BaseEnvironment(ABC):
             wrapped, login=login, timeout=effective_timeout, stdin_data=effective_stdin
         )
         result = self._wait_for_process(proc, timeout=effective_timeout)
-        self._update_cwd(result)
+        if update_cwd:
+            self._update_cwd(result)
 
         return result
 

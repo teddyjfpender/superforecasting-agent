@@ -4,6 +4,7 @@ import contextvars
 import json
 import sys
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -50,6 +51,30 @@ def test_persistent_state_receipts_errors_and_explicit_reset(owner):
     assert fresh["kernel_id"] != first["kernel_id"]
     assert fresh["stdout"] == "False\n"
     assert Path(first["calculation_record"]).exists()
+
+
+@pytest.mark.parametrize("failure", ["cancel", "deadline"])
+def test_interrupted_admission_never_sends_code_to_interpreter(owner, monkeypatch, failure):
+    from superforecasting_agent.tooling.interrupts import cancellation_scope
+
+    run(owner, "value = 1")
+    kernel = owner.kernel
+    original = kernel._start_rpc
+    cancellation = threading.Event()
+
+    def delayed(*args, **kwargs):
+        result = original(*args, **kwargs)
+        if failure == "cancel":
+            cancellation.set()
+        else:
+            time.sleep(0.1)
+        return result
+
+    monkeypatch.setattr(kernel, "_start_rpc", delayed)
+    monkeypatch.setattr(kernel, "_send_cell", lambda *_: pytest.fail("expired cell executed"))
+    with cancellation_scope(cancellation):
+        with pytest.raises((InterruptedError, TimeoutError), match="before dispatch"):
+            run(owner, "value = 2", timeout=0.05 if failure == "deadline" else 3)
 
 
 def test_fresh_call_context_and_budget_for_retained_imports(owner, monkeypatch):

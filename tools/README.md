@@ -50,8 +50,11 @@ and [engineering backlog](../TODO.md) for cross-package context.
 ## Code execution RPC
 
 [code_execution_tool.py](code_execution_tool.py) selects the execution environment
-and owns script lifetime. [code_kernel.py](code_kernel.py) owns the opt-in local
-persistent interpreter; [code_kernel_runner.py](code_kernel_runner.py) provides
+and owns script lifetime. [code_kernel.py](code_kernel.py) owns opt-in persistent
+analysis and local process handles. [code_kernel_remote.py](code_kernel_remote.py)
+uses the existing remote shell transport; [code_kernel_supervisor.py](code_kernel_supervisor.py)
+owns the remote runner, authenticated admission records and expiring heartbeat.
+[code_kernel_runner.py](code_kernel_runner.py) provides
 retained variables, bounded Python output, ordered calculation hashes and
 owner-pipe shutdown. [code_execution_rpc.py](code_execution_rpc.py) owns the
 shared authenticated request pipeline for local sockets and remote files. Both
@@ -64,9 +67,9 @@ arguments. A remote response-delivery failure retains the result for delivery
 retry, so polling cannot repeat the tool effect. These receipts last for the
 execution call; they do not promise exactly-once external effects after host death.
 
-### Local persistent analysis (in development)
+### Persistent analysis (in development)
 
-The default remains one interpreter per call. To opt into the local session
+The default remains one interpreter per call. To opt into a session
 kernel, set `code_execution.kernel_mode: session` in the active profile's config.
 `execute_code` then retains variables and imports across calls made by the same
 agent. Its `reset: true` argument closes the old interpreter before running code
@@ -112,8 +115,20 @@ code. Only explicitly replay locally trusted calculations. Direct Python I/O,
 editable project files and randomness are not frozen by the RPC input archive:
 use recorded tool observations and explicit random seeds for reproducible analysis.
 Legacy version 1 receipts remain readable JSON but lack verifiable replay inputs.
-Remote persistent kernels remain acceptance work.
-Remote backends retain per-call execution and reject session mode explicitly.
+Remote session mode requires a POSIX shell backend with Python 3. It borrows the
+exact terminal environment under a lease that prevents idle or manual removal.
+Control I/O does not update the terminal's saved shell environment or working
+directory. The supervisor expires a missing host heartbeat after 30 seconds;
+each cell also has an execution deadline. A broken connection retains ownership
+until termination can be confirmed, so reset may need a working connection.
+An abruptly killed supervisor cannot publish a termination receipt: its runner
+exits on owner-pipe EOF, but unconfirmed cleanup remains pending on the host.
+
+Real POSIX subprocess tests cover transport, abrupt supervisor death, owner
+leases and sibling-process isolation. They do not qualify hosted services or
+claim containment of hostile code that deliberately escapes its process group.
+Parent-death behavior on native Windows and credential-dependent remote services
+remain qualification work.
 
 Worker output suppression is context-scoped through the agent output owner;
 accepted sockets and borrowed terminal streams have separate disposal owners.

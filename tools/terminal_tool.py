@@ -1292,6 +1292,9 @@ def _cleanup_inactive_envs(lifetime_seconds: int = 300):
     with _env_lock:
         for task_id, last_time in list(_last_activity.items()):
             if current_time - last_time > lifetime_seconds:
+                from tools.environments.leases import is_retained
+                if is_retained(_active_environments.get(task_id)):
+                    continue
                 env = _active_environments.pop(task_id, None)
                 _last_activity.pop(task_id, None)
                 if env is not None:
@@ -1389,7 +1392,8 @@ def is_persistent_env(task_id: str) -> bool:
     env = get_active_env(task_id)
     if env is None:
         return False
-    return bool(getattr(env, "_persistent", False))
+    from tools.environments.leases import is_retained
+    return is_retained(env) or bool(getattr(env, "_persistent", False))
 
 
 
@@ -1430,6 +1434,9 @@ def cleanup_vm(task_id: str):
     # Invalidate in-flight creators atomically with detaching the current env.
     # Keep the same env -> creation lock order as the inactivity reaper.
     with _env_lock, _creation_locks_lock:
+        from tools.environments.leases import is_retained
+        if is_retained(_active_environments.get(task_id)):
+            raise RuntimeError("Terminal environment is retained by an active analysis kernel")
         env = _active_environments.pop(task_id, None)
         _last_activity.pop(task_id, None)
         _creation_locks.pop(task_id, None)

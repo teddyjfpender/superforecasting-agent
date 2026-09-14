@@ -16,6 +16,7 @@ import json
 import os
 import platform
 import queue
+import signal
 import sys
 import threading
 import traceback
@@ -23,6 +24,17 @@ from typing import Any
 
 MAX_REQUEST_BYTES = 1_048_576
 MAX_OUTPUT_CHARS = 250_000
+
+
+def owner_exit(code: int) -> None:
+    """Only a verified, dedicated POSIX session may terminate its own group."""
+    if (
+        os.name == "posix"
+        and os.environ.get("SUPERFORECASTING_AGENT_KERNEL_OWN_GROUP") == "1"
+        and os.getpid() == os.getpgrp() == os.getsid(0)
+    ):
+        os.killpg(os.getpgrp(), signal.SIGKILL)
+    os._exit(code)
 
 
 class Capture(io.TextIOBase):
@@ -60,9 +72,9 @@ def _read_requests(inbox: queue.Queue[dict[str, Any]]) -> None:
         while True:
             raw = sys.stdin.buffer.readline(MAX_REQUEST_BYTES + 1)
             if not raw:
-                os._exit(0)
+                owner_exit(0)
             if len(raw) > MAX_REQUEST_BYTES or not raw.endswith(b"\n"):
-                os._exit(65)
+                owner_exit(65)
             request = json.loads(raw)
             if (
                 not isinstance(request, dict)
@@ -73,17 +85,23 @@ def _read_requests(inbox: queue.Queue[dict[str, Any]]) -> None:
                 or not isinstance(request["code"], str)
                 or type(request["reset"]) is not bool
             ):
-                os._exit(65)
+                owner_exit(65)
             rpc = request.get("rpc")
             if rpc is not None and (
                 not isinstance(rpc, dict)
-                or set(rpc) != {"endpoint", "token"}
+                or set(rpc)
+                not in ({"endpoint", "token"}, {"endpoint", "token", "transport"})
                 or not all(isinstance(value, str) and value for value in rpc.values())
             ):
-                os._exit(65)
+                owner_exit(65)
+            if rpc is not None and rpc.get("transport", "socket") not in {
+                "socket",
+                "file",
+            }:
+                owner_exit(65)
             inbox.put_nowait(request)
     except (ValueError, OSError, queue.Full):
-        os._exit(65)
+        owner_exit(65)
 
 
 def main() -> None:
@@ -122,6 +140,14 @@ def main() -> None:
                     if connection is not None and module is not None:
                         connection.close()
                         setattr(module, "_sock", None)
+                if request["rpc"].get("transport") == "file":
+                    os.environ["SUPERFORECASTING_AGENT_RPC_DIR"] = request["rpc"][
+                        "endpoint"
+                    ]
+                    module = sys.modules.get("forecast_tools")
+                    if module is not None:
+                        setattr(module, "_RPC_DIR", request["rpc"]["endpoint"])
+                        setattr(module, "_seq", 0)
                 os.environ["SUPERFORECASTING_AGENT_RPC_SOCKET"] = request["rpc"][
                     "endpoint"
                 ]
@@ -175,7 +201,7 @@ def main() -> None:
             protocol.write(encoded + "\n")
             protocol.flush()
             if leaked_threads:
-                os._exit(73)
+                owner_exit(73)
 
 
 if __name__ == "__main__":

@@ -76,3 +76,27 @@ def test_already_interrupted_caller_cannot_create_fresh_authority():
         set_interrupt(False)
     with pytest.raises(InterruptedError, match="retired"):
         context.run(lambda: pytest.fail("effect from interrupted caller"))
+
+
+def test_maintenance_scope_restores_thread_cancellation_and_keeps_nested_stops():
+    import threading
+
+    from superforecasting_agent.tooling.interrupts import (
+        cancellation_scope,
+        is_interrupted,
+        set_interrupt,
+    )
+
+    set_interrupt(True)
+    try:
+        with cancellation_scope(threading.Event(), inherit=False):
+            assert not is_interrupted()
+            nested = threading.Event()
+            with cancellation_scope(nested):
+                assert not is_interrupted()
+                nested.set()
+                assert is_interrupted()
+            assert not is_interrupted()
+        assert is_interrupted()
+    finally:
+        set_interrupt(False)

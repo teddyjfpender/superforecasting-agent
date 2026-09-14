@@ -33,6 +33,7 @@ from tools.code_calculations import InputRecorder, display_output, sealed
 from tools.code_execution_rpc import _rpc_server_loop
 
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
+COMPAT_TOOLS_FILENAME = "hermes_tools.py"
 
 
 def _digest(value: str) -> str:
@@ -77,12 +78,14 @@ class LocalKernel:
         self.cwd = _resolve_child_cwd(mode, str(self.directory))
         source = generate_forecast_tools_module(list(tools))
         (self.directory / "forecast_tools.py").write_text(source, encoding="utf-8")
-        (self.directory / "hermes_tools.py").write_text(
+        (self.directory / COMPAT_TOOLS_FILENAME).write_text(
             "from forecast_tools import *\n", encoding="utf-8"
         )
         runner = self.directory / "runner.py"
         shutil.copyfile(Path(__file__).with_name("code_kernel_runner.py"), runner)
         self.environment = build_child_env(str(self.directory), "", "", policy)
+        if os.name == "posix":
+            self.environment["SUPERFORECASTING_AGENT_KERNEL_OWN_GROUP"] = "1"
         self.runner = runner
 
     def start(self) -> None:
@@ -166,6 +169,72 @@ class LocalKernel:
                 raise frame
             return frame
 
+    def _start_rpc(
+        self,
+        context: CallContext,
+        task_id: str,
+        budget: int,
+        timeout: float,
+        recorder: InputRecorder,
+    ) -> tuple[dict[str, str], list[dict[str, Any]]]:
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            listener.bind(("127.0.0.1", 0))
+            listener.listen(1)
+        except BaseException:
+            listener.close()
+            raise
+        token = secrets.token_urlsafe(32)
+        log: list[dict[str, Any]] = []
+        counter = [0]
+
+        def serve() -> None:
+            try:
+                context.run(
+                    _rpc_server_loop,
+                    listener,
+                    task_id,
+                    log,
+                    counter,
+                    budget,
+                    self.tools,
+                    self.policy,
+                    token,
+                    context.cancelled,
+                    timeout,
+                    recorder,
+                )
+            except InterruptedError:
+                pass
+
+        worker = threading.Thread(target=serve, daemon=True)
+        self.rpc_workers.append((context, listener, worker))
+        worker.start()
+        return {
+            "endpoint": f"tcp://127.0.0.1:{listener.getsockname()[1]}",
+            "token": token,
+        }, log
+
+    def _send_cell(self, cell: dict[str, Any]) -> None:
+        request = json.dumps(cell).encode() + b"\n"
+        if len(request) > 1_048_576:
+            raise ValueError("Kernel cell exceeds request limit")
+        assert self.process is not None and self.process.stdin is not None
+
+        def send() -> None:
+            assert self.process is not None and self.process.stdin is not None
+            try:
+                self.process.stdin.write(request)
+                self.process.stdin.flush()
+            except Exception as exc:
+                try:
+                    self.frames.put(exc, timeout=1)
+                except queue.Full:
+                    self.cancelled.set()
+
+        self.writer = threading.Thread(target=send, daemon=True)
+        self.writer.start()
+
     def run(
         self,
         code: str,
@@ -184,6 +253,12 @@ class LocalKernel:
         recorder: InputRecorder | None = None
         context = CallContext()
         try:
+            if is_interrupted():
+                raise InterruptedError("Kernel execution cancelled before admission")
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    "Kernel execution deadline exceeded before admission"
+                )
             if self.cancelled.is_set():
                 raise RuntimeError(
                     "Kernel retired; explicitly reset to start a new interpreter"
@@ -218,68 +293,12 @@ class LocalKernel:
                 dispatch_override
                 or code_execution_rpc._dispatcher(task_id, self.policy),
             )
-            listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            try:
-                listener.bind(("127.0.0.1", 0))
-                listener.listen(1)
-            except BaseException:
-                listener.close()
-                raise
-            token = secrets.token_urlsafe(32)
-            log: list[dict[str, Any]] = []
-            counter = [0]
-
-            def serve() -> None:
-                try:
-                    context.run(
-                        _rpc_server_loop,
-                        listener,
-                        task_id,
-                        log,
-                        counter,
-                        budget,
-                        self.tools,
-                        self.policy,
-                        token,
-                        context.cancelled,
-                        timeout,
-                        recorder,
-                    )
-                except InterruptedError:
-                    pass
-
-            worker = threading.Thread(target=serve, daemon=True)
-            self.rpc_workers.append((context, listener, worker))
-            worker.start()
-            request = (
-                json.dumps({
-                    "id": call_id,
-                    "code": code,
-                    "reset": False,
-                    "rpc": {
-                        "endpoint": f"tcp://127.0.0.1:{listener.getsockname()[1]}",
-                        "token": token,
-                    },
-                }).encode()
-                + b"\n"
-            )
-            if len(request) > 1_048_576:
-                raise ValueError("Kernel cell exceeds request limit")
-            assert self.process is not None and self.process.stdin is not None
-
-            def send() -> None:
-                assert self.process is not None and self.process.stdin is not None
-                try:
-                    self.process.stdin.write(request)
-                    self.process.stdin.flush()
-                except Exception as exc:
-                    try:
-                        self.frames.put(exc, timeout=1)
-                    except queue.Full:
-                        self.cancelled.set()
-
-            self.writer = threading.Thread(target=send, daemon=True)
-            self.writer.start()
+            rpc, log = self._start_rpc(context, task_id, budget, timeout, recorder)
+            if self.cancelled.is_set() or is_interrupted():
+                raise InterruptedError("Kernel execution cancelled before dispatch")
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Kernel execution deadline exceeded before dispatch")
+            self._send_cell({"id": call_id, "code": code, "reset": False, "rpc": rpc})
             raw = self._receive(deadline)
             self._capture_children()
             if (
@@ -428,7 +447,7 @@ class LocalKernel:
                     if stream is not None and not stream.closed:
                         stream.close()
             # Receipts and code records remain; only ephemeral RPC modules go.
-            for name in ("runner.py", "forecast_tools.py", "hermes_tools.py"):
+            for name in ("runner.py", "forecast_tools.py", COMPAT_TOOLS_FILENAME):
                 (self.directory / name).unlink(missing_ok=True)
         finally:
             self.lock.release()
@@ -454,6 +473,7 @@ class KernelOwner:
         reset: bool,
         *,
         dispatch_override: Callable[[str, dict], str] | None = None,
+        backend: str = "local",
     ) -> dict[str, Any]:
         if type(reset) is not bool:
             raise ValueError("reset must be a boolean")
@@ -465,7 +485,7 @@ class KernelOwner:
             raise ValueError("timeout must be positive and finite")
         if type(budget) is not int or budget < 0:
             raise ValueError("max_tool_calls must be a nonnegative integer")
-        key = (tools, policy, mode)
+        key = (tools, policy, mode, backend)
         with self.lock:
             if self.closed:
                 raise RuntimeError("Execution owner is closed")
@@ -474,7 +494,7 @@ class KernelOwner:
                 self.kernel = None
             if self.kernel is not None and self.key != key:
                 raise RuntimeError("Kernel configuration changed; use reset=true")
-            if self.kernel is not None:
+            if self.kernel is not None and backend == "local":
                 from tools.code_execution_tool import (
                     _resolve_child_cwd,
                     _resolve_child_python,
@@ -488,8 +508,38 @@ class KernelOwner:
                     raise RuntimeError(
                         "Kernel interpreter or working directory changed; use reset=true"
                     )
+            if self.kernel is not None and backend != "local":
+                from tools import terminal_tool
+                from tools.code_kernel_remote import RemoteKernel
+
+                lookup = terminal_tool._resolve_container_task_id(task_id)
+                with terminal_tool._env_lock:
+                    current = terminal_tool._active_environments.get(lookup)
+                if (
+                    not isinstance(self.kernel, RemoteKernel)
+                    or current is not self.kernel.env
+                ):
+                    raise RuntimeError("Kernel environment changed; use reset=true")
+                if mode == "project" and self.kernel.cwd != current.cwd:
+                    raise RuntimeError(
+                        "Kernel working directory changed; use reset=true"
+                    )
             if self.kernel is None:
-                self.kernel = LocalKernel(self.home, tools, policy, mode)
+                if backend == "local":
+                    self.kernel = LocalKernel(self.home, tools, policy, mode)
+                else:
+                    from tools.code_kernel_remote import RemoteKernel
+                    from tools.environments.leases import acquire
+
+                    environment, lease = acquire(task_id)
+                    try:
+                        self.kernel = RemoteKernel(
+                            self.home, tools, policy, mode, environment
+                        )
+                        self.kernel.environment_lease = lease
+                    except BaseException:
+                        lease.release()
+                        raise
                 self.key = key
                 self.kernel.start()
             kernel = self.kernel

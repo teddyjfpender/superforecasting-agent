@@ -19,6 +19,9 @@ ROOT = Path(__file__).resolve().parents[1]
 # The stricter scope grows with ownership extractions. Legacy code still runs
 # the repository-wide encoding gate; no silent baseline hides new-layer errors.
 STRICT_PYTHON = (
+    "tools/code_kernel_remote.py",
+    "tools/code_kernel_supervisor.py",
+    "tools/environments/leases.py",
     "tools/code_calculations.py",
     "tools/code_kernel.py",
     "tools/code_kernel_runner.py",

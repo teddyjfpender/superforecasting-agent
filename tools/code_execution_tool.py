@@ -955,8 +955,7 @@ def execute_code(
         return tool_error("code_execution.kernel_mode must be per_call or session")
     if kernel_mode == "session":
         from tools.terminal_tool import _get_env_config
-        if _get_env_config()["env_type"] != "local":
-            return tool_error("Persistent remote kernels are not yet available; use kernel_mode=per_call")
+        backend = _get_env_config()["env_type"]
         if kernel_owner is None:
             return tool_error("Persistent execution requires an agent-owned session")
         selected = SANDBOX_ALLOWED_TOOLS if enabled_tools is None else frozenset(enabled_tools)
@@ -967,6 +966,7 @@ def execute_code(
                 forecast_commit_policy, _get_execution_mode(),
                 config.get("timeout", DEFAULT_TIMEOUT),
                 config.get("max_tool_calls", DEFAULT_MAX_TOOL_CALLS), reset,
+                backend=backend,
             ))
         except Exception as exc:
             from agent.redact import redact_sensitive_text
