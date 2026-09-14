@@ -40,3 +40,17 @@ Update this guide when entry points or ownership change. See the
 and [engineering backlog](../../TODO.md) for cross-package context.
 
 [↑ Parent directory](../README.md)
+
+## SQLite filesystem admission
+
+[sqlite_filesystem.py](sqlite_filesystem.py) resolves the containing Linux mount
+from fresh mountinfo on each database admission. [sqlite.py](sqlite.py) applies
+the shared journal policy for sessions, the forecast ledger and kanban. Known
+virtiofs/9p mounts use rollback journaling for new databases. An existing WAL
+database on such a mount fails closed with offline relocation guidance: opening
+another connection must never convert a live database's journal mode. Unknown
+mounts retain the reactive compatibility fallback.
+
+Regression coverage: `tests/test_storage_sqlite.py`,
+`tests/forecasting/test_cross_vm_sqlite.py` and
+`tests/forecasting/test_ledger_wal.py`.

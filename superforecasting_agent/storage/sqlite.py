@@ -5,6 +5,13 @@ import sqlite3
 import threading
 from typing import Optional
 
+from superforecasting_agent.storage.sqlite_filesystem import cross_vm_filesystem
+
+
+class UnsafeWalFilesystemError(sqlite3.OperationalError):
+    """Existing WAL state must be relocated offline, never downgraded live."""
+
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -108,7 +115,9 @@ def apply_wal_with_fallback(
 ) -> str:
     """Set ``journal_mode=WAL`` on ``conn``, falling back to DELETE on failure.
 
-    Returns the journal mode actually set (``"wal"`` or ``"delete"``).
+    Returns the actual journal mode, including ``memory`` for in-memory databases.
+    Known cross-VM mounts use rollback journaling; existing WAL files on those
+    mounts are refused without attempting a live journal-mode conversion.
 
     On WAL-incompatible filesystems (NFS, SMB, some FUSE), SQLite raises
     ``OperationalError("locking protocol")`` when setting WAL.  We fall
@@ -124,9 +133,33 @@ def apply_wal_with_fallback(
     Shared by :class:`SessionDB` and ``superforecasting_agent.runtime.kanban_db.connect`` so
     both databases get identical fallback behavior.
     """
+    database = conn.execute("PRAGMA database_list").fetchone()
+    if database and database[2] and cross_vm_filesystem(str(database[2])):
+        current = str(conn.execute("PRAGMA journal_mode").fetchone()[0]).lower()
+        if current == "wal":
+            raise UnsafeWalFilesystemError(
+                "Existing WAL database is on a cross-VM filesystem (virtiofs/9p). "
+                "Close all database users and relocate the profile onto a native volume; "
+                "no journal-mode change was attempted."
+            )
+        _log_wal_fallback_once(
+            db_label,
+            RuntimeError("cross-VM filesystem (virtiofs/9p)"),
+            mode=current if current in {"delete", "truncate", "persist"} else "delete",
+        )
+        if current in {"delete", "truncate", "persist"}:
+            return current
+        actual = conn.execute("PRAGMA journal_mode=DELETE").fetchone()
+        if not actual or str(actual[0]).lower() != "delete":
+            raise UnsafeWalFilesystemError(
+                "Could not establish safe rollback journaling on cross-VM filesystem"
+            )
+        return "delete"
     try:
-        conn.execute("PRAGMA journal_mode=WAL")
-        return "wal"
+        actual = conn.execute("PRAGMA journal_mode=WAL").fetchone()
+        if not actual:
+            raise sqlite3.OperationalError("SQLite did not report its journal mode")
+        return str(actual[0]).lower()
     except sqlite3.OperationalError as exc:
         msg = str(exc).lower()
         if not any(marker in msg for marker in _WAL_INCOMPAT_MARKERS):
@@ -137,7 +170,9 @@ def apply_wal_with_fallback(
         return "delete"
 
 
-def _log_wal_fallback_once(db_label: str, exc: Exception) -> None:
+def _log_wal_fallback_once(
+    db_label: str, exc: Exception, *, mode: str = "delete"
+) -> None:
     """Log a single WARNING per (process, db_label) about WAL fallback.
 
     Without this dedup, NFS users running kanban (which opens a fresh
@@ -150,10 +185,11 @@ def _log_wal_fallback_once(db_label: str, exc: Exception) -> None:
         _wal_fallback_warned_paths.add(db_label)
     logger.warning(
         "%s: WAL journal_mode unsupported on this filesystem (%s) — "
-        "falling back to journal_mode=DELETE (slower rollback-journal "
+        "using journal_mode=%s (slower rollback-journal "
         "mode; reduces concurrency but works on NFS/SMB/FUSE). See "
         "https://www.sqlite.org/wal.html for details. This warning "
         "fires once per process per database.",
         db_label,
         exc,
+        mode.upper(),
     )

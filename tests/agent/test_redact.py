@@ -707,3 +707,19 @@ class TestTerminalOutputRedaction:
         out = "CUSTOM_TOKEN=zzzopaque1234567890abcdef"
         red = redact_terminal_output(out, "printenv")
         assert red == out
+
+
+@pytest.mark.parametrize('key', ['BRAVE_API_KEY', 'sessionToken', 'UserPassword', 'clientApiKey'])
+@pytest.mark.parametrize('value', ['opaque-demo-value', b'bytes-secret', "quote'and\\slash", 'raw***still-secret'])
+def test_mapping_repr_and_exception_redaction(key, value):
+    import ast
+    from agent.redact import redact_sensitive_text, redact_terminal_output
+    source = repr({key: value, 'token_count': 17})
+    redacted = redact_sensitive_text(source, force=True)
+    parsed = ast.literal_eval(redacted)
+    assert parsed[key] == (b'***' if isinstance(value, bytes) else '***')
+    assert parsed['token_count'] == 17
+    assert redact_sensitive_text(source, force=True, code_file=True) == source
+    diagnostic = redact_terminal_output('ValueError: ' + source, force=True)
+    assert diagnostic == 'ValueError: ' + redacted
+    assert redact_terminal_output('E       ' + source, force=True) == 'E       ' + redacted

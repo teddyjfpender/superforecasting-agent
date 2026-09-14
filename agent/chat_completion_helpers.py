@@ -2020,6 +2020,7 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
         model_name = None
         role = "assistant"
         reasoning_parts: list = []
+        reasoning_details: list[dict[str, object]] = []
         usage_obj = None
         for chunk in stream:
             last_chunk_time["t"] = time.time()
@@ -2064,6 +2065,15 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                 reasoning_parts.append(reasoning_text)
                 _fire_first_delta()
                 agent._fire_reasoning_delta(reasoning_text)
+
+            # Retain provider signatures and opaque replay blocks, not just visible text.
+            from agent.reasoning_details import append_reasoning_detail
+            detail_delta = getattr(delta, "reasoning_details", None)
+            if detail_delta is None and isinstance(getattr(delta, "model_extra", None), dict):
+                detail_delta = delta.model_extra.get("reasoning_details")
+            if isinstance(detail_delta, (list, tuple)):
+                for detail in detail_delta:
+                    append_reasoning_detail(reasoning_details, detail)
 
             # Accumulate text content — fire callback only when no tool calls
             if delta and delta.content:
@@ -2212,6 +2222,8 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
             tool_calls=mock_tool_calls,
             reasoning_content=full_reasoning,
         )
+        if reasoning_details:
+            mock_message.reasoning_details = reasoning_details
         mock_choice = SimpleNamespace(
             index=0,
             message=mock_message,
