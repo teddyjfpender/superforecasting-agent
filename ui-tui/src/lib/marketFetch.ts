@@ -1,5 +1,5 @@
 import type { MarketSeries } from '../content/marketProviders.js'
-import type { RpcRequest } from '../protocol/generated.js'
+import type { ObservationComparison, RpcRequest } from '../protocol/generated.js'
 import type { DataEvents, MarketProviderStatus, MarketSeriesRef } from '../protocol/generated.js'
 
 // The connected backend owns all fetching, credentials and parsing. This
@@ -12,6 +12,8 @@ export const DEFAULT_SERVER_SIDE = ['yahoo', 'frankfurter', 'bea', 'coingecko', 
 // a field-for-field drop-in) with the display-only columns kept optional. THE
 // LAW holds: a missing measurement is `null`, never a fabricated 0.
 export interface MarketQuote {
+  comparison?: ObservationComparison | null
+  last_movement?: ObservationComparison | null
   asOf: number // epoch ms, 0 if unknown
   retrieved_at?: string | null
   refresh_seconds?: number

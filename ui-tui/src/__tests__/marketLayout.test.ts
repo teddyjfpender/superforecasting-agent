@@ -35,3 +35,7 @@ describe('Markets width allocation', () => {
     }
   })
 })
+
+it('retains absolute CHG alongside NAME and LAST on a narrow terminal', () => {
+  expect(marketColumns(40, false).columns.map(column => column.key)).toEqual(['name', 'last', 'chg'])
+})

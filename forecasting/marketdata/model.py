@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 from protocol.data_desk import DataEvent as DataEvent
 from protocol.data_desk import DataEvents as DataEvents
 from protocol.data_desk import DatedValue as DatedValue
+from protocol.data_desk import ObservationComparison
 
 
 def num(value: object) -> float | None:
@@ -138,6 +139,8 @@ class Quote:
     volume: float | None = None
     week52High: float | None = None
     week52Low: float | None = None
+    comparison: ObservationComparison | None = None
+    last_movement: ObservationComparison | None = None
     catalog_id: str | None = None
     retrieved_at: str | None = None
     published_at: str | None = None
@@ -171,6 +174,10 @@ class Quote:
             "volume": self.volume,
             "week52High": self.week52High,
             "week52Low": self.week52Low,
+            "comparison": self.comparison.model_dump() if self.comparison else None,
+            "last_movement": self.last_movement.model_dump()
+            if self.last_movement
+            else None,
             "catalog_id": self.catalog_id,
             "retrieved_at": self.retrieved_at,
             "published_at": self.published_at,

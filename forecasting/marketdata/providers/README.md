@@ -56,3 +56,24 @@ canonical suite before pushing, as required by the repository contribution guide
 
 See the [package overview](../README.md) and
 [source qualification notes](../../../docs/verification/data-desk/qualification.md).
+
+## Change references
+
+Use `observation_quote()` on the full fetched history **before** chart truncation.
+The default `change_basis: previous_observation` compares the latest two distinct,
+non-missing source periods, however far apart. Equal releases remain zero. Price
+feeds keep their source-defined previous-close comparison; future weather values
+must not be treated as observed changes.
+
+For stepwise policy targets only, declare `change_basis: last_transition` in the
+catalog. The helper finds the latest adjacent unequal readings and preserves both
+values and dates in `comparison`; the TUI labels these changes with `*`. This is
+an observed transition, not an inferred policy meeting date. Ordinary series can
+expose `last_movement` separately without replacing an unchanged period delta.
+
+Fetch enough history to support the declared comparison. Backfill is bounded:
+BCB uses dated windows of one then ten years after its latest-20 endpoint; BIS
+uses 120 then 600 observations; keyed FRED expands 30 → 366 → 3660 observations.
+An unavailable transition stays null. Failed or inconsistent history backfills
+must preserve the latest valid measurement. Test sparse periods, equal values,
+conflicting duplicates, zero baselines and backfill failures.

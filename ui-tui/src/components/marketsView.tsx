@@ -9,7 +9,7 @@ import type { GatewayClient } from '../gatewayClient.js'
 import { catalogSeries, deskConfig, saveDeskFields } from '../lib/dataDesk.js'
 import { type FieldSpec, rankItems } from '../lib/fuzzyRank.js'
 import { statusGlyph } from '../lib/icons.js'
-import { changeReference } from '../lib/marketChange.js'
+import { changeReference, formatMarketChange, lastMovement } from '../lib/marketChange.js'
 import { fetchQuotes, type MarketQuote } from '../lib/marketFetch.js'
 import { marketColumns, marketTopicWindow } from '../lib/marketLayout.js'
 import { type MarketConfig, type QuoteCache, quoteKey } from '../lib/marketStore.js'
@@ -80,8 +80,10 @@ const fmtNum = (v: null | number | undefined, unit?: string): string => {
   return v.toFixed(4)
 }
 
-const fmtSigned = (v: null | number): string => (v === null ? '—' : `${v >= 0 ? '+' : ''}${fmtNum(v)}`)
-const fmtPct = (v: null | number): string => (v === null ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`)
+const fmtSigned = formatMarketChange
+
+const fmtPct = (v: null | number): string =>
+  v === null ? '—' : Math.abs(v) < 0.01 ? `${formatMarketChange(v)}%` : `${v > 0 ? '+' : ''}${v.toFixed(2)}%`
 
 const fmtVol = (v?: null | number): string => {
   if (v === null || v === undefined) {
@@ -1380,7 +1382,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
             <>
               <Text color={t.color.muted}>
                 {' '}
-                {fetching ? 'updating…' : hasContent ? 'live quotes' : 'no providers'} ·{' '}
+                {fetching ? 'updating…' : hasContent ? 'latest data' : 'no providers'} ·{' '}
               </Text>
               <Text color={t.color.text}>
                 {hasContent
@@ -1546,7 +1548,10 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   const cellText = (key: string, q: MarketQuote | undefined, ser: MarketSeries): { color: string; text: string } => {
     switch (key) {
       case 'chg':
-        return { color: cellColor(q?.change ?? null), text: q ? fmtSigned(q.change) : '—' }
+        return {
+          color: cellColor(q?.change ?? null),
+          text: q ? `${fmtSigned(q.change)}${q.comparison?.basis === 'last_transition' ? '*' : ''}` : '—'
+        }
       case 'last': {
         const events = ser.catalog_id ? eventCacheRef.current[ser.catalog_id] : undefined
 
@@ -1567,7 +1572,9 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
       case 'pct':
         return {
           color: cellColor(q?.changePct ?? null),
-          text: q ? `${dirGlyph(q.changePct)} ${fmtPct(q.changePct)}` : '—'
+          text: q
+            ? `${dirGlyph(q.changePct)} ${fmtPct(q.changePct)}${q.comparison?.basis === 'last_transition' ? '*' : ''}`
+            : '—'
         }
 
       case 'sym':
@@ -1620,7 +1627,11 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
           </Text>
         ) : null}
       </Box>
-      <Text color={sem.rule}>{'─'.repeat(avail)}</Text>
+      <Text color={sem.subtle} wrap="truncate-end">
+        {sortedRows.some(row => row.quote?.comparison?.basis === 'last_transition')
+          ? 'CHG: prior period · * last observed move'
+          : 'CHG: prior available period'}
+      </Text>
       <Box flexDirection="column">
         {sortedRows.length === 0 ? (
           <Text color={t.color.muted} wrap="wrap">
@@ -1741,7 +1752,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
           ) : null}
         </Box>
       ) : s ? (
-        <Box flexDirection="column">
+        <Box flexDirection="column" flexShrink={0}>
           <Text bold color={t.color.text} wrap="truncate-end">
             {q?.name || s.name}
           </Text>
@@ -1778,6 +1789,12 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
             </Text>
           ) : null}
 
+          {q && lastMovement(q) ? (
+            <Text color={sem.subtle} wrap="wrap">
+              {lastMovement(q)}
+            </Text>
+          ) : null}
+
           {chart.length ? (
             <Box flexDirection="column" marginTop={1}>
               {chart.map((line, i) => (
@@ -1797,18 +1814,22 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
             <Text color={sem.rule}>{'─'.repeat(chartW)}</Text>
           </Box>
           <Box flexDirection="column">
-            {statRow('Last', fmtNum(q?.value ?? null, s.unit), 'Prev', fmtNum(q?.prevClose ?? null))}
-            {statRow('Day Hi', fmtNum(q?.dayHigh ?? null), 'Day Lo', fmtNum(q?.dayLow ?? null))}
-            {statRow('52w Hi', fmtNum(q?.week52High ?? null), '52w Lo', fmtNum(q?.week52Low ?? null))}
-            {statRow(
-              '% Hi',
-              fromHigh != null ? fmtPct(fromHigh) : '—',
-              '% Lo',
-              fromLow != null ? fmtPct(fromLow) : '—',
-              fromHigh != null ? cellColor(fromHigh) : undefined,
-              fromLow != null ? cellColor(fromLow) : undefined
-            )}
-            {statRow('Volume', q ? fmtVol(q.volume) : '—', 'As of', q ? relTime(q.asOf) : '—')}
+            {!q?.kind || q.kind === 'quote' ? (
+              <>
+                {statRow('Last', fmtNum(q?.value ?? null, s.unit), 'Prev', fmtNum(q?.prevClose ?? null))}
+                {statRow('Day Hi', fmtNum(q?.dayHigh ?? null), 'Day Lo', fmtNum(q?.dayLow ?? null))}
+                {statRow('52w Hi', fmtNum(q?.week52High ?? null), '52w Lo', fmtNum(q?.week52Low ?? null))}
+                {statRow(
+                  '% Hi',
+                  fromHigh != null ? fmtPct(fromHigh) : '—',
+                  '% Lo',
+                  fromLow != null ? fmtPct(fromLow) : '—',
+                  fromHigh != null ? cellColor(fromHigh) : undefined,
+                  fromLow != null ? cellColor(fromLow) : undefined
+                )}
+                {statRow('Volume', q ? fmtVol(q.volume) : '—', 'As of', q ? relTime(q.asOf) : '—')}
+              </>
+            ) : null}
             {q?.kind && q.kind !== 'quote' ? (
               <>
                 <Text color={sem.subtle}>

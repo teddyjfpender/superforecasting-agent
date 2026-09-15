@@ -26,6 +26,7 @@ from typing import Callable
 from forecasting.marketdata.catalog import load_catalog
 from forecasting.marketdata.keys import resolve_key as _resolve_key
 from forecasting.marketdata.model import DataEvents, Quote, SeriesRef, epoch_ms
+from forecasting.marketdata.parsing import compare_observations
 from forecasting.marketdata.provider import BatchPartitioner, Provider, ProviderFailure
 from forecasting.marketdata.providers.bcb import BcbProvider
 from forecasting.marketdata.providers.bea import BeaProvider
@@ -284,7 +285,10 @@ class MarketDataService:
                             revision_policy=entry.revision_policy,
                             refresh_seconds=entry.refresh_seconds,
                         )
-                    result.append(replace(value, **metadata))
+                    bound = replace(value, **metadata)
+                    if bound.comparison is None and bound.kind in {"observation", "reanalysis", "estimate"}:
+                        bound = compare_observations(bound, bound.dated_history, entry.change_basis if entry else "previous_observation")
+                    result.append(bound)
                 return result
 
             ttl = (

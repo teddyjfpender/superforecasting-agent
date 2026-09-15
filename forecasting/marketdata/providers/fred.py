@@ -38,6 +38,7 @@ the ``fetch`` boundary, where "today" enters.
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import replace
 from datetime import date
@@ -56,6 +57,7 @@ from forecasting.marketdata.model import (
 from forecasting.marketdata.provider import (
     IndependentSeries,
     JsonGetter,
+    ProviderFailure,
     TextGetter,
     default_get_json,
     default_get_text,
@@ -133,13 +135,18 @@ def _finalize(
     # FRED dates identify observation periods, never publication or vintage.
     # Bound known monthly/quarterly/yearly series using the catalog cadence.
     from forecasting.marketdata.catalog import load_catalog
-    from forecasting.marketdata.parsing import period_bounds
+    from forecasting.marketdata.parsing import compare_observations, period_bounds
 
     entry = next(
         (item for item in load_catalog().series if item.id == series.catalog_id), None
     )
     dated = []
-    for day, measurement in window:
+    comparison_rows = list(window)
+    if last:
+        changed = next((i for i in range(len(deduped) - 2, -1, -1) if deduped[i][1] != last[1]), None)
+        if changed is not None and changed < len(deduped) - len(window):
+            comparison_rows = deduped[changed:changed + 2] + comparison_rows
+    for day, measurement in dict(comparison_rows).items():
         if not epoch_ms(day):
             continue
         period = day
@@ -164,13 +171,13 @@ def _finalize(
         asOf=as_of,
         unit=series.unit,
         history=history,
-        dated_history=dated,
+        dated_history=dated[-_HISTORY_LIMIT:],
     )
     if as_of_reference is not None and last is not None and value is not None:
         quote = _apply_missing_observation_rule(
             quote, [d for d, _ in deduped], as_of_reference
         )
-    return quote
+    return compare_observations(quote, dated)
 
 
 def parse_fred(
@@ -226,11 +233,11 @@ class FredProvider(IndependentSeries):
         self._get_json = get_json or default_get_json
         self._get_text = get_text or default_get_text
 
-    def _json_url(self, symbol: str, api_key: str) -> str:
+    def _json_url(self, symbol: str, api_key: str, limit: int = _HISTORY_LIMIT) -> str:
         return (
             "https://api.stlouisfed.org/fred/series/observations"
             f"?series_id={_urlquote(symbol, safe='')}&api_key={api_key}"
-            f"&file_type=json&sort_order=desc&limit={_HISTORY_LIMIT}"
+            f"&file_type=json&sort_order=desc&limit={limit}"
         )
 
     def _csv_url(self, symbol: str) -> str:
@@ -243,11 +250,29 @@ class FredProvider(IndependentSeries):
         quotes: list[Quote] = []
         for s in series:
             if api_key:
-                payload = self._get_json(
-                    self._json_url(s.symbol, api_key),
-                    headers={"User-Agent": f"python-httpx/{httpx.__version__}"},
-                )
-                quotes.append(parse_fred(payload, s, as_of_reference=reference))
+                value = None
+                for limit in (_HISTORY_LIMIT, 366, 3660):
+                    try:
+                        payload = self._get_json(
+                            self._json_url(s.symbol, api_key, limit),
+                            headers={"User-Agent": f"python-httpx/{httpx.__version__}"},
+                        )
+                        candidate = parse_fred(payload, s, as_of_reference=reference)
+                    except ProviderFailure:
+                        if value is None:
+                            raise
+                        logging.getLogger(__name__).warning(
+                            "FRED history unavailable for %s; retaining latest measurement", s.symbol
+                        )
+                        break
+                    if value is not None and (candidate.value != value.value or candidate.asOf != value.asOf):
+                        break
+                    value = candidate
+                    observations = payload.get("observations", []) if isinstance(payload, dict) else []
+                    if (value.comparison is not None and (value.change != 0 or value.last_movement is not None)) or len(observations) < limit:
+                        break
+                assert value is not None
+                quotes.append(value)
             else:
                 # FRED's public edge stalls with our custom product User-Agent.
                 # Identify the actual HTTP client; keep bounded, verified transport.

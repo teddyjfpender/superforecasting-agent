@@ -11,9 +11,9 @@ export interface MarketColumn {
 export function marketColumns(available: number, hasVolume: boolean) {
   const columns: MarketColumn[] = [
     { key: 'sym', label: 'SYMBOL', align: 'left', w: 9 },
-    { key: 'name', label: 'NAME', align: 'left', w: 18 },
-    { key: 'last', label: 'LAST', align: 'right', w: 12 },
-    { key: 'chg', label: 'CHG', align: 'right', w: 11 },
+    { key: 'name', label: 'NAME', align: 'left', w: available < 54 ? 12 : 18 },
+    { key: 'last', label: 'LAST', align: 'right', w: available < 54 ? 9 : 12 },
+    { key: 'chg', label: 'CHG', align: 'right', w: available < 54 ? 9 : 11 },
     { key: 'pct', label: 'CHG%', align: 'right', w: 10 },
     { key: 'vol', label: 'VOL', align: 'right', w: 10 }
   ]
@@ -21,7 +21,7 @@ export function marketColumns(available: number, hasVolume: boolean) {
   const keep = new Set<string>()
   let used = 2 // selection marker
 
-  for (const key of ['name', 'last', 'pct', 'chg', 'sym', ...(hasVolume ? ['vol'] : [])]) {
+  for (const key of ['name', 'last', 'chg', 'pct', 'sym', ...(hasVolume ? ['vol'] : [])]) {
     const column = columns.find(item => item.key === key)!
 
     if (used + column.w + 1 <= available) {

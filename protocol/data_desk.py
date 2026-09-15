@@ -74,6 +74,17 @@ class DataLocation(CatalogModel):
     timezone: str = "UTC"
 
 
+ChangeBasis = Literal["previous_observation", "last_transition"]
+
+
+class ObservationComparison(CatalogModel):
+    basis: ChangeBasis
+    previous_period: str
+    previous_value: float = Field(allow_inf_nan=False)
+    current_period: str
+    current_value: float = Field(allow_inf_nan=False)
+
+
 class DataSeries(CatalogModel):
     id: str
     provider: str
@@ -97,6 +108,7 @@ class DataSeries(CatalogModel):
     )
     refresh_seconds: int = Field(default=3600, ge=30)
     expected_lag_seconds: int | None = Field(default=None, ge=0)
+    change_basis: ChangeBasis = "previous_observation"
     history_points: int = Field(default=24, ge=0, le=366)
     tags: tuple[str, ...] = ()
     line: str | None = None

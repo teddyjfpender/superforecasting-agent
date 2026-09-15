@@ -22,6 +22,7 @@ from protocol.data_desk import (
     DeskPreview,
     DeskSavedEvent,
     DeskSelection,
+    ObservationComparison,
 )
 from protocol.types import WireModel, wire_optional
 
@@ -111,6 +112,8 @@ class Quote(WireModel):
     volume: float | None
     week52High: float | None
     week52Low: float | None
+    comparison: ObservationComparison | None = None
+    last_movement: ObservationComparison | None = None
     catalog_id: str | None = None
     retrieved_at: str | None = None
     published_at: str | None = None
