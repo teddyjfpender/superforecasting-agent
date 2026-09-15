@@ -1,9 +1,10 @@
 # Data-desk source fixtures
 
-These small public API responses were captured on 14 September 2026 through the
+These small public API responses were captured on 14–15 September 2026 through the
 same adapters used by the data desk. Each file records the requested series,
 public request URL, capture time, catalog revision, raw response, and expected
-latest value and history length. They contain no credentials.
+latest value and history length. The refreshed BCB/BIS captures also pin the
+source periods and values used for the last policy-rate transition. They contain no credentials.
 
 The replay tests in
 [`test_data_desk_source_fixtures.py`](../../forecasting/test_data_desk_source_fixtures.py)

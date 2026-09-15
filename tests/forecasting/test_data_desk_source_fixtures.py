@@ -71,4 +71,7 @@ def test_captured_source_response_retains_meaning_and_history(provider):
     assert len(quote.dated_history) == fixture["expected_points"]
     assert all(point.published_at is None for point in quote.dated_history)
     assert quote.published_at is None
+    if "expected_comparison" in fixture:
+        assert quote.comparison is not None
+        assert quote.comparison.model_dump() == fixture["expected_comparison"]
     assert list(requests) == []
