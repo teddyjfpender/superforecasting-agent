@@ -120,3 +120,30 @@ def test_transport_blocks_redirects_before_sending_and_caps_body(monkeypatch):
     assert seen == ['https://example.org/redirect']
     with pytest.raises(ValueError, match='budget'):
         fetch_public_text('https://example.org/large', is_safe_url=url_safety.is_safe_url)
+
+
+def test_article_candidates_do_not_join_other_stories_and_remove_page_furniture():
+    html = f'<main><article><div class="article-body"><h2>Decision</h2><p>{PARAGRAPH}</p><div class="ad-slot">BUY NOW</div><div class="related-stories">Other headlines</div><ul><li>First reason</li></ul></div></article><article><p>Unrelated story.</p></article></main>'
+    result = extract_article(html, "https://example.org/story")
+    assert "## Decision" in result.text
+    assert "- First reason" in result.text
+    for noise in ("BUY NOW", "Other headlines", "Unrelated story"):
+        assert noise not in result.text
+
+
+def test_split_body_sections_remain_in_the_same_article():
+    html = f'<article><div class="post-content"><p>{PARAGRAPH}</p></div><div class="post-content"><p>Final paragraph.</p></div></article>'
+    assert "Final paragraph." in extract_article(html, "https://example.org/story").text
+
+
+def test_verified_bbc_and_guardian_bodies_exclude_surrounding_metadata():
+    bbc = f'<main><div data-testid="metadata">Metadata</div><div data-testid="rich-text"><p>{PARAGRAPH}</p></div><div data-testid="subheadline"><h2>Context</h2></div><div data-testid="rich-text"><p>Final paragraph.</p></div><div data-testid="topic-list">Related topics</div></main>'
+    result = extract_article(bbc, "https://www.bbc.co.uk/news/articles/example")
+    assert "Final paragraph." in result.text
+    assert "## Context" in result.text
+    assert "Metadata" not in result.text
+    assert "Related topics" not in result.text
+    guardian = f'<article>Share controls<div class="article-body-viewer-selector"><p>{PARAGRAPH}</p></div>More topics</article>'
+    result = extract_article(guardian, "https://www.theguardian.com/world/story")
+    assert "Share controls" not in result.text
+    assert "More topics" not in result.text

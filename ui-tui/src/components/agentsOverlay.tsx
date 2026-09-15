@@ -174,8 +174,8 @@ export function OverlayScrollbar({
   const total = Math.max(vp, s?.getScrollHeight() ?? vp)
   const scrollable = total > vp
   const thumb = scrollable ? Math.max(1, Math.round((vp * vp) / total)) : vp
-  const travel = Math.max(1, vp - thumb)
-  const pos = Math.max(0, (s?.getScrollTop() ?? 0) + (s?.getPendingDelta() ?? 0))
+  const travel = Math.max(0, vp - thumb)
+  const pos = Math.min(total - vp, Math.max(0, (s?.getScrollTop() ?? 0) + (s?.getPendingDelta() ?? 0)))
   const thumbTop = scrollable ? Math.round((pos / Math.max(1, total - vp)) * travel) : 0
   const below = Math.max(0, vp - thumbTop - thumb)
 
@@ -185,7 +185,7 @@ export function OverlayScrollbar({
   const trackColor = hover ? t.color.border : t.color.muted
 
   const jump = (row: number, offset: number) => {
-    if (!s || !scrollable) {
+    if (!s || !scrollable || !travel) {
       return
     }
 
@@ -195,6 +195,7 @@ export function OverlayScrollbar({
   return (
     <Box
       flexDirection="column"
+      height={vp}
       onMouseDown={(e: { localRow?: number }) => {
         const row = Math.max(0, Math.min(vp - 1, e.localRow ?? 0))
         const off = row >= thumbTop && row < thumbTop + thumb ? row - thumbTop : Math.floor(thumb / 2)
@@ -207,6 +208,7 @@ export function OverlayScrollbar({
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       onMouseUp={() => setGrab(null)}
+      overflow="hidden"
       width={1}
     >
       {!scrollable ? (

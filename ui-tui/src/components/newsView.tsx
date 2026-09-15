@@ -30,6 +30,7 @@ import type { Theme } from '../theme.js'
 
 import { AddFeedModal } from './addFeedModal.js'
 import { type FooterChip, FooterChips } from './footerChips.js'
+import { Md } from './markdown.js'
 import { NewsStarterModal } from './newsStarterModal.js'
 
 export const openNewsView = () => patchOverlayState({ news: true })
@@ -82,7 +83,7 @@ const relTime = (ms: number): string => {
   const m = Math.floor(diff / 60_000)
 
   if (m < 1) {
-    return 'just now'
+    return 'now'
   }
 
   if (m < 60) {
@@ -790,8 +791,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
   }, [gw, selectedLink])
   const failedSources = Object.values(cacheRef.current).filter(entry => entry.error).length
 
-  const usingArticle =
-    articleBody?.status === 'article' && articleBody.text.length > (selectedArticle?.content?.length ?? 0)
+  const usingArticle = articleBody?.status === 'article' && Boolean(articleBody.text.trim())
 
   const readerText = usingArticle
     ? articleBody!.text
@@ -1017,7 +1017,15 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
         READER{reading ? ' · loading…' : usingArticle ? ' · article' : ' · feed'}
       </Text>
       {selectedArticle ? (
-        <ScrollBox flexDirection="column" flexGrow={1} marginTop={1} minHeight={0} ref={readerRef}>
+        <ScrollBox
+          decstbm={false}
+          flexDirection="column"
+          flexShrink={0}
+          height={Math.max(1, contentHeight - 2)}
+          marginTop={1}
+          minHeight={0}
+          ref={readerRef}
+        >
           <Text bold color={t.color.text} wrap="wrap">
             {selectedArticle.title}
           </Text>
@@ -1030,9 +1038,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
           </Text>
           {readerText ? (
             <Box marginTop={1}>
-              <Text color={t.color.text} wrap="wrap">
-                {readerText}
-              </Text>
+              <Md cols={Math.max(12, Math.floor((width - railWidth - 2) / 2) - 1)} compact t={t} text={readerText} />
             </Box>
           ) : null}
           {selectedArticle.link ? (
@@ -1138,7 +1144,15 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
   )
 
   return (
-    <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
+    <Box
+      alignItems="stretch"
+      flexDirection="column"
+      flexGrow={1}
+      minHeight={0}
+      overflow="hidden"
+      paddingX={1}
+      paddingY={1}
+    >
       {header}
       <Box flexDirection="row" flexShrink={0} height={contentHeight}>
         {rail}

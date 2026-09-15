@@ -15,7 +15,8 @@ import { OverlayScrollbar } from './agentsOverlay.js'
 // stack the overlay LAST, trap the keyboard (if (modalOpen) return in useInput),
 // and gate the still-visible body's MOUSE handlers (onClick/onSelect) while open.
 
-const clip = (value: string, max: number): string => (value.length > max ? `${value.slice(0, Math.max(0, max - 1))}…` : value)
+const clip = (value: string, max: number): string =>
+  value.length > max ? `${value.slice(0, Math.max(0, max - 1))}…` : value
 
 export function ModalOverlay({
   children,
@@ -27,7 +28,7 @@ export function ModalOverlay({
   scrollRef,
   t,
   tick = 0,
-  title,
+  title
 }: {
   children: ReactNode
   cols: number
@@ -52,14 +53,14 @@ export function ModalOverlay({
   const modalTop = Math.max(0, Math.floor((rows - modalH) / 2) - 1)
   const modalLeft = Math.max(0, Math.floor((cols - modalW) / 2))
 
-  // The content region's height = box minus border(2) + padding(2) + title(1) +
+  // The content region's height = box minus border(2) + padding(2) + title and gap(2) +
   // footer(1). A ScrollBox needs an EXPLICIT height (flexGrow doesn't resolve under
   // absolute positioning); forms render directly and manage their own layout.
-  const contentH = Math.max(3, modalH - 4 - (title ? 1 : 0) - (footerHint ? 1 : 0))
+  const contentH = Math.max(3, modalH - 4 - (title ? 2 : 0) - (footerHint ? 1 : 0))
 
   const body = scrollRef ? (
-    <Box flexDirection="row" flexShrink={0} height={contentH} minHeight={0}>
-      <ScrollBox decstbm={false} flexDirection="column" flexGrow={1} flexShrink={1} ref={scrollRef}>
+    <Box flexDirection="row" flexShrink={0} height={contentH} minHeight={0} overflow="hidden">
+      <ScrollBox decstbm={false} flexDirection="column" flexGrow={1} flexShrink={1} height={contentH} ref={scrollRef}>
         {children}
       </ScrollBox>
       <NoSelect flexShrink={0} marginLeft={1}>
@@ -80,6 +81,7 @@ export function ModalOverlay({
       flexDirection="column"
       height={modalH}
       left={modalLeft}
+      overflow="hidden"
       paddingX={2}
       paddingY={1}
       position="absolute"
@@ -91,7 +93,13 @@ export function ModalOverlay({
           {clip(title, Math.max(10, modalW - 6))}
         </Text>
       ) : null}
-      {title ? <Box flexGrow={1} flexShrink={1} marginTop={1} minHeight={0}>{body}</Box> : body}
+      {title ? (
+        <Box flexGrow={1} flexShrink={1} marginTop={1} minHeight={0}>
+          {body}
+        </Box>
+      ) : (
+        body
+      )}
       {footerHint ? (
         <Text color={t.color.muted} wrap="truncate-end">
           {footerHint}

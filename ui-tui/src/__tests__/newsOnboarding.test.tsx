@@ -13,7 +13,7 @@ const tick = (ms = 80) => new Promise(resolve => setTimeout(resolve, ms))
 const feed = { url: 'https://example.org/feed', title: 'Example · World', category: 'World', addedAt: 0, custom: false }
 
 const xml =
-  '<rss><channel><item><title>First source report</title><link>https://example.org/first</link><description>Teaser</description><content:encoded>' +
+  `<rss><channel><item><pubDate>${new Date().toUTCString()}</pubDate><title>First source report</title><link>https://example.org/first</link><description>Teaser</description><content:encoded>` +
   'Detailed publisher feed content. '.repeat(40) +
   '</content:encoded></item><item><title>Second source report</title><link>https://example.org/second</link><description>Second teaser</description></item></channel></rss>'
 
@@ -79,7 +79,7 @@ async function mount(cols: number, rows: number, configured = false) {
       }
 
       return {
-        text: 'Current article body. '.repeat(100),
+        text: 'Current article body. '.repeat(50),
         url: params.url,
         status: 'article',
         message: 'Publisher article text'
@@ -94,21 +94,28 @@ async function mount(cols: number, rows: number, configured = false) {
   Object.assign(stdout, { columns: cols, rows, isTTY: false })
   Object.assign(stdin, { isTTY: true, isRaw: false, setRawMode: () => undefined, ref: () => stdin, unref: () => stdin })
   let output = ''
+  const frames: string[] = []
   stdout.on('data', chunk => {
     output += String(chunk)
+    const frame = stripAnsi(String(chunk))
+
+    if (frame.includes('SOURCES') && frame.includes('READER')) {
+      frames.push(frame)
+    }
   })
 
   const instance = await render(
     <Box height={rows} width={cols}>
       <NewsView gw={{ request } as never} onClose={() => undefined} t={DARK_THEME} />
     </Box>,
-    { stdin, stdout, patchConsole: false, exitOnCtrlC: false }
+    { stdin, stdout, debug: true, patchConsole: false, exitOnCtrlC: false }
   )
 
   await tick()
 
   return {
     request,
+    frames,
     text: () => stripAnsi(output),
     fail: () => {
       fail = true
@@ -200,6 +207,36 @@ it('never displays a stale article response after moving to the next story', asy
     expect(app.text()).not.toContain('STALE BODY')
   } finally {
     app.release()
+    app.close()
+  }
+})
+
+it.each([
+  [80, 24],
+  [120, 40]
+])('keeps all news panes anchored through scrolling and source changes at %i×%i', async (cols, rows) => {
+  const app = await mount(cols, rows, true)
+
+  try {
+    await tick(650)
+    expect(app.frames.at(-1)).toContain('Current article body')
+    expect(app.frames.at(-1)).not.toContain('Detailed publisher feed content')
+    expect(app.frames.at(-1)).toContain('now')
+
+    for (const key of ['\u001b[6~', '\u001b[6~', '\u001b[B', '\u001b[C', '\u001b[C', '\u001b[D', '\u001b[5~']) {
+      await app.press(key)
+    }
+
+    expect(app.frames.length).toBeGreaterThan(3)
+    const headings = app.frames.map(frame => frame.split('\n').findIndex(line => line.includes('SOURCES')))
+    expect(new Set(headings).size).toBe(1)
+
+    for (const frame of app.frames) {
+      const lines = frame.trimEnd().split('\n')
+      expect(lines.length).toBeLessThanOrEqual(rows)
+      expect(lines[headings[0]]).toContain('READER')
+    }
+  } finally {
     app.close()
   }
 })
