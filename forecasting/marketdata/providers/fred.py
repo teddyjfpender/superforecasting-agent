@@ -43,6 +43,8 @@ from dataclasses import replace
 from datetime import date
 from urllib.parse import quote as _urlquote
 
+import httpx
+
 from forecasting.marketdata.model import (
     DatedValue,
     Quote,
@@ -51,8 +53,8 @@ from forecasting.marketdata.model import (
     epoch_ms,
     num,
 )
-from forecasting.marketdata.provider import IndependentSeries
 from forecasting.marketdata.provider import (
+    IndependentSeries,
     JsonGetter,
     TextGetter,
     default_get_json,
@@ -241,10 +243,18 @@ class FredProvider(IndependentSeries):
         quotes: list[Quote] = []
         for s in series:
             if api_key:
-                payload = self._get_json(self._json_url(s.symbol, api_key))
+                payload = self._get_json(
+                    self._json_url(s.symbol, api_key),
+                    headers={"User-Agent": f"python-httpx/{httpx.__version__}"},
+                )
                 quotes.append(parse_fred(payload, s, as_of_reference=reference))
             else:
-                csv_text = self._get_text(self._csv_url(s.symbol))
+                # FRED's public edge stalls with our custom product User-Agent.
+                # Identify the actual HTTP client; keep bounded, verified transport.
+                csv_text = self._get_text(
+                    self._csv_url(s.symbol),
+                    headers={"User-Agent": f"python-httpx/{httpx.__version__}"},
+                )
                 quotes.append(
                     parse_fred_csv(csv_text or "", s, as_of_reference=reference)
                 )

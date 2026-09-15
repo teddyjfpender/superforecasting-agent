@@ -171,6 +171,27 @@ afterEach(() => {
 })
 
 describe('Add data interaction', () => {
+  it('searches as you type and reviews indicator selection before saving', async () => {
+    const app = await mount(120, 40)
+
+    try {
+      await app.press('\t')
+      expect(app.text()).toContain('TOPICS')
+      await app.press('Germany')
+      expect(app.text()).toContain('Germany · Consumer inflation')
+      await app.press('\r')
+      expect(app.request.mock.calls.some(([method]) => method === 'market.selection.apply')).toBe(false)
+      await app.press('\u0013') // Ctrl+S reviews selected changes
+      expect(app.text()).toContain('1 additions')
+      await app.press('\u001b')
+      await app.press('\u001b')
+      expect(app.cancel).toHaveBeenCalledOnce()
+      expect(app.request.mock.calls.some(([method]) => method === 'market.selection.apply')).toBe(false)
+    } finally {
+      app.close()
+    }
+  })
+
   it.each([
     [120, 40],
     [80, 24]

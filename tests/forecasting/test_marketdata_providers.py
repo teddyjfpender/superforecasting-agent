@@ -497,3 +497,18 @@ def test_yahoo_provider_search_empty_query_and_error_payload_are_empty():
     prov = YahooProvider(get_json=lambda url, **kw: {"quotes": []})
     assert prov.search("   ") == []  # empty query → never even fetched
     assert prov.search("apple") == []  # empty result set
+
+
+def test_fred_requests_identify_the_real_http_client_without_custom_edge_header():
+    import httpx
+    from datetime import date
+    from forecasting.marketdata.providers.fred import FredProvider
+
+    calls = []
+    def get_text(url, **kwargs):
+        calls.append(kwargs)
+        return f"observation_date,UNRATE\n{date.today().isoformat()},4.1\n"
+
+    quotes = FredProvider(get_text=get_text).fetch([_fred("UNRATE")])
+    assert quotes[0].value == 4.1
+    assert calls[0]["headers"]["User-Agent"] == f"python-httpx/{httpx.__version__}"

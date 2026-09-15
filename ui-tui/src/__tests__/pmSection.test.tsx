@@ -524,12 +524,25 @@ describe('Prediction section inside the Data tape', () => {
     m.cleanup()
   })
 
-  it('→ expands a categorical event; sub-rows sit under an OUTCOME / BID·ASK header line', async () => {
+  it('horizontal arrows and Tab leave Prediction without expanding rows', async () => {
+    const m = await mount()
+    m.clear()
+    await m.press(`${ESC}[C`)
+    expect(m.text()).not.toContain('└')
+    await m.press(`${ESC}[D`)
+    expect(m.text()).toContain('NBA Champion')
+    m.clear()
+    await m.press('\t')
+    expect(m.text()).not.toContain('└')
+    m.cleanup()
+  })
+
+  it('Space expands a categorical event; sub-rows sit under an OUTCOME / BID·ASK header line', async () => {
     const m = await mount()
     // The '└' glyph + the BID·ASK header are unique to the EXPANDED outcome list.
     expect(m.text()).not.toContain('└')
     m.clear()
-    await m.press(`${ESC}[C`) // right arrow → expand the (first) NBA row
+    await m.press(' ') // Space expands the first NBA row
     const text = m.text()
     expect(text).toContain('└')
     // Every sub-value sits under a header that NAMES it — the operator caught
@@ -539,7 +552,7 @@ describe('Prediction section inside the Data tape', () => {
     expect(text).toContain('Nuggets')
     expect(text).toContain('Thunder')
     m.clear()
-    await m.press(`${ESC}[D`) // left arrow → collapse
+    await m.press(' ') // Space collapses without changing topics
     expect(m.text()).not.toContain('└')
     m.cleanup()
   })

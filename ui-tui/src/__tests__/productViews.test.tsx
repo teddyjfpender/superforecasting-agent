@@ -260,6 +260,12 @@ describe('AddProviderModal', () => {
     await tick(30)
     stdin.stream.write('\t')
     await tick(30)
+
+    for (let index = 0; index < 4; index += 1) {
+      stdin.stream.write('\u001b[B')
+      await tick(30)
+    }
+
     const text = normalize(stdout.text(), stripAnsi)
     instance.unmount?.()
     instance.cleanup?.()

@@ -10,6 +10,7 @@ import { catalogSeries, deskConfig, saveDeskFields } from '../lib/dataDesk.js'
 import { type FieldSpec, rankItems } from '../lib/fuzzyRank.js'
 import { statusGlyph } from '../lib/icons.js'
 import { fetchQuotes, type MarketQuote } from '../lib/marketFetch.js'
+import { marketColumns, marketTopicWindow } from '../lib/marketLayout.js'
 import { type MarketConfig, type QuoteCache, quoteKey } from '../lib/marketStore.js'
 import { loadModelCatalog, saveModelCatalog } from '../lib/modelStore.js'
 import { openExternalUrl } from '../lib/openExternalUrl.js'
@@ -864,7 +865,9 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   // Column sort (`o` cycles, `O` toggles, header click sorts). Composes ON TOP of
   // the `/` filter: sort the already-filtered `visibleRows`. Default = unsorted →
   // the loaded tape order is preserved.
-  const marketSort = useTableSort(MARKET_SORT_KEYS)
+  const hasVolume = visibleRows.some(row => row.quote?.volume != null && Number.isFinite(row.quote.volume))
+  const sortKeys = useMemo(() => MARKET_SORT_KEYS.filter(key => key !== 'vol' || hasVolume), [hasVolume])
+  const marketSort = useTableSort(sortKeys)
 
   const sortedRows = useMemo(
     () => sortRows(visibleRows, marketSort.state.key, marketSort.state.dir, marketSortValue),
@@ -1284,13 +1287,13 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
         return
       }
 
-      if (key.tab || key.rightArrow) {
+      if ((key.tab && !key.shift) || key.rightArrow) {
         setSel(0)
 
         return setActive(i => (i + 1) % Math.max(1, categories.length))
       }
 
-      if (key.leftArrow) {
+      if (key.leftArrow || (key.tab && key.shift)) {
         setSel(0)
 
         return setActive(i => (i - 1 + Math.max(1, categories.length)) % Math.max(1, categories.length))
@@ -1489,9 +1492,9 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
       />
     ) : null
 
-  const tabCount = cols >= 120 ? 5 : 3
-  const tabStart = Math.max(0, Math.min(active - Math.floor(tabCount / 2), categories.length - tabCount))
-  const visibleTabs = categories.slice(tabStart, tabStart + tabCount)
+  const topicWindow = marketTopicWindow(categories, active, Math.max(12, width - 22))
+  const tabStart = topicWindow.start
+  const visibleTabs = categories.slice(tabStart, topicWindow.end)
 
   const tabs = (
     <NoSelect flexShrink={0} marginBottom={1}>
@@ -1510,14 +1513,14 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
                 }
               }}
             >
-              {i > 0 ? <Text color={t.color.border}>{'  ·  '}</Text> : null}
+              {offset > 0 ? <Text color={t.color.border}>{'  ·  '}</Text> : null}
               <Text bold={i === active} color={i === active ? t.color.accent : t.color.muted}>
                 {cat}
               </Text>
             </Box>
           )
         })}
-        {categories.length > tabCount ? <Text color={t.color.muted}> ← → Topics</Text> : null}
+        {visibleTabs.length < categories.length ? <Text color={t.color.muted}> ← → Topics</Text> : null}
       </Box>
     </NoSelect>
   )
@@ -1534,39 +1537,8 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
 
   const cellColor = (v: null | number | undefined): string => dirColor(sem, v)
 
-  // Fixed columns packed from the left; the 1-month trend sparkline fills the
-  // leftover width so each row saturates the pane (overflow clips the trend,
-  // never the numbers, since the trend is last). CHG% leads with a ▲/▼ so
-  // direction reads without colour too.
-  const COLS: { align: 'left' | 'right'; key: string; label: string; w: number }[] = [
-    { align: 'left', key: 'sym', label: 'SYMBOL', w: 9 },
-    { align: 'left', key: 'name', label: 'NAME', w: 24 },
-    { align: 'right', key: 'last', label: 'LAST', w: 12 },
-    { align: 'right', key: 'chg', label: 'CHG', w: 11 },
-    { align: 'right', key: 'pct', label: 'CHG%', w: 10 },
-    { align: 'right', key: 'vol', label: 'VOL', w: 10 }
-  ]
-
-  // Keep columns by PRIORITY when the pane is tight (NAME/LAST/CHG% matter most),
-  // but render them in display order. So a narrow table still shows the essentials
-  // rather than just SYMBOL + LAST.
-  const PRIORITY = ['name', 'last', 'pct', 'chg', 'sym', 'vol']
-  const keep = new Set<string>()
-  let usedW = 2 // marker
-
-  for (const key of PRIORITY) {
-    const c = COLS.find(col => col.key === key)
-
-    if (c && usedW + c.w + 1 <= avail) {
-      keep.add(key)
-      usedW += c.w + 1
-    }
-  }
-
-  const keptCols = COLS.filter(c => keep.has(c.key))
-
-  const trendW = Math.max(0, avail - usedW)
-  const showTrend = trendW >= 10
+  const { columns: keptCols, trendWidth: trendW } = marketColumns(avail, hasVolume)
+  const showTrend = trendW > 0
 
   const cellText = (key: string, q: MarketQuote | undefined, ser: MarketSeries): { color: string; text: string } => {
     switch (key) {
@@ -1641,7 +1613,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
         })}
         {showTrend ? (
           <Text bold color={sem.heading}>
-            {pad('1MO', trendW, 'left')}
+            {pad('TREND', trendW, 'left')}
           </Text>
         ) : null}
       </Box>
@@ -1659,7 +1631,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
           windowed.map(({ quote, series }, i) => {
             const idx = listStart + i
             const on = idx === clampedSel
-            const trend = showTrend && quote?.history ? sparkline(quote.history, trendW) : ''
+            const trend = pad(showTrend && quote?.history ? sparkline(quote.history, trendW) : '', trendW, 'left')
 
             return (
               <Box
@@ -1776,6 +1748,17 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
             {q?.currency ? ` · ${q.currency}` : ''}
           </Text>
 
+          {providerStatus[s.provider]?.message ? (
+            <Text color={sem.subtle} wrap="wrap">
+              {providerStatus[s.provider].message} · r Retry · d Sources
+            </Text>
+          ) : q?.value == null ? (
+            <Text color={sem.subtle}>
+              {fetching
+                ? 'Retrieving source data…'
+                : 'No measurement returned. Press r to retry or d for source access.'}
+            </Text>
+          ) : null}
           <Box marginTop={1}>
             <Text bold color={t.color.text}>
               {fmtNum(q?.value ?? null, s.unit)}
@@ -1994,7 +1977,8 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   // quote tape has none), still sharing Filter / Models / Help / Close.
   const pmChips: FooterChip[] = [
     { k: '↑↓', label: 'Select' },
-    { k: '→', label: 'Expand' },
+    { k: '←→/Tab', label: 'Topics' },
+    { k: 'Space', label: 'Expand' },
     { k: '⏎', label: 'Open', run: pm.openMarket },
     { k: 'v', label: `Venue: ${pm.venue === 'all' ? 'All' : venueLabel(pm.venue)}`, run: pm.cycleVenue },
     { k: 'o', label: 'Sort', run: pm.cycleSort },

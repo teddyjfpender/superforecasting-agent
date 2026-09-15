@@ -223,7 +223,7 @@ def test_fred_parser_without_reference_never_ages():
 def test_fred_fetch_threads_today_and_blanks_a_dead_feed():
     # An old CSV fetched today (2026+) is far past a week → blanked to None.
     old_csv = _daily_csv_ending(date(2020, 1, 2), [10.0, 11.0])
-    prov = FredProvider(get_text=lambda url: old_csv)
+    prov = FredProvider(get_text=lambda url, **kwargs: old_csv)
     [q] = prov.fetch([_fred_series()])
     assert q.value is None
 
@@ -231,7 +231,7 @@ def test_fred_fetch_threads_today_and_blanks_a_dead_feed():
 def test_fred_fetch_recent_feed_keeps_value():
     today = date.today()
     recent = _daily_csv_ending(today, [70.0, 71.87])
-    prov = FredProvider(get_text=lambda url: recent)
+    prov = FredProvider(get_text=lambda url, **kwargs: recent)
     [q] = prov.fetch([_fred_series()])
     assert q.value == pytest.approx(71.87)
 

@@ -163,7 +163,7 @@ def test_service_routes_the_four_new_providers_with_real_parsers_no_network(monk
     # No key resolved → FRED takes the keyless CSV path (get_text).
     fred = FredProvider(
         get_json=lambda url, **kw: {"observations": []},
-        get_text=lambda url: "DATE,X\n2026-05-01,5.10\n2026-06-01,4.90\n",
+        get_text=lambda url, **kwargs: "DATE,X\n2026-05-01,5.10\n2026-06-01,4.90\n",
     )
     bls = BlsProvider(
         get_json=lambda url, **kw: {"Results": {"series": [{"seriesID": "CUUR0000SA0", "data": [{"period": "M05", "value": "320.1", "year": "2026"}]}]}}

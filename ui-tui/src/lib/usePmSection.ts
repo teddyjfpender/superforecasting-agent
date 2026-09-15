@@ -333,22 +333,20 @@ export function usePmSection(
       return true
     }
 
-    // ▸ expand / ◂ collapse — consumed on the PM tab even when the row can't
-    // expand, so arrow keys never leak into a category switch.
-    if (key.rightArrow || ch === ' ') {
+    // Horizontal arrows belong to the parent topic strip on every category.
+    // Space toggles a headline or collapses the selected outcome's parent.
+    if (ch === ' ') {
       if (selectedRow?.kind === 'headline' && pmExpandable(selectedRow.item)) {
         toggleExpand(selectedRow.id, !expanded.has(selectedRow.id))
+      } else if (selectedRow?.kind === 'outcome') {
+        toggleExpand(selectedRow.parentId, false)
       }
 
       return true
     }
 
-    if (key.leftArrow) {
-      if (selectedRow) {
-        toggleExpand(selectedRow.kind === 'headline' ? selectedRow.id : selectedRow.parentId, false)
-      }
-
-      return true
+    if (key.leftArrow || key.rightArrow) {
+      return false
     }
 
     if (ch === 'v') {

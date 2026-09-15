@@ -1,58 +1,58 @@
-# Market-data provider adapters
+# Adding a data provider
 
-Adapts economic, currency, equity and crypto sources to the market-data provider interface.
+This directory adapts external sources for the data desk. Providers own fetching
+and parsing; the shared service owns caching and dispatch. The TUI consumes the
+backend catalog—do not add a separate client-side provider list.
 
-## Ownership and boundaries
+## Implementation checklist
 
-Reject wrong-series fallback and ambiguous units or periods. Do not fabricate publication times from fetch times or silently treat revisions as first releases.
+1. **Qualify a useful measurement.** Check the official API, access terms, quotas,
+   stable series/entity IDs, units, observation periods and revision policy.
+   Start with a small, verified set rather than exposing an untested API wholesale.
+2. **Implement the adapter.** Follow [bcb.py](bcb.py) for a small example and the
+   [`Provider` interface](../provider.py): `name`, `needs_key` and
+   `fetch(series, *, api_key=None) -> list[Quote]`. Inject transport and clocks;
+   keep parsing independently callable. Reuse existing source parsers where suitable.
+3. **Use shared infrastructure.** Use bounded HTTP helpers and `ProviderFailure`
+   from [provider.py](../provider.py), plus observation helpers from
+   [parsing.py](../parsing.py). Choose batching deliberately: `IndependentSeries`
+   isolates one-request-per-series failures; `batch_key` supports grouped requests.
+   Keep alerts as events—see [nws.py](nws.py)—rather than inventing numeric quotes.
+4. **Register and describe it.** Register numeric adapters in
+   [`_default_providers()`](../service.py). Add provider metadata and exact series
+   bindings to [catalog.json](../catalog.json), reusing topic, region and kind IDs.
+   Advertise only implemented capabilities. Add starter membership only after
+   qualification; keep existing IDs stable. For credentials, declare `key_env`
+   and register the slot with the shared [API-key owner](../../api_keys.py).
+   Never write credentials or selections from the TUI.
+5. **Prove failure behavior.** Add captured, credential-free responses under
+   [tests/fixtures/data_desk](../../../tests/fixtures/data_desk/README.md) and
+   adapter tests under `tests/forecasting/`. Cover missing values, wrong identities
+   and units, malformed dates, conflicting duplicates, revisions and quota errors.
+   Record live qualification separately from deterministic fixture tests.
 
-## Start here
+## Non-negotiable semantics
 
-These are entry points and representative modules, not an exhaustive inventory.
+- Missing measurements stay `None`, never zero. Reject ambiguous source bindings.
+- Preserve observation periods; retrieval time is not publication or issue time.
+- Distinguish forecasts, observations, estimates and reanalysis. Retain revision
+  policy and original source provenance, including mirrored data.
+- Keep authentication, rate limits, invalid responses and no data distinguishable.
+  Never expose credential-bearing URLs in errors or fixtures.
+- Catalog display does **not** authorize forecast settlement.
 
-| File                             | Responsibility                                                                        |
-| -------------------------------- | ------------------------------------------------------------------------------------- |
-| [bea.py](bea.py) | BEA NIPA observations with quarterly/annual dated history. |
-| [bls.py](bls.py) | BLS exact-series parsing shared with source ingestion. |
-| [coingecko.py](coingecko.py) | Spot prices, source timestamps and absolute changes. |
-| [frankfurter.py](frankfurter.py) | FX history with independent dates per currency. |
-| [fred.py](fred.py) | FRED observations, including dated monthly/quarterly/annual periods. |
-| [stooq.py](stooq.py) | Daily OHLC CSV. |
-| [yahoo.py](yahoo.py) | Quotes, dated history and symbol discovery. |
+## Before submitting
 
-## Working in this directory
-
-Run checks from the repository root:
+From the repository root, with the development environment active:
 
 ```sh
 python3 scripts/dev.py check
 scripts/run_tests.sh tests/forecasting/
 ```
 
-Use the canonical runner for Python tests so isolation and environment settings
-match repository policy. Extend a regression around the changed contract; use
-controlled failures for retries, cancellation and interrupted writes. The full
-Python suite is required before pushing.
+Add new runtime owners to the strict check scope in `scripts/dev.py`. If shared
+wire schemas change, regenerate with `python3 -m protocol.codegen`. Run the full
+canonical suite before pushing, as required by the repository contribution guide.
 
-Update this guide when entry points or ownership change. See the
-[ownership map](../../../docs/architecture/ownership-map.md)
-and [engineering backlog](../../../TODO.md) for cross-package context.
-
-[↑ Parent directory](../README.md)
-
-## Global and regional measurements
-
-| Adapter | Contract |
-| --- | --- |
-| [country_indicators.py](country_indicators.py) | Existing World Bank/IMF parsers; annual periods and explicit estimate semantics. IMF access remains unqualified. |
-| [europe.py](europe.py) | Eurostat JSON-stat dimensions and ECB series identity, currency, and multiplier. |
-| [sdmx.py](sdmx.py) | ABS, BIS, and OECD CSV with pinned flow version, dimensions, units, and base period. |
-| [regional_statistics.py](regional_statistics.py) | SingStat table/row/unit binding and IBGE territory/variable/unit binding. |
-| [bcb.py](bcb.py) | BCB SGS dates and numeric values; future-effective values excluded from current observations. |
-| [weather.py](weather.py) | Existing Open-Meteo forecast, air quality, and reanalysis parsers with location/unit checks. |
-| [nws.py](nws.py) | Actual NWS alerts with area checks, duplicate detection, and explicit truncation. |
-
-Shared transport bounds bodies before parsing, spaces requests per host, and
-honors quota cooldowns. Authentication errors, rate limits, invalid measurements,
-and unavailable sources remain distinguishable. Do not log raw request exceptions:
-some upstream URLs contain credentials.
+See the [package overview](../README.md) and
+[source qualification notes](../../../docs/verification/data-desk/qualification.md).

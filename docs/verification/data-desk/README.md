@@ -62,3 +62,18 @@ the same starter twice leaves identical configuration. No live profile is used.
 
 The [qualification scope](qualification.md) distinguishes usable display coverage
 from conditional expansion and settlement authority.
+
+## Markets usability and recovery — 15 September
+
+The [read-only selected-series audit](2026-09-15-markets-recovery.json) returned
+values for all 200 selected numerical series across 14 providers. No profile
+credentials were loaded or changed. FRED's CSV endpoint timed out with the custom
+product User-Agent but returned data with httpx's standard client identification;
+the FRED adapter now uses the latter without changing TLS or response limits.
+This establishes the request-header trigger, not the internal cause at FRED's edge.
+
+Markets uses left/right and Tab for topics throughout, including Prediction.
+Space toggles prediction outcomes. Table width goes first to NAME, empty VOL
+columns are omitted, and the compact TREND column does not imply a one-month
+period for annual/monthly data. Add data follows the News modal's search, topic
+rail, results and detail layout; selections still require explicit review/apply.
