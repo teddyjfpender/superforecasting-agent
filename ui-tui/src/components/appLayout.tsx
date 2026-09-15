@@ -342,11 +342,7 @@ const ComposerPane = memo(function ComposerPane({
           sparse 3-item bar renders at the very bottom of the Home column instead. */}
       {landing ? null : <StatusRulePane at="top" composer={composer} status={status} />}
 
-      <Box
-        flexDirection="column"
-        marginTop={landing || ui.statusBar === 'top' ? 0 : 1}
-        position="relative"
-      >
+      <Box flexDirection="column" marginTop={landing || ui.statusBar === 'top' ? 0 : 1} position="relative">
         <FloatingOverlays
           cols={composer.cols}
           compIdx={composer.compIdx}
@@ -553,7 +549,15 @@ const MarketsViewPane = memo(function MarketsViewPane({ onAsk }: { onAsk: (quest
   const { gw } = useGateway()
   const ui = useStore($uiState)
 
-  return <MarketsView gw={gw} onAsk={onAsk} onClose={() => patchOverlayState({ markets: false })} sessionId={ui.sid ?? ''} t={ui.theme} />
+  return (
+    <MarketsView
+      gw={gw}
+      onAsk={onAsk}
+      onClose={() => patchOverlayState({ markets: false })}
+      sessionId={ui.sid ?? ''}
+      t={ui.theme}
+    />
+  )
 })
 
 const NewsViewPane = memo(function NewsViewPane() {
@@ -646,7 +650,6 @@ const StatusRulePane = memo(function StatusRulePane({
     </Box>
   )
 })
-
 
 export const AppLayout = memo(function AppLayout({
   actions,
@@ -925,7 +928,7 @@ export const AppLayout = memo(function AppLayout({
 
   return (
     <Shell {...shellProps}>
-      <Box flexDirection="column" flexGrow={1}>
+      <Box backgroundColor={ui.theme.color.canvas} flexDirection="column" flexGrow={1}>
         <PerfPane id="navbar">
           <NavBar />
         </PerfPane>
@@ -938,76 +941,76 @@ export const AppLayout = memo(function AppLayout({
           // longer double-handle keys/clicks. The overlay renders LAST as an
           // absolute ModalOverlay and floats on top.
           <>
-          <ViewErrorBoundary onRecover={recoverFromCrash} onReport={reportCrash} t={ui.theme}>
-          <Box flexDirection="row" flexGrow={1}>
-            {overlay.forecasts ? (
-              <PerfPane id="forecasts">
-                <ForecastsWorkspacePane />
-              </PerfPane>
-            ) : overlay.calibration ? (
-              <PerfPane id="calibration">
-                <CalibrationViewPane />
-              </PerfPane>
-            ) : overlay.alerts ? (
-              <PerfPane id="alerts">
-                <AlertsViewPane />
-              </PerfPane>
-            ) : overlay.help ? (
-              <PerfPane id="help">
-                <HelpViewPane />
-              </PerfPane>
-            ) : overlay.demoViz ? (
-              <PerfPane id="demoViz">
-                <DemoVizViewPane />
-              </PerfPane>
-            ) : overlay.hooks ? (
-              <PerfPane id="hooks">
-                <HooksViewPane />
-              </PerfPane>
-            ) : overlay.markets ? (
-              <PerfPane id="markets">
-                <MarketsViewPane
-                  onAsk={question => {
-                    patchOverlayState({ markets: false })
-                    actions.draftCommand(question)
-                  }}
-                />
-              </PerfPane>
-            ) : overlay.news ? (
-              <PerfPane id="news">
-                <NewsViewPane />
-              </PerfPane>
-            ) : overlay.messaging ? (
-              <PerfPane id="messaging">
-                <MessagingViewPane />
-              </PerfPane>
-            ) : overlay.calendar ? (
-              <PerfPane id="calendar">
-                <CalendarViewPane />
-              </PerfPane>
-            ) : overlay.obsidian ? (
-              <PerfPane id="docs">
-                <DocsViewPane onDraft={actions.draftCommand} />
-              </PerfPane>
-            ) : overlay.onboard ? (
-              <PerfPane id="onboard">
-                <QuestionOnboardPane />
-              </PerfPane>
-            ) : (
-              <PerfPane id="agents">
-                <AgentsOverlayPane />
-              </PerfPane>
-            )}
-          </Box>
-          </ViewErrorBoundary>
-          {/* The palette / cheat-sheet stacks LAST as an absolute overlay above
+            <ViewErrorBoundary onRecover={recoverFromCrash} onReport={reportCrash} t={ui.theme}>
+              <Box flexDirection="row" flexGrow={1}>
+                {overlay.forecasts ? (
+                  <PerfPane id="forecasts">
+                    <ForecastsWorkspacePane />
+                  </PerfPane>
+                ) : overlay.calibration ? (
+                  <PerfPane id="calibration">
+                    <CalibrationViewPane />
+                  </PerfPane>
+                ) : overlay.alerts ? (
+                  <PerfPane id="alerts">
+                    <AlertsViewPane />
+                  </PerfPane>
+                ) : overlay.help ? (
+                  <PerfPane id="help">
+                    <HelpViewPane />
+                  </PerfPane>
+                ) : overlay.demoViz ? (
+                  <PerfPane id="demoViz">
+                    <DemoVizViewPane />
+                  </PerfPane>
+                ) : overlay.hooks ? (
+                  <PerfPane id="hooks">
+                    <HooksViewPane />
+                  </PerfPane>
+                ) : overlay.markets ? (
+                  <PerfPane id="markets">
+                    <MarketsViewPane
+                      onAsk={question => {
+                        patchOverlayState({ markets: false })
+                        actions.draftCommand(question)
+                      }}
+                    />
+                  </PerfPane>
+                ) : overlay.news ? (
+                  <PerfPane id="news">
+                    <NewsViewPane />
+                  </PerfPane>
+                ) : overlay.messaging ? (
+                  <PerfPane id="messaging">
+                    <MessagingViewPane />
+                  </PerfPane>
+                ) : overlay.calendar ? (
+                  <PerfPane id="calendar">
+                    <CalendarViewPane />
+                  </PerfPane>
+                ) : overlay.obsidian ? (
+                  <PerfPane id="docs">
+                    <DocsViewPane onDraft={actions.draftCommand} />
+                  </PerfPane>
+                ) : overlay.onboard ? (
+                  <PerfPane id="onboard">
+                    <QuestionOnboardPane />
+                  </PerfPane>
+                ) : (
+                  <PerfPane id="agents">
+                    <AgentsOverlayPane />
+                  </PerfPane>
+                )}
+              </Box>
+            </ViewErrorBoundary>
+            {/* The palette / cheat-sheet stacks LAST as an absolute overlay above
               the still-mounted view body (ModalOverlay recipe), so the view stays
               visible around it — identical to the Home paths below. */}
-          {globalModal ? (
-            <PerfPane id="globalChrome">
-              <GlobalChromePane cols={composer.cols} onRun={actions.runCommand} rows={rows} />
-            </PerfPane>
-          ) : null}
+            {globalModal ? (
+              <PerfPane id="globalChrome">
+                <GlobalChromePane cols={composer.cols} onRun={actions.runCommand} rows={rows} />
+              </PerfPane>
+            ) : null}
           </>
         ) : (
           // Home is always a full-width conversation surface. Session history is

@@ -33,3 +33,25 @@ it('distinguishes forecast absence, missing baseline, and zero baseline', () => 
   expect(changeReference({ ...quote, changePct: null })).toContain('zero baseline')
   expect(changeReference({ ...quote, provider: 'coingecko' })).toContain('24 hours')
 })
+
+it('preserves tiny movements and displays genuine zero plainly', async () => {
+  const { formatMarketChange, lastMovement } = await import('../lib/marketChange.js')
+  expect(formatMarketChange(0)).toBe('0')
+  expect(formatMarketChange(0.00000012)).toBe('+1.20e-7')
+  expect(formatMarketChange(-0.00001)).toBe('-1.00e-5')
+  expect(formatMarketChange(null)).toBe('—')
+  expect(
+    lastMovement({
+      ...quote,
+      change: 0,
+      unit: '%',
+      last_movement: {
+        basis: 'last_transition',
+        previous_period: '2020-01-01',
+        previous_value: 2,
+        current_period: '2020-02-01',
+        current_value: 3
+      }
+    })
+  ).toContain('+1 pp on 2020-02-01')
+})

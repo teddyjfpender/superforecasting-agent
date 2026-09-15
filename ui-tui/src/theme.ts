@@ -1,6 +1,7 @@
 import { tuiEnvValue } from './lib/envAlias.js'
 
 export interface ThemeColors {
+  canvas?: string
   primary: string
   accent: string
   border: string
@@ -90,7 +91,7 @@ const ANSI_LIGHT_TARGET_LUMINANCE = 0.34
 const ANSI_LIGHT_MIN_SATURATION = 0.22
 const ANSI_MUTED_BUCKET = 245
 
-const ANSI_NORMALIZED_FOREGROUNDS: readonly (keyof ThemeColors)[] = [
+const ANSI_NORMALIZED_FOREGROUNDS: readonly Exclude<keyof ThemeColors, 'canvas'>[] = [
   'text',
   'label',
   'ok',
@@ -105,7 +106,11 @@ const ANSI_NORMALIZED_FOREGROUNDS: readonly (keyof ThemeColors)[] = [
   'shellDollar'
 ]
 
-const ANSI_MUTED_FOREGROUNDS: readonly (keyof ThemeColors)[] = ['muted', 'sessionLabel', 'sessionBorder']
+const ANSI_MUTED_FOREGROUNDS: readonly Exclude<keyof ThemeColors, 'canvas'>[] = [
+  'muted',
+  'sessionLabel',
+  'sessionBorder'
+]
 
 function xtermEightBitRgb(colorNumber: number): [number, number, number] {
   if (colorNumber >= 232) {
@@ -160,7 +165,7 @@ const DARK_TEXT_CONTRAST_FLOOR = 4.5
 // dark mode their dark values get lifted so the theme stays legible instead
 // of vanishing into the background. Severity colors (ok/warn/error) are
 // bright on every shipped skin; borders/backgrounds are decorative — left.
-const DARK_CONTRAST_FLOORED_KEYS: readonly (keyof ThemeColors)[] = [
+const DARK_CONTRAST_FLOORED_KEYS: readonly Exclude<keyof ThemeColors, 'canvas'>[] = [
   'text',
   'muted',
   'label',
@@ -187,11 +192,7 @@ function colorLuminance(hex: string): null | number {
 
 // Lift a too-dark color toward white until it clears `floor` against a dark
 // background. Non-hex inputs (e.g. `ansi256(...)`) pass through untouched.
-function enforceDarkContrast(
-  hex: string,
-  floor = DARK_TEXT_CONTRAST_FLOOR,
-  background = DARK_BG_LUMINANCE
-): string {
+function enforceDarkContrast(hex: string, floor = DARK_TEXT_CONTRAST_FLOOR, background = DARK_BG_LUMINANCE): string {
   const lum = colorLuminance(hex)
 
   if (lum === null || wcagContrast(lum, background) >= floor) {
@@ -626,11 +627,7 @@ export function normalizeThemeForAnsiLightTerminal(
 const DEFAULT_LIGHT_MODE = detectLightMode()
 
 export const DEFAULT_THEME: Theme = enforceDarkContrastFloor(
-  normalizeThemeForAnsiLightTerminal(
-    DEFAULT_LIGHT_MODE ? LIGHT_THEME : DARK_THEME,
-    process.env,
-    DEFAULT_LIGHT_MODE
-  ),
+  normalizeThemeForAnsiLightTerminal(DEFAULT_LIGHT_MODE ? LIGHT_THEME : DARK_THEME, process.env, DEFAULT_LIGHT_MODE),
   DEFAULT_LIGHT_MODE
 )
 
@@ -649,7 +646,8 @@ export function fromSkin(
   helpHeader = '',
   isLightOverride?: boolean
 ): Theme {
-  const isLight = isLightOverride ?? DEFAULT_LIGHT_MODE
+  const canvasLuminance = colors.ui_background ? colorLuminance(colors.ui_background) : null
+  const isLight = canvasLuminance !== null ? canvasLuminance > 0.5 : (isLightOverride ?? DEFAULT_LIGHT_MODE)
   const d = DEFAULT_THEME
   const c = (k: string) => colors[k]
   const hasSkinColors = Object.keys(colors).length > 0
@@ -668,61 +666,62 @@ export function fromSkin(
 
   return enforceDarkContrastFloor(
     normalizeThemeForAnsiLightTerminal(
-    {
-      color: {
-        primary: c('ui_primary') ?? c('banner_title') ?? d.color.primary,
-        accent,
-        border: c('ui_border') ?? c('banner_border') ?? d.color.border,
-        text: c('ui_text') ?? c('banner_text') ?? d.color.text,
-        muted,
-        completionBg,
-        completionCurrentBg,
-        completionMetaBg,
-        completionMetaCurrentBg,
+      {
+        color: {
+          ...(c('ui_background') ? { canvas: c('ui_background') } : {}),
+          primary: c('ui_primary') ?? c('banner_title') ?? d.color.primary,
+          accent,
+          border: c('ui_border') ?? c('banner_border') ?? d.color.border,
+          text: c('ui_text') ?? c('banner_text') ?? d.color.text,
+          muted,
+          completionBg,
+          completionCurrentBg,
+          completionMetaBg,
+          completionMetaCurrentBg,
 
-        label: c('ui_label') ?? d.color.label,
-        ok: c('ui_ok') ?? d.color.ok,
-        error: c('ui_error') ?? d.color.error,
-        warn: c('ui_warn') ?? d.color.warn,
-        info: c('ui_info') ?? d.color.info,
+          label: c('ui_label') ?? d.color.label,
+          ok: c('ui_ok') ?? d.color.ok,
+          error: c('ui_error') ?? d.color.error,
+          warn: c('ui_warn') ?? d.color.warn,
+          info: c('ui_info') ?? d.color.info,
 
-        prompt: c('prompt') ?? c('banner_text') ?? d.color.prompt,
-        sessionLabel: c('session_label') ?? muted,
-        sessionBorder: c('session_border') ?? muted,
+          prompt: c('prompt') ?? c('banner_text') ?? d.color.prompt,
+          sessionLabel: c('session_label') ?? muted,
+          sessionBorder: c('session_border') ?? muted,
 
-        statusBg: d.color.statusBg,
-        statusFg: d.color.statusFg,
-        statusGood: c('ui_ok') ?? d.color.statusGood,
-        statusWarn: c('ui_warn') ?? d.color.statusWarn,
-        statusBad: d.color.statusBad,
-        statusCritical: d.color.statusCritical,
-        selectionBg:
-          c('selection_bg') ??
-          c('completion_menu_current_bg') ??
-          (hasSkinColors ? completionCurrentBg : d.color.selectionBg),
+          statusBg: c('status_bar_bg') ?? d.color.statusBg,
+          statusFg: c('status_bar_text') ?? d.color.statusFg,
+          statusGood: c('ui_ok') ?? d.color.statusGood,
+          statusWarn: c('ui_warn') ?? d.color.statusWarn,
+          statusBad: c('status_bar_bad') ?? d.color.statusBad,
+          statusCritical: c('status_bar_critical') ?? d.color.statusCritical,
+          selectionBg:
+            c('selection_bg') ??
+            c('completion_menu_current_bg') ??
+            (hasSkinColors ? completionCurrentBg : d.color.selectionBg),
 
-        diffAdded: d.color.diffAdded,
-        diffRemoved: d.color.diffRemoved,
-        diffAddedWord: d.color.diffAddedWord,
-        diffRemovedWord: d.color.diffRemovedWord,
-        shellDollar: c('shell_dollar') ?? d.color.shellDollar
+          diffAdded: d.color.diffAdded,
+          diffRemoved: d.color.diffRemoved,
+          diffAddedWord: d.color.diffAddedWord,
+          diffRemovedWord: d.color.diffRemovedWord,
+          shellDollar: c('shell_dollar') ?? d.color.shellDollar
+        },
+
+        brand: {
+          name: branding.agent_name ?? d.brand.name,
+          icon: d.brand.icon,
+          prompt: cleanPromptSymbol(branding.prompt_symbol, d.brand.prompt),
+          welcome: branding.welcome ?? d.brand.welcome,
+          goodbye: branding.goodbye ?? d.brand.goodbye,
+          tool: toolPrefix || d.brand.tool,
+          helpHeader: branding.help_header ?? (helpHeader || d.brand.helpHeader)
+        },
+
+        bannerLogo,
+        bannerHero
       },
-
-      brand: {
-        name: branding.agent_name ?? d.brand.name,
-        icon: d.brand.icon,
-        prompt: cleanPromptSymbol(branding.prompt_symbol, d.brand.prompt),
-        welcome: branding.welcome ?? d.brand.welcome,
-        goodbye: branding.goodbye ?? d.brand.goodbye,
-        tool: toolPrefix || d.brand.tool,
-        helpHeader: branding.help_header ?? (helpHeader || d.brand.helpHeader)
-      },
-
-      bannerLogo,
-      bannerHero
-    },
-    process.env,
-    isLight
+      process.env,
+      isLight
     ),
     isLight
   )

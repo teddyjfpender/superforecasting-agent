@@ -268,6 +268,9 @@ Primary event types the client handles today:
 
 The client starts with `DEFAULT_THEME` from `theme.ts`, then merges in gateway skin data from `gateway.ready`.
 
+For a black-and-amber financial desk, select **Terminal Amber** with `/theme`.
+See its [activation and contrast measurements](../docs/verification/terminal-amber/README.md).
+
 Current branding overrides:
 
 - agent name

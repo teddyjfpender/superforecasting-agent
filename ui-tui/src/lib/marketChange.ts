@@ -14,6 +14,14 @@ export function changeReference(quote: MarketQuote): string {
     return 'CHG unavailable: source supplied no comparable prior value.'
   }
 
+  if (quote.comparison) {
+    const c = quote.comparison
+    const basis = c.basis === 'last_transition' ? 'Last observed move*' : quote.change === 0 ? 'Unchanged' : 'CHG'
+    const unit = quote.unit?.includes('%') ? ' · absolute Δ in pp' : ''
+
+    return `${basis}: ${c.previous_period} → ${c.current_period}${unit}${c.previous_value === 0 && quote.changePct === null ? ' · percentage unavailable (zero baseline)' : ''}`
+  }
+
   const observations = quote.dated_history?.filter(point => point.value != null) ?? []
   const previous = observations.at(-2)
   const latest = observations.at(-1)
@@ -28,4 +36,34 @@ export function changeReference(quote: MarketQuote): string {
           : 'CHG vs previous available observation'
 
   return `${period}${quote.changePct == null ? ' · percentage unavailable (zero baseline)' : ''}`
+}
+
+/** Compact precision without rounding real movements to an apparent zero. */
+export function formatMarketChange(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) {
+    return '—'
+  }
+
+  if (value === 0) {
+    return '0'
+  }
+
+  const magnitude = Math.abs(value)
+
+  const number =
+    magnitude < 0.0001 ? magnitude.toExponential(2) : magnitude.toLocaleString('en-US', { maximumFractionDigits: 4 })
+
+  return `${value > 0 ? '+' : '-'}${number}`
+}
+
+export function lastMovement(quote: MarketQuote): string | null {
+  const movement = quote.last_movement
+
+  if (quote.change !== 0 || !movement) {
+    return null
+  }
+
+  const unit = quote.unit?.includes('%') ? ' pp' : quote.unit ? ` ${quote.unit}` : ''
+
+  return `Last movement: ${formatMarketChange(movement.current_value - movement.previous_value)}${unit} on ${movement.current_period} (vs ${movement.previous_period})`
 }

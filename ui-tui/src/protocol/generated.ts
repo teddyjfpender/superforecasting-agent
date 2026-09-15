@@ -519,6 +519,7 @@ export interface DataRegion {
 
 export interface DataSeries {
   category: string
+  change_basis: 'last_transition' | 'previous_observation'
   concept_id: string
   country: null | string
   dimensions: Record<string, string>
@@ -2949,6 +2950,14 @@ export interface NewsSubscription {
   url: string
 }
 
+export interface ObservationComparison {
+  basis: 'last_transition' | 'previous_observation'
+  current_period: string
+  current_value: number
+  previous_period: string
+  previous_value: number
+}
+
 export interface ObsidianAppendRequest {
   rel_path: string
   text: string
@@ -3263,6 +3272,7 @@ export interface Quote {
   category: string
   change: null | number
   changePct: null | number
+  comparison: null | ObservationComparison
   currency: null | string
   dated_history: DatedValue[]
   dayHigh: null | number
@@ -3271,6 +3281,7 @@ export interface Quote {
   history: number[]
   issue_time: null | string
   kind: string
+  last_movement: null | ObservationComparison
   name: string
   prevClose: null | number
   provider: string

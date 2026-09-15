@@ -454,3 +454,15 @@ class TestAgentNameBranding:
             assert se._build_skin_config(custom).branding["agent_name"] == "Nyx"
         finally:
             appconfig.configure()
+
+
+def test_terminal_amber_registered_and_frontend_fixture_matches():
+    import json
+    from pathlib import Path
+    from superforecasting_agent.runtime.skin_engine import load_skin, list_skins
+    skin = load_skin("terminal-amber")
+    assert skin.name == "terminal-amber"
+    assert any(item["name"] == "terminal-amber" for item in list_skins())
+    fixture = Path(__file__).parents[2] / "ui-tui/src/__tests__/fixtures/terminal-amber.json"
+    assert skin.colors == json.loads(fixture.read_text())
+    assert skin.colors["ui_background"] == "#000000"

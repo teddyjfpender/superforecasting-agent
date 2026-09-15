@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 from urllib.parse import quote
 
 from forecasting.marketdata.model import DatedValue, Quote, SeriesRef, num
@@ -22,10 +23,15 @@ from forecasting.marketdata.provider import (
     TextGetter,
     default_get_text,
 )
+from protocol.data_desk import ChangeBasis
 
 
 def parse_sdmx_csv(
-    text: str | None, ref: SeriesRef, dimensions: dict[str, str]
+    text: str | None,
+    ref: SeriesRef,
+    dimensions: dict[str, str],
+    *,
+    basis: ChangeBasis = "previous_observation",
 ) -> Quote:
     reader = csv.DictReader(io.StringIO(text or ""))
     expected = {
@@ -59,7 +65,7 @@ def parse_sdmx_csv(
                 status=row.get("OBS_STATUS") or None,
             )
         )
-    return observation_quote(ref, points)
+    return observation_quote(ref, points, basis=basis)
 
 
 class SdmxProvider(IndependentSeries):
@@ -102,7 +108,34 @@ class SdmxProvider(IndependentSeries):
                 endpoint = (
                     "https://stats.bis.org/api/v2/data/dataflow/BIS/"
                     + quote(ref.symbol, safe="/.,")
-                    + "?lastNObservations=24&format=csv"
+                    + "?lastNObservations=120&format=csv"
                 )
-            result.append(parse_sdmx_csv(self._get(endpoint), ref, entry.dimensions))
+            value = parse_sdmx_csv(
+                self._get(endpoint), ref, entry.dimensions, basis=entry.change_basis
+            )
+            if (
+                self.name == "bis"
+                and entry.change_basis == "last_transition"
+                and value.comparison is None
+            ):
+                try:
+                    history = parse_sdmx_csv(
+                        self._get(
+                            endpoint.replace(
+                                "lastNObservations=120", "lastNObservations=600"
+                            )
+                        ),
+                        ref,
+                        entry.dimensions,
+                        basis=entry.change_basis,
+                    )
+                except ProviderFailure:
+                    logging.getLogger(__name__).warning(
+                        "BIS history unavailable for %s; retaining latest measurement",
+                        ref.symbol,
+                    )
+                else:
+                    if history.value == value.value and history.asOf == value.asOf:
+                        value = history
+            result.append(value)
         return result
