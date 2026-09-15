@@ -367,6 +367,7 @@ const isPasteResultPromise = (
 export function TextInput({
   columns = 80,
   multiline = false,
+  immediateChange = false,
   onCursorLine,
   value,
   onChange,
@@ -628,7 +629,7 @@ export function TextInput({
       nextLineWidth ?? stringWidth(next.includes('\n') ? next.slice(next.lastIndexOf('\n') + 1) : next)
 
     if (next !== prev) {
-      if (syncParent) {
+      if (syncParent || immediateChange) {
         flushParentChange()
         self.current = true
         cbChange.current(next)
@@ -1196,6 +1197,8 @@ export interface PasteEvent {
 interface TextInputProps {
   columns?: number
   multiline?: boolean
+  /** Durable editors publish every edit before dismissal can unmount them. */
+  immediateChange?: boolean
   onCursorLine?: (line: number) => void
   focus?: boolean
   mask?: string

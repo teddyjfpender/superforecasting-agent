@@ -1390,6 +1390,8 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
           <TextInput
             columns={Math.max(15, cols - railWidth - (cols >= 110 ? 18 : 0) - 7)}
             focus={!globalModal && !setup && !newChat && !contactView}
+            immediateChange
+            key={activeChatId}
             onChange={editDraft}
             onCursorLine={line => composeRef.current?.scrollTo(Math.max(0, line - 2))}
             onSubmit={sendDraft}

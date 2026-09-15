@@ -45,6 +45,7 @@ async function mount(view: React.ReactNode, cols = 100, rows = 32) {
 
   return {
     read: () => stripAnsi(output),
+    write: (text: string) => stdin.write(text),
     input: async (text: string) => {
       stdin.write(text)
       await new Promise(r => setTimeout(r, 60))
@@ -99,14 +100,20 @@ it('Docs selects the requested document and rejects stale async note replies', a
   try {
     await waitForText(app.read, 'Alpha')
     await waitUntil(() => typeof finishFirst === 'function', { label: 'initial note request started' })
+    const { $shareItem } = await import('../lib/messagingState.js')
+    expect($shareItem.get()).toBeNull()
+    await app.input('e')
+    expect(app.read()).not.toContain('EDIT · Alpha')
     await app.input('\x1b[B')
     await waitForText(app.read, 'Selected document body')
+    expect($shareItem.get()).toMatchObject({ title: 'Beta' })
     finishFirst({ content: 'STALE ALPHA BODY' })
     await new Promise(r => setTimeout(r, 80))
     expect(app.read()).not.toContain('STALE ALPHA BODY')
     await app.input('e')
-    await app.input('!')
-    await app.input('\x1b')
+    app.write('!')
+    app.write('\x1b')
+    await new Promise(r => setTimeout(r, 60))
     const { readDocumentDraft } = await import('../lib/documentDrafts.js')
     expect(readDocumentDraft('markdown:/fake/vault:b.md')?.content).toContain('!')
   } finally {
@@ -128,10 +135,33 @@ it('quick compose preserves edited text on dismiss without sending', async () =>
     await app.input('\r')
     await waitForText(app.read, 'Write a message', { timeout: 1200, label: 'recipient selected' })
     await app.input('A retained draft')
-    await app.input('\x1b')
+    app.write('!')
+    app.write('\x1b')
+    await waitUntil(() => $quickMessage.get() === null)
     expect($quickMessage.get()).toBeNull()
-    expect(loadMessagingState()['+15550001111']?.draft).toBe('A retained draft')
+    expect(loadMessagingState()['+15550001111']?.draft).toBe('A retained draft!')
   } finally {
+    app.close()
+  }
+})
+
+it('quick compose finds saved drafts without a contact or message history', async () => {
+  profile()
+  const { QuickMessage } = await import('../components/quickMessage.js')
+  const { $quickMessage, updateChatState, openQuickMessage } = await import('../lib/messagingState.js')
+  const { DARK_THEME } = await import('../theme.js')
+  updateChatState('+15559990000', { draft: 'Unsent research', category: 'Research' })
+  openQuickMessage()
+  const app = await mount(<QuickMessage cols={80} rows={24} t={DARK_THEME} />)
+
+  try {
+    await waitForText(app.read, 'MESSAGE')
+    await app.input('Research')
+    await waitForText(app.read, '+15559990000')
+    await app.input('\r')
+    await waitForText(app.read, 'Unsent research')
+  } finally {
+    $quickMessage.set(null)
     app.close()
   }
 })

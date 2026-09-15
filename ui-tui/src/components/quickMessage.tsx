@@ -3,7 +3,7 @@ import { Box, ScrollBox, type ScrollBoxHandle, Text, useInput } from '@superfore
 import { useMemo, useRef, useState } from 'react'
 
 import { sendDeskMessage } from '../lib/messagingSend.js'
-import { $chatState, $quickMessage, updateChatState } from '../lib/messagingState.js'
+import { $chatState, $messagingStorageError, $quickMessage, updateChatState } from '../lib/messagingState.js'
 import { isValidNumber, loadContactBook, normalizeNumber } from '../lib/signalContacts.js'
 import { signalCache } from '../lib/signalLive.js'
 import { resolveSignalConfig } from '../lib/signalStore.js'
@@ -15,6 +15,7 @@ import { TextInput } from './textInput.js'
 export function QuickMessage({ cols, rows, t }: { cols: number; rows: number; t: Theme }) {
   const request = useStore($quickMessage)
   const state = useStore($chatState)
+  const storageError = useStore($messagingStorageError)
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState(0)
   const [recipient, setRecipient] = useState<string | null>(null)
@@ -26,7 +27,7 @@ export function QuickMessage({ cols, rows, t }: { cols: number; rows: number; t:
   const inputRef = useRef<ScrollBoxHandle>(null)
   const book = useMemo(() => loadContactBook(), [])
 
-  const targets = [...new Set([...Object.keys(book), ...Object.keys(signalCache())])]
+  const targets = [...new Set([...Object.keys(book), ...Object.keys(signalCache()), ...Object.keys(state)])]
     .filter(id =>
       `${book[id]?.name ?? ''} ${id} ${state[id]?.category ?? ''}`.toLowerCase().includes(query.toLowerCase())
     )
@@ -70,7 +71,10 @@ export function QuickMessage({ cols, rows, t }: { cols: number; rows: number; t:
 
     const id = recipient
 
-    const text = [value.trim(), includeItem && request?.item ? `${request.item.title}\n${request.item.text}` : '']
+    const text = [
+      value.trim(),
+      includeItem && request?.item ? `${request.item.title}\n${request.item.text.replace(/\s+/g, ' ')}` : ''
+    ]
       .filter(Boolean)
       .join('\n\n')
 
@@ -86,7 +90,10 @@ export function QuickMessage({ cols, rows, t }: { cols: number; rows: number; t:
       return
     }
 
-    updateChatState(id, { draft: '' })
+    if ($chatState.get()[id]?.draft === value) {
+      updateChatState(id, { draft: '' })
+    }
+
     $quickMessage.set(null)
   }
 
@@ -184,6 +191,7 @@ export function QuickMessage({ cols, rows, t }: { cols: number; rows: number; t:
           <TextInput
             columns={Math.min(76, cols - 8)}
             focus={!busy}
+            immediateChange
             multiline
             onChange={value => {
               setDraft(value)
@@ -225,11 +233,15 @@ export function QuickMessage({ cols, rows, t }: { cols: number; rows: number; t:
             FORWARD · {request.item.title}
           </Text>
           <Text color={t.color.muted} wrap="truncate-end">
-            {request.item.text}
+            {request.item.text.replace(/\s+/g, ' ')}
           </Text>
         </Box>
       )}
-      {error && <Text color={t.color.error}>{error}</Text>}
+      {(error || storageError) && (
+        <Text color={t.color.error} wrap="truncate-end">
+          {error || storageError}
+        </Text>
+      )}
       <Box
         flexShrink={0}
         marginTop={1}

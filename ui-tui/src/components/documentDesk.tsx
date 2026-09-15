@@ -43,6 +43,7 @@ export function DocumentDesk({ gw, t, onClose }: { gw: GatewayClient; t: Theme; 
   const [content, setContent] = useState('')
   const [original, setOriginal] = useState('')
   const [loading, setLoading] = useState(false)
+  const [loadedIdentity, setLoadedIdentity] = useState('')
   const [error, setError] = useState('')
   const [status, setStatus] = useState('')
   const [editing, setEditing] = useState(false)
@@ -73,14 +74,16 @@ export function DocumentDesk({ gw, t, onClose }: { gw: GatewayClient; t: Theme; 
   )
 
   const identity = `${kind}:${scope}:${current?.id || ''}`
+  const ready = loadedIdentity === identity && !loading
+  const canEdit = Boolean(current && ready && !truncated)
   const folders = ['All documents', ...new Set(docs.map(d => d.folder).filter(Boolean))]
   const height = Math.max(4, rows - 9)
   const libraryWidth = cols >= 110 ? 20 : 0
   const listWidth = Math.max(22, Math.floor((cols - libraryWidth) * 0.34))
   const readerWidth = Math.max(15, cols - libraryWidth - listWidth - 7)
   useShareItem(
-    current?.title || '',
-    current
+    ready ? current?.title || '' : '',
+    ready && current
       ? `${kind === 'markdown' ? 'Obsidian' : 'Overleaf'} · ${current.id}\n${content.slice(0, 2000)}${content.length > 2000 ? '\n[Excerpt]' : ''}`
       : ''
   )
@@ -150,6 +153,9 @@ export function DocumentDesk({ gw, t, onClose }: { gw: GatewayClient; t: Theme; 
     setEditing(false)
     setTruncated(false)
     setSourceReview(null)
+    setLoadedIdentity('')
+    setError('')
+    setStatus('')
 
     if (!currentId) {
       setLoading(false)
@@ -174,6 +180,7 @@ export function DocumentDesk({ gw, t, onClose }: { gw: GatewayClient; t: Theme; 
           throw new Error('Document could not be read.')
         }
 
+        setLoadedIdentity(identity)
         const draft = readDocumentDraft(identity)
         setOriginal(note.content)
         setTruncated(Boolean('truncated' in note && note.truncated))
@@ -218,7 +225,7 @@ export function DocumentDesk({ gw, t, onClose }: { gw: GatewayClient; t: Theme; 
   }
 
   const save = async (value = content) => {
-    if (!current || saveLock.current || truncated) {
+    if (!current || !canEdit || saveLock.current) {
       return
     }
 
@@ -241,7 +248,12 @@ export function DocumentDesk({ gw, t, onClose }: { gw: GatewayClient; t: Theme; 
         }
       }
 
-      saveDocumentDraft(key, { content: value, original: value })
+      try {
+        saveDocumentDraft(key, { content: value, original: value })
+      } catch {
+        setError('Document saved, but the local recovery snapshot could not be updated.')
+      }
+
       setOriginal(value)
       setContent(value)
       setStatus('Saved')
@@ -393,7 +405,7 @@ export function DocumentDesk({ gw, t, onClose }: { gw: GatewayClient; t: Theme; 
         return setSearching(true)
       }
 
-      if (input === 'e' && current && !loading && !truncated) {
+      if (input === 'e' && canEdit) {
         return setEditing(true)
       }
 
@@ -566,6 +578,7 @@ export function DocumentDesk({ gw, t, onClose }: { gw: GatewayClient; t: Theme; 
               <TextInput
                 columns={readerWidth}
                 focus={!blocked && !saving && sourceReview === null}
+                immediateChange
                 key={identity}
                 multiline
                 onChange={edit}
@@ -576,7 +589,7 @@ export function DocumentDesk({ gw, t, onClose }: { gw: GatewayClient; t: Theme; 
             </ScrollBox>
           ) : (
             <DocumentReader
-              content={content}
+              content={ready ? content : ''}
               height={height - 2}
               identity={identity}
               kind={kind}
@@ -625,7 +638,7 @@ export function DocumentDesk({ gw, t, onClose }: { gw: GatewayClient; t: Theme; 
               ]
             : [
                 { k: '/', label: 'Search', run: () => setSearching(true) },
-                { k: 'e', label: 'Edit', run: () => current && !truncated && setEditing(true) },
+                { k: 'e', label: 'Edit', run: () => canEdit && setEditing(true) },
                 { k: 'n', label: 'New', run: () => setCreating('') },
                 { k: 'c', label: 'Connections', run: () => setConnections(true) },
                 { k: 'm', label: 'Forward', run: openQuickMessage },
