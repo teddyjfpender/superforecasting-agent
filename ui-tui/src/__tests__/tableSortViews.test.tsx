@@ -55,7 +55,11 @@ const tick = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 // A "chips row" = a normalized line carrying at least three `[k Label]` bracket
 // chips (the FooterChips row). The removed prose duplicate carried NO brackets.
 const hasChipsRow = (text: string): boolean =>
-  text.split('\n').some(line => (line.match(/\]/g) ?? []).length >= 3)
+  text
+    .split('\n')
+    .some(
+      line => (line.match(/\]/g) ?? []).length >= 3 || (/↑↓.*(?:Scroll|Page)/.test(line) && /\[(?:q|h|⎋) /.test(line))
+    )
 
 // The DISTINCT shortcut-row styles present in the buffer. Frame-independent (a
 // style is present or not, regardless of how many cumulative frames the non-TTY
@@ -119,7 +123,10 @@ describe('MarketsView column sort', () => {
 
     const stdout = writeStream(columns, 40)
     const stdin = writeStream(columns, 40, true)
-    const gw = dataDeskGateway(JSON.parse(readFileSync(join(process.env.FORECAST_HOME!, 'markets.json'), 'utf8')).watchlist) as never
+
+    const gw = dataDeskGateway(
+      JSON.parse(readFileSync(join(process.env.FORECAST_HOME!, 'markets.json'), 'utf8')).watchlist
+    ) as never
 
     const instance = await render(
       React.createElement(MarketsView, { gw, onAsk: () => undefined, onClose: () => undefined, t: DARK_THEME }),
@@ -203,7 +210,14 @@ describe('single shortcuts row (no duplicate prose hint row)', () => {
     const [{ render }, { stripAnsi }] = await Promise.all([import('@superforecasting/ink'), import('../lib/text.js')])
     const stdout = writeStream(columns, 40)
     const stdin = writeStream(columns, 40, true)
-    const instance = await render(element, { exitOnCtrlC: false, patchConsole: false, stdin: stdin.stream, stdout: stdout.stream })
+
+    const instance = await render(element, {
+      exitOnCtrlC: false,
+      patchConsole: false,
+      stdin: stdin.stream,
+      stdout: stdout.stream
+    })
+
     await tick(70)
 
     return {
@@ -242,11 +256,27 @@ describe('single shortcuts row (no duplicate prose hint row)', () => {
     // A watchlist so the data-mode footer (dataChips) renders.
     writeFileSync(
       join(process.env.FORECAST_HOME, 'markets.json'),
-      JSON.stringify({ categories: [], custom: [], providers: [], watchlist: [{ category: 'Stocks', name: 'Apple', provider: 'yahoo', symbol: 'AAPL' }] })
+      JSON.stringify({
+        categories: [],
+        custom: [],
+        providers: [],
+        watchlist: [{ category: 'Stocks', name: 'Apple', provider: 'yahoo', symbol: 'AAPL' }]
+      })
     )
-    const [{ MarketsView }, { DARK_THEME }] = await Promise.all([import('../components/marketsView.js'), import('../theme.js')])
-    const gw = dataDeskGateway(JSON.parse(readFileSync(join(process.env.FORECAST_HOME!, 'markets.json'), 'utf8')).watchlist) as never
-    const view = await mountView(React.createElement(MarketsView, { gw, onAsk: () => undefined, onClose: () => undefined, t: DARK_THEME }))
+
+    const [{ MarketsView }, { DARK_THEME }] = await Promise.all([
+      import('../components/marketsView.js'),
+      import('../theme.js')
+    ])
+
+    const gw = dataDeskGateway(
+      JSON.parse(readFileSync(join(process.env.FORECAST_HOME!, 'markets.json'), 'utf8')).watchlist
+    ) as never
+
+    const view = await mountView(
+      React.createElement(MarketsView, { gw, onAsk: () => undefined, onClose: () => undefined, t: DARK_THEME })
+    )
+
     const text = view.text()
     expect(text).toContain('o Sort')
     expect(shortcutStyles(text, '↑↓/jk select · Tab/←→ category')).toEqual(['chips'])
@@ -256,7 +286,12 @@ describe('single shortcuts row (no duplicate prose hint row)', () => {
   it('News shows exactly one (chips) shortcuts row — the prose duplicate is gone', async () => {
     process.env.FORECAST_TUI_INLINE = '1'
     process.env.FORECAST_HOME = mkdtempSync(join(tmpdir(), 'news-row-'))
-    const [{ NewsView }, { DARK_THEME }] = await Promise.all([import('../components/newsView.js'), import('../theme.js')])
+
+    const [{ NewsView }, { DARK_THEME }] = await Promise.all([
+      import('../components/newsView.js'),
+      import('../theme.js')
+    ])
+
     const gw = { off: () => undefined, on: () => undefined, request: () => Promise.resolve({}) } as never
     const view = await mountView(React.createElement(NewsView, { gw, onClose: () => undefined, t: DARK_THEME }))
     const text = view.text()
@@ -267,13 +302,42 @@ describe('single shortcuts row (no duplicate prose hint row)', () => {
 
   it('Warnings (Alerts) shows exactly one (chips) shortcuts row — the prose row was converted', async () => {
     process.env.FORECAST_TUI_INLINE = '1'
-    const [{ AlertsView }, { DARK_THEME }] = await Promise.all([import('../components/alertsView.js'), import('../theme.js')])
+
+    const [{ AlertsView }, { DARK_THEME }] = await Promise.all([
+      import('../components/alertsView.js'),
+      import('../theme.js')
+    ])
 
     // A non-empty aggregate so the tree footer (its full chip set) renders — the
     // empty backlog would show only [r Refresh] [q Close].
     const aggregate = {
-      agent: { reasons: [{ auto_resolvable: false, count: 1, kind: 'reforecast', reason: 'evidence_stale', recommended_action: 'reforecast', scope_refs: ['fq_a'] }], stale: { reasons: [], total: 0 }, total: 1 },
-      free: { reasons: [{ auto_resolvable: true, count: 1, kind: 'postmortem', reason: 'postmortem_due', recommended_action: 'score', scope_refs: ['fq_b'] }], total: 1 },
+      agent: {
+        reasons: [
+          {
+            auto_resolvable: false,
+            count: 1,
+            kind: 'reforecast',
+            reason: 'evidence_stale',
+            recommended_action: 'reforecast',
+            scope_refs: ['fq_a']
+          }
+        ],
+        stale: { reasons: [], total: 0 },
+        total: 1
+      },
+      free: {
+        reasons: [
+          {
+            auto_resolvable: true,
+            count: 1,
+            kind: 'postmortem',
+            reason: 'postmortem_due',
+            recommended_action: 'score',
+            scope_refs: ['fq_b']
+          }
+        ],
+        total: 1
+      },
       headline: { agent: 1, free: 1, manual: 0, total: 2 },
       manual: { reasons: [], total: 0 }
     }
@@ -289,7 +353,10 @@ describe('single shortcuts row (no duplicate prose hint row)', () => {
         )
     } as never
 
-    const view = await mountView(React.createElement(AlertsView, { gw, onClose: () => undefined, sessionId: '', t: DARK_THEME }))
+    const view = await mountView(
+      React.createElement(AlertsView, { gw, onClose: () => undefined, sessionId: '', t: DARK_THEME })
+    )
+
     const text = view.text()
     // The tree footer is now the single bracketed chips row; the old prose row
     // ("↑↓/jk move · ⏎/space expand · …") is gone.
@@ -313,13 +380,20 @@ describe('single shortcuts row (no duplicate prose hint row)', () => {
     const gw = { request: () => Promise.resolve({}) } as never
     const view = await mountView(React.createElement(CalibrationView, { gw, onClose: () => undefined, t: DARK_THEME }))
     const text = view.text()
-    expect(shortcutStyles(text, '↑↓/jk scroll · PgUp/PgDn page · g/G top/bottom · r refresh · Esc/q close')).toEqual(['chips'])
+    expect(shortcutStyles(text, '↑↓/jk scroll · PgUp/PgDn page · g/G top/bottom · r refresh · Esc/q close')).toEqual([
+      'chips'
+    ])
     view.cleanup()
   })
 
   it('Help shows exactly one (chips) shortcuts row', async () => {
     process.env.FORECAST_TUI_INLINE = '1'
-    const [{ HelpView }, { DARK_THEME }] = await Promise.all([import('../components/helpView.js'), import('../theme.js')])
+
+    const [{ HelpView }, { DARK_THEME }] = await Promise.all([
+      import('../components/helpView.js'),
+      import('../theme.js')
+    ])
+
     const view = await mountView(React.createElement(HelpView, { onClose: () => undefined, t: DARK_THEME }))
     const text = view.text()
     expect(shortcutStyles(text, '↑↓/jk scroll · PgUp/PgDn page · g/G top/bottom · Esc/q close')).toEqual(['chips'])
@@ -328,7 +402,12 @@ describe('single shortcuts row (no duplicate prose hint row)', () => {
 
   it('Demo-viz shows exactly one (chips) shortcuts row', async () => {
     process.env.FORECAST_TUI_INLINE = '1'
-    const [{ DemoVizView }, { DARK_THEME }] = await Promise.all([import('../components/demoVizView.js'), import('../theme.js')])
+
+    const [{ DemoVizView }, { DARK_THEME }] = await Promise.all([
+      import('../components/demoVizView.js'),
+      import('../theme.js')
+    ])
+
     const view = await mountView(React.createElement(DemoVizView, { onClose: () => undefined, t: DARK_THEME }))
     const text = view.text()
     expect(shortcutStyles(text, '↑↓/jk scroll · PgUp/PgDn · g/G top/bottom · Esc back')).toEqual(['chips'])
@@ -337,7 +416,11 @@ describe('single shortcuts row (no duplicate prose hint row)', () => {
 
   it('Hooks shows exactly one (chips) shortcuts row — the inspector prose row is gone', async () => {
     process.env.FORECAST_TUI_INLINE = '1'
-    const [{ HooksView }, { DARK_THEME }] = await Promise.all([import('../components/hooksView.js'), import('../theme.js')])
+
+    const [{ HooksView }, { DARK_THEME }] = await Promise.all([
+      import('../components/hooksView.js'),
+      import('../theme.js')
+    ])
 
     const rule = {
       check: 'saturation < 40',

@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { Box, type ScrollBoxHandle, Text, useInput, useStdout } from '@superforecasting/ink'
+import { Box, type ScrollBoxHandle, Text, useStdout } from '@superforecasting/ink'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
@@ -10,6 +10,7 @@ import { type FieldSpec, filterRanked } from '../lib/fuzzyRank.js'
 import { getOverlayCache, setOverlayCache } from '../lib/overlayCache.js'
 import { asRpcResult } from '../lib/rpc.js'
 import { type SortDir, sortIndicator, sortRows, type SortValue, useTableSort } from '../lib/tableSort.js'
+import { useViewInput } from '../lib/useViewInput.js'
 import { pad, semantics } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
 
@@ -486,7 +487,7 @@ export function CalendarView({ gw, onClose, t }: CalendarViewProps) {
     }
   }, [popoverOpen])
 
-  useInput(
+  const handleFooterKey = useViewInput(
     (ch, key) => {
       // ── Popover (grid day agenda) owns input while open ──────────────────────
       if (popoverOpen) {
@@ -839,7 +840,7 @@ export function CalendarView({ gw, onClose, t }: CalendarViewProps) {
           No deadlines this month — <Text color={t.color.accent}>]</Text> next month
         </Text>
       ) : null}
-      <FooterChips chips={chips} disabled={popoverOpen || globalModal} t={t} />
+      <FooterChips chips={chips} disabled={popoverOpen || globalModal} onKey={handleFooterKey} t={t} />
       {flash ? (
         <Text color={t.color.accent} wrap="truncate-end">
           {flash}

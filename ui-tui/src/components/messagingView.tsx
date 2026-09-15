@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { Box, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdout } from '@superforecasting/ink'
+import { Box, ScrollBox, type ScrollBoxHandle, Text, useStdout } from '@superforecasting/ink'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
@@ -36,6 +36,7 @@ import {
   subscribeSignal
 } from '../lib/signalLive.js'
 import { resolveSignalConfig } from '../lib/signalStore.js'
+import { useViewInput } from '../lib/useViewInput.js'
 import type { Theme } from '../theme.js'
 
 import { type FooterChip, FooterChips } from './footerChips.js'
@@ -701,7 +702,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     setFlash('connected')
   }
 
-  useInput(
+  const handleFooterKey = useViewInput(
     (ch, key) => {
       // While the setup modal is open it owns all input.
       if (setup) {
@@ -905,7 +906,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
 
       // `h` opens the unified Help modal — consistent on every view (list focus;
       // the setup / new-chat / contact / composer guards above already returned).
-      if (ch === 'h') {
+      if (ch === 'h' || ch === '?') {
         return openHelpOverlay()
       }
 
@@ -1194,6 +1195,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
               { k: 'q', label: 'Close', run: onClose }
             ]}
             disabled={setup || globalModal}
+            onKey={handleFooterKey}
             t={t}
           />
           {storageError && <Text color={t.color.error}>{storageError}</Text>}
@@ -1407,7 +1409,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   // and attachment-open (^O) the old prose row had to spell out separately.
   const chips: FooterChip[] = composing
     ? [
-        { k: '⏎', label: 'Send' },
+        { k: '⏎', label: 'Send', run: () => sendDraft() },
         { k: 'PgUp/Dn', label: 'History' },
         { k: '^O', label: 'Attachment', run: openLatestAttachment },
         { k: '⎋', label: 'Back', run: () => setFocus('list') }
@@ -1433,6 +1435,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
       <FooterChips
         chips={chips}
         disabled={setup || newChat || contactView || globalModal || categoryEdit !== null}
+        onKey={handleFooterKey}
         t={t}
       />
       {storageError || flash ? (

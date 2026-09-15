@@ -34,6 +34,7 @@ import {
   type TableSortState,
   useTableSort
 } from '../lib/tableSort.js'
+import { useViewInput } from '../lib/useViewInput.js'
 import { dirColor, pad, readinessColor, type Semantics, semantics } from '../lib/visualSemantics.js'
 import type {
   ForecastAnalystNote,
@@ -1213,7 +1214,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
 
   const modalPageSize = Math.max(4, termRows - 12)
 
-  useInput(
+  const handleFooterKey = useViewInput(
     (ch, key) => {
       // The settings / task modals own the keyboard while open (each has its own
       // useInput); trap everything here so the desk can't double-handle a key.
@@ -1798,7 +1799,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
           keyboard is already trapped (useInput early-returns on settingsOpen), so
           the still-visible footer must not leak clicks past that trap. The detail
           modal swaps to its own modal-only chip set, so it needs no gate here. */}
-      <FooterChips chips={chips} disabled={settingsOpen || taskOpen || globalModal} t={t} />
+      <FooterChips chips={chips} disabled={settingsOpen || taskOpen || globalModal} onKey={handleFooterKey} t={t} />
       {/* An OPTIONAL status line — the in-flight mass-run progress (accent-swept,
           like the sweep indicator), else a transient flash / stale-review note. It
           only paints when there is something to say. */}

@@ -9,7 +9,9 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { waitForText, waitUntil } from '../testing/settle.js'
 
 const roots: string[] = []
-afterEach(() => {
+afterEach(async () => {
+  const { resetOverlayState } = await import('../app/overlayStore.js')
+  resetOverlayState()
   vi.unstubAllEnvs()
   vi.restoreAllMocks()
   roots.splice(0).forEach(p => rmSync(p, { recursive: true, force: true }))
@@ -111,11 +113,17 @@ it('Docs selects the requested document and rejects stale async note replies', a
     await new Promise(r => setTimeout(r, 80))
     expect(app.read()).not.toContain('STALE ALPHA BODY')
     await app.input('e')
+    await app.input('?')
+    const { $overlayState } = await import('../app/overlayStore.js')
+    expect($overlayState.get().cheatSheet).toBe(false)
     app.write('!')
     app.write('\x1b')
     await new Promise(r => setTimeout(r, 60))
     const { readDocumentDraft } = await import('../lib/documentDrafts.js')
+    expect(readDocumentDraft('markdown:/fake/vault:b.md')?.content).toContain('?')
     expect(readDocumentDraft('markdown:/fake/vault:b.md')?.content).toContain('!')
+    await app.input('?')
+    expect($overlayState.get().cheatSheet).toBe(true)
   } finally {
     app.close()
   }

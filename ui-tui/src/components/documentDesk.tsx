@@ -1,8 +1,8 @@
 import { useStore } from '@nanostores/react'
-import { Box, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdout } from '@superforecasting/ink'
+import { Box, ScrollBox, type ScrollBoxHandle, Text, useStdout } from '@superforecasting/ink'
 import { useEffect, useRef, useState } from 'react'
 
-import { $globalModal } from '../app/overlayStore.js'
+import { $globalModal, openHelpOverlay } from '../app/overlayStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import type { ObsidianNoteResponse, ObsidianStatusResponse } from '../gatewayTypes.js'
 import { readDocumentDraft, saveDocumentDraft } from '../lib/documentDrafts.js'
@@ -10,6 +10,7 @@ import { createTexFile, docsDir, listTexFiles, readTexFile, writeTexFile } from 
 import { openQuickMessage } from '../lib/messagingState.js'
 import { asRpcResult } from '../lib/rpc.js'
 import { useShareItem } from '../lib/useShareItem.js'
+import { useViewInput } from '../lib/useViewInput.js'
 import type { Theme } from '../theme.js'
 
 import { docAge } from './docsShell.js'
@@ -324,7 +325,7 @@ export function DocumentDesk({ gw, t, onClose }: { gw: GatewayClient; t: Theme; 
     setStatus('')
   }
 
-  useInput(
+  const handleFooterKey = useViewInput(
     (input, key) => {
       if (connections || blocked || saving) {
         return
@@ -395,6 +396,10 @@ export function DocumentDesk({ gw, t, onClose }: { gw: GatewayClient; t: Theme; 
 
       if (input === '2') {
         return switchKind('latex')
+      }
+
+      if (input === 'h' || input === '?') {
+        return openHelpOverlay()
       }
 
       if (input === 'm') {
@@ -642,10 +647,12 @@ export function DocumentDesk({ gw, t, onClose }: { gw: GatewayClient; t: Theme; 
                 { k: 'n', label: 'New', run: () => setCreating('') },
                 { k: 'c', label: 'Connections', run: () => setConnections(true) },
                 { k: 'm', label: 'Forward', run: openQuickMessage },
+                { k: 'h', label: 'Help', run: openHelpOverlay },
                 { k: 'q', label: 'Close', run: onClose }
               ]
         }
         disabled={blocked || connections || creating !== null || sourceReview !== null || saving}
+        onKey={handleFooterKey}
         t={t}
       />
       {sourceReview !== null && (

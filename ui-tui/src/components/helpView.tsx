@@ -2,7 +2,7 @@ import { useStore } from '@nanostores/react'
 import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdout } from '@superforecasting/ink'
 import { useEffect, useRef, useState } from 'react'
 
-import { $globalModal, patchOverlayState } from '../app/overlayStore.js'
+import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
 import { HOTKEYS } from '../content/hotkeys.js'
 import type { Theme } from '../theme.js'
 
@@ -12,15 +12,19 @@ import { FooterChips } from './footerChips.js'
 export const openHelpView = () => patchOverlayState({ help: true })
 export const closeHelpView = () => patchOverlayState({ help: false })
 
-// Full help, surfaced as a navigable view (the `?` popup stays as the quick
-// inline hint). Static content — no gateway round-trip.
+// Full reference, surfaced as a navigable view. The ? shortcut opens the shared
+// Help modal. Static content — no gateway round-trip.
 const VIEWS: [string, string][] = [
   ['Home', 'the chat desk — ask a forecasting question to begin'],
   ['Desk', 'the forecasts workspace (/forecast desk)'],
   ['Calendar', 'upcoming closes + resolutions, by date'],
   ['Warnings', 'open alerts, review queue, stale items, readiness gaps'],
   ['Calibration', 'reliability curve + signed-bias verdict (/calibration --visual)'],
-  ['Obsidian', 'browse the vault write-ups + dossiers the desk publishes'],
+  ['Docs', 'Obsidian and Overleaf document library, editor and reader'],
+  ['Markets', 'data feeds, prediction markets and models'],
+  ['News', 'sources, headlines and article reader'],
+  ['Messaging', 'personal Signal chats and quick compose'],
+  ['Hooks', 'forecast rules and profile severity'],
   ['Agents', 'the subagent / spawn-tree view']
 ]
 
@@ -59,35 +63,42 @@ export function HelpView({ onClose, t }: HelpViewProps) {
 
   const pageSize = Math.max(4, termRows - 10)
 
-  useInput((ch, key) => {
-    if (ch === 'q' || key.escape) {
-      return onClose()
-    }
+  useInput(
+    (ch, key) => {
+      if (ch === 'h' || ch === '?') {
+        return openHelpOverlay()
+      }
 
-    if (key.upArrow || ch === 'k' || key.wheelUp) {
-      return scrollRef.current?.scrollBy(-2)
-    }
+      if (ch === 'q' || key.escape) {
+        return onClose()
+      }
 
-    if (key.downArrow || ch === 'j' || key.wheelDown) {
-      return scrollRef.current?.scrollBy(2)
-    }
+      if (key.upArrow || ch === 'k' || key.wheelUp) {
+        return scrollRef.current?.scrollBy(-2)
+      }
 
-    if (key.pageUp || (key.ctrl && ch === 'u')) {
-      return scrollRef.current?.scrollBy(-pageSize)
-    }
+      if (key.downArrow || ch === 'j' || key.wheelDown) {
+        return scrollRef.current?.scrollBy(2)
+      }
 
-    if (key.pageDown || (key.ctrl && ch === 'd')) {
-      return scrollRef.current?.scrollBy(pageSize)
-    }
+      if (key.pageUp || (key.ctrl && ch === 'u')) {
+        return scrollRef.current?.scrollBy(-pageSize)
+      }
 
-    if (ch === 'g') {
-      return scrollRef.current?.scrollTo(0)
-    }
+      if (key.pageDown || (key.ctrl && ch === 'd')) {
+        return scrollRef.current?.scrollBy(pageSize)
+      }
 
-    if (ch === 'G') {
-      return scrollRef.current?.scrollToBottom?.()
-    }
-  }, { isActive: !globalModal })
+      if (ch === 'g') {
+        return scrollRef.current?.scrollTo(0)
+      }
+
+      if (ch === 'G') {
+        return scrollRef.current?.scrollToBottom?.()
+      }
+    },
+    { isActive: !globalModal }
+  )
 
   const labelW = Math.min(
     24,
@@ -117,7 +128,7 @@ export function HelpView({ onClose, t }: HelpViewProps) {
         <ScrollBox decstbm={false} flexDirection="column" flexGrow={1} flexShrink={1} ref={scrollRef}>
           <Box flexDirection="column" paddingBottom={3} paddingRight={1}>
             <Text color={t.color.text} wrap="wrap">
-              Ask a forecasting question to begin. Type {'`/`'} for commands, {'`?`'} for a quick inline hint, and click
+              Ask a forecasting question to begin. Type {'`/`'} for commands, {'`?`'} for the Help modal, and click
               the tabs at the top to move between views.
             </Text>
 

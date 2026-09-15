@@ -339,6 +339,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     // own useInput traps first (stopImmediatePropagation), so we never reach
     // here for those keys.
     if (canOpenGlobalOverlay(overlay) && isCtrl(key, ch, 'k')) {
+      ;(event as unknown as { stopImmediatePropagation?: () => void }).stopImmediatePropagation?.()
       // Discovering the palette permanently retires the landing "New here?" hint.
       dismissFirstRunHint()
 
@@ -353,6 +354,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     // sibling, so clear it when we fire.
     if (
       canOpenGlobalOverlay(overlay) &&
+      activeNavKey(overlay) === 'home' &&
       ch === '?' &&
       !key.ctrl &&
       !key.meta &&
@@ -360,6 +362,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       !cState.inputBuf.length &&
       !cState.input
     ) {
+      ;(event as unknown as { stopImmediatePropagation?: () => void }).stopImmediatePropagation?.()
       cActions.clearIn()
       // Opening the cheat-sheet is itself the discovery act — retire the hint.
       dismissFirstRunHint()
@@ -518,6 +521,8 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     // `clearIn` (in the $chordPending branch above) drop the stray glyph when a
     // chord actually fires.
     if (chromeArmable && isCtrl(key, ch, 'g')) {
+      ;(event as unknown as { stopImmediatePropagation?: () => void }).stopImmediatePropagation?.()
+
       return armChord('g')
     }
 

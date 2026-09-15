@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { Box, NoSelect, type ScrollBoxHandle, Text, useInput, useStdout } from '@superforecasting/ink'
+import { Box, NoSelect, type ScrollBoxHandle, Text, useStdout } from '@superforecasting/ink'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { $marketJobs, pruneStaleMarketJobs, setMarketJob, STALE_MARKET_JOB_MS } from '../app/marketJobsStore.js'
@@ -29,6 +29,7 @@ import { blockChart, sparkline } from '../lib/sparkline.js'
 import { sortIndicator, sortRows, type SortValue, useTableSort } from '../lib/tableSort.js'
 import { usePmSection } from '../lib/usePmSection.js'
 import { useShareItem } from '../lib/useShareItem.js'
+import { useViewInput } from '../lib/useViewInput.js'
 import { dirColor, dirGlyph, pad, semantics } from '../lib/visualSemantics.js'
 import type { DataEvents, MarketCatalogResponse, MarketProviderStatus } from '../protocol/generated.js'
 import { WireEvent } from '../protocol/generated.js'
@@ -956,7 +957,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     }
   }
 
-  useInput(
+  const handleFooterKey = useViewInput(
     (ch, key) => {
       if (modal) {
         return
@@ -1072,7 +1073,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
       }
 
       // `p` jumps to the Prediction section (enabling the provider if it's off);
-      // `m` toggles Data | Models; `h` opens the unified Help modal (consistent on
+      // `M` toggles Data | Models; `h` opens the unified Help modal (consistent on
       // every view); `i` opens the Data-warnings modal (the header [!] detail) —
       // all available in every mode.
       if (ch === 'p') {
@@ -1090,7 +1091,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
         return setMode(prev => (prev === 'models' ? 'data' : 'models'))
       }
 
-      if (ch === 'h') {
+      if (ch === 'h' || ch === '?') {
         return openHelpOverlay()
       }
 
@@ -1960,7 +1961,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     { k: 'a', label: 'Ask agent', run: askAgent },
     { k: 'o', label: 'Sort', run: () => onSortCycle() },
     {
-      k: 'm',
+      k: 'M',
       label: 'Models',
       run: () => {
         setSel(0)
@@ -1987,7 +1988,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     { k: 'n', label: 'New model', run: () => setModal('newModel') },
     { k: 'R', label: 'Retry', run: () => retryModel(models[modelSel]?.id ?? null) },
     { k: 'x', label: 'Delete' },
-    { k: 'm', label: 'Data', run: () => setMode('data') },
+    { k: 'M', label: 'Data', run: () => setMode('data') },
     ...(infoItems.length ? [{ k: 'i', label: 'Warnings', run: () => setModal('info') }] : []),
     { k: 'h', label: 'Help', run: openHelpOverlay },
     { k: 'q', label: 'Close', run: onClose }
@@ -2039,7 +2040,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
       }
     },
     {
-      k: 'm',
+      k: 'M',
       label: 'Models',
       run: () => {
         setSel(0)
@@ -2077,7 +2078,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
 
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
-      <FooterChips chips={chips} disabled={!!modal || globalModal} t={t} />
+      <FooterChips chips={chips} disabled={!!modal || globalModal} onKey={handleFooterKey} t={t} />
       {flash || contextHint ? (
         <Text color={t.color.muted} wrap="truncate-end">
           {flash ? <Text color={t.color.accent}>{`${flash}${contextHint ? ' · ' : ''}`}</Text> : null}

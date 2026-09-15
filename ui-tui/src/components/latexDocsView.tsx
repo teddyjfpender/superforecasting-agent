@@ -467,7 +467,7 @@ export function LatexDocsView({ docKind, onClose, onDraft, onSelectKind, t }: La
 
     // `h` opens the unified Help modal — consistent on every view. Nav mode only
     // (the new-doc / git prompt guards above already returned).
-    if (ch === 'h') {
+    if (ch === 'h' || ch === '?') {
       return openHelpOverlay()
     }
 

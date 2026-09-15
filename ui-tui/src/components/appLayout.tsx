@@ -48,7 +48,6 @@ import { DemoVizView } from './demoVizView.js'
 import { DeskView } from './deskView.js'
 import { DocsView } from './docsView.js'
 import { FpsOverlay } from './fpsOverlay.js'
-import { HelpHint } from './helpHint.js'
 import { HelpOverlay } from './helpOverlay.js'
 import { HelpView } from './helpView.js'
 import { HomeStatusBar, HomeTip } from './homeLanding.js'
@@ -353,8 +352,6 @@ const ComposerPane = memo(function ComposerPane({
           onModelSelect={actions.onModelSelect}
           onPickerSelect={actions.resumeById}
         />
-
-        {input === '?' && !inputBuf.length && <HelpHint t={ui.theme} />}
 
         {!isBlocked && (
           <>

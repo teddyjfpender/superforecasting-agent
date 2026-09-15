@@ -21,13 +21,19 @@ export const HOTKEYS: [string, string][] = [
   // runs the IN-APP selection. While the chat is streaming that highlight can
   // jitter as new lines land under the cursor — hold Shift to fall back to the
   // terminal's own native selection, which the app never touches (rock steady).
-  ['drag · Shift+drag', 'select text — plain drag = in-app select; hold Shift for the terminal’s native selection (steady while streaming)'],
+  [
+    'drag · Shift+drag',
+    'select text — plain drag = in-app select; hold Shift for the terminal’s native selection (steady while streaming)'
+  ],
   [action + '+D', 'exit'],
-  [action + '+G / Alt+G', 'open $EDITOR (Alt+G fallback for VSCode/Cursor)'],
+  [isMac ? 'Cmd+G / Alt+G' : 'Alt+G', 'open $EDITOR (Alt+G fallback for VSCode/Cursor)'],
   [action + '+L', 'redraw / repaint'],
   [paste + '+V / /paste', 'paste text; /paste attaches clipboard image'],
   ['Ctrl+F', 'start forecast search; converts a typed phrase into /find <phrase>'],
-  ['Alt/Option+1..9 or /1..9', 'forecast views: book, review, alerts, evidence, learning, schedules, calibration, backtests, all'],
+  [
+    'Alt/Option+1..9 or /1..9',
+    'forecast views: book, review, alerts, evidence, learning, schedules, calibration, backtests, all'
+  ],
   ['/calibration --visual', 'full-screen calibration view: reliability curve, buckets, signed bias verdict'],
   ['Tab', 'apply completion'],
   ['↑/↓', 'completions / queue edit / history'],
@@ -35,7 +41,12 @@ export const HOTKEYS: [string, string][] = [
   [action + '+A/E', 'home / end of line'],
   [action + '+Z / ' + action + '+Y', 'undo / redo input edits'],
   [action + '+W', 'delete word'],
-  [action + '+U/K', 'delete to start / end'],
+  [
+    isMac ? 'Cmd+U/K' : 'Ctrl+U',
+    isMac ? 'delete to start / end' : 'delete to start (Ctrl+K opens the command palette)'
+  ],
+  ['Ctrl+K / Ctrl+G', 'command palette / view-switch leader'],
+  ['Alt+M', 'quick message'],
   [action + '+←/→', 'jump word'],
   ['Home/End', 'start / end of line'],
   ['Shift+Enter / Alt+Enter', 'insert newline'],

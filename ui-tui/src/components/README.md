@@ -39,6 +39,14 @@ for keybindings, storage ownership and regression coverage.
 - [forecast/](forecast/README.md) — Forecast display helpers.
 - [viz/](viz/README.md) — Terminal visualization components.
 
+## Help and footer actions
+
+Use `useViewInput` for a view's keyboard handler and pass its returned dispatcher
+as `FooterChips.onKey`. Keep text/modal guards before browsing shortcuts. Give
+compound actions explicit callbacks; combined navigation legends are non-clickable.
+Update `content/keymaps.ts` with behavior changes. See the
+[help audit](../../../../docs/verification/help-shortcuts.md).
+
 ## Working in this directory
 
 From the repository root, run:

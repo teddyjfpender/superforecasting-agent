@@ -62,9 +62,11 @@ export function HelpOverlay({ activeView, cols, onClose, rows, t }: HelpOverlayP
     scrollRef.current?.scrollTo(0)
   }, [showAll])
 
-  useInput((ch, key) => {
+  useInput((ch, key, event) => {
+    ;(event as unknown as { stopImmediatePropagation?: () => void }).stopImmediatePropagation?.()
+
     // Owns the keyboard while open — rendered as its own body branch, so the
-    // view/composer beneath are unmounted (see GlobalChromePane). `h` closes it
+    // view/composer beneath are blocked by the global modal store. `h` closes it
     // too (press-again-to-dismiss), matching the `?` alias.
     if (key.escape || ch === 'q' || ch === 'h' || ch === '?' || (key.ctrl && ch === 'c')) {
       return onClose()
@@ -125,17 +127,21 @@ export function HelpOverlay({ activeView, cols, onClose, rows, t }: HelpOverlayP
     )
   )
 
-  const pad = (s: string) => s + ' '.repeat(Math.max(0, labelW - s.length + 2))
-
-  // Keys render as keycaps (bold, label-coloured), the verb muted beside them.
+  // Wrap descriptions inside the bounded viewport; long bindings remain readable.
   const rowsOf = (items: [string, string][]) =>
     items.map(([k, v]) => (
-      <Text key={k} wrap="truncate-end">
-        <Text bold color={t.color.label}>
-          {pad(k)}
-        </Text>
-        <Text color={t.color.muted}>{v}</Text>
-      </Text>
+      <Box flexShrink={0} key={k}>
+        <Box flexShrink={0} width={labelW + 2}>
+          <Text bold color={t.color.label} wrap="wrap">
+            {k}
+          </Text>
+        </Box>
+        <Box flexGrow={1} minWidth={0}>
+          <Text color={t.color.muted} wrap="wrap">
+            {v}
+          </Text>
+        </Box>
+      </Box>
     ))
 
   return (
@@ -150,7 +156,7 @@ export function HelpOverlay({ activeView, cols, onClose, rows, t }: HelpOverlayP
       tick={tick}
       title={`${labelFor(activeView)} · Help`}
     >
-      <Box flexDirection="column">
+      <Box flexDirection="column" flexShrink={0}>
         {/* Which build this is — first line of the modal, warn-coloured with the
             concrete remedy when the gateway says it is behind a release. */}
         {buildLine ? (
@@ -175,11 +181,6 @@ export function HelpOverlay({ activeView, cols, onClose, rows, t }: HelpOverlayP
           </Box>
         ))}
 
-        <Text bold color={t.color.accent}>
-          Global keys
-        </Text>
-        {rowsOf(GLOBAL_KEYS)}
-
         {showAll ? (
           ALL_VIEW_KEYS.map(([key, keyRows]) => (
             <Box flexDirection="column" key={key} marginTop={1}>
@@ -199,6 +200,12 @@ export function HelpOverlay({ activeView, cols, onClose, rows, t }: HelpOverlayP
             {rowsOf(viewRows)}
           </>
         )}
+        <Box marginTop={1}>
+          <Text bold color={t.color.accent}>
+            Global keys
+          </Text>
+        </Box>
+        {rowsOf(GLOBAL_KEYS)}
       </Box>
     </ModalOverlay>
   )
