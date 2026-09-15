@@ -94,6 +94,20 @@ const splitBlocks = (xml: string, tag: string): string[] => {
   return [...xml.matchAll(re)].map(m => m[1])
 }
 
+/** NHC publishes an empty-basin status placeholder alongside actual bulletins. */
+export function isNhcStatusPlaceholder(article: Pick<Article, 'feedUrl' | 'title'>): boolean {
+  try {
+    const source = new URL(article.feedUrl)
+
+    return (
+      source.hostname === 'www.nhc.noaa.gov' &&
+      /^There are no tropical cyclones at this time\.?$/i.test(article.title.trim())
+    )
+  } catch {
+    return false
+  }
+}
+
 export const parseFeed = (xml: string, feedUrl: string, feedTitle: string): Article[] => {
   const isAtom = /<entry[\s>]/i.test(xml) && !/<item[\s>]/i.test(xml)
   const blocks = isAtom ? splitBlocks(xml, 'entry') : splitBlocks(xml, 'item')
@@ -106,7 +120,7 @@ export const parseFeed = (xml: string, feedUrl: string, feedTitle: string): Arti
   for (const block of blocks.slice(0, 200)) {
     const headline = clean(tagText(block, 'title'), 200)
 
-    if (!headline) {
+    if (!headline || isNhcStatusPlaceholder({ feedUrl, title: headline })) {
       continue
     }
 
