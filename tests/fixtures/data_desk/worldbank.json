@@ -1,0 +1,1081 @@
+{
+  "captured_at": "2026-09-14T17:59:09.094042+00:00",
+  "series_id": "worldbank:DEU/NY.GDP.MKTP.KD.ZG",
+  "catalog_revision": "5638c99283e0b86c5e70a30d5637b3d048c28074b92441712fc2cb32e34f9ffb",
+  "requests": [
+    {
+      "url": "https://api.worldbank.org/v2/country/DEU/indicator/NY.GDP.MKTP.KD.ZG?format=json&per_page=100",
+      "format": "json",
+      "body": [
+        {
+          "page": 1,
+          "pages": 1,
+          "per_page": 100,
+          "total": 66,
+          "sourceid": "2",
+          "lastupdated": "2026-07-13"
+        },
+        [
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "2025",
+            "value": 0.239578342117881,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "2024",
+            "value": -0.495851897260366,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "2023",
+            "value": -0.869647578573321,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "2022",
+            "value": 1.8092581243061,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "2021",
+            "value": 3.90999994204108,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "2020",
+            "value": -4.13191443239947,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "2019",
+            "value": 0.977734697038784,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "2018",
+            "value": 1.13569604599849,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "2017",
+            "value": 2.797906720551,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "2016",
+            "value": 2.22222216259371,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "2015",
+            "value": 1.66300602334775,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "2014",
+            "value": 2.18018602168017,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "2013",
+            "value": 0.396995583779145,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "2012",
+            "value": 0.463512036709204,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "2011",
+            "value": 3.75796884489337,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "2010",
+            "value": 4.13463778522758,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "2009",
+            "value": -5.54455451920674,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "2008",
+            "value": 0.887902330743628,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "2007",
+            "value": 2.8891174138025,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "2006",
+            "value": 3.86668241523209,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "2005",
+            "value": 0.885485292551564,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "2004",
+            "value": 1.16208684507278,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "2003",
+            "value": -0.529801394291297,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "2002",
+            "value": -0.228255715793637,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "2001",
+            "value": 1.63614170690956,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "2000",
+            "value": 2.8765231247659,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1999",
+            "value": 2.12957016297766,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1998",
+            "value": 2.09561231172233,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1997",
+            "value": 1.85432238398302,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1996",
+            "value": 1.0378755674358,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1995",
+            "value": 1.50499384201356,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1994",
+            "value": 2.59685569693275,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1993",
+            "value": -0.973033082340891,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1992",
+            "value": 2.01361340926105,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1991",
+            "value": 5.10826150190911,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1990",
+            "value": 5.25500610110028,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1989",
+            "value": 3.89655170553733,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1988",
+            "value": 3.70723567991882,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1987",
+            "value": 1.4021515883601,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1986",
+            "value": 2.28733925852798,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1985",
+            "value": 2.32793520067574,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1984",
+            "value": 2.82294783585535,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1983",
+            "value": 1.57241014192158,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1982",
+            "value": -0.394840735634787,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1981",
+            "value": 0.529240541969116,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1980",
+            "value": 1.40882864441943,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1979",
+            "value": 4.15036333786591,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1978",
+            "value": 3.00849288842491,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1977",
+            "value": 3.34721808033223,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1976",
+            "value": 4.94925843456397,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1975",
+            "value": -0.866738936529003,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1974",
+            "value": 0.890068699312494,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1973",
+            "value": 4.77748690945469,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1972",
+            "value": 4.30034129247663,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1971",
+            "value": 3.13269976979846,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1970",
+            "value": 5.10314457629295,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1969",
+            "value": 7.41810273162662,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1968",
+            "value": 5.66877310370654,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1967",
+            "value": -0.330256452713016,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1966",
+            "value": 2.81218130587229,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1965",
+            "value": 5.24416402432635,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1964",
+            "value": 6.63946989651858,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1963",
+            "value": 2.73529643602564,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1962",
+            "value": 4.6234710102125,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1961",
+            "value": 4.29843950975808,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          },
+          {
+            "indicator": {
+              "id": "NY.GDP.MKTP.KD.ZG",
+              "value": "GDP growth (annual %)"
+            },
+            "country": {
+              "id": "DE",
+              "value": "Germany"
+            },
+            "countryiso3code": "DEU",
+            "date": "1960",
+            "value": null,
+            "unit": "",
+            "obs_status": "",
+            "decimal": 1
+          }
+        ]
+      ]
+    }
+  ],
+  "expected_value": 0.239578342117881,
+  "expected_points": 30
+}

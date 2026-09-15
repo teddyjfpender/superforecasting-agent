@@ -36,6 +36,7 @@ from protocol.rpc import jobs as _rpc_jobs
 from protocol.rpc import market_models as _rpc_market_models
 from protocol.rpc import markets as _rpc_markets
 from protocol.rpc import model as _rpc_model
+from protocol.rpc import news as _rpc_news
 from protocol.rpc import obsidian as _rpc_obsidian
 from protocol.rpc import operations as _rpc_operations
 from protocol.rpc import pm as _rpc_pm
@@ -142,6 +143,12 @@ RPC_SPECS: list[RpcSpec] = [
         _rpc_operations.InsightsResponse,
         invalid_params_code=4004,
     ),
+    RpcSpec("news.desk", _rpc_news.NewsDeskRequest, _rpc_news.NewsDeskResponse),
+    RpcSpec(
+        "news.configure", _rpc_news.NewsConfigureRequest, _rpc_news.NewsDeskResponse
+    ),
+    RpcSpec("news.feed", _rpc_news.NewsFeedRequest, _rpc_news.NewsFeedResponse),
+    RpcSpec("news.article", _rpc_news.NewsFeedRequest, _rpc_news.NewsArticleResponse),
     RpcSpec(
         "news.search",
         _rpc_operations.NewsSearchRequest,
@@ -303,6 +310,41 @@ RPC_SPECS: list[RpcSpec] = [
     RpcSpec("jobs.active", _rpc_jobs.JobsActiveRequest, _rpc_jobs.JobsActiveResponse),
     RpcSpec("jobs.cancel", _rpc_jobs.JobsCancelRequest, _rpc_jobs.JobsCancelResponse),
     # ── market.* — the server-side data plane (Arc C) ────────────────────────
+    RpcSpec(
+        "market.catalog",
+        _rpc_markets.MarketCatalogRequest,
+        _rpc_markets.MarketCatalogResponse,
+    ),
+    RpcSpec(
+        "market.provider.connect",
+        _rpc_markets.MarketProviderConnectRequest,
+        _rpc_markets.MarketProviderConnectResponse,
+    ),
+    RpcSpec(
+        "market.selection.preview",
+        _rpc_markets.MarketSelectionPreviewRequest,
+        _rpc_markets.MarketSelectionPreviewResponse,
+    ),
+    RpcSpec(
+        "market.selection.apply",
+        _rpc_markets.MarketSelectionApplyRequest,
+        _rpc_markets.MarketSelectionApplyResponse,
+    ),
+    RpcSpec(
+        "market.selection.update",
+        _rpc_markets.MarketSelectionUpdateRequest,
+        _rpc_markets.MarketSelectionApplyResponse,
+    ),
+    RpcSpec(
+        "market.selection.events.update",
+        _rpc_markets.MarketEventsEditRequest,
+        _rpc_markets.MarketSelectionApplyResponse,
+    ),
+    RpcSpec(
+        "market.events.list",
+        _rpc_markets.MarketEventsRequest,
+        _rpc_markets.MarketEventsResponse,
+    ),
     RpcSpec(
         "market.quotes",
         _rpc_markets.MarketQuotesRequest,

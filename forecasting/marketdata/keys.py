@@ -14,12 +14,13 @@ skipped by the service, exactly as the client skipped it.
 from __future__ import annotations
 
 import os
+from forecasting.marketdata.catalog import load_catalog
 
 # provider slug -> env var (mirrors ``keyEnv`` in ui-tui marketProviders.ts).
 PROVIDER_ENV: dict[str, str] = {
-    "fred": "FRED_API_KEY",
-    "bls": "BLS_API_KEY",
-    "bea": "BEA_API_KEY",
+    provider.id: provider.key_env
+    for provider in load_catalog().providers
+    if provider.key_env
 }
 
 

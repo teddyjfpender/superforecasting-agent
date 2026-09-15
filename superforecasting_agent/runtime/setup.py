@@ -3382,6 +3382,12 @@ def run_setup_wizard(args):
         setup_tools(config, first_install=not is_existing)
 
     # Save and show summary
+    from superforecasting_agent.runtime.data_desk import setup_data_desk
+
+    setup_data_desk(Path(get_agent_home()))
+    from superforecasting_agent.runtime.news_desk import setup_news_desk
+
+    setup_news_desk(Path(get_agent_home()))
     save_config(config)
     if _backup_path and _backup_path.exists():
         print_info(f"Previous config backed up to: {_backup_path}")
@@ -3401,6 +3407,13 @@ def _run_first_time_quick_setup(config: dict, hermes_home, is_existing: bool):
 
     # Step 2: Terminal Backend — where commands run is a core decision
     setup_terminal_backend(config)
+
+    from superforecasting_agent.runtime.data_desk import setup_data_desk
+
+    setup_data_desk(Path(get_agent_home()))
+    from superforecasting_agent.runtime.news_desk import setup_news_desk
+
+    setup_news_desk(Path(get_agent_home()))
 
     # Step 3: Apply defaults for everything else
     _apply_default_agent_settings(config)

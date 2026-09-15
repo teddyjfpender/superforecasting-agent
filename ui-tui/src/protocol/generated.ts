@@ -442,6 +442,113 @@ export interface CronManageResponse {
   success?: boolean
 }
 
+export interface DataCatalog {
+  categories: Array<DataCategory>
+  countries: Array<DataCountry>
+  presets: Array<DataPreset>
+  providers: Array<DataProvider>
+  regions: Array<DataRegion>
+  series: Array<DataSeries>
+  version: number
+}
+
+export interface DataCategory {
+  aliases: Array<string>
+  group: string
+  id: string
+  name: string
+}
+
+export interface DataCountry {
+  id: string
+  name: string
+  region: string
+}
+
+export interface DataEvent {
+  area: null | string
+  description: string
+  effective_at: null | string
+  event_id: string
+  expires_at: null | string
+  issued_at: null | string
+  severity: null | string
+  source_url: null | string
+  title: string
+}
+
+export interface DataEvents {
+  events: DataEvent[]
+  retrieved_at: string
+  series_id: string
+  truncated: boolean
+}
+
+export interface DataLocation {
+  latitude: number
+  longitude: number
+  name: string
+  timezone: string
+}
+
+export interface DataPreset {
+  description: string
+  id: string
+  name: string
+  series_ids: Array<string>
+  version: number
+}
+
+export interface DataProvider {
+  access_note: string
+  auth: 'none' | 'optional' | 'required'
+  capabilities: Array<'events' | 'history' | 'latest' | 'search' | 'stream'>
+  description: string
+  id: string
+  key_env: null | string
+  name: string
+  signup_url: null | string
+  website: string
+}
+
+export interface DataRegion {
+  id: string
+  members: Array<string>
+  name: string
+}
+
+export interface DataSeries {
+  category: string
+  concept_id: string
+  country: null | string
+  dimensions: Record<string, string>
+  expected_lag_seconds: null | number
+  frequency: 'annual' | 'daily' | 'event' | 'hourly' | 'monthly' | 'quarterly' | 'tick' | 'weekly'
+  history_points: number
+  id: string
+  kind: 'estimate' | 'event' | 'forecast' | 'observation' | 'probability' | 'quote' | 'reanalysis'
+  line: null | string
+  location: null | DataLocation
+  name: string
+  provider: string
+  refresh_seconds: number
+  region: string
+  revision_policy: 'as_issued' | 'first_release' | 'latest' | 'unknown'
+  source_family: string
+  source_url: string
+  symbol: string
+  tags: Array<string>
+  unit: string
+}
+
+export interface DatedValue {
+  period_end: string
+  period_start: string
+  published_at: null | string
+  status: null | string
+  value: null | number
+}
+
 export interface DelegationActiveEntry {
   depth?: number
   goal?: string
@@ -484,6 +591,63 @@ export interface DelegationStatusResponse {
   max_concurrent_children?: number
   max_spawn_depth?: number
   paused?: boolean
+}
+
+export interface DeskCustomSeries {
+  category: string
+  line: null | string
+  name: string
+  provider: string
+  symbol: string
+  unit: string
+}
+
+export interface DeskEdit {
+  add: string[]
+  catalog_revision: string
+  home_region?: null | string
+  preset_id: null | string
+  remove: string[]
+  start_empty: boolean
+  weather_locations?: null | string[]
+}
+
+export interface DeskPatch {
+  categories?: null | string[]
+  custom?: null | DeskCustomSeries[]
+  pm_saved?: null | DeskSavedEvent[]
+  providers?: null | string[]
+  server_side?: null | string[]
+  watchlist?: null | DeskCustomSeries[]
+}
+
+export interface DeskPreview {
+  added: string[]
+  already_selected: string[]
+  catalog_revision: string
+  credential_providers: string[]
+  removed: string[]
+  revision: string
+  selection: DeskSelection
+}
+
+export interface DeskSavedEvent {
+  event_id: string
+  venue: string
+}
+
+export interface DeskSelection {
+  categories: string[]
+  custom: DeskCustomSeries[]
+  home_region: null | string
+  pm_saved: DeskSavedEvent[]
+  providers: string[]
+  revision: string
+  series_ids: string[]
+  server_side: null | string[]
+  state: 'custom' | 'empty' | 'preset' | 'unconfigured'
+  watchlist: DeskCustomSeries[]
+  weather_locations: null | string[]
 }
 
 export interface EmptyRequest {
@@ -2463,6 +2627,30 @@ export interface LessonShareBody {
   status: null | string
 }
 
+export interface MarketCatalogRequest {
+}
+
+export interface MarketCatalogResponse {
+  catalog: DataCatalog
+  catalog_revision: string
+  configured_providers: string[]
+  selection: DeskSelection
+}
+
+export interface MarketEventsEditRequest {
+  add: DeskSavedEvent[]
+  remove: DeskSavedEvent[]
+}
+
+export interface MarketEventsRequest {
+  series_id: string
+}
+
+export interface MarketEventsResponse {
+  data: null | DataEvents
+  status: MarketProviderStatus
+}
+
 export interface MarketModelCompletePayload {
   id: string
   status?: string
@@ -2485,12 +2673,29 @@ export interface MarketModelRefreshedPayload {
   presentation?: Record<string, unknown>
 }
 
+export interface MarketProviderConnectRequest {
+  provider: string
+  session_id: string
+}
+
+export interface MarketProviderConnectResponse {
+  stored: boolean
+}
+
+export interface MarketProviderStatus {
+  message: null | string
+  provider: string
+  retry_after: null | number
+  status: string
+}
+
 export interface MarketQuotesRequest {
   series: MarketSeriesRef[]
 }
 
 export interface MarketQuotesResponse {
   quotes: Quote[]
+  statuses: MarketProviderStatus[]
 }
 
 export interface MarketSearchRequest {
@@ -2508,7 +2713,30 @@ export interface MarketSearchResult {
   symbol: string
 }
 
+export interface MarketSelectionApplyRequest {
+  edit: DeskEdit
+  expected_revision: string
+}
+
+export interface MarketSelectionApplyResponse {
+  selection: DeskSelection
+}
+
+export interface MarketSelectionPreviewRequest {
+  edit: DeskEdit
+}
+
+export interface MarketSelectionPreviewResponse {
+  preview: DeskPreview
+}
+
+export interface MarketSelectionUpdateRequest {
+  expected_revision: string
+  patch: DeskPatch
+}
+
 export interface MarketSeriesRef {
+  catalog_id?: string
   category?: string
   line?: string
   name?: string
@@ -2672,6 +2900,36 @@ export interface NewsArticle {
   title: string
 }
 
+export interface NewsArticleResponse {
+  message: string
+  status: 'article' | 'excerpt' | 'unavailable'
+  text: string
+  url: string
+}
+
+export interface NewsConfigureRequest {
+  action: 'add' | 'empty' | 'remove' | 'starter'
+  feed: null | NewsSubscription
+}
+
+export interface NewsDeskRequest {
+}
+
+export interface NewsDeskResponse {
+  feeds: NewsSubscription[]
+  starter: NewsSubscription[]
+  state: 'configured' | 'unconfigured'
+}
+
+export interface NewsFeedRequest {
+  url: string
+}
+
+export interface NewsFeedResponse {
+  url: string
+  xml: string
+}
+
 export interface NewsSearchRequest {
   articles: NewsArticle[]
   limit: number
@@ -2681,6 +2939,14 @@ export interface NewsSearchRequest {
 export interface NewsSearchResponse {
   engine: string
   results: Record<string, unknown>[]
+}
+
+export interface NewsSubscription {
+  addedAt: number
+  category: string
+  custom: boolean
+  title: string
+  url: string
 }
 
 export interface ObsidianAppendRequest {
@@ -2993,19 +3259,31 @@ export interface PromptSubmitResponse {
 
 export interface Quote {
   asOf: number
+  catalog_id: null | string
   category: string
   change: null | number
   changePct: null | number
   currency: null | string
+  dated_history: DatedValue[]
   dayHigh: null | number
   dayLow: null | number
   exchange: null | string
   history: number[]
+  issue_time: null | string
+  kind: string
   name: string
   prevClose: null | number
   provider: string
+  published_at: null | string
+  refresh_seconds: number
+  retrieved_at: null | string
+  revision_policy: string
+  source_family: null | string
+  source_url: null | string
   symbol: string
   unit: string
+  valid_from: null | string
+  valid_until: null | string
   value: null | number
   volume: null | number
   week52High: null | number
@@ -4278,6 +4556,23 @@ export interface RpcMethods {
     }
     result: TextResponse
   }
+  'market.catalog': {
+    params: Record<string, never>
+    result: MarketCatalogResponse
+  }
+  'market.events.list': {
+    params: {
+      series_id: string
+    }
+    result: MarketEventsResponse
+  }
+  'market.provider.connect': {
+    params: {
+      provider: string
+      session_id: string
+    }
+    result: MarketProviderConnectResponse
+  }
   'market.quotes': {
     params: {
       series: MarketSeriesRef[]
@@ -4289,6 +4584,33 @@ export interface RpcMethods {
       query: string
     }
     result: MarketSearchResponse
+  }
+  'market.selection.apply': {
+    params: {
+      edit: DeskEdit
+      expected_revision: string
+    }
+    result: MarketSelectionApplyResponse
+  }
+  'market.selection.events.update': {
+    params: {
+      add: DeskSavedEvent[]
+      remove: DeskSavedEvent[]
+    }
+    result: MarketSelectionApplyResponse
+  }
+  'market.selection.preview': {
+    params: {
+      edit: DeskEdit
+    }
+    result: MarketSelectionPreviewResponse
+  }
+  'market.selection.update': {
+    params: {
+      expected_revision: string
+      patch: DeskPatch
+    }
+    result: MarketSelectionApplyResponse
   }
   'markets.model.chat': {
     params: {
@@ -4372,6 +4694,29 @@ export interface RpcMethods {
       slug: string
     }
     result: ModelOptionProvider
+  }
+  'news.article': {
+    params: {
+      url: string
+    }
+    result: NewsArticleResponse
+  }
+  'news.configure': {
+    params: {
+      action: 'add' | 'empty' | 'remove' | 'starter'
+      feed?: null | NewsSubscription
+    }
+    result: NewsDeskResponse
+  }
+  'news.desk': {
+    params: Record<string, never>
+    result: NewsDeskResponse
+  }
+  'news.feed': {
+    params: {
+      url: string
+    }
+    result: NewsFeedResponse
   }
   'news.search': {
     params: {

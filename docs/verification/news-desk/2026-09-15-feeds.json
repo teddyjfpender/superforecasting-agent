@@ -1,0 +1,135 @@
+[
+  {
+    "title": "CNBC \u00b7 Markets",
+    "url": "https://www.cnbc.com/id/100003114/device/rss/rss.html",
+    "items": 30,
+    "bytes": 20973,
+    "status": "ok"
+  },
+  {
+    "title": "BBC \u00b7 Business",
+    "url": "https://feeds.bbci.co.uk/news/business/rss.xml",
+    "items": 57,
+    "bytes": 41994,
+    "status": "ok"
+  },
+  {
+    "title": "BBC \u00b7 World",
+    "url": "https://feeds.bbci.co.uk/news/world/rss.xml",
+    "items": 32,
+    "bytes": 24851,
+    "status": "ok"
+  },
+  {
+    "title": "Al Jazeera \u00b7 World",
+    "url": "https://www.aljazeera.com/xml/rss/all.xml",
+    "items": 25,
+    "bytes": 17053,
+    "status": "ok"
+  },
+  {
+    "title": "Guardian \u00b7 Europe",
+    "url": "https://www.theguardian.com/world/europe-news/rss",
+    "items": 19,
+    "bytes": 69651,
+    "status": "ok"
+  },
+  {
+    "title": "CNA \u00b7 Asia",
+    "url": "https://www.channelnewsasia.com/api/v1/rss-outbound-feed?_format=xml&category=6511",
+    "items": 20,
+    "bytes": 20238,
+    "status": "ok"
+  },
+  {
+    "title": "CNA \u00b7 Business",
+    "url": "https://www.channelnewsasia.com/api/v1/rss-outbound-feed?_format=xml&category=6936",
+    "items": 20,
+    "bytes": 17245,
+    "status": "ok"
+  },
+  {
+    "title": "MercoPress \u00b7 Latin America",
+    "url": "https://en.mercopress.com/rss/latin-america",
+    "items": 10,
+    "bytes": 16334,
+    "status": "ok"
+  },
+  {
+    "title": "Guardian \u00b7 Middle East",
+    "url": "https://www.theguardian.com/world/middleeast/rss",
+    "items": 20,
+    "bytes": 71887,
+    "status": "ok"
+  },
+  {
+    "title": "Guardian \u00b7 Africa",
+    "url": "https://www.theguardian.com/world/africa/rss",
+    "items": 20,
+    "bytes": 71434,
+    "status": "ok"
+  },
+  {
+    "title": "Federal Reserve \u00b7 Policy",
+    "url": "https://www.federalreserve.gov/feeds/press_monetary.xml",
+    "items": 15,
+    "bytes": 9623,
+    "status": "ok"
+  },
+  {
+    "title": "ECB \u00b7 Press and speeches",
+    "url": "https://www.ecb.europa.eu/rss/press.html",
+    "items": 15,
+    "bytes": 5635,
+    "status": "ok"
+  },
+  {
+    "title": "BLS \u00b7 Economic releases",
+    "url": "https://www.bls.gov/feed/bls_latest.rss",
+    "items": 1,
+    "bytes": 5331,
+    "status": "ok"
+  },
+  {
+    "title": "EIA \u00b7 Today in Energy",
+    "url": "https://www.eia.gov/rss/todayinenergy.xml",
+    "items": 15,
+    "bytes": 9425,
+    "status": "ok"
+  },
+  {
+    "title": "Ars Technica",
+    "url": "https://feeds.arstechnica.com/arstechnica/index",
+    "items": 20,
+    "bytes": 76710,
+    "status": "ok"
+  },
+  {
+    "title": "NASA \u00b7 News",
+    "url": "https://www.nasa.gov/news-release/feed/",
+    "items": 10,
+    "bytes": 235504,
+    "status": "ok"
+  },
+  {
+    "title": "Carbon Brief",
+    "url": "https://www.carbonbrief.org/feed",
+    "items": 12,
+    "bytes": 670577,
+    "status": "ok"
+  },
+  {
+    "title": "NHC \u00b7 Atlantic storms",
+    "url": "https://www.nhc.noaa.gov/index-at.xml",
+    "items": 2,
+    "bytes": 2561,
+    "status": "ok"
+  },
+  {
+    "title": "GDACS \u00b7 Global alerts",
+    "url": "https://www.gdacs.org/xml/rss.xml",
+    "items": 228,
+    "bytes": 698635,
+    "status": "ok"
+  }
+]

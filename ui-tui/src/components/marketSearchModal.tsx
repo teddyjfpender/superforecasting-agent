@@ -36,6 +36,7 @@ const dedupe = (items: MarketSeries[]): MarketSeries[] => {
 }
 
 interface MarketSearchModalProps {
+  catalog: MarketSeries[]
   cols: number
   // The gateway handle: the live Yahoo symbol lookup routes through
   // `market.search` (Arc C3). Absent → catalog-only results.
@@ -50,6 +51,7 @@ interface MarketSearchModalProps {
 }
 
 export function MarketSearchModal({
+  catalog,
   cols,
   gw,
   isAdded,
@@ -64,6 +66,7 @@ export function MarketSearchModal({
   // Go inert while the global palette / cheat-sheet stacks above this modal.
   const globalModal = useStore($globalModal)
   const [query, setQuery] = useState('')
+  const [error, setError] = useState('')
   const [results, setResults] = useState<MarketSeries[]>([])
   const [sel, setSel] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -83,6 +86,8 @@ export function MarketSearchModal({
 
   // Debounced search: instant catalog results, then merge in Yahoo lookups.
   useEffect(() => {
+    const seq = ++seqRef.current
+    setError('')
     const q = query.trim()
 
     if (!q) {
@@ -92,15 +97,22 @@ export function MarketSearchModal({
       return
     }
 
-    const seq = ++seqRef.current
-    const local = searchCatalog(q)
+    const local = searchCatalog(q, catalog)
     setResults(local)
     setSel(0)
     setLoading(true)
 
     const id = setTimeout(() => {
       void (async () => {
-        const remote = await searchYahoo(q, gw)
+        let remote: MarketSeries[] = []
+
+        try {
+          remote = await searchYahoo(q, gw)
+        } catch {
+          if (aliveRef.current && seq === seqRef.current) {
+            setError('Live ticker search unavailable; catalog matches remain available.')
+          }
+        }
 
         if (!aliveRef.current || seq !== seqRef.current) {
           return
@@ -111,8 +123,11 @@ export function MarketSearchModal({
       })()
     }, 250)
 
-    return () => clearTimeout(id)
-  }, [gw, query])
+    return () => {
+      clearTimeout(id)
+      seqRef.current += 1
+    }
+  }, [catalog, gw, query])
 
   // Mirror ModalOverlay's box sizing so inner widths + the explicit list height
   // line up with the overlay this renders through.
@@ -122,114 +137,123 @@ export function MarketSearchModal({
   const inner = modalW - 6
   const listRows = Math.max(4, modalH - 10)
 
-  useInput((ch, key) => {
-    if (key.escape) {
-      return onClose()
-    }
-
-    if (key.return) {
-      const pick = results[sel]
-
-      if (pick) {
-        onToggleCategory(pick) // default: add to its own category
+  useInput(
+    (ch, key) => {
+      if (key.escape) {
+        return onClose()
       }
 
-      return
-    }
+      if (key.return) {
+        const pick = results[sel]
 
-    if (key.tab) {
-      const pick = results[sel]
+        if (pick) {
+          onToggleCategory(pick) // default: add to its own category
+        }
 
-      if (pick) {
-        onToggleWatch(pick) // opt-in: add to the watchlist instead
+        return
       }
 
-      return
-    }
+      if (key.tab) {
+        const pick = results[sel]
 
-    if (key.upArrow || key.wheelUp) {
-      return setSel(i => Math.max(0, i - 1))
-    }
+        if (pick) {
+          onToggleWatch(pick) // opt-in: add to the watchlist instead
+        }
 
-    if (key.downArrow || key.wheelDown) {
-      return setSel(i => Math.min(Math.max(0, results.length - 1), i + 1))
-    }
-
-    if (key.backspace || key.delete) {
-      return setQuery(s => s.slice(0, -1))
-    }
-
-    if (ch && !key.ctrl && !key.meta) {
-      const printable = [...ch].filter(c => c >= ' ').join('')
-
-      if (printable) {
-        setQuery(s => s + printable)
+        return
       }
-    }
-  }, { isActive: !globalModal })
+
+      if (key.upArrow || key.wheelUp) {
+        return setSel(i => Math.max(0, i - 1))
+      }
+
+      if (key.downArrow || key.wheelDown) {
+        return setSel(i => Math.min(Math.max(0, results.length - 1), i + 1))
+      }
+
+      if (key.backspace || key.delete) {
+        return setQuery(s => s.slice(0, -1))
+      }
+
+      if (ch && !key.ctrl && !key.meta) {
+        const printable = [...ch].filter(c => c >= ' ').join('')
+
+        if (printable) {
+          setQuery(s => s + printable)
+        }
+      }
+    },
+    { isActive: !globalModal }
+  )
 
   const start = Math.max(0, Math.min(sel - Math.floor(listRows / 2), results.length - listRows))
   const windowed = results.slice(Math.max(0, start), Math.max(0, start) + listRows)
 
   return (
     <ModalOverlay cols={cols} maxHeight={32} maxWidth={100} rows={rows} t={t}>
-        <Box flexShrink={0} justifyContent="space-between">
-          <Text bold color={t.color.primary}>
-            Search markets
-          </Text>
-          <Text color={loading ? sem.star : t.color.muted}>
-            {loading ? `${spinnerFrame(tick)} searching…` : `${results.length} ${results.length === 1 ? 'match' : 'matches'}`}
-          </Text>
-        </Box>
+      <Box flexShrink={0} justifyContent="space-between">
+        <Text bold color={t.color.primary}>
+          Search markets
+        </Text>
+        <Text color={loading ? sem.star : t.color.muted}>
+          {loading
+            ? `${spinnerFrame(tick)} searching…`
+            : `${results.length} ${results.length === 1 ? 'match' : 'matches'}`}
+        </Text>
+      </Box>
 
-        <Box flexShrink={0} marginTop={1}>
-          <Text bold color={sem.cursor}>{`${ICON.search} `}</Text>
-          <Text color={t.color.text}>{query}</Text>
-          <Text color={t.color.text} inverse>
-            {' '}
-          </Text>
-          {!query ? <Text color={t.color.muted}> ticker, name or theme (e.g. NVDA, gold, 10y yield)…</Text> : null}
-        </Box>
+      <Box flexShrink={0} marginTop={1}>
+        <Text bold color={sem.cursor}>{`${ICON.search} `}</Text>
+        <Text color={t.color.text}>{query}</Text>
+        <Text color={t.color.text} inverse>
+          {' '}
+        </Text>
+        {!query ? <Text color={t.color.muted}> ticker, name or theme (e.g. NVDA, gold, 10y yield)…</Text> : null}
+      </Box>
 
-        <Box flexShrink={0} marginTop={1}>
-          <Text color={sem.rule}>{'─'.repeat(inner)}</Text>
-        </Box>
+      <Box flexShrink={0} marginTop={1}>
+        <Text color={sem.rule}>{'─'.repeat(inner)}</Text>
+      </Box>
 
-        <Box flexDirection="column" flexShrink={0} height={listRows} overflow="hidden">
-          {results.length === 0 ? (
-            <Text color={t.color.muted} wrap="truncate-end">
-              {query ? (loading ? 'Searching…' : 'No matches — try a ticker or company name.') : 'Type to search the catalog and every Yahoo Finance ticker.'}
-            </Text>
-          ) : (
-            windowed.map((s, i) => {
-              const idx = start + i
-              const on = idx === sel
-              const added = isAdded(s)
-              const watched = isWatched(s)
-
-              return (
-                <Box key={`${s.provider}:${s.symbol}:${idx}`} width="100%">
-                  <Text wrap="truncate-end">
-                    <Text color={on ? sem.cursor : sem.faint}>{on ? '▸ ' : '  '}</Text>
-                    <Text bold color={added ? sem.up : sem.subtle}>
-                      {added ? '[✓]' : '[+]'}
-                    </Text>
-                    <Text color={watched ? sem.star : sem.faint}>{watched ? '★' : ' '}</Text>
-                    <Text color={t.color.accent}> {s.symbol.padEnd(10)}</Text>
-                    <Text color={on ? sem.selectionFg : t.color.label}> {truncate(s.name, inner - 32)}</Text>
-                    <Text color={sem.badge}> {s.category}</Text>
-                  </Text>
-                </Box>
-              )
-            })
-          )}
-        </Box>
-
-        <Box flexShrink={0} marginTop={1}>
+      <Box flexDirection="column" flexShrink={0} height={listRows} overflow="hidden">
+        {results.length === 0 ? (
           <Text color={t.color.muted} wrap="truncate-end">
-            type to search · ↑↓ move · ⏎ add to category · Tab ★ watchlist · Esc close
+            {query
+              ? loading
+                ? 'Searching…'
+                : 'No matches — try an indicator, location or ticker.'
+              : 'Search indicators, locations and financial tickers.'}
           </Text>
-        </Box>
+        ) : (
+          windowed.map((s, i) => {
+            const idx = start + i
+            const on = idx === sel
+            const added = isAdded(s)
+            const watched = isWatched(s)
+
+            return (
+              <Box key={`${s.provider}:${s.symbol}:${idx}`} width="100%">
+                <Text wrap="truncate-end">
+                  <Text color={on ? sem.cursor : sem.faint}>{on ? '▸ ' : '  '}</Text>
+                  <Text bold color={added ? sem.up : sem.subtle}>
+                    {added ? '[✓]' : '[+]'}
+                  </Text>
+                  <Text color={watched ? sem.star : sem.faint}>{watched ? '★' : ' '}</Text>
+                  <Text color={t.color.accent}> {s.symbol.padEnd(10)}</Text>
+                  <Text color={on ? sem.selectionFg : t.color.label}> {truncate(s.name, inner - 32)}</Text>
+                  <Text color={sem.badge}> {s.category}</Text>
+                </Text>
+              </Box>
+            )
+          })
+        )}
+      </Box>
+
+      <Box flexShrink={0} marginTop={1}>
+        <Text color={t.color.muted} wrap="truncate-end">
+          {error || 'type to search · ↑↓ move · ⏎ add to category · Tab ★ watchlist · Esc close'}
+        </Text>
+      </Box>
     </ModalOverlay>
   )
 }

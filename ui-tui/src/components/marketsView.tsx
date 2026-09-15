@@ -4,31 +4,30 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { $marketJobs, pruneStaleMarketJobs, setMarketJob, STALE_MARKET_JOB_MS } from '../app/marketJobsStore.js'
 import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
-import { DEFAULT_SERIES, MARKET_CATEGORIES, type MarketSeries, providerByKey } from '../content/marketProviders.js'
+import type { MarketSeries } from '../content/marketProviders.js'
 import type { GatewayClient } from '../gatewayClient.js'
+import { catalogSeries, deskConfig, saveDeskFields } from '../lib/dataDesk.js'
 import { type FieldSpec, rankItems } from '../lib/fuzzyRank.js'
 import { statusGlyph } from '../lib/icons.js'
 import { fetchQuotes, type MarketQuote } from '../lib/marketFetch.js'
-import { getProviderKey } from '../lib/marketKeys.js'
-import {
-  loadMarketConfig,
-  loadQuoteCache,
-  type MarketConfig,
-  type QuoteCache,
-  quoteKey,
-  saveMarketConfig,
-  saveQuoteCache
-} from '../lib/marketStore.js'
+import { marketColumns, marketTopicWindow } from '../lib/marketLayout.js'
+import { type MarketConfig, type QuoteCache, quoteKey } from '../lib/marketStore.js'
 import { loadModelCatalog, saveModelCatalog } from '../lib/modelStore.js'
 import { openExternalUrl } from '../lib/openExternalUrl.js'
 import { venueLabel } from '../lib/pmData.js'
 import { pmWindow } from '../lib/pmRows.js'
-import { type MarketModelListItem, normalizeModelList, normalizePresentation, type Presentation } from '../lib/presentation.js'
+import {
+  type MarketModelListItem,
+  normalizeModelList,
+  normalizePresentation,
+  type Presentation
+} from '../lib/presentation.js'
 import { asRpcResult } from '../lib/rpc.js'
 import { blockChart, sparkline } from '../lib/sparkline.js'
 import { sortIndicator, sortRows, type SortValue, useTableSort } from '../lib/tableSort.js'
 import { usePmSection } from '../lib/usePmSection.js'
 import { dirColor, dirGlyph, pad, semantics } from '../lib/visualSemantics.js'
+import type { DataEvents, MarketCatalogResponse, MarketProviderStatus } from '../protocol/generated.js'
 import { WireEvent } from '../protocol/generated.js'
 import type { Theme } from '../theme.js'
 
@@ -56,7 +55,6 @@ const PREDICTION = 'Prediction'
 // universe and a rich per-line-item detail pane (sparkline + day/52-week ranges
 // + heuristics). `d` adds providers/categories, `/` searches, `a` asks the agent.
 
-const STALE_MS = 60_000
 const WATCHLIST = 'Watchlist'
 
 const fmtNum = (v: null | number | undefined, unit?: string): string => {
@@ -207,7 +205,10 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   // useInput goes inert and its still-visible body mouse handlers are gated.
   const globalModal = useStore($globalModal)
 
-  const [config, setConfig] = useState<MarketConfig>(() => loadMarketConfig())
+  const [config, setConfig] = useState<MarketConfig>({ categories: [], custom: [], providers: [], watchlist: [] })
+  const [desk, setDesk] = useState<MarketCatalogResponse | null>(null)
+  const eventCacheRef = useRef<Record<string, DataEvents>>({})
+  const [providerStatus, setProviderStatus] = useState<Record<string, MarketProviderStatus>>({})
   const [active, setActive] = useState(0)
   const [sel, setSel] = useState(0)
   const [tick, setTick] = useState(0)
@@ -264,14 +265,14 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     }
 
     return merged
-     
   }, [progressById, marketJobs])
 
   const jobActive = (id: null | string): boolean => liveJob(id ? marketJobs[id] : undefined, Date.now())
 
-  const cacheRef = useRef<QuoteCache>(loadQuoteCache())
+  const cacheRef = useRef<QuoteCache>({})
   const [cacheVersion, setCacheVersion] = useState(0)
   const inflightRef = useRef(false)
+  const refreshOwner = useRef<AbortController | null>(null)
   const aliveRef = useRef(true)
 
   useEffect(() => {
@@ -292,32 +293,71 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   const providers = useMemo(() => new Set(config.providers), [config])
   const pmEnabled = providers.has('predictionmarkets')
 
-  // Enabled providers that require (or strongly need) an API key but don't have
-  // one set — these fetch nothing, so warn instead of showing a silent blank.
-  const providersMissingKey = useMemo(
-    () =>
-      config.providers
-        .map(providerByKey)
-        .filter((p): p is NonNullable<typeof p> => Boolean((p?.needsKey || p?.keyRecommended) && p?.keyEnv && !getProviderKey(p.keyEnv)))
-        .map(p => p.key),
-    [config.providers]
-  )
+  useEffect(() => {
+    let alive = true
+    refreshOwner.current?.abort()
+    refreshOwner.current = null
+    inflightRef.current = false
+    cacheRef.current = {}
+    eventCacheRef.current = {}
+    setDesk(null)
+    setConfig({ providers: [], categories: [], custom: [], watchlist: [] })
+    setProviderStatus({})
 
-  // Detail behind the header [!], shown in the `i` Information modal so the
-  // header stays a single row (no footer-stealing second line).
+    if (!gw) {
+      return
+    }
+
+    gw.request('market.catalog', {})
+      .then(result => {
+        if (!alive) {
+          return
+        }
+
+        const next = deskConfig(result.catalog, result.selection)
+        setDesk(result)
+        setConfig(next)
+      })
+      .catch(() => {
+        if (alive) {
+          setFlash('Unable to load data settings. Reconnect and reopen Markets.')
+        }
+      })
+
+    return () => {
+      alive = false
+    }
+  }, [gw])
+
+  const searchableSeries = useMemo(() => (desk ? catalogSeries(desk.catalog) : []), [desk])
+
   const infoItems = useMemo<InfoItem[]>(
     () =>
-      providersMissingKey.map(key => {
-        const p = providerByKey(key)
-
-        return {
-          detail: `${p?.keyUrl ? `Get a free key at ${p.keyUrl}. ` : ''}Add it under “Add data” (press d, highlight ${p?.name ?? key}, press k) or run /api-key set ${key}.`,
-          label: `${p?.name ?? key} series are blank without an API key`,
-          tone: 'warn'
-        }
-      }),
-    [providersMissingKey]
+      (desk?.catalog.providers ?? [])
+        .filter(
+          provider =>
+            config.providers.includes(provider.id) &&
+            provider.auth !== 'none' &&
+            !desk?.configured_providers.includes(provider.id)
+        )
+        .map(provider => ({
+          detail: `Open Add data → Sources to connect ${provider.name}. ${provider.access_note}`,
+          label: `${provider.name}: ${provider.auth === 'required' ? 'credentials required' : 'optional connection'}`,
+          tone: 'warn' as const
+        }))
+        .concat(
+          Object.values(providerStatus)
+            .filter(status => !['ready', 'refreshing'].includes(status.status))
+            .map(status => ({
+              label: `${status.provider}: ${status.status.replaceAll('_', ' ')}`,
+              detail: status.message ?? 'Try refreshing this source.',
+              tone: 'warn' as const
+            }))
+        ),
+    [desk, config.providers, providerStatus]
   )
+
+  const providersMissingKey = infoItems
 
   // ── Market Models data flow ────────────────────────────────────────────
   const refreshModels = () => {
@@ -391,8 +431,16 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
         const presRaw = (packet as Record<string, unknown>).presentation
         const pres = normalizePresentation((presRaw as Record<string, unknown>)?.presentation ?? presRaw)
         setPresentation(pres)
-        setVersionCount(Array.isArray((packet as Record<string, unknown>).versions) ? ((packet as Record<string, unknown>).versions as unknown[]).length : pres?.version ?? 0)
-        const msgs = Array.isArray((packet as Record<string, unknown>).messages) ? ((packet as Record<string, unknown>).messages as Record<string, unknown>[]) : []
+        setVersionCount(
+          Array.isArray((packet as Record<string, unknown>).versions)
+            ? ((packet as Record<string, unknown>).versions as unknown[]).length
+            : (pres?.version ?? 0)
+        )
+
+        const msgs = Array.isArray((packet as Record<string, unknown>).messages)
+          ? ((packet as Record<string, unknown>).messages as Record<string, unknown>[])
+          : []
+
         setChatMessages(msgs.map(m => ({ content: String(m.content ?? ''), role: String(m.role ?? 'user') })))
         setChatBusy(false)
       })
@@ -564,7 +612,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   // Tabs: a Watchlist tab (if any), the selected provider categories, then the
   // Prediction section (last) when the predictionmarkets provider is enabled.
   const categories = useMemo(() => {
-    const base = MARKET_CATEGORIES.filter(c => config.categories.includes(c))
+    const base = config.categories
 
     return [...(watchlist.length ? [WATCHLIST] : []), ...base, ...(pmEnabled ? [PREDICTION] : [])]
   }, [config, watchlist, pmEnabled])
@@ -585,8 +633,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   // appended LAST (after the optional Watchlist tab + the enabled quote
   // categories), so enabling the provider never shifts it — the index computed
   // from the CURRENT categories is already correct, no post-enable render hop.
-  const predictionTabIndex = (cats: string[]) =>
-    (watchlist.length ? 1 : 0) + MARKET_CATEGORIES.filter(c => cats.includes(c)).length
+  const predictionTabIndex = (cats: string[]) => (watchlist.length ? 1 : 0) + cats.length
 
   // Jump to (and, if needed, enable) the Prediction section. `p` from any mode,
   // and the add-data flow when the provider is newly turned on.
@@ -612,7 +659,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
 
     // Curated provider series + the user's own additions in this category.
     return dedupeSeries([
-      ...DEFAULT_SERIES.filter(s => providers.has(s.provider) && s.category === category),
+      ...(config.catalogSeries ?? []).filter(s => providers.has(s.provider) && s.category === category),
       ...custom.filter(s => s.category === category)
     ])
   }
@@ -624,7 +671,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
       dedupeSeries([
         ...watchlist,
         ...custom,
-        ...DEFAULT_SERIES.filter(s => providers.has(s.provider) && config.categories.includes(s.category))
+        ...(config.catalogSeries ?? []).filter(s => providers.has(s.provider) && config.categories.includes(s.category))
       ]),
     [watchlist, custom, providers, config]
   )
@@ -637,15 +684,23 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     const targets = force
       ? allSeries
       : allSeries.filter(s => {
+          if (s.kind === 'event' && s.catalog_id) {
+            const events = eventCacheRef.current[s.catalog_id]
+
+            return !events || Date.now() - Date.parse(events.retrieved_at) > (s.refresh_seconds ?? 300) * 1000
+          }
+
           const q = cacheRef.current[quoteKey(s.provider, s.symbol)]
 
-          return !q || Date.now() - q.asOf > STALE_MS
+          return !q?.retrieved_at || Date.now() - Date.parse(q.retrieved_at) > (q.refresh_seconds ?? 60) * 1000
         })
 
     if (targets.length === 0) {
       return
     }
 
+    const controller = new AbortController()
+    refreshOwner.current = controller
     inflightRef.current = true
 
     if (aliveRef.current) {
@@ -653,11 +708,26 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     }
 
     await fetchQuotes(targets, {
-      getKey: getProviderKey,
-      // Server-side providers (FX + BEA) route through the gateway; the flag is
-      // config.serverSide (undefined → marketFetch's DEFAULT_SERVER_SIDE).
+      // Requests belong to this view/backend generation. Late replies cannot
+      // populate a different connection's display or selection.
       gw,
+      signal: controller.signal,
       serverSide: config.serverSide,
+      onEvents: data => {
+        eventCacheRef.current[data.series_id] = data
+
+        if (aliveRef.current) {
+          setCacheVersion(value => value + 1)
+        }
+      },
+      onStatus: statuses => {
+        if (aliveRef.current) {
+          setProviderStatus(current => ({
+            ...current,
+            ...Object.fromEntries(statuses.map(status => [status.provider, status]))
+          }))
+        }
+      },
       onBatch: quotes => {
         for (const q of quotes) {
           cacheRef.current[quoteKey(q.provider, q.symbol)] = q
@@ -668,7 +738,12 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
         }
       }
     })
-    saveQuoteCache(cacheRef.current)
+
+    if (refreshOwner.current !== controller || controller.signal.aborted) {
+      return
+    }
+
+    refreshOwner.current = null
     inflightRef.current = false
 
     if (aliveRef.current) {
@@ -678,17 +753,35 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
 
   useEffect(() => {
     void refresh(false)
+
+    const timer = setInterval(() => {
+      void refresh(false)
+    }, 30_000)
+
+    return () => {
+      clearInterval(timer)
+      refreshOwner.current?.abort()
+      refreshOwner.current = null
+      inflightRef.current = false
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config])
+  }, [config, gw])
 
   const persist = (next: MarketConfig) => {
-    saveMarketConfig(next)
-    setConfig(next)
+    if (!gw || !desk || !config.revision) {
+      return setFlash('Data settings are not loaded. Reopen Markets to retry.')
+    }
+
+    void saveDeskFields(gw, config, next)
+      .then(setConfig)
+      .catch(cause =>
+        setFlash(cause instanceof Error ? cause.message : 'Could not save data settings. Reopen Markets and retry.')
+      )
   }
 
   const onProvidersSaved = (next: MarketConfig) => {
     setModal('')
-    persist({ ...next, custom, watchlist })
+    setConfig(next)
     setActive(0)
 
     // Enabling the Prediction Markets entry in Add-data jumps straight to the
@@ -711,8 +804,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     setFlash('saved')
   }
 
-  const withProvider = (key: string): string[] =>
-    providers.has(key) ? config.providers : [...config.providers, key]
+  const withProvider = (key: string): string[] => (providers.has(key) ? config.providers : [...config.providers, key])
 
   const isAdded = (s: MarketSeries): boolean => custom.some(c => sameSeries(c, s))
   const isWatched = (s: MarketSeries): boolean => watchlist.some(w => sameSeries(w, s))
@@ -722,8 +814,16 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   const toggleCategory = (s: MarketSeries) => {
     const exists = isAdded(s)
     const nextCustom = exists ? custom.filter(c => !sameSeries(c, s)) : [...custom, s]
-    const nextCategories = exists || config.categories.includes(s.category) ? config.categories : [...config.categories, s.category]
-    persist({ ...config, categories: nextCategories, custom: nextCustom, providers: exists ? config.providers : withProvider(s.provider) })
+
+    const nextCategories =
+      exists || config.categories.includes(s.category) ? config.categories : [...config.categories, s.category]
+
+    persist({
+      ...config,
+      categories: nextCategories,
+      custom: nextCustom,
+      providers: exists ? config.providers : withProvider(s.provider)
+    })
     setFlash(exists ? `removed ${s.symbol}` : `added ${s.symbol} to ${s.category}`)
   }
 
@@ -757,13 +857,17 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
       MARKET_SEARCH_FIELDS
     ).forEach((r, i) => rankOf.set(r.item, i))
 
-    return rows.filter(r => rankOf.has(r.series)).sort((a, b) => (rankOf.get(a.series) ?? 0) - (rankOf.get(b.series) ?? 0))
+    return rows
+      .filter(r => rankOf.has(r.series))
+      .sort((a, b) => (rankOf.get(a.series) ?? 0) - (rankOf.get(b.series) ?? 0))
   }, [rows, searchActive])
 
   // Column sort (`o` cycles, `O` toggles, header click sorts). Composes ON TOP of
   // the `/` filter: sort the already-filtered `visibleRows`. Default = unsorted →
   // the loaded tape order is preserved.
-  const marketSort = useTableSort(MARKET_SORT_KEYS)
+  const hasVolume = visibleRows.some(row => row.quote?.volume != null && Number.isFinite(row.quote.volume))
+  const sortKeys = useMemo(() => MARKET_SORT_KEYS.filter(key => key !== 'vol' || hasVolume), [hasVolume])
+  const marketSort = useTableSort(sortKeys)
 
   const sortedRows = useMemo(
     () => sortRows(visibleRows, marketSort.state.key, marketSort.state.dir, marketSortValue),
@@ -781,11 +885,16 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   useEffect(() => {
     const key = pendingReselect.current
 
-    if (key == null) {return}
+    if (key == null) {
+      return
+    }
+
     pendingReselect.current = null
     const idx = sortedRows.findIndex(r => quoteKey(r.series.provider, r.series.symbol) === key)
 
-    if (idx >= 0) {setSel(idx)}
+    if (idx >= 0) {
+      setSel(idx)
+    }
   }, [sortedRows])
 
   const armReselect = () => {
@@ -840,351 +949,366 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     }
   }
 
-  useInput((ch, key) => {
-    if (modal) {
-      return
-    }
-
-    // While the `/` filter bar is focused, keystrokes edit the query. Filtering
-    // is live; Enter drops focus so ↑↓ navigate matches, Esc clears + closes.
-    if (searchMode) {
-      if (key.escape) {
-        setSearchMode(false)
-        setSearchInput('')
-
+  useInput(
+    (ch, key) => {
+      if (modal) {
         return
       }
 
-      if (key.return) {
-        return setSearchMode(false)
-      }
+      // While the `/` filter bar is focused, keystrokes edit the query. Filtering
+      // is live; Enter drops focus so ↑↓ navigate matches, Esc clears + closes.
+      if (searchMode) {
+        if (key.escape) {
+          setSearchMode(false)
+          setSearchInput('')
 
-      if (key.backspace || key.delete) {
-        return setSearchInput(s => s.slice(0, -1))
-      }
-
-      if (ch && !key.ctrl && !key.meta) {
-        const printable = [...ch].filter(c => c >= ' ').join('')
-
-        if (printable) {
-          setSearchInput(s => s + printable)
-          setSel(0)
-        }
-      }
-
-      return
-    }
-
-    // While the model chat is open it captures input FIRST (so single-letter
-    // shortcuts can be typed into the message). Tab toggles focus between the
-    // composer and the presentation reader so the left pane stays scrollable;
-    // the mouse wheel always scrolls the reader regardless of focus.
-    if (mode === 'models' && chatOpen) {
-      if (key.tab) {
-        return setChatFocus(f => (f === 'input' ? 'reader' : 'input'))
-      }
-
-      if (key.escape) {
-        setChatFocus('input')
-
-        return setChatOpen(false)
-      }
-
-      // Wheel scrolls the reader from either focus (single-line composer has no
-      // use for it).
-      if (key.wheelUp) {
-        return presScrollRef.current?.scrollBy?.(-2)
-      }
-
-      if (key.wheelDown) {
-        return presScrollRef.current?.scrollBy?.(2)
-      }
-
-      if (chatFocus === 'reader') {
-        // Reader focus: scroll the presentation; Enter/printable jumps back to the
-        // composer so typing is never "stuck".
-        if (key.upArrow || ch === 'k') {
-          return presScrollRef.current?.scrollBy?.(-2)
-        }
-
-        if (key.downArrow || ch === 'j') {
-          return presScrollRef.current?.scrollBy?.(2)
-        }
-
-        if (key.pageUp) {
-          return presScrollRef.current?.scrollBy?.(-(10))
-        }
-
-        if (key.pageDown) {
-          return presScrollRef.current?.scrollBy?.(10)
-        }
-
-        if (ch === 'g') {
-          return presScrollRef.current?.scrollTo?.(0)
-        }
-
-        if (ch === 'G') {
-          return presScrollRef.current?.scrollToBottom?.()
+          return
         }
 
         if (key.return) {
-          return setChatFocus('input')
+          return setSearchMode(false)
+        }
+
+        if (key.backspace || key.delete) {
+          return setSearchInput(s => s.slice(0, -1))
+        }
+
+        if (ch && !key.ctrl && !key.meta) {
+          const printable = [...ch].filter(c => c >= ' ').join('')
+
+          if (printable) {
+            setSearchInput(s => s + printable)
+            setSel(0)
+          }
         }
 
         return
       }
 
-      // Composer focus: type the message.
-      if (key.return) {
-        return sendChat()
-      }
-
-      if (key.backspace || key.delete) {
-        return setChatInput(s => s.slice(0, -1))
-      }
-
-      if (ch && !key.ctrl && !key.meta) {
-        const printable = [...ch].filter(c => c >= ' ').join('')
-
-        if (printable) {
-          setChatInput(s => s + printable)
-        }
-      }
-
-      return
-    }
-
-    // `p` jumps to the Prediction section (enabling the provider if it's off);
-    // `m` toggles Data | Models; `h` opens the unified Help modal (consistent on
-    // every view); `i` opens the Data-warnings modal (the header [!] detail) —
-    // all available in every mode.
-    if (ch === 'p') {
-      return jumpToPrediction()
-    }
-
-    if (ch === 'm') {
-      setSel(0)
-      setModelSel(0)
-
-      return setMode(prev => (prev === 'models' ? 'data' : 'models'))
-    }
-
-    if (ch === 'h') {
-      return openHelpOverlay()
-    }
-
-    if (ch === 'i') {
-      return setModal('info')
-    }
-
-    if (mode === 'models') {
-      // (Chat-open input is captured at the top of useInput, before shortcuts.)
-      // An open presentation.
-      if (openModelId) {
-        if (key.escape || ch === 'q') {
-          setOpenModelId(null)
-          setPresentation(null)
-
-          return
+      // While the model chat is open it captures input FIRST (so single-letter
+      // shortcuts can be typed into the message). Tab toggles focus between the
+      // composer and the presentation reader so the left pane stays scrollable;
+      // the mouse wheel always scrolls the reader regardless of focus.
+      if (mode === 'models' && chatOpen) {
+        if (key.tab) {
+          return setChatFocus(f => (f === 'input' ? 'reader' : 'input'))
         }
 
-        if (ch === 'c') {
+        if (key.escape) {
           setChatFocus('input')
 
-          return setChatOpen(true)
+          return setChatOpen(false)
         }
 
-        if (ch === 'w') {
-          setFlash('rewriting…')
-          gw?.request('markets.model.renarrate', { id: openModelId })
-            .then(() => loadModel(openModelId))
-            .catch(() => setFlash('rewrite failed'))
-
-          return
-        }
-
-        if (ch === 'e') {
-          gw?.request('markets.model.export', { id: openModelId })
-            .then(raw => {
-              const r = asRpcResult<{ path?: string }>(raw)
-              setFlash(r?.path ? `exported → ${r.path}` : 'export failed')
-            })
-            .catch(() => setFlash('export failed'))
-
-          return
-        }
-
-        if (ch === 'F') {
-          gw?.request('markets.model.to_forecast', { id: openModelId })
-            .then(() => setFlash('forecast seed created'))
-            .catch(() => setFlash('failed'))
-
-          return
-        }
-
-        if (ch === 'R') {
-          return retryModel(openModelId)
-        }
-
-        if (key.leftArrow) {
-          return navVersion(-1)
-        }
-
-        if (key.rightArrow) {
-          return navVersion(1)
-        }
-
-        if (key.upArrow || ch === 'k' || key.wheelUp) {
+        // Wheel scrolls the reader from either focus (single-line composer has no
+        // use for it).
+        if (key.wheelUp) {
           return presScrollRef.current?.scrollBy?.(-2)
         }
 
-        if (key.downArrow || ch === 'j' || key.wheelDown) {
+        if (key.wheelDown) {
           return presScrollRef.current?.scrollBy?.(2)
+        }
+
+        if (chatFocus === 'reader') {
+          // Reader focus: scroll the presentation; Enter/printable jumps back to the
+          // composer so typing is never "stuck".
+          if (key.upArrow || ch === 'k') {
+            return presScrollRef.current?.scrollBy?.(-2)
+          }
+
+          if (key.downArrow || ch === 'j') {
+            return presScrollRef.current?.scrollBy?.(2)
+          }
+
+          if (key.pageUp) {
+            return presScrollRef.current?.scrollBy?.(-10)
+          }
+
+          if (key.pageDown) {
+            return presScrollRef.current?.scrollBy?.(10)
+          }
+
+          if (ch === 'g') {
+            return presScrollRef.current?.scrollTo?.(0)
+          }
+
+          if (ch === 'G') {
+            return presScrollRef.current?.scrollToBottom?.()
+          }
+
+          if (key.return) {
+            return setChatFocus('input')
+          }
+
+          return
+        }
+
+        // Composer focus: type the message.
+        if (key.return) {
+          return sendChat()
+        }
+
+        if (key.backspace || key.delete) {
+          return setChatInput(s => s.slice(0, -1))
+        }
+
+        if (ch && !key.ctrl && !key.meta) {
+          const printable = [...ch].filter(c => c >= ' ').join('')
+
+          if (printable) {
+            setChatInput(s => s + printable)
+          }
         }
 
         return
       }
 
-      // The models list.
-      if (key.escape || ch === 'q') {
+      // `p` jumps to the Prediction section (enabling the provider if it's off);
+      // `m` toggles Data | Models; `h` opens the unified Help modal (consistent on
+      // every view); `i` opens the Data-warnings modal (the header [!] detail) —
+      // all available in every mode.
+      if (ch === 'p') {
+        return jumpToPrediction()
+      }
+
+      if (ch === 'm') {
+        setSel(0)
+        setModelSel(0)
+
+        return setMode(prev => (prev === 'models' ? 'data' : 'models'))
+      }
+
+      if (ch === 'h') {
+        return openHelpOverlay()
+      }
+
+      if (ch === 'i') {
+        return setModal('info')
+      }
+
+      if (mode === 'models') {
+        // (Chat-open input is captured at the top of useInput, before shortcuts.)
+        // An open presentation.
+        if (openModelId) {
+          if (key.escape || ch === 'q') {
+            setOpenModelId(null)
+            setPresentation(null)
+
+            return
+          }
+
+          if (ch === 'c') {
+            setChatFocus('input')
+
+            return setChatOpen(true)
+          }
+
+          if (ch === 'w') {
+            setFlash('rewriting…')
+            gw?.request('markets.model.renarrate', { id: openModelId })
+              .then(() => loadModel(openModelId))
+              .catch(() => setFlash('rewrite failed'))
+
+            return
+          }
+
+          if (ch === 'e') {
+            gw?.request('markets.model.export', { id: openModelId })
+              .then(raw => {
+                const r = asRpcResult<{ path?: string }>(raw)
+                setFlash(r?.path ? `exported → ${r.path}` : 'export failed')
+              })
+              .catch(() => setFlash('export failed'))
+
+            return
+          }
+
+          if (ch === 'F') {
+            gw?.request('markets.model.to_forecast', { id: openModelId })
+              .then(() => setFlash('forecast seed created'))
+              .catch(() => setFlash('failed'))
+
+            return
+          }
+
+          if (ch === 'R') {
+            return retryModel(openModelId)
+          }
+
+          if (key.leftArrow) {
+            return navVersion(-1)
+          }
+
+          if (key.rightArrow) {
+            return navVersion(1)
+          }
+
+          if (key.upArrow || ch === 'k' || key.wheelUp) {
+            return presScrollRef.current?.scrollBy?.(-2)
+          }
+
+          if (key.downArrow || ch === 'j' || key.wheelDown) {
+            return presScrollRef.current?.scrollBy?.(2)
+          }
+
+          return
+        }
+
+        // The models list.
+        if (key.escape || ch === 'q') {
+          return onClose()
+        }
+
+        if (ch === 'n') {
+          return setModal('newModel')
+        }
+
+        if (ch === 'r') {
+          setFlash('refreshing…')
+
+          return refreshModels()
+        }
+
+        if (ch === 'R') {
+          const m = models[modelSel]
+
+          if (m) {
+            return retryModel(m.id)
+          }
+
+          return
+        }
+
+        if (key.return) {
+          const m = models[modelSel]
+
+          if (m) {
+            return loadModel(m.id)
+          }
+
+          return
+        }
+
+        if (ch === 'x') {
+          const m = models[modelSel]
+
+          if (m && gw) {
+            gw.request('markets.model.delete', { id: m.id })
+              .then(() => refreshModels())
+              .catch(() => undefined)
+            setFlash(`deleted ${m.title}`)
+          }
+
+          return
+        }
+
+        if (key.upArrow || ch === 'k' || key.wheelUp) {
+          return setModelSel(i => Math.max(0, i - 1))
+        }
+
+        if (key.downArrow || ch === 'j' || key.wheelDown) {
+          return setModelSel(i => Math.min(Math.max(0, models.length - 1), i + 1))
+        }
+
+        return
+      }
+
+      // ── Data mode ──────────────────────────────────────────────────────────
+      // On the Prediction tab, the section owns its keys (open / expand / venue /
+      // range / sort / select). It returns false for the shared keys (q/Esc, d,
+      // /, m, h, Tab) so they still fall through to the handlers below.
+      if (pmTabActive && pm.handleKey(ch, key)) {
+        return
+      }
+
+      // `f` opens the structured PM filter (the section owns it; the quote tape has
+      // no equivalent). Trapped here so it never leaks into a category switch.
+      if (pmTabActive && ch === 'f') {
+        return setModal('pmFilter')
+      }
+
+      if (ch === 'q' || key.escape) {
+        // Esc backs out of an active `/` filter first, then leaves the view.
+        if (key.escape && searchActive) {
+          setSearchInput('')
+
+          return
+        }
+
         return onClose()
       }
 
-      if (ch === 'n') {
-        return setModal('newModel')
+      if (ch === 'a') {
+        return askAgent()
+      }
+
+      if (ch === 'd') {
+        return setModal('providers')
+      }
+
+      if (ch === '/') {
+        setSearchMode(true)
+        setSel(0)
+
+        return
       }
 
       if (ch === 'r') {
         setFlash('refreshing…')
 
-        return refreshModels()
+        return void refresh(true)
       }
 
-      if (ch === 'R') {
-        const m = models[modelSel]
+      // `o` cycles the sort column (header order → unsorted); `O` toggles asc/desc.
+      if (ch === 'o') {
+        return onSortCycle()
+      }
 
-        if (m) {
-          return retryModel(m.id)
+      if (ch === 'O') {
+        return onSortToggle()
+      }
+
+      if (key.return && selectedRow?.series.kind === 'event') {
+        const entry = desk?.catalog.series.find(entry => entry.id === selectedRow.series.catalog_id)
+
+        if (entry) {
+          openExternalUrl(entry.source_url)
         }
 
         return
       }
 
-      if (key.return) {
-        const m = models[modelSel]
-
-        if (m) {
-          return loadModel(m.id)
+      if (key.return && selectedRow?.series.provider === 'yahoo') {
+        if (openExternalUrl(`https://finance.yahoo.com/quote/${encodeURIComponent(selectedRow.series.symbol)}`)) {
+          setFlash('opened in browser')
         }
 
         return
       }
 
-      if (ch === 'x') {
-        const m = models[modelSel]
+      if ((key.tab && !key.shift) || key.rightArrow) {
+        setSel(0)
 
-        if (m && gw) {
-          gw.request('markets.model.delete', { id: m.id }).then(() => refreshModels()).catch(() => undefined)
-          setFlash(`deleted ${m.title}`)
-        }
+        return setActive(i => (i + 1) % Math.max(1, categories.length))
+      }
 
-        return
+      if (key.leftArrow || (key.tab && key.shift)) {
+        setSel(0)
+
+        return setActive(i => (i - 1 + Math.max(1, categories.length)) % Math.max(1, categories.length))
       }
 
       if (key.upArrow || ch === 'k' || key.wheelUp) {
-        return setModelSel(i => Math.max(0, i - 1))
+        return setSel(i => Math.max(0, i - 1))
       }
 
       if (key.downArrow || ch === 'j' || key.wheelDown) {
-        return setModelSel(i => Math.min(Math.max(0, models.length - 1), i + 1))
+        return setSel(i => Math.min(Math.max(0, sortedRows.length - 1), i + 1))
       }
-
-      return
-    }
-
-    // ── Data mode ──────────────────────────────────────────────────────────
-    // On the Prediction tab, the section owns its keys (open / expand / venue /
-    // range / sort / select). It returns false for the shared keys (q/Esc, d,
-    // /, m, h, Tab) so they still fall through to the handlers below.
-    if (pmTabActive && pm.handleKey(ch, key)) {
-      return
-    }
-
-    // `f` opens the structured PM filter (the section owns it; the quote tape has
-    // no equivalent). Trapped here so it never leaks into a category switch.
-    if (pmTabActive && ch === 'f') {
-      return setModal('pmFilter')
-    }
-
-    if (ch === 'q' || key.escape) {
-      // Esc backs out of an active `/` filter first, then leaves the view.
-      if (key.escape && searchActive) {
-        setSearchInput('')
-
-        return
-      }
-
-      return onClose()
-    }
-
-    if (ch === 'a') {
-      return askAgent()
-    }
-
-    if (ch === 'd') {
-      return setModal('providers')
-    }
-
-    if (ch === '/') {
-      setSearchMode(true)
-      setSel(0)
-
-      return
-    }
-
-    if (ch === 'r') {
-      setFlash('refreshing…')
-
-      return void refresh(true)
-    }
-
-    // `o` cycles the sort column (header order → unsorted); `O` toggles asc/desc.
-    if (ch === 'o') {
-      return onSortCycle()
-    }
-
-    if (ch === 'O') {
-      return onSortToggle()
-    }
-
-    if (key.return && selectedRow?.series.provider === 'yahoo') {
-      if (openExternalUrl(`https://finance.yahoo.com/quote/${encodeURIComponent(selectedRow.series.symbol)}`)) {
-        setFlash('opened in browser')
-      }
-
-      return
-    }
-
-    if (key.tab || key.rightArrow) {
-      setSel(0)
-
-      return setActive(i => (i + 1) % Math.max(1, categories.length))
-    }
-
-    if (key.leftArrow) {
-      setSel(0)
-
-      return setActive(i => (i - 1 + Math.max(1, categories.length)) % Math.max(1, categories.length))
-    }
-
-    if (key.upArrow || ch === 'k' || key.wheelUp) {
-      return setSel(i => Math.max(0, i - 1))
-    }
-
-    if (key.downArrow || ch === 'j' || key.wheelDown) {
-      return setSel(i => Math.min(Math.max(0, sortedRows.length - 1), i + 1))
-    }
-  }, { isActive: !globalModal })
+    },
+    { isActive: !globalModal }
+  )
 
   const width = Math.max(40, cols - 4)
   const hasContent = providers.size > 0 || watchlist.length > 0
@@ -1213,53 +1337,63 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
           </Text>
         </Text>
       ) : (
-      <Text wrap="truncate-end">
-        <Text bold color={t.color.primary}>
-          MARKETS
-        </Text>
-        <Text color={t.color.muted}>{'   '}</Text>
-        <Text bold={mode === 'data'} color={mode === 'data' ? t.color.primary : t.color.muted}>
-          {mode === 'data' ? '[Data]' : 'Data'}
-        </Text>
-        <Text color={t.color.muted}>{'  '}</Text>
-        <Text bold={mode === 'models'} color={mode === 'models' ? t.color.primary : t.color.muted}>
-          {mode === 'models' ? '[Models]' : 'Models'}
-        </Text>
-        <Text color={t.color.muted}>{'   ·   '}</Text>
-        <Text color={fetching || pmBusy ? sem.star : hasContent ? sem.up : sem.subtle}>
-          {statusGlyph(fetching || pmBusy ? 'busy' : hasContent ? 'live' : 'idle', tick)}
-        </Text>
-        {mode === 'models' ? (
-          <Text color={t.color.muted}> {`${models.length} model${models.length === 1 ? '' : 's'}${buildingCount ? ` · ${buildingCount} building` : ''}`}</Text>
-        ) : pmTabActive ? (
-          pm.loading && pm.itemsCount === 0 ? (
-            // First open: an honest spinner + "loading venues…" instead of a
-            // "0 events" flash before the first list fetch lands.
-            <Text color={t.color.muted}>{` ${statusGlyph('busy', tick)} loading venues…`}</Text>
-          ) : (
-            <Text color={t.color.muted}>
-              {` Polymarket + Kalshi · ${pm.itemsCount} shown${pm.catalog?.ready ? ` · ${pm.catalog.events} indexed` : pm.catalog?.refreshing ? ' · ◌ indexing catalogs' : ''}${pm.stale ? ' · ◌ refreshing' : pm.streaming ? ' · ● live' : ''}`}
-              {pm.filterActive ? (
-                <Text color={t.color.muted}>{`  ·  ${pm.filterSummary} · ${pm.filteredCount} of ${pm.itemsCount} shown`}</Text>
-              ) : null}
-            </Text>
-          )
-        ) : (
-          <>
-            <Text color={t.color.muted}> {fetching ? 'updating…' : hasContent ? 'live quotes' : 'no providers'} · </Text>
-            <Text color={t.color.text}>
-              {hasContent ? `${config.providers.length} providers · ${watchlist.length} watched` : 'press a to add data'}
-            </Text>
-          </>
-        )}
-        {providersMissingKey.length ? (
-          <Text color={sem.star}>
-            {'   [!] '}
-            <Text color={t.color.muted}>press </Text>
-            <Text color={sem.star}>h</Text>
+        <Text wrap="truncate-end">
+          <Text bold color={t.color.primary}>
+            MARKETS
           </Text>
-        ) : null}
-      </Text>
+          <Text color={t.color.muted}>{'   '}</Text>
+          <Text bold={mode === 'data'} color={mode === 'data' ? t.color.primary : t.color.muted}>
+            {mode === 'data' ? '[Data]' : 'Data'}
+          </Text>
+          <Text color={t.color.muted}>{'  '}</Text>
+          <Text bold={mode === 'models'} color={mode === 'models' ? t.color.primary : t.color.muted}>
+            {mode === 'models' ? '[Models]' : 'Models'}
+          </Text>
+          <Text color={t.color.muted}>{'   ·   '}</Text>
+          <Text color={fetching || pmBusy ? sem.star : hasContent ? sem.up : sem.subtle}>
+            {statusGlyph(fetching || pmBusy ? 'busy' : hasContent ? 'live' : 'idle', tick)}
+          </Text>
+          {mode === 'models' ? (
+            <Text color={t.color.muted}>
+              {' '}
+              {`${models.length} model${models.length === 1 ? '' : 's'}${buildingCount ? ` · ${buildingCount} building` : ''}`}
+            </Text>
+          ) : pmTabActive ? (
+            pm.loading && pm.itemsCount === 0 ? (
+              // First open: an honest spinner + "loading venues…" instead of a
+              // "0 events" flash before the first list fetch lands.
+              <Text color={t.color.muted}>{` ${statusGlyph('busy', tick)} loading venues…`}</Text>
+            ) : (
+              <Text color={t.color.muted}>
+                {` Polymarket + Kalshi · ${pm.itemsCount} shown${pm.catalog?.ready ? ` · ${pm.catalog.events} indexed` : pm.catalog?.refreshing ? ' · ◌ indexing catalogs' : ''}${pm.stale ? ' · ◌ refreshing' : pm.streaming ? ' · ● live' : ''}`}
+                {pm.filterActive ? (
+                  <Text
+                    color={t.color.muted}
+                  >{`  ·  ${pm.filterSummary} · ${pm.filteredCount} of ${pm.itemsCount} shown`}</Text>
+                ) : null}
+              </Text>
+            )
+          ) : (
+            <>
+              <Text color={t.color.muted}>
+                {' '}
+                {fetching ? 'updating…' : hasContent ? 'live quotes' : 'no providers'} ·{' '}
+              </Text>
+              <Text color={t.color.text}>
+                {hasContent
+                  ? `${config.providers.length} providers · ${watchlist.length} watched`
+                  : 'press a to add data'}
+              </Text>
+            </>
+          )}
+          {providersMissingKey.length ? (
+            <Text color={sem.star}>
+              {'   [!] '}
+              <Text color={t.color.muted}>press </Text>
+              <Text color={sem.star}>h</Text>
+            </Text>
+          ) : null}
+        </Text>
       )}
     </Box>
   )
@@ -1273,19 +1407,19 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     <Box alignItems="center" flexGrow={1} justifyContent="center">
       <Box flexDirection="column" width={Math.min(74, width)}>
         <Text bold color={t.color.text}>
-          Build your market tape.
+          Build your global data desk.
         </Text>
         <Box marginTop={1}>
           <Text color={t.color.muted} wrap="wrap">
-            Enable data providers (Yahoo, Frankfurter, CoinGecko and FRED need no key; BLS optional; BEA uses a
-            free key) and pick categories — or search for any ticker and add it to your watchlist.
+            Load the global starter set or browse individual series by topic and region. Starting empty is fine — your
+            selection will stay empty until you add data.
           </Text>
         </Box>
         <Box marginTop={1}>
           <Text bold color={t.color.accent}>
             Press d
           </Text>
-          <Text color={t.color.text}> to add providers · </Text>
+          <Text color={t.color.text}> to load a starter set or browse data · </Text>
           <Text bold color={t.color.accent}>
             /
           </Text>
@@ -1303,11 +1437,13 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     modal === 'providers' ? (
       <AddProviderModal
         cols={cols}
+        gw={gw}
         initial={config}
         onCancel={() => setModal('')}
         onSaved={onProvidersSaved}
         onSearchSymbols={() => setModal('search')}
         rows={termRows}
+        sessionId={sessionId}
         t={t}
       />
     ) : modal === 'info' ? (
@@ -1323,7 +1459,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     ) : modal === 'newModel' ? (
       <NewModelModal
         cols={cols}
-        initialAsset={mode === 'data' ? selectedRow?.series.symbol ?? '' : ''}
+        initialAsset={mode === 'data' ? (selectedRow?.series.symbol ?? '') : ''}
         onCancel={() => setModal('')}
         onSubmit={submitNewModel}
         rows={termRows}
@@ -1331,6 +1467,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
       />
     ) : modal === 'search' ? (
       <MarketSearchModal
+        catalog={searchableSeries}
         cols={cols}
         gw={gw}
         isAdded={isAdded}
@@ -1355,17 +1492,35 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
       />
     ) : null
 
+  const topicWindow = marketTopicWindow(categories, active, Math.max(12, width - 22))
+  const tabStart = topicWindow.start
+  const visibleTabs = categories.slice(tabStart, topicWindow.end)
+
   const tabs = (
     <NoSelect flexShrink={0} marginBottom={1}>
       <Box>
-        {categories.map((cat, i) => (
-          <Box key={cat} onClick={() => { if (!modal && !globalModal) { setActive(i); setSel(0) } }}>
-            {i > 0 ? <Text color={t.color.border}>{'  ·  '}</Text> : null}
-            <Text bold={i === active} color={i === active ? t.color.accent : t.color.muted}>
-              {cat}
-            </Text>
-          </Box>
-        ))}
+        <Text color={t.color.muted}>{categories.length ? `${active + 1}/${categories.length}  ` : ''}</Text>
+        {visibleTabs.map((cat, offset) => {
+          const i = tabStart + offset
+
+          return (
+            <Box
+              key={cat}
+              onClick={() => {
+                if (!modal && !globalModal) {
+                  setActive(i)
+                  setSel(0)
+                }
+              }}
+            >
+              {offset > 0 ? <Text color={t.color.border}>{'  ·  '}</Text> : null}
+              <Text bold={i === active} color={i === active ? t.color.accent : t.color.muted}>
+                {cat}
+              </Text>
+            </Box>
+          )
+        })}
+        {visibleTabs.length < categories.length ? <Text color={t.color.muted}> ← → Topics</Text> : null}
       </Box>
     </NoSelect>
   )
@@ -1382,53 +1537,35 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
 
   const cellColor = (v: null | number | undefined): string => dirColor(sem, v)
 
-  // Fixed columns packed from the left; the 1-month trend sparkline fills the
-  // leftover width so each row saturates the pane (overflow clips the trend,
-  // never the numbers, since the trend is last). CHG% leads with a ▲/▼ so
-  // direction reads without colour too.
-  const COLS: { align: 'left' | 'right'; key: string; label: string; w: number }[] = [
-    { align: 'left', key: 'sym', label: 'SYMBOL', w: 9 },
-    { align: 'left', key: 'name', label: 'NAME', w: 24 },
-    { align: 'right', key: 'last', label: 'LAST', w: 12 },
-    { align: 'right', key: 'chg', label: 'CHG', w: 11 },
-    { align: 'right', key: 'pct', label: 'CHG%', w: 10 },
-    { align: 'right', key: 'vol', label: 'VOL', w: 10 }
-  ]
-
-  // Keep columns by PRIORITY when the pane is tight (NAME/LAST/CHG% matter most),
-  // but render them in display order. So a narrow table still shows the essentials
-  // rather than just SYMBOL + LAST.
-  const PRIORITY = ['name', 'last', 'pct', 'chg', 'sym', 'vol']
-  const keep = new Set<string>()
-  let usedW = 2 // marker
-
-  for (const key of PRIORITY) {
-    const c = COLS.find(col => col.key === key)
-
-    if (c && usedW + c.w + 1 <= avail) {
-      keep.add(key)
-      usedW += c.w + 1
-    }
-  }
-
-  const keptCols = COLS.filter(c => keep.has(c.key))
-
-  const trendW = Math.max(0, avail - usedW)
-  const showTrend = trendW >= 10
+  const { columns: keptCols, trendWidth: trendW } = marketColumns(avail, hasVolume)
+  const showTrend = trendW > 0
 
   const cellText = (key: string, q: MarketQuote | undefined, ser: MarketSeries): { color: string; text: string } => {
     switch (key) {
       case 'chg':
         return { color: cellColor(q?.change ?? null), text: q ? fmtSigned(q.change) : '—' }
+      case 'last': {
+        const events = ser.catalog_id ? eventCacheRef.current[ser.catalog_id] : undefined
 
-      case 'last':
-        return { color: t.color.text, text: fmtNum(q?.value, ser.unit) }
+        return {
+          color: t.color.text,
+          text:
+            ser.kind === 'event'
+              ? events
+                ? `${events.truncated ? '≥' : ''}${events.events.length} alerts`
+                : '—'
+              : fmtNum(q?.value, ser.unit)
+        }
+      }
 
       case 'name':
         return { color: t.color.label, text: q?.name || ser.name || ser.symbol || '' }
 
       case 'pct':
-        return { color: cellColor(q?.changePct ?? null), text: q ? `${dirGlyph(q.changePct)} ${fmtPct(q.changePct)}` : '—' }
+        return {
+          color: cellColor(q?.changePct ?? null),
+          text: q ? `${dirGlyph(q.changePct)} ${fmtPct(q.changePct)}` : '—'
+        }
 
       case 'sym':
         return { color: sem.subtle, text: ser.symbol }
@@ -1459,7 +1596,9 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
           (gated while a modal covers the body). The active column shows a ▲/▼
           direction glyph and paints in accent; the rest stay the plain heading. */}
       <Box>
-        <Text bold color={sem.heading}>{'  '}</Text>
+        <Text bold color={sem.heading}>
+          {'  '}
+        </Text>
         {keptCols.map(c => {
           const active = marketSort.state.key === c.key
           const ind = active ? ` ${sortIndicator(marketSort.state, c.key)}` : ''
@@ -1472,7 +1611,11 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
             </Box>
           )
         })}
-        {showTrend ? <Text bold color={sem.heading}>{pad('1MO', trendW, 'left')}</Text> : null}
+        {showTrend ? (
+          <Text bold color={sem.heading}>
+            {pad('TREND', trendW, 'left')}
+          </Text>
+        ) : null}
       </Box>
       <Text color={sem.rule}>{'─'.repeat(avail)}</Text>
       <Box flexDirection="column">
@@ -1488,10 +1631,18 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
           windowed.map(({ quote, series }, i) => {
             const idx = listStart + i
             const on = idx === clampedSel
-            const trend = showTrend && quote?.history ? sparkline(quote.history, trendW) : ''
+            const trend = pad(showTrend && quote?.history ? sparkline(quote.history, trendW) : '', trendW, 'left')
 
             return (
-              <Box key={`${series.provider}:${series.symbol}`} onClick={() => { if (!modal && !globalModal) { setSel(idx) } }} width="100%">
+              <Box
+                key={`${series.provider}:${series.symbol}`}
+                onClick={() => {
+                  if (!modal && !globalModal) {
+                    setSel(idx)
+                  }
+                }}
+                width="100%"
+              >
                 {/* Full-row selection highlight (desk-view parity across the whole
                     Data tape): the background IS the cursor. */}
                 <Text backgroundColor={on ? t.color.selectionBg : undefined} wrap="truncate-end">
@@ -1533,15 +1684,16 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
       return null
     }
 
-    const prov = providerByKey(s.provider)
+    const provider = desk?.catalog.providers.find(provider => provider.id === s.provider)
 
-    if (!prov?.keyEnv || getProviderKey(prov.keyEnv)) {
+    if (!provider?.key_env || desk?.configured_providers.includes(provider.id)) {
       return null
     }
 
-    return prov.needsKey || prov.keyRecommended
-      ? { required: true, text: `Needs an API key — run /api-key set ${prov.key}${prov.keyUrl ? ` (free: ${prov.keyUrl})` : ''}` }
-      : { required: false, text: `No API key — /api-key set ${prov.key} raises rate limits${prov.keyUrl ? ` (free: ${prov.keyUrl})` : ''}` }
+    return {
+      required: provider.auth === 'required',
+      text: `${provider.auth === 'required' ? 'Requires a connection' : 'Optional connection available'} — open Add data → Sources → ${provider.name}`
+    }
   })()
 
   const statRow = (l1: string, v1: string, l2: string, v2: string, c1?: string, c2?: string) => (
@@ -1554,8 +1706,38 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   )
 
   const detail = (
-    <Box flexDirection="column" flexShrink={0} height={contentHeight} marginLeft={1} overflow="hidden" width={detailWidth}>
-      {s ? (
+    <Box
+      flexDirection="column"
+      flexShrink={0}
+      height={contentHeight}
+      marginLeft={1}
+      overflow="hidden"
+      width={detailWidth}
+    >
+      {s?.kind === 'event' ? (
+        <Box flexDirection="column">
+          <Text bold color={t.color.text}>
+            {s.name}
+          </Text>
+          <Text color={sem.subtle}>Official alerts · Enter opens the source</Text>
+          {(eventCacheRef.current[s.catalog_id ?? '']?.events ?? [])
+            .slice(0, Math.max(1, Math.floor((contentHeight - 3) / 4)))
+            .map(event => (
+              <Box flexDirection="column" key={event.event_id} marginTop={1}>
+                <Text bold color={sem.heading} wrap="truncate-end">
+                  {event.severity ?? 'Alert'} · {event.title}
+                </Text>
+                <Text wrap="truncate-end">{event.area}</Text>
+                <Text color={sem.subtle} wrap="truncate-end">
+                  Expires {event.expires_at ?? 'not supplied'}
+                </Text>
+              </Box>
+            ))}
+          {eventCacheRef.current[s.catalog_id ?? '']?.events.length === 0 ? (
+            <Text>No active alerts returned.</Text>
+          ) : null}
+        </Box>
+      ) : s ? (
         <Box flexDirection="column">
           <Text bold color={t.color.text} wrap="truncate-end">
             {q?.name || s.name}
@@ -1566,6 +1748,17 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
             {q?.currency ? ` · ${q.currency}` : ''}
           </Text>
 
+          {providerStatus[s.provider]?.message ? (
+            <Text color={sem.subtle} wrap="wrap">
+              {providerStatus[s.provider].message} · r Retry · d Sources
+            </Text>
+          ) : q?.value == null ? (
+            <Text color={sem.subtle}>
+              {fetching
+                ? 'Retrieving source data…'
+                : 'No measurement returned. Press r to retry or d for source access.'}
+            </Text>
+          ) : null}
           <Box marginTop={1}>
             <Text bold color={t.color.text}>
               {fmtNum(q?.value ?? null, s.unit)}
@@ -1583,7 +1776,11 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
                   {line}
                 </Text>
               ))}
-              <Text color={sem.subtle}>1-month</Text>
+              <Text color={sem.subtle}>
+                {q?.dated_history?.length
+                  ? `${q.dated_history[0]?.period_start} → ${q.dated_history.at(-1)?.period_end}`
+                  : 'Recent available values'}
+              </Text>
             </Box>
           ) : null}
 
@@ -1602,7 +1799,25 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
               fromHigh != null ? cellColor(fromHigh) : undefined,
               fromLow != null ? cellColor(fromLow) : undefined
             )}
-            {statRow('Volume', q ? fmtVol(q.volume) : '—', 'Updated', q ? relTime(q.asOf) : '—')}
+            {statRow('Volume', q ? fmtVol(q.volume) : '—', 'As of', q ? relTime(q.asOf) : '—')}
+            {q?.kind && q.kind !== 'quote' ? (
+              <>
+                <Text color={sem.subtle}>
+                  {q.kind} · revision: {q.revision_policy ?? 'unknown'}
+                </Text>
+                {q.valid_from ? (
+                  <Text color={sem.subtle}>
+                    Valid: {q.valid_from} → {q.valid_until ?? 'unknown'}
+                  </Text>
+                ) : null}
+                <Text color={sem.subtle}>
+                  {q.kind === 'forecast'
+                    ? `Issued: ${q.issue_time ?? 'not supplied'}`
+                    : `Published: ${q.published_at ?? 'not supplied'}`}
+                </Text>
+              </>
+            ) : null}
+            {q?.retrieved_at ? <Text color={sem.subtle}>Retrieved {relTime(Date.parse(q.retrieved_at))}</Text> : null}
           </Box>
 
           <Box flexShrink={0} marginTop={1}>
@@ -1645,11 +1860,11 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     ? 'Loading prediction markets…'
     : pm.error
       ? `Prediction-market load failed: ${pm.error}. Press r to retry.`
-    : searchActive
-      ? `No markets match “${searchInput}”.`
-      : gw
-        ? 'No open markets right now. Press r to refresh or v to switch venue.'
-        : 'Prediction markets need the gateway. Polymarket + Kalshi headlines and books load read-only, no key. Press v to filter venue.'
+      : searchActive
+        ? `No markets match “${searchInput}”.`
+        : gw
+          ? 'No open markets right now. Press r to refresh or v to switch venue.'
+          : 'Prediction markets need the gateway. Polymarket + Kalshi headlines and books load read-only, no key. Press v to filter venue.'
 
   const pmTable = (
     <PredictionMarketsTable
@@ -1690,11 +1905,32 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
 
   const dataChips: FooterChip[] = [
     { k: '↑↓', label: 'Select' },
-    { k: '⇥', label: 'Category', run: () => { setSel(0); setActive(i => (i + 1) % Math.max(1, categories.length)) } },
+    {
+      k: '⇥',
+      label: 'Category',
+      run: () => {
+        setSel(0)
+        setActive(i => (i + 1) % Math.max(1, categories.length))
+      }
+    },
     { k: 'a', label: 'Ask agent', run: askAgent },
     { k: 'o', label: 'Sort', run: () => onSortCycle() },
-    { k: 'm', label: 'Models', run: () => { setSel(0); setMode('models') } },
-    { k: '/', label: 'Filter', run: () => { setSel(0); setSearchMode(true) } },
+    {
+      k: 'm',
+      label: 'Models',
+      run: () => {
+        setSel(0)
+        setMode('models')
+      }
+    },
+    {
+      k: '/',
+      label: 'Filter',
+      run: () => {
+        setSel(0)
+        setSearchMode(true)
+      }
+    },
     { k: 'd', label: 'Add data', run: () => setModal('providers') },
     ...(infoItems.length ? [{ k: 'i', label: 'Warnings', run: () => setModal('info') }] : []),
     { k: 'h', label: 'Help', run: openHelpOverlay },
@@ -1725,7 +1961,14 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
 
   const emptyChips: FooterChip[] = [
     { k: 'd', label: 'Add data', run: () => setModal('providers') },
-    { k: '/', label: 'Filter', run: () => { setSel(0); setSearchMode(true) } },
+    {
+      k: '/',
+      label: 'Filter',
+      run: () => {
+        setSel(0)
+        setSearchMode(true)
+      }
+    },
     { k: 'h', label: 'Help', run: openHelpOverlay },
     { k: 'q', label: 'Close', run: onClose }
   ]
@@ -1734,7 +1977,8 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   // quote tape has none), still sharing Filter / Models / Help / Close.
   const pmChips: FooterChip[] = [
     { k: '↑↓', label: 'Select' },
-    { k: '→', label: 'Expand' },
+    { k: '←→/Tab', label: 'Topics' },
+    { k: 'Space', label: 'Expand' },
     { k: '⏎', label: 'Open', run: pm.openMarket },
     { k: 'v', label: `Venue: ${pm.venue === 'all' ? 'All' : venueLabel(pm.venue)}`, run: pm.cycleVenue },
     { k: 'o', label: 'Sort', run: pm.cycleSort },
@@ -1742,8 +1986,22 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     // Live-keys-only: the Remove chip appears ONLY when the cursor is on a saved
     // (+) discovered row — nothing to remove on a browse row.
     ...(pm.selectedIsDiscovered ? [{ k: 'x', label: 'Remove', run: pm.removeDiscovered }] : []),
-    { k: '/', label: 'Search', run: () => { pm.setSel(() => 0); setSearchMode(true) } },
-    { k: 'm', label: 'Models', run: () => { setSel(0); setMode('models') } },
+    {
+      k: '/',
+      label: 'Search',
+      run: () => {
+        pm.setSel(() => 0)
+        setSearchMode(true)
+      }
+    },
+    {
+      k: 'm',
+      label: 'Models',
+      run: () => {
+        setSel(0)
+        setMode('models')
+      }
+    },
     ...(infoItems.length ? [{ k: 'i', label: 'Warnings', run: () => setModal('info') }] : []),
     { k: 'h', label: 'Help', run: openHelpOverlay },
     { k: 'q', label: 'Close', run: onClose }
@@ -1821,7 +2079,15 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
         </Text>
       </Box>
     ) : (
-      <ModelsList height={contentHeight} models={models} progressById={progress} sel={modelSel} t={t} tick={tick} width={width} />
+      <ModelsList
+        height={contentHeight}
+        models={models}
+        progressById={progress}
+        sel={modelSel}
+        t={t}
+        tick={tick}
+        width={width}
+      />
     )
 
   return (

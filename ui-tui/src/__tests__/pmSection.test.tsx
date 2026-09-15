@@ -74,7 +74,13 @@ const nbaItem = () => ({
     binary: false,
     close_time: '2099-01-01T00:00:00Z',
     event_id: 'evt-nba',
-    headline: { close_time: '2099-01-01T00:00:00Z', n: 3, top_label: 'Celtics', top_prob: 0.44, total_volume: 1_500_000 },
+    headline: {
+      close_time: '2099-01-01T00:00:00Z',
+      n: 3,
+      top_label: 'Celtics',
+      top_prob: 0.44,
+      total_volume: 1_500_000
+    },
     normalized: true,
     notes: [],
     outcomes: [out('Celtics', 0.44, 'cond-cel'), out('Nuggets', 0.33, 'cond-nug'), out('Thunder', 0.23, 'cond-thu')],
@@ -89,7 +95,11 @@ const nbaItem = () => ({
     close_time: '2099-01-01T00:00:00Z',
     event_id: 'evt-nba',
     is_binary: false,
-    markets: [polyMarket('Celtics', 'cond-cel', 'tok-cel', 0.4), polyMarket('Nuggets', 'cond-nug', 'tok-nug', 0.3), polyMarket('Thunder', 'cond-thu', 'tok-thu', 0.2)],
+    markets: [
+      polyMarket('Celtics', 'cond-cel', 'tok-cel', 0.4),
+      polyMarket('Nuggets', 'cond-nug', 'tok-nug', 0.3),
+      polyMarket('Thunder', 'cond-thu', 'tok-thu', 0.2)
+    ],
     mutually_exclusive: true,
     slug: 'nba',
     title: 'NBA Champion 2026',
@@ -159,8 +169,26 @@ const zombieItem = () => ({
     normalized: false,
     notes: ['book incomplete — outcomes may be missing'],
     outcomes: [
-      { label: 'Ballot A', liquid: false, market_id: 'ZB-A', prob: null, raw_prob: 0, volume: 0, yes_ask: null, yes_bid: null },
-      { label: 'Ballot B', liquid: false, market_id: 'ZB-B', prob: null, raw_prob: 0, volume: 0, yes_ask: null, yes_bid: null }
+      {
+        label: 'Ballot A',
+        liquid: false,
+        market_id: 'ZB-A',
+        prob: null,
+        raw_prob: 0,
+        volume: 0,
+        yes_ask: null,
+        yes_bid: null
+      },
+      {
+        label: 'Ballot B',
+        liquid: false,
+        market_id: 'ZB-B',
+        prob: null,
+        raw_prob: 0,
+        volume: 0,
+        yes_ask: null,
+        yes_bid: null
+      }
     ],
     overround: 0,
     title: 'Zombie Ballot 2030',
@@ -184,10 +212,16 @@ const zombieItem = () => ({
 })
 
 const book = (marketId: string, bid: number, ask: number) => ({
-  asks: [{ price: ask, size: 90 }, { price: ask + 0.01, size: 60 }],
+  asks: [
+    { price: ask, size: 90 },
+    { price: ask + 0.01, size: 60 }
+  ],
   best_ask: ask,
   best_bid: bid,
-  bids: [{ price: bid, size: 120 }, { price: bid - 0.01, size: 80 }],
+  bids: [
+    { price: bid, size: 120 },
+    { price: bid - 0.01, size: 80 }
+  ],
   market_id: marketId,
   mid: (bid + ask) / 2,
   tick_size: 0.01,
@@ -215,6 +249,62 @@ const fakeGw = (calls: Call[]) => {
 
   gw.request = (method: string, params: Record<string, unknown> = {}) => {
     calls.push({ method, params })
+
+    // The fake backend owns this test profile. The real TUI must reach it
+    // through RPC, including saved-event writes and configuration revisions.
+    if (method.startsWith('market.')) {
+      const path = join(process.env.SUPERFORECASTING_AGENT_HOME!, 'markets.json')
+      const stored = JSON.parse(readFileSync(path, 'utf8'))
+
+      if (method === 'market.selection.update') {
+        for (const [key, value] of Object.entries(params.patch as Record<string, unknown>)) {
+          stored[key === 'pm_saved' ? 'pmSaved' : key === 'server_side' ? 'serverSide' : key] = value
+        }
+
+        writeFileSync(path, JSON.stringify(stored))
+      }
+
+      if (method === 'market.selection.events.update') {
+        type Saved = { event_id: string; venue: string }
+        const remove = params.remove as Saved[]
+
+        const entries = new Map<string, Saved>(
+          (stored.pmSaved ?? []).map((item: Saved) => [`${item.venue}:${item.event_id}`, item])
+        )
+
+        for (const item of remove) {
+          entries.delete(`${item.venue}:${item.event_id}`)
+        }
+
+        for (const item of params.add as Saved[]) {
+          entries.set(`${item.venue}:${item.event_id}`, item)
+        }
+
+        stored.pmSaved = [...entries.values()]
+        writeFileSync(path, JSON.stringify(stored))
+      }
+
+      const selection = {
+        categories: stored.categories ?? [],
+        custom: stored.custom ?? [],
+        home_region: null,
+        pm_saved: stored.pmSaved ?? [],
+        providers: stored.providers ?? [],
+        revision: JSON.stringify(stored),
+        series_ids: [],
+        server_side: stored.serverSide ?? null,
+        state: 'custom',
+        watchlist: stored.watchlist ?? [],
+        weather_locations: null
+      }
+
+      return Promise.resolve({
+        catalog: { countries: [], version: 1, categories: [], providers: [], regions: [], series: [], presets: [] },
+        catalog_revision: 'fixture',
+        configured_providers: [],
+        selection
+      })
+    }
 
     if (method === 'pm.list') {
       const venue = params.venue
@@ -285,7 +375,13 @@ const writeStream = (columns: number, rows: number, isTTY = false) => {
     output += chunk.toString()
   })
 
-  return { reset: () => { output = '' }, stream, text: () => output }
+  return {
+    reset: () => {
+      output = ''
+    },
+    stream,
+    text: () => output
+  }
 }
 
 const normalize = (value: string, stripAnsi: (input: string) => string) =>
@@ -297,7 +393,11 @@ const normalize = (value: string, stripAnsi: (input: string) => string) =>
 // Mount MarketsView in its own temp home, seeded so the predictionmarkets
 // provider is the ONLY one enabled → the Prediction tab is the active Data tab
 // on first paint (no `p` keypress needed for the common case).
-const mount = async (providers = ['predictionmarkets'], gwOverride?: ReturnType<typeof fakeGw>, homeOverride?: string) => {
+const mount = async (
+  providers = ['predictionmarkets'],
+  gwOverride?: ReturnType<typeof fakeGw>,
+  homeOverride?: string
+) => {
   process.env.FORECAST_TUI_INLINE = '1'
   const home = homeOverride ?? mkdtempSync(join(tmpdir(), 'pm-section-'))
   process.env.SUPERFORECASTING_AGENT_HOME = home
@@ -320,7 +420,12 @@ const mount = async (providers = ['predictionmarkets'], gwOverride?: ReturnType<
   const stdin = writeStream(120, 40, true)
 
   const instance = render(
-    React.createElement(MarketsView, { gw: gw as never, onAsk: () => undefined, onClose: () => undefined, t: DARK_THEME }),
+    React.createElement(MarketsView, {
+      gw: gw as never,
+      onAsk: () => undefined,
+      onClose: () => undefined,
+      t: DARK_THEME
+    }),
     { exitOnCtrlC: false, patchConsole: false, stdin: stdin.stream, stdout: stdout.stream }
   )
 
@@ -419,12 +524,25 @@ describe('Prediction section inside the Data tape', () => {
     m.cleanup()
   })
 
-  it('→ expands a categorical event; sub-rows sit under an OUTCOME / BID·ASK header line', async () => {
+  it('horizontal arrows and Tab leave Prediction without expanding rows', async () => {
+    const m = await mount()
+    m.clear()
+    await m.press(`${ESC}[C`)
+    expect(m.text()).not.toContain('└')
+    await m.press(`${ESC}[D`)
+    expect(m.text()).toContain('NBA Champion')
+    m.clear()
+    await m.press('\t')
+    expect(m.text()).not.toContain('└')
+    m.cleanup()
+  })
+
+  it('Space expands a categorical event; sub-rows sit under an OUTCOME / BID·ASK header line', async () => {
     const m = await mount()
     // The '└' glyph + the BID·ASK header are unique to the EXPANDED outcome list.
     expect(m.text()).not.toContain('└')
     m.clear()
-    await m.press(`${ESC}[C`) // right arrow → expand the (first) NBA row
+    await m.press(' ') // Space expands the first NBA row
     const text = m.text()
     expect(text).toContain('└')
     // Every sub-value sits under a header that NAMES it — the operator caught
@@ -434,7 +552,7 @@ describe('Prediction section inside the Data tape', () => {
     expect(text).toContain('Nuggets')
     expect(text).toContain('Thunder')
     m.clear()
-    await m.press(`${ESC}[D`) // left arrow → collapse
+    await m.press(' ') // Space collapses without changing topics
     expect(m.text()).not.toContain('└')
     m.cleanup()
   })
@@ -519,15 +637,21 @@ describe('PredictionMarketsTable column contract', () => {
   const renderTable = async (avail: number, expanded: string[] = []) => {
     process.env.FORECAST_TUI_INLINE = '1'
 
-    const [{ Box, render }, { PredictionMarketsTable }, { flattenPMRows }, { semantics }, { DARK_THEME }, { stripAnsi }] =
-      await Promise.all([
-        import('@superforecasting/ink'),
-        import('../components/predictionMarketsTable.js'),
-        import('../lib/pmRows.js'),
-        import('../lib/visualSemantics.js'),
-        import('../theme.js'),
-        import('../lib/text.js')
-      ])
+    const [
+      { Box, render },
+      { PredictionMarketsTable },
+      { flattenPMRows },
+      { semantics },
+      { DARK_THEME },
+      { stripAnsi }
+    ] = await Promise.all([
+      import('@superforecasting/ink'),
+      import('../components/predictionMarketsTable.js'),
+      import('../lib/pmRows.js'),
+      import('../lib/visualSemantics.js'),
+      import('../theme.js'),
+      import('../lib/text.js')
+    ])
 
     const items = [nbaItem(), zombieItem(), fedItem()] as never[]
     const windowed = flattenPMRows(items, new Set(expanded))
@@ -539,24 +663,27 @@ describe('PredictionMarketsTable column contract', () => {
       React.createElement(
         Box as never,
         { flexDirection: 'column', height: 40, width: tableWidth + 4 } as never,
-        React.createElement(PredictionMarketsTable as never, {
-          active: false,
-          avail,
-          clampedSel: 0,
-          emptyText: '',
-          expanded: new Set(expanded),
-          height: 30,
-          listStart: 0,
-          livePrices: {},
-          onSelect: () => undefined,
-          onSortByKey: () => undefined,
-          rowsLength: windowed.length,
-          sem: semantics(DARK_THEME),
-          sortState: { dir: 'asc', key: null },
-          t: DARK_THEME,
-          tableWidth,
-          windowed
-        } as never)
+        React.createElement(
+          PredictionMarketsTable as never,
+          {
+            active: false,
+            avail,
+            clampedSel: 0,
+            emptyText: '',
+            expanded: new Set(expanded),
+            height: 30,
+            listStart: 0,
+            livePrices: {},
+            onSelect: () => undefined,
+            onSortByKey: () => undefined,
+            rowsLength: windowed.length,
+            sem: semantics(DARK_THEME),
+            sortState: { dir: 'asc', key: null },
+            t: DARK_THEME,
+            tableWidth,
+            windowed
+          } as never
+        )
       ),
       { exitOnCtrlC: false, patchConsole: false, stdin: stdin.stream, stdout: stdout.stream }
     )

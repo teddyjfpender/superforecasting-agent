@@ -1,4 +1,4 @@
-import { DEFAULT_SERIES, type MarketSeries } from '../content/marketProviders.js'
+import type { MarketSeries } from '../content/marketProviders.js'
 
 import type { QuotesTransport } from './marketFetch.js'
 
@@ -52,9 +52,14 @@ export const scoreSeries = (s: MarketSeries, tokens: string[], expanded: string[
   const name = s.name.toLowerCase()
   const symbol = s.symbol.toLowerCase()
   const cat = s.category.toLowerCase()
+  const metadata = s.search_terms?.toLowerCase() ?? ''
   let score = 0
 
   for (const tok of tokens) {
+    if (metadata.includes(tok)) {
+      score += 4
+    }
+
     if (symbol === tok) {
       score += 14
     } else if (symbol.includes(tok)) {
@@ -85,7 +90,7 @@ export const scoreSeries = (s: MarketSeries, tokens: string[], expanded: string[
   return score
 }
 
-export const searchCatalog = (query: string): MarketSeries[] => {
+export const searchCatalog = (query: string, catalog: readonly MarketSeries[]): MarketSeries[] => {
   const q = query.trim().toLowerCase()
 
   if (!q) {
@@ -95,7 +100,8 @@ export const searchCatalog = (query: string): MarketSeries[] => {
   const tokens = q.split(/\s+/).filter(Boolean)
   const expanded = expand(tokens)
 
-  return DEFAULT_SERIES.map(s => ({ s, score: scoreSeries(s, tokens, expanded) }))
+  return catalog
+    .map(s => ({ s, score: scoreSeries(s, tokens, expanded) }))
     .filter(x => x.score > 0)
     .sort((a, b) => b.score - a.score || a.s.name.localeCompare(b.s.name))
     .map(x => x.s)
@@ -112,16 +118,12 @@ export const searchYahoo = async (query: string, gw?: QuotesTransport): Promise<
     return []
   }
 
-  try {
-    const res = await gw.request('market.search', { query: q })
+  const res = await gw.request('market.search', { query: q })
 
-    return (res?.results ?? []).map(r => ({
-      category: r.category,
-      name: r.name,
-      provider: r.provider,
-      symbol: r.symbol
-    }))
-  } catch {
-    return []
-  }
+  return (res?.results ?? []).map(r => ({
+    category: r.category,
+    name: r.name,
+    provider: r.provider,
+    symbol: r.symbol
+  }))
 }

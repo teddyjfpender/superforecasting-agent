@@ -1,0 +1,213 @@
+{
+  "catalog_revision": "a3c01db3d16e56f1b9dfe301e82ab85b4699658d25db11bac2d2945407c4ae61",
+  "scope": "One representative binding per source or weather dataset; not full catalog qualification",
+  "samples": [
+    {
+      "series_id": "worldbank:DEU/NY.GDP.MKTP.KD.ZG",
+      "checked_at": "2026-09-14T17:39:04.603648+00:00",
+      "statuses": [
+        {
+          "provider": "worldbank",
+          "status": "ready",
+          "message": null,
+          "retry_after": null
+        }
+      ],
+      "points_or_events": 30,
+      "value": 0.239578342117881,
+      "source_url": "https://data.worldbank.org/indicator/NY.GDP.MKTP.KD.ZG?locations=DEU"
+    },
+    {
+      "series_id": "eurostat:prc_hicp_manr:EA20",
+      "checked_at": "2026-09-14T17:39:04.976149+00:00",
+      "statuses": [
+        {
+          "provider": "eurostat",
+          "status": "ready",
+          "message": null,
+          "retry_after": null
+        }
+      ],
+      "points_or_events": 24,
+      "value": 2.0,
+      "source_url": "https://ec.europa.eu/eurostat/databrowser/view/prc_hicp_manr/default/table"
+    },
+    {
+      "series_id": "ecb:D.USD.EUR.SP00.A",
+      "checked_at": "2026-09-14T17:39:05.203112+00:00",
+      "statuses": [
+        {
+          "provider": "ecb",
+          "status": "ready",
+          "message": null,
+          "retry_after": null
+        }
+      ],
+      "points_or_events": 30,
+      "value": 1.1551,
+      "source_url": "https://data.ecb.europa.eu"
+    },
+    {
+      "series_id": "bcb:432",
+      "checked_at": "2026-09-14T17:39:05.833364+00:00",
+      "statuses": [
+        {
+          "provider": "bcb",
+          "status": "ready",
+          "message": null,
+          "retry_after": null
+        }
+      ],
+      "points_or_events": 18,
+      "value": 14.0,
+      "source_url": "https://www3.bcb.gov.br/sgspub/consultarvalores/consultarValoresSeries.do?method=consultarValores&series=432"
+    },
+    {
+      "series_id": "abs:ABS,CPI,2.0.0/1.10001.10.50.M",
+      "checked_at": "2026-09-14T17:39:06.788304+00:00",
+      "statuses": [
+        {
+          "provider": "abs",
+          "status": "ready",
+          "message": null,
+          "retry_after": null
+        }
+      ],
+      "points_or_events": 24,
+      "value": 103.07,
+      "source_url": "https://www.abs.gov.au"
+    },
+    {
+      "series_id": "bis:WS_CBPOL/1.0/M.US",
+      "checked_at": "2026-09-14T17:39:05.511159+00:00",
+      "statuses": [
+        {
+          "provider": "bis",
+          "status": "ready",
+          "message": null,
+          "retry_after": null
+        }
+      ],
+      "points_or_events": 24,
+      "value": 3.625,
+      "source_url": "https://data.bis.org"
+    },
+    {
+      "series_id": "oecd:OECD.SDD.STES,DSD_STES@DF_CLI,4.1/USA.M.LI.IX._Z.AA.IX._Z.H",
+      "checked_at": "2026-09-14T17:39:06.205743+00:00",
+      "statuses": [
+        {
+          "provider": "oecd",
+          "status": "ready",
+          "message": null,
+          "retry_after": null
+        }
+      ],
+      "points_or_events": 24,
+      "value": 100.9563,
+      "source_url": "https://data-explorer.oecd.org"
+    },
+    {
+      "series_id": "singstat:M213751/1",
+      "checked_at": "2026-09-14T17:39:06.354282+00:00",
+      "statuses": [
+        {
+          "provider": "singstat",
+          "status": "ready",
+          "message": null,
+          "retry_after": null
+        }
+      ],
+      "points_or_events": 24,
+      "value": 102.696,
+      "source_url": "https://tablebuilder.singstat.gov.sg"
+    },
+    {
+      "series_id": "ibge:1737/63",
+      "checked_at": "2026-09-14T17:39:07.174595+00:00",
+      "statuses": [
+        {
+          "provider": "ibge",
+          "status": "ready",
+          "message": null,
+          "retry_after": null
+        }
+      ],
+      "points_or_events": 24,
+      "value": -0.32,
+      "source_url": "https://sidra.ibge.gov.br"
+    },
+    {
+      "series_id": "openmeteo:london/temperature_2m_max",
+      "checked_at": "2026-09-14T17:39:06.810384+00:00",
+      "statuses": [
+        {
+          "provider": "openmeteo",
+          "status": "ready",
+          "message": null,
+          "retry_after": null
+        }
+      ],
+      "points_or_events": 7,
+      "value": 24.4,
+      "source_url": "https://open-meteo.com"
+    },
+    {
+      "series_id": "openmeteo:london/airquality/pm2_5",
+      "checked_at": "2026-09-14T17:39:06.966122+00:00",
+      "statuses": [
+        {
+          "provider": "openmeteo",
+          "status": "ready",
+          "message": null,
+          "retry_after": null
+        }
+      ],
+      "points_or_events": 120,
+      "value": 3.4,
+      "source_url": "https://open-meteo.com/en/docs/air-quality-api"
+    },
+    {
+      "series_id": "openmeteo:london/reanalysis/temperature_2m_mean",
+      "checked_at": "2026-09-14T17:39:07.374374+00:00",
+      "statuses": [
+        {
+          "provider": "openmeteo",
+          "status": "ready",
+          "message": null,
+          "retry_after": null
+        }
+      ],
+      "points_or_events": 30,
+      "value": 20.7,
+      "source_url": "https://open-meteo.com/en/docs/historical-weather-api"
+    },
+    {
+      "series_id": "nws:NY",
+      "checked_at": "2026-09-14T17:39:07.250085+00:00",
+      "statuses": [
+        {
+          "provider": "nws",
+          "status": "unavailable",
+          "message": "Provider returned HTTP 400",
+          "retry_after": null
+        }
+      ],
+      "points_or_events": 0,
+      "value": null,
+      "source_url": "https://api.weather.gov/alerts/active?area=NY"
+    }
+  ],
+  "followup": {
+    "series_id": "nws:NY",
+    "checked_at": "2026-09-14T17:39:45.974344+00:00",
+    "status": {
+      "provider": "nws",
+      "status": "ready",
+      "message": null,
+      "retry_after": null
+    },
+    "events": 1,
+    "fix": "The active-alert endpoint does not accept limit; cap parsed events locally and retain truncation status."
+  }
+}

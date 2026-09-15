@@ -1,0 +1,110 @@
+{
+  "scope": "Read-only selected-series audit; keyless requests, no profile credentials loaded",
+  "elapsed_seconds": 31.88,
+  "requested": 200,
+  "returned": 200,
+  "with_value": 200,
+  "statuses": [
+    {
+      "provider": "yahoo",
+      "status": "ready",
+      "message": null,
+      "retry_after": null
+    },
+    {
+      "provider": "frankfurter",
+      "status": "ready",
+      "message": null,
+      "retry_after": null
+    },
+    {
+      "provider": "coingecko",
+      "status": "ready",
+      "message": null,
+      "retry_after": null
+    },
+    {
+      "provider": "fred",
+      "status": "ready",
+      "message": null,
+      "retry_after": null
+    },
+    {
+      "provider": "worldbank",
+      "status": "ready",
+      "message": null,
+      "retry_after": null
+    },
+    {
+      "provider": "eurostat",
+      "status": "ready",
+      "message": null,
+      "retry_after": null
+    },
+    {
+      "provider": "ecb",
+      "status": "ready",
+      "message": null,
+      "retry_after": null
+    },
+    {
+      "provider": "bcb",
+      "status": "ready",
+      "message": null,
+      "retry_after": null
+    },
+    {
+      "provider": "openmeteo",
+      "status": "ready",
+      "message": null,
+      "retry_after": null
+    },
+    {
+      "provider": "abs",
+      "status": "ready",
+      "message": null,
+      "retry_after": null
+    },
+    {
+      "provider": "singstat",
+      "status": "ready",
+      "message": null,
+      "retry_after": null
+    },
+    {
+      "provider": "ibge",
+      "status": "ready",
+      "message": null,
+      "retry_after": null
+    },
+    {
+      "provider": "bis",
+      "status": "ready",
+      "message": null,
+      "retry_after": null
+    },
+    {
+      "provider": "oecd",
+      "status": "ready",
+      "message": null,
+      "retry_after": null
+    }
+  ],
+  "missing_values": [],
+  "provider_counts": {
+    "yahoo": 22,
+    "frankfurter": 6,
+    "coingecko": 5,
+    "fred": 41,
+    "worldbank": 50,
+    "eurostat": 12,
+    "ecb": 6,
+    "bcb": 3,
+    "openmeteo": 45,
+    "abs": 1,
+    "singstat": 1,
+    "ibge": 1,
+    "bis": 4,
+    "oecd": 3
+  }
+}

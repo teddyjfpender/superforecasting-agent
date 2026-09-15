@@ -43,8 +43,18 @@ from dataclasses import replace
 from datetime import date
 from urllib.parse import quote as _urlquote
 
-from forecasting.marketdata.model import Quote, SeriesRef, change_columns, epoch_ms, num
+import httpx
+
+from forecasting.marketdata.model import (
+    DatedValue,
+    Quote,
+    SeriesRef,
+    change_columns,
+    epoch_ms,
+    num,
+)
 from forecasting.marketdata.provider import (
+    IndependentSeries,
     JsonGetter,
     TextGetter,
     default_get_json,
@@ -120,6 +130,28 @@ def _finalize(
     change, change_pct = change_columns(value, prev[1] if prev else None)
     as_of = epoch_ms(last[0]) if last and last[0] else 0
 
+    # FRED dates identify observation periods, never publication or vintage.
+    # Bound known monthly/quarterly/yearly series using the catalog cadence.
+    from forecasting.marketdata.catalog import load_catalog
+    from forecasting.marketdata.parsing import period_bounds
+
+    entry = next(
+        (item for item in load_catalog().series if item.id == series.catalog_id), None
+    )
+    dated = []
+    for day, measurement in window:
+        if not epoch_ms(day):
+            continue
+        period = day
+        if entry and entry.frequency == "monthly":
+            period = day[:7]
+        elif entry and entry.frequency == "quarterly":
+            period = f"{day[:4]}-Q{(int(day[5:7]) - 1) // 3 + 1}"
+        elif entry and entry.frequency == "annual":
+            period = day[:4]
+        start, end = period_bounds(period)
+        dated.append(DatedValue(period_start=start, period_end=end, value=measurement))
+
     quote = Quote(
         symbol=series.symbol,
         provider="fred",
@@ -132,6 +164,7 @@ def _finalize(
         asOf=as_of,
         unit=series.unit,
         history=history,
+        dated_history=dated,
     )
     if as_of_reference is not None and last is not None and value is not None:
         quote = _apply_missing_observation_rule(
@@ -183,7 +216,7 @@ def parse_fred_csv(
     return _finalize(rows, series, as_of_reference=as_of_reference)
 
 
-class FredProvider:
+class FredProvider(IndependentSeries):
     name = "fred"
     needs_key = False  # degrades to the keyless CSV, never skipped
 
@@ -203,16 +236,28 @@ class FredProvider:
     def _csv_url(self, symbol: str) -> str:
         return f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={_urlquote(symbol, safe='')}"
 
-    def fetch(self, series: list[SeriesRef], *, api_key: str | None = None) -> list[Quote]:
+    def fetch(
+        self, series: list[SeriesRef], *, api_key: str | None = None
+    ) -> list[Quote]:
         reference = date.today()  # the impure boundary where "today" enters
         quotes: list[Quote] = []
         for s in series:
             if api_key:
-                payload = self._get_json(self._json_url(s.symbol, api_key))
+                payload = self._get_json(
+                    self._json_url(s.symbol, api_key),
+                    headers={"User-Agent": f"python-httpx/{httpx.__version__}"},
+                )
                 quotes.append(parse_fred(payload, s, as_of_reference=reference))
             else:
-                csv_text = self._get_text(self._csv_url(s.symbol))
-                quotes.append(parse_fred_csv(csv_text or "", s, as_of_reference=reference))
+                # FRED's public edge stalls with our custom product User-Agent.
+                # Identify the actual HTTP client; keep bounded, verified transport.
+                csv_text = self._get_text(
+                    self._csv_url(s.symbol),
+                    headers={"User-Agent": f"python-httpx/{httpx.__version__}"},
+                )
+                quotes.append(
+                    parse_fred_csv(csv_text or "", s, as_of_reference=reference)
+                )
         return quotes
 
 

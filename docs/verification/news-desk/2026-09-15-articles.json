@@ -1,0 +1,38 @@
+[
+  {
+    "source": "BBC \u00b7 Business",
+    "url": "https://www.bbc.co.uk/news/articles/c2l8v7l0djqo?at_medium=RSS&at_campaign=rss",
+    "status": "article",
+    "characters": 2677
+  },
+  {
+    "source": "Guardian \u00b7 Europe",
+    "url": "https://www.theguardian.com/world/2026/sep/15/tuesday-briefing-how-to-understand-wales-scotland-and-northern-irelands-joint-call-for-change",
+    "status": "article",
+    "characters": 15958
+  },
+  {
+    "source": "MercoPress \u00b7 Latin America",
+    "url": "https://en.mercopress.com/2026/09/10/peru-joins-the-americas-shield-during-rubio-s-visit-to-lima?utm_source=feed&utm_medium=rss&utm_content=latin-america&utm_campaign=rss",
+    "status": "article",
+    "characters": 3492
+  },
+  {
+    "source": "Federal Reserve \u00b7 Policy",
+    "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20260825a.htm",
+    "status": "article",
+    "characters": 676
+  },
+  {
+    "source": "EIA \u00b7 Today in Energy",
+    "url": "https://www.eia.gov/todayinenergy/detail.php?id=68125",
+    "status": "article",
+    "characters": 3176
+  },
+  {
+    "source": "Ars Technica",
+    "url": "https://arstechnica.com/space/2026/09/for-the-first-time-the-us-military-confirms-it-has-deployed-weapons-in-orbit/",
+    "status": "article",
+    "characters": 10811
+  }
+]

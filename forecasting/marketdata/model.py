@@ -21,6 +21,10 @@ import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+from protocol.data_desk import DataEvent as DataEvent
+from protocol.data_desk import DataEvents as DataEvents
+from protocol.data_desk import DatedValue as DatedValue
+
 
 def num(value: object) -> float | None:
     """Coerce to a finite float, else ``None`` — the honest ``num`` helper.
@@ -46,7 +50,7 @@ def num(value: object) -> float | None:
 
 
 def epoch_ms(iso_date: str | None) -> int:
-    """Parse a ``YYYY-MM-DD`` (UTC midnight) into epoch milliseconds, else ``0``.
+    """Parse an ISO date or timezone-aware timestamp into epoch milliseconds.
 
     Matches the client's ``Date.parse('YYYY-MM-DD')`` (interpreted as UTC). An
     unparseable / empty date is ``0`` (the "unknown asOf" sentinel the tape reads
@@ -56,7 +60,12 @@ def epoch_ms(iso_date: str | None) -> int:
     if not iso_date:
         return 0
     try:
-        dt = datetime.strptime(iso_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        if len(iso_date) == 10:
+            dt = datetime.strptime(iso_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        else:
+            dt = datetime.fromisoformat(iso_date.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                return 0
     except (TypeError, ValueError):
         return 0
     return int(dt.timestamp() * 1000)
@@ -78,6 +87,7 @@ class SeriesRef:
     category: str = ""
     unit: str = ""
     line: str | None = None
+    catalog_id: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "SeriesRef":
@@ -93,6 +103,7 @@ class SeriesRef:
             category=str(data.get("category") or ""),
             unit=str(data.get("unit") or ""),
             line=str(line) if line not in (None, "") else None,
+            catalog_id=data.get("catalog_id"),
         )
 
 
@@ -127,6 +138,18 @@ class Quote:
     volume: float | None = None
     week52High: float | None = None
     week52Low: float | None = None
+    catalog_id: str | None = None
+    retrieved_at: str | None = None
+    published_at: str | None = None
+    issue_time: str | None = None
+    valid_from: str | None = None
+    valid_until: str | None = None
+    revision_policy: str = "unknown"
+    source_url: str | None = None
+    source_family: str | None = None
+    kind: str = "quote"
+    refresh_seconds: int = 60
+    dated_history: list[DatedValue] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -148,6 +171,20 @@ class Quote:
             "volume": self.volume,
             "week52High": self.week52High,
             "week52Low": self.week52Low,
+            "catalog_id": self.catalog_id,
+            "retrieved_at": self.retrieved_at,
+            "published_at": self.published_at,
+            "issue_time": self.issue_time,
+            "valid_from": self.valid_from,
+            "valid_until": self.valid_until,
+            "revision_policy": self.revision_policy,
+            "source_url": self.source_url,
+            "source_family": self.source_family,
+            "kind": self.kind,
+            "refresh_seconds": self.refresh_seconds,
+            "dated_history": [
+                point.model_dump(mode="json") for point in self.dated_history
+            ],
         }
 
 

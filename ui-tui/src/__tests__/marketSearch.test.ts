@@ -34,19 +34,37 @@ describe('blockChart', () => {
   })
 })
 
+const catalog = [
+  { provider: 'yahoo', symbol: 'NVDA', name: 'NVIDIA', category: 'Stocks' },
+  { provider: 'coingecko', symbol: 'bitcoin', name: 'Bitcoin', category: 'Crypto' },
+  { provider: 'yahoo', symbol: 'GC=F', name: 'Gold', category: 'Commodities' },
+  {
+    provider: 'worldbank',
+    symbol: 'BRA/CPI',
+    name: 'Inflation',
+    category: 'Inflation',
+    search_terms: 'Brazil Latin America'
+  }
+]
+
 describe('searchCatalog', () => {
   it('finds a ticker by symbol and a name', () => {
-    expect(searchCatalog('NVDA').some(s => s.symbol === 'NVDA')).toBe(true)
-    expect(searchCatalog('bitcoin').some(s => s.symbol === 'bitcoin')).toBe(true)
+    expect(searchCatalog('NVDA', catalog).some(s => s.symbol === 'NVDA')).toBe(true)
+    expect(searchCatalog('bitcoin', catalog).some(s => s.symbol === 'bitcoin')).toBe(true)
   })
 
   it('uses intent synonyms — "gold" surfaces a commodity', () => {
-    const res = searchCatalog('gold')
+    const res = searchCatalog('gold', catalog)
     expect(res.some(s => s.symbol === 'GC=F' || s.category === 'Commodities')).toBe(true)
   })
 
+  it('uses the connected catalog and country metadata', () => {
+    expect(searchCatalog('Brazil', catalog).map(s => s.provider)).toEqual(['worldbank'])
+    expect(searchCatalog('NVDA', [])).toEqual([])
+  })
+
   it('returns [] for an empty query', () => {
-    expect(searchCatalog('   ')).toEqual([])
+    expect(searchCatalog('   ', catalog)).toEqual([])
   })
 })
 
@@ -67,11 +85,11 @@ describe('searchYahoo routing (Arc C3: server-side via market.search)', () => {
     expect(out).toEqual([{ category: 'Stocks', name: 'Apple Inc.', provider: 'yahoo', symbol: 'AAPL' }])
   })
 
-  it('returns [] with no gateway and never throws on a failed RPC', async () => {
+  it('returns [] with no gateway and preserves RPC failures', async () => {
     expect(await searchYahoo('apple')).toEqual([])
     expect(await searchYahoo('   ', { request: vi.fn() })).toEqual([])
 
     const request = vi.fn().mockRejectedValue(new Error('down'))
-    expect(await searchYahoo('apple', { request })).toEqual([])
+    await expect(searchYahoo('apple', { request })).rejects.toThrow('down')
   })
 })

@@ -33,3 +33,6 @@ Update this guide when entry points or ownership change. See the
 and [engineering backlog](../../../TODO.md) for cross-package context.
 
 [↑ Parent directory](../README.md)
+
+`dataDesk.ts` supplies a controlled backend for product-view tests from the real
+catalog manifest, keeping client-local files out of the production selection flow.

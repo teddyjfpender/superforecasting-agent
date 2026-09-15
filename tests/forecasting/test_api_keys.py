@@ -205,3 +205,30 @@ def test_default_path_tracks_profile_without_runtime_loader(monkeypatch, tmp_pat
         home = tmp_path / name
         monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", str(home))
         assert api_keys.default_env_path() == home / ".env"
+
+
+def test_concurrent_provider_key_updates_preserve_each_other(monkeypatch,tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    env_path=_isolated_env(monkeypatch,tmp_path)
+    env_path.write_text('# retained\nOTHER=value\n')
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures=[pool.submit(api_keys.set_api_key,provider,value,env_path=env_path)
+                 for provider,value in [('fred','fixture-fred'),('bls','fixture-bls')]]
+        for future in futures: future.result()
+    text=env_path.read_text()
+    assert 'FRED_API_KEY=fixture-fred' in text
+    assert 'BLS_API_KEY=fixture-bls' in text
+    assert '# retained' in text and 'OTHER=value' in text
+
+
+def test_failed_atomic_key_update_preserves_file_and_process_value(monkeypatch,tmp_path):
+    from superforecasting_agent.storage import files
+    env_path=_isolated_env(monkeypatch,tmp_path)
+    api_keys.set_api_key('fred','original',env_path=env_path)
+    before=env_path.read_bytes()
+    def fail(*args): raise OSError('injected replacement failure')
+    monkeypatch.setattr(files,'atomic_replace',fail)
+    with pytest.raises(OSError): api_keys.set_api_key('fred','replacement',env_path=env_path)
+    assert env_path.read_bytes()==before
+    assert os.environ['FRED_API_KEY']=='original'
+    assert not list(tmp_path.glob('*.tmp'))

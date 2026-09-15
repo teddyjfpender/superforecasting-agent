@@ -95,12 +95,16 @@ def _ts_scalar(annotation: Any) -> str:
         ]
         return " | ".join(sorted(members))
     if origin in (tuple,):
+        args = get_args(annotation)
+        if len(args) == 2 and args[1] is Ellipsis:
+            return f"Array<{_ts_scalar(args[0])}>"
         # A fixed-length ``tuple[str, str]`` → ``[string, string]`` (POSITIONAL —
         # never sorted; a TS tuple's order is significant).
         return "[" + ", ".join(_ts_scalar(a) for a in get_args(annotation)) + "]"
     if origin in (list,):
         (inner,) = get_args(annotation)
-        return f"{_ts_scalar(inner)}[]"
+        scalar = _ts_scalar(inner)
+        return f"({scalar})[]" if " | " in scalar else f"{scalar}[]"
     if origin in (dict,) or annotation is dict:
         args = get_args(annotation)
         # A typed value (``dict[str, int]`` → ``Record<string, number>``); a bare
@@ -162,21 +166,15 @@ def _collect(models: list[type[BaseModel]]) -> list[type[BaseModel]]:
         if name in seen:
             continue
         seen[name] = model
-        for field in model.model_fields.values():
-            inner, _ = _split_optional(field.annotation)
-            # A multi-member union yields a tuple; walk every member so nested
-            # models referenced only inside a union still get collected.
-            for candidate in inner if isinstance(inner, tuple) else (inner,):
-                # Unwrap a container to the referenced element/value type: a model
-                # nested only inside ``list[Model]`` or ``dict[str, Model]`` must
-                # still be discovered and emitted.
-                if get_origin(candidate) in (list,):
-                    (candidate,) = get_args(candidate)
-                elif get_origin(candidate) in (dict,):
-                    args = get_args(candidate)
-                    candidate = args[1] if len(args) == 2 else Any
-                if isinstance(candidate, type) and issubclass(candidate, BaseModel):
-                    stack.append(candidate)
+        candidates = [field.annotation for field in model.model_fields.values()]
+        while candidates:
+            candidate = candidates.pop()
+            if isinstance(candidate, type) and issubclass(candidate, BaseModel):
+                stack.append(candidate)
+            elif get_origin(candidate) in (list, tuple, dict, Union, UnionType):
+                candidates.extend(
+                    arg for arg in get_args(candidate) if arg is not Ellipsis
+                )
     return [seen[name] for name in sorted(seen)]
 
 

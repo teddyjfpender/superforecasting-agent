@@ -49,3 +49,7 @@ Diagnostic capture and upload remain in [debug.py](debug.py). Messaging uses
 [diagnostic_service.py](diagnostic_service.py) for summary-only sharing; all
 sharing paths attach installed versions and sanitize the composed payload through
 the shared [application policy](../application/diagnostics.py).
+
+## Data desk
+
+`data_desk.py` is the thin `data` command and setup adapter. It delegates selection and credentials to the DataDesk application owner. Setup offers a global starter or intentional empty desk and supports preview/customization.
