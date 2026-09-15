@@ -106,3 +106,17 @@ describe('publisher content retention', () => {
     ).toBe('')
   })
 })
+
+it('omits only NHC empty-basin placeholders, preserving outlooks and advisories', () => {
+  const xml = `<rss><channel>
+    <item><title>There are no tropical cyclones at this time.</title><pubDate>Wed, 16 Sep 2026 23:05:44 GMT</pubDate></item>
+    <item><title>Atlantic Tropical Weather Outlook</title><pubDate>Tue, 15 Sep 2026 11:05:44 GMT</pubDate></item>
+    <item><title>Hurricane advisory</title></item>
+  </channel></rss>`
+
+  expect(parseFeed(xml, 'https://www.nhc.noaa.gov/index-at.xml', 'NHC').map(article => article.title)).toEqual([
+    'Atlantic Tropical Weather Outlook',
+    'Hurricane advisory'
+  ])
+  expect(parseFeed(xml, 'https://example.org/feed', 'Another publisher')).toHaveLength(3)
+})

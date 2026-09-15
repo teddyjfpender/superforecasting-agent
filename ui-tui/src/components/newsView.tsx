@@ -1,6 +1,6 @@
 import { useStore } from '@nanostores/react'
 import { Box, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdout } from '@superforecasting/ink'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
 import type { CatalogFeed } from '../content/newsFeedCatalog.js'
@@ -77,7 +77,7 @@ const relTime = (ms: number): string => {
   const diff = Date.now() - ms
 
   if (diff < 0) {
-    return 'soon'
+    return 'date?'
   }
 
   const m = Math.floor(diff / 60_000)
@@ -713,8 +713,15 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
   const clampedSel = Math.min(sel, Math.max(0, visibleArticles.length - 1))
   const selectedArticle = visibleArticles[clampedSel]
   const selectedLink = selectedArticle?.link ?? ''
-  useEffect(() => {
+
+  const selectedKey = selectedArticle
+    ? `${selectedArticle.feedUrl}:${selectedArticle.link}:${selectedArticle.title}`
+    : ''
+
+  useLayoutEffect(() => {
     readerRef.current?.scrollTo(0)
+  }, [selectedKey])
+  useEffect(() => {
     setArticleBody(null)
     setReading(false)
 
@@ -1021,6 +1028,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
           decstbm={false}
           flexDirection="column"
           flexShrink={0}
+          followContent={false}
           height={Math.max(1, contentHeight - 2)}
           marginTop={1}
           minHeight={0}
@@ -1035,6 +1043,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
               ? ` · ${new Date(selectedArticle.publishedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC`
               : ' · Publication time unknown'}
             {selectedArticle.author ? ` · ${selectedArticle.author}` : ''}
+            {selectedArticle.publishedAt > Date.now() ? ' · Source timestamp is in the future' : ''}
           </Text>
           {readerText ? (
             <Box marginTop={1}>

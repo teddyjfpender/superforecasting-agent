@@ -1,6 +1,6 @@
 import type { GatewayClient } from '../gatewayClient.js'
 
-import { type Article, type FetchResult, parseFeed } from './newsFeedFetch.js'
+import { type Article, type FetchResult, isNhcStatusPlaceholder, parseFeed } from './newsFeedFetch.js'
 
 /** The connected backend owns networking, so a VPS desk uses its own access. */
 export async function fetchBackendFeed(gw: GatewayClient, url: string, title: string): Promise<FetchResult> {
@@ -15,11 +15,16 @@ export async function fetchBackendFeed(gw: GatewayClient, url: string, title: st
 }
 
 /** Exact source-link duplicates collapse; related reporting stays independent. */
-export function uniqueArticles(articles: Article[]): Article[] {
+export function uniqueArticles(articles: Article[], now = Date.now()): Article[] {
   const seen = new Set<string>()
 
   return articles
     .filter(article => {
+      // Also clean previously persisted feed caches, without rewriting them.
+      if (isNhcStatusPlaceholder(article)) {
+        return false
+      }
+
       let key = `${article.feedUrl}:${article.title}`
 
       if (article.link) {
@@ -47,5 +52,10 @@ export function uniqueArticles(articles: Article[]): Article[] {
 
       return true
     })
-    .sort((a, b) => b.publishedAt - a.publishedAt)
+    .sort((a, b) => {
+      // Future publication claims remain inspectable, but cannot pin the feed.
+      const published = (date: number) => (Number.isFinite(date) && date > 0 && date <= now ? date : 0)
+
+      return published(b.publishedAt) - published(a.publishedAt)
+    })
 }

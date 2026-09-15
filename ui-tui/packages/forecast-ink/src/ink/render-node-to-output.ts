@@ -804,6 +804,7 @@ function renderNodeToOutput(
         const scrollTopBeforeFollow = node.scrollTop ?? 0
         const stickyBeforeFollow = node.stickyScroll
 
+        const followContent = node.attributes['followContent'] !== false
         const sticky = node.stickyScroll ?? Boolean(node.attributes['stickyScroll'])
 
         const prevMaxScroll = Math.max(0, prevScrollHeight - prevInnerHeight)
@@ -829,7 +830,7 @@ function renderNodeToOutput(
         // First frame (undefined) falls back to the positional check alone.
         const wasAtBottom = node.scrollWasAtBottom ?? scrollTopBeforeFollow >= prevMaxScroll
 
-        const atBottom = sticky || (grew && wasAtBottom && scrollTopBeforeFollow >= prevMaxScroll)
+        const atBottom = followContent && (sticky || (grew && wasAtBottom && scrollTopBeforeFollow >= prevMaxScroll))
 
         // Viewport shrink (composer grew a wrapped line, a status rule
         // appeared): keep the BOTTOM edge stable when the user was reading
@@ -846,6 +847,7 @@ function renderNodeToOutput(
         // mid-history reader to the tail. A genuine composer-growth shrink
         // always starts from a scrollable state (prevMax > 0).
         if (
+          followContent &&
           !atBottom &&
           viewportShrink > 0 &&
           prevMaxScroll > 0 &&

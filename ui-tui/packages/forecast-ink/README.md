@@ -20,6 +20,14 @@ These are entry points and representative modules, not an exhaustive inventory.
 
 - [src/](src/README.md) — Terminal renderer.
 
+## Reader scroll behavior
+
+Use `ScrollBox` with `followContent={false}` for article/document readers. Content
+loading and viewport resizing then preserve the reading position instead of
+following the tail. Explicit scroll commands still work; shrinking content clamps
+the position to its new bounds. Keep the default follow behavior for chat streams.
+Side-by-side panes also need `decstbm={false}` and an explicit viewport height.
+
 ## Working in this directory
 
 From the repository root, run:

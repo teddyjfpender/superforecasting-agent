@@ -27,3 +27,32 @@ describe('news aggregation', () => {
     ).toHaveLength(2)
   })
 })
+
+it('removes cached NHC empty-basin placeholders and demotes future publication claims', () => {
+  const now = Date.parse('2026-09-15T13:00:00Z')
+
+  const base = {
+    title: 'Report',
+    summary: '',
+    feedTitle: 'Source',
+    feedUrl: 'https://example.org/feed',
+    link: '',
+    publishedAt: now - 1000
+  }
+
+  const articles = [
+    {
+      ...base,
+      title: 'There are no tropical cyclones at this time.',
+      feedUrl: 'https://www.nhc.noaa.gov/index-at.xml',
+      publishedAt: now + 86400000
+    },
+    { ...base, title: 'Future story', publishedAt: now + 86400000 },
+    { ...base, title: 'Older story', publishedAt: now - 2000 },
+    base
+  ]
+
+  expect(uniqueArticles(articles, now).map(article => article.title)).toEqual(['Report', 'Older story', 'Future story'])
+  expect(articles).toHaveLength(4)
+  expect(uniqueArticles(articles, now + 86400001)[0].title).toBe('Future story')
+})

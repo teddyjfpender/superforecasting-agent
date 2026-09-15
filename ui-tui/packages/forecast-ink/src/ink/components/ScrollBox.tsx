@@ -80,6 +80,8 @@ export type ScrollBoxProps = Except<Styles, 'textWrap' | 'overflow' | 'overflowX
    * grows. Unset manually via scrollTo/scrollBy to break the stickiness.
    */
   stickyScroll?: boolean
+  /** Set false for readers: only explicit scroll commands change position. */
+  followContent?: boolean
   /**
    * Set to false for a ScrollBox that does NOT span the full terminal width
    * (e.g. a detail pane beside a list). DECSTBM hardware scrolling moves the
@@ -100,7 +102,14 @@ export type ScrollBoxProps = Except<Styles, 'textWrap' | 'overflow' | 'overflowX
  *
  * Works best inside a fullscreen (constrained-height root) Ink tree.
  */
-function ScrollBox({ children, decstbm, ref, stickyScroll, ...style }: PropsWithChildren<ScrollBoxProps>): React.ReactNode {
+function ScrollBox({
+  children,
+  decstbm,
+  followContent = true,
+  ref,
+  stickyScroll,
+  ...style
+}: PropsWithChildren<ScrollBoxProps>): React.ReactNode {
   const domRef = useRef<DOMElement>(null)
   // scrollTo/scrollBy bypass React: they mutate scrollTop on the DOM node,
   // mark it dirty, and call the root's throttled scheduleRender directly.
@@ -211,7 +220,12 @@ function ScrollBox({ children, decstbm, ref, stickyScroll, ...style }: PropsWith
         }
 
         el.pendingScrollDelta = undefined
-        el.stickyScroll = true
+        el.stickyScroll = followContent
+
+        if (!followContent) {
+          el.scrollTop = Math.max(0, (el.scrollHeight ?? 0) - (el.scrollViewportHeight ?? 0))
+        }
+
         markDirty(el)
         notify()
         forceRender(n => n + 1)
@@ -268,10 +282,8 @@ function ScrollBox({ children, decstbm, ref, stickyScroll, ...style }: PropsWith
       }
     }),
     // notify/scrollMutated are inline (no useCallback) but only close over
-    // refs + imports — stable. Empty deps avoids rebuilding the handle on
-    // every render (which re-registers the ref = churn).
-
-    []
+    // refs + imports — stable. Rebuild only when the follow policy changes.
+    [followContent]
   )
 
   // Structure: outer viewport (overflow:scroll, constrained height) >
@@ -307,6 +319,7 @@ function ScrollBox({ children, decstbm, ref, stickyScroll, ...style }: PropsWith
         overflowX: 'scroll',
         overflowY: 'scroll'
       }}
+      {...{ followContent }}
       {...(stickyScroll
         ? {
             stickyScroll: true
