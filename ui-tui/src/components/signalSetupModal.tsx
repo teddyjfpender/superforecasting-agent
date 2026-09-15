@@ -1,16 +1,10 @@
 import { useStore } from '@nanostores/react'
 import { Box, Text, useInput } from '@superforecasting/ink'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { $globalModal } from '../app/overlayStore.js'
-import { qrLines } from '../lib/qrRender.js'
-import {
-  type BinaryStatus,
-  findJava,
-  findSignalCli,
-  parseMajorVersion,
-  startDaemon
-} from '../lib/signalDaemon.js'
+import { qrLines, signalQrLayout } from '../lib/qrRender.js'
+import { type BinaryStatus, findJava, findSignalCli, parseMajorVersion, startDaemon } from '../lib/signalDaemon.js'
 import {
   brewInstall,
   CAPTCHA_URL,
@@ -31,14 +25,7 @@ import { ModalOverlay } from './modalOverlay.js'
 // account (renders the scan QR) or registers a new number (captcha + code), and
 // finally starts the daemon on a free port — no leaving the TUI, no manual port.
 
-type Step =
-  | 'install'
-  | 'linking'
-  | 'menu'
-  | 'reg-captcha'
-  | 'reg-code'
-  | 'reg-number'
-  | 'starting'
+type Step = 'install' | 'linking' | 'menu' | 'reg-captcha' | 'reg-code' | 'reg-number' | 'starting'
 
 interface SignalSetupModalProps {
   cols: number
@@ -78,10 +65,11 @@ export function SignalSetupModal({ cols, onCancel, onConnected, rows, t }: Signa
     }
   }, [])
 
-  const modalW = Math.max(54, Math.min(cols - 4, 100))
-  // Mirror ModalOverlay's box height (rows-6) so the internal log windowing matches
-  // the actual content region and the bottom rows aren't clipped.
-  const modalH = Math.max(16, Math.min(rows - 6, 36))
+  const code = useMemo(() => (linkUri ? qrLines(linkUri) : []), [linkUri])
+  const scanLayout = signalQrLayout(code, cols, rows)
+  const scanning = step === 'linking' && Boolean(linkUri)
+  const modalW = scanning ? scanLayout.width : Math.max(54, Math.min(cols - 4, 100))
+  const modalH = scanning ? scanLayout.height : Math.max(8, Math.min(rows - 6, 36))
 
   const javaOk = java.found && parseMajorVersion(java.version) >= 17
   const ready = cli.found && javaOk
@@ -243,96 +231,99 @@ export function SignalSetupModal({ cols, onCancel, onConnected, rows, t }: Signa
     })()
   }
 
-  useInput((ch, key) => {
-    if (busy) {
+  useInput(
+    (ch, key) => {
+      if (busy) {
+        if (key.escape) {
+          onCancel()
+        }
+
+        return
+      }
+
+      // Text-entry steps capture typing.
+      const isTextStep = step === 'reg-number' || step === 'reg-captcha' || step === 'reg-code' || step === 'linking'
+      const isNameStep = step === 'menu' // name is entered inline on the link menu? no — handled below
+
       if (key.escape) {
-        onCancel()
+        if (step === 'menu') {
+          return onCancel()
+        }
+
+        handleRef.current?.cancel()
+        setStep('menu')
+        setInput('')
+        setError('')
+
+        return
       }
 
-      return
-    }
-
-    // Text-entry steps capture typing.
-    const isTextStep = step === 'reg-number' || step === 'reg-captcha' || step === 'reg-code' || step === 'linking'
-    const isNameStep = step === 'menu' // name is entered inline on the link menu? no — handled below
-
-    if (key.escape) {
       if (step === 'menu') {
-        return onCancel()
-      }
+        if (ch === 'l' && ready) {
+          // Jump straight to link with a default name (most users keep it).
+          setInput('')
 
-      handleRef.current?.cancel()
-      setStep('menu')
-      setInput('')
-      setError('')
-
-      return
-    }
-
-    if (step === 'menu') {
-      if (ch === 'l' && ready) {
-        // Jump straight to link with a default name (most users keep it).
-        setInput('')
-
-        return startLink()
-      }
-
-      if (ch === 'n' && ready) {
-        setInput('')
-
-        return setStep('reg-number')
-      }
-
-      if (ch === 'i' && !cli.found) {
-        return install('signal-cli')
-      }
-
-      if (ch === 'j' && !javaOk) {
-        return install('openjdk')
-      }
-
-      if (ch === 'r') {
-        setCli(findSignalCli())
-        setJava(findJava())
-      }
-
-      return
-    }
-
-    if (isNameStep) {
-      return
-    }
-
-    if (isTextStep && step !== 'linking') {
-      if (key.return) {
-        if (step === 'reg-number') {
-          setNumber(input.trim())
-
-          return doRegister()
+          return startLink()
         }
 
-        if (step === 'reg-captcha') {
-          return doRegister(input.trim())
+        if (ch === 'n' && ready) {
+          setInput('')
+
+          return setStep('reg-number')
         }
 
-        if (step === 'reg-code') {
-          return doVerify()
+        if (ch === 'i' && !cli.found) {
+          return install('signal-cli')
+        }
+
+        if (ch === 'j' && !javaOk) {
+          return install('openjdk')
+        }
+
+        if (ch === 'r') {
+          setCli(findSignalCli())
+          setJava(findJava())
+        }
+
+        return
+      }
+
+      if (isNameStep) {
+        return
+      }
+
+      if (isTextStep && step !== 'linking') {
+        if (key.return) {
+          if (step === 'reg-number') {
+            setNumber(input.trim())
+
+            return doRegister()
+          }
+
+          if (step === 'reg-captcha') {
+            return doRegister(input.trim())
+          }
+
+          if (step === 'reg-code') {
+            return doVerify()
+          }
+        }
+
+        if (key.backspace || key.delete) {
+          return setInput(s => s.slice(0, -1))
+        }
+
+        if (ch && !key.ctrl && !key.meta) {
+          const printable = [...ch].filter(c => c >= ' ').join('')
+
+          if (printable) {
+            setInput(s => s + printable)
+          }
         }
       }
-
-      if (key.backspace || key.delete) {
-        return setInput(s => s.slice(0, -1))
-      }
-
-      if (ch && !key.ctrl && !key.meta) {
-        const printable = [...ch].filter(c => c >= ' ').join('')
-
-        if (printable) {
-          setInput(s => s + printable)
-        }
-      }
-    }
-  }, { isActive: !globalModal })
+    },
+    { isActive: !globalModal }
+  )
 
   // ---- rendering -----------------------------------------------------------
   const prereqLine = (label: string, ok: boolean, detail: string) => (
@@ -376,31 +367,43 @@ export function SignalSetupModal({ cols, onCancel, onConnected, rows, t }: Signa
     footer = 'Esc cancel'
   } else if (step === 'linking') {
     body = (
-      <Box flexDirection="column">
+      <Box flexDirection="column" flexShrink={0}>
         {linkUri ? (
-          <Box alignItems="center" flexDirection="column">
-            <Text color={t.color.label} wrap="truncate-end">
-              Open Signal on your phone → Settings → Linked devices → + → scan:
-            </Text>
-            {/* Always a light field + dark modules (theme-aware via luminance)
-                so it scans in BOTH light and dark themes — not inverted. */}
-            <Box flexDirection="column" marginTop={1}>
-              {qrLines(linkUri).map((line, i) => (
-                <Text backgroundColor={qr.bg} color={qr.fg} key={i}>
-                  {line}
+          scanLayout.fits ? (
+            <Box alignItems="center" flexDirection="column" flexShrink={0}>
+              <Box flexShrink={0} height={1}>
+                <Text color={t.color.label} wrap="truncate-end">
+                  Signal → Settings → Linked devices → + → scan
                 </Text>
-              ))}
+              </Box>
+              <Box
+                backgroundColor={qr.bg}
+                flexDirection="column"
+                flexShrink={0}
+                height={code.length}
+                width={code[0]?.length}
+              >
+                {code.map((line, i) => (
+                  <Box backgroundColor={qr.bg} flexShrink={0} height={1} key={i}>
+                    <Text backgroundColor={qr.bg} color={qr.fg} wrap="truncate-end">
+                      {line}
+                    </Text>
+                  </Box>
+                ))}
+              </Box>
             </Box>
-            <Box marginTop={1}>
-              <Text color={t.color.muted}>Waiting for your phone to confirm…</Text>
-            </Box>
-          </Box>
+          ) : (
+            <Text color={t.color.label} wrap="wrap">
+              Resize to at least {scanLayout.minCols} columns × {scanLayout.minRows} rows to scan the full QR code. The
+              link remains active; the code appears automatically when it fits.
+            </Text>
+          )
         ) : (
           <Text color={t.color.muted}>Generating a device-link code…</Text>
         )}
       </Box>
     )
-    footer = 'Esc cancel'
+    footer = linkUri ? 'Waiting for phone · Esc cancel' : 'Esc cancel'
   } else if (step === 'reg-number') {
     body = field('Register a new Signal number (E.164, e.g. +15551234567):', '+15551234567')
     footer = '⏎ request code · Esc back'
@@ -408,8 +411,7 @@ export function SignalSetupModal({ cols, onCancel, onConnected, rows, t }: Signa
     body = (
       <Box flexDirection="column">
         <Text color={t.color.label} wrap="wrap">
-          Signal needs a captcha. Open this in a browser, solve it, then copy the resulting
-          {' '}signalcaptcha:// link:
+          Signal needs a captcha. Open this in a browser, solve it, then copy the resulting signalcaptcha:// link:
         </Text>
         <Box marginTop={1}>
           <Text color={t.color.accent} wrap="truncate-end">
@@ -461,7 +463,7 @@ export function SignalSetupModal({ cols, onCancel, onConnected, rows, t }: Signa
   }
 
   return (
-    <ModalOverlay cols={cols} maxHeight={modalH} maxWidth={modalW} rows={rows} t={t}>
+    <ModalOverlay cols={cols} maxHeight={modalH} maxWidth={modalW} rows={rows} t={t} verticalMargin={scanning ? 2 : 6}>
       <Box flexDirection="column" flexGrow={1} minHeight={0}>
         <Box flexShrink={0} justifyContent="space-between">
           <Text bold color={t.color.primary}>
@@ -479,7 +481,7 @@ export function SignalSetupModal({ cols, onCancel, onConnected, rows, t }: Signa
             </Box>
           ) : null}
         </Box>
-        <Box flexShrink={0} marginTop={1}>
+        <Box flexShrink={0} marginTop={scanning ? 0 : 1}>
           <Text color={t.color.muted} wrap="truncate-end">
             {footer}
           </Text>

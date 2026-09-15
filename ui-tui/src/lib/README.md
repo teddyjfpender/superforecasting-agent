@@ -53,3 +53,8 @@ Update this guide when entry points or ownership change. See the
 and [engineering backlog](../../../TODO.md) for cross-package context.
 
 [↑ Parent directory](../README.md)
+
+Signal contact discovery is owned by `signalDirectory.ts` (shared refresh and
+reactive cache). `signalContacts.ts` preserves name provenance and local labels;
+`messagingSearch.ts` ranks names, categories and saved message context without
+external AI calls. See [Signal behavior and tests](../../../../docs/verification/signal-messaging.md).

@@ -13,6 +13,7 @@
 
 import { $chatState, $messagingStorageError, updateChatState } from './messagingState.js'
 import { openReceiveStream, type SignalConfig, type SignalMessage } from './signalClient.js'
+import { $signalDirectory, saveDirectoryContact } from './signalDirectory.js'
 import { appendMessage, loadSignalCache, saveSignalCache, type SignalCache } from './signalStore.js'
 
 type Listener = () => void
@@ -103,6 +104,10 @@ export const startSignalReceiver = (cfg: null | SignalConfig): void => {
     msg => {
       if (generation !== receiverGeneration) {
         return
+      }
+
+      if (msg.authorName && !$signalDirectory.get()[msg.author]?.name) {
+        saveDirectoryContact({ chatId: msg.author, name: msg.authorName, nameSource: 'signal' })
       }
 
       const next = appendMessage(cache, msg)

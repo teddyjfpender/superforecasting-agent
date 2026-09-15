@@ -59,7 +59,7 @@ describe('contact book', () => {
     const book = upsertContact({}, { addedAt: 7, chatId: '+12674553945', name: 'Levy', number: '+12674553945' })
     expect(saveContactBook(book)).toBe(true)
     const loaded = loadContactBook()
-    expect(loaded['+12674553945']).toEqual({ addedAt: 7, chatId: '+12674553945', name: 'Levy', number: '+12674553945' })
+    expect(loaded['+12674553945']).toMatchObject({ addedAt: 7, chatId: '+12674553945', name: 'Levy', number: '+12674553945' })
   })
 
   it('returns {} for a missing file', () => {

@@ -1,23 +1,24 @@
 import { useStore } from '@nanostores/react'
 import { Box, ScrollBox, type ScrollBoxHandle, Text, useInput } from '@superforecasting/ink'
-import { useMemo, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 
+import { $overlayState } from '../app/overlayStore.js'
 import { sendDeskMessage } from '../lib/messagingSend.js'
 import { $chatState, $messagingStorageError, $quickMessage, updateChatState } from '../lib/messagingState.js'
-import { isValidNumber, loadContactBook, normalizeNumber } from '../lib/signalContacts.js'
-import { signalCache } from '../lib/signalLive.js'
+import { $signalDirectory } from '../lib/signalDirectory.js'
 import { resolveSignalConfig } from '../lib/signalStore.js'
 import type { Theme } from '../theme.js'
 
+import { ContactPicker } from './contactPicker.js'
 import { ModalOverlay } from './modalOverlay.js'
 import { TextInput } from './textInput.js'
 
 export function QuickMessage({ cols, rows, t }: { cols: number; rows: number; t: Theme }) {
+  const overlay = useStore($overlayState)
+  const blocked = overlay.palette || overlay.cheatSheet
   const request = useStore($quickMessage)
   const state = useStore($chatState)
   const storageError = useStore($messagingStorageError)
-  const [query, setQuery] = useState('')
-  const [selected, setSelected] = useState(0)
   const [recipient, setRecipient] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [error, setError] = useState('')
@@ -25,36 +26,8 @@ export function QuickMessage({ cols, rows, t }: { cols: number; rows: number; t:
   const [includeItem, setIncludeItem] = useState(true)
   const sending = useRef(false)
   const inputRef = useRef<ScrollBoxHandle>(null)
-  const book = useMemo(() => loadContactBook(), [])
-
-  const targets = [...new Set([...Object.keys(book), ...Object.keys(signalCache()), ...Object.keys(state)])]
-    .filter(id =>
-      `${book[id]?.name ?? ''} ${id} ${state[id]?.category ?? ''}`.toLowerCase().includes(query.toLowerCase())
-    )
-    .sort(
-      (a, b) =>
-        Number(Boolean(state[b]?.pinned)) - Number(Boolean(state[a]?.pinned)) ||
-        (book[a]?.name ?? a).localeCompare(book[b]?.name ?? b)
-    )
-
-  if (isValidNumber(query) && !targets.includes(normalizeNumber(query))) {
-    targets.unshift(normalizeNumber(query))
-  }
-
-  const targetRows = Math.min(5, Math.max(2, rows - 22))
+  const book = useStore($signalDirectory)
   const draftRows = Math.max(2, Math.min(6, rows - 20))
-  const index = Math.min(selected, Math.max(0, targets.length - 1))
-
-  const choose = () => {
-    const id = targets[index]
-
-    if (!id) {
-      return
-    }
-
-    setRecipient(id)
-    setDraft(state[id]?.draft || '')
-  }
 
   const send = async (value = draft) => {
     const cfg = resolveSignalConfig()
@@ -97,67 +70,52 @@ export function QuickMessage({ cols, rows, t }: { cols: number; rows: number; t:
     $quickMessage.set(null)
   }
 
-  useInput((input, key, event) => {
-    if (!recipient || key.escape || key.tab || sending.current || (key.ctrl && input.toLowerCase() === 'r')) {
-      ;(event as unknown as { stopImmediatePropagation?: () => void }).stopImmediatePropagation?.()
-    }
+  useInput(
+    (input, key, event) => {
+      if (!recipient || key.escape || key.tab || sending.current || (key.ctrl && input.toLowerCase() === 'r')) {
+        ;(event as unknown as { stopImmediatePropagation?: () => void }).stopImmediatePropagation?.()
+      }
 
-    if (sending.current) {
-      return
-    }
+      if (sending.current) {
+        return
+      }
 
-    if (key.escape) {
-      $quickMessage.set(null)
-
-      return
-    }
-
-    if (key.tab) {
-      setRecipient(null)
-
-      return
-    }
-
-    if (key.ctrl && input.toLowerCase() === 'r') {
-      setIncludeItem(value => !value)
-
-      return
-    }
-
-    if (recipient) {
-      return
-    } else {
-      if (key.upArrow) {
-        setSelected(v => Math.max(0, v - 1))
+      if (key.escape) {
+        $quickMessage.set(null)
 
         return
       }
 
-      if (key.downArrow) {
-        setSelected(v => Math.min(targets.length - 1, v + 1))
+      if (key.tab) {
+        setRecipient(null)
 
         return
       }
 
-      if (key.return) {
-        choose()
+      if (key.ctrl && input.toLowerCase() === 'r') {
+        setIncludeItem(value => !value)
 
         return
       }
+    },
+    { isActive: Boolean(recipient) && !blocked }
+  )
 
-      if (key.backspace || key.delete) {
-        setQuery(v => v.slice(0, -1))
-        setSelected(0)
-
-        return
-      }
-
-      if (input && !key.ctrl && !key.meta) {
-        setQuery(v => v + input)
-        setSelected(0)
-      }
-    }
-  })
+  if (!recipient) {
+    return (
+      <ContactPicker
+        cols={cols}
+        onCancel={() => $quickMessage.set(null)}
+        onSelect={id => {
+          setRecipient(id)
+          setDraft(state[id]?.draft || '')
+        }}
+        rows={rows}
+        t={t}
+        title="MESSAGE · CHOOSE RECIPIENT"
+      />
+    )
+  }
 
   return (
     <ModalOverlay
@@ -176,10 +134,10 @@ export function QuickMessage({ cols, rows, t }: { cols: number; rows: number; t:
       </Box>
       <Box flexShrink={0}>
         <Text color={t.color.accent} wrap="truncate-end">
-          To: {recipient ? book[recipient]?.name || recipient : `${query}▌`}
+          To: {book[recipient]?.name || recipient} · {recipient}
         </Text>
       </Box>
-      {recipient ? (
+      {
         <ScrollBox
           decstbm={false}
           flexDirection="column"
@@ -190,7 +148,7 @@ export function QuickMessage({ cols, rows, t }: { cols: number; rows: number; t:
         >
           <TextInput
             columns={Math.min(76, cols - 8)}
-            focus={!busy}
+            focus={!busy && !blocked}
             immediateChange
             multiline
             onChange={value => {
@@ -203,30 +161,7 @@ export function QuickMessage({ cols, rows, t }: { cols: number; rows: number; t:
             value={draft}
           />
         </ScrollBox>
-      ) : (
-        <Box flexDirection="column" flexShrink={0} height={targetRows}>
-          {targets
-            .slice(Math.max(0, index - targetRows + 1), Math.max(0, index - targetRows + 1) + targetRows)
-            .map(id => (
-              <Box
-                key={id}
-                onClick={() => {
-                  setRecipient(id)
-                  setDraft(state[id]?.draft || '')
-                }}
-              >
-                <Text color={id === targets[index] ? t.color.accent : t.color.text}>
-                  {id === targets[index] ? '› ' : '  '}
-                  {book[id]?.name || id}
-                  {id.startsWith('group:') ? ' · group' : ''}
-                </Text>
-              </Box>
-            ))}
-          {!targets.length && (
-            <Text color={t.color.muted}>Search a saved contact, category, group or enter +countrycode number.</Text>
-          )}
-        </Box>
-      )}
+      }
       {includeItem && request?.item && (
         <Box flexDirection="column" flexShrink={0} marginTop={1}>
           <Text color={t.color.label} wrap="truncate-end">
@@ -246,7 +181,7 @@ export function QuickMessage({ cols, rows, t }: { cols: number; rows: number; t:
         flexShrink={0}
         marginTop={1}
         onClick={() => {
-          if (!sending.current) {
+          if (!sending.current && !blocked) {
             void send()
           }
         }}

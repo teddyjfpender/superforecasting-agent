@@ -31,7 +31,7 @@ describe('parseContacts', () => {
     )
 
     expect(out).toHaveLength(3)
-    expect(out[0]).toEqual({ id: '+15551112222', name: 'Ada L' })
+    expect(out[0]).toEqual({ id: '+15551112222', name: 'Ada L', aliases: ['Ada L'] })
     expect(out[1].name).toBe('Saved Name')
     expect(out[2]).toEqual({ id: 'abc-uuid', name: 'abc-uuid' })
   })

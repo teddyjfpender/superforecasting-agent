@@ -3,29 +3,19 @@ import { Box, ScrollBox, type ScrollBoxHandle, Text, useStdout } from '@superfor
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
-import { ICON, statusGlyph, type StatusKind } from '../lib/icons.js'
+import { statusGlyph, type StatusKind } from '../lib/icons.js'
 import { sendDeskMessage } from '../lib/messagingSend.js'
 import { $chatState, $messagingStorageError, openQuickMessage, updateChatState } from '../lib/messagingState.js'
 import { openAttachment } from '../lib/openAttachment.js'
-import {
-  attachmentLabel,
-  checkHealth,
-  createGroup,
-  listContacts,
-  listGroups,
-  type SignalContact,
-  type SignalGroup,
-  type SignalMessage
-} from '../lib/signalClient.js'
-import {
-  type ContactBook,
-  isValidNumber,
-  loadContactBook,
-  normalizeNumber,
-  saveContactBook,
-  upsertContact
-} from '../lib/signalContacts.js'
+import { attachmentLabel, checkHealth, createGroup, type SignalMessage } from '../lib/signalClient.js'
+import { isValidNumber, normalizeNumber, upsertContact } from '../lib/signalContacts.js'
 import { restartDaemon } from '../lib/signalDaemon.js'
+import {
+  $signalDirectory,
+  persistDirectory,
+  refreshSignalDirectory,
+  watchSignalDirectory
+} from '../lib/signalDirectory.js'
 import {
   markChatRead,
   signalCache,
@@ -39,6 +29,7 @@ import { resolveSignalConfig } from '../lib/signalStore.js'
 import { useViewInput } from '../lib/useViewInput.js'
 import type { Theme } from '../theme.js'
 
+import { ContactPicker } from './contactPicker.js'
 import { type FooterChip, FooterChips } from './footerChips.js'
 import { ModalOverlay } from './modalOverlay.js'
 import { SignalSetupModal } from './signalSetupModal.js'
@@ -168,8 +159,6 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   const [setup, setSetup] = useState(false)
 
   const [reachable, setReachable] = useState<boolean | null>(cfg ? null : false)
-  const [contacts, setContacts] = useState<SignalContact[]>([])
-  const [groups, setGroups] = useState<SignalGroup[]>([])
   // Selection is by chatId (stable), not list index — the list re-sorts by
   // recency when you send/receive, so an index would jump to another chat.
   const [selectedChatId, setSelectedChatId] = useState<null | string>(null)
@@ -208,7 +197,8 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   const composing = focus === 'thread'
 
   // Persisted address book (names/numbers) + the "new message" composer.
-  const [contactBook, setContactBook] = useState<ContactBook>(() => loadContactBook())
+  const contactBook = useStore($signalDirectory)
+  const [memberPicker, setMemberPicker] = useState(false)
   const [newChat, setNewChat] = useState(false)
   const [newMode, setNewMode] = useState<'direct' | 'group'>('direct')
   // Reused across modes: in 'direct' newNumber=recipient, newName=contact name;
@@ -242,72 +232,46 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     }
   }, [])
 
-  // Connect: health check → load contacts/groups → ensure the app-level receiver
-  // is streaming from this daemon (idempotent; it keeps running when this view
-  // closes, so messages are captured app-wide).
+  // Receive before directory synchronization, then poll without overlapping calls:
+  // a phone may deliver its contact response well after the initial RPC returns.
   useEffect(() => {
     if (!cfg) {
       return
     }
-    void (async () => {
+
+    let alive = true
+    const unwatch = watchSignalDirectory(cfg)
+
+    const refresh = async () => {
       const ok = await checkHealth(cfg)
 
-      if (!aliveRef.current) {
+      if (!alive) {
         return
       }
 
       setReachable(ok)
 
-      if (!ok) {
-        return
+      if (ok) {
+        startSignalReceiver(cfg)
       }
+    }
 
-      const [cs, gs] = await Promise.all([listContacts(cfg), listGroups(cfg)])
+    void refresh()
 
-      if (!aliveRef.current) {
-        return
-      }
+    const timer = setInterval(() => {
+      void refresh()
+    }, 15000)
 
-      setContacts(cs)
-      setGroups(gs)
-      setContactBook(prev => {
-        let book = prev
-
-        for (const c of cs) {
-          // Skip when the daemon's "name" is just the id/number — don't let it
-          // clobber a real name you've saved.
-          if (c.name?.trim() && c.name.trim() !== c.id && !book[c.id]?.name) {
-            book = upsertContact(book, { chatId: c.id, name: c.name })
-          }
-        }
-
-        for (const g of gs) {
-          if (g.name?.trim() && !book[`group:${g.id}`]?.name) {
-            book = upsertContact(book, { chatId: `group:${g.id}`, name: g.name })
-          }
-        }
-
-        if (book !== prev) {
-          saveContactBook(book)
-        }
-
-        return book
-      })
-      startSignalReceiver(cfg)
-    })()
+    return () => {
+      alive = false
+      clearInterval(timer)
+      unwatch()
+    }
   }, [cfg])
 
   const conversations = useMemo<Conversation[]>(() => {
     const cache = signalCache()
     const nameById = new Map<string, string>()
-
-    for (const c of contacts) {
-      nameById.set(c.id, c.name)
-    }
-
-    for (const g of groups) {
-      nameById.set(`group:${g.id}`, g.name)
-    }
 
     // The persisted book fills in names the live daemon didn't resolve (and
     // surfaces chats — e.g. a number you just started — that have no history).
@@ -317,12 +281,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
       }
     }
 
-    const ids = new Set<string>([
-      ...contacts.map(c => c.id),
-      ...groups.map(g => `group:${g.id}`),
-      ...Object.keys(contactBook),
-      ...Object.keys(cache)
-    ])
+    const ids = new Set<string>([...Object.keys(desk), ...Object.keys(contactBook), ...Object.keys(cache)])
 
     const list: Conversation[] = [...ids].map(chatId => {
       const msgs = cache[chatId] ?? []
@@ -371,7 +330,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
       return `${c.name} ${c.chatId} ${meta?.category || ''} ${c.lastText}`.toLowerCase().includes(query.toLowerCase())
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contacts, groups, contactBook, cacheVersion, desk, filter, query, focus, selectedChatId])
+  }, [contactBook, cacheVersion, desk, filter, query, focus, selectedChatId])
 
   const foundIndex = conversations.findIndex(c => c.chatId === selectedChatId)
   const clampedSel = foundIndex >= 0 ? foundIndex : 0
@@ -434,31 +393,10 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   // Start a conversation with a typed number: validate, save it to the address
   // book (so the name persists), then select + open it (chatId selection means
   // it resolves as soon as the book update lands it in the list).
-  const createNewChat = () => {
-    const number = normalizeNumber(newNumber)
-
-    if (!isValidNumber(number)) {
-      setFlash('enter a valid number, e.g. +12674553945')
-
-      return
-    }
-
-    const book = upsertContact(contactBook, { chatId: number, name: newName, number })
-    setContactBook(book)
-    saveContactBook(book)
-    setNewChat(false)
-    setNewNumber('')
-    setNewName('')
-    setNewField('number')
-    setSelectedChatId(number)
-    setThreadScroll(0)
-    setFocus('thread')
-    setFlash(`new chat · ${newName.trim() || number}`)
-  }
-
   // Open the new-message composer fresh (direct mode, empty fields).
   const openNewChat = () => {
     setNewMode('direct')
+    setMemberPicker(false)
     setNewNumber('')
     setNewName('')
     setNewField('number')
@@ -527,8 +465,13 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
 
       const chatId = `group:${groupId}`
       const book = upsertContact(contactBook, { chatId, name })
-      setContactBook(book)
-      saveContactBook(book)
+
+      if (!persistDirectory(book)) {
+        setFlash('Could not save contact')
+
+        return
+      }
+
       setSelectedChatId(chatId)
       setThreadScroll(0)
       setFocus('thread')
@@ -549,8 +492,13 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   const saveContact = () => {
     if (activeConv) {
       const book = upsertContact(contactBook, { chatId: activeConv.chatId, name: editName })
-      setContactBook(book)
-      saveContactBook(book)
+
+      if (!persistDirectory(book)) {
+        setFlash('Could not save contact')
+
+        return
+      }
+
       setFlash(`contact saved${editName.trim() ? ` · ${editName.trim()}` : ''}`)
     }
 
@@ -659,33 +607,11 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
       setReachable(ok)
 
       if (ok) {
-        const [cs, gs] = await Promise.all([listContacts(cfg), listGroups(cfg)])
+        startSignalReceiver(cfg)
+        await refreshSignalDirectory(cfg, true)
 
         if (aliveRef.current) {
-          setContacts(cs)
-          setGroups(gs)
-          setContactBook(prev => {
-            let book = prev
-
-            for (const c of cs) {
-              if (c.name?.trim()) {
-                book = upsertContact(book, { chatId: c.id, name: c.name })
-              }
-            }
-
-            for (const g of gs) {
-              if (g.name?.trim() && !book[`group:${g.id}`]?.name) {
-                book = upsertContact(book, { chatId: `group:${g.id}`, name: g.name })
-              }
-            }
-
-            if (book !== prev) {
-              saveContactBook(book)
-            }
-
-            return book
-          })
-          setFlash('refreshed')
+          setFlash('directory refreshed; phone sync may take a moment')
         }
       }
     })()
@@ -711,7 +637,15 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
 
       // New-message composer: Direct (a number) or Group (name + members).
       // Tab/←→ switch mode, ↑↓ switch field, Enter acts per mode/field.
+      if (newChat && (newMode === 'direct' || memberPicker)) {
+        return
+      }
+
       if (newChat) {
+        if (key.ctrl && ch === 'f') {
+          return setMemberPicker(true)
+        }
+
         if (key.escape) {
           return setNewChat(false)
         }
@@ -729,10 +663,6 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
         }
 
         if (key.return) {
-          if (newMode === 'direct') {
-            return createNewChat()
-          }
-
           // Group: name → member, then type+⏎ adds, empty ⏎ creates.
           if (newField === 'name') {
             return setNewField('number')
@@ -928,7 +858,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
         return openContact()
       }
 
-      if (ch === 'n') {
+      if (ch === 'n' || ch === 'f') {
         return openNewChat()
       }
 
@@ -1007,97 +937,85 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
       return null
     }
 
-    const modalW = Math.max(44, Math.min(cols - 4, 72))
-    const isGroup = newMode === 'group'
-    const numValid = isValidNumber(newNumber)
+    if (newMode === 'direct' || memberPicker) {
+      return (
+        <ContactPicker
+          cols={cols}
+          contactsOnly={memberPicker}
+          onCancel={() => (memberPicker ? setMemberPicker(false) : setNewChat(false))}
+          onNewGroup={
+            memberPicker
+              ? undefined
+              : () => {
+                  setNewMode('group')
+                  setNewField('name')
+                }
+          }
+          onSelect={id => {
+            if (memberPicker) {
+              setGroupMembers(ms => (ms.includes(id) ? ms : [...ms, id]))
+              setMemberPicker(false)
 
-    const field = (label: string, value: string, active: boolean, placeholder: string) => (
-      <Box>
-        <Text bold={active} color={active ? t.color.accent : t.color.label}>
-          {label.padEnd(9)}
-        </Text>
-        <Text color={t.color.muted}>{'› '}</Text>
-        <Text color={t.color.text}>{value}</Text>
-        {active ? (
-          live ? (
-            <Text color={t.color.text} inverse>
-              {' '}
-            </Text>
-          ) : (
-            <Text> </Text>
-          )
-        ) : null}
-        {!value ? <Text color={t.color.muted}> {placeholder}</Text> : null}
-      </Box>
-    )
+              return
+            }
 
-    const tab = (label: string, on: boolean) => (
-      <Text bold={on} color={on ? t.color.accent : t.color.muted}>
-        {on ? `▸ ${label}` : `  ${label}`}
-      </Text>
-    )
+            if (!persistDirectory(upsertContact(contactBook, { chatId: id }))) {
+              return
+            }
+
+            setFilter(desk[id]?.archived ? 'Archived' : 'Inbox')
+            setQuery('')
+            setSelectedChatId(id)
+            setThreadScroll(0)
+            setFocus('thread')
+            setNewChat(false)
+          }}
+          rows={termRows}
+          t={t}
+          title={memberPicker ? 'ADD GROUP MEMBER' : 'FIND CONTACT OR CHAT'}
+        />
+      )
+    }
+
+    const memberRows = Math.max(1, Math.min(8, termRows - 19))
 
     return (
-      <ModalOverlay cols={cols} maxHeight={isGroup ? 22 : 16} maxWidth={modalW} rows={termRows} t={t}>
+      <ModalOverlay
+        cols={cols}
+        footerHint="^F find members · Enter add/create · ↑↓ field · Tab direct · Esc cancel"
+        maxHeight={26}
+        maxWidth={100}
+        rows={termRows}
+        t={t}
+        title="NEW SIGNAL GROUP"
+      >
         <Box flexDirection="column" flexGrow={1} minHeight={0}>
-          <Box justifyContent="space-between">
-            <Text bold color={t.color.primary}>
-              {isGroup ? 'New group' : 'New message'}
+          <Text color={newField === 'name' ? t.color.accent : t.color.muted} wrap="truncate-end">
+            Name › {newName || 'Group name'}
+            {newField === 'name' ? '▌' : ''}
+          </Text>
+          <Text color={newField === 'number' ? t.color.accent : t.color.muted} wrap="truncate-end">
+            Member › {newNumber || 'Ctrl+F to find, or type +number'}
+            {newField === 'number' ? '▌' : ''}
+          </Text>
+          <Box flexDirection="column" flexGrow={1} marginTop={1} minHeight={0} overflow="hidden">
+            <Text bold color={t.color.label}>
+              MEMBERS · {groupMembers.length}
             </Text>
-            <Box>
-              {tab('Direct', !isGroup)}
-              <Text color={t.color.border}>{'   '}</Text>
-              {tab('Group', isGroup)}
-            </Box>
+            {groupMembers.slice(-memberRows).map(id => (
+              <Text color={t.color.text} key={id} wrap="truncate-end">
+                {contactBook[id]?.name || id} · {id}
+              </Text>
+            ))}
+            {!groupMembers.length && (
+              <Text color={t.color.muted}>
+                Choose contacts with Ctrl+F. Nothing is sent until you create the group.
+              </Text>
+            )}
           </Box>
-          <Box marginTop={1}>
-            <Text color={t.color.border}>{'─'.repeat(modalW - 6)}</Text>
-          </Box>
-
-          {isGroup ? (
-            <Box flexDirection="column" marginTop={1}>
-              {field('Name', newName, newField === 'name', 'group name')}
-              {field('Member', newNumber, newField === 'number', '+1… then ⏎ to add')}
-              <Box flexDirection="column" marginTop={1}>
-                <Text color={t.color.label}>{`Members (${groupMembers.length})`}</Text>
-                {groupMembers.length === 0 ? (
-                  <Text color={t.color.muted}> none yet — type a number, ⏎ to add</Text>
-                ) : (
-                  groupMembers.slice(0, 8).map(m => (
-                    <Text color={t.color.text} key={m} wrap="truncate-end">
-                      {`  • ${contactBook[m]?.name || m}`}
-                      {contactBook[m]?.name ? <Text color={t.color.muted}>{`  ${m}`}</Text> : null}
-                    </Text>
-                  ))
-                )}
-                {groupMembers.length > 8 ? (
-                  <Text color={t.color.muted}>{`  +${groupMembers.length - 8} more`}</Text>
-                ) : null}
-              </Box>
-            </Box>
-          ) : (
-            <Box flexDirection="column" marginTop={1}>
-              {field('Number', newNumber, newField === 'number', '+12674553945')}
-              {field('Name', newName, newField === 'name', 'optional')}
-              <Box marginTop={1}>
-                <Text color={newNumber ? (numValid ? t.color.ok : t.color.error) : t.color.muted} wrap="truncate-end">
-                  {newNumber
-                    ? numValid
-                      ? `${ICON.ok} valid Signal number`
-                      : 'needs E.164 format, e.g. +12674553945'
-                    : 'Enter a phone number in E.164 format (with country code).'}
-                </Text>
-              </Box>
-            </Box>
-          )}
-
-          <Box marginTop={1}>
-            <Text color={t.color.muted} wrap="truncate-end">
-              {isGroup
-                ? '⏎ add member · ⏎ (empty) create · ⌫ remove last · ↑↓ field · Tab direct · Esc cancel'
-                : '⏎ start chat · ↑↓ field · Tab group · Esc cancel'}
-            </Text>
-          </Box>
+          <Text color={t.color.warn} wrap="truncate-end">
+            {flash || 'Enter with an empty member field creates the group.'}
+          </Text>
         </Box>
       </ModalOverlay>
     )
@@ -1122,8 +1040,8 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
             <ModalOverlay
               cols={cols}
               footerHint="⏎ save name · Esc cancel"
-              maxHeight={12}
-              maxWidth={70}
+              maxHeight={16}
+              maxWidth={90}
               rows={termRows}
               t={t}
               title="Contact"
@@ -1144,6 +1062,8 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
                   )}
                   {!editName ? <Text color={t.color.muted}> (no name set)</Text> : null}
                 </Box>
+                {row('Signal', saved?.aliases?.join(' · ') || '')}
+                {row('Name from', saved?.nameSource === 'signal' ? 'Signal profile/contact' : 'Saved local label')}
                 {row('Number', activeConv.chatId.startsWith('group:') ? '' : saved?.number || activeConv.chatId)}
                 {row(activeConv.chatId.startsWith('group:') ? 'Group' : 'Chat id', activeConv.chatId, t.color.muted)}
                 {row(
@@ -1334,7 +1254,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
         >
           {threadMessages.length === 0 ? (
             <Text color={t.color.muted} wrap="wrap">
-              No messages yet. Press i to write one.
+              No locally saved messages. Phone history is not imported; new messages appear while the desk is connected.
             </Text>
           ) : (
             threadMessages.map((m, i) => {
@@ -1343,7 +1263,12 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
 
               const label = m.fromMe
                 ? 'You'
-                : truncate(activeConv?.chatId.startsWith('group:') ? m.author : (activeConv?.name ?? m.author), 24)
+                : truncate(
+                    activeConv?.chatId.startsWith('group:')
+                      ? contactBook[m.author]?.name || m.authorName || m.author
+                      : (activeConv?.name ?? m.author),
+                    24
+                  )
 
               return (
                 <Box
@@ -1423,6 +1348,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
         { k: 'm', label: 'Message', run: openQuickMessage },
         { k: 'c', label: 'Contact', run: openContact },
         { k: 'n', label: 'New / group', run: openNewChat },
+        { k: 'f', label: 'Find', run: openNewChat },
         { k: 'r', label: 'Reconnect', run: reconnect },
         { k: 'R', label: 'Restart', run: restartDaemonAndReconnect },
         ...(connected ? [] : [{ k: 's', label: 'Set up', run: () => setSetup(true) }]),

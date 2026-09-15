@@ -66,3 +66,8 @@ Update this guide when entry points or ownership change. See the
 and [engineering backlog](../../../TODO.md) for cross-package context.
 
 [↑ Parent directory](../README.md)
+
+`contactPicker.tsx` is the shared contact/chat browser for Messaging, quick
+compose and group-member selection. Keep search ranking in `messagingSearch.ts`
+and contact synchronization in `signalDirectory.ts`; the picker owns bounded
+layout, scopes and selection only.

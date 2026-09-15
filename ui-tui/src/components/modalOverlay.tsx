@@ -28,7 +28,8 @@ export function ModalOverlay({
   scrollRef,
   t,
   tick = 0,
-  title
+  title,
+  verticalMargin = 6
 }: {
   children: ReactNode
   cols: number
@@ -44,10 +45,12 @@ export function ModalOverlay({
   t: Theme
   tick?: number
   title?: string
+  /** Total rows reserved outside the modal; compact scan dialogs may use 2. */
+  verticalMargin?: number
 }) {
   const narrow = cols < 100
   const modalW = narrow ? Math.max(40, cols - 2) : Math.max(48, Math.min(cols - 6, maxWidth))
-  const modalH = Math.max(8, Math.min(rows - 6, maxHeight))
+  const modalH = Math.max(8, Math.min(rows - verticalMargin, maxHeight))
   // Computed offsets centre the box deterministically (alignItems on an absolute
   // box doesn't reliably centre, and a full-width centring wrapper reflows the body).
   const modalTop = Math.max(0, Math.floor((rows - modalH) / 2) - 1)
