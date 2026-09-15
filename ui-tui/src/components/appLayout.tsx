@@ -30,6 +30,7 @@ import {
   inputVisualHeight,
   stableComposerColumns
 } from '../lib/inputMetrics.js'
+import { $quickMessage } from '../lib/messagingState.js'
 import { PerfPane } from '../lib/perfPane.js'
 import { composerPromptText } from '../lib/prompt.js'
 import { startSignalReceiver } from '../lib/signalLive.js'
@@ -47,7 +48,6 @@ import { DemoVizView } from './demoVizView.js'
 import { DeskView } from './deskView.js'
 import { DocsView } from './docsView.js'
 import { FpsOverlay } from './fpsOverlay.js'
-import { HelpHint } from './helpHint.js'
 import { HelpOverlay } from './helpOverlay.js'
 import { HelpView } from './helpView.js'
 import { HomeStatusBar, HomeTip } from './homeLanding.js'
@@ -60,6 +60,7 @@ import { NewsView } from './newsView.js'
 import { PaletteOverlay } from './paletteOverlay.js'
 import { QuestionOnboardModal } from './questionOnboardModal.js'
 import { QueuedMessages } from './queuedMessages.js'
+import { QuickMessage } from './quickMessage.js'
 import { ScheduleStrip } from './scheduleStrip.js'
 import { LiveTodoPanel, StreamingAssistant } from './streamingAssistant.js'
 import { TextInput, type TextInputMouseApi } from './textInput.js'
@@ -352,8 +353,6 @@ const ComposerPane = memo(function ComposerPane({
           onPickerSelect={actions.resumeById}
         />
 
-        {input === '?' && !inputBuf.length && <HelpHint t={ui.theme} />}
-
         {!isBlocked && (
           <>
             {inputBuf.map((line, i) => (
@@ -514,6 +513,12 @@ const GlobalChromePane = memo(function GlobalChromePane({
 }) {
   const ui = useStore($uiState)
   const overlay = useStore($overlayState)
+
+  const quick = useStore($quickMessage)
+
+  if (quick) {
+    return <QuickMessage cols={cols} rows={rows} t={ui.theme} />
+  }
 
   if (overlay.palette) {
     return (
@@ -676,7 +681,7 @@ export const AppLayout = memo(function AppLayout({
   // open over Home OR over a view; rendered LAST as an absolute ModalOverlay, it
   // leaves the body mounted beneath and floats on top. Every fullscreen view
   // gates its own useInput + mouse handlers on this flag so nothing double-fires.
-  const globalModal = overlay.palette || overlay.cheatSheet
+  const globalModal = useStore($globalModal)
 
   // Keep the Signal receiver running app-wide — not just while the Messaging
   // view is open — so inbound messages are captured and cached even when you're

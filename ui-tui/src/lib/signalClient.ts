@@ -16,6 +16,7 @@ export interface SignalConfig {
 export interface SignalContact {
   id: string // number (preferred) or uuid — the send recipient
   name: string
+  aliases?: string[]
 }
 
 export interface SignalGroup {
@@ -32,6 +33,7 @@ export interface AttachmentInfo {
 
 export interface SignalMessage {
   attachments: number // count (kept for back-compat with older caches)
+  authorName?: string // Signal-supplied profile label, never inferred from message text
   author: string // sender id (number/uuid) or 'me'
   chatId: string // contact id, or `group:<id>`
   files?: AttachmentInfo[] // per-attachment metadata (filename + content-type)
@@ -90,20 +92,24 @@ export const attachmentLabel = (msg: Pick<SignalMessage, 'attachments' | 'files'
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : '')
 
-const contactName = (c: Record<string, unknown>): string => {
-  const profile = (c.profile as Record<string, unknown> | undefined) ?? {}
-  const given = str(profile.givenName)
-  const family = str(profile.familyName)
-  const full = `${given} ${family}`.trim()
+const contactNames = (c: Record<string, unknown>): string[] => {
+  const profile = c.profile && typeof c.profile === 'object' ? (c.profile as Record<string, unknown>) : {}
 
-  return (
-    str(c.name) ||
-    str(c.profileName) ||
-    full ||
-    str(c.username) ||
-    str(c.number) ||
-    str(c.uuid)
-  )
+  return [
+    ...new Set(
+      [
+        str(c.nickName),
+        `${str(c.nickGivenName)} ${str(c.nickFamilyName)}`.trim(),
+        str(c.name),
+        `${str(c.givenName)} ${str(c.familyName)}`.trim(),
+        str(c.profileName),
+        `${str(profile.givenName)} ${str(profile.familyName)}`.trim(),
+        str(c.username)
+      ]
+        .map(name => name.replace(/\0/g, ' ').trim())
+        .filter(Boolean)
+    )
+  ]
 }
 
 export const parseContacts = (result: unknown, selfNumber = ''): SignalContact[] => {
@@ -126,7 +132,8 @@ export const parseContacts = (result: unknown, selfNumber = ''): SignalContact[]
       continue // skip self / unidentifiable
     }
 
-    out.push({ id, name: contactName(c) })
+    const aliases = contactNames(c)
+    out.push({ id, name: aliases[0] || id, ...(aliases.length ? { aliases } : {}) })
   }
 
   return out
@@ -194,7 +201,7 @@ export const parseEnvelope = (raw: unknown, selfId = ''): null | SignalMessage =
 
   if (sent && typeof sent === 'object') {
     const gid = groupIdOf(sent)
-    const dest = str(sent.destinationNumber) || str(sent.destination)
+    const dest = str(sent.destinationNumber) || str(sent.destinationUuid) || str(sent.destination)
     const chatId = gid ? `group:${gid}` : dest
     const text = str(sent.message)
     const files = attachmentList(sent)
@@ -214,7 +221,8 @@ export const parseEnvelope = (raw: unknown, selfId = ''): null | SignalMessage =
     return null
   }
 
-  const data = (env.dataMessage as Record<string, unknown> | undefined) ??
+  const data =
+    (env.dataMessage as Record<string, unknown> | undefined) ??
     ((env.editMessage as Record<string, unknown> | undefined)?.dataMessage as Record<string, unknown> | undefined)
 
   if (!data || typeof data !== 'object') {
@@ -239,6 +247,7 @@ export const parseEnvelope = (raw: unknown, selfId = ''): null | SignalMessage =
   return {
     attachments: files.length,
     author: sender,
+    ...(str(env.sourceName).trim() ? { authorName: str(env.sourceName).trim() } : {}),
     chatId,
     files,
     fromMe: Boolean(self) && sender === self,
@@ -310,13 +319,21 @@ export const checkHealth = async (cfg: SignalConfig, timeoutMs = 8000): Promise<
 }
 
 export const listContacts = async (cfg: SignalConfig): Promise<SignalContact[]> => {
-  const { result } = await signalRpc(cfg, 'listContacts', { account: cfg.account })
+  const { result, error } = await signalRpc(cfg, 'listContacts', { account: cfg.account, allRecipients: true })
+
+  if (error) {
+    throw new Error(`Contacts: ${error}`)
+  }
 
   return parseContacts(result, cfg.account)
 }
 
 export const listGroups = async (cfg: SignalConfig): Promise<SignalGroup[]> => {
-  const { result } = await signalRpc(cfg, 'listGroups', { account: cfg.account })
+  const { result, error } = await signalRpc(cfg, 'listGroups', { account: cfg.account })
+
+  if (error) {
+    throw new Error(`Groups: ${error}`)
+  }
 
   return parseGroups(result)
 }

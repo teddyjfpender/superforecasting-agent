@@ -25,7 +25,9 @@ type InkExt = typeof Ink & {
 }
 
 const ink = Ink as unknown as InkExt
-const { Box, Text, useStdin, useInput, useStdout, stringWidth, useCursorAdvance, useDeclaredCursor, useTerminalFocus } = ink
+
+const { Box, Text, useStdin, useInput, useStdout, stringWidth, useCursorAdvance, useDeclaredCursor, useTerminalFocus } =
+  ink
 
 const ESC = '\x1b'
 const INV = `${ESC}[7m`
@@ -364,6 +366,9 @@ const isPasteResultPromise = (
 
 export function TextInput({
   columns = 80,
+  multiline = false,
+  immediateChange = false,
+  onCursorLine,
   value,
   onChange,
   onPaste,
@@ -429,6 +434,10 @@ export function TextInput({
   // over a single-line string in the common case), so dropping useMemo
   // is fine.
   const layout = cursorLayout(display, curRef.current, columns)
+
+  useEffect(() => {
+    onCursorLine?.(layout.line)
+  }, [layout.line, onCursorLine])
 
   const boxRef = useDeclaredCursor({
     line: layout.line,
@@ -571,7 +580,8 @@ export function TextInput({
     }, 16)
   }
 
-  const canFastEchoBase = () => supportsFastEchoTerminal() && focus && termFocus && !selected && !mask && !!stdout?.isTTY
+  const canFastEchoBase = () =>
+    supportsFastEchoTerminal() && focus && termFocus && !selected && !mask && !!stdout?.isTTY
 
   const canFastAppend = (current: string, cursor: number, text: string) =>
     canFastEchoBase() && canFastAppendShape(current, cursor, text, columns, lineWidthRef.current)
@@ -619,7 +629,7 @@ export function TextInput({
       nextLineWidth ?? stringWidth(next.includes('\n') ? next.slice(next.lastIndexOf('\n') + 1) : next)
 
     if (next !== prev) {
-      if (syncParent) {
+      if (syncParent || immediateChange) {
         flushParentChange()
         self.current = true
         cbChange.current(next)
@@ -889,7 +899,7 @@ export function TextInput({
       if (k.return) {
         flushPaste(true)
 
-        if (k.shift || k.ctrl || (isMac ? isActionMod(k) : k.meta)) {
+        if (multiline ? !k.ctrl : k.shift || k.ctrl || (isMac ? isActionMod(k) : k.meta)) {
           flushParentChange()
           commit(ins(vRef.current, curRef.current, '\n'), curRef.current + 1)
         } else {
@@ -1186,6 +1196,10 @@ export interface PasteEvent {
 
 interface TextInputProps {
   columns?: number
+  multiline?: boolean
+  /** Durable editors publish every edit before dismissal can unmount them. */
+  immediateChange?: boolean
+  onCursorLine?: (line: number) => void
   focus?: boolean
   mask?: string
   mouseApiRef?: MutableRefObject<null | TextInputMouseApi>
@@ -1199,9 +1213,7 @@ interface TextInputProps {
   voiceRecordKey?: ParsedVoiceRecordKey
 }
 
-export type RightClickDecision =
-  | { action: 'copy'; text: string }
-  | { action: 'paste' }
+export type RightClickDecision = { action: 'copy'; text: string } | { action: 'paste' }
 
 /**
  * Decide what right-click should do on the composer:
@@ -1236,6 +1248,7 @@ export const shouldPassThroughToGlobalHandler = (
   currentValue = '',
   raw?: string
 ): boolean =>
+  (key.meta && input.toLowerCase() === 'm') ||
   (key.ctrl && input === 'c') ||
   (key.ctrl && input === 'x') ||
   key.tab ||

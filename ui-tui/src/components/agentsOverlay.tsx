@@ -32,6 +32,7 @@ import {
   widthByDepth
 } from '../lib/subagentTree.js'
 import { compactPreview } from '../lib/text.js'
+import { useViewInput } from '../lib/useViewInput.js'
 import type { Theme } from '../theme.js'
 import type { SubagentNode, SubagentProgress } from '../types.js'
 
@@ -923,7 +924,7 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
   const wheelDetailDy = 3
   const scrollDetail = (dy: number) => detailScrollRef.current?.scrollBy(dy)
 
-  useInput(
+  const handleFooterKey = useViewInput(
     (ch, key) => {
       if (ch === 'q') {
         return closeWithCleanup()
@@ -1160,7 +1161,12 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
 
       <Box flexDirection="column" marginTop={1}>
         {flash ? <Text color={t.color.accent}>{flash}</Text> : null}
-        <FooterChips chips={mode === 'list' ? listChips : detailChips} disabled={globalModal} t={t} />
+        <FooterChips
+          chips={mode === 'list' ? listChips : detailChips}
+          disabled={globalModal}
+          onKey={handleFooterKey}
+          t={t}
+        />
       </Box>
     </Box>
   )

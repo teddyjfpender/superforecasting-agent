@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 import { forecastHomeDir } from './forecastHome.js'
 
@@ -19,6 +19,9 @@ export interface SavedContact {
   chatId: string
   name?: string
   number?: string
+  /** Explicit user labels outrank later Signal profile updates. */
+  nameSource?: 'local' | 'signal'
+  aliases?: string[]
 }
 
 export type ContactBook = Record<string, SavedContact>
@@ -34,7 +37,8 @@ export const normalizeNumber = (raw: string): string => {
 }
 
 // Signal recipients are E.164: a leading '+' and 7–15 digits.
-export const isValidNumber = (raw: string): boolean => /^\+\d{7,15}$/.test(normalizeNumber(raw))
+export const isValidNumber = (raw: string): boolean =>
+  /^[+\d() .-]+$/.test(raw.trim()) && /^\+\d{7,15}$/.test(normalizeNumber(raw))
 
 export const loadContactBook = (path = contactsFile()): ContactBook => {
   try {
@@ -53,6 +57,8 @@ export const loadContactBook = (path = contactsFile()): ContactBook => {
           addedAt: typeof c.addedAt === 'number' ? c.addedAt : 0,
           chatId,
           name: typeof c.name === 'string' && c.name.trim() ? c.name : undefined,
+          nameSource: c.nameSource === 'signal' ? 'signal' : 'local',
+          aliases: Array.isArray(c.aliases) ? c.aliases.filter((v): v is string => typeof v === 'string') : [],
           number: typeof c.number === 'string' ? c.number : undefined
         }
       }
@@ -66,7 +72,7 @@ export const loadContactBook = (path = contactsFile()): ContactBook => {
 
 export const saveContactBook = (book: ContactBook, path = contactsFile()): boolean => {
   try {
-    const dir = forecastHomeDir()
+    const dir = dirname(path)
 
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true })
@@ -84,12 +90,13 @@ export const saveContactBook = (book: ContactBook, path = contactsFile()): boole
 
 // Merge a contact in without dropping fields we already have (a later, unnamed
 // sighting shouldn't wipe a saved name). Returns a new book.
-export const upsertContact = (
-  book: ContactBook,
-  entry: { addedAt?: number; chatId: string; name?: string; number?: string }
-): ContactBook => {
+export const upsertContact = (book: ContactBook, entry: Partial<SavedContact> & { chatId: string }): ContactBook => {
   const prev = book[entry.chatId]
-  const name = entry.name?.trim() || prev?.name
+
+  const preserveLocal =
+    entry.nameSource === 'signal' && prev?.nameSource !== 'signal' && Boolean(prev?.name && prev.name !== prev.chatId)
+
+  const name = preserveLocal ? prev?.name : entry.name?.trim() || prev?.name
 
   return {
     ...book,
@@ -97,6 +104,12 @@ export const upsertContact = (
       addedAt: prev?.addedAt ?? entry.addedAt ?? Date.now(),
       chatId: entry.chatId,
       name,
+      nameSource: preserveLocal
+        ? 'local'
+        : entry.name?.trim()
+          ? (entry.nameSource ?? 'local')
+          : (prev?.nameSource ?? 'local'),
+      aliases: entry.aliases ?? prev?.aliases,
       number: entry.number ?? prev?.number
     }
   }

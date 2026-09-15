@@ -1320,7 +1320,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
 
       // `h` opens the unified Help modal — consistent on every view. Nav mode only
       // (the edit/chat/search/prompt guards above already returned).
-      if (ch === 'h') {
+      if (ch === 'h' || ch === '?') {
         return openHelpOverlay()
       }
 

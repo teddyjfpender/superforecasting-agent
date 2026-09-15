@@ -1,5 +1,7 @@
 import { atom, computed } from 'nanostores'
 
+import { $quickMessage } from '../lib/messagingState.js'
+
 import type { OverlayState } from './interfaces.js'
 
 const buildOverlayState = (): OverlayState => ({
@@ -58,8 +60,7 @@ type PromptKey = (typeof PROMPT_KEYS)[number]
 let pendingPrompts: Array<Partial<OverlayState>> = []
 
 /** The first prompt key currently shown, or null when no prompt is active. */
-const activePromptKey = (state: OverlayState): null | PromptKey =>
-  PROMPT_KEYS.find(key => state[key] != null) ?? null
+const activePromptKey = (state: OverlayState): null | PromptKey => PROMPT_KEYS.find(key => state[key] != null) ?? null
 
 /** Test/teardown helper: drop every buffered prompt. */
 export const clearPendingPrompts = () => {
@@ -70,60 +71,64 @@ export const clearPendingPrompts = () => {
 export const pendingPromptCount = () => pendingPrompts.length
 
 export const $isBlocked = computed(
-  $overlayState,
-  ({
-    agents,
-    alerts,
-    approval,
-    calendar,
-    calibration,
-    cheatSheet,
-    clarify,
-    confirm,
-    demoViz,
-    forecasts,
-    help,
-    hooks,
-    markets,
-    messaging,
-    modelPicker,
-    news,
-    obsidian,
-    onboard,
-    pager,
-    palette,
-    picker,
-    secret,
-    skillsHub,
-    sudo,
-    themePicker
-  }) =>
+  [$overlayState, $quickMessage],
+  (
+    {
+      agents,
+      alerts,
+      approval,
+      calendar,
+      calibration,
+      cheatSheet,
+      clarify,
+      confirm,
+      demoViz,
+      forecasts,
+      help,
+      hooks,
+      markets,
+      messaging,
+      modelPicker,
+      news,
+      obsidian,
+      onboard,
+      pager,
+      palette,
+      picker,
+      secret,
+      skillsHub,
+      sudo,
+      themePicker
+    },
+    quick
+  ) =>
     Boolean(
+      quick ||
       agents ||
-        alerts ||
-        approval ||
-        calendar ||
-        calibration ||
-        cheatSheet ||
-        clarify ||
-        confirm ||
-        demoViz ||
-        forecasts ||
-        help ||
-        hooks ||
-        markets ||
-        messaging ||
-        modelPicker ||
-        news ||
-        obsidian ||
-        onboard ||
-        pager ||
-        palette ||
-        picker ||
-        secret ||
-        skillsHub ||
-        sudo ||
-        themePicker
+      alerts ||
+      approval ||
+      calendar ||
+      calibration ||
+      cheatSheet ||
+      clarify ||
+      confirm ||
+      demoViz ||
+      forecasts ||
+      help ||
+      hooks ||
+      markets ||
+      messaging ||
+      modelPicker ||
+      news ||
+      obsidian ||
+      onboard ||
+      pager ||
+      palette ||
+      picker ||
+      secret ||
+      skillsHub ||
+      sudo ||
+      themePicker
     )
 )
 
@@ -137,7 +142,9 @@ export const $isBlocked = computed(
  * `overlay.palette || overlay.cheatSheet` read) keeps view re-renders scoped:
  * it only notifies when one of these two flags actually flips.
  */
-export const $globalModal = computed($overlayState, ({ cheatSheet, palette }) => Boolean(cheatSheet || palette))
+export const $globalModal = computed([$overlayState, $quickMessage], (overlay, quick) =>
+  Boolean(overlay.cheatSheet || overlay.palette || quick)
+)
 
 export const getOverlayState = () => $overlayState.get()
 
@@ -191,6 +198,7 @@ export const raisePrompt = (patch: Partial<OverlayState>) => {
 
 /** Full reset — used by session/turn teardown and tests. */
 export const resetOverlayState = () => {
+  $quickMessage.set(null)
   pendingPrompts = []
   $overlayState.set(buildOverlayState())
 }

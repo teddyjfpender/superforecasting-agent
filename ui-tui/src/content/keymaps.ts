@@ -31,11 +31,12 @@ export const resolveViewChord = (letter: string): null | string => CHORD_BY_KEY.
 
 // Rows for the cheat-sheet's global section.
 export const GLOBAL_KEYS: [string, string][] = [
-  ['h / ?', 'this help — the guide + shortcuts for the current view'],
+  ['h / ?', 'help while browsing; ? also opens help in an empty Home composer'],
   ['Ctrl+K', 'command palette — run any / command'],
   ['Ctrl+G then …', 'jump to a view: ' + VIEW_CHORDS.map(c => `${c.key} ${c.label}`).join(' · ')],
   ['click a tab', 'switch views with the mouse (top bar)'],
-  ['/', 'type a slash command directly']
+  ['Alt+M', 'quick message from any view'],
+  ['/', 'Home: slash command; other views: their local search/filter']
 ]
 
 // Per-view key rows, keyed by the NAV_TABS key of the active view. Assembled
@@ -56,7 +57,10 @@ export const PER_VIEW_KEYS: Record<string, [string, string][]> = {
     ['U / u', 'update now / re-arm — marked rows (or a lens → all its questions)'],
     ['A / T', 'agent run · task over the selection (or a lens → all its questions)'],
     ['o / O', 'sort column · toggle asc/desc — cycles past the columns to VOI (value-of-information order)'],
-    ['VOI', 'Next best actions panel = what to touch next (U update · +src add sources · R resolve); thesis lens shows each member\'s ⇅±pp swing'],
+    [
+      'VOI',
+      "Next best actions panel = what to touch next (U update · +src add sources · R resolve); thesis lens shows each member's ⇅±pp swing"
+    ],
     ['s / / / r', 'settings · filter · refresh'],
     ['q / Esc', 'clear selection / filter, then close the view']
   ],
@@ -64,12 +68,13 @@ export const PER_VIEW_KEYS: Record<string, [string, string][]> = {
     ['↑/↓', 'select a market'],
     ['Tab / ←→', 'switch category'],
     ['p', 'jump to the Prediction section (Polymarket + Kalshi)'],
-    ['→ / v / 1·2·3', 'expand outcomes · switch venue · history range (Prediction)'],
+    ['Space / v / 1·2·3', 'expand outcomes · switch venue · history range (Prediction)'],
     ['f', 'filter prediction markets (venue · volume · probability · hide sports)'],
     ['x', 'remove the saved “+” market under the cursor (a searched find; browse rows stay)'],
     ['Enter', 'open · / search · r refresh'],
     ['o / O', 'sort column · toggle asc/desc (or click a header)'],
-    ['m', 'switch Data ↔ Models'],
+    ['M', 'switch Data ↔ Models'],
+    ['m', 'message / forward the selected item'],
     ['i', 'data warnings — how to fix blank (missing-key) series'],
     ['q / Esc', 'close the view'],
     // ── Models mode (m toggles into it) ──────────────────────────────────────
@@ -83,8 +88,14 @@ export const PER_VIEW_KEYS: Record<string, [string, string][]> = {
   ],
   news: [
     ['↑/↓', 'select a story'],
-    ['Enter', 'open · / filter · r refresh'],
-    ['q / Esc', 'close the view']
+    ['Tab / ←→', 'next/previous source'],
+    ['Enter', 'open story in browser'],
+    ['/', 'search headlines'],
+    ['a / s', 'add feed / starter feeds'],
+    ['PgUp/PgDn', 'scroll the reader'],
+    ['m', 'message / forward story'],
+    ['r', 'refresh'],
+    ['q / Esc', 'close; Esc clears search first']
   ],
   warnings: [
     ['↑/↓ / j k', 'move the cursor'],
@@ -97,8 +108,11 @@ export const PER_VIEW_KEYS: Record<string, [string, string][]> = {
     ['r', 'refresh · q / Esc close the view']
   ],
   calibration: [
-    ['↑/↓', 'scroll'],
-    ['q / Esc', 'close the view']
+    ['↑/↓ / j k', 'scroll'],
+    ['PgUp/PgDn', 'page'],
+    ['g / G', 'top / bottom'],
+    ['r', 'refresh'],
+    ['q / Esc', 'close']
   ],
   calendar: [
     ['Tab', 'switch month-grid ↔ agenda (wide terminals)'],
@@ -112,30 +126,53 @@ export const PER_VIEW_KEYS: Record<string, [string, string][]> = {
     ['r', 'refresh · q / Esc close the view']
   ],
   obsidian: [
-    ['1 / 2', 'switch collection: Markdown vault ↔ LaTeX workspace'],
-    ['↑↓ / j k', 'navigate the focused pane'],
-    ['←→ / l', 'move across panes: list · outline · doc (h is Help)'],
-    ['Enter', 'open a note / doc · follow the focused wikilink'],
-    ['Tab', 'cycle the wikilinks in the doc (Markdown)'],
-    ['/', 'filter the list · o / O sort (name / modified)'],
-    ['s', 'search the vault (Markdown) · e edit · a ask the desk'],
-    ['n / c', 'new note · comment on the selected lines (Markdown)'],
-    ['g / G / P', 'git init · GitHub repo · commit + push (LaTeX)'],
-    ['q / Esc', 'clear selection / filter, then close the view']
+    ['1 / 2', 'Obsidian vault / Overleaf workspace'],
+    ['↑/↓', 'select a document'],
+    ['Tab / ←→', 'cycle folders'],
+    ['/', 'search titles and paths'],
+    ['PgUp/PgDn', 'scroll reader'],
+    ['e / Ctrl+Enter', 'edit / save in editor'],
+    ['R', 'reconcile source and recovered draft'],
+    ['n / c', 'new document / connections and sync'],
+    ['m', 'message / forward document excerpt'],
+    ['q / Esc', 'close; Esc leaves editing/search first']
   ],
   agents: [
-    ['↑/↓ / j k', 'move the cursor'],
-    ['←', 'back · l / → forward (h is Help)'],
-    ['q / Esc', 'close the view']
+    ['↑/↓ / j k', 'select agent; detail: scroll'],
+    ['Enter / →', 'open detail'],
+    ['← / Esc', 'back from detail'],
+    ['s / f', 'cycle sort / filter'],
+    ['[ / ]', 'step through history'],
+    ['x / X', 'kill agent / subtree when supported'],
+    ['p', 'pause / resume delegation when supported'],
+    ['q', 'close']
   ],
   hooks: [
-    ['↑/↓', 'select'],
-    ['Enter', 'open / toggle'],
-    ['q / Esc', 'close the view']
+    ['↑/↓', 'select a hook; inspector: scroll'],
+    ['Tab', 'focus list / inspector'],
+    ['c / ←→', 'cycle severity'],
+    ['p', 'cycle profile'],
+    ['e / d', 'enable / disable selected rule'],
+    ['n / E / x', 'new / edit user rule / remove user rule'],
+    ['r', 'toggle reference / rules'],
+    ['q / Esc', 'back from reference, then close']
   ],
   messaging: [
-    ['↑/↓', 'select a thread'],
-    ['q / Esc', 'close the view']
+    ['↑/↓', 'select a chat'],
+    ['Tab / [ / ]', 'cycle collections (← previous)'],
+    ['Enter / →', 'open chat and focus composer'],
+    ['/', 'search chats, names and categories'],
+    ['p / x / C', 'pin / archive / assign category'],
+    ['f / n', 'find contacts or chats / new chat (Ctrl+B group)'],
+    ['c', 'edit saved contact name'],
+    ['Ctrl+R', 'in contact picker: request names/groups from phone'],
+    ['m', 'quick compose'],
+    ['Enter', 'in chat: send message'],
+    ['PgUp/PgDn', 'in chat: scroll history'],
+    ['Ctrl+O', 'in chat: open latest attachment'],
+    ['r / R', 'reconnect / restart daemon'],
+    ['s', 'set up Signal when disconnected'],
+    ['q / Esc', 'list: close; chat: Esc back (q types text)']
   ],
   // Dev-gated (FORECAST_TUI_DEV_DEMO_VIZ) — absent from NAV_TABS unless the flag
   // is on, so the Help modal's "all views" wall (built from NAV_TABS) never shows
@@ -153,25 +190,22 @@ export const PER_VIEW_KEYS: Record<string, [string, string][]> = {
 // `?` alias) opens this same modal on every view.
 export const PER_VIEW_GUIDE: Record<string, string[]> = {
   home: [
-    'Home is the forecasting desk itself — a chat. Ask a question in plain language to start a forecast, or press / for a slash command. Enter sends; Shift+Enter inserts a newline.',
-    'Ctrl+K opens the command palette (every action, one search) and Ctrl+G then a letter jumps to any view. Ctrl+T focuses the Today attention panel so you can act without leaving Home.',
-    'Press h (or ?) any time — including here once you have stepped off the composer — for this help.'
+    'Home is the forecasting chat. Enter sends; Shift+Enter inserts a newline. / starts a slash command.',
+    'Press ? in an empty composer for this modal. h opens help when focus is on Today rather than the composer. Ctrl+K opens the command palette; Ctrl+G then a letter switches views; Ctrl+T focuses Today.'
   ],
   desk: [
-    // Kept to three wrapped lines on purpose: the Help modal shows the guide
-    // ABOVE the shortcut table, and a fourth line pushes the view's own keys
-    // below the fold of the first frame (globalChrome.test.tsx pins that).
-    'The Desk is your forecasts workspace. Lenses (Tab, ←→) regroup the book by your real theses, largest first, then All, then Operations — the desk\'s own cockpit, not a slice of the book. ↑↓ selects; Enter opens a forecast.',
-    'Updating has three tiers: u re-arms the review schedule, U runs a real update now, and A hands the question to an agent for autonomous reforecasting. Mark rows with Space (⇧↑↓ extends the selection) to run a tier across many at once — with nothing marked, a lens applies the action to all of its questions.',
-    'T opens a task over the selection; n creates a new question; R resolves one; s opens settings. The SRC / RDY columns flag readiness (evidence sourced, ready to score). Next best actions (below the inspected detail) ranks the book by value-of-information — what to touch next. Press / to filter, o to sort, and r to refresh.'
+    'Lenses group forecasts by thesis, then All and Operations. Tab or left/right switches lens; arrows select; Enter opens detail.',
+    'Updates have three tiers: u re-arms, U updates now, A runs an agent. Space marks rows; Shift+arrows extends selection. T opens a task; with no rows marked, lens actions apply to its questions.',
+    'n creates; R resolves; s opens settings. / filters, o sorts and r refreshes. Next best actions ranks the book by value of information.'
   ],
   markets: [
-    'Markets has two modes, toggled with m: Data (live quotes by category) and Models (agentic quant-research). Press p to jump to the Prediction section — Polymarket and Kalshi — where v cycles venue, 1·2·3 set the history range, and → expands outcomes.',
+    'Markets has two modes, toggled with M: Data (live quotes by category) and Models (agentic quant-research). Press p to jump to the Prediction section — Polymarket and Kalshi — where v cycles venue, 1·2·3 set the history range, and Space expands outcomes.',
     'Market Models are quant questions the desk researches end to end. Press n to define one, Enter to open it, c to chat/refine, w to rewrite on fresh data, e to export JSON, ←→ for versions, and F to spin off a Desk forecast.',
     'Press d (Add data) to connect a provider; / filters the tape (or deep-searches a ticker in Prediction), o sorts, r refreshes. Blank series usually mean a missing API key — the header [!] flags which; press i for the per-provider fix.'
   ],
   news: [
-    'News is a headline feed across your configured providers. Move with ↑↓, press Enter to open a story in the browser, / to filter the feed, and r to refresh.'
+    'News has sources, headlines and an independently scrolling reader. Tab or left/right switches sources; up/down selects stories. PgUp/PgDn scrolls article text without moving the selection.',
+    'Enter opens the source in a browser, / searches, a adds feeds, s selects starter feeds when available, r refreshes and m forwards the selected story.'
   ],
   warnings: [
     'Warnings is the desk’s alert and review queue — open alerts, stale forecasts, readiness gaps, and items awaiting judgment, grouped into tiers. Move with ↑↓ (or j/k); Enter or Space expands a row; ← collapses and → expands; Tab jumps between tiers.',
@@ -185,17 +219,19 @@ export const PER_VIEW_GUIDE: Record<string, string[]> = {
     'In the grid, arrows move the day focus, PgUp/PgDn (or [ ]) page months, and t jumps to today. In the agenda, ↑↓ select an event and o/O sort. Enter opens the focused day or deep-links into the Desk; / filters the agenda; r refreshes.'
   ],
   obsidian: [
-    'Docs browses the write-ups and dossiers the desk publishes. Press 1 for the Markdown vault and 2 for the LaTeX workspace. Move within a pane with ↑↓ (j/k); ←→ (l for right) crosses the three panes — list, outline, doc. Enter opens a note or follows the focused wikilink; Tab cycles the wikilinks in a Markdown doc.',
-    'Press / to filter and o/O to sort. s searches the vault, e edits, a asks the desk about the note, n makes a new note, and c comments on selected lines. In the LaTeX workspace, g / G / P handle git init, GitHub repo, and commit-and-push.'
+    'Docs has a library, document list and independently scrolling reader. Press 1 for Obsidian or 2 for Overleaf/LaTeX. Tab cycles folders; arrows select documents; PgUp/PgDn scrolls the reader.',
+    'Press e to edit, Ctrl+Enter to save, and Esc to return to preview with the draft retained. R reconciles source changes. n creates a document; c opens connections and explicit sync. m forwards a labelled excerpt.'
   ],
   agents: [
     'The Agents view is the subagent and spawn-tree monitor: every delegated run, its status, and its history. Move the cursor with ↑↓ (j/k); ← steps back and →/l goes forward through the tree; [ and ] step through history. It updates live as agents work.'
   ],
   hooks: [
-    'Hooks are the desk’s saturation and style guardrails that score every forecast snapshot. Move with ↑↓, press Enter to open or toggle a hook, c (or ←→) to collapse/expand, and r to refresh. The wizard walks you through authoring a new one.'
+    'Hooks configures forecasting rules. Tab switches between list and inspector; arrows select or scroll. c cycles severity, p cycles profile, e enables and d disables.',
+    'n creates a rule; E edits and x removes a user rule. r switches the reference page. Esc returns from reference before closing.'
   ],
   messaging: [
-    'Messaging bridges the desk to Signal so alerts and chat reach your phone. Move threads with ↑↓, press s to set up or link an account, and r to refresh. Open a thread to read and reply.'
+    'Messaging is a personal Signal client. Tab cycles Inbox, Unread, Pinned, Groups, Archived and named categories. / searches; p pins, x archives and C assigns a category.',
+    'Enter opens a chat ready to type; Enter sends and Esc returns with the draft retained. PgUp/PgDn scrolls history. m opens quick compose; Alt+M also works from other views. The header badge counts unread conversations.'
   ],
   // Dev-gated — see the PER_VIEW_KEYS note above.
   demoViz: [

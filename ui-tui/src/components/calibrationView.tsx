@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdout } from '@superforecasting/ink'
+import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useStdout } from '@superforecasting/ink'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
@@ -17,6 +17,7 @@ import type {
 import { bandChart, type BandPoint, levelSparkline, pct } from '../lib/forecastCharts.js'
 import { getOverlayCache, setOverlayCache } from '../lib/overlayCache.js'
 import { asRpcResult } from '../lib/rpc.js'
+import { useViewInput } from '../lib/useViewInput.js'
 import type { Theme } from '../theme.js'
 
 import { OverlayScrollbar } from './agentsOverlay.js'
@@ -240,14 +241,14 @@ export function CalibrationView({ gw, onClose, t }: CalibrationViewProps) {
 
   const pageSize = Math.max(4, termRows - 10)
 
-  useInput(
+  const handleFooterKey = useViewInput(
     (ch, key) => {
       if (ch === 'q' || key.escape) {
         return onClose()
       }
 
       // `h` opens the unified Help modal — consistent on every view.
-      if (ch === 'h') {
+      if (ch === 'h' || ch === '?') {
         return openHelpOverlay()
       }
 
@@ -352,7 +353,7 @@ export function CalibrationView({ gw, onClose, t }: CalibrationViewProps) {
 
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
-      <FooterChips chips={chips} disabled={globalModal} t={t} />
+      <FooterChips chips={chips} disabled={globalModal} onKey={handleFooterKey} t={t} />
       {flash ? (
         <Text color={t.color.accent} wrap="truncate-end">
           {flash}

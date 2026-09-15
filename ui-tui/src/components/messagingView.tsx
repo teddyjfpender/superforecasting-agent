@@ -1,33 +1,23 @@
 import { useStore } from '@nanostores/react'
-import { Box, Text, useInput, useStdout } from '@superforecasting/ink'
+import { Box, ScrollBox, type ScrollBoxHandle, Text, useStdout } from '@superforecasting/ink'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
-import { ICON, statusGlyph, type StatusKind } from '../lib/icons.js'
+import { statusGlyph, type StatusKind } from '../lib/icons.js'
+import { sendDeskMessage } from '../lib/messagingSend.js'
+import { $chatState, $messagingStorageError, openQuickMessage, updateChatState } from '../lib/messagingState.js'
 import { openAttachment } from '../lib/openAttachment.js'
-import {
-  attachmentLabel,
-  checkHealth,
-  createGroup,
-  listContacts,
-  listGroups,
-  sendSignalMessage,
-  type SignalContact,
-  type SignalGroup,
-  type SignalMessage
-} from '../lib/signalClient.js'
-import {
-  type ContactBook,
-  isValidNumber,
-  loadContactBook,
-  normalizeNumber,
-  saveContactBook,
-  upsertContact
-} from '../lib/signalContacts.js'
+import { attachmentLabel, checkHealth, createGroup, type SignalMessage } from '../lib/signalClient.js'
+import { isValidNumber, normalizeNumber, upsertContact } from '../lib/signalContacts.js'
 import { restartDaemon } from '../lib/signalDaemon.js'
 import {
+  $signalDirectory,
+  persistDirectory,
+  refreshSignalDirectory,
+  watchSignalDirectory
+} from '../lib/signalDirectory.js'
+import {
   markChatRead,
-  recordSignalMessage,
   signalCache,
   signalConnected,
   signalUnread,
@@ -36,11 +26,14 @@ import {
   subscribeSignal
 } from '../lib/signalLive.js'
 import { resolveSignalConfig } from '../lib/signalStore.js'
+import { useViewInput } from '../lib/useViewInput.js'
 import type { Theme } from '../theme.js'
 
+import { ContactPicker } from './contactPicker.js'
 import { type FooterChip, FooterChips } from './footerChips.js'
 import { ModalOverlay } from './modalOverlay.js'
 import { SignalSetupModal } from './signalSetupModal.js'
+import { TextInput } from './textInput.js'
 
 export const openMessagingView = () => patchOverlayState({ messaging: true })
 export const closeMessagingView = () => patchOverlayState({ messaging: false })
@@ -166,14 +159,32 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   const [setup, setSetup] = useState(false)
 
   const [reachable, setReachable] = useState<boolean | null>(cfg ? null : false)
-  const [contacts, setContacts] = useState<SignalContact[]>([])
-  const [groups, setGroups] = useState<SignalGroup[]>([])
   // Selection is by chatId (stable), not list index — the list re-sorts by
   // recency when you send/receive, so an index would jump to another chat.
   const [selectedChatId, setSelectedChatId] = useState<null | string>(null)
   const [tick, setTick] = useState(0)
   const [flash, setFlash] = useState('')
   const [draft, setDraft] = useState('')
+  const desk = useStore($chatState)
+  const storageError = useStore($messagingStorageError)
+  const [filter, setFilter] = useState('Inbox')
+  const [query, setQuery] = useState('')
+  const [searching, setSearching] = useState(false)
+  const [categoryEdit, setCategoryEdit] = useState<string | null>(null)
+  const sendingRef = useRef(false)
+
+  const filters = [
+    'Inbox',
+    'Unread',
+    'Pinned',
+    'Groups',
+    'Archived',
+    ...new Set(
+      Object.values(desk)
+        .map(c => c.category)
+        .filter((v): v is string => Boolean(v))
+    )
+  ]
 
   // Focus: the chat LIST, or an open THREAD. In a thread the composer is ALWAYS
   // active (you can type the moment you open a chat — no extra keystroke), and
@@ -181,10 +192,13 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   // from the latest.
   const [focus, setFocus] = useState<'list' | 'thread'>('list')
   const [threadScroll, setThreadScroll] = useState(0)
+  const threadRef = useRef<ScrollBoxHandle>(null)
+  const composeRef = useRef<ScrollBoxHandle>(null)
   const composing = focus === 'thread'
 
   // Persisted address book (names/numbers) + the "new message" composer.
-  const [contactBook, setContactBook] = useState<ContactBook>(() => loadContactBook())
+  const contactBook = useStore($signalDirectory)
+  const [memberPicker, setMemberPicker] = useState(false)
   const [newChat, setNewChat] = useState(false)
   const [newMode, setNewMode] = useState<'direct' | 'group'>('direct')
   // Reused across modes: in 'direct' newNumber=recipient, newName=contact name;
@@ -218,87 +232,56 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     }
   }, [])
 
-  // Connect: health check → load contacts/groups → ensure the app-level receiver
-  // is streaming from this daemon (idempotent; it keeps running when this view
-  // closes, so messages are captured app-wide).
+  // Receive before directory synchronization, then poll without overlapping calls:
+  // a phone may deliver its contact response well after the initial RPC returns.
   useEffect(() => {
     if (!cfg) {
       return
     }
-    void (async () => {
+
+    let alive = true
+    const unwatch = watchSignalDirectory(cfg)
+
+    const refresh = async () => {
       const ok = await checkHealth(cfg)
 
-      if (!aliveRef.current) {
+      if (!alive) {
         return
       }
 
       setReachable(ok)
 
-      if (!ok) {
-        return
+      if (ok) {
+        startSignalReceiver(cfg)
       }
+    }
 
-      const [cs, gs] = await Promise.all([listContacts(cfg), listGroups(cfg)])
+    void refresh()
 
-      if (!aliveRef.current) {
-        return
-      }
+    const timer = setInterval(() => {
+      void refresh()
+    }, 15000)
 
-      setContacts(cs)
-      setGroups(gs)
-      setContactBook(prev => {
-        let book = prev
-
-        for (const c of cs) {
-          // Skip when the daemon's "name" is just the id/number — don't let it
-          // clobber a real name you've saved.
-          if (c.name?.trim() && c.name.trim() !== c.id) {
-            book = upsertContact(book, { chatId: c.id, name: c.name })
-          }
-        }
-
-        for (const g of gs) {
-          if (g.name?.trim()) {
-            book = upsertContact(book, { chatId: `group:${g.id}`, name: g.name })
-          }
-        }
-
-        if (book !== prev) {
-          saveContactBook(book)
-        }
-
-        return book
-      })
-      startSignalReceiver(cfg)
-    })()
+    return () => {
+      alive = false
+      clearInterval(timer)
+      unwatch()
+    }
   }, [cfg])
 
   const conversations = useMemo<Conversation[]>(() => {
     const cache = signalCache()
     const nameById = new Map<string, string>()
 
-    for (const c of contacts) {
-      nameById.set(c.id, c.name)
-    }
-
-    for (const g of groups) {
-      nameById.set(`group:${g.id}`, g.name)
-    }
-
     // The persisted book fills in names the live daemon didn't resolve (and
     // surfaces chats — e.g. a number you just started — that have no history).
     for (const [id, c] of Object.entries(contactBook)) {
-      if (c.name && !nameById.get(id)?.trim()) {
+      if (c.name) {
         nameById.set(id, c.name)
       }
     }
 
-    const ids = new Set<string>([
-      ...contacts.map(c => c.id),
-      ...groups.map(g => `group:${g.id}`),
-      ...Object.keys(contactBook),
-      ...Object.keys(cache)
-    ])
+    const ids = new Set<string>([...Object.keys(desk), ...Object.keys(contactBook), ...Object.keys(cache)])
 
     const list: Conversation[] = [...ids].map(chatId => {
       const msgs = cache[chatId] ?? []
@@ -314,73 +297,106 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
       }
     })
 
-    list.sort((a, b) => b.lastTs - a.lastTs || a.name.localeCompare(b.name))
+    list.sort(
+      (a, b) =>
+        Number(Boolean(desk[b.chatId]?.pinned)) - Number(Boolean(desk[a.chatId]?.pinned)) ||
+        b.lastTs - a.lastTs ||
+        a.name.localeCompare(b.name)
+    )
 
-    return list
+    return list.filter(c => {
+      const meta = desk[c.chatId]
+
+      if (filter === 'Archived' ? !meta?.archived : meta?.archived) {
+        return false
+      }
+
+      if (filter === 'Unread' && !unread.has(c.chatId) && !(focus === 'thread' && c.chatId === selectedChatId)) {
+        return false
+      }
+
+      if (filter === 'Pinned' && !meta?.pinned) {
+        return false
+      }
+
+      if (filter === 'Groups' && !c.chatId.startsWith('group:')) {
+        return false
+      }
+
+      if (!['Inbox', 'Unread', 'Pinned', 'Groups', 'Archived'].includes(filter) && meta?.category !== filter) {
+        return false
+      }
+
+      return `${c.name} ${c.chatId} ${meta?.category || ''} ${c.lastText}`.toLowerCase().includes(query.toLowerCase())
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contacts, groups, contactBook, cacheVersion])
+  }, [contactBook, cacheVersion, desk, filter, query, focus, selectedChatId])
 
   const foundIndex = conversations.findIndex(c => c.chatId === selectedChatId)
   const clampedSel = foundIndex >= 0 ? foundIndex : 0
   const activeConv = conversations[clampedSel]
-  const threadMessages = activeConv ? signalCache()[activeConv.chatId] ?? [] : []
+  const threadMessages = activeConv ? (signalCache()[activeConv.chatId] ?? []) : []
+
+  const activeChatId = activeConv?.chatId
+  useEffect(() => {
+    setDraft(activeChatId ? $chatState.get()[activeChatId]?.draft || '' : '')
+  }, [activeChatId])
+
+  const editDraft = (update: string | ((previous: string) => string)) => {
+    const next = typeof update === 'function' ? update(draft) : update
+    setDraft(next)
+
+    if (activeConv) {
+      updateChatState(activeConv.chatId, { draft: next })
+    }
+  }
 
   // Layout + thread-window geometry (needed by both the key handler and render).
   const width = Math.max(48, cols - 4)
-  const contentHeight = Math.max(8, termRows - 7)
+  const contentHeight = Math.max(6, termRows - (cols >= 110 ? 9 : 11))
   const railWidth = Math.min(40, Math.max(26, Math.floor(width * 0.34)))
   const railRows = Math.max(3, contentHeight - 2)
   // Rows available for messages: header + marginTop + (composer when writing).
   const composerRows = composing ? 3 : 0
   const msgRows = Math.max(1, contentHeight - 2 - composerRows)
-  // ~2 rows per message (sender line + text); window by message for scrolling.
-  const threadVisible = Math.max(1, Math.floor(msgRows / 2))
-  const maxThreadScroll = Math.max(0, threadMessages.length - threadVisible)
-  const threadScrollClamped = Math.min(threadScroll, maxThreadScroll)
+  useEffect(() => {
+    if (threadScroll === 0) {
+      threadRef.current?.scrollToBottom()
+    }
+  }, [cacheVersion, threadScroll, activeChatId])
 
   // Reset the scroll to the latest whenever the open conversation changes.
   useEffect(() => {
     setThreadScroll(0)
+    threadRef.current?.scrollToBottom()
   }, [activeConv?.chatId])
 
   // Opening / viewing a chat clears its unread flag (also when a new message
   // lands while it's open — hence the cacheVersion dep).
   useEffect(() => {
-    if (focus !== 'thread' || !activeConv) {
+    if (
+      focus !== 'thread' ||
+      !activeConv ||
+      threadScroll !== 0 ||
+      globalModal ||
+      setup ||
+      newChat ||
+      contactView ||
+      categoryEdit !== null
+    ) {
       return
     }
 
     markChatRead(activeConv.chatId)
-  }, [activeConv, cacheVersion, focus])
+  }, [activeConv, cacheVersion, focus, threadScroll, globalModal, setup, newChat, contactView, categoryEdit])
 
   // Start a conversation with a typed number: validate, save it to the address
   // book (so the name persists), then select + open it (chatId selection means
   // it resolves as soon as the book update lands it in the list).
-  const createNewChat = () => {
-    const number = normalizeNumber(newNumber)
-
-    if (!isValidNumber(number)) {
-      setFlash('enter a valid number, e.g. +12674553945')
-
-      return
-    }
-
-    const book = upsertContact(contactBook, { chatId: number, name: newName, number })
-    setContactBook(book)
-    saveContactBook(book)
-    setNewChat(false)
-    setNewNumber('')
-    setNewName('')
-    setNewField('number')
-    setSelectedChatId(number)
-    setThreadScroll(0)
-    setFocus('thread')
-    setFlash(`new chat · ${newName.trim() || number}`)
-  }
-
   // Open the new-message composer fresh (direct mode, empty fields).
   const openNewChat = () => {
     setNewMode('direct')
+    setMemberPicker(false)
     setNewNumber('')
     setNewName('')
     setNewField('number')
@@ -449,8 +465,13 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
 
       const chatId = `group:${groupId}`
       const book = upsertContact(contactBook, { chatId, name })
-      setContactBook(book)
-      saveContactBook(book)
+
+      if (!persistDirectory(book)) {
+        setFlash('Could not save contact')
+
+        return
+      }
+
       setSelectedChatId(chatId)
       setThreadScroll(0)
       setFocus('thread')
@@ -471,8 +492,13 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   const saveContact = () => {
     if (activeConv) {
       const book = upsertContact(contactBook, { chatId: activeConv.chatId, name: editName })
-      setContactBook(book)
-      saveContactBook(book)
+
+      if (!persistDirectory(book)) {
+        setFlash('Could not save contact')
+
+        return
+      }
+
       setFlash(`contact saved${editName.trim() ? ` · ${editName.trim()}` : ''}`)
     }
 
@@ -504,41 +530,34 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     setFlash('no attachments in this chat')
   }
 
-  const sendDraft = () => {
-    const text = draft.trim()
-    setDraft('') // clear, but stay in the thread so you can keep typing
-    setThreadScroll(0) // jump to the latest so the sent message is visible
+  const sendDraft = (value = draft) => {
+    const text = value.trim()
 
-    if (!text || !activeConv || !cfg) {
+    if (!text || !activeConv || !cfg || sendingRef.current) {
       return
     }
 
+    const id = activeConv.chatId
+    sendingRef.current = true
     setFlash('sending…')
+    void sendDeskMessage(cfg, id, text).then(error => {
+      sendingRef.current = false
 
-    void (async () => {
-      const { error, timestamp } = await sendSignalMessage(cfg, activeConv.chatId, text)
+      if (!error && $chatState.get()[id]?.draft?.trim() === text) {
+        updateChatState(id, { draft: '' })
+      }
 
       if (!aliveRef.current) {
         return
       }
 
-      if (error) {
-        setFlash(`send failed: ${error}`)
+      setFlash(error || 'sent')
 
-        return
+      if (!error) {
+        setDraft(current => (current.trim() === text ? '' : current))
+        setThreadScroll(0)
       }
-
-      recordSignalMessage({
-        attachments: 0,
-        author: 'me',
-        chatId: activeConv.chatId,
-        files: [],
-        fromMe: true,
-        text,
-        timestamp: timestamp || Date.now()
-      })
-      setFlash('sent')
-    })()
+    })
   }
 
   // Force-restart the daemon: recovers a stalled receiver that still answers
@@ -588,33 +607,11 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
       setReachable(ok)
 
       if (ok) {
-        const [cs, gs] = await Promise.all([listContacts(cfg), listGroups(cfg)])
+        startSignalReceiver(cfg)
+        await refreshSignalDirectory(cfg, true)
 
         if (aliveRef.current) {
-          setContacts(cs)
-          setGroups(gs)
-          setContactBook(prev => {
-            let book = prev
-
-            for (const c of cs) {
-              if (c.name?.trim()) {
-                book = upsertContact(book, { chatId: c.id, name: c.name })
-              }
-            }
-
-            for (const g of gs) {
-              if (g.name?.trim()) {
-                book = upsertContact(book, { chatId: `group:${g.id}`, name: g.name })
-              }
-            }
-
-            if (book !== prev) {
-              saveContactBook(book)
-            }
-
-            return book
-          })
-          setFlash('refreshed')
+          setFlash('directory refreshed; phone sync may take a moment')
         }
       }
     })()
@@ -631,182 +628,258 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     setFlash('connected')
   }
 
-  useInput((ch, key) => {
-    // While the setup modal is open it owns all input.
-    if (setup) {
-      return
-    }
-
-    // New-message composer: Direct (a number) or Group (name + members).
-    // Tab/←→ switch mode, ↑↓ switch field, Enter acts per mode/field.
-    if (newChat) {
-      if (key.escape) {
-        return setNewChat(false)
+  const handleFooterKey = useViewInput(
+    (ch, key) => {
+      // While the setup modal is open it owns all input.
+      if (setup) {
+        return
       }
 
-      if (key.tab || key.leftArrow || key.rightArrow) {
-        const next = newMode === 'direct' ? 'group' : 'direct'
-        setNewMode(next)
-        setNewField(next === 'group' ? 'name' : 'number')
+      // New-message composer: Direct (a number) or Group (name + members).
+      // Tab/←→ switch mode, ↑↓ switch field, Enter acts per mode/field.
+      if (newChat && (newMode === 'direct' || memberPicker)) {
+        return
+      }
+
+      if (newChat) {
+        if (key.ctrl && ch === 'f') {
+          return setMemberPicker(true)
+        }
+
+        if (key.escape) {
+          return setNewChat(false)
+        }
+
+        if (key.tab || key.leftArrow || key.rightArrow) {
+          const next = newMode === 'direct' ? 'group' : 'direct'
+          setNewMode(next)
+          setNewField(next === 'group' ? 'name' : 'number')
+
+          return
+        }
+
+        if (key.upArrow || key.downArrow) {
+          return setNewField(f => (f === 'number' ? 'name' : 'number'))
+        }
+
+        if (key.return) {
+          // Group: name → member, then type+⏎ adds, empty ⏎ creates.
+          if (newField === 'name') {
+            return setNewField('number')
+          }
+
+          return newNumber.trim() ? addGroupMember() : createGroupChat()
+        }
+
+        if (key.backspace || key.delete) {
+          // Empty member field + Backspace removes the last added member.
+          if (newMode === 'group' && newField === 'number' && !newNumber) {
+            return setGroupMembers(ms => ms.slice(0, -1))
+          }
+
+          return newField === 'number' ? setNewNumber(s => s.slice(0, -1)) : setNewName(s => s.slice(0, -1))
+        }
+
+        if (ch && !key.ctrl && !key.meta) {
+          const printable = [...ch].filter(c => c >= ' ').join('')
+
+          if (printable) {
+            return newField === 'number' ? setNewNumber(s => s + printable) : setNewName(s => s + printable)
+          }
+        }
 
         return
       }
 
-      if (key.upArrow || key.downArrow) {
-        return setNewField(f => (f === 'number' ? 'name' : 'number'))
-      }
-
-      if (key.return) {
-        if (newMode === 'direct') {
-          return createNewChat()
+      // Contact card: edit the saved name for the highlighted chat.
+      if (contactView) {
+        if (key.escape) {
+          return setContactView(false)
         }
 
-        // Group: name → member, then type+⏎ adds, empty ⏎ creates.
-        if (newField === 'name') {
-          return setNewField('number')
+        if (key.return) {
+          return saveContact()
         }
 
-        return newNumber.trim() ? addGroupMember() : createGroupChat()
-      }
-
-      if (key.backspace || key.delete) {
-        // Empty member field + Backspace removes the last added member.
-        if (newMode === 'group' && newField === 'number' && !newNumber) {
-          return setGroupMembers(ms => ms.slice(0, -1))
+        if (key.backspace || key.delete) {
+          return setEditName(s => s.slice(0, -1))
         }
 
-        return newField === 'number' ? setNewNumber(s => s.slice(0, -1)) : setNewName(s => s.slice(0, -1))
-      }
+        if (ch && !key.ctrl && !key.meta) {
+          const printable = [...ch].filter(c => c >= ' ').join('')
 
-      if (ch && !key.ctrl && !key.meta) {
-        const printable = [...ch].filter(c => c >= ' ').join('')
-
-        if (printable) {
-          return newField === 'number' ? setNewNumber(s => s + printable) : setNewName(s => s + printable)
+          if (printable) {
+            setEditName(s => s + printable)
+          }
         }
+
+        return
       }
 
-      return
-    }
-
-    // Contact card: edit the saved name for the highlighted chat.
-    if (contactView) {
-      if (key.escape) {
-        return setContactView(false)
-      }
-
-      if (key.return) {
-        return saveContact()
-      }
-
-      if (key.backspace || key.delete) {
-        return setEditName(s => s.slice(0, -1))
-      }
-
-      if (ch && !key.ctrl && !key.meta) {
-        const printable = [...ch].filter(c => c >= ' ').join('')
-
-        if (printable) {
-          setEditName(s => s + printable)
+      // Open thread: the composer is always active here (type immediately).
+      // Enter sends, arrows/wheel scroll history, Esc returns to the list. All
+      // other printable keys (incl. q/s/r/n) go into the draft — no global
+      // shortcuts while typing.
+      if (focus === 'thread') {
+        if (key.escape) {
+          return setFocus('list')
         }
-      }
 
-      return
-    }
+        if (key.pageUp || key.wheelUp) {
+          threadRef.current?.scrollBy(key.pageUp ? -msgRows : -3)
 
-    // Open thread: the composer is always active here (type immediately).
-    // Enter sends, arrows/wheel scroll history, Esc returns to the list. All
-    // other printable keys (incl. q/s/r/n) go into the draft — no global
-    // shortcuts while typing.
-    if (focus === 'thread') {
-      if (key.escape) {
-        setDraft('')
-
-        return setFocus('list')
-      }
-
-      if (key.return) {
-        return sendDraft()
-      }
-
-      if (key.upArrow || key.wheelUp) {
-        return setThreadScroll(s => Math.min(maxThreadScroll, s + 1))
-      }
-
-      if (key.downArrow || key.wheelDown) {
-        return setThreadScroll(s => Math.max(0, s - 1))
-      }
-
-      // Ctrl+O opens the latest attachment (it's a control key, so it doesn't
-      // type into the draft).
-      if (key.ctrl && (ch === 'o' || ch === 'O')) {
-        return openLatestAttachment()
-      }
-
-      if (key.backspace || key.delete) {
-        return setDraft(d => d.slice(0, -1))
-      }
-
-      if (ch && !key.ctrl && !key.meta) {
-        const printable = [...ch].filter(c => c >= ' ').join('')
-
-        if (printable) {
-          setDraft(d => d + printable)
+          return setThreadScroll(1)
         }
+
+        if (key.pageDown || key.wheelDown) {
+          const delta = key.pageDown ? msgRows : 3
+          threadRef.current?.scrollBy(delta)
+
+          if (
+            (threadRef.current?.getScrollTop() || 0) + msgRows + delta >=
+            (threadRef.current?.getScrollHeight() || 0)
+          ) {
+            setThreadScroll(0)
+          }
+
+          return
+        }
+
+        if (key.ctrl && ch.toLowerCase() === 'o') {
+          return openLatestAttachment()
+        }
+
+        return
       }
 
-      return
-    }
+      if (categoryEdit !== null) {
+        if (key.escape) {
+          return setCategoryEdit(null)
+        }
 
-    // List focus.
-    if (ch === 'q' || key.escape) {
-      return onClose()
-    }
+        if (key.return && activeConv) {
+          updateChatState(activeConv.chatId, { category: categoryEdit.trim() })
+          setCategoryEdit(null)
 
-    // `h` opens the unified Help modal — consistent on every view (list focus;
-    // the setup / new-chat / contact / composer guards above already returned).
-    if (ch === 'h') {
-      return openHelpOverlay()
-    }
+          return
+        }
 
-    // Setup is only reachable when not connected — so an accidental 's' can't
-    // relaunch onboarding mid-session.
-    if (ch === 's' && !connected) {
-      return setSetup(true)
-    }
+        if (key.backspace || key.delete) {
+          return setCategoryEdit(v => v?.slice(0, -1) || '')
+        }
 
-    if (ch === 'r') {
-      return reconnect()
-    }
+        if (ch && !key.ctrl && !key.meta) {
+          setCategoryEdit(v => (v + ch).slice(0, 80))
+        }
 
-    if (ch === 'R') {
-      return restartDaemonAndReconnect()
-    }
+        return
+      }
 
-    if (ch === 'c' && activeConv) {
-      return openContact()
-    }
+      if (searching) {
+        if (key.escape) {
+          setSearching(false)
+          setQuery('')
 
-    if (ch === 'n') {
-      return openNewChat()
-    }
+          return
+        }
 
-    if (key.upArrow || ch === 'k' || key.wheelUp) {
-      return setSelectedChatId(conversations[Math.max(0, clampedSel - 1)]?.chatId ?? null)
-    }
+        if (key.return) {
+          return setSearching(false)
+        }
 
-    if (key.downArrow || ch === 'j' || key.wheelDown) {
-      return setSelectedChatId(conversations[Math.min(conversations.length - 1, clampedSel + 1)]?.chatId ?? null)
-    }
+        if (key.backspace || key.delete) {
+          return setQuery(v => v.slice(0, -1))
+        }
 
-    // Enter / → / i open the highlighted chat — composer ready immediately.
-    if ((key.return || key.rightArrow || ch === 'l' || ch === 'i') && activeConv) {
-      setSelectedChatId(activeConv.chatId)
-      setThreadScroll(0)
+        if (ch && !key.ctrl && !key.meta) {
+          setQuery(v => v + ch)
+        }
 
-      return setFocus('thread')
-    }
-  }, { isActive: !globalModal })
+        return
+      }
+
+      if (ch === '/') {
+        return setSearching(true)
+      }
+
+      if (ch === 'm') {
+        return openQuickMessage()
+      }
+
+      if (ch === 'p' && activeConv) {
+        updateChatState(activeConv.chatId, { pinned: !desk[activeConv.chatId]?.pinned })
+
+        return
+      }
+
+      if (ch === 'x' && activeConv) {
+        updateChatState(activeConv.chatId, { archived: !desk[activeConv.chatId]?.archived })
+
+        return
+      }
+
+      if (ch === 'C' && activeConv) {
+        return setCategoryEdit(desk[activeConv.chatId]?.category || '')
+      }
+
+      if (key.tab || key.leftArrow || ch === '[' || ch === ']') {
+        const delta = key.shift || key.leftArrow || ch === '[' ? -1 : 1
+        setFilter(filters[(filters.indexOf(filter) + delta + filters.length) % filters.length]!)
+
+        return
+      }
+
+      // List focus.
+      if (ch === 'q' || key.escape) {
+        return onClose()
+      }
+
+      // `h` opens the unified Help modal — consistent on every view (list focus;
+      // the setup / new-chat / contact / composer guards above already returned).
+      if (ch === 'h' || ch === '?') {
+        return openHelpOverlay()
+      }
+
+      // Setup is only reachable when not connected — so an accidental 's' can't
+      // relaunch onboarding mid-session.
+      if (ch === 's' && !connected) {
+        return setSetup(true)
+      }
+
+      if (ch === 'r') {
+        return reconnect()
+      }
+
+      if (ch === 'R') {
+        return restartDaemonAndReconnect()
+      }
+
+      if (ch === 'c' && activeConv) {
+        return openContact()
+      }
+
+      if (ch === 'n' || ch === 'f') {
+        return openNewChat()
+      }
+
+      if (key.upArrow || ch === 'k' || key.wheelUp) {
+        return setSelectedChatId(conversations[Math.max(0, clampedSel - 1)]?.chatId ?? null)
+      }
+
+      if (key.downArrow || ch === 'j' || key.wheelDown) {
+        return setSelectedChatId(conversations[Math.min(conversations.length - 1, clampedSel + 1)]?.chatId ?? null)
+      }
+
+      // Enter / → / i open the highlighted chat — composer ready immediately.
+      if ((key.return || key.rightArrow || ch === 'l' || ch === 'i') && activeConv) {
+        setSelectedChatId(activeConv.chatId)
+        setThreadScroll(0)
+
+        return setFocus('thread')
+      }
+    },
+    { isActive: !globalModal }
+  )
 
   const live = tick % 2 === 0
 
@@ -844,7 +917,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
         <Text color={statusDot}>{statusGlyph(statusKind, tick)}</Text>
         <Text color={t.color.muted}> {statusWord} · </Text>
         <Text color={connected ? t.color.accent : t.color.text}>Signal</Text>
-        <Text color={t.color.muted}> · Telegram (soon)</Text>
+        <Text color={t.color.muted}> · {unread.size} unread chats</Text>
         {cfg ? <Text color={t.color.muted}>{`  ${cfg.account}`}</Text> : null}
       </Text>
     </Box>
@@ -864,97 +937,85 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
       return null
     }
 
-    const modalW = Math.max(44, Math.min(cols - 4, 72))
-    const isGroup = newMode === 'group'
-    const numValid = isValidNumber(newNumber)
+    if (newMode === 'direct' || memberPicker) {
+      return (
+        <ContactPicker
+          cols={cols}
+          contactsOnly={memberPicker}
+          onCancel={() => (memberPicker ? setMemberPicker(false) : setNewChat(false))}
+          onNewGroup={
+            memberPicker
+              ? undefined
+              : () => {
+                  setNewMode('group')
+                  setNewField('name')
+                }
+          }
+          onSelect={id => {
+            if (memberPicker) {
+              setGroupMembers(ms => (ms.includes(id) ? ms : [...ms, id]))
+              setMemberPicker(false)
 
-    const field = (label: string, value: string, active: boolean, placeholder: string) => (
-      <Box>
-        <Text bold={active} color={active ? t.color.accent : t.color.label}>
-          {label.padEnd(9)}
-        </Text>
-        <Text color={t.color.muted}>{'› '}</Text>
-        <Text color={t.color.text}>{value}</Text>
-        {active ? (
-          live ? (
-            <Text color={t.color.text} inverse>
-              {' '}
-            </Text>
-          ) : (
-            <Text>{' '}</Text>
-          )
-        ) : null}
-        {!value ? <Text color={t.color.muted}> {placeholder}</Text> : null}
-      </Box>
-    )
+              return
+            }
 
-    const tab = (label: string, on: boolean) => (
-      <Text bold={on} color={on ? t.color.accent : t.color.muted}>
-        {on ? `▸ ${label}` : `  ${label}`}
-      </Text>
-    )
+            if (!persistDirectory(upsertContact(contactBook, { chatId: id }))) {
+              return
+            }
+
+            setFilter(desk[id]?.archived ? 'Archived' : 'Inbox')
+            setQuery('')
+            setSelectedChatId(id)
+            setThreadScroll(0)
+            setFocus('thread')
+            setNewChat(false)
+          }}
+          rows={termRows}
+          t={t}
+          title={memberPicker ? 'ADD GROUP MEMBER' : 'FIND CONTACT OR CHAT'}
+        />
+      )
+    }
+
+    const memberRows = Math.max(1, Math.min(8, termRows - 19))
 
     return (
-      <ModalOverlay cols={cols} maxHeight={isGroup ? 22 : 16} maxWidth={modalW} rows={termRows} t={t}>
+      <ModalOverlay
+        cols={cols}
+        footerHint="^F find members · Enter add/create · ↑↓ field · Tab direct · Esc cancel"
+        maxHeight={26}
+        maxWidth={100}
+        rows={termRows}
+        t={t}
+        title="NEW SIGNAL GROUP"
+      >
         <Box flexDirection="column" flexGrow={1} minHeight={0}>
-          <Box justifyContent="space-between">
-            <Text bold color={t.color.primary}>
-              {isGroup ? 'New group' : 'New message'}
+          <Text color={newField === 'name' ? t.color.accent : t.color.muted} wrap="truncate-end">
+            Name › {newName || 'Group name'}
+            {newField === 'name' ? '▌' : ''}
+          </Text>
+          <Text color={newField === 'number' ? t.color.accent : t.color.muted} wrap="truncate-end">
+            Member › {newNumber || 'Ctrl+F to find, or type +number'}
+            {newField === 'number' ? '▌' : ''}
+          </Text>
+          <Box flexDirection="column" flexGrow={1} marginTop={1} minHeight={0} overflow="hidden">
+            <Text bold color={t.color.label}>
+              MEMBERS · {groupMembers.length}
             </Text>
-            <Box>
-              {tab('Direct', !isGroup)}
-              <Text color={t.color.border}>{'   '}</Text>
-              {tab('Group', isGroup)}
-            </Box>
+            {groupMembers.slice(-memberRows).map(id => (
+              <Text color={t.color.text} key={id} wrap="truncate-end">
+                {contactBook[id]?.name || id} · {id}
+              </Text>
+            ))}
+            {!groupMembers.length && (
+              <Text color={t.color.muted}>
+                Choose contacts with Ctrl+F. Nothing is sent until you create the group.
+              </Text>
+            )}
           </Box>
-          <Box marginTop={1}>
-            <Text color={t.color.border}>{'─'.repeat(modalW - 6)}</Text>
-          </Box>
-
-          {isGroup ? (
-            <Box flexDirection="column" marginTop={1}>
-              {field('Name', newName, newField === 'name', 'group name')}
-              {field('Member', newNumber, newField === 'number', '+1… then ⏎ to add')}
-              <Box flexDirection="column" marginTop={1}>
-                <Text color={t.color.label}>{`Members (${groupMembers.length})`}</Text>
-                {groupMembers.length === 0 ? (
-                  <Text color={t.color.muted}> none yet — type a number, ⏎ to add</Text>
-                ) : (
-                  groupMembers.slice(0, 8).map(m => (
-                    <Text color={t.color.text} key={m} wrap="truncate-end">
-                      {`  • ${contactBook[m]?.name || m}`}
-                      {contactBook[m]?.name ? <Text color={t.color.muted}>{`  ${m}`}</Text> : null}
-                    </Text>
-                  ))
-                )}
-                {groupMembers.length > 8 ? (
-                  <Text color={t.color.muted}>{`  +${groupMembers.length - 8} more`}</Text>
-                ) : null}
-              </Box>
-            </Box>
-          ) : (
-            <Box flexDirection="column" marginTop={1}>
-              {field('Number', newNumber, newField === 'number', '+12674553945')}
-              {field('Name', newName, newField === 'name', 'optional')}
-              <Box marginTop={1}>
-                <Text color={newNumber ? (numValid ? t.color.ok : t.color.error) : t.color.muted} wrap="truncate-end">
-                  {newNumber
-                    ? numValid
-                      ? `${ICON.ok} valid Signal number`
-                      : 'needs E.164 format, e.g. +12674553945'
-                    : 'Enter a phone number in E.164 format (with country code).'}
-                </Text>
-              </Box>
-            </Box>
-          )}
-
-          <Box marginTop={1}>
-            <Text color={t.color.muted} wrap="truncate-end">
-              {isGroup
-                ? '⏎ add member · ⏎ (empty) create · ⌫ remove last · ↑↓ field · Tab direct · Esc cancel'
-                : '⏎ start chat · ↑↓ field · Tab group · Esc cancel'}
-            </Text>
-          </Box>
+          <Text color={t.color.warn} wrap="truncate-end">
+            {flash || 'Enter with an empty member field creates the group.'}
+          </Text>
         </Box>
       </ModalOverlay>
     )
@@ -976,7 +1037,15 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
           )
 
           return (
-            <ModalOverlay cols={cols} footerHint="⏎ save name · Esc cancel" maxHeight={12} maxWidth={70} rows={termRows} t={t} title="Contact">
+            <ModalOverlay
+              cols={cols}
+              footerHint="⏎ save name · Esc cancel"
+              maxHeight={16}
+              maxWidth={90}
+              rows={termRows}
+              t={t}
+              title="Contact"
+            >
               <Box flexDirection="column">
                 <Box>
                   <Text bold color={t.color.accent}>
@@ -984,12 +1053,30 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
                   </Text>
                   <Text color={t.color.muted}>{'› '}</Text>
                   <Text color={t.color.text}>{editName}</Text>
-                  {live ? <Text color={t.color.text} inverse>{' '}</Text> : <Text>{' '}</Text>}
+                  {live ? (
+                    <Text color={t.color.text} inverse>
+                      {' '}
+                    </Text>
+                  ) : (
+                    <Text> </Text>
+                  )}
                   {!editName ? <Text color={t.color.muted}> (no name set)</Text> : null}
                 </Box>
+                {row('Signal', saved?.aliases?.join(' · ') || '')}
+                {row('Name from', saved?.nameSource === 'signal' ? 'Signal profile/contact' : 'Saved local label')}
                 {row('Number', activeConv.chatId.startsWith('group:') ? '' : saved?.number || activeConv.chatId)}
                 {row(activeConv.chatId.startsWith('group:') ? 'Group' : 'Chat id', activeConv.chatId, t.color.muted)}
-                {row('Added', saved?.addedAt ? new Date(saved.addedAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : '', t.color.muted)}
+                {row(
+                  'Added',
+                  saved?.addedAt
+                    ? new Date(saved.addedAt).toLocaleDateString('en-US', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric'
+                      })
+                    : '',
+                  t.color.muted
+                )}
               </Box>
             </ModalOverlay>
           )
@@ -1021,7 +1108,17 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
           </Box>
         </Box>
         <Box flexDirection="column" flexShrink={0} marginTop={1}>
-          <FooterChips chips={[{ k: 's', label: 'Set up', run: () => setSetup(true) }, { k: 'h', label: 'Help', run: openHelpOverlay }, { k: 'q', label: 'Close', run: onClose }]} disabled={setup || globalModal} t={t} />
+          <FooterChips
+            chips={[
+              { k: 's', label: 'Set up', run: () => setSetup(true) },
+              { k: 'h', label: 'Help', run: openHelpOverlay },
+              { k: 'q', label: 'Close', run: onClose }
+            ]}
+            disabled={setup || globalModal}
+            onKey={handleFooterKey}
+            t={t}
+          />
+          {storageError && <Text color={t.color.error}>{storageError}</Text>}
           {flash ? (
             <Text color={t.color.accent} wrap="truncate-end">
               {flash}
@@ -1029,6 +1126,18 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
           ) : null}
         </Box>
         {/* Modals overlay even the not-configured prompt (setup opens from here). */}
+        {categoryEdit !== null && (
+          <ModalOverlay
+            cols={cols}
+            footerHint="Enter save · Esc cancel · empty removes category"
+            maxHeight={10}
+            rows={termRows}
+            t={t}
+            title="CHAT CATEGORY"
+          >
+            <Text color={t.color.text}>{categoryEdit}▌</Text>
+          </ModalOverlay>
+        )}
         {setup ? setupOverlay : newChat ? newChatOverlay : null}
       </Box>
     )
@@ -1068,7 +1177,19 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
             const prefix = on ? '▸ ' : isUnread ? '● ' : '  '
 
             return (
-              <Box key={conv.chatId} onClick={() => { if (setup || newChat || contactView || globalModal) {return;} setSelectedChatId(conv.chatId); setThreadScroll(0); setFocus('thread') }} width="100%">
+              <Box
+                key={conv.chatId}
+                onClick={() => {
+                  if (setup || newChat || contactView || globalModal) {
+                    return
+                  }
+
+                  setSelectedChatId(conv.chatId)
+                  setThreadScroll(0)
+                  setFocus('thread')
+                }}
+                width="100%"
+              >
                 <Text wrap="truncate-end">
                   <Text bold={isUnread} color={on ? t.color.accent : isUnread ? t.color.ok : t.color.border}>
                     {prefix}
@@ -1096,20 +1217,21 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   const threadFocused = focus === 'thread'
   const headerForMsg = messageHeaders(threadMessages)
 
-  const threadEnd = Math.max(0, threadMessages.length - threadScrollClamped)
-  const threadStart = Math.max(0, threadEnd - threadVisible)
-  const windowMsgs = threadMessages.slice(threadStart, threadEnd)
-  const olderCount = threadStart
-  const newerCount = threadMessages.length - threadEnd
-
   const thread = (
-    <Box flexDirection="column" flexGrow={1} flexShrink={1} height={contentHeight} marginLeft={1} minWidth={0} overflow="hidden">
+    <Box
+      flexDirection="column"
+      flexGrow={1}
+      flexShrink={1}
+      height={contentHeight}
+      marginLeft={1}
+      minWidth={0}
+      overflow="hidden"
+    >
       <Text bold={threadFocused} color={threadFocused ? t.color.accent : t.color.label} wrap="truncate-end">
         {threadFocused ? '▸ ' : ''}
         {activeConv ? truncate(activeConv.name, 32) : 'SIGNAL'}
         {activeConv?.chatId.startsWith('group:') ? <Text color={t.color.muted}> · group</Text> : null}
-        {threadFocused && olderCount > 0 ? <Text color={t.color.muted}>{`  ↑ ${olderCount} older`}</Text> : null}
-        {threadFocused && newerCount > 0 ? <Text color={t.color.muted}>{`  ↓ ${newerCount} newer`}</Text> : null}
+        {threadFocused && threadScroll > 0 ? <Text color={t.color.muted}> · reading history</Text> : null}
       </Text>
 
       {!connected ? (
@@ -1121,22 +1243,40 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
           </Text>
         </Box>
       ) : (
-        <Box flexDirection="column" height={msgRows} justifyContent="flex-end" marginTop={1} overflow="hidden">
+        <ScrollBox
+          decstbm={false}
+          flexDirection="column"
+          flexShrink={0}
+          followContent={false}
+          height={msgRows}
+          marginTop={1}
+          ref={threadRef}
+        >
           {threadMessages.length === 0 ? (
             <Text color={t.color.muted} wrap="wrap">
-              No messages yet. Press i to write one.
+              No locally saved messages. Phone history is not imported; new messages appear while the desk is connected.
             </Text>
           ) : (
-            windowMsgs.map((m, i) => {
-              const gi = threadStart + i
+            threadMessages.map((m, i) => {
+              const gi = i
               const showHeader = headerForMsg[gi]
 
               const label = m.fromMe
                 ? 'You'
-                : truncate(activeConv?.chatId.startsWith('group:') ? m.author : activeConv?.name ?? m.author, 24)
+                : truncate(
+                    activeConv?.chatId.startsWith('group:')
+                      ? contactBook[m.author]?.name || m.authorName || m.author
+                      : (activeConv?.name ?? m.author),
+                    24
+                  )
 
               return (
-                <Box flexDirection="column" key={`${m.timestamp}:${gi}`} marginTop={showHeader && i > 0 ? 1 : 0}>
+                <Box
+                  flexDirection="column"
+                  flexShrink={0}
+                  key={`${m.timestamp}:${gi}`}
+                  marginTop={showHeader && i > 0 ? 1 : 0}
+                >
                   {showHeader ? (
                     <Text wrap="truncate-end">
                       <Text bold color={m.fromMe ? t.color.ok : t.color.accent}>
@@ -1151,7 +1291,13 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
                     </Text>
                   ) : null}
                   {m.attachments > 0 ? (
-                    <Box onClick={() => { if (!setup && !newChat && !contactView && !globalModal) {openMessageAttachment(m)} }}>
+                    <Box
+                      onClick={() => {
+                        if (!setup && !newChat && !contactView && !globalModal) {
+                          openMessageAttachment(m)
+                        }
+                      }}
+                    >
                       <Text color={t.color.accent} wrap="truncate-end">
                         {attachmentLabel(m)}
                         {(m.files ?? []).some(f => f.id) ? <Text color={t.color.muted}> · open</Text> : null}
@@ -1162,24 +1308,24 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
               )
             })
           )}
-        </Box>
+        </ScrollBox>
       )}
 
       {/* Native bottom composer — sits below the history, doesn't overlap it. */}
       {composing ? (
-        <Box borderColor={t.color.accent} borderStyle="round" flexShrink={0} paddingX={1}>
-          <Text color={t.color.muted}>{'› '}</Text>
-          <Text color={t.color.text}>{draft}</Text>
-          {/* Blinking block caret (toggles with the 600ms tick) so it reads as a
-              live text field; the off-frame is a plain space to hold the width. */}
-          {live ? (
-            <Text color={t.color.text} inverse>
-              {' '}
-            </Text>
-          ) : (
-            <Text>{' '}</Text>
-          )}
-        </Box>
+        <ScrollBox decstbm={false} flexShrink={0} followContent={false} height={3} ref={composeRef}>
+          <TextInput
+            columns={Math.max(15, cols - railWidth - (cols >= 110 ? 18 : 0) - 7)}
+            focus={!globalModal && !setup && !newChat && !contactView}
+            immediateChange
+            key={activeChatId}
+            onChange={editDraft}
+            onCursorLine={line => composeRef.current?.scrollTo(Math.max(0, line - 2))}
+            onSubmit={sendDraft}
+            placeholder="Write a message…"
+            value={draft}
+          />
+        </ScrollBox>
       ) : null}
     </Box>
   )
@@ -1188,16 +1334,21 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   // and attachment-open (^O) the old prose row had to spell out separately.
   const chips: FooterChip[] = composing
     ? [
-        { k: '⏎', label: 'Send' },
-        { k: '↑↓', label: 'Scroll' },
+        { k: '⏎', label: 'Send', run: () => sendDraft() },
+        { k: 'PgUp/Dn', label: 'History' },
         { k: '^O', label: 'Attachment', run: openLatestAttachment },
         { k: '⎋', label: 'Back', run: () => setFocus('list') }
       ]
     : [
         { k: '↑↓', label: 'Chats' },
         { k: '⏎', label: 'Open', run: () => activeConv && setFocus('thread') },
+        { k: 'p', label: 'Pin' },
+        { k: 'x', label: 'Archive' },
+        { k: 'C', label: 'Category' },
+        { k: 'm', label: 'Message', run: openQuickMessage },
         { k: 'c', label: 'Contact', run: openContact },
         { k: 'n', label: 'New / group', run: openNewChat },
+        { k: 'f', label: 'Find', run: openNewChat },
         { k: 'r', label: 'Reconnect', run: reconnect },
         { k: 'R', label: 'Restart', run: restartDaemonAndReconnect },
         ...(connected ? [] : [{ k: 's', label: 'Set up', run: () => setSetup(true) }]),
@@ -1207,10 +1358,15 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
 
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
-      <FooterChips chips={chips} disabled={setup || newChat || contactView || globalModal} t={t} />
-      {flash ? (
-        <Text color={t.color.accent} wrap="truncate-end">
-          {flash}
+      <FooterChips
+        chips={chips}
+        disabled={setup || newChat || contactView || globalModal || categoryEdit !== null}
+        onKey={handleFooterKey}
+        t={t}
+      />
+      {storageError || flash ? (
+        <Text color={storageError ? t.color.error : t.color.accent} wrap="truncate-end">
+          {storageError || flash}
         </Text>
       ) : null}
     </Box>
@@ -1219,7 +1375,37 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   return (
     <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
       {header}
+      <Box flexShrink={0} marginBottom={1}>
+        <Text color={t.color.accent}>{filter}</Text>
+        <Text color={t.color.muted}>
+          {' '}
+          · Tab collections · / search {query ? ` · ${query}` : ''}
+          {searching ? '▌' : ''}
+        </Text>
+      </Box>
       <Box flexDirection="row" flexShrink={0} height={contentHeight}>
+        {cols >= 110 && (
+          <Box flexDirection="column" flexShrink={0} paddingRight={1} width={18}>
+            <Text bold color={t.color.label}>
+              COLLECTIONS
+            </Text>
+            {filters.map(name => (
+              <Box
+                key={name}
+                onClick={() => {
+                  if (!globalModal && !composing && !setup && !newChat && !contactView && categoryEdit === null) {
+                    setFilter(name)
+                  }
+                }}
+              >
+                <Text bold={filter === name} color={filter === name ? t.color.accent : t.color.muted}>
+                  {filter === name ? '› ' : '  '}
+                  {name}
+                </Text>
+              </Box>
+            ))}
+          </Box>
+        )}
         {rail}
         {thread}
       </Box>
@@ -1227,6 +1413,18 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
       {/* Modals overlay the body (stacked LAST + absolutely positioned by
           ModalOverlay). The keyboard is trapped by the `if (setup)`/`if (newChat)`/
           `if (contactView)` early-returns in useInput; body mouse handlers gated above. */}
+      {categoryEdit !== null && (
+        <ModalOverlay
+          cols={cols}
+          footerHint="Enter save · Esc cancel · empty removes category"
+          maxHeight={10}
+          rows={termRows}
+          t={t}
+          title="CHAT CATEGORY"
+        >
+          <Text color={t.color.text}>{categoryEdit}▌</Text>
+        </ModalOverlay>
+      )}
       {setup ? setupOverlay : newChat ? newChatOverlay : contactView ? contactOverlay : null}
     </Box>
   )

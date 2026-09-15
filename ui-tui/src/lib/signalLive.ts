@@ -11,17 +11,26 @@
 // store and subscribes for re-renders; it no longer opens its own stream (which
 // also removes a cache write-race between two owners).
 
+import { $chatState, $messagingStorageError, updateChatState } from './messagingState.js'
 import { openReceiveStream, type SignalConfig, type SignalMessage } from './signalClient.js'
+import { $signalDirectory, saveDirectoryContact } from './signalDirectory.js'
 import { appendMessage, loadSignalCache, saveSignalCache, type SignalCache } from './signalStore.js'
 
 type Listener = () => void
 
 let cache: SignalCache = loadSignalCache()
 let version = 0
-let unread = new Set<string>()
+
+let unread = new Set(
+  Object.entries($chatState.get())
+    .filter(([, state]) => state.unread)
+    .map(([id]) => id)
+)
+
 let connected = false
 let stop: null | (() => void) = null
 let currentUrl = ''
+let receiverGeneration = 0
 const listeners = new Set<Listener>()
 
 const notify = (): void => {
@@ -47,6 +56,12 @@ export const subscribeSignal = (listener: Listener): (() => void) => {
 
 export const markChatRead = (chatId: string): void => {
   if (unread.has(chatId)) {
+    const through = Math.max(0, ...(cache[chatId] ?? []).map(m => m.timestamp))
+
+    if (!updateChatState(chatId, { readThrough: through, unread: false })) {
+      return
+    }
+
     unread = new Set(unread)
     unread.delete(chatId)
     notify()
@@ -60,7 +75,11 @@ export const recordSignalMessage = (msg: SignalMessage): void => {
 
   if (next !== cache) {
     cache = next
-    saveSignalCache(cache)
+
+    if (!saveSignalCache(cache)) {
+      $messagingStorageError.set('Messages are visible but could not be saved. Check profile permissions.')
+    }
+
     notify()
   }
 }
@@ -73,15 +92,24 @@ export const startSignalReceiver = (cfg: null | SignalConfig): void => {
     return
   }
 
-  if (stop && currentUrl === cfg.httpUrl) {
+  if (stop && currentUrl === `${cfg.httpUrl}|${cfg.account}`) {
     return
   }
 
+  const generation = ++receiverGeneration
   stop?.()
-  currentUrl = cfg.httpUrl
+  currentUrl = `${cfg.httpUrl}|${cfg.account}`
   stop = openReceiveStream(
     cfg,
     msg => {
+      if (generation !== receiverGeneration) {
+        return
+      }
+
+      if (msg.authorName && !$signalDirectory.get()[msg.author]?.name) {
+        saveDirectoryContact({ chatId: msg.author, name: msg.authorName, nameSource: 'signal' })
+      }
+
       const next = appendMessage(cache, msg)
 
       if (next === cache) {
@@ -89,15 +117,23 @@ export const startSignalReceiver = (cfg: null | SignalConfig): void => {
       }
 
       cache = next
-      saveSignalCache(cache)
 
       if (!msg.fromMe) {
         unread = new Set(unread).add(msg.chatId)
+        updateChatState(msg.chatId, { unread: true })
+      }
+
+      if (!saveSignalCache(cache)) {
+        $messagingStorageError.set('Messages are visible but could not be saved. Check profile permissions.')
       }
 
       notify()
     },
     isConnected => {
+      if (generation !== receiverGeneration) {
+        return
+      }
+
       if (isConnected !== connected) {
         connected = isConnected
         notify()
@@ -107,8 +143,10 @@ export const startSignalReceiver = (cfg: null | SignalConfig): void => {
 }
 
 export const stopSignalReceiver = (): void => {
+  receiverGeneration += 1
   stop?.()
   stop = null
   currentUrl = ''
   connected = false
+  notify()
 }

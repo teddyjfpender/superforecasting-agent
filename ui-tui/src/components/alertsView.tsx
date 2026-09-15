@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdout } from '@superforecasting/ink'
+import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useStdout } from '@superforecasting/ink'
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 
 import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
@@ -9,6 +9,7 @@ import type { ForecastTriageLabel } from '../gatewayTypes.js'
 import { spinnerFrame } from '../lib/icons.js'
 import { getOverlayCache, setOverlayCache } from '../lib/overlayCache.js'
 import { asRpcResult } from '../lib/rpc.js'
+import { useViewInput } from '../lib/useViewInput.js'
 import { semantics } from '../lib/visualSemantics.js'
 import { isResolutionProposal, resolutionProposalOutcome } from '../lib/warningKind.js'
 import type {
@@ -895,7 +896,7 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
 
   const pageSize = Math.max(4, termRows - 10)
 
-  useInput(
+  const handleFooterKey = useViewInput(
     (ch, key) => {
       // ── Dismiss modal: it owns ALL input while open (the sheet-open guard). ──
       if (dismissTarget) {
@@ -1461,7 +1462,7 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
       {automodeLine}
       {flash ? <Text color={t.color.accent}>{flash}</Text> : null}
-      {dismissModal ?? <FooterChips chips={footerChips} disabled={globalModal} t={t} />}
+      {dismissModal ?? <FooterChips chips={footerChips} disabled={globalModal} onKey={handleFooterKey} t={t} />}
     </Box>
   )
 

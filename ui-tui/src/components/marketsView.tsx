@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { Box, NoSelect, type ScrollBoxHandle, Text, useInput, useStdout } from '@superforecasting/ink'
+import { Box, NoSelect, type ScrollBoxHandle, Text, useStdout } from '@superforecasting/ink'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { $marketJobs, pruneStaleMarketJobs, setMarketJob, STALE_MARKET_JOB_MS } from '../app/marketJobsStore.js'
@@ -13,6 +13,7 @@ import { changeReference, formatMarketChange, lastMovement } from '../lib/market
 import { fetchQuotes, type MarketQuote } from '../lib/marketFetch.js'
 import { marketColumns, marketTopicWindow } from '../lib/marketLayout.js'
 import { type MarketConfig, type QuoteCache, quoteKey } from '../lib/marketStore.js'
+import { openQuickMessage } from '../lib/messagingState.js'
 import { loadModelCatalog, saveModelCatalog } from '../lib/modelStore.js'
 import { openExternalUrl } from '../lib/openExternalUrl.js'
 import { venueLabel } from '../lib/pmData.js'
@@ -27,6 +28,8 @@ import { asRpcResult } from '../lib/rpc.js'
 import { blockChart, sparkline } from '../lib/sparkline.js'
 import { sortIndicator, sortRows, type SortValue, useTableSort } from '../lib/tableSort.js'
 import { usePmSection } from '../lib/usePmSection.js'
+import { useShareItem } from '../lib/useShareItem.js'
+import { useViewInput } from '../lib/useViewInput.js'
 import { dirColor, dirGlyph, pad, semantics } from '../lib/visualSemantics.js'
 import type { DataEvents, MarketCatalogResponse, MarketProviderStatus } from '../protocol/generated.js'
 import { WireEvent } from '../protocol/generated.js'
@@ -954,7 +957,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     }
   }
 
-  useInput(
+  const handleFooterKey = useViewInput(
     (ch, key) => {
       if (modal) {
         return
@@ -1070,7 +1073,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
       }
 
       // `p` jumps to the Prediction section (enabling the provider if it's off);
-      // `m` toggles Data | Models; `h` opens the unified Help modal (consistent on
+      // `M` toggles Data | Models; `h` opens the unified Help modal (consistent on
       // every view); `i` opens the Data-warnings modal (the header [!] detail) —
       // all available in every mode.
       if (ch === 'p') {
@@ -1078,13 +1081,17 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
       }
 
       if (ch === 'm') {
+        return openQuickMessage()
+      }
+
+      if (ch === 'M') {
         setSel(0)
         setModelSel(0)
 
         return setMode(prev => (prev === 'models' ? 'data' : 'models'))
       }
 
-      if (ch === 'h') {
+      if (ch === 'h' || ch === '?') {
         return openHelpOverlay()
       }
 
@@ -1683,6 +1690,14 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
 
   // ---- right: security detail card ----------------------------------------
   const q = selectedRow?.quote
+  useShareItem(
+    pmTabActive ? pm.detailItem?.event.title || '' : q?.name || q?.symbol || '',
+    pmTabActive
+      ? `Prediction market · ${pm.detailItem?.event.title || ''}\n${pm.detailItem?.event.url || ''}`
+      : q
+        ? `${q.value ?? 'Unavailable'} ${q.unit || ''} · CHG ${q.change ?? 'unavailable'} · ${q.provider} · observed ${q.asOf ? new Date(q.asOf).toISOString() : 'unknown'}`
+        : ''
+  )
   const s = selectedRow?.series
   const chartW = Math.max(12, detailWidth - 2)
   const chart = q?.history ? blockChart(q.history, chartW, 7) : []
@@ -1946,7 +1961,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     { k: 'a', label: 'Ask agent', run: askAgent },
     { k: 'o', label: 'Sort', run: () => onSortCycle() },
     {
-      k: 'm',
+      k: 'M',
       label: 'Models',
       run: () => {
         setSel(0)
@@ -1973,7 +1988,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     { k: 'n', label: 'New model', run: () => setModal('newModel') },
     { k: 'R', label: 'Retry', run: () => retryModel(models[modelSel]?.id ?? null) },
     { k: 'x', label: 'Delete' },
-    { k: 'm', label: 'Data', run: () => setMode('data') },
+    { k: 'M', label: 'Data', run: () => setMode('data') },
     ...(infoItems.length ? [{ k: 'i', label: 'Warnings', run: () => setModal('info') }] : []),
     { k: 'h', label: 'Help', run: openHelpOverlay },
     { k: 'q', label: 'Close', run: onClose }
@@ -2025,7 +2040,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
       }
     },
     {
-      k: 'm',
+      k: 'M',
       label: 'Models',
       run: () => {
         setSel(0)
@@ -2063,7 +2078,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
 
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
-      <FooterChips chips={chips} disabled={!!modal || globalModal} t={t} />
+      <FooterChips chips={chips} disabled={!!modal || globalModal} onKey={handleFooterKey} t={t} />
       {flash || contextHint ? (
         <Text color={t.color.muted} wrap="truncate-end">
           {flash ? <Text color={t.color.accent}>{`${flash}${contextHint ? ' · ' : ''}`}</Text> : null}

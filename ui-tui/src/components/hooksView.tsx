@@ -1,10 +1,11 @@
 import { useStore } from '@nanostores/react'
-import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdout } from '@superforecasting/ink'
+import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useStdout } from '@superforecasting/ink'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 
 import { $globalModal, openHelpOverlay } from '../app/overlayStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import { asRpcResult } from '../lib/rpc.js'
+import { useViewInput } from '../lib/useViewInput.js'
 import type { Theme } from '../theme.js'
 
 import { OverlayScrollbar } from './agentsOverlay.js'
@@ -54,7 +55,18 @@ interface HooksData {
   reasoning_methods: { name: string; doc: string }[]
 }
 
-const CATEGORY_ORDER = ['saturation', 'output', 'quorum', 'confidence', 'reasoning', 'decision', 'calibration', 'style', 'custom']
+const CATEGORY_ORDER = [
+  'saturation',
+  'output',
+  'quorum',
+  'confidence',
+  'reasoning',
+  'decision',
+  'calibration',
+  'style',
+  'custom'
+]
+
 const SEV_CYCLE = ['off', 'warn', 'error']
 
 export function HooksView({ gw, onClose, t }: { gw?: GatewayClient; onClose: () => void; t: Theme }) {
@@ -90,7 +102,9 @@ export function HooksView({ gw, onClose, t }: { gw?: GatewayClient; onClose: () 
     }
 
     gw.request('forecast.hooks', {})
-      .then(raw => setData((asRpcResult<HooksData>(raw) ?? (raw as { result?: HooksData })?.result ?? null) as HooksData | null))
+      .then(raw =>
+        setData((asRpcResult<HooksData>(raw) ?? (raw as { result?: HooksData })?.result ?? null) as HooksData | null)
+      )
       .catch((e: unknown) => setError(String(e)))
   }
 
@@ -142,125 +156,129 @@ export function HooksView({ gw, onClose, t }: { gw?: GatewayClient; onClose: () 
     mutate({ target: 'profile', value: nextProf }, `profile → ${nextProf}`)
   }
 
-  useInput((ch, key) => {
-    if (wizard) {
-      return
-    }
+  const handleFooterKey = useViewInput(
+    (ch, key) => {
+      if (wizard) {
+        return
+      }
 
-    if (confirmRemove) {
-      if (ch === 'y' || ch === 'Y') {
-        const id = confirmRemove
+      if (confirmRemove) {
+        if (ch === 'y' || ch === 'Y') {
+          const id = confirmRemove
+          setConfirmRemove('')
+          gw?.request('forecast.hooks.remove_rule', { id })
+            .then(() => {
+              setFlash(`removed ${id}`)
+              setSel(0)
+              load()
+            })
+            .catch((e: unknown) => setError(String(e)))
+
+          return
+        }
+
         setConfirmRemove('')
-        gw?.request('forecast.hooks.remove_rule', { id })
-          .then(() => {
-            setFlash(`removed ${id}`)
-            setSel(0)
-            load()
-          })
-          .catch((e: unknown) => setError(String(e)))
 
         return
       }
 
-      setConfirmRemove('')
+      if (key.escape || ch === 'q') {
+        if (reference) {
+          return setReference(false)
+        }
 
-      return
-    }
-
-    if (key.escape || ch === 'q') {
-      if (reference) {
-        return setReference(false)
+        return onClose()
       }
 
-      return onClose()
-    }
+      // `h` opens the unified Help modal — consistent on every view.
+      if (ch === 'h' || ch === '?') {
+        return openHelpOverlay()
+      }
 
-    // `h` opens the unified Help modal — consistent on every view.
-    if (ch === 'h') {
-      return openHelpOverlay()
-    }
+      if (key.tab) {
+        return setFocus(f => (f === 'list' ? 'inspector' : 'list'))
+      }
 
-    if (key.tab) {
-      return setFocus(f => (f === 'list' ? 'inspector' : 'list'))
-    }
+      if (focus === 'inspector') {
+        if (key.upArrow || ch === 'k' || key.wheelUp) {
+          return scrollRef.current?.scrollBy?.(-2)
+        }
 
-    if (focus === 'inspector') {
+        if (key.downArrow || ch === 'j' || key.wheelDown) {
+          return scrollRef.current?.scrollBy?.(2)
+        }
+
+        if (key.pageUp) {
+          return scrollRef.current?.scrollBy?.(-(contentHeight - 2))
+        }
+
+        if (key.pageDown) {
+          return scrollRef.current?.scrollBy?.(contentHeight - 2)
+        }
+      }
+
+      // list-focused actions
       if (key.upArrow || ch === 'k' || key.wheelUp) {
-        return scrollRef.current?.scrollBy?.(-2)
+        return setSel(s => Math.max(0, s - 1))
       }
 
       if (key.downArrow || ch === 'j' || key.wheelDown) {
-        return scrollRef.current?.scrollBy?.(2)
+        return setSel(s => Math.min(ordered.length - 1, s + 1))
       }
 
-      if (key.pageUp) {
-        return scrollRef.current?.scrollBy?.(-(contentHeight - 2))
+      if (ch === 'c' || key.leftArrow || key.rightArrow) {
+        return cycleSeverity()
       }
 
-      if (key.pageDown) {
-        return scrollRef.current?.scrollBy?.(contentHeight - 2)
+      if (ch === 'p') {
+        return cycleProfile()
       }
-    }
 
-    // list-focused actions
-    if (key.upArrow || ch === 'k' || key.wheelUp) {
-      return setSel(s => Math.max(0, s - 1))
-    }
+      if (ch === 'e' && current) {
+        return mutate({ target: 'enable', rule_id: current.id }, `${current.id} enabled (profile severity)`)
+      }
 
-    if (key.downArrow || ch === 'j' || key.wheelDown) {
-      return setSel(s => Math.min(ordered.length - 1, s + 1))
-    }
+      if (ch === 'd' && current) {
+        return mutate({ target: 'disable', rule_id: current.id }, `${current.id} disabled`)
+      }
 
-    if (ch === 'c' || key.leftArrow || key.rightArrow) {
-      return cycleSeverity()
-    }
+      if (ch === 'r') {
+        return setReference(v => !v)
+      }
 
-    if (ch === 'p') {
-      return cycleProfile()
-    }
+      if (ch === 'n') {
+        return setWizard({})
+      }
 
-    if (ch === 'e' && current) {
-      return mutate({ target: 'enable', rule_id: current.id }, `${current.id} enabled (profile severity)`)
-    }
+      if (ch === 'E' && current?.is_user) {
+        return setWizard({ editId: current.id, initial: ruleToInitial(current) })
+      }
 
-    if (ch === 'd' && current) {
-      return mutate({ target: 'disable', rule_id: current.id }, `${current.id} disabled`)
-    }
+      if (ch === 'x' && current?.is_user) {
+        return setConfirmRemove(current.id)
+      }
+    },
+    { isActive: !globalModal }
+  )
 
-    if (ch === 'r') {
-      return setReference(v => !v)
-    }
-
-    if (ch === 'n') {
-      return setWizard({})
-    }
-
-    if (ch === 'E' && current?.is_user) {
-      return setWizard({ editId: current.id, initial: ruleToInitial(current) })
-    }
-
-    if (ch === 'x' && current?.is_user) {
-      return setConfirmRemove(current.id)
-    }
-  }, { isActive: !globalModal })
-
-  const wizardOverlay = wizard && data ? (
-    <HooksWizard
-      cols={cols}
-      editId={wizard.editId}
-      glossary={data.glossary}
-      gw={gw}
-      initial={wizard.initial}
-      onCancel={() => setWizard(null)}
-      onSaved={id => {
-        setWizard(null)
-        setFlash(`saved ${id}`)
-        load()
-      }}
-      rows={termRows}
-      t={t}
-    />
-  ) : null
+  const wizardOverlay =
+    wizard && data ? (
+      <HooksWizard
+        cols={cols}
+        editId={wizard.editId}
+        glossary={data.glossary}
+        gw={gw}
+        initial={wizard.initial}
+        onCancel={() => setWizard(null)}
+        onSaved={id => {
+          setWizard(null)
+          setFlash(`saved ${id}`)
+          load()
+        }}
+        rows={termRows}
+        t={t}
+      />
+    ) : null
 
   const list = (
     <Box flexDirection="column" flexShrink={0} width={listW}>
@@ -275,7 +293,7 @@ export function HooksView({ gw, onClose, t }: { gw?: GatewayClient; onClose: () 
             out.push(
               <Text color={t.color.label} key={`h-${cat}`}>
                 {cat}
-              </Text>,
+              </Text>
             )
           }
 
@@ -291,7 +309,7 @@ export function HooksView({ gw, onClose, t }: { gw?: GatewayClient; onClose: () 
               <Text bold={active} color={active ? t.color.text : t.color.muted} wrap="truncate-end">
                 {r.is_user ? `${r.valid === false ? '✗' : '✓'} ${r.id}` : r.id}
               </Text>
-            </Box>,
+            </Box>
           )
         })
 
@@ -397,16 +415,29 @@ export function HooksView({ gw, onClose, t }: { gw?: GatewayClient; onClose: () 
     { k: 'c', label: 'Severity' },
     ...(current
       ? [
-          { k: 'e', label: 'Enable', run: () => mutate({ rule_id: current.id, target: 'enable' }, `${current.id} enabled (profile severity)`) },
-          { k: 'd', label: 'Disable', run: () => mutate({ rule_id: current.id, target: 'disable' }, `${current.id} disabled`) }
+          {
+            k: 'e',
+            label: 'Enable',
+            run: () => mutate({ rule_id: current.id, target: 'enable' }, `${current.id} enabled (profile severity)`)
+          },
+          {
+            k: 'd',
+            label: 'Disable',
+            run: () => mutate({ rule_id: current.id, target: 'disable' }, `${current.id} disabled`)
+          }
         ]
       : []),
     { k: 'p', label: 'Profile' },
     { k: 'n', label: 'New rule' },
-    ...(current?.is_user ? [{ k: 'E', label: 'Edit' }, { k: 'x', label: 'Remove' }] : []),
+    ...(current?.is_user
+      ? [
+          { k: 'E', label: 'Edit' },
+          { k: 'x', label: 'Remove' }
+        ]
+      : []),
     { k: 'r', label: reference ? 'Rules' : 'Reference' },
     { k: 'h', label: 'Help', run: openHelpOverlay },
-    { k: 'Esc', label: 'Back' },
+    { k: 'Esc', label: 'Back' }
   ]
 
   return (
@@ -452,7 +483,7 @@ export function HooksView({ gw, onClose, t }: { gw?: GatewayClient; onClose: () 
         )}
       </Box>
 
-      <FooterChips chips={footerChips} disabled={!!wizard || globalModal} t={t} />
+      <FooterChips chips={footerChips} disabled={!!wizard || !!confirmRemove || globalModal} onKey={handleFooterKey} t={t} />
       {/* The body stays mounted; the wizard paints ABOVE it as an absolute overlay.
           The keyboard is trapped by the `if (wizard) return` in useInput, and the
           master list is keyboard-driven (no mouse handlers to gate). */}
@@ -461,18 +492,28 @@ export function HooksView({ gw, onClose, t }: { gw?: GatewayClient; onClose: () 
   )
 }
 
-export function ruleToInitial(r: RuleRow): { id: string; desc: string; conditions: { signal: string; op: string; value: string }[]; severity: string; remediation: string } {
+export function ruleToInitial(r: RuleRow): {
+  id: string
+  desc: string
+  conditions: { signal: string; op: string; value: string }[]
+  severity: string
+  remediation: string
+} {
   return {
     conditions: checkToConditions(r.check),
     desc: r.doc ?? '',
     id: r.id,
     remediation: r.remediation ?? 'none',
-    severity: r.severity,
+    severity: r.severity
   }
 }
 
 function checkToConditions(check: unknown): { signal: string; op: string; value: string }[] {
-  const leaf = (c: Record<string, unknown>) => ({ op: String(c.op ?? ''), signal: String(c.signal ?? ''), value: c.value === undefined ? '' : String(c.value) })
+  const leaf = (c: Record<string, unknown>) => ({
+    op: String(c.op ?? ''),
+    signal: String(c.signal ?? ''),
+    value: c.value === undefined ? '' : String(c.value)
+  })
 
   if (!check || typeof check !== 'object') {
     return []

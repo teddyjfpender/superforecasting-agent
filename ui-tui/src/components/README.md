@@ -21,11 +21,31 @@ These are entry points and representative modules, not an exhaustive inventory.
 | [appOverlays.tsx](appOverlays.tsx)           | appOverlays.      |
 | [asciiAnimation.tsx](asciiAnimation.tsx)     | asciiAnimation.   |
 
+## Messaging and documents
+
+- `messagingView.tsx` owns conversation navigation; `quickMessage.tsx` provides
+  global compose and forwarding. Both use the shared send owner.
+- `documentDesk.tsx` owns library selection and editing; `documentReader.tsx`
+  bounds Markdown/LaTeX scrolling; `documentConnections.tsx` owns explicit sync.
+- Gate background keyboard and mouse actions while a modal is open. Keep drafts
+  outside component lifetime and reject stale asynchronous selection results.
+
+See the [desk architecture](../../../../docs/architecture/messaging-docs-desk.md)
+for keybindings, storage ownership and regression coverage.
+
 ## Subdirectories
 
 - [desk/](desk/README.md) — Desk display helpers.
 - [forecast/](forecast/README.md) — Forecast display helpers.
 - [viz/](viz/README.md) — Terminal visualization components.
+
+## Help and footer actions
+
+Use `useViewInput` for a view's keyboard handler and pass its returned dispatcher
+as `FooterChips.onKey`. Keep text/modal guards before browsing shortcuts. Give
+compound actions explicit callbacks; combined navigation legends are non-clickable.
+Update `content/keymaps.ts` with behavior changes. See the
+[help audit](../../../../docs/verification/help-shortcuts.md).
 
 ## Working in this directory
 
@@ -46,3 +66,8 @@ Update this guide when entry points or ownership change. See the
 and [engineering backlog](../../../TODO.md) for cross-package context.
 
 [↑ Parent directory](../README.md)
+
+`contactPicker.tsx` is the shared contact/chat browser for Messaging, quick
+compose and group-member selection. Keep search ranking in `messagingSearch.ts`
+and contact synchronization in `signalDirectory.ts`; the picker owns bounded
+layout, scopes and selection only.

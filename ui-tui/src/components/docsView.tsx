@@ -5,8 +5,7 @@ import { docsRootExists, migrateLegacyVault, vaultDir } from '../lib/latexDocs.j
 import type { Theme } from '../theme.js'
 
 import { DocsSetup } from './docsSetup.js'
-import { LatexDocsView } from './latexDocsView.js'
-import { ObsidianView } from './obsidianView.js'
+import { DocumentDesk } from './documentDesk.js'
 
 // Docs — two kinds of documents under one view:
 //   1. Markdown — the Obsidian vault (GitHub-backed via the gateway tools).
@@ -24,9 +23,7 @@ interface DocsViewProps {
   t: Theme
 }
 
-export function DocsView({ gw, onClose, onDraft, sid, t }: DocsViewProps) {
-  const [kind, setKind] = useState<DocKind>('markdown')
-
+export function DocsView({ gw, onClose, t }: DocsViewProps) {
   // First run: no ~/.superforecasting-agent/docs yet → offer to create the
   // unified workspace (vault + latex + git) before showing either kind. When it
   // exists, recover any notes from the legacy default vault into docs/vault
@@ -45,19 +42,5 @@ export function DocsView({ gw, onClose, onDraft, sid, t }: DocsViewProps) {
     return <DocsSetup onClose={onClose} onReady={() => setReady(true)} t={t} />
   }
 
-  if (kind === 'latex') {
-    return <LatexDocsView docKind="latex" onClose={onClose} onDraft={onDraft} onSelectKind={setKind} t={t} />
-  }
-
-  return (
-    <ObsidianView
-      docKind="markdown"
-      gw={gw}
-      onClose={onClose}
-      onDraft={onDraft}
-      onSelectKind={setKind}
-      sid={sid}
-      t={t}
-    />
-  )
+  return <DocumentDesk gw={gw} onClose={onClose} t={t} />
 }

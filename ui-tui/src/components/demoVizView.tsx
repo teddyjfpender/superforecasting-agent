@@ -1,8 +1,9 @@
 import { useStore } from '@nanostores/react'
-import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdout } from '@superforecasting/ink'
+import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useStdout } from '@superforecasting/ink'
 import { useEffect, useRef, useState } from 'react'
 
 import { $globalModal, openHelpOverlay } from '../app/overlayStore.js'
+import { useViewInput } from '../lib/useViewInput.js'
 import type { ChartKind } from '../lib/viz/index.js'
 import type { Theme } from '../theme.js'
 
@@ -61,7 +62,13 @@ const SAMPLES: { data: unknown; height?: number; kind: ChartKind; subtitle: stri
 
   return [
     {
-      data: { fitLine: [{ x: 0, y: 0 }, { x: n - 1, y: (n - 1) * 0.6 }], points: scatterPts },
+      data: {
+        fitLine: [
+          { x: 0, y: 0 },
+          { x: n - 1, y: (n - 1) * 0.6 }
+        ],
+        points: scatterPts
+      },
       height: 14,
       kind: 'scatter',
       subtitle: 'braille points + interpolated fit line (regression / scatter blocks)',
@@ -81,7 +88,17 @@ const SAMPLES: { data: unknown; height?: number; kind: ChartKind; subtitle: stri
       title: 'Fan / Monte-Carlo'
     },
     {
-      data: { cdf, intervals: [{ hi: 1.28, lo: -1.28, p: 0.8 }, { hi: 1.96, lo: -1.96, p: 0.95 }], mean: 0, median: 0, pdf, support },
+      data: {
+        cdf,
+        intervals: [
+          { hi: 1.28, lo: -1.28, p: 0.8 },
+          { hi: 1.96, lo: -1.96, p: 0.95 }
+        ],
+        mean: 0,
+        median: 0,
+        pdf,
+        support
+      },
       height: 12,
       kind: 'distribution',
       subtitle: 'PDF + CDF overlay + 80/95% interval bands + mean/median markers',
@@ -130,40 +147,43 @@ export function DemoVizView({ onClose, t }: { onClose: () => void; t: Theme }) {
   const chartW = Math.max(24, Math.min(innerW, 96))
   const contentHeight = Math.max(8, termRows - 4)
 
-  useInput((ch, key) => {
-    if (key.escape || ch === 'q') {
-      return onClose()
-    }
+  const handleFooterKey = useViewInput(
+    (ch, key) => {
+      if (key.escape || ch === 'q') {
+        return onClose()
+      }
 
-    // `h` opens the unified Help modal — consistent on every view.
-    if (ch === 'h') {
-      return openHelpOverlay()
-    }
+      // `h` opens the unified Help modal — consistent on every view.
+      if (ch === 'h' || ch === '?') {
+        return openHelpOverlay()
+      }
 
-    if (key.upArrow || ch === 'k' || key.wheelUp) {
-      return scrollRef.current?.scrollBy?.(-2)
-    }
+      if (key.upArrow || ch === 'k' || key.wheelUp) {
+        return scrollRef.current?.scrollBy?.(-2)
+      }
 
-    if (key.downArrow || ch === 'j' || key.wheelDown) {
-      return scrollRef.current?.scrollBy?.(2)
-    }
+      if (key.downArrow || ch === 'j' || key.wheelDown) {
+        return scrollRef.current?.scrollBy?.(2)
+      }
 
-    if (key.pageUp) {
-      return scrollRef.current?.scrollBy?.(-(contentHeight - 2))
-    }
+      if (key.pageUp) {
+        return scrollRef.current?.scrollBy?.(-(contentHeight - 2))
+      }
 
-    if (key.pageDown) {
-      return scrollRef.current?.scrollBy?.(contentHeight - 2)
-    }
+      if (key.pageDown) {
+        return scrollRef.current?.scrollBy?.(contentHeight - 2)
+      }
 
-    if (ch === 'g') {
-      return scrollRef.current?.scrollTo?.(0)
-    }
+      if (ch === 'g') {
+        return scrollRef.current?.scrollTo?.(0)
+      }
 
-    if (ch === 'G') {
-      return scrollRef.current?.scrollToBottom?.()
-    }
-  }, { isActive: !globalModal })
+      if (ch === 'G') {
+        return scrollRef.current?.scrollToBottom?.()
+      }
+    },
+    { isActive: !globalModal }
+  )
 
   return (
     <Box flexDirection="column" flexGrow={1} paddingX={1}>
@@ -205,6 +225,7 @@ export function DemoVizView({ onClose, t }: { onClose: () => void; t: Theme }) {
           { k: '⎋', label: 'Back', run: onClose }
         ]}
         disabled={globalModal}
+        onKey={handleFooterKey}
         t={t}
       />
     </Box>

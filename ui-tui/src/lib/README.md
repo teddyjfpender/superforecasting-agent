@@ -4,7 +4,16 @@ Contains reusable terminal formatting, caches, grouping and platform helpers.
 
 ## Ownership and boundaries
 
-Prefer focused pure helpers. Keep durable business state and provider calls outside this directory.
+Prefer focused pure helpers. Forecast business state stays in the Python
+application owners. Existing personal Signal and local Docs integrations live
+here: `messagingSend.ts` centralizes sends, `signalLive.ts` owns the receiver,
+`messagingState.ts` persists chat organization and drafts, and
+`documentDrafts.ts` stores recoverable editor snapshots. These profile-local
+owners are not a multi-device service. Components must reuse them rather than
+write their files or send directly.
+
+See the [desk architecture](../../../../docs/architecture/messaging-docs-desk.md)
+for failure behavior and integration boundaries.
 
 ## Start here
 
@@ -44,3 +53,8 @@ Update this guide when entry points or ownership change. See the
 and [engineering backlog](../../../TODO.md) for cross-package context.
 
 [↑ Parent directory](../README.md)
+
+Signal contact discovery is owned by `signalDirectory.ts` (shared refresh and
+reactive cache). `signalContacts.ts` preserves name provenance and local labels;
+`messagingSearch.ts` ranks names, categories and saved message context without
+external AI calls. See [Signal behavior and tests](../../../../docs/verification/signal-messaging.md).

@@ -1,6 +1,17 @@
-import { cpSync, type Dirent, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import {
+  cpSync,
+  type Dirent,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  statSync,
+  writeFileSync
+} from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, dirname, join, relative } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative } from 'node:path'
 
 import { forecastHomeDir } from './forecastHome.js'
 
@@ -230,13 +241,32 @@ export const readTexFile = (dir: string, rel: string): string => {
   }
 }
 
-export const writeTexFile = (dir: string, rel: string, content: string): { error: null | string } => {
+export const writeTexFile = (
+  dir: string,
+  rel: string,
+  content: string,
+  expectedContent?: string
+): { error: null | string } => {
   if (rel.includes('..')) {
     return { error: 'invalid path' }
   }
 
   try {
-    writeFileSync(join(dir, rel), content)
+    const root = realpathSync(dir)
+    const target = realpathSync(join(dir, rel))
+    const relativePath = relative(root, target)
+
+    if (relativePath.startsWith('..') || isAbsolute(relativePath)) {
+      return { error: 'Document is outside the workspace' }
+    }
+
+    if (expectedContent !== undefined && readFileSync(target, 'utf8') !== expectedContent) {
+      return { error: 'Document changed since it was opened; reconcile your saved draft' }
+    }
+
+    const temp = `${target}.${process.pid}.tmp`
+    writeFileSync(temp, content, { mode: statSync(target).mode & 0o777 })
+    renameSync(temp, target)
 
     return { error: null }
   } catch (e) {

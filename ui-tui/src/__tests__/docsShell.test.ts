@@ -64,19 +64,17 @@ describe('titlePath (title-priority truncation)', () => {
 })
 
 describe('keymap registration', () => {
-  it('the Docs view advertises its unified keys (kinds, filter, sort)', () => {
+  it('the Docs view advertises its unified keys (collections, search, folders)', () => {
     const rows = PER_VIEW_KEYS.obsidian.map(r => `${r[0]} ${r[1]}`).join(' | ')
 
     expect(rows).toContain('1 / 2') // switch collection
     expect(rows).toContain('/') // filter
-    expect(rows.toLowerCase()).toContain('sort')
+    expect(rows.toLowerCase()).toContain('search titles')
 
-    // Tab cycles wikilinks — it does NOT move across panes (←→ / h l do). Guard
-    // against the label/binding divergence: no cheat-sheet row may pair the Tab
-    // key with a pane-movement description.
+    // The new document desk cycles folders, not the retired outline/wiki-link panes.
     const tabRow = PER_VIEW_KEYS.obsidian.find(r => r[0].includes('Tab'))
 
-    expect(tabRow?.[1].toLowerCase()).toContain('wikilink')
+    expect(tabRow?.[1].toLowerCase()).toContain('folder')
     expect(tabRow?.[1].toLowerCase()).not.toContain('pane')
   })
 })

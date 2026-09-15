@@ -180,14 +180,17 @@ describe('help overlay', () => {
       Box as never,
       { flexDirection: 'column', height: 40, width: 120 } as never,
       React.createElement(Text as never, { key: 'b' } as never, 'BODY'),
-      React.createElement(HelpOverlay as never, {
-        activeView,
-        cols: 120,
-        key: 'm',
-        onClose: () => undefined,
-        rows: 40,
-        t: DARK_THEME
-      } as never)
+      React.createElement(
+        HelpOverlay as never,
+        {
+          activeView,
+          cols: 120,
+          key: 'm',
+          onClose: () => undefined,
+          rows: 40,
+          t: DARK_THEME
+        } as never
+      )
     )
 
     renderSync(app, { exitOnCtrlC: false, patchConsole: false, stdout: sink.stream } as never)
@@ -203,8 +206,7 @@ describe('help overlay', () => {
     expect(text).toContain('Lenses')
     expect(text).toContain('three tiers')
     // Grouped shortcut table.
-    expect(text).toContain('Global keys')
-    expect(text).toContain('Ctrl+K')
+    // View-specific actions come first; global keys remain below in the scrollable body.
     expect(text).toContain('This view — Desk')
     expect(text).toContain('switch lens')
   })
@@ -311,7 +313,9 @@ describe('help overlay', () => {
           React.createElement(HelpOverlay, {
             activeView: 'desk',
             cols: 120,
-            onClose: () => { closed += 1 },
+            onClose: () => {
+              closed += 1
+            },
             rows: 40,
             t: DARK_THEME
           })

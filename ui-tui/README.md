@@ -398,3 +398,10 @@ tui_gateway/
 ## Data desk
 
 The Markets view consumes its connected backend catalog. Add data offers Starter sets, Browse data and Sources; preview precedes apply. `src/lib/dataDesk.ts` projects catalog rows and sends scoped selection edits. Credentials use correlated gateway secret prompts and never local client file writes.
+
+### Messaging and Docs
+
+See the [Messaging and Docs desk guide](../docs/architecture/messaging-docs-desk.md)
+for keyboard navigation, forwarding, persistent drafts, integration ownership and
+verification limits. Alt+M opens quick compose; Docs uses a shared Markdown reader
+and recoverable editor with explicit sync controls.

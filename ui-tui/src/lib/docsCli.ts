@@ -147,8 +147,24 @@ export const ghAuthStatus = async (): Promise<boolean> => {
 // Create a GitHub repo from a local dir and push it. The dir must already be a
 // git repo with at least one commit (gitInit handles that).
 export const ghCreateRepo = (dir: string, name: string, isPrivate = true): Promise<RunResult> =>
-  runCli('gh', ['repo', 'create', name, isPrivate ? '--private' : '--public', '--source', dir, '--remote', 'origin', '--push'], dir, 120_000)
+  runCli(
+    'gh',
+    ['repo', 'create', name, isPrivate ? '--private' : '--public', '--source', dir, '--remote', 'origin', '--push'],
+    dir,
+    120_000
+  )
 
 // ── Overleaf (olcli) ─────────────────────────────────────────────────────────
 
 export const overleaf = (dir: string, args: string[]): Promise<RunResult> => runCli('olcli', args, dir, 90_000)
+
+/** Interactive Docs sync never hides local edits in an automatic stash. */
+export const docsSyncPull = async (dir: string): Promise<RunResult> => {
+  const state = await gitStatus(dir)
+
+  if (!state || state.dirty) {
+    return { code: 1, error: 'Commit or reconcile local changes before pulling.', stderr: '', stdout: '' }
+  }
+
+  return runCli('git', ['-C', dir, 'pull', '--ff-only'], dir, 90_000)
+}

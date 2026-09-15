@@ -261,7 +261,10 @@ def _(rid, params: dict) -> dict:
         if not rel or not isinstance(content, str):
             return _err(rid, 5014, "rel_path and string content are required")
         path = safe_note_path(vault, rel)
-        write_note(path, content)
+        expected = params.get("expected_content")
+        if expected is not None and not isinstance(expected, str):
+            return _err(rid, 5014, "expected_content must be a string")
+        write_note(path, content, expected_content=expected)
         return _ok(rid, {"ok": True, "rel_path": rel, "size": len(content.encode("utf-8"))})
     except Exception as e:
         return _err(rid, 5014, str(e))

@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { Box, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdout } from '@superforecasting/ink'
+import { Box, ScrollBox, type ScrollBoxHandle, Text, useStdout } from '@superforecasting/ink'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
@@ -8,6 +8,7 @@ import { FEED_CATEGORIES } from '../content/newsFeedCatalog.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import { type FieldSpec, rankItems } from '../lib/fuzzyRank.js'
 import { statusGlyph } from '../lib/icons.js'
+import { openQuickMessage } from '../lib/messagingState.js'
 import { fetchBackendFeed, uniqueArticles } from '../lib/newsDesk.js'
 import { type ArticleCache, loadArticleCache, pruneArticleCache, saveArticleCache } from '../lib/newsFeedCache.js'
 import { type Article, fetchFeeds } from '../lib/newsFeedFetch.js'
@@ -24,6 +25,8 @@ import {
 import { nextProviderColor, providerColor } from '../lib/newsProviderColor.js'
 import { loadProviderColors, type ProviderColors, saveProviderColors } from '../lib/newsProviderColorStore.js'
 import { openExternalUrl } from '../lib/openExternalUrl.js'
+import { useShareItem } from '../lib/useShareItem.js'
+import { useViewInput } from '../lib/useViewInput.js'
 import { semantics } from '../lib/visualSemantics.js'
 import type { NewsArticleResponse, NewsSubscription } from '../protocol/generated.js'
 import type { Theme } from '../theme.js'
@@ -494,7 +497,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
     setModalSel(0)
   }
 
-  useInput(
+  const handleFooterKey = useViewInput(
     (ch, key) => {
       if (starterOpen) {
         if (saving) {
@@ -609,13 +612,17 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
         return
       }
 
+      if (ch === 'm') {
+        return openQuickMessage()
+      }
+
       if (ch === 'q') {
         return onClose()
       }
 
       // `h` opens the unified Help modal — consistent on every view. Nav mode only
       // (the `adding` + `searchMode` text guards above already returned).
-      if (ch === 'h') {
+      if (ch === 'h' || ch === '?') {
         return openHelpOverlay()
       }
 
@@ -712,6 +719,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
 
   const clampedSel = Math.min(sel, Math.max(0, visibleArticles.length - 1))
   const selectedArticle = visibleArticles[clampedSel]
+  useShareItem(selectedArticle?.title || '', selectedArticle?.link || '')
   const selectedLink = selectedArticle?.link ?? ''
 
   const selectedKey = selectedArticle
@@ -1143,7 +1151,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
       {/* The FooterChips are the ONE canonical shortcuts row (the always-on prose
           duplicate below them was removed). Only a transient flash survives, and
           only when there is something to say — never a second shortcuts row. */}
-      <FooterChips chips={chips} disabled={adding || starterOpen || globalModal} t={t} />
+      <FooterChips chips={chips} disabled={adding || starterOpen || globalModal} onKey={handleFooterKey} t={t} />
       {flash ? (
         <Text color={t.color.accent} wrap="truncate-end">
           {flash}

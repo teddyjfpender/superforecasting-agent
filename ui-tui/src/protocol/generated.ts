@@ -3030,6 +3030,7 @@ export interface ObsidianStatusResponse {
 
 export interface ObsidianWriteRequest {
   content: string
+  expected_content: null | string
   rel_path: string
 }
 
@@ -4780,6 +4781,7 @@ export interface RpcMethods {
   'obsidian.write': {
     params: {
       content: string
+      expected_content?: null | string
       rel_path: string
     }
     result: ObsidianWriteResponse
