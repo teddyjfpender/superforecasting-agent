@@ -36,6 +36,7 @@ from protocol.rpc import jobs as _rpc_jobs
 from protocol.rpc import market_models as _rpc_market_models
 from protocol.rpc import markets as _rpc_markets
 from protocol.rpc import model as _rpc_model
+from protocol.rpc import news as _rpc_news
 from protocol.rpc import obsidian as _rpc_obsidian
 from protocol.rpc import operations as _rpc_operations
 from protocol.rpc import pm as _rpc_pm
@@ -142,6 +143,12 @@ RPC_SPECS: list[RpcSpec] = [
         _rpc_operations.InsightsResponse,
         invalid_params_code=4004,
     ),
+    RpcSpec("news.desk", _rpc_news.NewsDeskRequest, _rpc_news.NewsDeskResponse),
+    RpcSpec(
+        "news.configure", _rpc_news.NewsConfigureRequest, _rpc_news.NewsDeskResponse
+    ),
+    RpcSpec("news.feed", _rpc_news.NewsFeedRequest, _rpc_news.NewsFeedResponse),
+    RpcSpec("news.article", _rpc_news.NewsFeedRequest, _rpc_news.NewsArticleResponse),
     RpcSpec(
         "news.search",
         _rpc_operations.NewsSearchRequest,

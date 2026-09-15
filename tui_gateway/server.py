@@ -260,6 +260,9 @@ _LONG_HANDLERS = frozenset(
         "market.search",
         "markets.model.renarrate",
         "news.search",
+        "news.feed",
+        "news.article",
+        "news.configure",
         "pm.book",
         "pm.detail",
         "pm.history",
@@ -6083,6 +6086,10 @@ atexit.register(_pm_rpc.shutdown)
 from tui_gateway import market_rpc as _market_rpc  # noqa: E402
 
 _market_rpc.register(sys.modules[__name__])
+
+from tui_gateway import news_rpc as _news_rpc  # noqa: E402
+
+_news_rpc.register(sys.modules[__name__])
 
 # ── Carved RPC family modules (W2.a) — each replays its handlers into _methods
 # via register(), re-entrant across importlib.reload(server) like pm_rpc/jobs_rpc.

@@ -3385,6 +3385,9 @@ def run_setup_wizard(args):
     from superforecasting_agent.runtime.data_desk import setup_data_desk
 
     setup_data_desk(Path(get_agent_home()))
+    from superforecasting_agent.runtime.news_desk import setup_news_desk
+
+    setup_news_desk(Path(get_agent_home()))
     save_config(config)
     if _backup_path and _backup_path.exists():
         print_info(f"Previous config backed up to: {_backup_path}")
@@ -3408,6 +3411,9 @@ def _run_first_time_quick_setup(config: dict, hermes_home, is_existing: bool):
     from superforecasting_agent.runtime.data_desk import setup_data_desk
 
     setup_data_desk(Path(get_agent_home()))
+    from superforecasting_agent.runtime.news_desk import setup_news_desk
+
+    setup_news_desk(Path(get_agent_home()))
 
     # Step 3: Apply defaults for everything else
     _apply_default_agent_settings(config)

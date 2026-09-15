@@ -71,3 +71,38 @@ describe('parseFeed — robustness', () => {
     expect(parseFeed('', 'https://x', 'X')).toEqual([])
   })
 })
+
+describe('publisher content retention', () => {
+  it('keeps long encoded content and paragraphs instead of selecting the teaser', () => {
+    const body = 'Detailed source reporting. '.repeat(100)
+
+    const [article] = parseFeed(
+      `<rss><channel><item><title>Story</title><description>Teaser</description><content:encoded><![CDATA[<p>${body}</p><p>Final paragraph.</p><script>bad()</script>]]></content:encoded><dc:creator>Reporter</dc:creator><link>/story</link></item></channel></rss>`,
+      'https://example.org/feed',
+      'News'
+    )
+
+    expect(article.summary).toBe('Teaser')
+    expect(article.content).toContain(body.trim())
+    expect(article.content).toContain('\n\nFinal paragraph.')
+    expect(article.content).not.toContain('bad()')
+    expect(article.author).toBe('Reporter')
+    expect(article.link).toBe('https://example.org/story')
+  })
+  it('accepts single-quoted Atom links and rejects executable URLs', () => {
+    const [article] = parseFeed(
+      "<feed><entry><title>Story</title><link rel='alternate' href='https://example.org/story?a=1&amp;b=2'/><content>Text</content></entry></feed>",
+      'https://example.org/feed',
+      'News'
+    )
+
+    expect(article.link).toBe('https://example.org/story?a=1&b=2')
+    expect(
+      parseFeed(
+        '<rss><item><title>Bad</title><link>javascript:alert(1)</link></item></rss>',
+        'https://example.org',
+        'News'
+      )[0].link
+    ).toBe('')
+  })
+})

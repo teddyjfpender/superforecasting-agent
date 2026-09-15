@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { Box, Text, useInput, useStdout } from '@superforecasting/ink'
+import { Box, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdout } from '@superforecasting/ink'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
@@ -8,6 +8,7 @@ import { FEED_CATEGORIES } from '../content/newsFeedCatalog.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import { type FieldSpec, rankItems } from '../lib/fuzzyRank.js'
 import { statusGlyph } from '../lib/icons.js'
+import { fetchBackendFeed, uniqueArticles } from '../lib/newsDesk.js'
 import { type ArticleCache, loadArticleCache, pruneArticleCache, saveArticleCache } from '../lib/newsFeedCache.js'
 import { type Article, fetchFeeds } from '../lib/newsFeedFetch.js'
 import { ALL_CATEGORY, searchFeeds } from '../lib/newsFeedSearch.js'
@@ -24,17 +25,19 @@ import { nextProviderColor, providerColor } from '../lib/newsProviderColor.js'
 import { loadProviderColors, type ProviderColors, saveProviderColors } from '../lib/newsProviderColorStore.js'
 import { openExternalUrl } from '../lib/openExternalUrl.js'
 import { semantics } from '../lib/visualSemantics.js'
+import type { NewsArticleResponse, NewsSubscription } from '../protocol/generated.js'
 import type { Theme } from '../theme.js'
 
 import { AddFeedModal } from './addFeedModal.js'
 import { type FooterChip, FooterChips } from './footerChips.js'
+import { NewsStarterModal } from './newsStarterModal.js'
 
 export const openNewsView = () => patchOverlayState({ news: true })
 export const closeNewsView = () => patchOverlayState({ news: false })
 
 // News — live RSS feeds with quick reading. Press `a` to manage subscriptions
-// (catalog + search + paste URL); feeds are fetched and parsed in the TUI's
-// Node runtime, so the article list + reader fill in automatically. Panes are
+// (catalog + search + paste URL). The connected backend owns subscriptions
+// and acquisition; the terminal parses feeds and presents source-attributed text. Panes are
 // separated by thin vertical rules with an explicit height so nothing reflows.
 
 const bar = (n: number): string => '░'.repeat(Math.max(3, n))
@@ -102,8 +105,7 @@ const relTime = (ms: number): string => {
 }
 
 interface NewsViewProps {
-  // Gateway client for the semantic-search RPC. Optional so the view renders
-  // standalone (e.g. in tests) — search is simply disabled when absent.
+  // Connected news profile and public-source acquisition. Optional for standalone rendering.
   gw?: GatewayClient
   // A `/news <query>` argument: run this semantic search once articles load.
   initialQuery?: null | string
@@ -126,7 +128,20 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
   // Go inert while the Ctrl+K palette / `?` cheat-sheet stacks above the view.
   const globalModal = useStore($globalModal)
 
-  const [subscribed, setSubscribed] = useState<SubscribedFeed[]>(() => loadSubscribedFeeds())
+  const [subscribed, setSubscribed] = useState<SubscribedFeed[]>(() => (gw ? [] : loadSubscribedFeeds()))
+  const [starter, setStarter] = useState<NewsSubscription[]>([])
+  const [starterOpen, setStarterOpen] = useState(false)
+  const [starterChoice, setStarterChoice] = useState(0)
+  const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)
+  const [ready, setReady] = useState(!gw)
+  const [refreshEpoch, setRefreshEpoch] = useState(0)
+  const forceRefresh = useRef(false)
+  const readerRef = useRef<ScrollBoxHandle>(null)
+  const [articleBody, setArticleBody] = useState<NewsArticleResponse | null>(null)
+  const [reading, setReading] = useState(false)
+  const bodyPending = useRef<Promise<NewsArticleResponse> | null>(null)
+  const bodyCache = useRef(new Map<string, NewsArticleResponse>())
   const [source, setSource] = useState(0)
   const [sel, setSel] = useState(0)
   const [tick, setTick] = useState(0)
@@ -150,8 +165,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
   const [searchInput, setSearchInput] = useState('')
   const initialRanRef = useRef(false)
 
-  const cacheRef = useRef<ArticleCache>(loadArticleCache())
-  const inflightRef = useRef(false)
+  const cacheRef = useRef<ArticleCache>(gw ? {} : loadArticleCache())
   const aliveRef = useRef(true)
 
   useEffect(() => {
@@ -187,101 +201,195 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
 
   const activeSource = sources[Math.min(source, sources.length - 1)] ?? ALL_FEEDS
 
-  // Aggregate the cached articles for the currently-subscribed feeds.
-  const rebuild = () => {
-    if (!aliveRef.current) {
+  useEffect(() => {
+    if (!gw) {
       return
     }
 
-    const out: Article[] = []
+    let active = true
+    setReady(false)
+    void gw
+      .request('news.desk', {})
+      .then(result => {
+        if (!active) {
+          return
+        }
 
-    for (const f of subscribed) {
-      const entry = cacheRef.current[normalizeFeedUrl(f.url)]
+        setSubscribed(result.feeds)
+        setStarter(result.starter)
+        setReady(true)
+        setStarterOpen(result.state === 'unconfigured')
+      })
+      .catch(() => {
+        if (active) {
+          setFlash('Cannot load backend news subscriptions. Reopen News to retry.')
+        }
+      })
 
-      if (entry?.articles?.length) {
-        out.push(...entry.articles)
-      }
+    return () => {
+      active = false
     }
+  }, [gw])
 
-    out.sort((a, b) => b.publishedAt - a.publishedAt)
-    setArticles(out)
+  const refresh = (_force: boolean) => {
+    forceRefresh.current = true
+    setRefreshEpoch(value => value + 1)
   }
 
-  // Fetch feeds that are missing or stale (or everything, when forced).
-  const refresh = async (force: boolean) => {
-    if (inflightRef.current) {
+  useEffect(() => {
+    const timer = setInterval(() => {
+      forceRefresh.current = true
+      setRefreshEpoch(value => value + 1)
+    }, STALE_MS)
+
+    return () => clearInterval(timer)
+  }, [])
+
+  useEffect(() => {
+    if (!ready) {
       return
     }
 
-    const targets = subscribed.filter(f => {
-      const entry = cacheRef.current[normalizeFeedUrl(f.url)]
+    const controller = new AbortController()
+    const keep = new Set(subscribed.map(f => normalizeFeedUrl(f.url)))
+    cacheRef.current = pruneArticleCache(cacheRef.current, { keep, maxAgeMs: 30 * 24 * 60 * 60 * 1000 })
+
+    const rebuild = () => {
+      if (controller.signal.aborted) {
+        return
+      }
+
+      setArticles(
+        uniqueArticles(subscribed.flatMap(feed => cacheRef.current[normalizeFeedUrl(feed.url)]?.articles ?? []))
+      )
+    }
+
+    rebuild()
+    const force = forceRefresh.current
+    forceRefresh.current = false
+
+    const targets = subscribed.filter(feed => {
+      const entry = cacheRef.current[normalizeFeedUrl(feed.url)]
 
       return force || !entry || Date.now() - entry.fetchedAt > STALE_MS
     })
 
-    if (targets.length === 0) {
-      rebuild()
-
-      return
-    }
-
-    inflightRef.current = true
-
-    if (aliveRef.current) {
-      setFetching(true)
-    }
-
-    await fetchFeeds(
-      targets.map(f => ({ title: f.title, url: f.url })),
+    setFetching(targets.length > 0)
+    void fetchFeeds(
+      targets,
       (url, result) => {
-        cacheRef.current[normalizeFeedUrl(url)] = {
-          articles: result.articles,
+        const key = normalizeFeedUrl(url)
+        const previous = cacheRef.current[key]
+        cacheRef.current[key] = {
+          articles: result.error ? (previous?.articles ?? []) : result.articles,
           error: result.error ?? undefined,
           fetchedAt: Date.now()
         }
         rebuild()
+      },
+      6,
+      gw ? (url, title) => fetchBackendFeed(gw, url, title) : undefined,
+      controller.signal
+    ).finally(() => {
+      if (controller.signal.aborted) {
+        return
       }
-    )
 
-    saveArticleCache(cacheRef.current)
-    inflightRef.current = false
+      if (!gw) {
+        saveArticleCache(cacheRef.current)
+      }
 
-    if (aliveRef.current) {
       setFetching(false)
-    }
-  }
+    })
 
-  // Whenever the subscription set changes (and on first mount): prune cached
-  // articles for feeds you no longer follow so the cache can't grow without
-  // bound, then rebuild + refresh.
-  useEffect(() => {
-    const keep = new Set(subscribed.map(f => normalizeFeedUrl(f.url)))
-    cacheRef.current = pruneArticleCache(cacheRef.current, { keep, maxAgeMs: 30 * 24 * 60 * 60 * 1000 })
-    saveArticleCache(cacheRef.current)
-    rebuild()
-    void refresh(false)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [subscribed])
+    return () => controller.abort()
+  }, [subscribed, refreshEpoch, gw, ready])
 
-  const modalCategories = useMemo(() => [ALL_CATEGORY, ...FEED_CATEGORIES], [])
-  const results = useMemo(() => searchFeeds(query, modalCat), [query, modalCat])
+  const modalCategories = useMemo(
+    () => [ALL_CATEGORY, ...new Set([...FEED_CATEGORIES, ...starter.map(feed => feed.category)])],
+    [starter]
+  )
+
+  const results = useMemo(() => {
+    const catalog = searchFeeds(query, modalCat)
+    const keys = new Set(catalog.map(feed => normalizeFeedUrl(feed.url)))
+
+    const extra = starter
+      .filter(
+        feed =>
+          !keys.has(normalizeFeedUrl(feed.url)) &&
+          (modalCat === ALL_CATEGORY || feed.category === modalCat) &&
+          `${feed.title} ${feed.category}`.toLowerCase().includes(query.toLowerCase())
+      )
+      .map(feed => ({ ...feed, description: 'Global news starter source' }))
+
+    return [...extra, ...catalog]
+  }, [query, modalCat, starter])
+
   const isUrlQuery = isFeedUrl(query)
 
-  const persist = (next: SubscribedFeed[]) => {
-    setSubscribed(next)
-    saveSubscribedFeeds(next)
+  const configure = async (action: 'add' | 'remove' | 'starter' | 'empty', feed?: SubscribedFeed) => {
+    if (savingRef.current || !ready) {
+      return
+    }
+
+    savingRef.current = true
+    setSaving(true)
+
+    try {
+      if (gw) {
+        const result = await gw.request('news.configure', {
+          action,
+          feed: feed ? { ...feed, custom: feed.custom ?? false } : null
+        })
+
+        if (!aliveRef.current) {
+          return
+        }
+
+        setSubscribed(result.feeds)
+        setStarter(result.starter)
+      } else if (feed) {
+        const next =
+          action === 'remove'
+            ? subscribed.filter(item => normalizeFeedUrl(item.url) !== normalizeFeedUrl(feed.url))
+            : [...subscribed, feed]
+
+        if (!saveSubscribedFeeds(next)) {
+          throw new Error('Cannot save subscriptions')
+        }
+
+        setSubscribed(next)
+      }
+
+      setStarterOpen(false)
+      setFlash(
+        action === 'starter'
+          ? 'Global news starter added; your feeds are preserved'
+          : action === 'empty'
+            ? 'Start empty saved; press s to load the starter later'
+            : `${action === 'remove' ? 'Unsubscribed' : 'Subscribed'} ${feed?.title ?? ''}`
+      )
+    } catch {
+      if (aliveRef.current) {
+        setFlash('Could not save news subscriptions. Your previous selection is unchanged; retry.')
+      }
+    } finally {
+      savingRef.current = false
+
+      if (aliveRef.current) {
+        setSaving(false)
+      }
+    }
   }
 
   const toggleFeed = (feed: CatalogFeed) => {
-    const key = normalizeFeedUrl(feed.url)
-
-    if (subscribedUrls.has(key)) {
-      persist(subscribed.filter(f => normalizeFeedUrl(f.url) !== key))
-      setFlash(`unsubscribed ${feed.title}`)
-    } else {
-      persist([{ addedAt: Date.now(), category: feed.category, title: feed.title, url: feed.url }, ...subscribed])
-      setFlash(`subscribed ${feed.title}`)
-    }
+    void configure(subscribedUrls.has(normalizeFeedUrl(feed.url)) ? 'remove' : 'add', {
+      addedAt: Date.now(),
+      category: feed.category,
+      title: feed.title,
+      url: feed.url
+    })
   }
 
   const addUrlFeed = () => {
@@ -290,17 +398,14 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
     }
 
     const url = ensureFeedUrlScheme(query)
-    const key = normalizeFeedUrl(url)
 
-    if (subscribedUrls.has(key)) {
-      setFlash('already subscribed')
-      setQuery('')
+    if (subscribedUrls.has(normalizeFeedUrl(url))) {
+      setFlash('Already subscribed')
 
       return
     }
 
-    persist([{ addedAt: Date.now(), category: 'Custom', custom: true, title: feedHost(url), url }, ...subscribed])
-    setFlash(`added ${feedHost(url)}`)
+    void configure('add', { addedAt: Date.now(), category: 'Custom', custom: true, title: feedHost(url), url })
     setQuery('')
     setModalSel(0)
   }
@@ -323,7 +428,12 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
 
   const cycleColorFor = (feedTitle: string) => {
     const name = providerName(feedTitle)
-    const next = { ...providerColors, [providerName(feedTitle).trim().toLowerCase()]: nextProviderColor(name, t, colorFor(feedTitle)) }
+
+    const next = {
+      ...providerColors,
+      [providerName(feedTitle).trim().toLowerCase()]: nextProviderColor(name, t, colorFor(feedTitle))
+    }
+
     setProviderColors(next)
     saveProviderColors(next)
     setFlash(`colour set · ${name.trim()}`)
@@ -374,7 +484,6 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
       initialRanRef.current = true
       setSearchInput(q)
     }
-     
   }, [initialQuery, articles.length])
 
   const openModal = () => {
@@ -384,181 +493,323 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
     setModalSel(0)
   }
 
-  useInput((ch, key) => {
-    if (adding) {
-      if (key.escape) {
-        return closeModal()
-      }
-
-      if (key.return) {
-        if (isUrlQuery) {
-          return addUrlFeed()
+  useInput(
+    (ch, key) => {
+      if (starterOpen) {
+        if (saving) {
+          return
         }
 
-        const feed = results[modalSel]
+        if (key.escape) {
+          return setStarterOpen(false)
+        }
 
-        if (feed) {
-          toggleFeed(feed)
+        if (!subscribed.length && (key.upArrow || key.downArrow || key.tab)) {
+          return setStarterChoice(value => 1 - value)
+        }
+
+        if (key.return) {
+          return void configure(starterChoice === 1 && !subscribed.length ? 'empty' : 'starter')
         }
 
         return
       }
 
-      // Shift+Tab recolours the highlighted feed's provider (before plain Tab,
-      // which switches category).
-      if (key.tab && key.shift) {
-        return cycleSelectedColor()
-      }
+      if (adding) {
+        if (key.escape) {
+          return closeModal()
+        }
 
-      if (key.tab || key.rightArrow) {
-        return cycleModalCat(1)
-      }
+        if (key.return) {
+          if (isUrlQuery) {
+            return addUrlFeed()
+          }
 
-      if (key.leftArrow) {
-        return cycleModalCat(-1)
-      }
+          const feed = results[modalSel]
 
-      if (key.upArrow || key.wheelUp) {
-        return setModalSel(i => Math.max(0, i - 1))
-      }
+          if (feed) {
+            toggleFeed(feed)
+          }
 
-      if (key.downArrow || key.wheelDown) {
-        return setModalSel(i => Math.min(Math.max(0, results.length - 1), i + 1))
-      }
+          return
+        }
 
-      if (key.backspace || key.delete) {
-        setModalSel(0)
+        // Shift+Tab recolours the highlighted feed's provider (before plain Tab,
+        // which switches category).
+        if (key.tab && key.shift) {
+          return cycleSelectedColor()
+        }
 
-        return setQuery(q => q.slice(0, -1))
-      }
+        if (key.tab || key.rightArrow) {
+          return cycleModalCat(1)
+        }
 
-      if (ch && !key.ctrl && !key.meta) {
-        const printable = [...ch].filter(c => c >= ' ').join('')
+        if (key.leftArrow) {
+          return cycleModalCat(-1)
+        }
 
-        if (printable) {
+        if (key.upArrow || key.wheelUp) {
+          return setModalSel(i => Math.max(0, i - 1))
+        }
+
+        if (key.downArrow || key.wheelDown) {
+          return setModalSel(i => Math.min(Math.max(0, results.length - 1), i + 1))
+        }
+
+        if (key.backspace || key.delete) {
           setModalSel(0)
-          setQuery(q => q + printable)
+
+          return setQuery(q => q.slice(0, -1))
         }
-      }
 
-      return
-    }
+        if (ch && !key.ctrl && !key.meta) {
+          const printable = [...ch].filter(c => c >= ' ').join('')
 
-    // Typing a semantic search query.
-    if (searchMode) {
-      if (key.escape) {
-        setSearchMode(false)
-        setSearchInput('')
+          if (printable) {
+            setModalSel(0)
+            setQuery(q => q + printable)
+          }
+        }
 
         return
       }
 
-      if (key.return) {
-        // Filtering is already live; Enter just drops focus so ↑↓ navigate the
-        // ranked results while the filter stays applied.
-        return setSearchMode(false)
+      // Typing a semantic search query.
+      if (searchMode) {
+        if (key.escape) {
+          setSearchMode(false)
+          setSearchInput('')
+
+          return
+        }
+
+        if (key.return) {
+          // Filtering is already live; Enter just drops focus so ↑↓ navigate the
+          // ranked results while the filter stays applied.
+          return setSearchMode(false)
+        }
+
+        if (key.backspace || key.delete) {
+          setSel(0)
+
+          return setSearchInput(s => s.slice(0, -1))
+        }
+
+        if (ch && !key.ctrl && !key.meta) {
+          const printable = [...ch].filter(c => c >= ' ').join('')
+
+          if (printable) {
+            // Reset the cursor to the top match as the ranking shifts under typing.
+            setSel(0)
+            setSearchInput(s => s + printable)
+          }
+        }
+
+        return
       }
 
-      if (key.backspace || key.delete) {
+      if (ch === 'q') {
+        return onClose()
+      }
+
+      // `h` opens the unified Help modal — consistent on every view. Nav mode only
+      // (the `adding` + `searchMode` text guards above already returned).
+      if (ch === 'h') {
+        return openHelpOverlay()
+      }
+
+      if (key.escape) {
+        // Esc backs out of an active search first, then leaves the view.
+        if (searchActive) {
+          return clearSearch()
+        }
+
+        return onClose()
+      }
+
+      // `/` opens the instant fuzzy filter (keeps any current query to refine).
+      if (ch === '/') {
+        return setSearchMode(true)
+      }
+
+      if (ch === 'a') {
+        return openModal()
+      }
+
+      if (ch === 's' && starter.length) {
+        setStarterChoice(0)
+        setStarterOpen(true)
+
+        return
+      }
+
+      if (key.pageDown || (key.ctrl && ch === 'd')) {
+        readerRef.current?.scrollBy(8)
+
+        return
+      }
+
+      if (key.pageUp || (key.ctrl && ch === 'u')) {
+        readerRef.current?.scrollBy(-8)
+
+        return
+      }
+
+      if (ch === 'r') {
+        setFlash('refreshing…')
+
+        return void refresh(true)
+      }
+
+      if (key.return) {
+        const article = visibleArticles[sel]
+        const target = article?.link || article?.feedUrl
+
+        if (target && openExternalUrl(ensureFeedUrlScheme(target))) {
+          setFlash('opened in browser')
+        }
+
+        return
+      }
+
+      if ((key.tab && !key.shift) || key.rightArrow) {
         setSel(0)
 
-        return setSearchInput(s => s.slice(0, -1))
+        return setSource(i => (i + 1) % sources.length)
       }
 
-      if (ch && !key.ctrl && !key.meta) {
-        const printable = [...ch].filter(c => c >= ' ').join('')
+      if (key.leftArrow || (key.tab && key.shift)) {
+        setSel(0)
 
-        if (printable) {
-          // Reset the cursor to the top match as the ranking shifts under typing.
-          setSel(0)
-          setSearchInput(s => s + printable)
+        return setSource(i => (i - 1 + sources.length) % sources.length)
+      }
+
+      if (key.upArrow || ch === 'k' || key.wheelUp) {
+        return setSel(i => Math.max(0, i - 1))
+      }
+
+      if (key.downArrow || ch === 'j' || key.wheelDown) {
+        return setSel(i => Math.min(Math.max(0, visibleArticles.length - 1), i + 1))
+      }
+    },
+    { isActive: !globalModal }
+  )
+
+  const width = Math.max(48, cols - 4)
+  const contentHeight = Math.max(8, termRows - 8)
+  const sem = semantics(t)
+  const hasFeeds = subscribed.length > 0
+  const railWidth = Math.min(24, Math.max(16, Math.floor(width * 0.18)))
+  // One screen row per article (single-line rows) below the pane label + gap.
+  const compactList = (width - railWidth - 2) / 2 < 56
+  const listRows = Math.max(3, Math.floor((contentHeight - 2) / (compactList ? 2 : 1)))
+
+  const sourceStart = Math.max(
+    0,
+    Math.min(source - Math.floor((contentHeight - 2) / 2), sources.length - (contentHeight - 2))
+  )
+
+  const clampedSel = Math.min(sel, Math.max(0, visibleArticles.length - 1))
+  const selectedArticle = visibleArticles[clampedSel]
+  const selectedLink = selectedArticle?.link ?? ''
+  useEffect(() => {
+    readerRef.current?.scrollTo(0)
+    setArticleBody(null)
+    setReading(false)
+
+    if (!gw || !selectedLink) {
+      return
+    }
+
+    const cached = bodyCache.current.get(selectedLink)
+
+    if (cached) {
+      setArticleBody(cached)
+
+      return
+    }
+
+    let active = true
+
+    const timer = setTimeout(() => {
+      setReading(true)
+
+      const load = async () => {
+        await bodyPending.current?.catch(() => undefined)
+
+        if (!active) {
+          return null
+        }
+
+        const pending = gw.request('news.article', { url: selectedLink })
+        bodyPending.current = pending
+
+        try {
+          return await pending
+        } finally {
+          if (bodyPending.current === pending) {
+            bodyPending.current = null
+          }
         }
       }
 
-      return
+      void load()
+        .then(body => {
+          if (!active || !body) {
+            return
+          }
+
+          if (bodyCache.current.size >= 40) {
+            bodyCache.current.delete(bodyCache.current.keys().next().value!)
+          }
+
+          bodyCache.current.set(selectedLink, body)
+          setArticleBody(body)
+        })
+        .catch(() => {
+          if (active) {
+            setArticleBody({
+              text: '',
+              url: selectedLink,
+              status: 'unavailable',
+              message: 'Article unavailable; retaining feed content'
+            })
+          }
+        })
+        .finally(() => {
+          if (active) {
+            setReading(false)
+          }
+        })
+    }, 450)
+
+    return () => {
+      active = false
+      clearTimeout(timer)
     }
+  }, [gw, selectedLink])
+  const failedSources = Object.values(cacheRef.current).filter(entry => entry.error).length
 
-    if (ch === 'q') {
-      return onClose()
-    }
+  const usingArticle =
+    articleBody?.status === 'article' && articleBody.text.length > (selectedArticle?.content?.length ?? 0)
 
-    // `h` opens the unified Help modal — consistent on every view. Nav mode only
-    // (the `adding` + `searchMode` text guards above already returned).
-    if (ch === 'h') {
-      return openHelpOverlay()
-    }
-
-    if (key.escape) {
-      // Esc backs out of an active search first, then leaves the view.
-      if (searchActive) {
-        return clearSearch()
-      }
-
-      return onClose()
-    }
-
-    // `/` opens the instant fuzzy filter (keeps any current query to refine).
-    if (ch === '/') {
-      return setSearchMode(true)
-    }
-
-    if (ch === 'a') {
-      return openModal()
-    }
-
-    if (ch === 'r') {
-      setFlash('refreshing…')
-
-      return void refresh(true)
-    }
-
-    if (key.return) {
-      const article = visibleArticles[sel]
-      const target = article?.link || article?.feedUrl
-
-      if (target && openExternalUrl(ensureFeedUrlScheme(target))) {
-        setFlash('opened in browser')
-      }
-
-      return
-    }
-
-    if (key.tab || key.rightArrow) {
-      setSel(0)
-
-      return setSource(i => (i + 1) % sources.length)
-    }
-
-    if (key.leftArrow) {
-      setSel(0)
-
-      return setSource(i => (i - 1 + sources.length) % sources.length)
-    }
-
-    if (key.upArrow || ch === 'k' || key.wheelUp) {
-      return setSel(i => Math.max(0, i - 1))
-    }
-
-    if (key.downArrow || ch === 'j' || key.wheelDown) {
-      return setSel(i => Math.min(Math.max(0, visibleArticles.length - 1), i + 1))
-    }
-  }, { isActive: !globalModal })
-
-  const width = Math.max(48, cols - 4)
-  const contentHeight = Math.max(8, termRows - 7)
-  const sem = semantics(t)
-  const hasFeeds = subscribed.length > 0
-  const railWidth = Math.min(26, Math.max(20, Math.floor(width * 0.2)))
-  // One screen row per article (single-line rows) below the pane label + gap.
-  const listRows = Math.max(3, contentHeight - 2)
-  const clampedSel = Math.min(sel, Math.max(0, visibleArticles.length - 1))
-  const selectedArticle = visibleArticles[clampedSel]
+  const readerText = usingArticle
+    ? articleBody!.text
+    : selectedArticle?.content || selectedArticle?.summary || articleBody?.text || ''
 
   // Window the article list around the selection so scrolling stays visible.
   const listStart = Math.max(0, Math.min(clampedSel - Math.floor(listRows / 2), visibleArticles.length - listRows))
   const windowedArticles = visibleArticles.slice(Math.max(0, listStart), Math.max(0, listStart) + listRows)
 
-  const statusWord = fetching ? 'fetching…' : hasFeeds ? 'idle' : 'no feeds'
+  const statusWord = !ready
+    ? 'connecting…'
+    : fetching
+      ? 'fetching…'
+      : failedSources
+        ? `${failedSources} source errors · r retry`
+        : hasFeeds
+          ? 'live'
+          : 'no feeds'
 
   // Header is a single row. While typing a search the row becomes the input;
   // with an active search it appends a compact result indicator — neither adds a
@@ -576,7 +827,9 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
           <Text color={t.color.primary} inverse>
             {' '}
           </Text>
-          <Text color={t.color.muted}>{`   ${searchActive ? `${visibleArticles.length} matches · ` : ''}⏎ done · Esc clear`}</Text>
+          <Text
+            color={t.color.muted}
+          >{`   ${searchActive ? `${visibleArticles.length} matches · ` : ''}⏎ done · Esc clear`}</Text>
         </Text>
       ) : (
         <Text wrap="truncate-end">
@@ -600,9 +853,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
               <Text bold color={t.color.text}>
                 {truncate(searchActive, 28)}
               </Text>
-              <Text color={t.color.muted}>
-                {` · ${visibleArticles.length}/${articles.length} · Esc clear`}
-              </Text>
+              <Text color={t.color.muted}>{` · ${visibleArticles.length}/${articles.length} · Esc clear`}</Text>
             </Text>
           ) : null}
         </Text>
@@ -623,10 +874,11 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
       width={railWidth}
     >
       <Text bold color={t.color.label}>
-        SOURCES
+        SOURCES {source + 1}/{sources.length}
       </Text>
       <Box flexDirection="column" marginTop={1}>
-        {sources.map((src, i) => {
+        {sources.slice(sourceStart, sourceStart + contentHeight - 2).map((src, offset) => {
+          const i = sourceStart + offset
           const isActive = i === source
 
           const count =
@@ -639,7 +891,10 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
               justifyContent="space-between"
               key={src}
               onClick={() => {
-                if (adding || globalModal) {return}
+                if (adding || starterOpen || globalModal) {
+                  return
+                }
+
                 setSource(i)
                 setSel(0)
               }}
@@ -690,15 +945,34 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
             const provider = providerName(article.feedTitle)
 
             return (
-              <Box key={`${article.feedUrl}:${idx}`} onClick={() => { if (!adding && !globalModal) {setSel(idx)} }} width="100%">
+              <Box
+                flexDirection="column"
+                key={`${article.feedUrl}:${idx}`}
+                onClick={() => {
+                  if (!adding && !starterOpen && !globalModal) {
+                    setSel(idx)
+                  }
+                }}
+                width="100%"
+              >
                 <Text wrap="truncate-end">
                   <Text color={on ? sem.cursor : sem.faint}>{on ? '▸ ' : '  '}</Text>
-                  <Text color={sem.subtle}>{when} </Text>
-                  <Text color={providerColor(provider, t, providerColors)}>{provider} </Text>
+                  {!compactList ? (
+                    <>
+                      <Text color={sem.subtle}>{when} </Text>
+                      <Text color={providerColor(provider, t, providerColors)}>{provider} </Text>
+                    </>
+                  ) : null}
                   <Text bold={on} color={on ? sem.selectionFg : t.color.label}>
                     {article.title}
                   </Text>
                 </Text>
+                {compactList ? (
+                  <Text color={sem.subtle} wrap="truncate-end">
+                    {' '}
+                    {when} · {provider.trim()}
+                  </Text>
+                ) : null}
               </Box>
             )
           })
@@ -740,21 +1014,24 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
       overflow="hidden"
     >
       <Text bold color={t.color.label} wrap="truncate-end">
-        READER
+        READER{reading ? ' · loading…' : usingArticle ? ' · article' : ' · feed'}
       </Text>
       {selectedArticle ? (
-        <Box flexDirection="column" marginTop={1}>
+        <ScrollBox flexDirection="column" flexGrow={1} marginTop={1} minHeight={0} ref={readerRef}>
           <Text bold color={t.color.text} wrap="wrap">
             {selectedArticle.title}
           </Text>
           <Text color={t.color.muted} wrap="truncate-end">
             {selectedArticle.feedTitle}
-            {selectedArticle.publishedAt ? ` · ${relTime(selectedArticle.publishedAt)}` : ''}
+            {selectedArticle.publishedAt
+              ? ` · ${new Date(selectedArticle.publishedAt).toISOString().slice(0, 16).replace('T', ' ')} UTC`
+              : ' · Publication time unknown'}
+            {selectedArticle.author ? ` · ${selectedArticle.author}` : ''}
           </Text>
-          {selectedArticle.summary ? (
+          {readerText ? (
             <Box marginTop={1}>
               <Text color={t.color.text} wrap="wrap">
-                {truncate(selectedArticle.summary, 600)}
+                {readerText}
               </Text>
             </Box>
           ) : null}
@@ -767,10 +1044,15 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
           ) : null}
           <Box marginTop={1}>
             <Text color={t.color.muted} wrap="wrap">
-              Press Enter to open this article in your browser.
+              {reading
+                ? 'Loading article…'
+                : usingArticle
+                  ? articleBody?.message
+                  : `Publisher feed content${articleBody?.status === 'unavailable' ? ' · article unavailable' : ''}`}{' '}
+              · PgUp/PgDn scroll · Enter opens source.
             </Text>
           </Box>
-        </Box>
+        </ScrollBox>
       ) : (
         <Box flexDirection="column" marginTop={1}>
           <Box flexDirection="column">
@@ -786,7 +1068,9 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
                 ? fetching
                   ? 'Fetching the latest articles…'
                   : 'Select an article on the left to read it here.'
-                : 'No feeds yet. Press a to browse a catalog of quality RSS feeds, search them, or paste your own URL.'}
+                : starter.length
+                  ? 'No feeds yet. Press s to load the global news starter, or a to choose feeds and add your own URL.'
+                  : 'No feeds yet. Press a to choose feeds or add your own URL.'}
             </Text>
           </Box>
         </Box>
@@ -796,11 +1080,45 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
 
   const chips: FooterChip[] = [
     { k: '↑↓', label: 'Browse' },
-    { k: '/', label: 'Search', run: () => { setSearchMode(true); setSearchInput(searchActive) } },
-    { k: '⇥', label: 'Source', run: () => { setSel(0); setSource(i => (i + 1) % sources.length) } },
+    {
+      k: '/',
+      label: 'Search',
+      run: () => {
+        setSearchMode(true)
+        setSearchInput(searchActive)
+      }
+    },
+    {
+      k: '⇥',
+      label: 'Source',
+      run: () => {
+        setSel(0)
+        setSource(i => (i + 1) % sources.length)
+      }
+    },
     { k: '⏎', label: 'Open' },
     { k: 'a', label: 'Add feed', run: openModal },
-    { k: 'r', label: 'Refresh', run: () => { setFlash('refreshing…'); void refresh(true) } },
+    ...(starter.length
+      ? [
+          {
+            k: 's',
+            label: 'Starter',
+            run: () => {
+              setStarterChoice(0)
+              setStarterOpen(true)
+            }
+          }
+        ]
+      : []),
+    { k: 'PgUp/Dn', label: 'Read' },
+    {
+      k: 'r',
+      label: 'Refresh',
+      run: () => {
+        setFlash('refreshing…')
+        void refresh(true)
+      }
+    },
     { k: 'h', label: 'Help', run: openHelpOverlay },
     { k: 'q', label: 'Close', run: onClose }
   ]
@@ -810,7 +1128,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
       {/* The FooterChips are the ONE canonical shortcuts row (the always-on prose
           duplicate below them was removed). Only a transient flash survives, and
           only when there is something to say — never a second shortcuts row. */}
-      <FooterChips chips={chips} disabled={adding || globalModal} t={t} />
+      <FooterChips chips={chips} disabled={adding || starterOpen || globalModal} t={t} />
       {flash ? (
         <Text color={t.color.accent} wrap="truncate-end">
           {flash}
@@ -828,6 +1146,27 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
         {reader}
       </Box>
       {footer}
+      {starterOpen ? (
+        <NewsStarterModal
+          busy={saving}
+          choice={starterChoice}
+          cols={cols}
+          existing={subscribedUrls}
+          feeds={starter}
+          onApply={() => {
+            if (!globalModal && !saving) {
+              void configure(starterChoice === 1 && !subscribed.length ? 'empty' : 'starter')
+            }
+          }}
+          onChoose={value => {
+            if (!globalModal && !saving) {
+              setStarterChoice(value)
+            }
+          }}
+          rows={termRows}
+          t={t}
+        />
+      ) : null}
       {/* Body stays mounted; the overlay paints over it (its own absolute box).
           Body mouse handlers are gated while `adding` (rail/list onClick → no-op),
           and the keyboard is trapped by the `if (adding)` branch in useInput. */}

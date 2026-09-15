@@ -3,10 +3,9 @@ import { join } from 'node:path'
 
 import { forecastHomeDir } from './forecastHome.js'
 
-// The user's subscribed News feeds, persisted to ~/.superforecasting-agent/
-// news_feeds.json. The TUI owns this file (it is the only writer); a future
-// RSS fetcher can read it to know what to poll. Kept TUI-side on purpose so
-// adding feeds works against an installed build without a gateway round-trip.
+// Compatibility helpers for standalone terminal clients. Connected clients use
+// the backend NewsDesk owner for atomic, additive profile edits; never replace
+// its subscription file from the TUI. URL helpers remain shared with RSS parsing.
 
 export interface SubscribedFeed {
   addedAt: number
@@ -19,14 +18,17 @@ export interface SubscribedFeed {
 export const newsFeedsFile = (dir = forecastHomeDir()) => join(dir, 'news_feeds.json')
 
 // Normalised key for de-duplication / membership tests: lowercased, protocol-
-// and trailing-slash-insensitive so http vs https and a stray slash don't make
+// and trailing-slash-insensitive; preserve case-sensitive paths and queries so they do not make
 // the same feed look like two.
-export const normalizeFeedUrl = (url: string): string =>
-  url
-    .trim()
-    .toLowerCase()
-    .replace(/^https?:\/\//, '')
-    .replace(/\/+$/, '')
+export const normalizeFeedUrl = (url: string): string => {
+  try {
+    const parsed = new URL(ensureFeedUrlScheme(url))
+
+    return `${parsed.host.toLowerCase()}${parsed.pathname.replace(/\/+$/, '')}${parsed.search}`
+  } catch {
+    return url.trim()
+  }
+}
 
 export const isFeedUrl = (value: string): boolean => {
   const v = value.trim()
@@ -36,7 +38,13 @@ export const isFeedUrl = (value: string): boolean => {
   }
 
   if (/^https?:\/\//i.test(v)) {
-    return true
+    try {
+      const url = new URL(v)
+
+      return Boolean(url.hostname) && !url.username && !url.password
+    } catch {
+      return false
+    }
   }
 
   // Bare domain with a path/extension, e.g. example.com/feed.xml
@@ -53,7 +61,10 @@ export const feedHost = (url: string): string => {
   try {
     return new URL(ensureFeedUrlScheme(url)).host.replace(/^www\./, '')
   } catch {
-    return url.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0]
+    return url
+      .replace(/^https?:\/\//, '')
+      .replace(/^www\./, '')
+      .split('/')[0]
   }
 }
 

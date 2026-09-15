@@ -53,3 +53,10 @@ and [engineering backlog](../../TODO.md) for cross-package context.
 ## Data desk
 
 `data_desk.py` owns catalog selection preview/apply, scoped edits, saved prediction-event merges and credential connection. All clients use these operations; presets never overwrite existing personal selections.
+
+## News desk
+
+`news_desk.py` owns the connected profile's news subscriptions, legacy-file
+reading and atomic additive starter/individual edits. Setup and TUI RPC use the
+same operations. Public acquisition and parsing live in `forecasting/news/`;
+wire models live in `protocol/rpc/news.py`. No news operation changes forecasts.

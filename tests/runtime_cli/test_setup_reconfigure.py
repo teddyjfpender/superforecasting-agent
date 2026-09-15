@@ -115,6 +115,7 @@ class TestExistingInstallDefault:
                 gateway="superforecasting_agent.runtime.setup.setup_gateway",
                 tools="superforecasting_agent.runtime.setup.setup_tools",
                 data_desk="superforecasting_agent.runtime.data_desk.setup_data_desk",
+                news_desk="superforecasting_agent.runtime.news_desk.setup_news_desk",
             )
             from superforecasting_agent.runtime.setup import run_setup_wizard
             run_setup_wizard(args)
@@ -145,6 +146,7 @@ class TestExistingInstallDefault:
                 gateway="superforecasting_agent.runtime.setup.setup_gateway",
                 tools="superforecasting_agent.runtime.setup.setup_tools",
                 data_desk="superforecasting_agent.runtime.data_desk.setup_data_desk",
+                news_desk="superforecasting_agent.runtime.news_desk.setup_news_desk",
             )
             from superforecasting_agent.runtime.setup import run_setup_wizard
             run_setup_wizard(args)
@@ -174,6 +176,7 @@ class TestQuickFlag:
                 gateway="superforecasting_agent.runtime.setup.setup_gateway",
                 tools="superforecasting_agent.runtime.setup.setup_tools",
                 data_desk="superforecasting_agent.runtime.data_desk.setup_data_desk",
+                news_desk="superforecasting_agent.runtime.news_desk.setup_news_desk",
             )
             from superforecasting_agent.runtime.setup import run_setup_wizard
             run_setup_wizard(args)

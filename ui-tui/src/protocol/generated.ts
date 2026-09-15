@@ -2900,6 +2900,36 @@ export interface NewsArticle {
   title: string
 }
 
+export interface NewsArticleResponse {
+  message: string
+  status: 'article' | 'excerpt' | 'unavailable'
+  text: string
+  url: string
+}
+
+export interface NewsConfigureRequest {
+  action: 'add' | 'empty' | 'remove' | 'starter'
+  feed: null | NewsSubscription
+}
+
+export interface NewsDeskRequest {
+}
+
+export interface NewsDeskResponse {
+  feeds: NewsSubscription[]
+  starter: NewsSubscription[]
+  state: 'configured' | 'unconfigured'
+}
+
+export interface NewsFeedRequest {
+  url: string
+}
+
+export interface NewsFeedResponse {
+  url: string
+  xml: string
+}
+
 export interface NewsSearchRequest {
   articles: NewsArticle[]
   limit: number
@@ -2909,6 +2939,14 @@ export interface NewsSearchRequest {
 export interface NewsSearchResponse {
   engine: string
   results: Record<string, unknown>[]
+}
+
+export interface NewsSubscription {
+  addedAt: number
+  category: string
+  custom: boolean
+  title: string
+  url: string
 }
 
 export interface ObsidianAppendRequest {
@@ -4656,6 +4694,29 @@ export interface RpcMethods {
       slug: string
     }
     result: ModelOptionProvider
+  }
+  'news.article': {
+    params: {
+      url: string
+    }
+    result: NewsArticleResponse
+  }
+  'news.configure': {
+    params: {
+      action: 'add' | 'empty' | 'remove' | 'starter'
+      feed?: null | NewsSubscription
+    }
+    result: NewsDeskResponse
+  }
+  'news.desk': {
+    params: Record<string, never>
+    result: NewsDeskResponse
+  }
+  'news.feed': {
+    params: {
+      url: string
+    }
+    result: NewsFeedResponse
   }
   'news.search': {
     params: {
