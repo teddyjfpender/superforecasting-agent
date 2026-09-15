@@ -9,9 +9,11 @@ import { expect, it, vi } from 'vitest'
 import type * as SignalClient from '../lib/signalClient.js'
 import { waitForText } from '../testing/settle.js'
 
+const transport = vi.hoisted(() => vi.fn())
 vi.mock('../lib/signalClient.js', async importOriginal => ({
   ...(await importOriginal<typeof SignalClient>()),
   checkHealth: async () => true,
+  sendSignalMessage: transport,
   listContacts: async () => [{ id: '+15550000001', name: 'Ada Lovelace', aliases: ['Ada'] }],
   listGroups: async () => [],
   signalRpc: async () => ({ result: null, error: null }),
@@ -54,6 +56,47 @@ it('refreshes names in the real messaging view, opens f search and enters a chat
     stdin.write('\r')
     await waitForText(() => stripAnsi(output), 'Write a message')
     expect(stripAnsi(output)).not.toContain('FIND CONTACT OR CHAT')
+    // Cursor navigation edits text; Left at the boundary returns to the rail.
+    stdin.write('abc')
+    const { $chatState } = await import('../lib/messagingState.js')
+    await vi.waitFor(() => expect($chatState.get()['+15550000001']?.draft).toBe('abc'))
+    output = ''
+    stdin.write('\x1b[D')
+    await new Promise(resolve => setTimeout(resolve, 60))
+    expect(stripAnsi(output)).not.toContain('New / group')
+    stdin.write('\x1b[D\x1b[D\x1b[D')
+    await waitForText(() => stripAnsi(output), 'New / group')
+    expect($chatState.get()['+15550000001']?.draft).toBe('abc')
+    output = ''
+    stdin.write('\x1b[C')
+    await waitForText(() => stripAnsi(output), 'Shift+Enter newline')
+    let finish!: (value: { error: null; timestamp: number }) => void
+    transport.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          finish = resolve
+        })
+    )
+    output = ''
+    stdin.write('\r')
+    await waitForText(() => stripAnsi(output), '◷')
+    expect(stripAnsi(output)).not.toContain('sending…')
+    output = ''
+    finish({ error: null, timestamp: Date.now() })
+    await waitForText(() => stripAnsi(output), 'abc ✓')
+    await vi.waitFor(() => expect($chatState.get()['+15550000001']?.draft).toBe(''))
+    output = ''
+    stdin.write('\x1b[D')
+    await waitForText(() => stripAnsi(output), 'New / group')
+    output = ''
+    stdin.write('\x1b[C')
+    await waitForText(() => stripAnsi(output), 'Write a message')
+    stdin.write('test failure')
+    await vi.waitFor(() => expect($chatState.get()['+15550000001']?.draft).toBe('test failure'))
+    transport.mockResolvedValueOnce({ error: 'offline', timestamp: 0 })
+    stdin.write('\r')
+    await waitForText(() => stripAnsi(output), 'Delivery unconfirmed')
+    expect($chatState.get()['+15550000001']?.draft).toBe('test failure')
   } finally {
     app.unmount()
     app.cleanup()

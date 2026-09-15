@@ -71,3 +71,7 @@ and [engineering backlog](../../../TODO.md) for cross-package context.
 compose and group-member selection. Keep search ranking in `messagingSearch.ts`
 and contact synchronization in `signalDirectory.ts`; the picker owns bounded
 layout, scopes and selection only.
+
+`messageComposer.tsx` owns the bounded message editor used by chat and quick
+compose. Send attempts are shared through `messagingSend.ts`; message status
+belongs in the conversation, while draft persistence remains with the caller.
