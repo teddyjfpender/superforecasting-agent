@@ -7,6 +7,7 @@ import { resolveViewChord } from '../content/keymaps.js'
 import type { VoiceRecordResponse } from '../gatewayTypes.js'
 import { completionRequestForInput } from '../hooks/useCompletion.js'
 import { forecastFindDraft, forecastShortcutForKey } from '../lib/forecastShortcuts.js'
+import { $quickMessage, openQuickMessage } from '../lib/messagingState.js'
 import { isAction, isCopyShortcut, isMac, isVoiceToggleKey } from '../lib/platform.js'
 import { computePrecisionWheelStep, initPrecisionWheel } from '../lib/precisionWheel.js'
 import { dismissFirstRunHint } from '../lib/uiFlagsStore.js'
@@ -318,6 +319,17 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
 
   useInput((ch, key, event) => {
     const live = getUiState()
+
+    if ($quickMessage.get()) {
+      return
+    }
+
+    if (canOpenGlobalOverlay(overlay) && key.meta && ch.toLowerCase() === 'm') {
+      ;(event as unknown as { stopImmediatePropagation?: () => void }).stopImmediatePropagation?.()
+      openQuickMessage()
+
+      return
+    }
 
     // ── Global interaction chrome: command palette ──────────────────────────
     // Ctrl+K opens the palette from ANYWHERE — the Home composer or over a

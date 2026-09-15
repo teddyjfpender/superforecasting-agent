@@ -11,8 +11,14 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 from pathlib import Path
 from typing import Any
+
+from superforecasting_agent.storage.files import atomic_text_write
+from superforecasting_agent.storage.locking import file_lock
+
+_NOTE_LOCKS = threading.local()
 
 MANAGED_BEGIN = "<!-- superforecasting:begin -->"
 MANAGED_END = "<!-- superforecasting:end -->"
@@ -123,6 +129,11 @@ def splice_managed_block(existing: str | None, generated: str) -> str:
     return block + "\n\n" + existing.lstrip("\n")
 
 
-def write_note(path: Path, content: str) -> None:
+def write_note(path: Path, content: str, *, expected_content: str | None = None) -> None:
+    """Serialize plugin writes, reject stale edits and atomically replace notes."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+    with file_lock(path.with_name("." + path.name + ".lock"), _NOTE_LOCKS, 10, "Note is busy; retry saving"):
+        if expected_content is not None:
+            if not path.exists() or path.read_text(encoding="utf-8") != expected_content:
+                raise ValueError("Document changed since it was opened; reload and reconcile your saved draft")
+        atomic_text_write(path, content)

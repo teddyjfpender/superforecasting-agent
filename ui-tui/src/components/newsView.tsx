@@ -8,6 +8,7 @@ import { FEED_CATEGORIES } from '../content/newsFeedCatalog.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import { type FieldSpec, rankItems } from '../lib/fuzzyRank.js'
 import { statusGlyph } from '../lib/icons.js'
+import { openQuickMessage } from '../lib/messagingState.js'
 import { fetchBackendFeed, uniqueArticles } from '../lib/newsDesk.js'
 import { type ArticleCache, loadArticleCache, pruneArticleCache, saveArticleCache } from '../lib/newsFeedCache.js'
 import { type Article, fetchFeeds } from '../lib/newsFeedFetch.js'
@@ -24,6 +25,7 @@ import {
 import { nextProviderColor, providerColor } from '../lib/newsProviderColor.js'
 import { loadProviderColors, type ProviderColors, saveProviderColors } from '../lib/newsProviderColorStore.js'
 import { openExternalUrl } from '../lib/openExternalUrl.js'
+import { useShareItem } from '../lib/useShareItem.js'
 import { semantics } from '../lib/visualSemantics.js'
 import type { NewsArticleResponse, NewsSubscription } from '../protocol/generated.js'
 import type { Theme } from '../theme.js'
@@ -609,6 +611,10 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
         return
       }
 
+      if (ch === 'm') {
+        return openQuickMessage()
+      }
+
       if (ch === 'q') {
         return onClose()
       }
@@ -712,6 +718,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
 
   const clampedSel = Math.min(sel, Math.max(0, visibleArticles.length - 1))
   const selectedArticle = visibleArticles[clampedSel]
+  useShareItem(selectedArticle?.title || '', selectedArticle?.link || '')
   const selectedLink = selectedArticle?.link ?? ''
 
   const selectedKey = selectedArticle

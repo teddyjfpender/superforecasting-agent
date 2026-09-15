@@ -13,6 +13,7 @@ import { changeReference, formatMarketChange, lastMovement } from '../lib/market
 import { fetchQuotes, type MarketQuote } from '../lib/marketFetch.js'
 import { marketColumns, marketTopicWindow } from '../lib/marketLayout.js'
 import { type MarketConfig, type QuoteCache, quoteKey } from '../lib/marketStore.js'
+import { openQuickMessage } from '../lib/messagingState.js'
 import { loadModelCatalog, saveModelCatalog } from '../lib/modelStore.js'
 import { openExternalUrl } from '../lib/openExternalUrl.js'
 import { venueLabel } from '../lib/pmData.js'
@@ -27,6 +28,7 @@ import { asRpcResult } from '../lib/rpc.js'
 import { blockChart, sparkline } from '../lib/sparkline.js'
 import { sortIndicator, sortRows, type SortValue, useTableSort } from '../lib/tableSort.js'
 import { usePmSection } from '../lib/usePmSection.js'
+import { useShareItem } from '../lib/useShareItem.js'
 import { dirColor, dirGlyph, pad, semantics } from '../lib/visualSemantics.js'
 import type { DataEvents, MarketCatalogResponse, MarketProviderStatus } from '../protocol/generated.js'
 import { WireEvent } from '../protocol/generated.js'
@@ -1078,6 +1080,10 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
       }
 
       if (ch === 'm') {
+        return openQuickMessage()
+      }
+
+      if (ch === 'M') {
         setSel(0)
         setModelSel(0)
 
@@ -1683,6 +1689,14 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
 
   // ---- right: security detail card ----------------------------------------
   const q = selectedRow?.quote
+  useShareItem(
+    pmTabActive ? pm.detailItem?.event.title || '' : q?.name || q?.symbol || '',
+    pmTabActive
+      ? `Prediction market · ${pm.detailItem?.event.title || ''}\n${pm.detailItem?.event.url || ''}`
+      : q
+        ? `${q.value ?? 'Unavailable'} ${q.unit || ''} · CHG ${q.change ?? 'unavailable'} · ${q.provider} · observed ${q.asOf ? new Date(q.asOf).toISOString() : 'unknown'}`
+        : ''
+  )
   const s = selectedRow?.series
   const chartW = Math.max(12, detailWidth - 2)
   const chart = q?.history ? blockChart(q.history, chartW, 7) : []

@@ -21,6 +21,18 @@ These are entry points and representative modules, not an exhaustive inventory.
 | [appOverlays.tsx](appOverlays.tsx)           | appOverlays.      |
 | [asciiAnimation.tsx](asciiAnimation.tsx)     | asciiAnimation.   |
 
+## Messaging and documents
+
+- `messagingView.tsx` owns conversation navigation; `quickMessage.tsx` provides
+  global compose and forwarding. Both use the shared send owner.
+- `documentDesk.tsx` owns library selection and editing; `documentReader.tsx`
+  bounds Markdown/LaTeX scrolling; `documentConnections.tsx` owns explicit sync.
+- Gate background keyboard and mouse actions while a modal is open. Keep drafts
+  outside component lifetime and reject stale asynchronous selection results.
+
+See the [desk architecture](../../../../docs/architecture/messaging-docs-desk.md)
+for keybindings, storage ownership and regression coverage.
+
 ## Subdirectories
 
 - [desk/](desk/README.md) — Desk display helpers.

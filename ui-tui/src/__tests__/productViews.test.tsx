@@ -535,7 +535,7 @@ describe('MessagingView', () => {
 
     expect(text).toContain('MESSAGING')
     expect(text).toContain('Signal')
-    expect(text).toContain('Telegram (soon)')
+    expect(text).not.toContain('Telegram (soon)')
     expect(text).toContain('not connected')
     expect(text).toContain('Press s')
     expect(text).toContain('set up Signal')

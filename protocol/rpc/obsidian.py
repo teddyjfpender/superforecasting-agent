@@ -90,6 +90,7 @@ __all__ = [
 class ObsidianWriteRequest(WireModel):
     rel_path: str
     content: str
+    expected_content: str | None = None
 
 
 class ObsidianCreateRequest(WireModel):
