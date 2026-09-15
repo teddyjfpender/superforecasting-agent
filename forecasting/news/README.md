@@ -8,8 +8,9 @@ and article-body parsing. It never creates evidence or changes forecast probabil
 - `transport.py`: public URL checks on requests and redirects, verified TLS,
   timeouts and a 2 MiB response limit. Uses the existing URL safety policy;
   DNS preflight has the same documented rebinding limitation as that policy.
-- `articles.py`: pure HTML-to-text extraction. Prefer body containers, omit
-  hidden/navigation content and label excerpts. Never bypass publisher access gates.
+- `articles.py`: pure HTML-to-Markdown extraction. Select one article body, retain
+  paragraphs, headings and lists, omit hidden/navigation/advertising content,
+  and label excerpts. Split sections may join only within the same article. Never bypass publisher access gates.
 
 To add a starter source, verify its official feed URL, live entries, publication
 metadata and access terms; add a catalog row and record qualification. For a

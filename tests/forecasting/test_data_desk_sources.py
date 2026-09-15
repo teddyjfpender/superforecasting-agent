@@ -236,3 +236,16 @@ def test_bls_shared_parser_rejects_wrong_identity_and_excludes_annual_average():
     payload["Results"]["series"][0]["seriesID"] = "WRONG"
     with pytest.raises(ProviderFailure):
         parse_bls(payload, ref)
+
+
+def test_sparse_change_retains_previous_available_observation():
+    from datetime import date, timedelta
+    from forecasting.marketdata.model import DatedValue, SeriesRef
+    start = date(2025, 1, 1)
+    points = [DatedValue(period_start=(start + timedelta(days=i)).isoformat(), period_end=(start + timedelta(days=i)).isoformat(), value=10 if i == 0 else 12 if i == 50 else None) for i in range(51)]
+    quote = observation_quote(SeriesRef(provider="test", symbol="sparse"), points)
+    assert quote.value == 12
+    assert quote.change == 2
+    assert quote.changePct == 20
+    assert len(quote.dated_history) <= 36
+    assert quote.dated_history[0].value == 10

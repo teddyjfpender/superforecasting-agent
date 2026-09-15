@@ -9,6 +9,7 @@ import type { GatewayClient } from '../gatewayClient.js'
 import { catalogSeries, deskConfig, saveDeskFields } from '../lib/dataDesk.js'
 import { type FieldSpec, rankItems } from '../lib/fuzzyRank.js'
 import { statusGlyph } from '../lib/icons.js'
+import { changeReference } from '../lib/marketChange.js'
 import { fetchQuotes, type MarketQuote } from '../lib/marketFetch.js'
 import { marketColumns, marketTopicWindow } from '../lib/marketLayout.js'
 import { type MarketConfig, type QuoteCache, quoteKey } from '../lib/marketStore.js'
@@ -337,7 +338,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
         .filter(
           provider =>
             config.providers.includes(provider.id) &&
-            provider.auth !== 'none' &&
+            provider.auth === 'required' &&
             !desk?.configured_providers.includes(provider.id)
         )
         .map(provider => ({
@@ -347,7 +348,9 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
         }))
         .concat(
           Object.values(providerStatus)
-            .filter(status => !['ready', 'refreshing'].includes(status.status))
+            .filter(
+              status => config.providers.includes(status.provider) && !['ready', 'refreshing'].includes(status.status)
+            )
             .map(status => ({
               label: `${status.provider}: ${status.status.replaceAll('_', ' ')}`,
               detail: status.message ?? 'Try refreshing this source.',
@@ -357,7 +360,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     [desk, config.providers, providerStatus]
   )
 
-  const providersMissingKey = infoItems
+  const dataWarnings = infoItems
 
   // ── Market Models data flow ────────────────────────────────────────────
   const refreshModels = () => {
@@ -927,7 +930,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     const facts = [
       `${ss.name} (${ss.symbol})`,
       qq?.value != null ? `last ${fmtNum(qq.value, ss.unit)}${qq.currency ? ` ${qq.currency}` : ''}` : '',
-      qq?.changePct != null ? `${fmtPct(qq.changePct)} today` : ''
+      qq?.changePct != null ? `${fmtPct(qq.changePct)} vs prior reference` : ''
     ]
       .filter(Boolean)
       .join(', ')
@@ -1386,11 +1389,11 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
               </Text>
             </>
           )}
-          {providersMissingKey.length ? (
+          {dataWarnings.length ? (
             <Text color={sem.star}>
               {'   [!] '}
               <Text color={t.color.muted}>press </Text>
-              <Text color={sem.star}>h</Text>
+              <Text color={sem.star}>i · Data status</Text>
             </Text>
           ) : null}
         </Text>
@@ -1768,6 +1771,12 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
               {q ? `${dirGlyph(q.change)} ${fmtSigned(q.change)}  ${fmtPct(q.changePct)}` : '—'}
             </Text>
           </Box>
+
+          {q ? (
+            <Text color={sem.subtle} wrap="wrap">
+              {changeReference(q)}
+            </Text>
+          ) : null}
 
           {chart.length ? (
             <Box flexDirection="column" marginTop={1}>

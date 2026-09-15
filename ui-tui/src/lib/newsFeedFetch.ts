@@ -47,7 +47,7 @@ const clean = (raw: string | null | undefined, limit = 0, paragraphs = false): s
   }
 
   let s = stripCdata(raw)
-  s = s.replace(/<(script|style|noscript)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
+  s = s.replace(/<(script|style|noscript|nav|aside|footer|form)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
   s = s.replace(/<[^>]+>/g, ' ') // strip HTML tags
   s = decodeEntities(s)
   s = [...s]

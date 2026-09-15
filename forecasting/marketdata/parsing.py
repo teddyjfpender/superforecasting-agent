@@ -48,8 +48,17 @@ def observation_quote(ref: SeriesRef, points: list[DatedValue]) -> Quote:
                 "Provider returned conflicting observations for one period",
             )
         unique[point.period_start] = point
-    history = sorted(unique.values(), key=lambda point: point.period_start)[-36:]
-    usable = [point for point in history if point.value is not None]
+    ordered = sorted(unique.values(), key=lambda point: point.period_start)
+    usable = [point for point in ordered if point.value is not None][-36:]
+    # Bound display history after finding usable measurements: sparse reporting
+    # must not erase the prior observation behind a run of missing periods.
+    history = ordered[-36:]
+    retained = [point for point in usable[-2:] if point not in history]
+    if retained:
+        history = sorted(
+            [*retained, *history[-(36 - len(retained)) :]],
+            key=lambda point: point.period_start,
+        )
     last = usable[-1] if usable else None
     previous = usable[-2].value if len(usable) > 1 else None
     change, percent = change_columns(last.value if last else None, previous)
