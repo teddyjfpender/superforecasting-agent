@@ -104,7 +104,9 @@ were exercised against a user's accounts.
 ## Sharing a data feed
 
 On Markets, select a numeric feed and press **m**, choose a recipient, then
-review the snapshot before **Ctrl+Enter** sends it. A caption is optional.
+review the live chart preview before **Ctrl+Enter** sends it. A caption is optional.
+The modal shows the send shortcut and chart/horizon controls; its preview adapts
+to terminal height and updates when the presentation or horizon changes.
 **Shift+Tab** focuses chart settings: left/right changes bar/line presentation;
 up/down selects the latest 6, 12, 24 or 120 observations; Enter returns to writing.
 **Ctrl+R** includes/excludes the forwarded item. Sparse observations keep their

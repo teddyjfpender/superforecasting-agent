@@ -20,73 +20,88 @@ vi.mock('../lib/signalClient.js', async importOriginal => ({
   openReceiveStream: () => () => {}
 }))
 
-it('selects a contact, edits chart settings and sends a typed feed without requiring a caption', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'feed-share-flow-'))
-  vi.stubEnv('SUPERFORECASTING_AGENT_HOME', root)
-  vi.stubEnv('SIGNAL_ACCOUNT', '+15550000999')
-  const { QuickMessage } = await import('../components/quickMessage.js')
-  const { MessagingView } = await import('../components/messagingView.js')
-  const { stopSignalReceiver } = await import('../lib/signalLive.js')
-  const { $quickMessage } = await import('../lib/messagingState.js')
-  const { resetOverlayState } = await import('../app/overlayStore.js')
-  const { Box, render } = await import('@superforecasting/ink')
-  const { DARK_THEME } = await import('../theme.js')
-  const { stripAnsi } = await import('../lib/text.js')
-  resetOverlayState()
-  const feed = JSON.parse(readFileSync(new URL('../../../tests/fixtures/feed_share/v1.json', import.meta.url), 'utf8'))
-  $quickMessage.set({ item: { title: 'IPCA', text: 'Monthly release', feed } })
+it.each([
+  [100, 30],
+  [80, 24]
+])(
+  'previews and sends a feed at %ix%i with visible shortcuts',
+  async (cols, rows) => {
+    transport.mockClear()
+    const root = mkdtempSync(join(tmpdir(), 'feed-share-flow-'))
+    vi.stubEnv('SUPERFORECASTING_AGENT_HOME', root)
+    vi.stubEnv('SIGNAL_ACCOUNT', '+15550000999')
+    const { QuickMessage } = await import('../components/quickMessage.js')
+    const { MessagingView } = await import('../components/messagingView.js')
+    const { stopSignalReceiver } = await import('../lib/signalLive.js')
+    const { $quickMessage } = await import('../lib/messagingState.js')
+    const { resetOverlayState } = await import('../app/overlayStore.js')
+    const { Box, render } = await import('@superforecasting/ink')
+    const { DARK_THEME } = await import('../theme.js')
+    const { stripAnsi } = await import('../lib/text.js')
+    resetOverlayState()
 
-  const stdout = new PassThrough(),
-    stdin = new PassThrough()
-
-  Object.assign(stdout, { columns: 100, rows: 30, isTTY: false })
-  Object.assign(stdin, { isTTY: true, isRaw: false, setRawMode: () => {}, ref: () => stdin, unref: () => stdin })
-  let output = ''
-  stdout.on('data', chunk => {
-    output += String(chunk)
-  })
-
-  const app = await render(
-    <Box height={30} width={100}>
-      <QuickMessage cols={100} rows={30} t={DARK_THEME} />
-    </Box>,
-    { stdout: stdout as never, stdin: stdin as never, debug: true, patchConsole: false, exitOnCtrlC: false }
-  )
-
-  try {
-    await waitForText(() => stripAnsi(output), 'Ada')
-    stdin.write('\r')
-    await waitForText(() => stripAnsi(output), 'Shift+Tab edit')
-    stdin.write('\x1b[Z')
-    await waitForText(() => stripAnsi(output), 'Enter compose')
-    stdin.write('\x1b[C')
-    await waitForText(() => stripAnsi(output), 'line-chart')
-    stdin.write('\x1b[A')
-    await waitForText(() => stripAnsi(output), 'latest 12 observations')
-    output = ''
-    stdin.write('\r')
-    await waitForText(() => stripAnsi(output), 'Tab recipient')
-    stdin.write('\x1b[13;5u')
-    await vi.waitFor(() => expect(transport).toHaveBeenCalledTimes(1))
-    const shared = decodeFeedMessage(transport.mock.calls[0]![2])
-    expect(shared.share?.presentation).toBe('line-chart')
-    expect(shared.share?.feeds[0]?.points).toHaveLength(3)
-    expect($quickMessage.get()).toBeNull()
-    app.rerender(
-      <Box height={30} width={100}>
-        <MessagingView onClose={() => {}} t={DARK_THEME} />
-      </Box>
+    const feed = JSON.parse(
+      readFileSync(new URL('../../../tests/fixtures/feed_share/v1.json', import.meta.url), 'utf8')
     )
-    await waitForText(() => stripAnsi(output), 'Shared snapshot')
-    expect(stripAnsi(output)).toContain('-0.32')
-    expect(stripAnsi(output)).not.toContain('```sfa-feed')
-  } finally {
-    stopSignalReceiver()
-    app.unmount()
-    app.cleanup()
-    stdout.destroy()
-    stdin.destroy()
-    vi.unstubAllEnvs()
-    rmSync(root, { recursive: true, force: true })
-  }
-})
+
+    $quickMessage.set({ item: { title: 'IPCA', text: 'Monthly release', feed } })
+
+    const stdout = new PassThrough(),
+      stdin = new PassThrough()
+
+    Object.assign(stdout, { columns: cols, rows, isTTY: false })
+    Object.assign(stdin, { isTTY: true, isRaw: false, setRawMode: () => {}, ref: () => stdin, unref: () => stdin })
+    let output = ''
+    stdout.on('data', chunk => {
+      output += String(chunk)
+    })
+
+    const app = await render(
+      <Box height={rows} width={cols}>
+        <QuickMessage cols={cols} rows={rows} t={DARK_THEME} />
+      </Box>,
+      { stdout: stdout as never, stdin: stdin as never, debug: true, patchConsole: false, exitOnCtrlC: false }
+    )
+
+    try {
+      await waitForText(() => stripAnsi(output), 'Ada')
+      stdin.write('\r')
+      await waitForText(() => stripAnsi(output), '[Shift+Tab chart/horizon]')
+      expect(stripAnsi(output)).toContain('[Ctrl+Enter send]')
+      expect(stripAnsi(output)).toContain('zero baseline')
+      expect(stripAnsi(output)).toContain('█')
+      stdin.write('\x1b[Z')
+      await waitForText(() => stripAnsi(output), 'Enter compose')
+      stdin.write('\x1b[C')
+      await waitForText(() => stripAnsi(output), 'line-chart')
+      stdin.write('\x1b[A')
+      await waitForText(() => stripAnsi(output), 'latest 12 observations')
+      output = ''
+      stdin.write('\r')
+      await waitForText(() => stripAnsi(output), 'Tab recipient')
+      stdin.write('\x1b[13;5u')
+      await vi.waitFor(() => expect(transport).toHaveBeenCalledTimes(1))
+      const shared = decodeFeedMessage(transport.mock.calls[0]![2])
+      expect(shared.share?.presentation).toBe('line-chart')
+      expect(shared.share?.feeds[0]?.points).toHaveLength(3)
+      expect($quickMessage.get()).toBeNull()
+      app.rerender(
+        <Box height={rows} width={cols}>
+          <MessagingView onClose={() => {}} t={DARK_THEME} />
+        </Box>
+      )
+      await waitForText(() => stripAnsi(output), 'Shared snapshot')
+      expect(stripAnsi(output)).toContain('-0.32')
+      expect(stripAnsi(output)).not.toContain('```sfa-feed')
+    } finally {
+      stopSignalReceiver()
+      app.unmount()
+      app.cleanup()
+      stdout.destroy()
+      stdin.destroy()
+      vi.unstubAllEnvs()
+      rmSync(root, { recursive: true, force: true })
+    }
+  },
+  15000
+)

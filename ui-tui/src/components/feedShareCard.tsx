@@ -9,12 +9,14 @@ export function FeedShareCard({
   share,
   width,
   t,
-  compact = false
+  compact = false,
+  chartHeight = 5
 }: {
   share: FeedShare
   width: number
   t: Theme
   compact?: boolean
+  chartHeight?: number
 }) {
   return (
     <Box flexDirection="column" flexShrink={0} width={Math.max(12, width)}>
@@ -26,17 +28,20 @@ export function FeedShareCard({
           <Text color={t.color.text} wrap="truncate-end">
             {feed.points.at(-1)?.value ?? '—'} {feed.unit} · {feed.provider}:{feed.symbol}
           </Text>
-          {!compact &&
-            feedChartLines(feed.points, share.presentation, Math.max(4, width - 2)).map((line, i) => (
-              <Text color={i === 0 || i === 6 ? t.color.muted : t.color.accent} key={i}>
+          {!compact && (
+            <Text color={t.color.muted} wrap="truncate-end">
+              Shared snapshot · {feed.kind} · {feed.revision_policy}
+            </Text>
+          )}
+          {feedChartLines(feed.points, share.presentation, Math.max(4, width - 2), chartHeight).map(
+            (line, i, lines) => (
+              <Text color={i === 0 || i === lines.length - 1 ? t.color.muted : t.color.accent} key={i}>
                 {line}
               </Text>
-            ))}
+            )
+          )}
           <Text color={t.color.muted} wrap="truncate-end">
             {feed.points[0]?.start} → {feed.points.at(-1)?.end} · {feed.points.length} observations
-          </Text>
-          <Text color={t.color.muted} wrap="truncate-end">
-            Shared snapshot · {feed.kind} · {feed.revision_policy}
           </Text>
           {!compact && (
             <Text color={t.color.muted} wrap="truncate-end">

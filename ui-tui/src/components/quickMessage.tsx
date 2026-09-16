@@ -35,9 +35,11 @@ export function QuickMessage({ cols, rows, t }: { cols: number; rows: number; t:
   const book = useStore($signalDirectory)
   const modalWidth = cols < 100 ? Math.max(40, cols - 2) : Math.max(48, Math.min(cols - 6, 88))
 
+  const previewHeight = rows >= 32 ? 4 : 2
+
   const draftRows = Math.max(
     1,
-    Math.min(6, Math.min(rows - 6, 30) - 14 - (includeItem && request?.item ? (feed ? 6 : 2) : 0))
+    Math.min(6, Math.min(rows - 6, 30) - 14 - (includeItem && request?.item ? (feed ? 8 + previewHeight : 2) : 0))
   )
 
   const send = async (value = draft) => {
@@ -99,12 +101,18 @@ export function QuickMessage({ cols, rows, t }: { cols: number; rows: number; t:
         key.escape ||
         key.tab ||
         sending.current ||
-        (key.ctrl && input.toLowerCase() === 'r')
+        (key.ctrl && (input.toLowerCase() === 'r' || key.return))
       ) {
         ;(event as unknown as { stopImmediatePropagation?: () => void }).stopImmediatePropagation?.()
       }
 
       if (sending.current) {
+        return
+      }
+
+      if (key.ctrl && key.return) {
+        void send()
+
         return
       }
 
@@ -177,21 +185,23 @@ export function QuickMessage({ cols, rows, t }: { cols: number; rows: number; t:
       cols={cols}
       footerHint={
         optionsFocused
-          ? '←/→ chart · ↑/↓ observations · Enter compose'
-          : `Tab recipient · ${feed ? 'Shift+Tab chart · ' : ''}Ctrl+R forward · Esc keep draft`
+          ? '[←/→ chart] [↑/↓ horizon] [Enter compose]'
+          : '[Tab recipient] [Ctrl+R forward] [Esc keep draft]'
       }
-      maxHeight={30}
+      maxHeight={36}
       maxWidth={88}
       rows={rows}
       t={t}
       title="MESSAGE"
       verticalMargin={rows < 30 ? 2 : 6}
     >
-      <Box flexShrink={0}>
-        <Text color={t.color.muted} wrap="truncate-end">
-          Signal · Review recipient and content before sending
-        </Text>
-      </Box>
+      {!feed && (
+        <Box flexShrink={0}>
+          <Text color={t.color.muted} wrap="truncate-end">
+            Signal · Review recipient and content before sending
+          </Text>
+        </Box>
+      )}
       <Box flexShrink={0}>
         <Text color={t.color.accent} wrap="truncate-end">
           To: {book[recipient]?.name || recipient} · {recipient}
@@ -215,10 +225,10 @@ export function QuickMessage({ cols, rows, t }: { cols: number; rows: number; t:
       />
       {feed ? (
         <Box flexDirection="column" flexShrink={0}>
-          <Text color={optionsFocused ? t.color.accent : t.color.muted}>
-            {chart} · latest {horizon} observations · Shift+Tab edit
+          <Text color={optionsFocused ? t.color.accent : t.color.muted} wrap="truncate-end">
+            {chart} · latest {horizon} observations · [Shift+Tab chart/horizon]
           </Text>
-          <FeedShareCard compact share={feed} t={t} width={modalWidth - 10} />
+          <FeedShareCard chartHeight={previewHeight} compact share={feed} t={t} width={modalWidth - 10} />
         </Box>
       ) : (
         includeItem &&
