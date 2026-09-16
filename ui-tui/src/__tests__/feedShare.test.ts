@@ -115,6 +115,37 @@ describe('portable feed snapshots', () => {
     expect(share.feeds[0]!.source_url).toBe('https://example.com/data')
     expect(share.feeds[0]!.points).toHaveLength(1)
   })
+  it('normalizes timestamped closes without inventing or collapsing observations', () => {
+    const quote = (dates: string[]) => ({
+      provider: 'yahoo',
+      symbol: '^GSPC',
+      name: 'S&P 500',
+      category: 'indices',
+      asOf: 0,
+      value: 12,
+      change: null,
+      changePct: null,
+      dated_history: dates.map(period => ({
+        period_start: period,
+        period_end: period,
+        value: 12,
+        published_at: null,
+        status: null
+      }))
+    })
+
+    const raw = quote(['2026-09-14T14:00:00+00:00', '2026-09-15T23:00:00-04:00'])
+    const share = shareQuote(raw)!
+    expect(share?.feeds[0]?.points.map(point => point.start)).toEqual(['2026-09-14', '2026-09-16'])
+    expect(raw.dated_history[0]?.period_start).toBe('2026-09-14T14:00:00+00:00')
+    expect(validFeedShare(share)).toBe(true)
+
+    for (const invalid of ['2026-02-30T14:00:00Z', '2026-09-14T14:00:00', 'not a date']) {
+      expect(shareQuote(quote([invalid]))).toBeNull()
+    }
+
+    expect(shareQuote(quote(['2026-09-14T14:00:00Z', '2026-09-14T15:00:00Z']))).toBeNull()
+  })
   it('renders zero-based signed charts, missing gaps and bounded hostile values', () => {
     const points = fixture().feeds[0]!.points
     const lines = feedChartLines(points, 'bar-chart', 25)

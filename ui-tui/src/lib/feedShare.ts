@@ -164,8 +164,27 @@ export function encodeFeedMessage(text: string, share: FeedShare): string {
 }
 
 export function shareQuote(quote: MarketQuote): FeedShare | null {
+  // The wire chart uses calendar days; providers also supply timezone-aware
+  // instants (e.g. Yahoo daily closes). Normalize those to UTC days here, not
+  // in the ledger. Validation below still rejects overlapping/collapsed days.
+  const chartDay = (value: string): string => {
+    if (day(value as unknown)) {
+      return value
+    }
+
+    if (
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value) &&
+      day(value.slice(0, 10)) &&
+      Number.isFinite(Date.parse(value))
+    ) {
+      return new Date(value).toISOString().slice(0, 10)
+    }
+
+    return value
+  }
+
   let points: SharedObservation[] = (quote.dated_history ?? [])
-    .map(p => ({ start: p.period_start, end: p.period_end, value: p.value }))
+    .map(p => ({ start: chartDay(p.period_start), end: chartDay(p.period_end), value: p.value }))
     .slice(-120)
 
   if (!points.length && quote.asOf > 0 && Number.isFinite(quote.asOf) && quote.asOf <= 8.64e15) {
