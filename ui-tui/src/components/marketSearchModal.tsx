@@ -6,13 +6,13 @@ import { $globalModal } from '../app/overlayStore.js'
 import type { MarketSeries } from '../content/marketProviders.js'
 import { ICON, spinnerFrame } from '../lib/icons.js'
 import type { QuotesTransport } from '../lib/marketFetch.js'
-import { searchCatalog, searchYahoo } from '../lib/marketSearch.js'
+import { discoverMarkets, searchCatalog } from '../lib/marketSearch.js'
 import { semantics } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
 
 import { ModalOverlay } from './modalOverlay.js'
 
-// Search the market catalog + Yahoo's symbol lookup to find any ticker / line
+// Search the catalog and federated provider directories for a ticker / line
 // item, then add it to the watchlist. Press `/` in Markets. Mirrors the News /
 // add-provider modal key scheme: ↑↓ move · Enter add · Esc close.
 
@@ -24,7 +24,7 @@ const dedupe = (items: MarketSeries[]): MarketSeries[] => {
   const out: MarketSeries[] = []
 
   for (const s of items) {
-    const k = `${s.provider}:${s.symbol.toLowerCase()}`
+    const k = `${s.provider}:${s.symbol}`
 
     if (!seen.has(k)) {
       seen.add(k)
@@ -38,8 +38,7 @@ const dedupe = (items: MarketSeries[]): MarketSeries[] => {
 interface MarketSearchModalProps {
   catalog: MarketSeries[]
   cols: number
-  // The gateway handle: the live Yahoo symbol lookup routes through
-  // `market.search` (Arc C3). Absent → catalog-only results.
+  // Live discovery belongs to the gateway. Absent → catalog-only results.
   gw?: QuotesTransport
   isAdded: (s: MarketSeries) => boolean
   isWatched: (s: MarketSeries) => boolean
@@ -84,7 +83,7 @@ export function MarketSearchModal({
     }
   }, [])
 
-  // Debounced search: instant catalog results, then merge in Yahoo lookups.
+  // Debounced search: instant catalog results, then merge in provider lookups.
   useEffect(() => {
     const seq = ++seqRef.current
     setError('')
@@ -107,10 +106,10 @@ export function MarketSearchModal({
         let remote: MarketSeries[] = []
 
         try {
-          remote = await searchYahoo(q, gw)
+          remote = await discoverMarkets(q, gw)
         } catch {
           if (aliveRef.current && seq === seqRef.current) {
-            setError('Live ticker search unavailable; catalog matches remain available.')
+            setError('Live data search unavailable; catalog matches remain available.')
           }
         }
 
@@ -118,7 +117,23 @@ export function MarketSearchModal({
           return
         }
 
-        setResults(dedupe([...local, ...remote]))
+        setResults(
+          dedupe([
+            ...local,
+            ...remote.map(hit => {
+              const bound = catalog.find(item => item.provider === hit.provider && item.symbol === hit.symbol)
+
+              return (
+                bound ?? {
+                  ...hit,
+                  category:
+                    catalog.find(item => item.category.toLowerCase() === hit.category.toLowerCase())?.category ??
+                    hit.category.replace(/(^|[- ])\w/g, letter => letter.toUpperCase())
+                }
+              )
+            })
+          ])
+        )
         setLoading(false)
       })()
     }, 250)

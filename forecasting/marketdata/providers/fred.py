@@ -75,7 +75,7 @@ _HISTORY_LIMIT = 30
 
 
 def _apply_missing_observation_rule(
-    quote: Quote, date_strs: list[str], as_of_reference: date
+    quote: Quote, date_strs: list[str], as_of_reference: date, *, period_end: str | None = None
 ) -> Quote:
     """Blank the value when the newest observation is EXCESSIVELY stale.
 
@@ -91,7 +91,7 @@ def _apply_missing_observation_rule(
         return quote
     limit = cadence_aware_max_business_days(infer_cadence_business_days(dates))
     assessment = assess_observation_freshness(
-        dates[-1], as_of_reference=as_of_reference, max_business_days=limit
+        period_end or dates[-1], as_of_reference=as_of_reference, max_business_days=limit
     )
     if assessment.is_missing:
         return replace(quote, value=None, change=None, changePct=None)
@@ -162,6 +162,7 @@ def _finalize(
     quote = Quote(
         symbol=series.symbol,
         provider="fred",
+        kind="observation",
         name=series.name,
         category=series.category,
         value=value,
@@ -175,7 +176,8 @@ def _finalize(
     )
     if as_of_reference is not None and last is not None and value is not None:
         quote = _apply_missing_observation_rule(
-            quote, [d for d, _ in deduped], as_of_reference
+            quote, [d for d, _ in deduped], as_of_reference,
+            period_end=dated[-1].period_end if entry and dated else None
         )
     return compare_observations(quote, dated)
 

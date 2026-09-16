@@ -15,6 +15,10 @@ export const catalogSeries = (catalog: DataCatalog): MarketSeries[] => {
     refresh_seconds: series.refresh_seconds,
     category: names.get(series.category) ?? series.category,
     search_terms: [
+      series.id,
+      series.provider,
+      catalog.providers.find(p => p.id === series.provider)?.name,
+      ...(catalog.categories.find(c => c.id === series.category)?.aliases ?? []),
       series.region,
       series.country,
       countries.get(series.country ?? ''),
@@ -43,7 +47,9 @@ export const deskConfig = (catalog: DataCatalog, selection: DeskSelection): Mark
     categories: [...new Set([...chosen, ...custom].map(series => series.category))],
     custom,
     pmSaved: selection.pm_saved,
-    providers: [...new Set([...selection.providers, ...chosen.map(series => series.provider)])],
+    providers: [
+      ...new Set([...selection.providers, ...[...chosen, ...custom, ...watchlist].map(series => series.provider)])
+    ],
     revision: selection.revision,
     serverSide: selection.server_side ?? undefined,
     setupState: selection.state,

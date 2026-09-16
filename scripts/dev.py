@@ -23,6 +23,8 @@ STRICT_PYTHON = (
     "superforecasting_agent/runtime/news_desk.py",
     "superforecasting_agent/runtime/data_desk.py",
     "forecasting/marketdata/catalog.py",
+    "forecasting/marketdata/discovery.py",
+    "forecasting/marketdata/discovery_worldbank.py",
     "forecasting/marketdata/model.py",
     "forecasting/marketdata/parsing.py",
     "forecasting/marketdata/provider.py",

@@ -606,6 +606,8 @@ export interface DeskCustomSeries {
 export interface DeskEdit {
   add: string[]
   catalog_revision: string
+  custom_add?: DeskCustomSeries[]
+  custom_remove?: DeskCustomSeries[]
   home_region?: null | string
   preset_id: null | string
   remove: string[]
@@ -2638,6 +2640,36 @@ export interface MarketCatalogResponse {
   selection: DeskSelection
 }
 
+export interface MarketDiscoverRequest {
+  category?: string
+  country?: string
+  kind?: string
+  provider?: string
+  query: string
+  region?: string
+}
+
+export interface MarketDiscoverResponse {
+  results: MarketDiscoveryHit[]
+  statuses: MarketProviderStatus[]
+}
+
+export interface MarketDiscoveryHit {
+  catalog_id: null | string
+  category: string
+  country: null | string
+  description: string
+  frequency: string
+  id: string
+  kind: string
+  name: string
+  provider: string
+  region: string
+  source_url: string
+  symbol: string
+  unit: string
+}
+
 export interface MarketEventsEditRequest {
   add: DeskSavedEvent[]
   remove: DeskSavedEvent[]
@@ -4571,6 +4603,17 @@ export interface RpcMethods {
   'market.catalog': {
     params: Record<string, never>
     result: MarketCatalogResponse
+  }
+  'market.discover': {
+    params: {
+      category?: string
+      country?: string
+      kind?: string
+      provider?: string
+      query: string
+      region?: string
+    }
+    result: MarketDiscoverResponse
   }
   'market.events.list': {
     params: {

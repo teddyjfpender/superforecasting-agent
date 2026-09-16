@@ -55,3 +55,39 @@ it('preserves tiny movements and displays genuine zero plainly', async () => {
     })
   ).toContain('+1 pp on 2020-02-01')
 })
+
+it('marks flat observation rows with their dated last move without changing period returns', async () => {
+  const { displayedChange } = await import('../lib/marketChange.js')
+
+  const flat = {
+    ...quote,
+    kind: 'observation',
+    change: 0,
+    changePct: 0,
+    comparison: {
+      basis: 'previous_observation' as const,
+      previous_period: '2026-09-11',
+      previous_value: 3.62,
+      current_period: '2026-09-14',
+      current_value: 3.62
+    },
+    last_movement: {
+      basis: 'last_transition' as const,
+      previous_period: '2026-09-09',
+      previous_value: 3.64,
+      current_period: '2026-09-10',
+      current_value: 3.62
+    }
+  }
+
+  const result = displayedChange(flat)
+  expect(result.historical).toBe(true)
+  expect(result.change).toBeCloseTo(-0.02)
+  expect(result.percent).toBeCloseTo((-0.02 / 3.64) * 100)
+  expect(flat.change).toBe(0)
+  expect(changeReference(flat)).toContain('Unchanged: 2026-09-11 → 2026-09-14')
+  expect(displayedChange({ ...flat, kind: 'quote' })).toEqual({ change: 0, percent: 0, historical: false })
+  expect(displayedChange({ ...flat, change: null, changePct: null }).change).toBeNull()
+  expect(displayedChange({ ...flat, last_movement: { ...flat.last_movement, previous_value: 0 } }).percent).toBeNull()
+  expect(displayedChange({ ...flat, last_movement: null }).historical).toBe(false)
+})

@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 from typing import Callable
 
 from forecasting.marketdata.catalog import load_catalog
+from forecasting.marketdata.discovery import Discovery
 from forecasting.marketdata.keys import resolve_key as _resolve_key
 from forecasting.marketdata.model import DataEvents, Quote, SeriesRef, epoch_ms
 from forecasting.marketdata.parsing import compare_observations
@@ -47,6 +48,7 @@ from forecasting.marketdata.providers.sdmx import SdmxProvider
 from forecasting.marketdata.providers.stooq import StooqProvider
 from forecasting.marketdata.providers.weather import OpenMeteoProvider
 from forecasting.marketdata.providers.yahoo import SearchResult, YahooProvider
+from protocol.rpc.markets import MarketDiscoverRequest, MarketDiscoverResponse
 
 logger = logging.getLogger(__name__)
 
@@ -183,6 +185,7 @@ class MarketDataService:
     ) -> None:
         self._providers = providers if providers is not None else _default_providers()
         self._resolve_key = key_resolver or _resolve_key
+        self._discovery = Discovery(self._providers, self._resolve_key)
         self._clock = clock or time.monotonic
         self._ttl = ttl
         self._wall_clock = wall_clock or time.time
@@ -460,6 +463,9 @@ class MarketDataService:
                 "message": str(exc),
                 "retry_after": exc.retry_after,
             }
+
+    def discover(self, request: MarketDiscoverRequest) -> MarketDiscoverResponse:
+        return self._discovery.discover(request, load_catalog())
 
     def search(self, query: str) -> list[SearchResult]:
         """Cached live ticker search; an outage is distinct from no matches."""

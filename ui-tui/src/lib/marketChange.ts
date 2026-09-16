@@ -67,3 +67,26 @@ export function lastMovement(quote: MarketQuote): string | null {
 
   return `Last movement: ${formatMarketChange(movement.current_value - movement.previous_value)}${unit} on ${movement.current_period} (vs ${movement.previous_period})`
 }
+
+/** A marked historical move for flat observation series; never alter the quote. */
+export function displayedChange(quote: MarketQuote): {
+  change: number | null
+  percent: number | null
+  historical: boolean
+} {
+  const move = quote.last_movement
+
+  if (quote.change === 0 && move && ['observation', 'estimate', 'reanalysis'].includes(quote.kind ?? '')) {
+    const change = move.current_value - move.previous_value
+
+    if (Number.isFinite(change) && change !== 0) {
+      return {
+        change,
+        percent: move.previous_value === 0 ? null : (change / Math.abs(move.previous_value)) * 100,
+        historical: true
+      }
+    }
+  }
+
+  return { change: quote.change, percent: quote.changePct, historical: quote.comparison?.basis === 'last_transition' }
+}

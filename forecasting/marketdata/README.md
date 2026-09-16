@@ -13,6 +13,8 @@ semantics. Displaying data never creates a forecast or authorizes settlement.
 | [model.py](model.py) | Quote assembly and coercion; re-exports shared dated-observation/event schemas. |
 | [parsing.py](parsing.py) | Period boundaries, duplicate checks, and dated measurement assembly. |
 | [provider.py](provider.py) | Injectable fetch interface, bounded verified HTTP, pacing, and safe diagnostics. |
+| [discovery.py](discovery.py) | Ranked catalog and live-directory search with bounded caching and failure isolation. |
+| [discovery_worldbank.py](discovery_worldbank.py) | World Bank directory identity matching; never observation or settlement validation. |
 | [service.py](service.py) | Provider routing, cache ownership, refresh intervals, and failure isolation. |
 | [keys.py](keys.py) | Credentials resolved by the connected backend. |
 | [providers/](providers/README.md) | Source-specific fetching and parsing contracts. |

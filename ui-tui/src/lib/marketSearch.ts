@@ -11,6 +11,15 @@ import type { QuotesTransport } from './marketFetch.js'
 // runs client-side anymore.
 
 const SYNONYMS: Record<string, string[]> = {
+  us: ['united states', 'usa', 'american'],
+  uk: ['united kingdom', 'gbr', 'british'],
+  uae: ['united arab emirates', 'are'],
+  growth: ['gdp', 'output'],
+  housing: ['home', 'house', 'mortgage', 'residential'],
+  weather: ['temperature', 'precipitation', 'wind'],
+  rain: ['precipitation'],
+  population: ['demographics'],
+  currency: ['fx', 'exchange'],
   bitcoin: ['btc', 'crypto'],
   bonds: ['rates', 'treasury', 'yield'],
   btc: ['bitcoin', 'crypto'],
@@ -53,6 +62,20 @@ export const scoreSeries = (s: MarketSeries, tokens: string[], expanded: string[
   const symbol = s.symbol.toLowerCase()
   const cat = s.category.toLowerCase()
   const metadata = s.search_terms?.toLowerCase() ?? ''
+  const text = `${name} ${symbol} ${cat} ${metadata} ${s.provider}`
+
+  if (
+    !tokens.every(token =>
+      [token, ...(SYNONYMS[token] ?? [])].some(term =>
+        ['us', 'uk', 'uae'].includes(token)
+          ? new RegExp(`(^|[^a-z0-9_])${term}($|[^a-z0-9_])`).test(text)
+          : text.includes(term)
+      )
+    )
+  ) {
+    return 0
+  }
+
   let score = 0
 
   for (const tok of tokens) {
@@ -125,5 +148,23 @@ export const searchYahoo = async (query: string, gw?: QuotesTransport): Promise<
     name: r.name,
     provider: r.provider,
     symbol: r.symbol
+  }))
+}
+
+/** Federated discovery; unknown remote metadata never becomes a catalog binding. */
+export const discoverMarkets = async (query: string, gw?: QuotesTransport): Promise<MarketSeries[]> => {
+  if (!gw || query.trim().length < 2) {
+    return []
+  }
+
+  const response = await gw.request('market.discover', { query: query.trim().slice(0, 200) })
+
+  return response.results.map(hit => ({
+    provider: hit.provider,
+    symbol: hit.symbol,
+    name: hit.name,
+    category: hit.category,
+    unit: hit.unit,
+    ...(hit.catalog_id ? { catalog_id: hit.catalog_id } : {})
   }))
 }

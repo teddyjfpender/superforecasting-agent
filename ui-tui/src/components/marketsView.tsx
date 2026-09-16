@@ -9,7 +9,7 @@ import type { GatewayClient } from '../gatewayClient.js'
 import { catalogSeries, deskConfig, saveDeskFields } from '../lib/dataDesk.js'
 import { type FieldSpec, rankItems } from '../lib/fuzzyRank.js'
 import { statusGlyph } from '../lib/icons.js'
-import { changeReference, formatMarketChange, lastMovement } from '../lib/marketChange.js'
+import { changeReference, displayedChange, formatMarketChange, lastMovement } from '../lib/marketChange.js'
 import { fetchQuotes, type MarketQuote } from '../lib/marketFetch.js'
 import { marketColumns, marketTopicWindow } from '../lib/marketLayout.js'
 import { type MarketConfig, type QuoteCache, quoteKey } from '../lib/marketStore.js'
@@ -180,7 +180,7 @@ const marketSortValue = (row: TapeRow, key: string): SortValue => {
 
   switch (key) {
     case 'chg':
-      return q?.change ?? null
+      return q ? displayedChange(q).change : null
 
     case 'last':
       return q?.value ?? null
@@ -189,7 +189,7 @@ const marketSortValue = (row: TapeRow, key: string): SortValue => {
       return q?.name || s.name || s.symbol || ''
 
     case 'pct':
-      return q?.changePct ?? null
+      return q ? displayedChange(q).percent : null
 
     case 'sym':
       return s.symbol
@@ -684,14 +684,18 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     [watchlist, custom, providers, config]
   )
 
+  // A broad desk must not fetch every annual country series at startup.
+  // Topic navigation warms just that topic; already loaded values stay cached.
+  const refreshSeries = dedupeSeries([...allSeries.filter(s => s.category === activeCategory), ...watchlist])
+
   const refresh = async (force: boolean) => {
-    if (inflightRef.current || allSeries.length === 0) {
+    if (inflightRef.current || refreshSeries.length === 0) {
       return
     }
 
     const targets = force
-      ? allSeries
-      : allSeries.filter(s => {
+      ? refreshSeries
+      : refreshSeries.filter(s => {
           if (s.kind === 'event' && s.catalog_id) {
             const events = eventCacheRef.current[s.catalog_id]
 
@@ -773,7 +777,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
       inflightRef.current = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config, gw])
+  }, [config, gw, activeCategory])
 
   const persist = (next: MarketConfig) => {
     if (!gw || !desk || !config.revision) {
@@ -1394,7 +1398,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
               <Text color={t.color.text}>
                 {hasContent
                   ? `${config.providers.length} providers · ${watchlist.length} watched`
-                  : 'press a to add data'}
+                  : 'press d to add data'}
               </Text>
             </>
           )}
@@ -1428,14 +1432,16 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
           </Text>
         </Box>
         <Box marginTop={1}>
-          <Text bold color={t.color.accent}>
-            Press d
+          <Text wrap="wrap">
+            <Text bold color={t.color.accent}>
+              Press d
+            </Text>{' '}
+            to search data or load a starter set.{' '}
+            <Text bold color={t.color.accent}>
+              /
+            </Text>{' '}
+            filters the current topic.
           </Text>
-          <Text color={t.color.text}> to load a starter set or browse data · </Text>
-          <Text bold color={t.color.accent}>
-            /
-          </Text>
-          <Text color={t.color.text}> to search for a ticker.</Text>
         </Box>
       </Box>
     </Box>
@@ -1553,11 +1559,13 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   const showTrend = trendW > 0
 
   const cellText = (key: string, q: MarketQuote | undefined, ser: MarketSeries): { color: string; text: string } => {
+    const display = q ? displayedChange(q) : null
+
     switch (key) {
       case 'chg':
         return {
-          color: cellColor(q?.change ?? null),
-          text: q ? `${fmtSigned(q.change)}${q.comparison?.basis === 'last_transition' ? '*' : ''}` : '—'
+          color: cellColor(display?.change ?? null),
+          text: display ? `${fmtSigned(display.change)}${display.historical ? '*' : ''}` : '—'
         }
       case 'last': {
         const events = ser.catalog_id ? eventCacheRef.current[ser.catalog_id] : undefined
@@ -1578,9 +1586,9 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
 
       case 'pct':
         return {
-          color: cellColor(q?.changePct ?? null),
-          text: q
-            ? `${dirGlyph(q.changePct)} ${fmtPct(q.changePct)}${q.comparison?.basis === 'last_transition' ? '*' : ''}`
+          color: cellColor(display?.percent ?? null),
+          text: display
+            ? `${dirGlyph(display.percent)} ${fmtPct(display.percent)}${display.historical ? '*' : ''}`
             : '—'
         }
 
@@ -1635,7 +1643,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
         ) : null}
       </Box>
       <Text color={sem.subtle} wrap="truncate-end">
-        {sortedRows.some(row => row.quote?.comparison?.basis === 'last_transition')
+        {sortedRows.some(row => row.quote && displayedChange(row.quote).historical)
           ? 'CHG: prior period · * last observed move'
           : 'CHG: prior available period'}
       </Text>

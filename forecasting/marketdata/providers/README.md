@@ -77,3 +77,21 @@ uses 120 then 600 observations; keyed FRED expands 30 → 366 → 3660 observati
 An unavailable transition stays null. Failed or inconsistent history backfills
 must preserve the latest valid measurement. Test sparse periods, equal values,
 conflicting duplicates, zero baselines and backfill failures.
+
+## Discovery
+
+All catalog entries are searchable, independent of subscriptions. Optional live
+lookups belong to [`discovery.py`](../discovery.py); World Bank directory parsing
+is separate in [`discovery_worldbank.py`](../discovery_worldbank.py). Extend the
+backend search dispatcher, advertise `search` only once implemented, and return
+`MarketDiscoveryHit` with exact provider/symbol identity. Leave unknown metadata
+empty. Remote hits must not invent a `catalog_id` or settlement binding.
+
+Use the bounded HTTP helpers, service-owned cache and search concurrency limit.
+Test exact IDs, country/topic intent, deduplication, missing credentials, malformed
+responses and partial failures. Never put provider URLs or parsing in the TUI.
+Category aliases in the shared catalog improve both local and backend search.
+
+The table may display an unchanged observation's `last_movement` with `*`.
+The underlying quote's period delta remains zero; the detail panel preserves
+both comparisons and dates. Do not rewrite source measurements to make CHG move.

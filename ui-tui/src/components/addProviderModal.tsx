@@ -4,9 +4,17 @@ import { useEffect, useRef, useState } from 'react'
 
 import { $globalModal } from '../app/overlayStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
-import { deskConfig } from '../lib/dataDesk.js'
+import { catalogSeries, deskConfig } from '../lib/dataDesk.js'
+import { searchCatalog } from '../lib/marketSearch.js'
 import type { MarketConfig } from '../lib/marketStore.js'
-import type { DeskEdit, DeskPreview, MarketCatalogResponse, Quote } from '../protocol/generated.js'
+import type {
+  DeskEdit,
+  DeskPreview,
+  MarketCatalogResponse,
+  MarketDiscoveryHit,
+  MarketProviderStatus,
+  Quote
+} from '../protocol/generated.js'
 import type { Theme } from '../theme.js'
 
 import { ModalOverlay } from './modalOverlay.js'
@@ -36,6 +44,13 @@ export function AddProviderModal({ cols, gw, onCancel, onSaved, rows, sessionId 
   const [category, setCategory] = useState(0)
   const [kind, setKind] = useState(0)
   const [country, setCountry] = useState(0)
+  const [source, setSource] = useState(0)
+  const [filterFocus, setFilterFocus] = useState<number | null>(null)
+  const [remote, setRemote] = useState<MarketDiscoveryHit[]>([])
+  const [picked, setPicked] = useState<Record<string, MarketDiscoveryHit>>({})
+  const [searchStatus, setSearchStatus] = useState<MarketProviderStatus[]>([])
+  const [searching, setSearching] = useState(false)
+  const [searchAttempt, setSearchAttempt] = useState(0)
   const [previewIndex, setPreviewIndex] = useState(0)
   const [latest, setLatest] = useState<Record<string, Quote>>({})
   const [latestStatus, setLatestStatus] = useState<Record<string, string>>({})
@@ -96,22 +111,112 @@ export function AddProviderModal({ cols, gw, onCancel, onSaved, rows, sessionId 
   const regionFilter = regions[region - 1]
   const categoryFilter = availableCategories[category - 1]
 
-  const matches =
-    catalog?.series.filter(series => {
-      const haystack =
-        `${series.name} ${series.symbol} ${series.country ?? ''} ${catalog?.countries.find(country => country.id === series.country)?.name ?? ''} ${series.location?.name ?? ''} ${series.tags.join(' ')}`.toLowerCase()
+  const sourceFilter = catalog?.providers[source - 1]
+  const countryFilter = countries[country - 1]?.id ?? ''
+  const kindFilter = kinds[kind - 1] ?? ''
+  const regionId = regionFilter?.id ?? ''
+  const categoryId = categoryFilter?.id ?? ''
+  const sourceId = sourceFilter?.id ?? ''
 
-      return (
-        (!regionFilter || series.region === regionFilter.id || regionFilter.members.includes(series.region)) &&
-        (!categoryFilter || series.category === categoryFilter.id) &&
-        (!kind || series.kind === kinds[kind - 1]) &&
-        (!country || series.country === countries[country - 1]?.id) &&
-        query
-          .toLowerCase()
-          .split(/\s+/)
-          .every(term => haystack.includes(term))
-      )
-    }) ?? []
+  useEffect(() => {
+    let alive = true
+    setRemote([])
+    setSearchStatus([])
+    setSearching(false)
+
+    if (tab !== 1 || !gw || query.trim().length < 2) {
+      return
+    }
+
+    setSearching(true)
+
+    const timer = setTimeout(() => {
+      void gw
+        .request('market.discover', {
+          query: query.trim().slice(0, 200),
+          provider: sourceId,
+          country: countryFilter,
+          region: regionId,
+          category: categoryId,
+          kind: kindFilter
+        })
+        .then(result => {
+          if (!alive) {
+            return
+          }
+
+          setRemote(result.results)
+          setSearchStatus(result.statuses)
+        })
+        .catch(() => {
+          if (alive) {
+            setSearchStatus([
+              {
+                provider: 'discovery',
+                status: 'unavailable',
+                message: 'Live search unavailable; catalog matches remain available.',
+                retry_after: null
+              }
+            ])
+          }
+        })
+        .finally(() => {
+          if (alive) {
+            setSearching(false)
+          }
+        })
+    }, 300)
+
+    return () => {
+      alive = false
+      clearTimeout(timer)
+    }
+  }, [gw, tab, query, sourceId, countryFilter, regionId, categoryId, kindFilter, searchAttempt])
+
+  const localIds =
+    query.trim() && catalog
+      ? new Map(searchCatalog(query, catalogSeries(catalog)).map((item, position) => [item.catalog_id, position]))
+      : null
+
+  const local = (catalog?.series ?? [])
+    .filter(series => !localIds || localIds.has(series.id))
+    .sort((a, b) => (localIds?.get(a.id) ?? 0) - (localIds?.get(b.id) ?? 0))
+    .map(series => ({
+      ...series,
+      catalog_id: series.id,
+      description: `Catalog binding · revisions: ${series.revision_policy}`
+    }))
+
+  const matches = [...new Map([...local, ...remote].map(hit => [hit.id, hit])).values()].filter(
+    series =>
+      (!regionFilter || series.region === regionFilter.id || regionFilter.members.includes(series.region)) &&
+      (!categoryFilter || series.category === categoryFilter.id) &&
+      (!kindFilter || series.kind === kindFilter) &&
+      (!countryFilter || series.country === countryFilter) &&
+      (!sourceId || series.provider === sourceId)
+  )
+
+  const filterFields = [
+    { name: 'Region', value: regionFilter?.name ?? 'All', length: regions.length + 1, set: setRegion },
+    { name: 'Country', value: countries[country - 1]?.name ?? 'All', length: countries.length + 1, set: setCountry },
+    { name: 'Kind', value: kindFilter || 'All', length: kinds.length + 1, set: setKind },
+    { name: 'Source', value: sourceFilter?.name ?? 'All', length: (catalog?.providers.length ?? 0) + 1, set: setSource }
+  ]
+
+  const cycleFilter = (position: number, direction: number) => {
+    const field = filterFields[position]
+    field?.set(value => (value + direction + field.length) % field.length)
+
+    if (position === 0) {
+      setCountry(0)
+    }
+
+    if (position === 1) {
+      setRegion(0)
+    }
+
+    setIndex(0)
+  }
 
   const choices =
     tab === 1
@@ -121,17 +226,23 @@ export function AddProviderModal({ cols, gw, onCancel, onSaved, rows, sessionId 
         )
 
   const current = choices[Math.min(index, Math.max(0, choices.length - 1))]
-  const existing = new Set(data?.selection.series_ids ?? [])
+
+  const existing = new Set([
+    ...(data?.selection.series_ids ?? []),
+    ...(data?.selection.custom ?? []).map(item => `custom:${item.provider}:${item.symbol}`)
+  ])
+
   const modalWidth = cols < 100 ? Math.max(40, cols - 2) : Math.max(48, Math.min(cols - 6, 112))
   const innerWidth = modalWidth - 6
-  const modalHeight = Math.max(8, Math.min(rows - 6, 38))
+  const verticalMargin = rows < 30 ? 2 : 6
+  const modalHeight = Math.max(8, Math.min(rows - verticalMargin, 38))
   const detailHeight = modalHeight >= 26 ? 5 : 2
-  const pageSize = Math.max(2, modalHeight - 4 - 12 - detailHeight)
+  const pageSize = Math.max(1, modalHeight - 4 - 11 - detailHeight - (cols < 100 ? 1 : 0))
   const railWidth = Math.max(14, Math.min(24, Math.floor(innerWidth * 0.25)))
 
   const topicStart = Math.max(
     0,
-    Math.min(category - Math.floor(pageSize / 2), availableCategories.length + 1 - (pageSize + 1))
+    Math.min(category - Math.floor(pageSize / 2), availableCategories.length + 1 - pageSize)
   )
 
   const topicChoices = [{ id: '', name: 'All topics' }, ...availableCategories]
@@ -246,6 +357,12 @@ export function AddProviderModal({ cols, gw, onCancel, onSaved, rows, sessionId 
     }
 
     if (key.escape) {
+      if (filterFocus !== null) {
+        setFilterFocus(null)
+
+        return
+      }
+
       if (preview) {
         setPreview(null)
         setEdit(null)
@@ -274,10 +391,40 @@ export function AddProviderModal({ cols, gw, onCancel, onSaved, rows, sessionId 
       return
     }
 
+    if (key.tab && key.shift && tab === 1) {
+      setFilterFocus(value => (value === null ? 0 : null))
+
+      return
+    }
+
+    if (filterFocus !== null) {
+      if (key.leftArrow || key.rightArrow || key.tab) {
+        setFilterFocus(value => ((value ?? 0) + (key.leftArrow ? 3 : 1)) % 4)
+      } else if (key.upArrow || key.downArrow) {
+        cycleFilter(filterFocus, key.upArrow ? -1 : 1)
+      } else if (key.return) {
+        setFilterFocus(null)
+      } else if (key.backspace || key.delete) {
+        setRegion(0)
+        setCountry(0)
+        setKind(0)
+        setSource(0)
+        setIndex(0)
+      }
+
+      return
+    }
+
     if (key.tab) {
       setTab(value => (value + (key.shift ? 2 : 1)) % 3)
       setQuery('')
       setIndex(0)
+
+      return
+    }
+
+    if (key.return && key.shift && tab === 1) {
+      setSearchAttempt(value => value + 1)
 
       return
     }
@@ -291,15 +438,6 @@ export function AddProviderModal({ cols, gw, onCancel, onSaved, rows, sessionId 
         value => (value + (key.leftArrow ? availableCategories.length : 1)) % (availableCategories.length + 1)
       )
       setIndex(0)
-    } else if (key.ctrl && input === 'r' && tab === 1) {
-      setRegion(value => (value + 1) % (regions.length + 1))
-      setIndex(0)
-    } else if (key.ctrl && input === 'k' && tab === 1) {
-      setKind(value => (value + 1) % (kinds.length + 1))
-      setIndex(0)
-    } else if (key.ctrl && input === 'g' && tab === 1) {
-      setCountry(value => (value + 1) % (countries.length + 1))
-      setIndex(0)
     } else if (key.ctrl && input === 'l' && tab === 1) {
       void loadLatest()
     } else if (key.ctrl && input === 's' && tab === 1 && selected.size) {
@@ -312,7 +450,7 @@ export function AddProviderModal({ cols, gw, onCancel, onSaved, rows, sessionId 
       setQuery(value => value.slice(0, -1))
       setIndex(0)
     } else if (input && !key.ctrl && !key.meta) {
-      setQuery(value => value + input)
+      setQuery(value => (value + input).slice(0, 200))
       setIndex(0)
     }
   })
@@ -362,14 +500,22 @@ export function AddProviderModal({ cols, gw, onCancel, onSaved, rows, sessionId 
 
     try {
       const result = await gw.request('market.quotes', {
-        series: [{ catalog_id: id, provider: series.provider, symbol: series.symbol }]
+        series: [
+          {
+            ...(series.catalog_id ? { catalog_id: series.catalog_id } : {}),
+            provider: series.provider,
+            symbol: series.symbol,
+            name: series.name,
+            unit: series.unit
+          }
+        ]
       })
 
       if (owner !== generation.current) {
         return
       }
 
-      const quote = result.quotes.find(item => item.catalog_id === id)
+      const quote = result.quotes.find(item => item.provider === series.provider && item.symbol === series.symbol)
 
       if (quote) {
         setLatest(previous => ({ ...previous, [id]: quote }))
@@ -396,8 +542,29 @@ export function AddProviderModal({ cols, gw, onCancel, onSaved, rows, sessionId 
     }
 
     void prepare({
-      add: [...selected].filter(id => !existing.has(id)),
-      remove: [...selected].filter(id => existing.has(id)),
+      add: [...selected].filter(id => !id.startsWith('custom:') && !existing.has(id)),
+      remove: [...selected].filter(id => !id.startsWith('custom:') && existing.has(id)),
+      custom_add: [...selected]
+        .filter(id => id.startsWith('custom:') && !existing.has(id))
+        .flatMap(id => {
+          const hit = picked[id]
+
+          return hit
+            ? [
+                {
+                  provider: hit.provider,
+                  symbol: hit.symbol,
+                  name: hit.name,
+                  category: catalog?.categories.find(c => c.id === hit.category)?.name ?? hit.category,
+                  unit: hit.unit,
+                  line: null
+                }
+              ]
+            : []
+        }),
+      custom_remove: (data.selection.custom ?? []).filter(item =>
+        selected.has(`custom:${item.provider}:${item.symbol}`)
+      ),
       catalog_revision: data.catalog_revision,
       preset_id: null,
       start_empty: false
@@ -412,6 +579,12 @@ export function AddProviderModal({ cols, gw, onCancel, onSaved, rows, sessionId 
     if (tab === 0) {
       void prepare({ add: [], remove: [], catalog_revision: data.catalog_revision, preset_id: id, start_empty: false })
     } else if (tab === 1) {
+      const hit = matches.find(item => item.id === id)
+
+      if (hit) {
+        setPicked(previous => ({ ...previous, [id]: hit }))
+      }
+
       setSelected(previous => {
         const next = new Set(previous)
 
@@ -425,8 +598,17 @@ export function AddProviderModal({ cols, gw, onCancel, onSaved, rows, sessionId 
       })
     } else if (id === 'predictionmarkets') {
       void enablePredictionMarkets()
-    } else if (catalog?.providers.find(item => item.id === id)?.key_env) {
+    } else if (catalog?.providers.find(item => item.id === id)?.key_env && sessionId) {
       void connect(id)
+    } else {
+      setSource((catalog?.providers.findIndex(item => item.id === id) ?? -1) + 1)
+      setTab(1)
+      setQuery('')
+      setIndex(0)
+      setCategory(0)
+      setRegion(0)
+      setCountry(0)
+      setKind(0)
     }
   }
 
@@ -437,7 +619,7 @@ export function AddProviderModal({ cols, gw, onCancel, onSaved, rows, sessionId 
     : []
 
   return (
-    <ModalOverlay cols={cols} maxHeight={38} maxWidth={112} rows={rows} t={t}>
+    <ModalOverlay cols={cols} maxHeight={38} maxWidth={112} rows={rows} t={t} verticalMargin={verticalMargin}>
       <Box flexDirection="column" flexGrow={1} minHeight={0}>
         <Box flexShrink={0} justifyContent="space-between">
           <Text bold color={t.color.primary}>
@@ -468,7 +650,7 @@ export function AddProviderModal({ cols, gw, onCancel, onSaved, rows, sessionId 
         <Box flexShrink={0} marginTop={1}>
           <Text color={t.color.accent}>Search </Text>
           <Text>{query}</Text>
-          {!preview ? <Text inverse> </Text> : null}
+          {!preview && filterFocus === null ? <Text inverse> </Text> : null}
           {!query ? <Text color={t.color.muted}> type a name, country or indicator…</Text> : null}
         </Box>
         <Text color={t.color.border}>{'─'.repeat(innerWidth)}</Text>
@@ -481,10 +663,12 @@ export function AddProviderModal({ cols, gw, onCancel, onSaved, rows, sessionId 
               {preview.added.length} additions · {preview.removed.length} removals · {preview.already_selected.length}{' '}
               already selected
             </Text>
-            <Text color={t.color.muted}>Watchlists, custom data and saved prediction markets are preserved.</Text>
+            <Text color={t.color.muted}>
+              Only the listed changes will be applied; watchlists and saved events are preserved.
+            </Text>
             {previewRows.slice(previewIndex, previewIndex + pageSize).map(({ id, action }) => (
               <Text key={id} wrap="truncate-end">
-                {action}: {catalog?.series.find(item => item.id === id)?.name ?? id}
+                {action}: {catalog?.series.find(item => item.id === id)?.name ?? picked[id]?.name ?? id}
               </Text>
             ))}
             {previewRows.length > pageSize ? (
@@ -501,10 +685,41 @@ export function AddProviderModal({ cols, gw, onCancel, onSaved, rows, sessionId 
         ) : data ? (
           <>
             {tab === 1 ? (
-              <Text color={t.color.muted} wrap="truncate-end">
-                Ctrl+R Region: {regionFilter?.name ?? 'All'} · Ctrl+G Country: {countries[country - 1]?.name ?? 'All'} ·
-                Ctrl+K Kind: {kinds[kind - 1] ?? 'All'}
-              </Text>
+              <Box flexDirection="column" flexShrink={0}>
+                <Box flexWrap="wrap" gap={1}>
+                  {filterFields.map((field, position) => (
+                    <Text
+                      color={filterFocus === position ? t.color.accent : t.color.muted}
+                      inverse={filterFocus === position}
+                      key={field.name}
+                      onClick={() => {
+                        if (!globalModal && !busy) {
+                          setFilterFocus(position)
+                        }
+                      }}
+                    >
+                      {field.name}: {field.value}
+                    </Text>
+                  ))}
+                </Box>
+                <Text
+                  color={t.color.muted}
+                  onClick={() => {
+                    if (!globalModal && !busy) {
+                      setSearchAttempt(value => value + 1)
+                    }
+                  }}
+                  wrap="truncate-end"
+                >
+                  {filterFocus !== null
+                    ? '←→ Filter · ↑↓ Value · Backspace Reset · Enter Results'
+                    : searching
+                      ? 'Searching live directories… · Shift+Tab Filters'
+                      : query.trim().length < 2
+                        ? 'Catalog results · type 2+ characters for live search · Shift+Tab Filters'
+                        : `${matches.length} results · Shift+Tab Filters · ${searchStatus.filter(s => !['ok', 'cached', 'catalog_only'].includes(s.status)).length || 'no'} source limits · Shift+Enter Retry`}
+                </Text>
+              </Box>
             ) : (
               <Text color={t.color.muted}>
                 {tab === 0
@@ -529,7 +744,7 @@ export function AddProviderModal({ cols, gw, onCancel, onSaved, rows, sessionId 
                   <Text bold color={t.color.label}>
                     TOPICS
                   </Text>
-                  {topicChoices.slice(topicStart, topicStart + pageSize + 1).map((topic, offset) => (
+                  {topicChoices.slice(topicStart, topicStart + pageSize).map((topic, offset) => (
                     <Text
                       color={category === topicStart + offset ? t.color.accent : t.color.muted}
                       key={topic.id}
@@ -579,6 +794,7 @@ export function AddProviderModal({ cols, gw, onCancel, onSaved, rows, sessionId 
                     <Box flexGrow={1} minWidth={0}>
                       <Text bold={index === start + offset} wrap="truncate-end">
                         {item.name}
+                        {tab === 1 && 'provider' in item ? ` · ${item.provider}` : ''}
                       </Text>
                     </Box>
                   </Box>
@@ -587,7 +803,15 @@ export function AddProviderModal({ cols, gw, onCancel, onSaved, rows, sessionId 
               </Box>
             </Box>
             <Text color={t.color.border}>{'─'.repeat(innerWidth)}</Text>
-            <ScrollBox decstbm={false} flexDirection="column" flexShrink={0} height={detailHeight} ref={scrollRef}>
+            <ScrollBox
+              decstbm={false}
+              flexDirection="column"
+              flexShrink={0}
+              followContent={false}
+              height={detailHeight}
+              key={current?.id ?? tab}
+              ref={scrollRef}
+            >
               {preset ? (
                 <>
                   <Text bold>
@@ -604,9 +828,22 @@ export function AddProviderModal({ cols, gw, onCancel, onSaved, rows, sessionId 
                     {series.unit} · {series.frequency} · {series.kind}
                   </Text>
                   <Text color={t.color.muted}>
-                    Ctrl+L Latest · Revision: {series.revision_policy}. Display data does not authorize settlement.
+                    Ctrl+L Latest · {series.symbol} · {series.description}. Display only; not settlement evidence.
                   </Text>
                 </>
+              ) : null}
+              {searchStatus
+                .filter(status => !['ok', 'cached', 'catalog_only'].includes(status.status))
+                .map(status => (
+                  <Text color={t.color.muted} key={status.provider}>
+                    {status.provider}: {status.message}
+                  </Text>
+                ))}
+              {sourceFilter &&
+              searchStatus.some(status => status.provider === sourceFilter.id && status.status === 'catalog_only') ? (
+                <Text color={t.color.muted}>
+                  This source supports reviewed catalog entries; live directory search is unavailable.
+                </Text>
               ) : null}
               {series && measurement ? (
                 <Text wrap="truncate-end">
@@ -640,7 +877,11 @@ export function AddProviderModal({ cols, gw, onCancel, onSaved, rows, sessionId 
                       : data.configured_providers.includes(provider.id)
                         ? 'Credentials saved; access checked when fetching'
                         : `${provider.auth === 'required' ? 'Required' : 'Optional'} credentials not configured`}
-                    {provider.key_env && sessionId && tab === 2 ? ' · Enter to connect securely' : ''}
+                    {tab === 2
+                      ? provider.key_env && sessionId
+                        ? ' · Enter to connect securely'
+                        : ' · Enter to browse this source'
+                      : ''}
                   </Text>
                   {provider.access_note ? (
                     <Text color={t.color.muted} wrap="truncate-end">
@@ -662,7 +903,9 @@ export function AddProviderModal({ cols, gw, onCancel, onSaved, rows, sessionId 
             <Text color={t.color.muted} wrap="truncate-end">
               {preview
                 ? '↑↓ Review · Enter Apply selection · Esc Back'
-                : 'Enter Choose · Esc Cancel · Tab View · ←→ Topic · PgUp/Dn Details'}
+                : filterFocus !== null
+                  ? 'Enter Results · Esc Results · ←→ Filter · ↑↓ Value'
+                  : 'Enter Choose · Esc Cancel · Tab View · ←→ Topic · PgUp/Dn Details'}
             </Text>
           </Box>
           {!preview && tab === 1 && selected.size ? (

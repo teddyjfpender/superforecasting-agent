@@ -1,9 +1,30 @@
-import { describe, expect, it } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
-import { recordSignalMessage, signalCache, signalVersion, subscribeSignal } from '../lib/signalLive.js'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-// The receiver is a module-level singleton, so use a chatId unique to this run
-// to stay isolated from any other test that touches the same store.
+import type * as SignalLive from '../lib/signalLive.js'
+
+let signal: typeof SignalLive
+let home: string
+const previousHome = process.env.SUPERFORECASTING_AGENT_HOME
+
+beforeAll(async () => {
+  home = mkdtempSync(join(tmpdir(), 'signal-live-test-'))
+  process.env.SUPERFORECASTING_AGENT_HOME = home
+  signal = await import('../lib/signalLive.js')
+})
+
+afterAll(() => {
+  rmSync(home, { recursive: true, force: true })
+
+  if (previousHome === undefined) {delete process.env.SUPERFORECASTING_AGENT_HOME}
+  else {process.env.SUPERFORECASTING_AGENT_HOME = previousHome}
+})
+
+// Isolate persistence before importing the singleton. A PID is not a unique
+// persistent identity: process reuse can otherwise load an old duplicate.
 const CHAT = `test:signal-live:${process.pid}`
 
 const msg = (text: string, timestamp: number) => ({
@@ -18,6 +39,7 @@ const msg = (text: string, timestamp: number) => ({
 
 describe('signalLive singleton', () => {
   it('records messages, dedupes exact repeats, and notifies subscribers', () => {
+    const { recordSignalMessage, signalCache, signalVersion, subscribeSignal } = signal
     const before = signalVersion()
     const seen: number[] = []
     const off = subscribeSignal(() => seen.push(signalVersion()))

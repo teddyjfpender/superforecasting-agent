@@ -355,6 +355,11 @@ RPC_SPECS: list[RpcSpec] = [
         _rpc_markets.MarketSearchRequest,
         _rpc_markets.MarketSearchResponse,
     ),
+    RpcSpec(
+        "market.discover",
+        _rpc_markets.MarketDiscoverRequest,
+        _rpc_markets.MarketDiscoverResponse,
+    ),
     # ── forecast.* — the forecast-desk family (Arc A3), the biggest ──────────
     # Wrapped in tui_gateway/server.py with VALIDATE-ONLY semantics (the wrapper
     # logs drift and returns the original result untouched — the big partial

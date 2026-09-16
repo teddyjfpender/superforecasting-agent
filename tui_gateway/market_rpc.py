@@ -168,6 +168,14 @@ def register(server) -> None:
             return _err(rid, exc)
         return _ok(rid, {"results": [r.to_dict() for r in results]})
 
+    def market_discover(rid, params):
+        from protocol.rpc.markets import MarketDiscoverRequest
+        try:
+            result = get_service().discover(MarketDiscoverRequest.model_validate(params))
+            return _ok(rid, result.model_dump(mode="json"))
+        except Exception as exc:
+            return _err(rid, exc)
+
     def _validate_params(method: str, handler):
         spec = RPC_BY_METHOD.get(method)
         if spec is None:  # pragma: no cover - market.quotes is registered
@@ -187,6 +195,7 @@ def register(server) -> None:
         return wrapped
 
     server.register_method("market.quotes", _validate_params("market.quotes", market_quotes))
+    server.register_method("market.discover", _validate_params("market.discover", market_discover))
     server.register_method("market.search", _validate_params("market.search", market_search))
     server.register_method("market.catalog", _validate_params("market.catalog", market_catalog))
     server.register_method("market.provider.connect", _validate_params("market.provider.connect", market_provider_connect))
