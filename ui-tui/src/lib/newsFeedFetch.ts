@@ -3,7 +3,7 @@ import { ensureFeedUrlScheme, feedHost } from './newsFeedStore.js'
 // Minimal, dependency-free RSS / Atom fetch + parse. Runs in the TUI's Node
 // runtime (global fetch). The parser is an attribute/tag scan, not a strict XML
 // parse, so it tolerates the unescaped ampersands and odd namespacing real
-// feeds ship — same approach as the catalog generator.
+// feeds ship.
 
 export interface Article {
   content?: string

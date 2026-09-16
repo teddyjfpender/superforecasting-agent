@@ -50,7 +50,26 @@ const SYNONYMS: Record<string, string[]> = {
   earthquake: ['quake', 'seismic', 'usgs', 'disaster', 'hazard'],
   disaster: ['hazard', 'emergency', 'flood', 'earthquake', 'storm', 'weather', 'relief'],
   climate: ['weather', 'warming', 'environment', 'emissions'],
-  wildfire: ['fire', 'wildfires', 'weather', 'hazard']
+  wildfire: ['fire', 'wildfires', 'weather', 'hazard'],
+  macro: ['economics', 'economic releases', 'central banks', 'monetary'],
+  rates: ['central banks', 'monetary', 'policy'],
+  regulation: ['regulation', 'securities', 'competition', 'enforcement'],
+  shipping: ['trade & logistics', 'maritime', 'freight', 'ports'],
+  commodities: ['commodities', 'energy', 'oil', 'gas', 'power', 'mining', 'metals', 'trade'],
+  apac: ['asia pacific', 'asia', 'australia'],
+  emea: ['europe', 'middle east', 'africa'],
+  latam: ['latin america', 'latin american'],
+  magazines: ['magazines', 'long reads', 'essays', 'geopolitics'],
+  farming: ['agriculture', 'crop', 'food'],
+  crops: ['agriculture', 'food security', 'farming'],
+  wheat: ['agriculture', 'food security', 'commodity'],
+  cyber: ['cybersecurity', 'ransomware', 'breaches'],
+  military: ['defense', 'procurement', 'national-security'],
+  sanctions: ['sanctions', 'regulation', 'foreign-policy'],
+  biotech: ['health', 'biotechnology', 'drug'],
+  solar: ['solar', 'photovoltaics', 'energy'],
+  disclosures: ['company releases', 'issuer-supplied', 'earnings'],
+  chips: ['semiconductor', 'chip design', 'manufacturing']
 }
 
 const expand = (tokens: string[]): string[] => {

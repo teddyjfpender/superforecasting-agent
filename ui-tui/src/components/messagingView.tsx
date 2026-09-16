@@ -268,7 +268,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     }
   }, [cfg])
 
-  const conversations = useMemo<Conversation[]>(() => {
+  const candidates = useMemo<Conversation[]>(() => {
     const cache = signalCache()
     const nameById = new Map<string, string>()
 
@@ -331,9 +331,23 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contactBook, cacheVersion, desk, filter, query, focus, selectedChatId])
 
+  // The address book is for discovery, not the chat rail. Keep an explicitly
+  // opened empty recipient available to the composer without listing it.
+  const conversations = candidates.filter(
+    c =>
+      c.hasMessages ||
+      Boolean(desk[c.chatId]?.draft?.trim()) ||
+      Boolean(cfg && sendAttempts[messageSendKey(cfg, c.chatId)])
+  )
+
   const foundIndex = conversations.findIndex(c => c.chatId === selectedChatId)
   const clampedSel = foundIndex >= 0 ? foundIndex : 0
-  const activeConv = conversations[clampedSel]
+
+  const activeConv =
+    focus === 'thread'
+      ? (candidates.find(c => c.chatId === selectedChatId) ?? conversations[clampedSel])
+      : conversations[clampedSel]
+
   const threadMessages = activeConv ? (signalCache()[activeConv.chatId] ?? []) : []
 
   const activeChatId = activeConv?.chatId
@@ -476,6 +490,8 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
         return
       }
 
+      setFilter('Inbox')
+      setQuery('')
       setSelectedChatId(chatId)
       setThreadScroll(0)
       setFocus('thread')
@@ -1206,7 +1222,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
           })
         ) : (
           <Text color={t.color.muted} wrap="wrap">
-            {connected ? 'No conversations yet. Messages appear as they arrive.' : ''}
+            {connected ? 'No conversations yet. Press f to find a contact or n to start a chat.' : ''}
           </Text>
         )}
       </Box>

@@ -47,6 +47,7 @@ import { CommandActivity } from './commandActivity.js'
 import { DemoVizView } from './demoVizView.js'
 import { DeskView } from './deskView.js'
 import { DocsView } from './docsView.js'
+import { FooterChips } from './footerChips.js'
 import { FpsOverlay } from './fpsOverlay.js'
 import { HelpOverlay } from './helpOverlay.js'
 import { HelpView } from './helpView.js'
@@ -410,6 +411,7 @@ const ComposerPane = memo(function ComposerPane({
       </Box>
 
       <CommandActivity />
+      <FooterChips chips={[]} disabled={isBlocked} t={ui.theme} />
 
       {!composer.empty && !ui.sid && <Text color={ui.theme.color.muted}>P {ui.status}</Text>}
 

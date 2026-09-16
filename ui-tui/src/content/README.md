@@ -21,6 +21,36 @@ These are entry points and representative modules, not an exhaustive inventory.
 | [hotkeys.ts](hotkeys.ts)                   | hotkeys.          |
 | [keymaps.ts](keymaps.ts)                   | keymaps.          |
 
+## News sources
+
+[`newsFeeds.json`](newsFeeds.json) owns the Add Feed discovery catalog.
+[`newsFeedCatalog.ts`](newsFeedCatalog.ts) is generated; never edit it directly.
+The original catalog was imported from the CC0
+[awesome-rss-feeds collection](https://github.com/plenaryapp/awesome-rss-feeds)
+plus a forecasting supplement. New additions are reviewed publisher feeds;
+see the [qualification record](../../../docs/verification/news-catalog.md).
+
+To add a feed:
+
+1. Add `category`, `title`, `url`, and `description` to the JSON. Prefer the
+   publisher's HTTPS endpoint, a precise topic and an existing category where it fits.
+2. Verify a bounded fetch through `forecasting.news.transport.fetch_public_text`
+   and parsing through `ui-tui/src/lib/newsFeedFetch.ts`: useful titles, article
+   links, real publication dates and the intended language/topic. Check the newest
+   past publication (not just the first item); reject stale feeds and distinguish
+   future events from released news. Confirm subject-filter IDs against the
+   publisher directory, and label multilingual or issuer-supplied material.
+   Record the date and result. Do not substitute scraping proxies for inaccessible feeds.
+3. Mention subscription requirements in the description. Public RSS does not
+   imply full-text access, redistribution rights or a licensed real-time wire.
+4. Run `python3 scripts/gen-news-catalog.py`, then the checks below. Generation
+   is offline; `python3 scripts/gen-news-catalog.py --check` detects stale output.
+   Search synonyms live in `../lib/newsFeedSearch.ts`.
+
+Catalog additions are opt-in through **News → Add Feed**; they do not silently
+subscribe existing profiles. The smaller setup starter is owned separately by
+`forecasting/news/catalog.py`. Do not add every discovery feed to that starter.
+
 ## Working in this directory
 
 From the repository root, run:

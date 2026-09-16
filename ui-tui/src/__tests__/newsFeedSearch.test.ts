@@ -1,17 +1,47 @@
 import { describe, expect, it } from 'vitest'
 
-import { FEED_CATALOG } from '../content/newsFeedCatalog.js'
+import { FEED_CATALOG, FEED_CATEGORIES } from '../content/newsFeedCatalog.js'
 import { ALL_CATEGORY, scoreFeed, searchFeeds } from '../lib/newsFeedSearch.js'
 
 describe('feed catalog', () => {
   it('is non-trivial and well-formed', () => {
     expect(FEED_CATALOG.length).toBeGreaterThan(100)
 
-    for (const f of FEED_CATALOG.slice(0, 50)) {
+    for (const f of FEED_CATALOG) {
       expect(f.url).toMatch(/^https?:\/\//)
       expect(f.title.length).toBeGreaterThan(0)
       expect(f.category.length).toBeGreaterThan(0)
     }
+  })
+})
+
+describe('professional news coverage', () => {
+  it('has unique URLs and exposes every category in the picker', () => {
+    expect(new Set(FEED_CATALOG.map(f => f.url)).size).toBe(FEED_CATALOG.length)
+    expect(FEED_CATEGORIES).toEqual(
+      [...new Set(FEED_CATALOG.map(f => f.category))].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+    )
+  })
+
+  it.each([
+    ['macro', 'BIS · Research'],
+    ['rates', 'BIS · Central bankers’ speeches'],
+    ['regulation', 'SEC · Press releases'],
+    ['shipping', 'The Loadstar'],
+    ['apac', 'South China Morning Post · Asia'],
+    ['emea', 'African Business'],
+    ['latam', 'MercoPress · Economy'],
+    ['magazines', 'Harper’s Magazine'],
+    ['crops', 'FAO · News'],
+    ['cyber', 'CISA · Advisories'],
+    ['military', 'Breaking Defense'],
+    ['sanctions', 'UK · Financial sanctions'],
+    ['solar', 'PV Magazine'],
+    ['chips', 'Semiconductor Engineering'],
+    ['disclosures', 'NVIDIA · Press releases'],
+    ['earnings', 'GlobeNewswire · Earnings']
+  ])('discovers relevant feeds for %s', (query, title) => {
+    expect(searchFeeds(query).some(f => f.title === title)).toBe(true)
   })
 })
 
