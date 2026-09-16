@@ -15,7 +15,7 @@ vi.mock('../lib/signalClient.js', async importOriginal => ({
   checkHealth: async () => true,
   sendSignalMessage: transport,
   listContacts: async () => [{ id: '+15550000001', name: 'Ada Lovelace', aliases: ['Ada'] }],
-  listGroups: async () => [],
+  listGroups: async () => [{ id: 'empty', name: 'Empty group', memberCount: 2 }],
   signalRpc: async () => ({ result: null, error: null }),
   openReceiveStream: () => () => {}
 }))
@@ -47,7 +47,11 @@ it('refreshes names in the real messaging view, opens f search and enters a chat
   )
 
   try {
-    await waitForText(() => stripAnsi(output), 'Ada Lovelace')
+    const { $signalDirectory } = await import('../lib/signalDirectory.js')
+    await vi.waitFor(() => expect($signalDirectory.get()['+15550000001']?.name).toBe('Ada Lovelace'))
+    await waitForText(() => stripAnsi(output), 'No conversations yet.')
+    expect(stripAnsi(output)).not.toContain('Ada Lovelace')
+    expect(stripAnsi(output)).not.toContain('Empty group')
     stdin.write('f')
     await waitForText(() => stripAnsi(output), 'FIND CONTACT OR CHAT')
     stdin.write('ada')
@@ -56,6 +60,17 @@ it('refreshes names in the real messaging view, opens f search and enters a chat
     stdin.write('\r')
     await waitForText(() => stripAnsi(output), 'Write a message')
     expect(stripAnsi(output)).not.toContain('FIND CONTACT OR CHAT')
+    expect(stripAnsi(output)).not.toContain('CHATS  (1)')
+    output = ''
+    stdin.write('\x1b[D')
+    await waitForText(() => stripAnsi(output), 'No conversations yet.')
+    stdin.write('f')
+    await waitForText(() => stripAnsi(output), 'FIND CONTACT OR CHAT')
+    stdin.write('ada')
+    await waitForText(() => stripAnsi(output), 'Search › ada')
+    output = ''
+    stdin.write('\r')
+    await waitForText(() => stripAnsi(output), 'Write a message')
     // Cursor navigation edits text; Left at the boundary returns to the rail.
     stdin.write('abc')
     const { $chatState } = await import('../lib/messagingState.js')

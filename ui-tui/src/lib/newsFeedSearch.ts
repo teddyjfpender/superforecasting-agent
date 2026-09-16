@@ -50,7 +50,16 @@ const SYNONYMS: Record<string, string[]> = {
   earthquake: ['quake', 'seismic', 'usgs', 'disaster', 'hazard'],
   disaster: ['hazard', 'emergency', 'flood', 'earthquake', 'storm', 'weather', 'relief'],
   climate: ['weather', 'warming', 'environment', 'emissions'],
-  wildfire: ['fire', 'wildfires', 'weather', 'hazard']
+  wildfire: ['fire', 'wildfires', 'weather', 'hazard'],
+  macro: ['economics', 'economic releases', 'central banks', 'monetary'],
+  rates: ['central banks', 'monetary', 'policy'],
+  regulation: ['regulation', 'securities', 'competition', 'enforcement'],
+  shipping: ['trade & logistics', 'maritime', 'freight', 'ports'],
+  commodities: ['energy', 'oil', 'gas', 'power', 'trade'],
+  apac: ['asia pacific', 'asia', 'australia'],
+  emea: ['europe', 'middle east', 'africa'],
+  latam: ['latin america', 'latin american'],
+  magazines: ['magazines', 'long reads', 'essays', 'geopolitics']
 }
 
 const expand = (tokens: string[]): string[] => {

@@ -38,8 +38,9 @@ outline/wiki-link/git shortcut maps no longer describe the default Docs surface.
 `useViewInput` registers the keyboard handler and returns the same guarded handler
 for footer actions. `FooterChips` uses it for unambiguous single-action keys that
 lack an explicit callback. Existing explicit callbacks remain for compound or
-context-dependent actions. A combined navigation hint such as `PgUp/Dn` is plain
-text; clickable actions have brackets. Covered or disabled footers never dispatch.
+context-dependent actions. Every shortcut uses brackets, including combined navigation hints such as
+`[PgUp/Dn Read]`. Only unambiguous actions dispatch mouse clicks. Quick Message
+lives in the bottom shortcut rows, not the page-navigation bar. Covered or disabled footers never dispatch.
 
 This closes previously inert clicks for model actions, News Open, Hooks actions,
 and Messaging pin/archive/category. Markets uses `M` for Models and `m` for messaging.

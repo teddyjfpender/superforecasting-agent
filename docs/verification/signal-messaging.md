@@ -22,6 +22,11 @@
 - Quick compose uses the same picker. Selecting a recipient does not send a
   message; review the identifier and draft before **Ctrl+Enter**.
 
+The conversation lists exclude contacts and groups with no captured messages,
+nonempty draft or outstanding send attempt. Empty recipients remain discoverable
+through **f/n**; opening one lets you write without adding an empty chat to the
+list. Leaving it blank returns to the uncluttered list.
+
 ## Composer and message status
 
 The chat composer expands as text wraps, up to six visible rows on large

@@ -2,10 +2,9 @@ import { useStore } from '@nanostores/react'
 import { Box, NoSelect, Text } from '@superforecasting/ink'
 import { useEffect, useState } from 'react'
 
-import { activeNavKey, canOpenGlobalOverlay, NAV_TABS, selectNavView } from '../app/navRoutes.js'
+import { activeNavKey, NAV_TABS, selectNavView } from '../app/navRoutes.js'
 import { $globalModal, $overlayState } from '../app/overlayStore.js'
 import { $uiState } from '../app/uiStore.js'
-import { openQuickMessage } from '../lib/messagingState.js'
 import { signalUnread, signalVersion, subscribeSignal } from '../lib/signalLive.js'
 
 // A slim, clickable tab bar across the top of the TUI — browser-style routing
@@ -52,16 +51,7 @@ export function NavBar() {
             </Box>
           )
         })}
-        <Box
-          marginLeft={2}
-          onClick={() => {
-            if (!blocked && canOpenGlobalOverlay(overlay)) {
-              openQuickMessage()
-            }
-          }}
-        >
-          <Text color={t.color.accent}>[⌥m Message]</Text>
-        </Box>
+
       </Box>
     </NoSelect>
   )

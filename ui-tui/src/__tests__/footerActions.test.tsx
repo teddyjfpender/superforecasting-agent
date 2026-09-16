@@ -87,3 +87,25 @@ describe('shared help and footer ownership', () => {
     })
   }
 })
+
+
+it('keeps navigation hints bracketed and Quick Message in the footer only', async () => {
+  const { $quickMessage, openQuickMessage } = await import('../lib/messagingState.js')
+  const { resetOverlayState, patchOverlayState } = await import('../app/overlayStore.js')
+  resetOverlayState()
+  const row = FooterChips({ chips: [{ k: 'PgUp/Dn', label: 'Read' }], t: DARK_THEME })
+  const children = (row.props as { children: ReactElement<{ onClick?: (event: object) => void; children: ReactElement<{ children: string }>[] }>[] }).children
+  expect(children[0].props.children[0].props.children).toBe('[')
+  expect(children[0].props.children.at(-1)?.props.children).toBe(']')
+  expect(children[0].props.onClick).toBeUndefined()
+  children[1].props.onClick?.({})
+  expect($quickMessage.get()).not.toBeNull()
+  resetOverlayState()
+  patchOverlayState({ cheatSheet: true })
+  children[1].props.onClick?.({})
+  expect($quickMessage.get()).toBeNull()
+  resetOverlayState()
+  const existing = FooterChips({ chips: [{ k: 'm', label: 'Message', run: openQuickMessage }], t: DARK_THEME })
+  expect((existing.props as { children: unknown[] }).children).toHaveLength(1)
+  expect(readFileSync(resolve('src/components/navBar.tsx'), 'utf8')).not.toContain('openQuickMessage')
+})
