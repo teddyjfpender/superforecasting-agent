@@ -31,7 +31,15 @@ describe('professional news coverage', () => {
     ['apac', 'South China Morning Post · Asia'],
     ['emea', 'African Business'],
     ['latam', 'MercoPress · Economy'],
-    ['magazines', 'Harper’s Magazine']
+    ['magazines', 'Harper’s Magazine'],
+    ['crops', 'FAO · News'],
+    ['cyber', 'CISA · Advisories'],
+    ['military', 'Breaking Defense'],
+    ['sanctions', 'UK · Financial sanctions'],
+    ['solar', 'PV Magazine'],
+    ['chips', 'Semiconductor Engineering'],
+    ['disclosures', 'NVIDIA · Press releases'],
+    ['earnings', 'GlobeNewswire · Earnings']
   ])('discovers relevant feeds for %s', (query, title) => {
     expect(searchFeeds(query).some(f => f.title === title)).toBe(true)
   })

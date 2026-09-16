@@ -36,8 +36,11 @@ To add a feed:
    publisher's HTTPS endpoint, a precise topic and an existing category where it fits.
 2. Verify a bounded fetch through `forecasting.news.transport.fetch_public_text`
    and parsing through `ui-tui/src/lib/newsFeedFetch.ts`: useful titles, article
-   links, real publication dates and the intended language/topic. Record the date
-   and result. Do not substitute scraping proxies for inaccessible feeds.
+   links, real publication dates and the intended language/topic. Check the newest
+   past publication (not just the first item); reject stale feeds and distinguish
+   future events from released news. Confirm subject-filter IDs against the
+   publisher directory, and label multilingual or issuer-supplied material.
+   Record the date and result. Do not substitute scraping proxies for inaccessible feeds.
 3. Mention subscription requirements in the description. Public RSS does not
    imply full-text access, redistribution rights or a licensed real-time wire.
 4. Run `python3 scripts/gen-news-catalog.py`, then the checks below. Generation
