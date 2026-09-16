@@ -3,13 +3,16 @@ import { Box, Text, useInput } from '@superforecasting/ink'
 import { useRef, useState } from 'react'
 
 import { $overlayState } from '../app/overlayStore.js'
+import { encodeFeedMessage, presentFeedShare } from '../lib/feedShare.js'
 import { sendDeskMessage } from '../lib/messagingSend.js'
 import { $chatState, $messagingStorageError, $quickMessage, updateChatState } from '../lib/messagingState.js'
 import { $signalDirectory } from '../lib/signalDirectory.js'
 import { resolveSignalConfig } from '../lib/signalStore.js'
+import type { FeedShare } from '../protocol/generated.js'
 import type { Theme } from '../theme.js'
 
 import { ContactPicker } from './contactPicker.js'
+import { FeedShareCard } from './feedShareCard.js'
 import { MessageComposer } from './messageComposer.js'
 import { ModalOverlay } from './modalOverlay.js'
 
@@ -24,10 +27,20 @@ export function QuickMessage({ cols, rows, t }: { cols: number; rows: number; t:
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [includeItem, setIncludeItem] = useState(true)
+  const [chart, setChart] = useState<FeedShare['presentation']>('bar-chart')
+  const [horizon, setHorizon] = useState(24)
+  const [optionsFocused, setOptionsFocused] = useState(false)
+  const feed = includeItem && request?.item?.feed ? presentFeedShare(request.item.feed, chart, horizon) : null
   const sending = useRef(false)
   const book = useStore($signalDirectory)
   const modalWidth = cols < 100 ? Math.max(40, cols - 2) : Math.max(48, Math.min(cols - 6, 88))
-  const draftRows = Math.max(1, Math.min(6, Math.min(rows - 6, 30) - 14 - (includeItem && request?.item ? 2 : 0)))
+
+  const previewHeight = rows >= 32 ? 4 : 2
+
+  const draftRows = Math.max(
+    1,
+    Math.min(6, Math.min(rows - 6, 30) - 14 - (includeItem && request?.item ? (feed ? 8 + previewHeight : 2) : 0))
+  )
 
   const send = async (value = draft) => {
     const cfg = resolveSignalConfig()
@@ -44,12 +57,22 @@ export function QuickMessage({ cols, rows, t }: { cols: number; rows: number; t:
 
     const id = recipient
 
-    const text = [
+    let text = [
       value.trim(),
       includeItem && request?.item ? `${request.item.title}\n${request.item.text.replace(/\s+/g, ' ')}` : ''
     ]
       .filter(Boolean)
       .join('\n\n')
+
+    if (feed) {
+      try {
+        text = encodeFeedMessage(text, feed)
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : 'Cannot encode feed snapshot')
+
+        return
+      }
+    }
 
     sending.current = true
     setBusy(true)
@@ -72,11 +95,51 @@ export function QuickMessage({ cols, rows, t }: { cols: number; rows: number; t:
 
   useInput(
     (input, key, event) => {
-      if (!recipient || key.escape || key.tab || sending.current || (key.ctrl && input.toLowerCase() === 'r')) {
+      if (
+        optionsFocused ||
+        !recipient ||
+        key.escape ||
+        key.tab ||
+        sending.current ||
+        (key.ctrl && (input.toLowerCase() === 'r' || key.return))
+      ) {
         ;(event as unknown as { stopImmediatePropagation?: () => void }).stopImmediatePropagation?.()
       }
 
       if (sending.current) {
+        return
+      }
+
+      if (key.ctrl && key.return) {
+        void send()
+
+        return
+      }
+
+      if (key.tab && key.shift && feed) {
+        setOptionsFocused(value => !value)
+
+        return
+      }
+
+      if (optionsFocused && feed) {
+        if (key.leftArrow || key.rightArrow) {
+          setChart(value => (value === 'bar-chart' ? 'line-chart' : 'bar-chart'))
+        }
+
+        if (key.upArrow || key.downArrow) {
+          setHorizon(value => {
+            const choices = [6, 12, 24, 120]
+            const index = choices.indexOf(value)
+
+            return choices[(index + (key.upArrow ? 3 : 1)) % 4]!
+          })
+        }
+
+        if (key.return || key.escape) {
+          setOptionsFocused(false)
+        }
+
         return
       }
 
@@ -120,27 +183,35 @@ export function QuickMessage({ cols, rows, t }: { cols: number; rows: number; t:
   return (
     <ModalOverlay
       cols={cols}
-      footerHint="Tab recipient · Ctrl+R forward · Esc keep draft"
-      maxHeight={30}
+      footerHint={
+        optionsFocused
+          ? '[←/→ chart] [↑/↓ horizon] [Enter compose]'
+          : '[Tab recipient] [Ctrl+R forward] [Esc keep draft]'
+      }
+      maxHeight={36}
       maxWidth={88}
       rows={rows}
       t={t}
       title="MESSAGE"
+      verticalMargin={rows < 30 ? 2 : 6}
     >
-      <Box flexShrink={0}>
-        <Text color={t.color.muted} wrap="truncate-end">
-          Signal · Review recipient and content before sending
-        </Text>
-      </Box>
+      {!feed && (
+        <Box flexShrink={0}>
+          <Text color={t.color.muted} wrap="truncate-end">
+            Signal · Review recipient and content before sending
+          </Text>
+        </Box>
+      )}
       <Box flexShrink={0}>
         <Text color={t.color.accent} wrap="truncate-end">
           To: {book[recipient]?.name || recipient} · {recipient}
         </Text>
       </Box>
       <MessageComposer
-        active={!busy && !blocked}
+        active={!busy && !blocked && !optionsFocused}
         busy={busy}
         columns={modalWidth - 10}
+        hasAttachment={Boolean(includeItem && request?.item)}
         inputRows={draftRows}
         multiline
         onBack={() => setRecipient(null)}
@@ -152,15 +223,25 @@ export function QuickMessage({ cols, rows, t }: { cols: number; rows: number; t:
         t={t}
         text={draft}
       />
-      {includeItem && request?.item && (
+      {feed ? (
         <Box flexDirection="column" flexShrink={0}>
-          <Text color={t.color.label} wrap="truncate-end">
-            FORWARD · {request.item.title}
+          <Text color={optionsFocused ? t.color.accent : t.color.muted} wrap="truncate-end">
+            {chart} · latest {horizon} observations · [Shift+Tab chart/horizon]
           </Text>
-          <Text color={t.color.muted} wrap="truncate-end">
-            {request.item.text.replace(/\s+/g, ' ')}
-          </Text>
+          <FeedShareCard chartHeight={previewHeight} compact share={feed} t={t} width={modalWidth - 10} />
         </Box>
+      ) : (
+        includeItem &&
+        request?.item && (
+          <Box flexDirection="column" flexShrink={0}>
+            <Text color={t.color.label} wrap="truncate-end">
+              FORWARD · {request.item.title}
+            </Text>
+            <Text color={t.color.muted} wrap="truncate-end">
+              {request.item.text.replace(/\s+/g, ' ')}
+            </Text>
+          </Box>
+        )
       )}
       {(error || storageError) && (
         <Text color={t.color.error} wrap="truncate-end">

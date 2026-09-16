@@ -7,6 +7,8 @@ import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlay
 import type { MarketSeries } from '../content/marketProviders.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import { catalogSeries, deskConfig, saveDeskFields } from '../lib/dataDesk.js'
+import { deskViewCache } from '../lib/deskViewCache.js'
+import { shareQuote } from '../lib/feedShare.js'
 import { type FieldSpec, rankItems } from '../lib/fuzzyRank.js'
 import { statusGlyph } from '../lib/icons.js'
 import { changeReference, displayedChange, formatMarketChange, lastMovement } from '../lib/marketChange.js'
@@ -211,10 +213,18 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   // useInput goes inert and its still-visible body mouse handlers are gated.
   const globalModal = useStore($globalModal)
 
-  const [config, setConfig] = useState<MarketConfig>({ categories: [], custom: [], providers: [], watchlist: [] })
-  const [desk, setDesk] = useState<MarketCatalogResponse | null>(null)
-  const eventCacheRef = useRef<Record<string, DataEvents>>({})
-  const [providerStatus, setProviderStatus] = useState<Record<string, MarketProviderStatus>>({})
+  const [standaloneCache] = useState(() => deskViewCache())
+  const retained = gw ? deskViewCache(gw) : standaloneCache
+
+  const [config, setConfig] = useState<MarketConfig>(() =>
+    retained.marketDesk
+      ? deskConfig(retained.marketDesk.catalog, retained.marketDesk.selection)
+      : { categories: [], custom: [], providers: [], watchlist: [] }
+  )
+
+  const [desk, setDesk] = useState<MarketCatalogResponse | null>(retained.marketDesk ?? null)
+  const eventCacheRef = useRef<Record<string, DataEvents>>(retained.events)
+  const [providerStatus, setProviderStatus] = useState<Record<string, MarketProviderStatus>>(retained.statuses)
   const [active, setActive] = useState(0)
   const [sel, setSel] = useState(0)
   const [tick, setTick] = useState(0)
@@ -275,7 +285,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
 
   const jobActive = (id: null | string): boolean => liveJob(id ? marketJobs[id] : undefined, Date.now())
 
-  const cacheRef = useRef<QuoteCache>({})
+  const cacheRef = useRef<QuoteCache>(retained.quotes)
   const [cacheVersion, setCacheVersion] = useState(0)
   const inflightRef = useRef(false)
   const refreshOwner = useRef<AbortController | null>(null)
@@ -304,11 +314,15 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     refreshOwner.current?.abort()
     refreshOwner.current = null
     inflightRef.current = false
-    cacheRef.current = {}
-    eventCacheRef.current = {}
-    setDesk(null)
-    setConfig({ providers: [], categories: [], custom: [], watchlist: [] })
-    setProviderStatus({})
+    cacheRef.current = retained.quotes
+    eventCacheRef.current = retained.events
+    setDesk(retained.marketDesk ?? null)
+    setConfig(
+      retained.marketDesk
+        ? deskConfig(retained.marketDesk.catalog, retained.marketDesk.selection)
+        : { providers: [], categories: [], custom: [], watchlist: [] }
+    )
+    setProviderStatus(retained.statuses)
 
     if (!gw) {
       return
@@ -320,6 +334,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
           return
         }
 
+        retained.marketDesk = result
         const next = deskConfig(result.catalog, result.selection)
         setDesk(result)
         setConfig(next)
@@ -333,7 +348,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     return () => {
       alive = false
     }
-  }, [gw])
+  }, [gw, retained])
 
   const searchableSeries = useMemo(() => (desk ? catalogSeries(desk.catalog) : []), [desk])
 
@@ -1698,13 +1713,15 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
 
   // ---- right: security detail card ----------------------------------------
   const q = selectedRow?.quote
+  const feedShare = useMemo(() => (q && !pmTabActive ? shareQuote(q) : null), [q, pmTabActive])
   useShareItem(
     pmTabActive ? pm.detailItem?.event.title || '' : q?.name || q?.symbol || '',
     pmTabActive
       ? `Prediction market · ${pm.detailItem?.event.title || ''}\n${pm.detailItem?.event.url || ''}`
       : q
         ? `${q.value ?? 'Unavailable'} ${q.unit || ''} · CHG ${q.change ?? 'unavailable'} · ${q.provider} · observed ${q.asOf ? new Date(q.asOf).toISOString() : 'unknown'}`
-        : ''
+        : '',
+    feedShare
   )
   const s = selectedRow?.series
   const chartW = Math.max(12, detailWidth - 2)

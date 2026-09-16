@@ -13,6 +13,7 @@ export interface CachedFeed {
   articles: Article[]
   error?: string
   fetchedAt: number
+  retryAt?: number
 }
 
 export type ArticleCache = Record<string, CachedFeed>

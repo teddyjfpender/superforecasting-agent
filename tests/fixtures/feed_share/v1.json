@@ -1,0 +1,21 @@
+{
+  "type": "sfa.feed",
+  "version": 1,
+  "presentation": "bar-chart",
+  "horizon": {"start": "2026-06-01", "end": "2026-08-31"},
+  "feeds": [{
+    "provider": "ibge",
+    "symbol": "1737/63",
+    "name": "Brazil · IPCA monthly inflation",
+    "unit": "% monthly change",
+    "kind": "observation",
+    "source_url": "https://sidra.ibge.gov.br",
+    "retrieved_at": "2026-09-16T09:00:00Z",
+    "revision_policy": "latest",
+    "points": [
+      {"start": "2026-06-01", "end": "2026-06-30", "value": 0.16},
+      {"start": "2026-07-01", "end": "2026-07-31", "value": null},
+      {"start": "2026-08-01", "end": "2026-08-31", "value": -0.32}
+    ]
+  }]
+}

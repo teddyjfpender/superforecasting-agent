@@ -58,3 +58,23 @@ Signal contact discovery is owned by `signalDirectory.ts` (shared refresh and
 reactive cache). `signalContacts.ts` preserves name provenance and local labels;
 `messagingSearch.ts` ranks names, categories and saved message context without
 external AI calls. See [Signal behavior and tests](../../../../docs/verification/signal-messaging.md).
+
+## Data desk lifetimes
+
+- `deskViewCache.ts` owns bounded, in-memory snapshots keyed by the backend
+  connection and active profile/attach address, not by a mounted React view.
+  Reattaching a client in place creates a new cache scope; late replies stay in
+  their original scope. Different backend/profile clients never share caches. Restarting the TUI starts a new connection cache.
+- `marketFetch.ts` coalesces identical pending quote requests. Replies still warm
+  their original connection after navigation, while aborted views cannot repaint.
+  Source-specific freshness remains authoritative; values stay visible during refresh.
+- `newsDesk.ts` retains parsed feeds for ten minutes and reader bodies for thirty,
+  deduplicates pending acquisitions, and backs off feed failures for one minute.
+  Explicit refresh bypasses feed freshness/backoff. Failed refreshes retain the
+  last successful contents and acquisition time.
+- `feedShare.ts` validates and serializes portable message snapshots against the
+  generated `protocol/feed_share.py` types. `feedShareChart.ts` renders bounded
+  charts; `FeedShareCard` presents them without network or ledger effects.
+- `pmListCache.ts` retains prediction-market browse snapshots per connection and
+  venue for thirty seconds. Explicit refresh and a backend refresh-in-progress
+  bypass freshness; stream subscriptions still stop when the view leaves.

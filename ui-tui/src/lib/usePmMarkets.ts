@@ -1,20 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+
+import type { RpcRequest } from '../protocol/generated.js'
 // Data hooks for the Prediction Markets pane: they keep the network + streaming
 // lifecycle out of the view component (which stays under the non-monolithic
 // line budget and reads as pure layout + input). One list fetch per refresh;
 // book/history fetch on demand for the selection; ONE multiplexed ws
 // subscription per selected event, folded in place on pm.tick.
-
-import type { RpcRequest } from '../protocol/generated.js'
 import { WireEvent } from '../protocol/generated.js'
 
+import { gatewayCacheOwner } from './deskViewCache.js'
+import type { fetchPMListResult } from './pmData.js'
 import {
   applyBookTick,
   bookMarketId,
   fetchPMBook,
   fetchPMDetail,
   fetchPMHistory,
-  fetchPMListResult,
   type PMHistoryPointDTO,
   type PMHistoryRange,
   type PMListItem,
@@ -28,6 +29,7 @@ import {
   stopPMStream,
   tickEstimate
 } from './pmData.js'
+import { peekPMList, retainedPMList } from './pmListCache.js'
 
 export interface PMHookGateway {
   off?: (event: string, listener: (...args: unknown[]) => void) => void
@@ -38,17 +40,23 @@ export interface PMHookGateway {
 // ── list ─────────────────────────────────────────────────────────────────────
 
 export function usePmList(gw: PMHookGateway | undefined, active: boolean, venue: 'all' | PMVenue) {
-  const [items, setItems] = useState<PMListItem[]>([])
+  const cacheOwner = gw ? gatewayCacheOwner(gw) : undefined
+  const [items, setItems] = useState<PMListItem[]>(() => peekPMList(gw, venue)?.value.items ?? [])
   const [loading, setLoading] = useState(false)
   // Cold-start tape: rows served instantly from the gateway's disk cache while
   // the live revalidate runs — surfaced so the UI can mark the tape stale.
-  const [stale, setStale] = useState(false)
-  const [catalog, setCatalog] = useState<Awaited<ReturnType<typeof fetchPMListResult>>['catalog']>(null)
+  const [stale, setStale] = useState(() => peekPMList(gw, venue)?.value.stale ?? false)
+
+  const [catalog, setCatalog] = useState<Awaited<ReturnType<typeof fetchPMListResult>>['catalog']>(
+    () => peekPMList(gw, venue)?.value.catalog ?? null
+  )
+
   const [error, setError] = useState('')
   // Has the FIRST list fetch settled (either way)? Lets the section show an
   // honest "loading venues…" line on first open instead of flashing "0 events"
   // before any items land. Distinct from `loading`, which toggles per refresh.
-  const [loaded, setLoaded] = useState(false)
+  const [loaded, setLoaded] = useState(() => Boolean(peekPMList(gw, venue)))
+  const listGeneration = useRef(0)
   const aliveRef = useRef(true)
 
   useEffect(() => {
@@ -59,35 +67,48 @@ export function usePmList(gw: PMHookGateway | undefined, active: boolean, venue:
     }
   }, [])
 
-  const reload = useCallback(() => {
-    if (!gw) {
-      return
-    }
+  const reload = useCallback(
+    (force = true) => {
+      if (!gw) {
+        return
+      }
 
-    setLoading(true)
-    setError('')
-    fetchPMListResult(gw, { limit: 40, ...(venue === 'all' ? {} : { venue }) })
-      .then(next => {
-        if (aliveRef.current) {
-          setCatalog(next.catalog)
-          setItems(next.items)
-          setStale(next.stale)
-          setLoading(false)
-          setLoaded(true)
-        }
-      })
-      .catch(err => {
-        if (aliveRef.current) {
-          setError(err instanceof Error ? err.message : String(err))
-          setLoading(false)
-          setLoaded(true)
-        }
-      })
-  }, [gw, venue])
+      const generation = ++listGeneration.current
+      const cached = peekPMList(gw, venue)
+      setItems(cached?.value.items ?? [])
+      setCatalog(cached?.value.catalog ?? null)
+      setLoaded(Boolean(cached))
+      setStale(cached?.value.stale ?? false)
+      setLoading(true)
+      setError('')
+      retainedPMList(gw, venue, force)
+        .then(next => {
+          if (aliveRef.current && generation === listGeneration.current && cacheOwner === gatewayCacheOwner(gw)) {
+            setCatalog(next.catalog)
+            setItems(next.items)
+            setStale(next.stale)
+            setLoading(false)
+            setLoaded(true)
+          }
+        })
+        .catch(err => {
+          if (aliveRef.current && generation === listGeneration.current && cacheOwner === gatewayCacheOwner(gw)) {
+            setError(err instanceof Error ? err.message : String(err))
+            setLoading(false)
+            setLoaded(true)
+          }
+        })
+    },
+    [gw, venue, cacheOwner]
+  )
 
   useEffect(() => {
     if (active) {
-      reload()
+      reload(false)
+    }
+
+    return () => {
+      listGeneration.current += 1
     }
   }, [active, reload])
 

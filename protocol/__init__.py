@@ -26,6 +26,7 @@ from protocol.events import tools as _events_tools
 from protocol.events import turn as _events_turn
 from protocol.events import voice as _events_voice
 from protocol.events import warnings as _events_warnings
+from protocol.feed_share import FeedShare
 from protocol.rpc import agents as _rpc_agents
 from protocol.rpc import commands as _rpc_commands
 from protocol.rpc import config as _rpc_config
@@ -833,6 +834,7 @@ RPC_SPECS: list[RpcSpec] = [
 # their own leaner event models). Listed here so the codegen collector reaches
 # them.
 EXTRA_MODELS: list[type[WireModel]] = [
+    FeedShare,
     _rpc_config.ConfigMtimeResponse,
     _rpc_config.ConfigProviderResponse,
     _rpc_config.ConfigGetValueResponse,

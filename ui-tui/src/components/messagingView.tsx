@@ -3,6 +3,7 @@ import { Box, ScrollBox, type ScrollBoxHandle, Text, useStdout } from '@superfor
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
+import { decodeFeedMessage } from '../lib/feedShare.js'
 import { statusGlyph, type StatusKind } from '../lib/icons.js'
 import { $messageSendAttempts, messageSendKey, sendDeskMessage } from '../lib/messagingSend.js'
 import { $chatState, $messagingStorageError, openQuickMessage, updateChatState } from '../lib/messagingState.js'
@@ -30,6 +31,7 @@ import { useViewInput } from '../lib/useViewInput.js'
 import type { Theme } from '../theme.js'
 
 import { ContactPicker } from './contactPicker.js'
+import { FeedShareCard } from './feedShareCard.js'
 import { type FooterChip, FooterChips } from './footerChips.js'
 import { MessageComposer, messageComposerRows } from './messageComposer.js'
 import { ModalOverlay } from './modalOverlay.js'
@@ -1274,6 +1276,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
             </Text>
           ) : (
             threadMessages.map((m, i) => {
+              const shared = decodeFeedMessage(m.text)
               const gi = i
               const showHeader = headerForMsg[gi]
 
@@ -1303,10 +1306,11 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
                   ) : null}
                   {m.text ? (
                     <Text color={t.color.text} wrap="wrap">
-                      {m.text}
+                      {shared.text}
                       {m.fromMe ? <Text color={t.color.muted}> ✓</Text> : null}
                     </Text>
                   ) : null}
+                  {shared.share ? <FeedShareCard share={shared.share} t={t} width={composerColumns} /> : null}
                   {m.attachments > 0 ? (
                     <Box
                       onClick={() => {

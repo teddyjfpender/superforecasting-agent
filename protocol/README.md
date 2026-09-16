@@ -83,3 +83,12 @@ The forecast operation parity tests cover both malformed input and absence of wr
 ## Data desk
 
 Pure data-desk schemas live in `data_desk.py`; RPC envelopes live in `rpc/markets.py`. They import no application, credential, filesystem or provider owners. TypeScript generation includes nested catalog and selection types.
+
+## Portable feed messages
+
+[`feed_share.py`](feed_share.py) owns the transport-neutral `sfa.feed` v1 snapshot
+contract. It is an extra generated model, not a gateway operation. The receiving
+TUI validates untrusted JSON before rendering; Python and TypeScript tests consume
+[the same fixture](../tests/fixtures/feed_share/README.md). See
+[message transport and trust boundaries](../docs/architecture/messaging-docs-desk.md#sharing-a-data-feed)
+before adding a transport or presentation type.

@@ -107,6 +107,63 @@ def parse_ibge(payload: JsonValue, ref: SeriesRef, dimensions: dict[str, str]) -
     return observation_quote(ref, points)
 
 
+def parse_ibge_aggregate(
+    payload: JsonValue, ref: SeriesRef, dimensions: dict[str, str]
+) -> Quote:
+    """Aggregate API v3: validate the measurement before adapting SIDRA rows."""
+
+    def invalid() -> ProviderFailure:
+        return ProviderFailure(
+            "invalid_response", "IBGE aggregate measurement or territory mismatch"
+        )
+
+    if (
+        not isinstance(payload, list)
+        or len(payload) != 1
+        or not isinstance(payload[0], dict)
+    ):
+        raise invalid()
+    variable = payload[0]
+    if (variable.get("id"), variable.get("variavel"), variable.get("unidade")) != (
+        dimensions["D2C"],
+        dimensions["D2N"],
+        dimensions["MN"],
+    ):
+        raise invalid()
+    results = variable.get("resultados")
+    if (
+        not isinstance(results, list)
+        or len(results) != 1
+        or not isinstance(results[0], dict)
+    ):
+        raise invalid()
+    result = results[0]
+    series = result.get("series")
+    if (
+        result.get("classificacoes") != []
+        or not isinstance(series, list)
+        or len(series) != 1
+        or not isinstance(series[0], dict)
+    ):
+        raise invalid()
+    item = series[0]
+    locality = item.get("localidade")
+    if not isinstance(locality, dict) or locality.get("id") != dimensions["D1C"]:
+        raise invalid()
+    level = locality.get("nivel")
+    if not isinstance(level, dict) or level.get("id") != "N" + dimensions["NC"]:
+        raise invalid()
+    observations = item.get("serie")
+    if not isinstance(observations, dict) or not observations:
+        raise invalid()
+    rows: list[JsonValue] = [{}]
+    rows.extend(
+        {**dimensions, "D3C": period, "V": value}
+        for period, value in observations.items()
+    )
+    return parse_ibge(rows, ref, dimensions)
+
+
 class SingStatProvider(IndependentSeries):
     name = "singstat"
     needs_key = False
@@ -150,11 +207,12 @@ class IbgeProvider(IndependentSeries):
             entry = catalog_entry(ref)
             dimensions = entry.dimensions
             endpoint = (
-                "https://apisidra.ibge.gov.br/values/t/"
+                "https://servicodados.ibge.gov.br/api/v3/agregados/"
                 + quote(dimensions["_table"], safe="")
-                + "/n1/1/v/"
+                + "/periodos/-24/variaveis/"
                 + quote(dimensions["D2C"], safe="")
-                + "/p/last%2024?formato=json"
+                + "?"
+                + urlencode({"localidades": "N1[1]"})
             )
-            result.append(parse_ibge(self._get(endpoint), ref, dimensions))
+            result.append(parse_ibge_aggregate(self._get(endpoint), ref, dimensions))
         return result
