@@ -18,6 +18,7 @@ export function MessageComposer({
   busy,
   t,
   multiline = false,
+  hasAttachment = false,
   onChange,
   onSend,
   onBack
@@ -29,6 +30,7 @@ export function MessageComposer({
   busy: boolean
   t: Theme
   multiline?: boolean
+  hasAttachment?: boolean
   onChange: (text: string) => void
   onSend: (text: string) => void
   onBack: () => void
@@ -65,12 +67,12 @@ export function MessageComposer({
         </Text>
         <Box
           onClick={() => {
-            if (active && !busy && text.trim()) {
+            if (active && !busy && (text.trim() || hasAttachment)) {
               onSend(text)
             }
           }}
         >
-          <Text bold color={active && !busy && text.trim() ? t.color.accent : t.color.muted}>
+          <Text bold color={active && !busy && (text.trim() || hasAttachment) ? t.color.accent : t.color.muted}>
             {busy ? '◷' : multiline ? '[Ctrl+Enter send]' : '[Enter send]'}
           </Text>
         </Box>

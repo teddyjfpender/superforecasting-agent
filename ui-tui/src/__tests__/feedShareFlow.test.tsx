@@ -1,0 +1,92 @@
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { PassThrough } from 'node:stream'
+
+import React from 'react'
+import { expect, it, vi } from 'vitest'
+
+import { decodeFeedMessage } from '../lib/feedShare.js'
+import type * as SignalClient from '../lib/signalClient.js'
+import { waitForText } from '../testing/settle.js'
+
+const transport = vi.hoisted(() => vi.fn().mockResolvedValue({ error: null, timestamp: 123 }))
+vi.mock('../lib/signalClient.js', async importOriginal => ({
+  ...(await importOriginal<typeof SignalClient>()),
+  checkHealth: async () => true,
+  sendSignalMessage: transport,
+  listContacts: async () => [{ id: '+15550000001', name: 'Ada', aliases: [] }],
+  listGroups: async () => [],
+  openReceiveStream: () => () => {}
+}))
+
+it('selects a contact, edits chart settings and sends a typed feed without requiring a caption', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'feed-share-flow-'))
+  vi.stubEnv('SUPERFORECASTING_AGENT_HOME', root)
+  vi.stubEnv('SIGNAL_ACCOUNT', '+15550000999')
+  const { QuickMessage } = await import('../components/quickMessage.js')
+  const { MessagingView } = await import('../components/messagingView.js')
+  const { stopSignalReceiver } = await import('../lib/signalLive.js')
+  const { $quickMessage } = await import('../lib/messagingState.js')
+  const { resetOverlayState } = await import('../app/overlayStore.js')
+  const { Box, render } = await import('@superforecasting/ink')
+  const { DARK_THEME } = await import('../theme.js')
+  const { stripAnsi } = await import('../lib/text.js')
+  resetOverlayState()
+  const feed = JSON.parse(readFileSync(new URL('../../../tests/fixtures/feed_share/v1.json', import.meta.url), 'utf8'))
+  $quickMessage.set({ item: { title: 'IPCA', text: 'Monthly release', feed } })
+
+  const stdout = new PassThrough(),
+    stdin = new PassThrough()
+
+  Object.assign(stdout, { columns: 100, rows: 30, isTTY: false })
+  Object.assign(stdin, { isTTY: true, isRaw: false, setRawMode: () => {}, ref: () => stdin, unref: () => stdin })
+  let output = ''
+  stdout.on('data', chunk => {
+    output += String(chunk)
+  })
+
+  const app = await render(
+    <Box height={30} width={100}>
+      <QuickMessage cols={100} rows={30} t={DARK_THEME} />
+    </Box>,
+    { stdout: stdout as never, stdin: stdin as never, debug: true, patchConsole: false, exitOnCtrlC: false }
+  )
+
+  try {
+    await waitForText(() => stripAnsi(output), 'Ada')
+    stdin.write('\r')
+    await waitForText(() => stripAnsi(output), 'Shift+Tab edit')
+    stdin.write('\x1b[Z')
+    await waitForText(() => stripAnsi(output), 'Enter compose')
+    stdin.write('\x1b[C')
+    await waitForText(() => stripAnsi(output), 'line-chart')
+    stdin.write('\x1b[A')
+    await waitForText(() => stripAnsi(output), 'latest 12 observations')
+    output = ''
+    stdin.write('\r')
+    await waitForText(() => stripAnsi(output), 'Tab recipient')
+    stdin.write('\x1b[13;5u')
+    await vi.waitFor(() => expect(transport).toHaveBeenCalledTimes(1))
+    const shared = decodeFeedMessage(transport.mock.calls[0]![2])
+    expect(shared.share?.presentation).toBe('line-chart')
+    expect(shared.share?.feeds[0]?.points).toHaveLength(3)
+    expect($quickMessage.get()).toBeNull()
+    app.rerender(
+      <Box height={30} width={100}>
+        <MessagingView onClose={() => {}} t={DARK_THEME} />
+      </Box>
+    )
+    await waitForText(() => stripAnsi(output), 'Shared snapshot')
+    expect(stripAnsi(output)).toContain('-0.32')
+    expect(stripAnsi(output)).not.toContain('```sfa-feed')
+  } finally {
+    stopSignalReceiver()
+    app.unmount()
+    app.cleanup()
+    stdout.destroy()
+    stdin.destroy()
+    vi.unstubAllEnvs()
+    rmSync(root, { recursive: true, force: true })
+  }
+})

@@ -693,6 +693,14 @@ export interface EvidenceShareBody {
   triage_label: null | string
 }
 
+export interface FeedShare {
+  feeds: SharedFeed[]
+  horizon: SharedPeriod
+  presentation: 'bar-chart' | 'line-chart'
+  type: 'sfa.feed'
+  version: number
+}
+
 export interface ForecastAnalystNote {
   as_of?: string
   be_aware?: string
@@ -3741,6 +3749,29 @@ export interface SfpSender {
   agent: string
   instance_id: string
   team: null | string
+}
+
+export interface SharedFeed {
+  kind: string
+  name: string
+  points: SharedObservation[]
+  provider: string
+  retrieved_at: null | string
+  revision_policy: string
+  source_url: null | string
+  symbol: string
+  unit: string
+}
+
+export interface SharedObservation {
+  end: string
+  start: string
+  value: null | number
+}
+
+export interface SharedPeriod {
+  end: string
+  start: string
 }
 
 export interface ShellExecRequest {

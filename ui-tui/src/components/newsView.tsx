@@ -6,10 +6,11 @@ import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlay
 import type { CatalogFeed } from '../content/newsFeedCatalog.js'
 import { FEED_CATEGORIES } from '../content/newsFeedCatalog.js'
 import type { GatewayClient } from '../gatewayClient.js'
+import { deskViewCache } from '../lib/deskViewCache.js'
 import { type FieldSpec, rankItems } from '../lib/fuzzyRank.js'
 import { statusGlyph } from '../lib/icons.js'
 import { openQuickMessage } from '../lib/messagingState.js'
-import { fetchBackendFeed, uniqueArticles } from '../lib/newsDesk.js'
+import { fetchBackendArticle, fetchBackendFeed, uniqueArticles } from '../lib/newsDesk.js'
 import { type ArticleCache, loadArticleCache, pruneArticleCache, saveArticleCache } from '../lib/newsFeedCache.js'
 import { type Article, fetchFeeds } from '../lib/newsFeedFetch.js'
 import { ALL_CATEGORY, searchFeeds } from '../lib/newsFeedSearch.js'
@@ -132,24 +133,36 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
   // Go inert while the Ctrl+K palette / `?` cheat-sheet stacks above the view.
   const globalModal = useStore($globalModal)
 
-  const [subscribed, setSubscribed] = useState<SubscribedFeed[]>(() => (gw ? [] : loadSubscribedFeeds()))
-  const [starter, setStarter] = useState<NewsSubscription[]>([])
+  const [standaloneCache] = useState(() => deskViewCache())
+  const retained = gw ? deskViewCache(gw) : standaloneCache
+
+  const [subscribed, setSubscribed] = useState<SubscribedFeed[]>(() =>
+    gw ? (retained.newsDesk?.feeds ?? []) : loadSubscribedFeeds()
+  )
+
+  const [starter, setStarter] = useState<NewsSubscription[]>(retained.newsDesk?.starter ?? [])
   const [starterOpen, setStarterOpen] = useState(false)
   const [starterChoice, setStarterChoice] = useState(0)
   const [saving, setSaving] = useState(false)
   const savingRef = useRef(false)
-  const [ready, setReady] = useState(!gw)
+  const [ready, setReady] = useState(!gw || Boolean(retained.newsDesk))
   const [refreshEpoch, setRefreshEpoch] = useState(0)
   const forceRefresh = useRef(false)
   const readerRef = useRef<ScrollBoxHandle>(null)
   const [articleBody, setArticleBody] = useState<NewsArticleResponse | null>(null)
   const [reading, setReading] = useState(false)
   const bodyPending = useRef<Promise<NewsArticleResponse> | null>(null)
-  const bodyCache = useRef(new Map<string, NewsArticleResponse>())
+  const bodyCache = useRef(retained.bodies)
   const [source, setSource] = useState(0)
   const [sel, setSel] = useState(0)
   const [tick, setTick] = useState(0)
-  const [articles, setArticles] = useState<Article[]>([])
+
+  const [articles, setArticles] = useState<Article[]>(() =>
+    uniqueArticles(
+      (retained.newsDesk?.feeds ?? []).flatMap(feed => retained.articles[normalizeFeedUrl(feed.url)]?.articles ?? [])
+    )
+  )
+
   const [fetching, setFetching] = useState(false)
 
   // Add-feed modal state.
@@ -169,7 +182,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
   const [searchInput, setSearchInput] = useState('')
   const initialRanRef = useRef(false)
 
-  const cacheRef = useRef<ArticleCache>(gw ? {} : loadArticleCache())
+  const cacheRef = useRef<ArticleCache>(gw ? retained.articles : loadArticleCache())
   const aliveRef = useRef(true)
 
   useEffect(() => {
@@ -211,7 +224,16 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
     }
 
     let active = true
-    setReady(false)
+    cacheRef.current = retained.articles
+    bodyCache.current = retained.bodies
+    setArticleBody(null)
+    setArticles(
+      uniqueArticles(
+        (retained.newsDesk?.feeds ?? []).flatMap(feed => retained.articles[normalizeFeedUrl(feed.url)]?.articles ?? [])
+      )
+    )
+    setSubscribed(retained.newsDesk?.feeds ?? [])
+    setReady(Boolean(retained.newsDesk))
     void gw
       .request('news.desk', {})
       .then(result => {
@@ -219,6 +241,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
           return
         }
 
+        retained.newsDesk = result
         setSubscribed(result.feeds)
         setStarter(result.starter)
         setReady(true)
@@ -233,7 +256,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
     return () => {
       active = false
     }
-  }, [gw])
+  }, [gw, retained])
 
   const refresh = (_force: boolean) => {
     forceRefresh.current = true
@@ -256,7 +279,16 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
 
     const controller = new AbortController()
     const keep = new Set(subscribed.map(f => normalizeFeedUrl(f.url)))
-    cacheRef.current = pruneArticleCache(cacheRef.current, { keep, maxAgeMs: 30 * 24 * 60 * 60 * 1000 })
+    const pruned = pruneArticleCache(cacheRef.current, { keep, maxAgeMs: 30 * 24 * 60 * 60 * 1000, maxFeeds: 700 })
+
+    // Keep the record identity stable for requests already owned by this connection.
+    for (const key of Object.keys(cacheRef.current)) {
+      if (!(key in pruned)) {
+        delete cacheRef.current[key]
+      }
+    }
+
+    Object.assign(cacheRef.current, pruned)
 
     const rebuild = () => {
       if (controller.signal.aborted) {
@@ -275,7 +307,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
     const targets = subscribed.filter(feed => {
       const entry = cacheRef.current[normalizeFeedUrl(feed.url)]
 
-      return force || !entry || Date.now() - entry.fetchedAt > STALE_MS
+      return force || !entry || (Date.now() >= (entry.retryAt ?? 0) && Date.now() - entry.fetchedAt > STALE_MS)
     })
 
     setFetching(targets.length > 0)
@@ -285,14 +317,15 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
         const key = normalizeFeedUrl(url)
         const previous = cacheRef.current[key]
         cacheRef.current[key] = {
+          retryAt: result.error ? Date.now() + 60_000 : undefined,
           articles: result.error ? (previous?.articles ?? []) : result.articles,
           error: result.error ?? undefined,
-          fetchedAt: Date.now()
+          fetchedAt: result.error ? (previous?.fetchedAt ?? 0) : Date.now()
         }
         rebuild()
       },
       6,
-      gw ? (url, title) => fetchBackendFeed(gw, url, title) : undefined,
+      gw ? (url, title) => fetchBackendFeed(gw, url, title, force) : undefined,
       controller.signal
     ).finally(() => {
       if (controller.signal.aborted) {
@@ -351,6 +384,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
           return
         }
 
+        retained.newsDesk = result
         setSubscribed(result.feeds)
         setStarter(result.starter)
       } else if (feed) {
@@ -739,8 +773,8 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
 
     const cached = bodyCache.current.get(selectedLink)
 
-    if (cached) {
-      setArticleBody(cached)
+    if (cached && Date.now() - cached.fetchedAt < 30 * 60 * 1000) {
+      setArticleBody(cached.value)
 
       return
     }
@@ -757,7 +791,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
           return null
         }
 
-        const pending = gw.request('news.article', { url: selectedLink })
+        const pending = fetchBackendArticle(gw, selectedLink)
         bodyPending.current = pending
 
         try {
@@ -775,11 +809,6 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
             return
           }
 
-          if (bodyCache.current.size >= 40) {
-            bodyCache.current.delete(bodyCache.current.keys().next().value!)
-          }
-
-          bodyCache.current.set(selectedLink, body)
           setArticleBody(body)
         })
         .catch(() => {

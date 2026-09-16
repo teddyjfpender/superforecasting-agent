@@ -4,6 +4,8 @@ import { dirname, join } from 'node:path'
 
 import { atom } from 'nanostores'
 
+import type { FeedShare } from '../protocol/generated.js'
+
 import { forecastHomeDir } from './forecastHome.js'
 
 export interface ChatState {
@@ -72,6 +74,7 @@ export const updateChatState = (id: string, patch: Partial<ChatState>): boolean 
 }
 
 export interface ShareItem {
+  feed?: FeedShare | null
   title: string
   text: string
 }

@@ -95,3 +95,9 @@ Category aliases in the shared catalog improve both local and backend search.
 The table may display an unchanged observation's `last_movement` with `*`.
 The underlying quote's period delta remains zero; the detail panel preserves
 both comparisons and dates. Do not rewrite source measurements to make CHG move.
+
+IBGE uses the official `servicodados.ibge.gov.br/api/v3/agregados` endpoint.
+The older `apisidra` host may return an HTML browser challenge. The aggregate
+parser verifies variable ID/name, units, national territory, classification and
+monthly periods before adapting to the shared observation model. Do not bypass
+these checks or substitute the BCB series silently when a source is unavailable.

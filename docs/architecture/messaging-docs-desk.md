@@ -100,3 +100,35 @@ callbacks, rapid document selection, conflict rejection and independent scrollin
 Real Signal delivery and credentialed Overleaf synchronization require configured
 accounts; component tests and local Git fixtures do not claim those integrations
 were exercised against a user's accounts.
+
+## Sharing a data feed
+
+On Markets, select a numeric feed and press **m**, choose a recipient, then
+review the snapshot before **Ctrl+Enter** sends it. A caption is optional.
+**Shift+Tab** focuses chart settings: left/right changes bar/line presentation;
+up/down selects the latest 6, 12, 24 or 120 observations; Enter returns to writing.
+**Ctrl+R** includes/excludes the forwarded item. Sparse observations keep their
+actual periods, and a source with only one dated reading displays that limitation.
+
+[`protocol/feed_share.py`](../../protocol/feed_share.py) defines `sfa.feed` version
+1; TypeScript declarations are generated with the other contracts. The text wire
+format is a readable caption followed by a fenced `sfa-feed` JSON block. It works
+through Signal's existing text send/receive and history persistence. A future
+Telegram adapter can carry the same body without changing chart semantics.
+Ordinary clients see the readable caption and JSON; the TUI renders a chart card.
+This is **not** a native chart attachment in the Signal phone application.
+
+The payload specifies presentation, an explicit date horizon and up to four
+feeds, each with provider/series identity, name, unit, kind, revision policy,
+public source URL, retrieval time and dated numeric/null observations. Rendering
+accepts at most 48 KiB, 120 observations per feed and nonoverlapping chronological
+periods. Missing observations remain gaps; horizontal spacing uses actual period-end dates.
+Bars use a zero baseline. Each feed
+has its own scale; incompatible units are never combined. All text fields reject
+terminal control characters. Outgoing source URLs omit queries and fragments.
+
+Snapshots are **sender-supplied claims**, labelled "Shared snapshot". Receiving
+one never runs code, fetches a URL, subscribes to a feed or creates settlement
+provenance. Unknown versions and malformed payloads remain ordinary text. Shared
+Python/TypeScript fixtures cover the boundary. New versions must retain this
+fallback, and transport adapters must preserve the complete message body.

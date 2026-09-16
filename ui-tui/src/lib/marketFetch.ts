@@ -2,6 +2,9 @@ import type { MarketSeries } from '../content/marketProviders.js'
 import type { ObservationComparison, RpcRequest } from '../protocol/generated.js'
 import type { DataEvents, MarketProviderStatus, MarketSeriesRef } from '../protocol/generated.js'
 
+import { deskViewCache, gatewayCacheOwner, retainEntries } from './deskViewCache.js'
+import { quoteKey } from './marketStore.js'
+
 // The connected backend owns all fetching, credentials and parsing. This
 // adapter limits provider RPC concurrency and paints each completed group.
 // Retained for compatibility tests; unspecified serverSide allows the catalog.
@@ -88,6 +91,47 @@ const toSeriesRef = (s: MarketSeries): MarketSeriesRef => ({
   ...(s.unit ? { unit: s.unit } : {})
 })
 
+// Coalesce overlapping requests across rapid topic switches and view remounts.
+const pendingQuotes = new WeakMap<object, Map<string, Promise<Awaited<ReturnType<typeof requestQuotes>>>>>()
+
+const requestQuotes = (gateway: QuotesTransport, series: MarketSeries[]) =>
+  gateway.request('market.quotes', { series: series.map(toSeriesRef) })
+
+async function retainedQuotes(gateway: QuotesTransport, series: MarketSeries[]) {
+  const owner = gatewayCacheOwner(gateway)
+  const cache = deskViewCache(gateway)
+  let pending = pendingQuotes.get(owner)
+
+  if (!pending) {
+    pending = new Map()
+    pendingQuotes.set(owner, pending)
+  }
+
+  const key = JSON.stringify(series.map(toSeriesRef).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))))
+  let request = pending.get(key)
+
+  if (!request) {
+    request = requestQuotes(gateway, series)
+      .then(result => {
+        for (const quote of result.quotes) {
+          cache.quotes[quoteKey(quote.provider, quote.symbol)] = quote
+        }
+
+        retainEntries(cache.quotes, 2000)
+
+        for (const status of result.statuses ?? []) {
+          cache.statuses[status.provider] = status
+        }
+
+        return result
+      })
+      .finally(() => pending!.delete(key))
+    pending.set(key, request)
+  }
+
+  return request
+}
+
 // Cancellation discards late responses and stops scheduling additional groups.
 // Already-running backend refreshes remain backend-owned and may warm its cache.
 export const fetchQuotes = async (seriesList: MarketSeries[], opts: FetchOpts): Promise<void> => {
@@ -131,7 +175,14 @@ export const fetchQuotes = async (seriesList: MarketSeries[], opts: FetchOpts): 
               break
             }
 
+            const cache = deskViewCache(gateway)
             const result = await gateway.request('market.events.list', { series_id: ref.catalog_id })
+
+            if (result.data) {
+              const cache = deskViewCache(gateway)
+              cache.events[result.data.series_id] = result.data
+              retainEntries(cache.events, 100)
+            }
 
             if (opts.signal?.aborted) {
               return
@@ -147,7 +198,7 @@ export const fetchQuotes = async (seriesList: MarketSeries[], opts: FetchOpts): 
           continue
         }
 
-        const result = await gateway.request('market.quotes', { series: series.map(toSeriesRef) })
+        const result = await retainedQuotes(gateway, series)
 
         if (opts.signal?.aborted) {
           return
