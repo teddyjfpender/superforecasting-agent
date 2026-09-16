@@ -254,3 +254,31 @@ def test_cancelled_secret_prompt_does_not_write_credentials(tmp_path):
     desk = DataDesk(tmp_path)
     assert not desk.connect("fred", lambda slot, prompt: "")
     assert not (tmp_path / ".env").exists()
+
+
+def test_discovered_custom_series_merge_atomically_and_preserve_legacy_metadata(tmp_path):
+    from protocol.data_desk import DeskCustomSeries
+    path = tmp_path / 'markets.json'
+    path.write_text(json.dumps({'custom':[{'provider':'yahoo','symbol':'OLD','extension':42}]}))
+    desk = DataDesk(tmp_path)
+    item = DeskCustomSeries(provider='worldbank',symbol='ZMB/SP.POP.TOTL',name='Zambia population',category='Demographics',unit='people')
+    edit = DeskEdit(catalog_revision=desk.catalog.revision,add=['fred:SOFR'],custom_add=[item])
+    preview=desk.preview(edit)
+    assert set(preview.added)=={'fred:SOFR','custom:worldbank:ZMB/SP.POP.TOTL'}
+    saved=desk.apply(edit,expected_revision=preview.revision)
+    assert len(saved.custom)==2 and saved.series_ids==['fred:SOFR']
+    assert json.loads(path.read_text())['custom'][0]['extension']==42
+    assert desk.apply(edit,expected_revision=preview.revision)==saved
+    with pytest.raises(SelectionConflict):
+        desk.apply(DeskEdit(catalog_revision=desk.catalog.revision,custom_remove=[item]),expected_revision=preview.revision)
+    assert desk.selection()==saved
+    removed=desk.apply(DeskEdit(catalog_revision=desk.catalog.revision,custom_remove=[item]),expected_revision=saved.revision)
+    assert [r.symbol for r in removed.custom]==['OLD']
+
+
+def test_remote_discovery_cannot_create_weather_or_settlement_binding(tmp_path):
+    from protocol.data_desk import DeskCustomSeries
+    desk=DataDesk(tmp_path)
+    with pytest.raises(ValueError,match='Unsupported custom'):
+        desk.preview(DeskEdit(catalog_revision=desk.catalog.revision,custom_add=[DeskCustomSeries(provider='openmeteo',symbol='invented',name='invented')]))
+    assert desk.selection().state=='unconfigured'

@@ -153,3 +153,20 @@ def test_fred_backfill_failure_preserves_current_quote():
     )[0]
     assert q.value == 12
     assert q.change == 0
+
+
+def test_monthly_fred_lag_uses_period_end_not_first_day():
+    from forecasting.marketdata.providers.fred import _finalize
+    q = _finalize(
+        [('2026-04-01', 100), ('2026-05-01', 101), ('2026-06-01', 102)],
+        SeriesRef(provider='fred', symbol='CSUSHPINSA', catalog_id='fred:CSUSHPINSA'),
+        as_of_reference=date(2026, 9, 16),
+    )
+    assert q.value == 102 and q.change == 1
+    assert q.dated_history[-1].period_end == '2026-06-30'
+    stale = _finalize(
+        [('2025-04-01', 100), ('2025-05-01', 101), ('2025-06-01', 102)],
+        SeriesRef(provider='fred', symbol='CSUSHPINSA', catalog_id='fred:CSUSHPINSA'),
+        as_of_reference=date(2026, 9, 16),
+    )
+    assert stale.value is None and stale.change is None

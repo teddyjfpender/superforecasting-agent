@@ -80,7 +80,7 @@ const empty: DeskSelection = {
 
 const tick = () => new Promise(resolve => setTimeout(resolve, 70))
 
-const mount = async (columns: number, rows: number) => {
+const mount = async (columns: number, rows: number, discovery?: (params: unknown) => Promise<unknown>) => {
   resetOverlayState()
   process.env.FORECAST_TUI_INLINE = '1'
   const stdout = new PassThrough()
@@ -100,7 +100,11 @@ const mount = async (columns: number, rows: number) => {
     output += String(chunk)
   })
 
-  const request = vi.fn(async (method: string) => {
+  const request = vi.fn(async (method: string, params?: unknown) => {
+    if (method === 'market.discover') {
+      return discovery ? discovery(params) : { results: [], statuses: [] }
+    }
+
     if (method === 'market.catalog') {
       return { catalog, catalog_revision: 'catalog', selection: empty, configured_providers: [] }
     }
@@ -228,4 +232,102 @@ describe('Add data interaction', () => {
       app.close()
     }
   })
+})
+
+const liveHit = {
+  id: 'custom:yahoo:NEW',
+  catalog_id: null,
+  provider: 'yahoo',
+  symbol: 'NEW',
+  name: 'New listing beyond defaults',
+  category: 'stocks',
+  region: '',
+  country: null,
+  kind: 'quote',
+  frequency: 'daily',
+  unit: 'USD',
+  source_url: '',
+  description: 'Live symbol lookup'
+}
+
+it.each([
+  [120, 40],
+  [80, 24]
+])('filters use Shift+Tab and arrows, Escape returns to results at %i×%i', async (cols, rows) => {
+  const app = await mount(cols, rows)
+
+  try {
+    await app.press('\t')
+    expect(app.text()).not.toContain('Ctrl+K Kind')
+    await app.press('\u001b[Z') // Shift+Tab
+    expect(app.text()).toContain('Backspace Reset')
+    expect(app.text()).toContain('TOPICS')
+    expect(app.text()).toContain('Germany · Consumer inflation')
+
+    await app.press('\u001b[B')
+    expect(app.text()).toContain('Region: Europe')
+    await app.press('\u001b[C')
+    await app.press('\u001b[B')
+    expect(app.text()).toContain('Country: Germany')
+    expect(app.text()).toContain('Region: All')
+    await app.press('\u001b[C')
+    await app.press('\u001b[B')
+    expect(app.text()).toContain('Kind: observation')
+    await app.press('\u001b[C')
+    await app.press('\u001b[B')
+    expect(app.text()).toContain('Source: Official Statistics')
+    await app.press('\u007f')
+    expect(app.text()).toContain('Country: All')
+    await app.press('\u001b')
+    expect(app.cancel).not.toHaveBeenCalled()
+    await app.press('Germany')
+    expect(app.text()).toContain('Consumer inflation')
+  } finally {
+    app.close()
+  }
+})
+
+it('selects a live result and includes its identity in the same review transaction', async () => {
+  const app = await mount(120, 40, async () => ({ results: [liveHit], statuses: [] }))
+
+  try {
+    await app.press('\t')
+    await app.press('NEW')
+    await new Promise(resolve => setTimeout(resolve, 400))
+    expect(app.text()).toContain('New listing beyond defaults')
+    await app.press('\r')
+    await app.press('\u0013')
+    const call = app.request.mock.calls.find(([method]) => method === 'market.selection.preview')
+    expect(call?.[1]).toMatchObject({
+      edit: { add: [], custom_add: [{ provider: 'yahoo', symbol: 'NEW', unit: 'USD' }] }
+    })
+  } finally {
+    app.close()
+  }
+})
+
+it('late discovery results cannot replace the current query', async () => {
+  let answer: ((value: unknown) => void) | undefined
+
+  const app = await mount(120, 40, async params => {
+    if ((params as { query: string }).query === 'old') {
+      return new Promise(resolve => {
+        answer = resolve
+      })
+    }
+
+    return { results: [], statuses: [] }
+  })
+
+  try {
+    await app.press('\t')
+    await app.press('old')
+    await new Promise(resolve => setTimeout(resolve, 400))
+    await app.press('new')
+    answer?.({ results: [liveHit], statuses: [] })
+    await tick()
+    expect(app.text()).not.toContain('New listing beyond defaults')
+  } finally {
+    app.close()
+  }
 })

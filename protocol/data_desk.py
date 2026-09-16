@@ -343,6 +343,12 @@ class DeskPatch(DeskModel):
 
 
 class DeskEdit(DeskModel):
+    custom_add: list[DeskCustomSeries] = Field(
+        default_factory=list, max_length=100, json_schema_extra={"wireOptional": True}
+    )
+    custom_remove: list[DeskCustomSeries] = Field(
+        default_factory=list, max_length=100, json_schema_extra={"wireOptional": True}
+    )
     catalog_revision: str
     preset_id: str | None = None
     add: list[str] = Field(default_factory=list, max_length=2000)

@@ -66,3 +66,42 @@ Include the installed version, provider and catalog series ID, visible status,
 expected behavior, and whether the backend was local or remote. Never include API
 keys or a raw `.env` file. The [qualification report](qualification.md) documents
 conditional providers and known history/release-metadata limitations.
+
+## Expanded discovery and change columns
+
+Existing profiles keep their selections. To add the expanded default, open
+**Add data → Starter sets → Global**, review the additions, then apply. Version 2
+contains 618 series across markets, country economics, energy, agriculture and
+weather. Only the visible topic and watchlist refresh; changing topics loads its
+rows. Annual data retains its observation date and does not become a live price.
+
+In **Browse data**, type a country, ticker, feed ID or topic intent—for example
+`Brazil jobs`, `SOFR`, `TSM`, `Zambia population` or `CAN/IT.NET.USER.ZS`.
+Catalog matches appear immediately; live directories follow after a short pause.
+Search is independent of currently enabled providers. Select multiple results
+with Enter, then **Review [Ctrl+S] → Enter** to apply one revision-checked edit.
+Escape abandons changes. Remote results are custom display series, not settlement
+bindings; unknown units and publication metadata remain unknown.
+
+Use **Shift+Tab** to focus filters, **Left/Right** to choose Region, Country, Kind
+or Source, and **Up/Down** to change its value. **Backspace** resets filters;
+**Enter/Escape** returns to results. Clicking a filter focuses the same control.
+The old Ctrl+R/G/K filter bindings have been removed; Ctrl+K remains the global
+command palette. Outside filter focus, Left/Right changes the topic and Tab
+changes the modal view. Country and region filters reset each other to avoid
+incompatible geographic selections.
+
+Live discovery supports Yahoo, CoinGecko, Frankfurter, FRED and World Bank WDI.
+FRED keyword searches require a free FRED key; exact uppercase IDs also work
+through its public CSV endpoint. World Bank discovery needs a country name/code
+or the Country filter. Other providers expose reviewed catalog entries and say
+when a live directory is unavailable. Source failures retain catalog results. **Shift+Enter** retries live discovery
+without discarding selections. Search results are bounded (200 combined hits,
+including up to 80 World Bank directory matches); narrow the query to see more
+specific measurements.
+
+**CHG** normally compares the latest available source periods, however sparse.
+For an unchanged observation, **`*` means the last observed nonzero movement**,
+not today's change. The detail panel shows both the unchanged latest comparison
+and the historical movement's dates. Price feeds retain their normal close/24h
+comparison. Missing baselines stay missing; a completely flat history stays zero.

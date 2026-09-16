@@ -32,7 +32,7 @@ For each series family, retain a source response fixture and verify:
 - Access requirements, documented quotas and useful dated history.
 - Behavior on invalid queries, transport failures and authentication errors.
 
-The current 163-series starter is a **candidate manifest**, not a declaration that
+The original 163-series starter was a **candidate manifest**, not a declaration that
 all series have passed qualification. Broader provider scope remains in the
 [implementation plan](../../plans/2026-09-14-global-data-desk.md).
 
@@ -77,3 +77,23 @@ Space toggles prediction outcomes. Table width goes first to NAME, empty VOL
 columns are omitted, and the compact TREND column does not imply a one-month
 period for annual/monthly data. Add data follows the News modal's search, topic
 rail, results and detail layout; selections still require explicit review/apply.
+
+
+## Expanded Markets and discovery — 16 September
+
+[Live receipts](2026-09-16-markets-discovery.json) cover every one of the 457
+proposed additions, using the production adapters and public endpoints. Of these,
+453 returned numerical measurements immediately. One discontinued FRED series was
+removed, and a fiscal-year series was excluded pending an exact period contract; the other three exposed a period-start freshness bug. After assessing
+monthly data from its period end, all three returned values. The final catalog
+has **674 series**, including **618 in global starter version 2**, with 455 new
+entries returning data during qualification. This does not establish future
+availability, first-release provenance or settlement eligibility.
+
+The receipt includes FEDFUNDS, DFF and SOFR comparisons: their latest deltas are
+zero, and each has a separate dated nonzero movement. It also records public
+Yahoo, CoinGecko, currency and World Bank directory searches outside the starter.
+FRED keyword search remains credential-dependent; its missing-key status is
+verified, while exact IDs use the existing keyless route. No live tester profile
+was modified. Follow the [walkthrough](tester-walkthrough.md) to opt into the
+expanded starter and use the new filter controls.

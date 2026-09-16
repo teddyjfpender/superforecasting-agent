@@ -93,3 +93,44 @@ describe('searchYahoo routing (Arc C3: server-side via market.search)', () => {
     await expect(searchYahoo('apple', { request })).rejects.toThrow('down')
   })
 })
+
+it('requires country and intent together rather than returning every match of either term', () => {
+  expect(searchCatalog('Brazil prices', catalog).map(s => s.provider)).toEqual([])
+  expect(searchCatalog('Brazil inflation', catalog).map(s => s.provider)).toEqual(['worldbank'])
+  expect(searchCatalog('Brazil bitcoin', catalog)).toEqual([])
+})
+
+it('federated lookup preserves remote identity and unit without inventing catalog provenance', async () => {
+  const { discoverMarkets } = await import('../lib/marketSearch.js')
+
+  const request = vi.fn().mockResolvedValue({
+    results: [
+      {
+        provider: 'worldbank',
+        symbol: 'ZMB/SP.POP.TOTL',
+        name: 'Zambia population',
+        category: 'demographics',
+        unit: '',
+        catalog_id: null
+      }
+    ],
+    statuses: []
+  })
+
+  const results = await discoverMarkets('Zambia population', { request })
+  expect(request).toHaveBeenCalledWith('market.discover', { query: 'Zambia population' })
+  expect(results).toEqual([
+    { provider: 'worldbank', symbol: 'ZMB/SP.POP.TOTL', name: 'Zambia population', category: 'demographics', unit: '' }
+  ])
+})
+
+it('country abbreviations do not match substrings or other United countries', () => {
+  const rows = ['United States', 'Australia', 'United Arab Emirates'].map(name => ({
+    provider: 'worldbank',
+    symbol: name,
+    name: `${name} unemployment`,
+    category: 'Employment'
+  }))
+
+  expect(searchCatalog('US jobs', rows).map(r => r.symbol)).toEqual(['United States'])
+})

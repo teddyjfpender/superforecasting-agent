@@ -130,3 +130,23 @@ def test_market_search_missing_query_is_field_error(monkeypatch):
         assert "query" in err["message"]
     finally:
         market_rpc.set_service(None)
+
+
+def test_discovery_runs_real_service_through_shared_wire_validation(monkeypatch):
+    from forecasting.marketdata.service import MarketDataService
+    from forecasting.marketdata.providers.yahoo import YahooProvider
+    calls = []
+    def fetch(url):
+        calls.append(url)
+        return {'quotes':[{'symbol':'OUTSIDE','shortname':'Outside default catalog','quoteType':'EQUITY'}]}
+    market_rpc.set_service(MarketDataService(providers={'yahoo':YahooProvider(get_json=fetch)},key_resolver=lambda provider: None))
+    try:
+        assert _call('market.discover',{'query':'x'*201})['error']['code']==-32602
+        assert calls==[]
+        result=_call('market.discover',{'query':'OUTSIDE','provider':'yahoo'})['result']
+        hit=result['results'][0]
+        assert hit['symbol']=='OUTSIDE' and hit['catalog_id'] is None
+        assert hit['unit']=='' and hit['id']=='custom:yahoo:OUTSIDE'
+        assert result['statuses'][0]['status']=='ok'
+    finally:
+        market_rpc.set_service(None)

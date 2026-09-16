@@ -13,6 +13,8 @@ measurement (``value`` / ``change`` / ``changePct`` / ``prevClose``) is
 
 from __future__ import annotations
 
+from pydantic import Field
+
 from protocol.data_desk import (
     DataCatalog,
     DataEvents,
@@ -177,6 +179,44 @@ class MarketSearchResponse(WireModel):
     TS_NAME = "MarketSearchResponse"
 
     results: list[MarketSearchResult]
+
+
+class MarketDiscoveryHit(MarketSearchResult):
+    TS_NAME = "MarketDiscoveryHit"
+
+    id: str
+    catalog_id: str | None = None
+    unit: str = ""
+    kind: str = "quote"
+    frequency: str = "unknown"
+    country: str | None = None
+    region: str = ""
+    source_url: str = ""
+    description: str = ""
+
+
+class MarketDiscoverRequest(WireModel):
+    query: str = Field(max_length=200)
+    provider: str = Field(
+        default="", max_length=40, json_schema_extra={"wireOptional": True}
+    )
+    country: str = Field(
+        default="", max_length=3, json_schema_extra={"wireOptional": True}
+    )
+    category: str = Field(
+        default="", max_length=80, json_schema_extra={"wireOptional": True}
+    )
+    region: str = Field(
+        default="", max_length=40, json_schema_extra={"wireOptional": True}
+    )
+    kind: str = Field(
+        default="", max_length=40, json_schema_extra={"wireOptional": True}
+    )
+
+
+class MarketDiscoverResponse(WireModel):
+    results: list[MarketDiscoveryHit]
+    statuses: list[MarketProviderStatus]
 
 
 __all__ = [

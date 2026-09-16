@@ -227,6 +227,47 @@ class DataDesk:
             )
         selection = self._selection(raw, revision)
         requested = set(edit.add)
+        # Live discovery results are custom display series, never qualified
+        # catalog/settlement bindings. Merge them under the same revision lock.
+        custom = {(r.provider, r.symbol): r for r in selection.custom}
+        custom_added: list[str] = []
+        custom_removed: list[str] = []
+        custom_existing: list[str] = []
+        add_keys = {(r.provider, r.symbol) for r in edit.custom_add}
+        remove_keys = {(r.provider, r.symbol) for r in edit.custom_remove}
+        if add_keys & remove_keys:
+            raise ValueError("A custom series cannot be added and removed together")
+        if edit.start_empty and (add_keys or remove_keys):
+            raise ValueError("Start empty cannot be combined with custom changes")
+        supported = {
+            "yahoo",
+            "fred",
+            "coingecko",
+            "worldbank",
+            "imf",
+            "frankfurter",
+            "stooq",
+            "bls",
+            "bea",
+        }
+        for item in edit.custom_add:
+            if (
+                item.provider not in supported
+                or not item.symbol.strip()
+                or len(item.symbol) > 240
+            ):
+                raise ValueError("Unsupported custom data identity")
+            key = (item.provider, item.symbol)
+            identity = f"custom:{item.provider}:{item.symbol}"
+            if key in custom:
+                custom_existing.append(identity)
+            else:
+                custom[key] = item
+                custom_added.append(identity)
+        for key in remove_keys:
+            if key in custom:
+                del custom[key]
+                custom_removed.append(f"custom:{key[0]}:{key[1]}")
         weather_filter = (
             edit.weather_locations
             if edit.weather_locations is not None
@@ -296,26 +337,34 @@ class DataDesk:
         providers = {
             entry.provider for entry in self.catalog.series if entry.id in added
         }
+        providers.update(item.provider for item in edit.custom_add)
         credentials = sorted(
             p.id
             for p in self.catalog.providers
             if p.id in providers and p.auth == "required"
         )
         state: Literal["unconfigured", "empty", "custom", "preset"] = "empty"
-        if ids or selection.custom or selection.watchlist or selection.pm_saved:
+        if ids or custom or selection.watchlist or selection.pm_saved:
             state = "preset" if edit.preset_id else "custom"
-            if not added and not removed and selection.state != "unconfigured":
+            if (
+                not added
+                and not removed
+                and not custom_added
+                and not custom_removed
+                and selection.state != "unconfigured"
+            ):
                 state = selection.state
         return DeskPreview(
             revision=revision,
             catalog_revision=self.catalog.revision,
-            added=added,
-            removed=removed,
-            already_selected=sorted(requested & existing),
+            added=added + custom_added,
+            removed=removed + custom_removed,
+            already_selected=sorted(requested & existing) + custom_existing,
             credential_providers=credentials,
             selection=selection.model_copy(
                 update={
                     "series_ids": ids,
+                    "custom": list(custom.values()),
                     "state": state,
                     "home_region": edit.home_region
                     if edit.home_region is not None
@@ -340,6 +389,18 @@ class DataDesk:
             updated["selectionVersion"] = 1
             updated["seriesIds"] = list(preview.selection.series_ids)
             updated["setupState"] = preview.selection.state
+            if edit.custom_add or edit.custom_remove:
+                # Keep unknown metadata on untouched legacy custom rows.
+                prior = {
+                    (r.get("provider"), r.get("symbol")): r
+                    for r in _objects(updated.get("custom"))
+                    if isinstance(r.get("provider"), str)
+                    and isinstance(r.get("symbol"), str)
+                }
+                updated["custom"] = [
+                    prior.get((r.provider, r.symbol), r.model_dump(mode="json"))
+                    for r in preview.selection.custom
+                ]
             if edit.home_region is not None:
                 updated["homeRegion"] = edit.home_region
             if edit.weather_locations is not None:
