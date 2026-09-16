@@ -28,7 +28,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 The original catalog was imported from the CC0
 [awesome-rss-feeds collection](https://github.com/plenaryapp/awesome-rss-feeds)
 plus a forecasting supplement. New additions are reviewed publisher feeds;
-see the [qualification record](../../../../docs/verification/news-catalog.md).
+see the [qualification record](../../../docs/verification/news-catalog.md).
 
 To add a feed:
 
