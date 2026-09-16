@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { Box, ScrollBox, type ScrollBoxHandle, Text, useInput } from '@superforecasting/ink'
+import { Box, Text, useInput } from '@superforecasting/ink'
 import { useRef, useState } from 'react'
 
 import { $overlayState } from '../app/overlayStore.js'
@@ -10,8 +10,8 @@ import { resolveSignalConfig } from '../lib/signalStore.js'
 import type { Theme } from '../theme.js'
 
 import { ContactPicker } from './contactPicker.js'
+import { MessageComposer } from './messageComposer.js'
 import { ModalOverlay } from './modalOverlay.js'
-import { TextInput } from './textInput.js'
 
 export function QuickMessage({ cols, rows, t }: { cols: number; rows: number; t: Theme }) {
   const overlay = useStore($overlayState)
@@ -25,9 +25,9 @@ export function QuickMessage({ cols, rows, t }: { cols: number; rows: number; t:
   const [busy, setBusy] = useState(false)
   const [includeItem, setIncludeItem] = useState(true)
   const sending = useRef(false)
-  const inputRef = useRef<ScrollBoxHandle>(null)
   const book = useStore($signalDirectory)
-  const draftRows = Math.max(2, Math.min(6, rows - 20))
+  const modalWidth = cols < 100 ? Math.max(40, cols - 2) : Math.max(48, Math.min(cols - 6, 88))
+  const draftRows = Math.max(1, Math.min(6, Math.min(rows - 6, 30) - 14 - (includeItem && request?.item ? 2 : 0)))
 
   const send = async (value = draft) => {
     const cfg = resolveSignalConfig()
@@ -120,8 +120,8 @@ export function QuickMessage({ cols, rows, t }: { cols: number; rows: number; t:
   return (
     <ModalOverlay
       cols={cols}
-      footerHint="Ctrl+Enter send · Tab to · Ctrl+R forward · Esc keep draft"
-      maxHeight={24}
+      footerHint="Tab recipient · Ctrl+R forward · Esc keep draft"
+      maxHeight={30}
       maxWidth={88}
       rows={rows}
       t={t}
@@ -129,7 +129,7 @@ export function QuickMessage({ cols, rows, t }: { cols: number; rows: number; t:
     >
       <Box flexShrink={0}>
         <Text color={t.color.muted} wrap="truncate-end">
-          Signal · {busy ? 'Sending…' : 'Review recipient and content before sending'}
+          Signal · Review recipient and content before sending
         </Text>
       </Box>
       <Box flexShrink={0}>
@@ -137,33 +137,23 @@ export function QuickMessage({ cols, rows, t }: { cols: number; rows: number; t:
           To: {book[recipient]?.name || recipient} · {recipient}
         </Text>
       </Box>
-      {
-        <ScrollBox
-          decstbm={false}
-          flexDirection="column"
-          flexShrink={0}
-          followContent={false}
-          height={draftRows}
-          ref={inputRef}
-        >
-          <TextInput
-            columns={Math.min(76, cols - 8)}
-            focus={!busy && !blocked}
-            immediateChange
-            multiline
-            onChange={value => {
-              setDraft(value)
-              updateChatState(recipient, { draft: value })
-            }}
-            onCursorLine={line => inputRef.current?.scrollTo(Math.max(0, line - draftRows + 1))}
-            onSubmit={value => void send(value)}
-            placeholder="Write a message…"
-            value={draft}
-          />
-        </ScrollBox>
-      }
+      <MessageComposer
+        active={!busy && !blocked}
+        busy={busy}
+        columns={modalWidth - 10}
+        inputRows={draftRows}
+        multiline
+        onBack={() => setRecipient(null)}
+        onChange={value => {
+          setDraft(value)
+          updateChatState(recipient, { draft: value })
+        }}
+        onSend={value => void send(value)}
+        t={t}
+        text={draft}
+      />
       {includeItem && request?.item && (
-        <Box flexDirection="column" flexShrink={0} marginTop={1}>
+        <Box flexDirection="column" flexShrink={0}>
           <Text color={t.color.label} wrap="truncate-end">
             FORWARD · {request.item.title}
           </Text>
@@ -177,19 +167,6 @@ export function QuickMessage({ cols, rows, t }: { cols: number; rows: number; t:
           {error || storageError}
         </Text>
       )}
-      <Box
-        flexShrink={0}
-        marginTop={1}
-        onClick={() => {
-          if (!sending.current && !blocked) {
-            void send()
-          }
-        }}
-      >
-        <Text bold color={t.color.accent}>
-          [ Send message ]
-        </Text>
-      </Box>
     </ModalOverlay>
   )
 }

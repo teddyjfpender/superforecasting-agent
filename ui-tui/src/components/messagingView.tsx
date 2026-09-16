@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
 import { statusGlyph, type StatusKind } from '../lib/icons.js'
-import { sendDeskMessage } from '../lib/messagingSend.js'
+import { $messageSendAttempts, messageSendKey, sendDeskMessage } from '../lib/messagingSend.js'
 import { $chatState, $messagingStorageError, openQuickMessage, updateChatState } from '../lib/messagingState.js'
 import { openAttachment } from '../lib/openAttachment.js'
 import { attachmentLabel, checkHealth, createGroup, type SignalMessage } from '../lib/signalClient.js'
@@ -31,9 +31,9 @@ import type { Theme } from '../theme.js'
 
 import { ContactPicker } from './contactPicker.js'
 import { type FooterChip, FooterChips } from './footerChips.js'
+import { MessageComposer, messageComposerRows } from './messageComposer.js'
 import { ModalOverlay } from './modalOverlay.js'
 import { SignalSetupModal } from './signalSetupModal.js'
-import { TextInput } from './textInput.js'
 
 export const openMessagingView = () => patchOverlayState({ messaging: true })
 export const closeMessagingView = () => patchOverlayState({ messaging: false })
@@ -171,7 +171,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   const [query, setQuery] = useState('')
   const [searching, setSearching] = useState(false)
   const [categoryEdit, setCategoryEdit] = useState<string | null>(null)
-  const sendingRef = useRef(false)
+  const sendAttempts = useStore($messageSendAttempts)
 
   const filters = [
     'Inbox',
@@ -193,7 +193,6 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   const [focus, setFocus] = useState<'list' | 'thread'>('list')
   const [threadScroll, setThreadScroll] = useState(0)
   const threadRef = useRef<ScrollBoxHandle>(null)
-  const composeRef = useRef<ScrollBoxHandle>(null)
   const composing = focus === 'thread'
 
   // Persisted address book (names/numbers) + the "new message" composer.
@@ -338,6 +337,9 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   const threadMessages = activeConv ? (signalCache()[activeConv.chatId] ?? []) : []
 
   const activeChatId = activeConv?.chatId
+  const activeChatRef = useRef(activeChatId)
+  activeChatRef.current = activeChatId
+  const attempt = cfg && activeChatId ? sendAttempts[messageSendKey(cfg, activeChatId)] : undefined
   useEffect(() => {
     setDraft(activeChatId ? $chatState.get()[activeChatId]?.draft || '' : '')
   }, [activeChatId])
@@ -357,13 +359,15 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   const railWidth = Math.min(40, Math.max(26, Math.floor(width * 0.34)))
   const railRows = Math.max(3, contentHeight - 2)
   // Rows available for messages: header + marginTop + (composer when writing).
-  const composerRows = composing ? 3 : 0
+  const composerColumns = Math.max(15, cols - railWidth - (cols >= 110 ? 18 : 0) - 7)
+  const inputRows = messageComposerRows(draft, composerColumns, contentHeight)
+  const composerRows = composing ? inputRows + 4 : 0
   const msgRows = Math.max(1, contentHeight - 2 - composerRows)
   useEffect(() => {
     if (threadScroll === 0) {
       threadRef.current?.scrollToBottom()
     }
-  }, [cacheVersion, threadScroll, activeChatId])
+  }, [cacheVersion, threadScroll, activeChatId, attempt, inputRows])
 
   // Reset the scroll to the latest whenever the open conversation changes.
   useEffect(() => {
@@ -533,25 +537,21 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   const sendDraft = (value = draft) => {
     const text = value.trim()
 
-    if (!text || !activeConv || !cfg || sendingRef.current) {
+    if (!text || !activeConv || !cfg || attempt?.status === 'sending') {
       return
     }
 
     const id = activeConv.chatId
-    sendingRef.current = true
-    setFlash('sending…')
+    setFlash('')
+    setThreadScroll(0)
     void sendDeskMessage(cfg, id, text).then(error => {
-      sendingRef.current = false
-
       if (!error && $chatState.get()[id]?.draft?.trim() === text) {
         updateChatState(id, { draft: '' })
       }
 
-      if (!aliveRef.current) {
+      if (!aliveRef.current || activeChatRef.current !== id) {
         return
       }
-
-      setFlash(error || 'sent')
 
       if (!error) {
         setDraft(current => (current.trim() === text ? '' : current))
@@ -721,7 +721,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
       // other printable keys (incl. q/s/r/n) go into the draft — no global
       // shortcuts while typing.
       if (focus === 'thread') {
-        if (key.escape) {
+        if (key.escape || (key.leftArrow && !key.ctrl && !key.meta && !key.shift && !draft)) {
           return setFocus('list')
         }
 
@@ -1252,7 +1252,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
           marginTop={1}
           ref={threadRef}
         >
-          {threadMessages.length === 0 ? (
+          {threadMessages.length === 0 && !attempt ? (
             <Text color={t.color.muted} wrap="wrap">
               No locally saved messages. Phone history is not imported; new messages appear while the desk is connected.
             </Text>
@@ -1288,6 +1288,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
                   {m.text ? (
                     <Text color={t.color.text} wrap="wrap">
                       {m.text}
+                      {m.fromMe ? <Text color={t.color.muted}> ✓</Text> : null}
                     </Text>
                   ) : null}
                   {m.attachments > 0 ? (
@@ -1300,6 +1301,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
                     >
                       <Text color={t.color.accent} wrap="truncate-end">
                         {attachmentLabel(m)}
+                        {m.fromMe && !m.text ? <Text color={t.color.muted}> ✓</Text> : null}
                         {(m.files ?? []).some(f => f.id) ? <Text color={t.color.muted}> · open</Text> : null}
                       </Text>
                     </Box>
@@ -1308,24 +1310,38 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
               )
             })
           )}
+          {attempt && (
+            <Box flexDirection="column" flexShrink={0} marginTop={threadMessages.length ? 1 : 0}>
+              <Text color={attempt.status === 'uncertain' ? t.color.warn : t.color.muted}>
+                You · {clock(attempt.startedAt)} {attempt.status === 'sending' ? '◷' : '!'}
+              </Text>
+              <Text color={t.color.text} wrap="wrap">
+                {attempt.text}
+              </Text>
+              {attempt.error && (
+                <Text color={t.color.warn} wrap="wrap">
+                  {attempt.error}
+                </Text>
+              )}
+            </Box>
+          )}
         </ScrollBox>
       )}
 
       {/* Native bottom composer — sits below the history, doesn't overlap it. */}
       {composing ? (
-        <ScrollBox decstbm={false} flexShrink={0} followContent={false} height={3} ref={composeRef}>
-          <TextInput
-            columns={Math.max(15, cols - railWidth - (cols >= 110 ? 18 : 0) - 7)}
-            focus={!globalModal && !setup && !newChat && !contactView}
-            immediateChange
-            key={activeChatId}
-            onChange={editDraft}
-            onCursorLine={line => composeRef.current?.scrollTo(Math.max(0, line - 2))}
-            onSubmit={sendDraft}
-            placeholder="Write a message…"
-            value={draft}
-          />
-        </ScrollBox>
+        <MessageComposer
+          active={!globalModal && !setup && !newChat && !contactView}
+          busy={attempt?.status === 'sending'}
+          columns={composerColumns}
+          inputRows={inputRows}
+          key={activeChatId}
+          onBack={() => setFocus('list')}
+          onChange={editDraft}
+          onSend={sendDraft}
+          t={t}
+          text={draft}
+        />
       ) : null}
     </Box>
   )
@@ -1335,6 +1351,8 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   const chips: FooterChip[] = composing
     ? [
         { k: '⏎', label: 'Send', run: () => sendDraft() },
+        { k: 'Shift+Enter', label: 'Newline' },
+        { k: '←', label: 'Back at start' },
         { k: 'PgUp/Dn', label: 'History' },
         { k: '^O', label: 'Attachment', run: openLatestAttachment },
         { k: '⎋', label: 'Back', run: () => setFocus('list') }

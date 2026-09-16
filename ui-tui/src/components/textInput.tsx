@@ -369,6 +369,7 @@ export function TextInput({
   multiline = false,
   immediateChange = false,
   onCursorLine,
+  onLeftBoundary,
   value,
   onChange,
   onPaste,
@@ -949,6 +950,13 @@ export function TextInput({
 
         return
       } else if (k.leftArrow) {
+        if (c === 0 && !range && !wordMod && !k.shift && onLeftBoundary) {
+          flushParentChange()
+          onLeftBoundary()
+
+          return
+        }
+
         if (range && !wordMod && !k.shift) {
           clearSel()
           c = range.start
@@ -1200,6 +1208,8 @@ interface TextInputProps {
   /** Durable editors publish every edit before dismissal can unmount them. */
   immediateChange?: boolean
   onCursorLine?: (line: number) => void
+  /** Plain Left at offset zero can return focus to an owning navigation pane. */
+  onLeftBoundary?: () => void
   focus?: boolean
   mask?: string
   mouseApiRef?: MutableRefObject<null | TextInputMouseApi>

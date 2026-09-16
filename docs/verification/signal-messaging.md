@@ -22,6 +22,21 @@
 - Quick compose uses the same picker. Selecting a recipient does not send a
   message; review the identifier and draft before **Ctrl+Enter**.
 
+## Composer and message status
+
+The chat composer expands as text wraps, up to six visible rows on large
+terminals, then scrolls internally. **Enter** sends; **Shift+Enter** inserts a
+newline. Quick compose uses **Ctrl+Enter** to send and **Enter** for a newline.
+**Left** at the start of the draft returns to navigation; **Esc** returns from
+any cursor position. Both preserve the draft.
+
+Message status lives beside the message: **◷** pending, **✓** accepted by the
+Signal send operation, **!** delivery unconfirmed. A tick does not imply a
+recipient delivery/read receipt. Unconfirmed sends retain the draft and show
+the error inside the conversation; retries remain explicit. Pending indicators
+are process-local; after a restart, retained drafts must be checked against the
+conversation before retrying.
+
 ## Names and history
 
 Signal contact names, nicknames and available profile names come from
