@@ -136,7 +136,12 @@ export function usePmSelectionData(
   historyRange: PMHistoryRange
 ): PMSelectionData {
   const [detailResult, setDetailResult] = useState<{ owner: object | undefined; item: PMListItem } | null>(null)
-  const [book, setBook] = useState<null | PMOrderBookDTO>(null)
+
+  const [bookResult, setBookResult] = useState<{
+    owner: object | undefined
+    key: string
+    book: PMOrderBookDTO | null
+  } | null>(null)
 
   const [historyResult, setHistoryResult] = useState<{
     owner: object | undefined
@@ -199,6 +204,9 @@ export function usePmSelectionData(
   const activeMarket = detailItem?.event.markets.find(m => m.market_id === activeOutcome?.market_id)
   const bookId = activeOutcome ? bookMarketId(activeVenue, activeMarket, activeOutcome.market_id) : null
 
+  const bookKey = JSON.stringify([activeVenue, selectedEventId, bookId])
+  const book = active && bookResult?.owner === owner && bookResult?.key === bookKey ? bookResult.book : null
+
   const historyKey = JSON.stringify([activeVenue, selectedEventId, bookId, historyRange])
 
   const history =
@@ -207,7 +215,7 @@ export function usePmSelectionData(
   // Book + history on outcome / range change (on demand).
   useEffect(() => {
     if (!gw || !active || !bookId) {
-      setBook(null)
+      setBookResult(null)
       setHistoryResult(null)
 
       return
@@ -215,8 +223,17 @@ export function usePmSelectionData(
 
     let cancelled = false
     fetchPMBook(gw, activeVenue, bookId)
-      .then(b => !cancelled && aliveRef.current && setBook(b))
-      .catch(() => !cancelled && aliveRef.current && setBook(null))
+      .then(
+        b =>
+          !cancelled &&
+          aliveRef.current &&
+          setBookResult({
+            owner,
+            key: bookKey,
+            book: b && b.venue === activeVenue && b.market_id === bookId ? b : null
+          })
+      )
+      .catch(() => !cancelled && aliveRef.current && setBookResult(null))
     fetchPMHistory(gw, activeVenue, bookId, {
       range: historyRange,
       seriesTicker: seriesTickerFor(activeVenue, detailItem?.event)
@@ -228,7 +245,7 @@ export function usePmSelectionData(
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gw, owner, active, activeVenue, bookId, historyRange, historyKey])
+  }, [gw, owner, active, activeVenue, bookId, historyRange, historyKey, bookKey])
 
   // ONE ws subscription for the selected event's book ids; stop on leave.
   // Debounced so arrow-keying down the list doesn't open+close the venue socket
@@ -298,7 +315,15 @@ export function usePmSelectionData(
       }
 
       const tick = ev.payload
-      setBook(prev => applyBookTick(prev, tick))
+      setBookResult(prev => {
+        if (!prev || prev.owner !== owner) {
+          return prev
+        }
+
+        const next = applyBookTick(prev.book, tick)
+
+        return next === prev.book ? prev : { ...prev, book: next }
+      })
 
       // Fold ONLY the server's honest estimate. A null estimate (dead/degenerate
       // tick) changes NOTHING — the honest REST value on the row is left intact,
@@ -316,7 +341,7 @@ export function usePmSelectionData(
     gw.on('event', onEvent)
 
     return () => gw.off?.('event', onEvent)
-  }, [gw])
+  }, [gw, owner])
 
   return { activeMarket, book, bookId, detailItem, history, livePrices, streamNote, streaming }
 }

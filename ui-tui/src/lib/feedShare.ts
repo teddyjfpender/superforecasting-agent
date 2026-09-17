@@ -45,8 +45,15 @@ const chartTime = (v: unknown): v is string =>
 const period = (v: unknown): v is Record<string, unknown> & { start: string; end: string } =>
   object(v) && chartTime(v.start) && chartTime(v.end) && v.start.length === v.end.length && v.start <= v.end
 
-const instant = (v: unknown) =>
-  v === null || (plain(v, 40) && /(?:Z|[+-]\d{2}:\d{2})$/.test(v) && Number.isFinite(Date.parse(v)))
+const sourceInstant = (v: unknown): v is string =>
+  plain(v, 40) &&
+  /^(?!0000)\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,6})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/.test(
+    v
+  ) &&
+  day(v.slice(0, 10)) &&
+  Number.isFinite(Date.parse(v))
+
+const instant = (v: unknown) => v === null || sourceInstant(v)
 
 const publicUrl = (v: unknown) => {
   if (v === null) {

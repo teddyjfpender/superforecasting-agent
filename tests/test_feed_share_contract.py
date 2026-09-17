@@ -74,3 +74,25 @@ def test_intraday_snapshot_round_trip_and_version_boundaries():
     raw["feeds"][0]["points"][0]["start"] = "2026-09-16"
     with pytest.raises(ValidationError):
         FeedShare.model_validate(raw)
+
+
+@pytest.mark.parametrize(
+    "timestamp,valid",
+    [
+        ("2026-02-30T12:00:00Z", False),
+        ("2026-09-16T24:00:00Z", False),
+        ("2026-09-16T12:00:00", False),
+        ("September 16, 2026 12:00:00Z", False),
+        ("2026-09-16T12:00:00+00:99", False),
+        ("2026-09-16T12:00:00.123456+04:00", True),
+        ("2026-09-16T12:00:00Z", True),
+    ],
+)
+def test_retrieval_timestamp_contract(timestamp, valid):
+    raw = snapshot()
+    raw["feeds"][0]["retrieved_at"] = timestamp
+    if valid:
+        assert FeedShare.model_validate(raw).feeds[0].retrieved_at == timestamp
+    else:
+        with pytest.raises(ValidationError):
+            FeedShare.model_validate(raw)

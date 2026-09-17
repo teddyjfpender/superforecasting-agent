@@ -9,11 +9,16 @@ import type { PMListItem, PMOutcomeDTO } from '../protocol/generated.js'
 it('hides old history immediately and ignores late replies after outcome selection changes', async () => {
   const { render } = await import('@superforecasting/ink')
   const pending = new Map<string, (value: unknown) => void>()
+  const books = new Map<string, (value: unknown) => void>()
 
   const gw: PMHookGateway = {
     request: (async (method: string, params: Record<string, unknown>) => {
       if (method === 'pm.history') {
         return new Promise(resolve => pending.set(String(params.market_id), resolve))
+      }
+
+      if (method === 'pm.book') {
+        return new Promise(resolve => books.set(String(params.market_id), resolve))
       }
 
       return {}
@@ -41,16 +46,22 @@ it('hides old history immediately and ignores late replies after outcome selecti
 
   try {
     await vi.waitFor(() => expect(pending.has('A')).toBe(true))
+    books.get('A')!({ book: { venue: 'kalshi', market_id: 'A', bids: [], asks: [] } })
     pending.get('A')!({ points: [{ ts: 1, p: 0.2 }] })
     await vi.waitFor(() => expect(latest?.history[0]?.p).toBe(0.2))
+    expect(latest?.book?.market_id).toBe('A')
     app.rerender(<Probe id="B" />)
     await vi.waitFor(() => expect(pending.has('B')).toBe(true))
     expect(latest?.history).toEqual([])
+    expect(latest?.book).toBeNull()
     app.rerender(<Probe id="C" />)
     await vi.waitFor(() => expect(pending.has('C')).toBe(true))
+    books.get('C')!({ book: { venue: 'kalshi', market_id: 'C', bids: [], asks: [] } })
+    books.get('B')!({ book: { venue: 'kalshi', market_id: 'B', bids: [], asks: [] } })
     pending.get('B')!({ points: [{ ts: 2, p: 0.9 }] })
     pending.get('C')!({ points: [{ ts: 3, p: 0.4 }] })
     await vi.waitFor(() => expect(latest?.history).toEqual([{ ts: 3, p: 0.4 }]))
+    expect(latest?.book?.market_id).toBe('C')
   } finally {
     app.unmount()
     app.cleanup()

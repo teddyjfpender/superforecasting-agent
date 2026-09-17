@@ -249,3 +249,17 @@ it.each([
     value: null
   })
 })
+
+it.each([
+  ['2026-02-30T12:00:00Z', false],
+  ['2026-09-16T24:00:00Z', false],
+  ['2026-09-16T12:00:00', false],
+  ['September 16, 2026 12:00:00Z', false],
+  ['2026-09-16T12:00:00+00:99', false],
+  ['2026-09-16T12:00:00.123456+04:00', true],
+  ['2026-09-16T12:00:00Z', true]
+])('validates retrieval timestamp %s consistently with Python', (timestamp, valid) => {
+  const share = fixture()
+  share.feeds[0]!.retrieved_at = timestamp
+  expect(validFeedShare(share)).toBe(valid)
+})

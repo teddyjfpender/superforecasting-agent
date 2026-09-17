@@ -82,11 +82,14 @@ class SharedFeed(ShareModel):
     @field_validator("retrieved_at")
     @classmethod
     def timestamp(cls, value: str | None) -> str | None:
-        if (
-            value is not None
-            and datetime.fromisoformat(value.replace("Z", "+00:00")).tzinfo is None
-        ):
-            raise ValueError("Timestamp needs a timezone")
+        if value is not None:
+            if not re.fullmatch(
+                r"(?!0000)\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d"
+                r"(?:\.\d{1,6})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)",
+                value,
+            ):
+                raise ValueError("Use an ISO timestamp with an explicit timezone")
+            datetime.fromisoformat(value.replace("Z", "+00:00"))
         return value
 
     @model_validator(mode="after")

@@ -148,3 +148,10 @@ History belongs to a backend/profile, event, contract and requested range; old
 responses cannot be attached to a replacement selection. While history is
 unavailable, forwarding remains text-only with an explicit explanation; close
 and reopen the composer once history loads to capture a fresh snapshot.
+
+The order book uses the same backend/profile and selection ownership as history.
+Responses must match the requested venue and book identifier; cross-venue ticks
+are ignored even when identifiers collide. Spot-only feeds (currently CoinGecko)
+share their single source-timestamped value and explicitly report that a trend
+is unavailable. Retrieval timestamps require a real ISO date/time and timezone;
+Python and TypeScript reject invalid calendar dates and offset fields alike.
