@@ -39,7 +39,7 @@ def test_untrusted_snapshot_rejected(mutation):
     raw = snapshot()
     feed = raw["feeds"][0]
     if mutation == "version":
-        raw["version"] = 2
+        raw["version"] = 3
     if mutation == "boolean_version":
         raw["version"] = True
     if mutation == "duplicate":
@@ -58,5 +58,19 @@ def test_untrusted_snapshot_rejected(mutation):
         feed["source_url"] = "https://example.com/?api_key=secret"
     if mutation == "extra":
         raw["execute"] = "something"
+    with pytest.raises(ValidationError):
+        FeedShare.model_validate(raw)
+
+
+def test_intraday_snapshot_round_trip_and_version_boundaries():
+    raw = json.loads(
+        (Path(__file__).parent / "fixtures/feed_share/v2.json").read_text()
+    )
+    assert FeedShare.model_validate(raw).model_dump() == raw
+    raw["version"] = 1
+    with pytest.raises(ValidationError):
+        FeedShare.model_validate(raw)
+    raw["version"] = 2
+    raw["feeds"][0]["points"][0]["start"] = "2026-09-16"
     with pytest.raises(ValidationError):
         FeedShare.model_validate(raw)

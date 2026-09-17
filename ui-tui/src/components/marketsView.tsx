@@ -8,7 +8,7 @@ import type { MarketSeries } from '../content/marketProviders.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import { catalogSeries, deskConfig, saveDeskFields } from '../lib/dataDesk.js'
 import { deskViewCache } from '../lib/deskViewCache.js'
-import { shareQuote } from '../lib/feedShare.js'
+import { sharePredictionMarket, shareQuote } from '../lib/feedShare.js'
 import { type FieldSpec, rankItems } from '../lib/fuzzyRank.js'
 import { statusGlyph } from '../lib/icons.js'
 import { changeReference, displayedChange, formatMarketChange, lastMovement } from '../lib/marketChange.js'
@@ -1713,7 +1713,19 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
 
   // ---- right: security detail card ----------------------------------------
   const q = selectedRow?.quote
-  const feedShare = useMemo(() => (q && !pmTabActive ? shareQuote(q) : null), [q, pmTabActive])
+
+  const feedShare = useMemo(
+    () =>
+      pmTabActive
+        ? pm.detailItem && pm.activeOutcome
+          ? sharePredictionMarket(pm.detailItem.event, pm.activeOutcome, pm.history)
+          : null
+        : q
+          ? shareQuote(q)
+          : null,
+    [q, pmTabActive, pm.detailItem, pm.activeOutcome, pm.history]
+  )
+
   useShareItem(
     pmTabActive ? pm.detailItem?.event.title || '' : q?.name || q?.symbol || '',
     pmTabActive
@@ -1721,7 +1733,12 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
       : q
         ? `${q.value ?? 'Unavailable'} ${q.unit || ''} · CHG ${q.change ?? 'unavailable'} · ${q.provider} · observed ${q.asOf ? new Date(q.asOf).toISOString() : 'unknown'}`
         : '',
+    feedShare,
     feedShare
+      ? undefined
+      : pmTabActive
+        ? 'Chart unavailable · close, wait for outcome history, then reopen'
+        : 'Chart unavailable · source has no valid dated observations'
   )
   const s = selectedRow?.series
   const chartW = Math.max(12, detailWidth - 2)

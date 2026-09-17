@@ -135,9 +135,16 @@ export function usePmSelectionData(
   activeOutcome: null | PMOutcomeDTO,
   historyRange: PMHistoryRange
 ): PMSelectionData {
-  const [detail, setDetail] = useState<null | PMListItem>(null)
+  const [detailResult, setDetailResult] = useState<{ owner: object | undefined; item: PMListItem } | null>(null)
   const [book, setBook] = useState<null | PMOrderBookDTO>(null)
-  const [history, setHistory] = useState<PMHistoryPointDTO[]>([])
+
+  const [historyResult, setHistoryResult] = useState<{
+    owner: object | undefined
+    key: string
+    points: PMHistoryPointDTO[]
+  } | null>(null)
+
+  const owner = gw ? gatewayCacheOwner(gw) : undefined
   const [streaming, setStreaming] = useState(false)
   const [streamNote, setStreamNote] = useState('')
   const [livePrices, setLivePrices] = useState<Record<string, number>>({})
@@ -159,37 +166,49 @@ export function usePmSelectionData(
 
   const selectedEventId = selectedItem ? `${selectedItem.event.venue}:${selectedItem.event.event_id}` : null
 
+  const detail = detailResult?.owner === owner ? detailResult?.item : null
+
   // Full event (markets + token ids) on event change.
   useEffect(() => {
     if (!gw || !active || !selectedItem) {
-      setDetail(null)
+      setDetailResult(null)
 
       return
     }
 
     let cancelled = false
     fetchPMDetail(gw, selectedItem.event.venue, selectedItem.event.event_id)
-      .then(d => !cancelled && aliveRef.current && setDetail(d ?? selectedItem))
-      .catch(() => !cancelled && aliveRef.current && setDetail(selectedItem))
+      .then(d => !cancelled && aliveRef.current && setDetailResult({ owner, item: d ?? selectedItem }))
+      .catch(() => !cancelled && aliveRef.current && setDetailResult({ owner, item: selectedItem }))
 
     return () => {
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gw, active, selectedEventId])
+  }, [gw, owner, active, selectedEventId])
 
   const detailItem =
-    detail && selectedItem && detail.event.event_id === selectedItem.event.event_id ? detail : selectedItem
+    detail &&
+    selectedItem &&
+    detail.event.event_id === selectedItem.event.event_id &&
+    detail.event.venue === selectedItem.event.venue
+      ? detail
+      : selectedItem
 
   const activeVenue = selectedItem?.event.venue ?? 'polymarket'
   const activeMarket = detailItem?.event.markets.find(m => m.market_id === activeOutcome?.market_id)
   const bookId = activeOutcome ? bookMarketId(activeVenue, activeMarket, activeOutcome.market_id) : null
 
+  const historyKey = JSON.stringify([activeVenue, selectedEventId, bookId, historyRange])
+
+  const history =
+    active && historyResult?.owner === owner && historyResult?.key === historyKey ? historyResult.points : []
+
   // Book + history on outcome / range change (on demand).
   useEffect(() => {
     if (!gw || !active || !bookId) {
       setBook(null)
-      setHistory([])
+      setHistoryResult(null)
 
       return
     }
@@ -202,14 +221,14 @@ export function usePmSelectionData(
       range: historyRange,
       seriesTicker: seriesTickerFor(activeVenue, detailItem?.event)
     })
-      .then(pts => !cancelled && aliveRef.current && setHistory(pts))
-      .catch(() => !cancelled && aliveRef.current && setHistory([]))
+      .then(pts => !cancelled && aliveRef.current && setHistoryResult({ owner, key: historyKey, points: pts }))
+      .catch(() => !cancelled && aliveRef.current && setHistoryResult(null))
 
     return () => {
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gw, active, activeVenue, bookId, historyRange])
+  }, [gw, owner, active, activeVenue, bookId, historyRange, historyKey])
 
   // ONE ws subscription for the selected event's book ids; stop on leave.
   // Debounced so arrow-keying down the list doesn't open+close the venue socket

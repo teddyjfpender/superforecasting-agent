@@ -22,14 +22,25 @@ class ShareModel(WireModel):
 
 
 class SharedPeriod(ShareModel):
-    start: str = Field(max_length=10)
-    end: str = Field(max_length=10)
+    start: str = Field(max_length=24)
+    end: str = Field(max_length=24)
 
     @model_validator(mode="after")
     def valid_period(self) -> Self:
         for value in (self.start, self.end):
-            if date.fromisoformat(value).isoformat() != value:
-                raise ValueError("Use ISO calendar dates")
+            if len(value) == 10:
+                valid = date.fromisoformat(value).isoformat() == value
+            else:
+                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                valid = (
+                    value.endswith("Z")
+                    and parsed.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+                    == value
+                )
+            if not valid:
+                raise ValueError("Use ISO calendar dates or canonical UTC milliseconds")
+        if len(self.start) != len(self.end):
+            raise ValueError("Period precision must match")
         if self.end < self.start:
             raise ValueError("Period end precedes start")
         return self
@@ -89,7 +100,7 @@ class SharedFeed(ShareModel):
 
 class FeedShare(ShareModel):
     type: Literal["sfa.feed"]
-    version: Literal[1]
+    version: Literal[1, 2]
     presentation: Literal["bar-chart", "line-chart"]
     horizon: SharedPeriod
     feeds: list[SharedFeed] = Field(min_length=1, max_length=4)
@@ -103,7 +114,12 @@ class FeedShare(ShareModel):
 
     @model_validator(mode="after")
     def bounded_horizon(self) -> Self:
+        precision = len(self.horizon.start)
+        if self.version == 1 and precision != 10:
+            raise ValueError("Version 1 only supports calendar dates")
         for feed in self.feeds:
+            if any(len(p.start) != precision for p in feed.points):
+                raise ValueError("All observations must use the horizon precision")
             if (
                 feed.points[0].start < self.horizon.start
                 or feed.points[-1].end > self.horizon.end
