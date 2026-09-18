@@ -25,6 +25,7 @@ import {
 } from '../lib/newsFeedStore.js'
 import { nextProviderColor, providerColor } from '../lib/newsProviderColor.js'
 import { loadProviderColors, type ProviderColors, saveProviderColors } from '../lib/newsProviderColorStore.js'
+import { sameNewsArticles } from '../lib/newsPublication.js'
 import { openExternalUrl } from '../lib/openExternalUrl.js'
 import { useShareItem } from '../lib/useShareItem.js'
 import { useViewInput } from '../lib/useViewInput.js'
@@ -163,7 +164,25 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
     )
   )
 
+  // Acquisition may continue while reading; publication is a deliberate action.
+  const displayedArticles = useRef(articles)
+  const [pendingArticles, setPendingArticles] = useState<Article[] | null>(null)
+
+  const publishArticles = (next: Article[]) => {
+    displayedArticles.current = next
+    setArticles(next)
+    setPendingArticles(null)
+  }
+
+  const applyUpdates = () => {
+    if (pendingArticles) {
+      publishArticles(pendingArticles)
+      setSel(0)
+    }
+  }
+
   const [fetching, setFetching] = useState(false)
+  const [, setCacheRevision] = useState(0)
 
   // Add-feed modal state.
   const [adding, setAdding] = useState(false)
@@ -227,7 +246,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
     cacheRef.current = retained.articles
     bodyCache.current = retained.bodies
     setArticleBody(null)
-    setArticles(
+    publishArticles(
       uniqueArticles(
         (retained.newsDesk?.feeds ?? []).flatMap(feed => retained.articles[normalizeFeedUrl(feed.url)]?.articles ?? [])
       )
@@ -279,6 +298,13 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
 
     const controller = new AbortController()
     const keep = new Set(subscribed.map(f => normalizeFeedUrl(f.url)))
+    const keptArticles = displayedArticles.current.filter(article => keep.has(normalizeFeedUrl(article.feedUrl)))
+
+    if (keptArticles.length !== displayedArticles.current.length) {
+      publishArticles(keptArticles)
+      setSel(0)
+    }
+
     const pruned = pruneArticleCache(cacheRef.current, { keep, maxAgeMs: 30 * 24 * 60 * 60 * 1000, maxFeeds: 700 })
 
     // Keep the record identity stable for requests already owned by this connection.
@@ -295,9 +321,15 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
         return
       }
 
-      setArticles(
-        uniqueArticles(subscribed.flatMap(feed => cacheRef.current[normalizeFeedUrl(feed.url)]?.articles ?? []))
+      const next = uniqueArticles(
+        subscribed.flatMap(feed => cacheRef.current[normalizeFeedUrl(feed.url)]?.articles ?? [])
       )
+
+      if (!displayedArticles.current.length) {
+        publishArticles(next)
+      } else {
+        setPendingArticles(sameNewsArticles(displayedArticles.current, next) ? null : next)
+      }
     }
 
     rebuild()
@@ -322,6 +354,8 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
           error: result.error ?? undefined,
           fetchedAt: result.error ? (previous?.fetchedAt ?? 0) : Date.now()
         }
+        // Status updates must render even when the published articles stay fixed.
+        setCacheRevision(value => value + 1)
         rebuild()
       },
       6,
@@ -697,6 +731,12 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
         return
       }
 
+      if (ch === 'u' && !key.ctrl && !key.meta) {
+        applyUpdates()
+
+        return
+      }
+
       if (ch === 'r') {
         setFlash('refreshing…')
 
@@ -890,6 +930,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
             {' · '}
             {hasFeeds ? `${subscribed.length} feeds · ${articles.length} articles` : 'press a to add feeds'}
           </Text>
+          {pendingArticles ? <Text color={t.color.accent}> · Updates ready [u apply]</Text> : null}
           {searchActive ? (
             <Text>
               <Text color={t.color.muted}>{'  ·  '}</Text>
@@ -1163,6 +1204,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
         ]
       : []),
     { k: 'PgUp/Dn', label: 'Read' },
+    ...(pendingArticles ? [{ k: 'u', label: 'Apply updates', run: applyUpdates }] : []),
     {
       k: 'r',
       label: 'Refresh',

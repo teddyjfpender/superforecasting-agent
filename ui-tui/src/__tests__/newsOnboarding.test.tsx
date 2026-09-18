@@ -47,6 +47,7 @@ async function mount(cols: number, rows: number, configured = false) {
     'Disasters'
   ].map((category, i) => ({ ...feed, category, url: `https://example.org/feed${i}` }))
 
+  let responseXml = xml
   let feeds = configured ? [feed] : []
   let fail = false
   let release: ((value: unknown) => void) | undefined
@@ -68,7 +69,7 @@ async function mount(cols: number, rows: number, configured = false) {
         throw new Error('Source offline')
       }
 
-      return { xml, url: feed.url }
+      return { xml: responseXml, url: feed.url }
     }
 
     if (method === 'news.article') {
@@ -115,6 +116,9 @@ async function mount(cols: number, rows: number, configured = false) {
 
   return {
     request,
+    revise: () => {
+      responseXml = xml.replaceAll('First source report', 'Revised source report')
+    },
     frames,
     text: () => stripAnsi(output),
     fail: () => {
@@ -235,6 +239,31 @@ it.each([
       const lines = frame.trimEnd().split('\n')
       expect(lines.length).toBeLessThanOrEqual(rows)
       expect(lines[headings[0]]).toContain('READER')
+    }
+  } finally {
+    app.close()
+  }
+})
+
+it.each([
+  [80, 24],
+  [120, 40]
+])('holds the current story until updates are explicitly applied at %ix%i', async (cols, rows) => {
+  const app = await mount(cols, rows, true)
+
+  try {
+    await tick(650)
+    app.revise()
+    await app.press('r')
+    await tick(150)
+    expect(app.text()).toContain('First source report')
+    expect(app.text()).not.toContain('Revised source report')
+    expect(app.text()).toContain('Updates ready')
+    await app.press('u')
+    expect(app.text()).toContain('Revised source report')
+
+    for (const frame of app.frames) {
+      expect(frame.trimEnd().split('\n').length).toBeLessThanOrEqual(rows)
     }
   } finally {
     app.close()

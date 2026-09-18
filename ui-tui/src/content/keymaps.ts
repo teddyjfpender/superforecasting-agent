@@ -94,7 +94,8 @@ export const PER_VIEW_KEYS: Record<string, [string, string][]> = {
     ['a / s', 'add feed / starter feeds'],
     ['PgUp/PgDn', 'scroll the reader'],
     ['m', 'message / forward story'],
-    ['r', 'refresh'],
+    ['r', 'fetch updates without moving the current story'],
+    ['u', 'apply fetched updates'],
     ['q / Esc', 'close; Esc clears search first']
   ],
   warnings: [

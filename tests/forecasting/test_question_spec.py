@@ -349,3 +349,28 @@ def test_apply_recommended_defaults_falls_back_to_end_of_year_without_horizon():
     new_spec, applied = apply_recommended_defaults(spec)
     close = next(a for a in applied if a["field"] == "close_time")
     assert close["value"].endswith("-12-31")
+
+
+@pytest.mark.parametrize("method", ["add_watched_source", "add_reference_class", "set_resolution_rule"])
+def test_commit_rolls_back_partial_question_on_failure(tmp_path, monkeypatch, method):
+    ledger = _make_ledger(tmp_path)
+    spec = _good_spec(
+        resolution_rule=ResolutionRuleSpec(
+            field="yoy_percent", comparator=">=", threshold=3.0, source_role="resolver"
+        ),
+    )
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("injected write failure")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(ledger, method, fail)
+        with pytest.raises(RuntimeError, match="injected write failure"):
+            spec.commit(ledger)
+    assert ledger.list_questions() == []
+    assert ledger.list_watched_sources() == []
+    assert ledger.list_scheduled_reviews() == []
+
+    result = spec.commit(ledger)
+    assert len(ledger.list_questions()) == 1
+    assert len(ledger.list_reference_classes(result["question_id"])) == 1

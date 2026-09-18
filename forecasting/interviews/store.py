@@ -1,0 +1,154 @@
+"""Append-only interview revisions in the forecast ledger's transaction boundary."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import sqlite3
+from typing import TYPE_CHECKING, Literal
+
+from forecasting.interviews.models import InterviewDraft
+from forecasting.models import ValidationError, utc_now_iso
+
+if TYPE_CHECKING:
+    from forecasting.ledger import ForecastLedger
+
+
+def initialize_schema(conn: sqlite3.Connection) -> None:
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS forecast_interview_revisions (
+            interview_id TEXT NOT NULL,
+            revision INTEGER NOT NULL CHECK (revision > 0),
+            request_id TEXT NOT NULL,
+            actor TEXT NOT NULL CHECK (actor IN ('user', 'agent')),
+            document TEXT NOT NULL,
+            digest TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (interview_id, revision),
+            UNIQUE (interview_id, request_id)
+        )
+    """)
+
+
+class InterviewStore:
+    """No draft operation creates a forecast snapshot or changes its probability."""
+
+    def __init__(self, ledger: ForecastLedger):
+        self.ledger = ledger
+
+    def read(self, interview_id: str, revision: int | None = None) -> dict:
+        with self.ledger._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM forecast_interview_revisions WHERE interview_id = ? "
+                + ("AND revision = ? " if revision is not None else "")
+                + "ORDER BY revision DESC LIMIT 1",
+                (interview_id, revision) if revision is not None else (interview_id,),
+            ).fetchone()
+        if row is None:
+            raise ValidationError("interview revision not found")
+        return {**dict(row), "document": json.loads(row["document"])}
+
+    def save(
+        self,
+        interview_id: str,
+        draft: InterviewDraft,
+        *,
+        expected_revision: int,
+        request_id: str,
+        actor: Literal["user", "agent"],
+    ) -> dict:
+        if not interview_id.strip() or not request_id.strip():
+            raise ValidationError("interview and request identifiers are required")
+        if actor not in {"user", "agent"}:
+            raise ValidationError("unknown interview actor")
+        if type(expected_revision) is not int or expected_revision < 0:
+            raise ValidationError("invalid expected revision")
+        # Revalidate mutable nested lists and dictionaries even for model callers.
+        draft = InterviewDraft.model_validate(draft.model_dump())
+        document = json.dumps(
+            draft.model_dump(), sort_keys=True, separators=(",", ":"), allow_nan=False
+        )
+        digest = hashlib.sha256(document.encode()).hexdigest()
+        with self.ledger.transaction(immediate=True) as conn:
+            retry = conn.execute(
+                "SELECT revision, digest, actor FROM forecast_interview_revisions "
+                "WHERE interview_id = ? AND request_id = ?",
+                (interview_id, request_id),
+            ).fetchone()
+            if retry is not None:
+                if (
+                    retry["digest"] != digest
+                    or retry["actor"] != actor
+                    or retry["revision"] != expected_revision + 1
+                ):
+                    raise ValidationError(
+                        "request identifier reused for a different revision"
+                    )
+                return self.read(interview_id, retry["revision"])
+            previous = conn.execute(
+                "SELECT revision, document FROM forecast_interview_revisions "
+                "WHERE interview_id = ? ORDER BY revision DESC LIMIT 1",
+                (interview_id,),
+            ).fetchone()
+            if (previous["revision"] if previous else 0) != expected_revision:
+                raise ValidationError("interview changed; reload before saving")
+            old = (
+                InterviewDraft.model_validate_json(previous["document"])
+                if previous
+                else None
+            )
+            if old:
+                if (draft.mode, draft.question_id, draft.baseline_forecast_id) != (
+                    old.mode,
+                    old.question_id,
+                    old.baseline_forecast_id,
+                ):
+                    raise ValidationError("interview target and baseline are immutable")
+                if old.status == "cancelled":
+                    raise ValidationError("cancelled interviews cannot be edited")
+                old_questions = {q.id: q for q in old.questions}
+                answered_ids = {a.question_id for a in old.answers}
+                current_questions = {q.id: q for q in draft.questions}
+                if any(
+                    current_questions.get(qid) != old_questions[qid]
+                    for qid in answered_ids
+                ):
+                    raise ValidationError(
+                        "answered questions cannot change meaning; create a new question identifier"
+                    )
+            if draft.question_id:
+                question = self.ledger.get_question(draft.question_id)
+                if draft.baseline_forecast_id:
+                    baseline = self.ledger.get_snapshot(draft.baseline_forecast_id)
+                    if baseline.question_id != question.id:
+                        raise ValidationError(
+                            "baseline belongs to a different question"
+                        )
+            if actor == "agent":
+                old_user = (
+                    {a.question_id: a for a in old.answers if a.actor == "user"}
+                    if old
+                    else {}
+                )
+                new_user = {
+                    a.question_id: a for a in draft.answers if a.actor == "user"
+                }
+                if new_user != old_user:
+                    raise ValidationError(
+                        "agents cannot invent, edit or remove user answers"
+                    )
+            conn.execute(
+                "INSERT INTO forecast_interview_revisions "
+                "(interview_id, revision, request_id, actor, document, digest, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    interview_id,
+                    expected_revision + 1,
+                    request_id,
+                    actor,
+                    document,
+                    digest,
+                    utc_now_iso(),
+                ),
+            )
+            return self.read(interview_id)

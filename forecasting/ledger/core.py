@@ -1848,6 +1848,9 @@ class ForecastLedger:
             from forecasting.change_control.store import initialize_schema
 
             initialize_schema(conn)
+            from forecasting.interviews.store import initialize_schema as initialize_interviews
+
+            initialize_interviews(conn)
             from forecasting.ledger.workflow import initialize_schema as initialize_workflow_schema
 
             initialize_workflow_schema(conn)
