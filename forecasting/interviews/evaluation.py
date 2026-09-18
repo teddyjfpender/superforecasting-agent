@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from statistics import mean, pstdev
 from typing import TYPE_CHECKING
 
@@ -16,6 +17,7 @@ from forecasting.interviews.service import InterviewService
 from forecasting.interviews.store import InterviewStore
 from forecasting.jobs.policy import ActionClass
 from forecasting.models import ValidationError, utc_now_iso
+from forecasting.question_spec import spec_from_dict
 from protocol.interviews import InterviewDraft
 from protocol.scenarios import ScenarioEstimate, ScenarioEvaluationOptions
 
@@ -62,11 +64,7 @@ def prepare(
             "resolution_criteria": spec["resolution_criteria"],
             "resolution_source": spec.get("resolution_source"),
             "close_time": spec.get("close_time"),
-            "outcome_space": {
-                "type": spec["outcome_type"],
-                "choices": spec.get("choices", []),
-                "units": spec.get("units"),
-            },
+            "outcome_space": asdict(spec_from_dict(spec).outcome_space()),
         }
     else:
         contract = packet["frozen_question"]

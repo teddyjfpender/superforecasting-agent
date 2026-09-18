@@ -2756,6 +2756,33 @@ export interface InterviewPreviewResponse {
   unanswered: string[]
 }
 
+export interface InterviewPromoteRequest {
+  job_id: string
+  preview_digest: string
+  repetition: number
+}
+
+export interface InterviewPromoteResponse {
+  forecast_id: string
+  question_id: string
+}
+
+export interface InterviewPromotionPreviewRequest {
+  job_id: string
+  repetition: number
+}
+
+export interface InterviewPromotionPreviewResponse {
+  blockers: string[]
+  candidate: Record<string, number> | number
+  job_id: string
+  preview_digest: string
+  promoted_forecast_id: null | string
+  question_id: string
+  repetition: number
+  would_commit: boolean
+}
+
 export interface InterviewQuestion {
   allow_custom: boolean
   assumption_ids: string[]
@@ -4786,6 +4813,21 @@ export interface RpcMethods {
       revision: number
     }
     result: InterviewPreviewResponse
+  }
+  'forecast.interview.promote': {
+    params: {
+      job_id: string
+      preview_digest: string
+      repetition?: number
+    }
+    result: InterviewPromoteResponse
+  }
+  'forecast.interview.promotion_preview': {
+    params: {
+      job_id: string
+      repetition?: number
+    }
+    result: InterviewPromotionPreviewResponse
   }
   'forecast.interview.read': {
     params: {

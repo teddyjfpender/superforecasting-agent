@@ -357,3 +357,196 @@ def test_interview_allows_only_one_active_comparison(work):
         enqueue_evaluation(
             service.ledger, "review", record.spec["revision"], "second", options
         )
+
+
+def promotion_job(work, monkeypatch):
+    service, question, jobs, original = work
+    evidence = service.ledger.add_evidence(
+        question_id=question.id,
+        source_or_note="Official report",
+        claim="Recorded observation",
+        summary="Relevant evidence for the estimate",
+        archive_url_snapshot=False,
+    )
+    draft = service.begin("promotion", question_id=question.id)
+    record = JobRecord(
+        job_id=jobs.new_id(),
+        type="forecast_scenarios",
+        spec={
+            **original.spec,
+            "interview_id": "promotion",
+            "revision": draft["revision"],
+        },
+    )
+    jobs.write(record)
+    result = response()
+    content = json.loads(result["content"])
+    content["evidence_refs"] = [evidence.id]
+    result["content"] = json.dumps(content)
+    monkeypatch.setattr(evaluation, "run_model", Mock(return_value=result))
+    outcome = run(record.job_id, store=jobs)
+    assert outcome.status == "done", outcome.error
+    return record.job_id
+
+
+def test_explicit_promotion_is_atomic_and_idempotent(work, monkeypatch):
+    from forecasting.interviews.promotion import preview_promotion, promote
+
+    service, question, jobs, _ = work
+    job_id = promotion_job(work, monkeypatch)
+    preview = preview_promotion(service.ledger, job_id)
+    assert preview["would_commit"], preview
+    assert service.ledger.list_snapshots(question.id) == []
+    result = promote(service.ledger, job_id, 0, preview["preview_digest"])
+    assert promote(service.ledger, job_id, 0, preview["preview_digest"]) == result
+    assert len(service.ledger.list_snapshots(question.id)) == 1
+    snapshot = service.ledger.get_current_snapshot(question.id)
+    assert snapshot.forecast_id == result["forecast_id"]
+    assert (
+        snapshot.metadata["interview_evaluation"]["selected_result"]["kind"]
+        == "baseline"
+    )
+    assert snapshot.probability_or_distribution == 0.4
+    with pytest.raises(ValidationError, match="different reviewed candidate"):
+        promote(service.ledger, job_id, 1, preview["preview_digest"])
+
+
+def test_stale_baseline_and_bad_preview_cannot_promote(work, monkeypatch):
+    from forecasting.interviews.promotion import preview_promotion, promote
+
+    service, question, _, _ = work
+    job_id = promotion_job(work, monkeypatch)
+    preview = preview_promotion(service.ledger, job_id)
+    with pytest.raises(ValidationError, match="preview changed"):
+        promote(service.ledger, job_id, 0, "0" * 64)
+    with allow_ledger_writes(reason="fixture"):
+        service.ledger.create_snapshot(
+            question_id=question.id,
+            probability_or_distribution=0.8,
+            rationale="New baseline",
+            forecast_origin="exploratory",
+        )
+    with pytest.raises(ValidationError, match="active forecast changed"):
+        promote(service.ledger, job_id, 0, preview["preview_digest"])
+    assert len(service.ledger.list_snapshots(question.id)) == 1
+
+
+def test_ledger_blockers_are_preserved_by_promotion(work, monkeypatch):
+    from forecasting.interviews.promotion import preview_promotion, promote
+
+    service, question, jobs, record = work
+    monkeypatch.setattr(evaluation, "run_model", Mock(return_value=response()))
+    assert run(record.job_id, store=jobs).status == "done"
+    preview = preview_promotion(service.ledger, record.job_id)
+    assert not preview["would_commit"]
+    assert preview["blockers"]
+    with pytest.raises(ValidationError, match="promotion blocked"):
+        promote(service.ledger, record.job_id, 0, preview["preview_digest"])
+    assert service.ledger.list_snapshots(question.id) == []
+
+
+def test_promotion_receipt_failure_rolls_back_snapshot(work, monkeypatch):
+    import sqlite3
+
+    from forecasting.interviews.promotion import preview_promotion, promote
+
+    service, question, _, _ = work
+    job_id = promotion_job(work, monkeypatch)
+    preview = preview_promotion(service.ledger, job_id)
+    with service.ledger.transaction(immediate=True) as conn:
+        conn.execute(
+            "CREATE TRIGGER fail_promotion BEFORE INSERT ON forecast_interview_promotions BEGIN SELECT RAISE(ABORT, 'injected interruption'); END"
+        )
+    with pytest.raises(sqlite3.IntegrityError, match="injected interruption"):
+        promote(service.ledger, job_id, 0, preview["preview_digest"])
+    assert service.ledger.list_snapshots(question.id) == []
+    assert service.ledger.get_question(question.id).current_forecast_id is None
+    with service.ledger.transaction(immediate=True) as conn:
+        conn.execute("DROP TRIGGER fail_promotion")
+    saved = promote(service.ledger, job_id, 0, preview["preview_digest"])
+    restored = preview_promotion(service.ledger, job_id)
+    assert restored["promoted_forecast_id"] == saved["forecast_id"]
+
+
+def test_promotion_rejects_altered_result_records(work, monkeypatch):
+    from forecasting.interviews.promotion import preview_promotion
+
+    service, question, jobs, _ = work
+    job_id = promotion_job(work, monkeypatch)
+    stored = jobs.read(job_id)
+    stored.result["results"][0]["estimate"]["probability"] = 0.99
+    jobs.write(stored)
+    with pytest.raises(ValidationError, match="durable call records"):
+        preview_promotion(service.ledger, job_id)
+    assert service.ledger.list_snapshots(question.id) == []
+
+
+def test_censored_promotion_never_invents_tail_probability(work, monkeypatch):
+    from forecasting.interviews.promotion import preview_promotion
+    from forecasting.models import OutcomeSpace
+
+    service, _, jobs, original = work
+    with allow_ledger_writes(reason="fixture"):
+        question = service.ledger.create_question(
+            title="How many days until official confirmation?",
+            resolution_criteria="Days from January 1 until the official report, observed through January 7.",
+            outcome_space=OutcomeSpace(
+                type="numeric",
+                choices=[],
+                units="days",
+                censoring={
+                    "threshold": 6,
+                    "inclusive": True,
+                    "probability_key": "p_gte_6",
+                },
+            ),
+        )
+    record = service.begin("censored", question_id=question.id)
+    record = service.answer(
+        "censored",
+        expected_revision=record["revision"],
+        request_id="drivers",
+        question_id="drivers",
+        status="answered",
+        value="Official publication is delayed",
+    )
+    factor = record["document"]["assumptions"][0]["id"]
+    record = service.save_scenario(
+        "censored",
+        expected_revision=record["revision"],
+        request_id="scenario",
+        scenario=InterviewScenario(
+            id="delayed", name="Delayed", kind="conditional", conditions={factor: True}
+        ),
+    )
+    job = JobRecord(
+        job_id=jobs.new_id(),
+        type="forecast_scenarios",
+        spec={
+            **original.spec,
+            "interview_id": "censored",
+            "revision": record["revision"],
+            "options": {"scenario_ids": ["delayed"]},
+        },
+    )
+    jobs.write(job)
+    result = response()
+    result["content"] = json.dumps({
+        "outcome_type": "numeric",
+        "q10": 1.0,
+        "q50": 4.0,
+        "q90": 8.0,
+        "units": "days",
+        "rationale": "Direct elicited quantiles",
+    })
+    monkeypatch.setattr(evaluation, "run_model", Mock(return_value=result))
+    completed = run(job.job_id, store=jobs)
+    assert completed.status == "done", completed.error
+    preview = preview_promotion(service.ledger, job.job_id)
+    assert preview["would_commit"] is False
+    assert any(
+        "Gaussian fallback is forbidden" in blocker for blocker in preview["blockers"]
+    )
+    assert "sd" not in preview["candidate"]
+    assert "p_gte_6" not in preview["candidate"]
+    assert service.ledger.list_snapshots(question.id) == []

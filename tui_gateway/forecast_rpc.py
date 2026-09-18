@@ -1251,3 +1251,23 @@ def _(rid, params: dict) -> dict:
         return _ok(rid, evaluation_status(_interview_service().ledger, params["interview_id"]))
     except Exception as exc:
         return _err(rid, 5008, str(exc))
+
+
+@rpc_validated("forecast.interview.promotion_preview")
+def _(rid, params: dict) -> dict:
+    try:
+        from forecasting.interviews.promotion import preview_promotion
+
+        return _ok(rid, preview_promotion(_interview_service().ledger, **params))
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))
+
+
+@rpc_validated("forecast.interview.promote")
+def _(rid, params: dict) -> dict:
+    try:
+        from forecasting.interviews.promotion import promote
+
+        return _ok(rid, promote(_interview_service().ledger, **params))
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))

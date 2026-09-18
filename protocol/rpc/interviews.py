@@ -146,3 +146,30 @@ class InterviewEvaluationStatusResponse(InterviewGenerationStatusResponse):
 
     report: ScenarioReport | None = None
     stale: bool = False
+
+
+class InterviewPromotionPreviewRequest(WireModel):
+    job_id: str
+    repetition: int = Field(default=0, ge=0, le=2)
+
+
+class InterviewPromotionPreviewResponse(WireModel):
+    job_id: str
+    repetition: int
+    question_id: str
+    candidate: float | dict[str, float]
+    would_commit: bool
+    blockers: list[str]
+    preview_digest: str
+    promoted_forecast_id: str | None = None
+
+
+class InterviewPromoteRequest(InterviewPromotionPreviewRequest):
+    TS_NAME = "InterviewPromoteRequest"
+
+    preview_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class InterviewPromoteResponse(WireModel):
+    question_id: str
+    forecast_id: str

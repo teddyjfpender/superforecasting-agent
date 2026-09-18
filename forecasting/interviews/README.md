@@ -28,7 +28,7 @@ forecast. Publishing a forecast requires the separate explicit ledger commit pat
 
 Run `scripts/run_tests.sh tests/forecasting/test_interviews.py` from the repository
 root. See [the implementation design](../../docs/design/forecast-interviews-and-scenarios.md)
-for the planned transport, questionnaire UI and scheduled-review integration.
+for the design rationale and remaining scheduled-review integration.
 
 ## Current interaction
 
@@ -41,9 +41,10 @@ The review page scrolls with Page Up/Down. Creating a question requires explicit
 confirmation and is idempotent for the reviewed revision.
 
 The deterministic questionnaire works without model credentials. Adaptive model
-follow-ups and scenario selection are available; scenario execution, update
-promotion and scheduled review integration are still being implemented. An update interview currently saves the review
-draft and does not change the active probability.
+follow-ups, scenario comparisons and explicit baseline promotion are available.
+An update interview saves a draft; changing the active probability requires
+separate preview and confirmation. Scheduled review integration is still being
+implemented.
 
 ## Markets and News handoffs
 
@@ -83,8 +84,9 @@ require another provider call; provider-level exactly-once billing is not promis
 Model output can append optional questions and proposed assumptions, never user
 answers. Provenance includes the frozen input revision/digest, prompt digest,
 requested provider, reported response model and output-token usage when supplied.
-It does not yet prove a matched provider route for scenario comparisons. Stale
-results remain in job annotations and cannot overwrite newer user edits.
+Generation provenance alone is not a matched comparison; scenario evaluation
+also compares prepared-request fingerprints. Stale results remain in job
+annotations and cannot overwrite newer user edits.
 Cancellation terminates and reaps the owned model process; a cancelled response
 is not applied. No live-provider forecasting-quality claim follows from these
 synthetic failure and recovery checks.
@@ -104,8 +106,9 @@ asserting excluded factors false. Use `n` to name a scenario, Enter to inspect a
 full assumption and its attribution, and Ctrl+Enter to save. Existing scenarios
 can be reopened and edited; Ctrl+D asks for confirmation before deletion.
 Revisions retain history. Agent writers cannot overwrite user-owned scenarios.
-These definitions are not yet evaluated predictions and cannot change the active
-forecast probability.
+Definitions alone do not change the active forecast probability. Run comparisons
+with Ctrl+E, then explicitly preview and confirm an unconditional baseline if
+you choose to promote it.
 
 ## Frozen update context
 
@@ -148,8 +151,7 @@ what happens inside a provider's infrastructure.
 Ablations exclude factors from the reasoning task; the same source packet is
 retained in every variant. They are sensitivity analyses, not blinded information
 experiments, causal effects or evidence of calibration. Conditional outputs stay
-conditional. TUI controls, explicit candidate promotion and scheduled invocation
-remain under implementation.
+conditional. Scheduled invocation remains under implementation.
 
 ### Comparing in the TUI
 
@@ -165,4 +167,21 @@ scrolls with arrows or Page Up/Down. It shows frozen scenario definitions,
 assumptions, per-run reasoning, unresolved questions and cited evidence.
 Probabilities use percentages; differences use percentage points. Stale
 interviews/contracts/baselines are labelled historical. No comparison becomes
-a forecast without a separate promotion action (still under implementation).
+a forecast without a separate promotion action.
+
+### Explicit promotion
+
+In a completed comparison, Ctrl+P opens promotion for unconditional baseline
+runs only. Left/Right selects a repetition; Enter runs the ledger preview;
+Ctrl+Enter accepts its exact candidate. The preview includes configured
+probability clamps and displays ledger blockers. It never disables citation,
+style, output-shape or other ledger gates to make a candidate pass.
+
+Promotion refuses changed interviews, active baselines and resolution contracts.
+The snapshot and promotion receipt commit in one transaction, and retries return
+the same snapshot. Frozen call provenance and attributed assumptions are copied
+into snapshot metadata. Conditional scenarios and ablations cannot be selected.
+Continuous quantiles remain quantiles; no Gaussian or tail probability is
+invented to satisfy a censored-outcome contract. A new-question interview must
+first create its reviewed question. Reopening the preview restores the saved
+forecast ID after a lost response.

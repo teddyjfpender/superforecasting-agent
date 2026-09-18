@@ -11,6 +11,7 @@ import type {
 } from '../protocol/generated.js'
 import type { Theme } from '../theme.js'
 
+import { InterviewPromotion } from './interviewPromotion.js'
 import { ModalOverlay } from './modalOverlay.js'
 import { TextInput } from './textInput.js'
 
@@ -46,6 +47,7 @@ export function InterviewEvaluation({
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [review, setReview] = useState(false)
+  const [promoting, setPromoting] = useState(false)
   const alive = useRef(true)
   const locked = useRef(false)
   const epoch = useRef(0)
@@ -209,6 +211,12 @@ export function InterviewEvaluation({
       }
 
       if (review) {
+        if (key.ctrl && input === 'p' && status?.report && job) {
+          setPromoting(true)
+
+          return
+        }
+
         if (key.pageDown || key.downArrow) {
           scroll.current?.scrollBy(key.pageDown ? height : 1)
         }
@@ -280,15 +288,30 @@ export function InterviewEvaluation({
         }
       }
     },
-    { isActive: !blocked }
+    { isActive: !blocked && !promoting }
   )
+
+  if (promoting && job && status?.report) {
+    return (
+      <InterviewPromotion
+        blocked={blocked}
+        cols={cols}
+        gw={gw}
+        jobId={job.job_id}
+        onClose={() => setPromoting(false)}
+        report={status.report}
+        rows={rows}
+        t={t}
+      />
+    )
+  }
 
   return (
     <ModalOverlay
       cols={cols}
       footerHint={
         review
-          ? '[↑↓ / PgUp/Dn Read] [Esc Settings]'
+          ? '[↑↓ / PgUp/Dn Read] [^P Promote] [Esc Settings]'
           : running
             ? '[Ctrl+X Cancel] [Esc Back; job continues]'
             : '[↑↓] [Space Toggle] [←→] [Enter] [^R Results] [Esc]'

@@ -490,6 +490,16 @@ RPC_SPECS: list[RpcSpec] = [
         _rpc_interviews.InterviewRecord,
     ),
     RpcSpec(
+        "forecast.interview.promotion_preview",
+        _rpc_interviews.InterviewPromotionPreviewRequest,
+        _rpc_interviews.InterviewPromotionPreviewResponse,
+    ),
+    RpcSpec(
+        "forecast.interview.promote",
+        _rpc_interviews.InterviewPromoteRequest,
+        _rpc_interviews.InterviewPromoteResponse,
+    ),
+    RpcSpec(
         "forecast.interview.evaluate",
         _rpc_interviews.InterviewEvaluateRequest,
         _rpc_interviews.InterviewGenerateResponse,

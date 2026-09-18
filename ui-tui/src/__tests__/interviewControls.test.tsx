@@ -638,3 +638,70 @@ it('keeps historical comparison results closed until requested and uses frozen s
     ui.close()
   }
 })
+
+it('requires a ledger preview and a separate confirmation before promotion', async () => {
+  const record = fixture()
+
+  const report = {
+    scenarios: [],
+    assumptions: [],
+    comparisons: [],
+    limitation: 'Controlled comparison',
+    results: [
+      {
+        variant_id: 'baseline',
+        kind: 'baseline',
+        repetition: 0,
+        estimate: { outcome_type: 'binary', probability: 0.4, rationale: 'Unconditional reasoning' }
+      }
+    ]
+  }
+
+  const request = vi.fn(async (method: string, params: any) => {
+    if (method === 'forecast.interview.list') {return { interviews: [record] }}
+
+    if (method === 'forecast.interview.evaluation_status')
+      {return { found: true, job: { job_id: 'job', status: 'done', done_count: 2, total: 2 }, report, stale: false }}
+
+    if (method === 'forecast.interview.promotion_preview')
+      {return {
+        job_id: 'job',
+        repetition: 0,
+        question_id: 'question',
+        candidate: 0.4,
+        would_commit: true,
+        blockers: [],
+        preview_digest: 'reviewed',
+        promoted_forecast_id: null
+      }}
+
+    if (method === 'forecast.interview.promote') {
+      expect(params.preview_digest).toBe('reviewed')
+
+      return { question_id: 'question', forecast_id: 'saved-forecast' }
+    }
+
+    throw new Error(`Unexpected ${method}`)
+  })
+
+  const ui = await screen(request, 100, 32)
+
+  try {
+    await ui.wait('What event?')
+    ui.press('\x05')
+    await ui.wait('done')
+    ui.press('\x12')
+    await ui.wait('SCENARIO COMPARISON')
+    ui.press('\x10')
+    await ui.wait('PROMOTE UNCONDITIONAL FORECAST')
+    expect(request.mock.calls.some(([method]) => method === 'forecast.interview.promote')).toBe(false)
+    ui.press('\r')
+    await ui.wait('Ledger candidate: 40.0%')
+    expect(request.mock.calls.some(([method]) => method === 'forecast.interview.promote')).toBe(false)
+    ui.press('\x1b[13;5u')
+    await ui.wait('Forecast saved: saved-forecast')
+    expect(request.mock.calls.filter(([method]) => method === 'forecast.interview.promote')).toHaveLength(1)
+  } finally {
+    ui.close()
+  }
+})
