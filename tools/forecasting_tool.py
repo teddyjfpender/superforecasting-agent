@@ -48,6 +48,7 @@ from forecasting.sources.dispatch import (
     normalize_filter_terms as _tool_filter_terms,
 )
 from tools.registry import registry, tool_error, tool_result
+from protocol.interview_agent import InterviewAgentRequest as _InterviewAgentRequest
 
 
 # Deterministic model families routed through the SINGLE forecasting.market_compute
@@ -76,7 +77,10 @@ FORECAST_LEDGER_SCHEMA = {
         "evidence weighting that discounts correlated/biased signals, "
         "reference-class base-rate blending, poll→probability conversion, "
         "market de-vigging, sensitivity/tornado analysis, and forecast-diff "
-        "decomposition) so probability moves are transparent rather than ad hoc."
+        "decomposition) so probability moves are transparent rather than ad hoc. "
+        "Use action=interview with interview_request to begin/read/answer an agent-owned "
+        "questionnaire, propose follow-ups and assumptions, or save a conditional/ablation scenario. "
+        "Do this after evidence collection and before unattended update_forecast proposals."
     ),
     "parameters": {
         "type": "object",
@@ -84,6 +88,7 @@ FORECAST_LEDGER_SCHEMA = {
             "action": {
                 "type": "string",
                 "enum": [
+                    "interview",
                     "create_question",
                     "propose_spec",
                     "commit_spec",
@@ -1283,6 +1288,15 @@ def _market_query_refs(args: dict[str, Any]) -> list[SeriesRef]:
     return [SeriesRef(provider=p, symbol=sym, name=sym) for p, sym in zip(provs, symbols)]
 
 
+# Agent interview input shares the application owner's strict contracts.
+_interview_schema = _InterviewAgentRequest.model_json_schema()
+FORECAST_LEDGER_SCHEMA["parameters"].setdefault("$defs", {}).update(_interview_schema.pop("$defs", {}))
+FORECAST_LEDGER_SCHEMA["parameters"]["properties"]["interview_request"] = _interview_schema
+FORECAST_LEDGER_SCHEMA["parameters"]["properties"]["interview_id"] = {
+    "type": "string", "description": "Completed structured review ID for an unattended update_forecast proposal."
+}
+
+
 @allow_ledger_writes_decorator("forecast_ledger_tool")
 def forecast_ledger_tool(
     args: dict[str, Any],
@@ -1298,7 +1312,9 @@ def forecast_ledger_tool(
     args = dict(args)
     if main_runtime:
         args["_main_runtime"] = dict(main_runtime)
-    proposal_only = (main_runtime or {}).get("forecast_commit_policy") == "proposal_only"
+    from forecasting.ledger.gate import snapshot_writes_allowed
+
+    proposal_only = (main_runtime or {}).get("forecast_commit_policy") == "proposal_only" or not snapshot_writes_allowed()
     if proposal_only and args.get("action") == "update_forecast":
         args["proposal_only"] = True
     action = args.get("action")

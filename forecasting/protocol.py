@@ -717,7 +717,14 @@ _COMMIT_MATERIAL_POLICY = (
 
 _PROPOSAL_ONLY_POLICY = (
     "\n\nPROPOSAL-ONLY POLICY (unattended run): evaluate the fresh evidence and call "
-    "`update_forecast` with your best estimate. The runtime forces that call through every "
+    "`forecast_ledger` action=interview with interview_request {operation: begin, interview_id: a stable unique ID for this review, question_id}. "
+    "Do this AFTER collecting evidence so it is frozen in the review. Read the returned questions and prior assumptions; "
+    "use operation=propose for useful adaptive follow-ups and proposed assumptions, operation=answer with the current revision "
+    "and a stable request_id for each review question. Record Unknown rather than inventing evidence. "
+    "Separate epistemic uncertainty, irreducible variability, measurement uncertainty, reference classes, dependence, "
+    "counterevidence and review triggers. Preserve user-owned beliefs; your answers are always agent-attributed. "
+    "Use operation=scenario to record conditional states or factor exclusions; excluded does not mean false. "
+    "Then call update_forecast with this interview_id and your best estimate. The runtime verifies this review and forces that call through every "
     "normal preview/gate and creates a pending proposal only for a MATERIAL move; it cannot "
     "commit a snapshot. Report the proposal id, or state that the move was marginal/blocked."
 )

@@ -320,6 +320,14 @@ def test_unattended_runtime_forces_material_update_to_pending_proposal(tmp_path)
         "require_panel": False,
     }
     _tool(db, **{k: v for k, v in common.items() if k != "db"}, probability=0.45)
+    review = _tool(db, action="interview", interview_request={"operation": "begin", "interview_id": "scheduled-review", "question_id": qid})
+    for key in review["review_questions"]:
+        review = _tool(db, action="interview", interview_request={
+            "operation": "answer", "interview_id": "scheduled-review",
+            "revision": review["interview"]["revision"], "request_id": key,
+            "answer": {"question_id": key, "status": "unknown", "note": "Unresolved by this controlled fixture"},
+        })
+    common["interview_id"] = "scheduled-review"
 
     result = json.loads(
         forecast_ledger_tool(
@@ -343,6 +351,7 @@ def test_unattended_runtime_forces_material_update_to_pending_proposal(tmp_path)
     ledger = ForecastLedger(db)
     assert result["status"] == "proposal_created"
     assert result["proposal"]["status"] == "pending"
+    assert result["proposal"]["snapshot_args"]["metadata"]["structured_interview_review"]["interview_id"] == "scheduled-review"
     assert len(ledger.list_snapshots(qid)) == 1
     assert ledger.get_current_snapshot(qid).probability_or_distribution == 0.45
 

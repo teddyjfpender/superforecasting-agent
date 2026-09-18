@@ -28,7 +28,7 @@ forecast. Publishing a forecast requires the separate explicit ledger commit pat
 
 Run `scripts/run_tests.sh tests/forecasting/test_interviews.py` from the repository
 root. See [the implementation design](../../docs/design/forecast-interviews-and-scenarios.md)
-for the design rationale and remaining scheduled-review integration.
+for the design rationale and acceptance criteria.
 
 ## Current interaction
 
@@ -43,8 +43,8 @@ confirmation and is idempotent for the reviewed revision.
 The deterministic questionnaire works without model credentials. Adaptive model
 follow-ups, scenario comparisons and explicit baseline promotion are available.
 An update interview saves a draft; changing the active probability requires
-separate preview and confirmation. Scheduled review integration is still being
-implemented.
+separate preview and confirmation. Scheduled reviews use the same application
+owner through the forecast ledger tool.
 
 ## Markets and News handoffs
 
@@ -151,7 +151,7 @@ what happens inside a provider's infrastructure.
 Ablations exclude factors from the reasoning task; the same source packet is
 retained in every variant. They are sensitivity analyses, not blinded information
 experiments, causal effects or evidence of calibration. Conditional outputs stay
-conditional. Scheduled invocation remains under implementation.
+conditional. Scheduled review operations are described below.
 
 ### Comparing in the TUI
 
@@ -185,3 +185,22 @@ Continuous quantiles remain quantiles; no Gaussian or tail probability is
 invented to satisfy a censored-outcome contract. A new-question interview must
 first create its reviewed question. Reopening the preview restores the saved
 forecast ID after a lost response.
+
+## Scheduled and agent-owned reviews
+
+Agents use `forecast_ledger` action `interview` with a typed `interview_request`.
+Operations are `begin`, `read`, `answer`, `propose` (adaptive questions and
+assumptions), and `scenario`. Begin after evidence collection so the review
+captures that evidence. Writes require the current revision and a stable
+request ID; retries preserve identity. All answers/scenarios are agent-attributed.
+Proposed follow-ups share the interactive validator and do not start another
+model call or manufacture a provider receipt.
+
+Unattended `update_forecast` calls must pass a completed `interview_id`. The
+application checks the question, baseline, contract, cited evidence and eleven
+review topics covering evidence, reference classes, assumptions, dependence,
+uncertainty, counterevidence and triggers. Unknown is valid and explicitly
+recorded; skipping the review is not. The proposal stores its review revision,
+digest, unresolved questions and attributed assumptions. New evidence or a
+changed baseline requires a fresh review. The existing proposal-only runtime
+boundary remains in force, so scheduled agents cannot promote live snapshots.

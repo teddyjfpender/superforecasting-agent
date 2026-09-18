@@ -124,6 +124,11 @@ def update_forecast(args: dict[str, Any], ledger) -> str:
     # commit-then-remediate.
     proposal_only = bool(args.get("proposal_only", False))
     preview_flag = bool(args.get("preview", False) or proposal_only)
+    interview_review = None
+    if proposal_only:
+        from forecasting.interviews.agent import review_for_update
+
+        interview_review = review_for_update(ledger, question_id, args.get("interview_id"), args.get("evidence_refs") or [])
     components = args.get("components") or {}
     # Accept the schema-advertised aliases so an agent can pass
     # probability_or_distribution / proposed_probability_or_distribution
@@ -272,6 +277,7 @@ def update_forecast(args: dict[str, Any], ledger) -> str:
         # the resolver — never trusting the model to echo its own provenance.
         metadata={
             **(args.get("metadata") or {}),
+            **({"structured_interview_review": interview_review} if interview_review else {}),
             **({"cross_refs": _xr} if (_xr := ledger.build_cross_refs(question_id)) else {}),
         },
         reasons_up=args.get("reasons_up"),

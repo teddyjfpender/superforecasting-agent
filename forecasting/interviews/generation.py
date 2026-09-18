@@ -153,8 +153,10 @@ def apply_followups(
     ledger: ForecastLedger,
     record: dict,
     output: InterviewFollowups,
-    provenance: InterviewGenerationRecord,
+    provenance: InterviewGenerationRecord | None,
     max_questions: int,
+    *,
+    request_id: str | None = None,
 ) -> dict:
     draft = InterviewDraft.model_validate(record["document"])
     if len(output.questions) > max_questions:
@@ -195,13 +197,18 @@ def apply_followups(
         existing_ids.add(question.id)
         existing_prompts.add(question.prompt.strip().casefold())
         draft.questions.append(question.model_copy(update={"required": False}))
-    draft.generations.append(provenance)
+    if provenance is not None:
+        draft.generations.append(provenance)
+    elif not request_id:
+        raise ValidationError(
+            "agent question proposals require a stable request identifier"
+        )
     draft.status = "needs_user"
     return InterviewStore(ledger).save(
         record["interview_id"],
         draft,
         expected_revision=record["revision"],
-        request_id=f"generation:{provenance.job_id}",
+        request_id=f"generation:{provenance.job_id}" if provenance else str(request_id),
         actor="agent",
     )
 
