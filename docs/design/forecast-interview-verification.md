@@ -1,0 +1,53 @@
+# Forecast interview verification
+
+Review checkpoint: 18 September 2026. This is engineering evidence, not evidence
+that the feature improves predictive accuracy. The implementation is PR #65.
+
+## Requested workflows
+
+| Requirement | Implementation | Repeatable evidence |
+| --- | --- | --- |
+| Research-grounded elicitation | [Design and primary sources](forecast-interviews-and-scenarios.md); deterministic spine plus adaptive follow-ups | `test_interviews.py`, `test_interview_generation.py` |
+| New-question and update interviews | Shared service, revision store and `ForecastInterview`; Desk `n` / `i` | Atomic question creation, update context capture, branch validation and rendered `interviewControls.test.tsx` |
+| Assumptions and beliefs | Attributed probabilities, uncertainty types, rationale and evidence links; explicit editing | User ownership, historical revisions, stale writes and lost-response retries in backend and rendered TUI tests |
+| Conditional scenarios and on/off ablations | Separate condition and exclusion contracts; shared evaluation owner | `test_scenario_evaluation.py`: matched calls, exact units/categories, cancellation, partial recovery, stale inputs and explicit-tail safeguards |
+| Safe forecast updates | Preview and explicit unconditional-baseline promotion; ledger quality gates | `test_interview_rpc.py` round trip reconstructs the service for each request, evaluates with a controlled model, then promotes exactly once |
+| Scheduled structured reviews | Forecast-ledger interview operations, required unattended review coverage, proposal-only guard | `test_interview_agent.py`, `test_commit_preview.py` and `test_reforecast_policy.py` |
+| Markets shortcut | `F` captures exact series or selected prediction outcome without adopting its price as a user belief | `test_interview_sources.py`, `forecastSeeds.test.ts`, prediction-market keyboard/selection coverage |
+| Stable News reading | Acquisition stages changes separately from visible publication; `u` applies updates | `newsOnboarding.test.tsx` checks selected content and bounded layouts at 80×24 and 120×40 |
+| News-to-forecast evidence | `F` opens active-question search, attachment preview and optional update interview | Rendered attachment confirmation plus RPC/source tests for retry, rollback, revision grouping and unknown/future timestamps |
+
+Test paths above are under `tests/forecasting/`, `tests/tui_gateway/`, or
+`ui-tui/src/__tests__/`. Production owners and controls are documented in the
+[interview README](../../forecasting/interviews/README.md).
+
+## Verification status
+
+- Full TUI suite: **2,263 passed, one skipped** (220 test files).
+- Canonical lint, typing, architecture and generated-contract gates passed at
+  the latest committed checkpoints.
+- The controlled RPC review-to-promotion round trip passes with the declared
+  optional request defaults and durable state restored on every request.
+- The canonical full Python suite is in progress; final completion is not yet
+  claimed. Additional RPC checks added after its collection pass separately.
+
+## Explicit limits
+
+- Generation and comparisons use controlled providers in engineering tests.
+  Live-provider quality and eventual proper-score improvement are unproven.
+- Factor ablation omits factors from reasoning while retaining the same evidence
+  packet. It is not a causal intervention or blinded evidence-removal experiment.
+- The system asks about dependence and conflicting beliefs. It does not prove
+  arbitrary natural-language assumptions logically compatible, nor infer a causal
+  graph or exact epistemic/aleatoric variance decomposition.
+- Confirmed answers are durable. Unconfirmed text survives question navigation
+  within the open interview but is not saved across closing the panel.
+- Existing reference classes are captured and cited. Prose base-rate answers do
+  not fabricate empirical anchors. A blocked preview directs the user to add a
+  supported anchor and begin a fresh review before reevaluating.
+- Source claims retain timestamps and identities but do not acquire verified
+  settlement provenance merely by being attached. Syndication independence may
+  remain unassessed.
+- The current interface is a sequential, scrollable modal. The wide three-pane
+  layout and richer typed dependency/distribution controls in the design remain
+  unimplemented design work; the audit does not claim those extensions are done.
