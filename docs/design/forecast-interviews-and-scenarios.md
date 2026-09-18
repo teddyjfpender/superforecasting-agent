@@ -274,3 +274,11 @@ midpoints are distinct from normalized distribution probabilities and user belie
 News `F` now has a searchable active-forecast picker, source preview, idempotent
 evidence attachment and an evidence-linked update interview. Agent-generated
 updates and scenario runs remain pending integration.
+
+
+Adaptive generation now has a bounded, isolated provider worker and the shared
+`forecast_interview` job type. Start request receipts prevent duplicate jobs on
+lost responses; cached validated output supports recovery after partial writes.
+Tests cover stale user edits, cancelled responses, invalid/duplicate proposals,
+unknown evidence references and actual child-process termination. TUI generation
+controls, scenario execution/promotion and cron integration remain incomplete.

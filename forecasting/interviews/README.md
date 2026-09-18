@@ -1,8 +1,9 @@
 # Forecast interviews
 
 Durable question-and-answer drafts for creating or reviewing a forecast. This
-package owns interview validation and revision history; it does not call a model,
-render the TUI, or change an active forecast probability.
+package owns interview validation, revision history and bounded adaptive
+question generation. It does not render the TUI or change an active forecast
+probability.
 
 | File           | Responsibility                                                                      |
 | -------------- | ----------------------------------------------------------------------------------- |
@@ -10,6 +11,8 @@ render the TUI, or change an active forecast probability.
 | `store.py`     | Append-only ledger revisions, optimistic concurrency and retry identity             |
 | `questions.py` | Required interview spine and outcome-specific elicitation                           |
 | `news.py`      | Idempotent article attachment and evidence-linked update drafts                     |
+| `generation.py` | Frozen input packets, idempotent job enqueue and validated proposal application |
+| `model_worker.py` | Isolated model call with an owned cancellation/deadline boundary |
 | `service.py`   | Begin/resume, attributed answers, validation preview and explicit question creation |
 
 Every save supplies the revision the caller read and a stable request ID. Retrying
@@ -56,3 +59,27 @@ with the original URL, while syndication independence remains unassessed.
 Unknown publication times stay unknown, and these user-selected claims are not
 admissible for historical backtests by default. No attachment changes a forecast
 probability or automatically starts an agent run.
+
+## Adaptive generation backend
+
+`forecast.interview.generate` accepts an interview revision, stable `request_id`
+and optional provider/model, question count, token budget and wall deadline.
+Defaults are eight follow-ups, 4,000 output tokens and 90 seconds; hard bounds
+are enforced by the shared contract. This is an explicit paid model operation.
+The UI controls for starting and restoring these jobs are still being integrated.
+
+The `forecast_interview` job type uses the shared durable job store and spend
+policy. Poll `jobs.status` and cancel with `jobs.cancel`; detached execution uses
+the active profile. Repeating a start request returns the same job, and a kernel
+claim prevents concurrent execution. A crash after storing validated output
+reuses that output without another call. A crash before output is stored may
+require another provider call; provider-level exactly-once billing is not promised.
+
+Model output can append optional questions and proposed assumptions, never user
+answers. Provenance includes the frozen input revision/digest, prompt digest,
+requested provider, reported response model and output-token usage when supplied.
+It does not yet prove a matched provider route for scenario comparisons. Stale
+results remain in job annotations and cannot overwrite newer user edits.
+Cancellation terminates and reaps the owned model process; a cancelled response
+is not applied. No live-provider forecasting-quality claim follows from these
+synthetic failure and recovery checks.

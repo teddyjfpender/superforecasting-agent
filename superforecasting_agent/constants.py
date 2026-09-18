@@ -30,6 +30,19 @@ _NATIVE_HOME_DIRNAME = ".superforecasting-agent"
 _LEGACY_HOME_DIRNAME = ".hermes"
 
 
+def subprocess_home_env(home: str | Path | None = None) -> dict[str, str]:
+    """Copy the environment and bind all supported home aliases for a child.
+
+    Context-local profile overrides do not cross process boundaries. Synchronize
+    compatibility aliases in the copy so inherited consumers cannot reopen a
+    different profile; never mutate the parent process environment.
+    """
+    env = dict(os.environ)
+    active_home = str(get_agent_home() if home is None else home)
+    env.update({name: active_home for name in _HOME_ENV_VARS})
+    return env
+
+
 def _configured_home_env() -> tuple[str | None, str | None]:
     """Return the first configured home env var name/value pair.
 

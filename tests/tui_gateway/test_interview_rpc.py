@@ -87,3 +87,26 @@ def test_article_attachment_and_picker_use_validated_contracts(tmp_path, monkeyp
     assert (
         request("forecast.article.attach", params)["result"]["already_attached"] is True
     )
+
+
+def test_generation_start_retries_return_same_durable_job(tmp_path, monkeypatch):
+    from forecasting.jobs import detached
+    from tui_gateway import server, forecast_rpc
+
+    service = InterviewService(ForecastLedger(tmp_path / "interviews.db"))
+    service.begin("adaptive")
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", str(tmp_path))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.setattr(forecast_rpc, "_interview_service", lambda: service)
+    launched = []
+    monkeypatch.setattr(detached, "spawn_detached_job", lambda job_id, **kwargs: launched.append((job_id, kwargs)))
+    request = {"jsonrpc": "2.0", "id": 3, "method": "forecast.interview.generate",
+               "params": {"interview_id": "adaptive", "revision": 1, "request_id": "start"}}
+    first = server.handle_request(request)
+    assert "result" in first, first
+    assert server.handle_request(request)["result"] == first["result"]
+    assert len({job for job, _ in launched}) == 1
+    assert launched[0][1]["home"] == tmp_path
+    invalid = {**request, "params": {**request["params"], "options": {"max_tokens": 999999}}}
+    assert "error" in server.handle_request(invalid)
+    assert len(launched) == 2

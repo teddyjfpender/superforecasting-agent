@@ -178,7 +178,7 @@ class InterviewService:
                         + hashlib.sha256(statement.encode()).hexdigest()[:16]
                     )
                     known.setdefault(
-                        id, InterviewAssumption(id=id, statement=statement)
+                        id, InterviewAssumption(id=id, statement=statement, actor=actor)
                     )
             draft.assumptions = list(known.values())
         draft.status = "needs_user" if status == "unknown" else "draft"

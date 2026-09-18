@@ -2624,6 +2624,7 @@ export interface InterviewAnswerRequest {
 }
 
 export interface InterviewAssumption {
+  actor: 'agent' | 'user'
   evidence_refs: string[]
   id: string
   probability: null | number
@@ -2654,6 +2655,7 @@ export interface InterviewDraft {
   assumptions: InterviewAssumption[]
   baseline_forecast_id: null | string
   evidence_refs: string[]
+  generations: InterviewGenerationRecord[]
   mode: 'create' | 'update'
   question_id: null | string
   questions: InterviewQuestion[]
@@ -2662,6 +2664,38 @@ export interface InterviewDraft {
   seed: null | ForecastMarketSeed
   status: 'cancelled' | 'draft' | 'needs_research' | 'needs_user' | 'ready'
   title: string
+}
+
+export interface InterviewGenerateRequest {
+  interview_id: string
+  options: InterviewGenerationOptions
+  request_id: string
+  revision: number
+}
+
+export interface InterviewGenerateResponse {
+  job_id: string
+}
+
+export interface InterviewGenerationOptions {
+  max_questions: number
+  max_tokens: number
+  model: null | string
+  provider: null | string
+  timeout_seconds: number
+}
+
+export interface InterviewGenerationRecord {
+  created_at: string
+  input_digest: string
+  input_revision: number
+  job_id: string
+  max_tokens: number
+  output_tokens: null | number
+  prompt_digest: string
+  requested_provider: null | string
+  response_model: string
+  summary: string
 }
 
 export interface InterviewListRequest {
@@ -4583,6 +4617,15 @@ export interface RpcMethods {
       revision: number
     }
     result: InterviewCommitResponse
+  }
+  'forecast.interview.generate': {
+    params: {
+      interview_id: string
+      options?: InterviewGenerationOptions
+      request_id: string
+      revision: number
+    }
+    result: InterviewGenerateResponse
   }
   'forecast.interview.list': {
     params: {

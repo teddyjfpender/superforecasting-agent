@@ -1178,3 +1178,22 @@ def _(rid, params: dict) -> dict:
                                       for q in ForecastLedger().list_questions(status="active")]})
     except Exception as exc:
         return _err(rid, 5008, str(exc))
+
+
+@rpc_validated("forecast.interview.generate")
+def _(rid, params: dict) -> dict:
+    try:
+        from forecasting.interviews.generation import enqueue_generation
+        from forecasting.jobs.detached import spawn_detached_job
+        from protocol.interviews import InterviewGenerationOptions
+        from superforecasting_agent.constants import get_agent_home
+
+        job_id = enqueue_generation(
+            _interview_service().ledger, params["interview_id"], params["revision"],
+            params["request_id"], InterviewGenerationOptions.model_validate(params.get("options", {})),
+        )
+        # The runtime's kernel claim prevents duplicate execution on start retries.
+        spawn_detached_job(job_id, home=get_agent_home())
+        return _ok(rid, {"job_id": job_id})
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))

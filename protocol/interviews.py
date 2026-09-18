@@ -158,6 +158,7 @@ class InterviewAnswer(InterviewModel):
 
 
 class InterviewAssumption(InterviewModel):
+    actor: Literal["user", "agent"] = "user"
     id: str = Field(min_length=1, max_length=80)
     statement: str = Field(min_length=1, max_length=3000)
     probability: float | None = Field(default=None, ge=0, le=1)
@@ -192,10 +193,40 @@ class InterviewScenario(InterviewModel):
         return self
 
 
+class InterviewGenerationOptions(InterviewModel):
+    provider: str | None = Field(default=None, max_length=100)
+    model: str | None = Field(default=None, max_length=200)
+    max_questions: int = Field(default=8, ge=1, le=16)
+    max_tokens: int = Field(default=4000, ge=512, le=12000)
+    timeout_seconds: float = Field(default=90.0, ge=5, le=180)
+
+
+class InterviewFollowups(InterviewModel):
+    questions: list[InterviewQuestion] = Field(max_length=16)
+    assumptions: list[InterviewAssumption] = Field(default_factory=list, max_length=16)
+    summary: str = Field(min_length=1, max_length=4000)
+
+
+class InterviewGenerationRecord(InterviewModel):
+    job_id: str
+    input_revision: int
+    input_digest: str
+    prompt_digest: str
+    response_model: str
+    requested_provider: str | None
+    max_tokens: int
+    output_tokens: int | None
+    created_at: str
+    summary: str
+
+
 class InterviewDraft(InterviewModel):
     schema_version: Literal[1] = 1
     seed: ForecastMarketSeed | None = None
     evidence_refs: list[str] = Field(default_factory=list, max_length=200)
+    generations: list[InterviewGenerationRecord] = Field(
+        default_factory=list, max_length=100
+    )
     mode: Literal["create", "update"]
     question_id: str | None = None
     baseline_forecast_id: str | None = None

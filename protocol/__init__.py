@@ -475,6 +475,11 @@ RPC_SPECS: list[RpcSpec] = [
         _rpc_interviews.ForecastQuestionChoicesResponse,
     ),
     RpcSpec(
+        "forecast.interview.generate",
+        _rpc_interviews.InterviewGenerateRequest,
+        _rpc_interviews.InterviewGenerateResponse,
+    ),
+    RpcSpec(
         "forecast.interview.begin",
         _rpc_interviews.InterviewBeginRequest,
         _rpc_interviews.InterviewRecord,

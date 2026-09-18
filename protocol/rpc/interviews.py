@@ -2,7 +2,14 @@
 
 from typing import Any, Literal
 
-from protocol.interviews import ForecastArticleClaim, ForecastMarketSeed, InterviewDraft
+from pydantic import Field
+
+from protocol.interviews import (
+    ForecastArticleClaim,
+    ForecastMarketSeed,
+    InterviewDraft,
+    InterviewGenerationOptions,
+)
 from protocol.types import WireModel
 
 
@@ -84,3 +91,16 @@ class ForecastQuestionChoice(WireModel):
 
 class ForecastQuestionChoicesResponse(WireModel):
     questions: list[ForecastQuestionChoice]
+
+
+class InterviewGenerateRequest(WireModel):
+    request_id: str = Field(min_length=1, max_length=200)
+    interview_id: str
+    revision: int
+    options: InterviewGenerationOptions = Field(
+        default_factory=InterviewGenerationOptions
+    )
+
+
+class InterviewGenerateResponse(WireModel):
+    job_id: str
