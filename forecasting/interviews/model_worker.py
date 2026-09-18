@@ -16,6 +16,7 @@ def call(payload: dict[str, Any]) -> dict[str, Any]:
     options = payload["options"]
     response = call_llm(
         task="forecast_interview",
+        strict_request=True,
         provider=options.get("provider"),
         model=options.get("model"),
         messages=payload["messages"],

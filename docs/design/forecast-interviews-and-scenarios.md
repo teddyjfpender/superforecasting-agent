@@ -301,3 +301,14 @@ an unowned or approval-parked job. Both have deterministic regressions.
 
 Scenario execution/comparison, candidate promotion and scheduled-agent integration
 remain open. The final integrated suite is still deferred until those paths exist.
+
+### Request budget enforcement checkpoint
+
+Interview generation uses the shared auxiliary helper's strict request mode.
+It requires a positive output cap, rejects body overrides of protected request
+fields, and propagates provider errors without removing parameters or selecting
+another provider. Routes that cannot carry the output cap (including the current
+Codex OAuth adapter) fail before sending the request. SDK transport retries may
+repeat the same request; the isolated worker still owns the overall deadline.
+This is request-budget enforcement, not a guarantee of provider billing totals.
+Matched scenario route/settings receipts and evaluation remain required.
