@@ -64,6 +64,7 @@ def build_messages(
     packet = {
         "interview": draft.model_dump(),
         "evidence": evidence,
+        "reference_classes": context.get("reference_classes", []) if context else [],
         "frozen_question": context["question"] if context else None,
         "frozen_baseline": context["baseline"] if context else None,
         "prior_interview": context.get("prior_interview") if context else None,
@@ -238,6 +239,7 @@ def enqueue_generation(
         revision=revision,
         options=options,
         db=str(ledger.db_path.resolve()),
+        request_id=request_id,
     ).model_dump()
     encoded = json.dumps(spec, sort_keys=True, allow_nan=False)
     jobs = JobStore()

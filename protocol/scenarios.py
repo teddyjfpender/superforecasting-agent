@@ -39,6 +39,7 @@ class ScenarioEstimate(InterviewModel):
     units: str | None = None
     rationale: str = Field(min_length=1, max_length=10000)
     evidence_refs: list[str] = Field(default_factory=list, max_length=200)
+    reference_class_refs: list[str] = Field(default_factory=list, max_length=100)
     unresolved_questions: list[str] = Field(default_factory=list, max_length=30)
 
     @model_validator(mode="after")

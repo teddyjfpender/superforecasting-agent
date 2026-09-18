@@ -232,11 +232,11 @@ scenario. Engineering correctness and predictive usefulness need separate eviden
 - [x] Implement and test stable News publication independently of acquisition.
 - [x] Add strict interview/answer/assumption/variant models and migrations.
 - [x] Add durable interview operations, idempotency and concurrency tests.
-- [ ] Integrate adaptive structured generation with budget, cancellation and retry.
-- [ ] Replace onboarding and add Desk update interview shortcut.
-- [ ] Implement coherent scenario evaluation and matched ablation records.
+- [x] Integrate adaptive structured generation with budget, cancellation and retry.
+- [x] Replace onboarding and add Desk update interview shortcut.
+- [x] Implement coherent scenario evaluation and matched ablation records.
 - [x] Add Markets-to-interview and News-to-question evidence/update flows.
-- [ ] Integrate cron/tool execution with explicit unresolved-user status.
+- [x] Integrate cron/tool execution with explicit unresolved-user status.
 - [ ] Verify terminal layouts, keyboard collisions, reconnect/resume and failure paths.
 - [ ] Run focused unit, integration and generated-contract checks, then required gates.
 - [ ] Publish a reviewable implementation with current README/usage instructions.
@@ -254,61 +254,46 @@ cutoff and model budget, cluster by independent outcome family, and compare prop
 scores only after resolution. Keep ablation sensitivity separate from demonstrated
 improvement. An outcome that is not yet resolved provides no score evidence.
 
-### Implementation checkpoint
+### Current implementation and verification
 
-The shared models now live in `protocol/interviews.py`, generate TypeScript, and
-are consumed by `forecasting/interviews/`. The TUI has a deterministic, resumable
-questionnaire for new questions and Desk updates (`i`). Question creation is
-atomic and has a revision-bound commit receipt. No update interview changes a
-probability yet. Outcome branches elicit binary probabilities, numeric quantiles
-and category-specific probabilities, with coherence checks before creation.
+The shared contracts in `protocol/interviews.py` and `protocol/scenarios.py`
+generate the TypeScript consumed by the TUI. `forecasting/interviews/` owns
+append-only drafts, immutable context captures, attributed answers/assumptions,
+conditional scenarios, factor ablations, model evaluation and explicit baseline
+promotion. See its [README](../../forecasting/interviews/README.md) for controls,
+module ownership and recovery semantics.
 
-Current checks cover lost-response retries, stale writes, duplicate creation,
-user-answer attribution, contract validation and keyboard operation at 60×18,
-80×24 and 120×40. These are engineering checks, not evidence of improved scores.
-The unchecked integration items above remain required for the full feature.
+The Desk opens creation with `n` and review with `i`. Markets `F` captures exact
+series or prediction-outcome identity. News `F` attaches a reviewed article to an
+active question, optionally opening its update interview. News acquisition is
+staged separately from publication; incoming headlines do not replace the reader
+or reorder the visible list until the user applies updates.
 
-The Markets `F` handoff now captures exact prediction-outcome or ordinary-series
-identity. A multi-outcome headline requires explicit outcome selection; raw market
-midpoints are distinct from normalized distribution probabilities and user beliefs.
-News `F` now has a searchable active-forecast picker, source preview, idempotent
-evidence attachment and an evidence-linked update interview. Agent-generated
-updates and scenario runs remain pending integration.
+Adaptive generation and matched scenario comparisons have explicit model/token/
+call budgets, deadlines, cancellation and durable result recovery. Strict model
+requests cannot silently drop the requested output cap or switch provider through
+the auxiliary helper's fallback chain. A route unable to carry that cap fails
+before sending. Prepared-request fingerprints, frozen prompts and reported model
+identity support comparison provenance; they do not establish provider determinism
+or exactly-once billing. A crash before storing a response may require another call.
 
+A conditional scenario fixes explicit states. Factor ablation omits a factor from
+reasoning with the same evidence packet; it is not a blinded evidence-removal
+experiment. Comparison dispersion is not calibration evidence. Only an explicitly
+selected unconditional baseline can be promoted, after preview and confirmation,
+through normal citations and resolved quality hooks. Reference classes are frozen
+with evidence and model citations may name only supplied identifiers. Missing
+outside-view anchors remain visible blockers; prose answers are not silently
+converted into invented empirical base rates.
 
-Adaptive generation now has a bounded, isolated provider worker and the shared
-`forecast_interview` job type. Start request receipts prevent duplicate jobs on
-lost responses; cached validated output supports recovery after partial writes.
-Tests cover stale user edits, cancelled responses, invalid/duplicate proposals,
-unknown evidence references and actual child-process termination. TUI generation
-controls, scenario execution/promotion and cron integration remain incomplete.
+Scheduled agent updates use the same interview owner through `forecast_ledger`.
+They must record structured review coverage and uncertainty; unresolved questions
+remain explicit. Agent answers and assumptions never impersonate or overwrite
+user beliefs. Scheduled proposal generation does not advance active probabilities.
 
-
-### Adaptive interaction checkpoint
-
-The TUI now exposes budgeted follow-up generation with per-interview durable
-status restoration, cancellation and explicit opening of completed questions.
-Custom text is separate from selected choice IDs, and multi-select questions have
-real keyboard selection. Scenario controls create/edit conditional and ablation
-definitions, show assumption attribution, and require confirmation for deletion.
-User-owned scenarios receive the same agent-write protection as user answers.
-
-Terminal verification exposed a shared input-hook timing defect: its Node
-callback/listener updates used passive effects after paint. Handlers now install
-at layout commit with stable propagation order. The job store also now signals
-cancellation without overwriting a live owner's progress and can finish cancelling
-an unowned or approval-parked job. Both have deterministic regressions.
-
-Scenario execution/comparison, candidate promotion and scheduled-agent integration
-remain open. The final integrated suite is still deferred until those paths exist.
-
-### Request budget enforcement checkpoint
-
-Interview generation uses the shared auxiliary helper's strict request mode.
-It requires a positive output cap, rejects body overrides of protected request
-fields, and propagates provider errors without removing parameters or selecting
-another provider. Routes that cannot carry the output cap (including the current
-Codex OAuth adapter) fail before sending the request. SDK transport retries may
-repeat the same request; the isolated worker still owns the overall deadline.
-This is request-budget enforcement, not a guarantee of provider billing totals.
-Matched scenario route/settings receipts and evaluation remain required.
+Focused checks cover immutable context, user attribution, probability coherence,
+explicit tails, stale revisions, duplicate commits, lost responses, rollback,
+matched routes, worker deadlines/cancellation and terminal controls at 60×18,
+80×24 and 120×40. The final broad integration gates and remaining acceptance
+fixture audit above are still required. Controlled-provider engineering checks do
+not demonstrate predictive improvement; that requires prospective resolved scores.

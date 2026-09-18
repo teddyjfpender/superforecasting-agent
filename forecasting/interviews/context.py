@@ -34,6 +34,7 @@ def capture_context(
         "question": asdict(question),
         "baseline": asdict(baseline) if baseline else None,
         "evidence": [asdict(item) for item in evidence],
+        "reference_classes": ledger.list_reference_classes(question.id),
         "prior_interview": previous_interview(ledger, question.id),
     }
     document = json.dumps(

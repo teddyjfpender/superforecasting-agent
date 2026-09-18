@@ -321,3 +321,27 @@ def test_generation_status_is_scoped_and_preserves_terminal_states(work, monkeyp
     jobs.path(job_id).unlink()
     with pytest.raises(ValidationError, match="missing"):
         generation.generation_status(service.ledger, "interview")
+
+
+def test_rolled_back_generation_enqueue_cannot_spend(work, monkeypatch):
+    service, jobs, _ = work
+    with service.ledger._connect() as conn:
+        conn.execute("CREATE TRIGGER fail_generation_receipt BEFORE INSERT ON forecast_interview_generation_requests BEGIN SELECT RAISE(ABORT, 'injected interruption'); END")
+    written = []
+    original = JobStore.write
+
+    def capture(self, record):
+        written.append(record.job_id)
+        return original(self, record)
+
+    monkeypatch.setattr(JobStore, "write", capture)
+    with pytest.raises(Exception, match="injected interruption"):
+        generation.enqueue_generation(service.ledger, "interview", 1, "lost", InterviewGenerationOptions())
+    orphan = written[0]
+    call = Mock()
+    monkeypatch.setattr(generation, "run_model", call)
+    result = run(orphan, store=jobs)
+    assert result.status == "error"
+    assert "receipt was not committed" in result.error
+    call.assert_not_called()
+    assert service.store.read("interview")["revision"] == 1

@@ -3750,6 +3750,7 @@ export interface ScenarioEstimate {
   q50: null | number
   q90: null | number
   rationale: string
+  reference_class_refs: string[]
   units: null | string
   unresolved_questions: string[]
 }

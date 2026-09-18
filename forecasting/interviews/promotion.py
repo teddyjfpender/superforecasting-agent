@@ -108,10 +108,12 @@ def _candidate(
         "method": "interview_unconditional_baseline",
         "key_assumptions": [item.statement for item in report.assumptions],
         "evidence_refs": estimate.evidence_refs,
+        "reference_class_refs": estimate.reference_class_refs,
         "agent_model": selected.response_model,
         "prompt_version": "scenario-evaluation-v1",
         "forecast_origin": "live",
         "require_citations": True,
+        "enforce_resolved_hooks": True,
         "metadata": {
             "interview_evaluation": {
                 "job_id": job_id,

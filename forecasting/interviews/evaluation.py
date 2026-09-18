@@ -35,7 +35,7 @@ of all information: the evidence packet is deliberately identical between varian
 Prior interview answers are historical, not newly confirmed beliefs. Agent assumptions are proposals.
 Do not multiply correlated marginal probabilities or invent a decomposition of uncertainty.
 Distinguish missing knowledge, irreducible future variability and measurement ambiguity in your rationale.
-Identify unresolved questions. Cite only supplied evidence IDs. Respect exact category labels and units.
+Identify unresolved questions. Cite only supplied evidence IDs and reference-class IDs actually used. Respect exact category labels and units.
 For continuous quantities return ordered q10/q50/q90, never invent a Gaussian or an explicit tail probability.
 These are model proposals, not scored forecasts or authority to change the active forecast.
 """
@@ -133,11 +133,16 @@ def prepare(
         "options": options.model_dump(),
         "contract": contract,
         "evidence_refs": draft.evidence_refs,
+        "reference_class_refs": [item["id"] for item in packet["reference_classes"]],
         "calls": calls,
     }
 
 
 def validate_estimate(output: ScenarioEstimate, plan: dict) -> None:
+    if not set(output.reference_class_refs) <= set(
+        plan.get("reference_class_refs", [])
+    ):
+        raise ValidationError("model invented a reference-class reference")
     space = plan["contract"]["outcome_space"]
     if output.outcome_type != space["type"]:
         raise ValidationError("model changed the question outcome type")

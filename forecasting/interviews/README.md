@@ -1,9 +1,10 @@
 # Forecast interviews
 
 Durable question-and-answer drafts for creating or reviewing a forecast. This
-package owns interview validation, revision history and bounded adaptive
-question generation. It does not render the TUI or change an active forecast
-probability.
+package owns interview validation, revision history, bounded adaptive question
+generation and scenario evaluation. Only its explicit promotion operation changes
+an active forecast probability, after a ledger preview and user confirmation. It
+does not render the TUI.
 
 | File           | Responsibility                                                                      |
 | -------------- | ----------------------------------------------------------------------------------- |
@@ -14,6 +15,10 @@ probability.
 | `news.py`      | Idempotent article attachment and evidence-linked update drafts                     |
 | `generation.py` | Frozen input packets, idempotent job enqueue and validated proposal application |
 | `model_worker.py` | Isolated model call with an owned cancellation/deadline boundary |
+| `evaluation.py` | Frozen matched calls, strict estimates and sensitivity summaries |
+| `evaluation_jobs.py` | Evaluation enqueue receipts and scoped durable status |
+| `promotion.py` | Explicit baseline preview/commit through ledger quality gates |
+| `agent.py` | Attributed unattended reviews and proposal coverage checks |
 | `service.py`   | Begin/resume, attributed answers, validation preview and explicit question creation |
 
 Every save supplies the revision the caller read and a stable request ID. Retrying
@@ -217,3 +222,14 @@ In an update interview, `Ctrl+N` explicitly starts a fresh review using the late
 baseline and evidence. The confirmation explains that unconfirmed editor text is
 discarded; saved assumptions and scenarios carry forward with provenance and the
 previous interview remains available in history.
+
+### Outside-view anchors and promotion gates
+
+Update reviews freeze existing reference classes alongside evidence. Evaluations
+may cite only those captured IDs; promotion links the selected baseline's cited
+anchors and enforces the resolved ledger quality policy. A prose base-rate answer
+is not an empirical reference-class record. If preview reports a missing anchor,
+add a supported reference class through the forecast workflow, then start a fresh
+review and reevaluate. This preserves the original comparison's frozen provenance.
+Generation jobs must match a committed enqueue receipt before spending, so a
+rolled-back enqueue cannot leave an executable orphan model call.

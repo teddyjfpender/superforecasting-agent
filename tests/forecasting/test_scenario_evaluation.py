@@ -359,7 +359,7 @@ def test_interview_allows_only_one_active_comparison(work):
         )
 
 
-def promotion_job(work, monkeypatch):
+def promotion_job(work, monkeypatch, *, outside_view=True):
     service, question, jobs, original = work
     evidence = service.ledger.add_evidence(
         question_id=question.id,
@@ -368,6 +368,11 @@ def promotion_job(work, monkeypatch):
         summary="Relevant evidence for the estimate",
         archive_url_snapshot=False,
     )
+    if outside_view:
+        service.ledger.add_reference_class(
+            question_id=question.id, name="Comparable elections",
+            inclusion_criteria="Prior elections under the same rules", base_rate=0.4,
+        )
     draft = service.begin("promotion", question_id=question.id)
     record = JobRecord(
         job_id=jobs.new_id(),
@@ -382,6 +387,7 @@ def promotion_job(work, monkeypatch):
     result = response()
     content = json.loads(result["content"])
     content["evidence_refs"] = [evidence.id]
+    content["reference_class_refs"] = [item["id"] for item in service.ledger.list_reference_classes(question.id)]
     result["content"] = json.dumps(content)
     monkeypatch.setattr(evaluation, "run_model", Mock(return_value=result))
     outcome = run(record.job_id, store=jobs)
@@ -549,4 +555,33 @@ def test_censored_promotion_never_invents_tail_probability(work, monkeypatch):
     )
     assert "sd" not in preview["candidate"]
     assert "p_gte_6" not in preview["candidate"]
+    assert service.ledger.list_snapshots(question.id) == []
+
+
+def test_promotion_enforces_outside_view_quality_gate(work, monkeypatch):
+    from forecasting.interviews.promotion import preview_promotion, promote
+
+    service, question, _, _ = work
+    job_id = promotion_job(work, monkeypatch, outside_view=False)
+    preview = preview_promotion(service.ledger, job_id)
+    assert not preview["would_commit"]
+    assert any("outside-view" in item for item in preview["blockers"])
+    with pytest.raises(ValidationError, match="outside-view"):
+        promote(service.ledger, job_id, 0, preview["preview_digest"])
+    assert service.ledger.list_snapshots(question.id) == []
+
+
+def test_scenario_cannot_cite_reference_class_outside_frozen_context(work, monkeypatch):
+    service, question, jobs, record = work
+    reference = service.ledger.add_reference_class(
+        question_id=question.id, name="Added after capture", inclusion_criteria="Comparable cases", base_rate=0.4,
+    )
+    result = response()
+    content = json.loads(result["content"])
+    content["reference_class_refs"] = [reference["id"]]
+    result["content"] = json.dumps(content)
+    monkeypatch.setattr(evaluation, "run_model", Mock(return_value=result))
+    outcome = run(record.job_id, store=jobs)
+    assert outcome.status == "error"
+    assert "invented a reference-class reference" in outcome.error
     assert service.ledger.list_snapshots(question.id) == []
