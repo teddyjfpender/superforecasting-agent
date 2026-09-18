@@ -1267,8 +1267,10 @@ def _(rid, params: dict) -> dict:
 def _(rid, params: dict) -> dict:
     try:
         from forecasting.interviews.promotion import promote
+        from protocol.rpc.interviews import InterviewPromoteRequest
 
-        return _ok(rid, promote(_interview_service().ledger, **params))
+        request = InterviewPromoteRequest.model_validate(params)
+        return _ok(rid, promote(_interview_service().ledger, **request.model_dump()))
     except Exception as exc:
         return _err(rid, 5008, str(exc))
 
