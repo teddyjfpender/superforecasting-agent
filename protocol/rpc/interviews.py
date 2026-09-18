@@ -12,6 +12,7 @@ from protocol.interviews import (
     InterviewScenario,
 )
 from protocol.rpc.jobs import JobsStatusResponse
+from protocol.scenarios import ScenarioEvaluationOptions, ScenarioReport
 from protocol.types import WireModel
 
 
@@ -131,3 +132,17 @@ class InterviewGenerationStatusResponse(JobsStatusResponse):
     TS_NAME = "InterviewGenerationStatusResponse"
 
     request_id: str | None = None
+
+
+class InterviewEvaluateRequest(WireModel):
+    request_id: str = Field(min_length=1, max_length=200)
+    interview_id: str
+    revision: int
+    options: ScenarioEvaluationOptions
+
+
+class InterviewEvaluationStatusResponse(InterviewGenerationStatusResponse):
+    TS_NAME = "InterviewEvaluationStatusResponse"
+
+    report: ScenarioReport | None = None
+    stale: bool = False

@@ -17,6 +17,7 @@ class ScenarioJobSpec(InterviewModel):
     revision: int = Field(ge=1)
     options: ScenarioEvaluationOptions
     db: str | None = None
+    request_id: str | None = None
 
 
 def execute(raw: dict[str, Any], ctx: JobContext) -> dict:
@@ -27,9 +28,19 @@ def execute(raw: dict[str, Any], ctx: JobContext) -> dict:
     spec = ScenarioJobSpec.model_validate(raw)
     if ctx.should_cancel():
         return {"cancelled": True}
+    ledger = ForecastLedger(spec.db)
+    if spec.request_id:
+        with ledger._connect() as conn:
+            receipt = conn.execute(
+                "SELECT job_id FROM forecast_interview_evaluation_requests WHERE interview_id = ? AND request_id = ?",
+                (spec.interview_id, spec.request_id),
+            ).fetchone()
+        if receipt is None or receipt["job_id"] != ctx.record.job_id:
+            raise ValueError(
+                "scenario start receipt was not committed; no model calls made"
+            )
     plan = ctx.record.annotations.get("scenario_plan")
     if plan is None:
-        ledger = ForecastLedger(spec.db)
         if InterviewStore(ledger).read(spec.interview_id)["revision"] != spec.revision:
             raise ValueError("interview changed; reload before evaluating")
         plan = prepare(ledger, spec.interview_id, spec.revision, spec.options)

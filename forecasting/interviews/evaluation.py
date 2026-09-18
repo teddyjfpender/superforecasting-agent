@@ -127,6 +127,8 @@ def prepare(
             })
     return {
         "schema_version": 1,
+        "scenarios": [scenarios[key].model_dump() for key in options.scenario_ids],
+        "assumptions": [item.model_dump() for item in draft.assumptions],
         "interview_id": interview_id,
         "revision": revision,
         "input_digest": record["digest"],
@@ -221,6 +223,8 @@ def execute_plan(plan: dict, ctx: JobContext) -> dict:
         "revision": plan["revision"],
         "input_digest": plan["input_digest"],
         "matched": True,
+        "scenarios": plan["scenarios"],
+        "assumptions": plan["assumptions"],
         "comparisons": summarize(results),
         "results": results,
         "limitation": "Matched observable request settings; provider internals are not observable. Model dispersion is not forecast calibration.",

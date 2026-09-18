@@ -150,3 +150,19 @@ retained in every variant. They are sensitivity analyses, not blinded informatio
 experiments, causal effects or evidence of calibration. Conditional outputs stay
 conditional. TUI controls, explicit candidate promotion and scheduled invocation
 remain under implementation.
+
+### Comparing in the TUI
+
+Ctrl+E opens **Evaluate scenarios**. Toggle saved scenarios with Space, adjust
+repetitions/output caps with Left/Right, and select Run only after reviewing the
+call/token total. Provider/model overrides use Enter. Each call has a 90-second
+execution deadline. Ctrl+X cancels; Escape leaves the durable job running.
+Only one evaluation per interview can run at a time; retrying a lost start
+response retains its request identity.
+
+Ctrl+R explicitly opens completed comparisons. The reader starts at the top and
+scrolls with arrows or Page Up/Down. It shows frozen scenario definitions,
+assumptions, per-run reasoning, unresolved questions and cited evidence.
+Probabilities use percentages; differences use percentage points. Stale
+interviews/contracts/baselines are labelled historical. No comparison becomes
+a forecast without a separate promotion action (still under implementation).

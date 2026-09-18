@@ -2677,6 +2677,21 @@ export interface InterviewDraft {
   title: string
 }
 
+export interface InterviewEvaluateRequest {
+  interview_id: string
+  options: ScenarioEvaluationOptions
+  request_id: string
+  revision: number
+}
+
+export interface InterviewEvaluationStatusResponse {
+  found: boolean
+  job: null | JobRecordDTO
+  report: null | ScenarioReport
+  request_id: null | string
+  stale: boolean
+}
+
 export interface InterviewGenerateRequest {
   interview_id: string
   options: InterviewGenerationOptions
@@ -3665,6 +3680,68 @@ export interface RollbackRestoreResponse {
   reason?: string
   restored_to?: string
   success?: boolean
+}
+
+export interface ScenarioCallResult {
+  created_at: string
+  estimate: ScenarioEstimate
+  kind: 'ablation' | 'baseline' | 'conditional'
+  output_tokens: null | number
+  prompt_digest: string
+  repetition: number
+  request_receipt: ScenarioRouteReceipt
+  response_model: string
+  variant_id: string
+}
+
+export interface ScenarioComparison {
+  dimensions: Record<string, ScenarioDimension>
+  kind: 'ablation' | 'baseline' | 'conditional'
+  repetitions: number
+  variant_id: string
+}
+
+export interface ScenarioDimension {
+  mean: number
+  model_dispersion: null | number
+  paired_delta: number
+}
+
+export interface ScenarioEstimate {
+  categories: Record<string, number>
+  evidence_refs: string[]
+  outcome_type: 'binary' | 'categorical' | 'distribution' | 'numeric'
+  probability: null | number
+  q10: null | number
+  q50: null | number
+  q90: null | number
+  rationale: string
+  units: null | string
+  unresolved_questions: string[]
+}
+
+export interface ScenarioEvaluationOptions {
+  model: InterviewGenerationOptions
+  repetitions: number
+  scenario_ids: string[]
+}
+
+export interface ScenarioReport {
+  assumptions: InterviewAssumption[]
+  comparisons: ScenarioComparison[]
+  input_digest: string
+  interview_id: string
+  limitation: string
+  matched: boolean
+  results: ScenarioCallResult[]
+  revision: number
+  scenarios: InterviewScenario[]
+}
+
+export interface ScenarioRouteReceipt {
+  fingerprint: string
+  model: string
+  provider: string
 }
 
 export interface SecretRequestPayload {
@@ -4666,6 +4743,21 @@ export interface RpcMethods {
       revision: number
     }
     result: InterviewCommitResponse
+  }
+  'forecast.interview.evaluate': {
+    params: {
+      interview_id: string
+      options: ScenarioEvaluationOptions
+      request_id: string
+      revision: number
+    }
+    result: InterviewGenerateResponse
+  }
+  'forecast.interview.evaluation_status': {
+    params: {
+      interview_id: string
+    }
+    result: InterviewEvaluationStatusResponse
   }
   'forecast.interview.generate': {
     params: {

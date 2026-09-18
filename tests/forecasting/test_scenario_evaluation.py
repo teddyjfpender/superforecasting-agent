@@ -1,5 +1,6 @@
 """Matched scenario execution preserves inputs, recovery and forecast authority."""
 
+import hashlib
 import json
 from unittest.mock import Mock
 
@@ -80,7 +81,7 @@ def response(probability=0.4, fingerprint="same"):
         "response_model": "controlled-model",
         "output_tokens": 40,
         "request_receipt": {
-            "fingerprint": fingerprint,
+            "fingerprint": hashlib.sha256(fingerprint.encode()).hexdigest(),
             "provider": "fake",
             "model": "controlled-model",
         },
@@ -282,4 +283,77 @@ def test_update_cannot_silently_compare_a_changed_contract(work):
             "review",
             updated["revision"],
             ScenarioEvaluationOptions(scenario_ids=["healthy"]),
+        )
+
+
+def test_idempotent_start_and_typed_status(work, monkeypatch):
+    from forecasting.interviews.evaluation_jobs import (
+        enqueue_evaluation,
+        evaluation_status,
+    )
+    from protocol.rpc.interviews import InterviewEvaluationStatusResponse
+
+    service, _, jobs, record = work
+    options = ScenarioEvaluationOptions(scenario_ids=["healthy"])
+    job_id = enqueue_evaluation(
+        service.ledger, "review", record.spec["revision"], "start", options
+    )
+    assert (
+        enqueue_evaluation(
+            service.ledger, "review", record.spec["revision"], "start", options
+        )
+        == job_id
+    )
+    with pytest.raises(ValidationError, match="different settings"):
+        enqueue_evaluation(
+            service.ledger,
+            "review",
+            record.spec["revision"],
+            "start",
+            ScenarioEvaluationOptions(scenario_ids=["omit"]),
+        )
+    monkeypatch.setattr(
+        evaluation, "run_model", Mock(side_effect=[response(), response(0.6)])
+    )
+    assert run(job_id, store=jobs).status == "done"
+    status = InterviewEvaluationStatusResponse.model_validate(
+        evaluation_status(service.ledger, "review")
+    )
+    assert status.report.matched
+    assert status.report.scenarios[0].id == "healthy"
+    assert status.stale is False
+    service.answer(
+        "review",
+        expected_revision=record.spec["revision"],
+        request_id="later",
+        question_id="belief",
+        status="answered",
+        value=0.9,
+    )
+    assert evaluation_status(service.ledger, "review")["stale"] is True
+
+
+def test_uncommitted_enqueue_cannot_spend(work, monkeypatch):
+    _, _, jobs, record = work
+    record.spec["request_id"] = "missing-receipt"
+    jobs.write(record)
+    call = Mock()
+    monkeypatch.setattr(evaluation, "run_model", call)
+    result = run(record.job_id, store=jobs)
+    assert result.status == "error"
+    assert "receipt was not committed" in result.error
+    call.assert_not_called()
+
+
+def test_interview_allows_only_one_active_comparison(work):
+    from forecasting.interviews.evaluation_jobs import enqueue_evaluation
+
+    service, _, _, record = work
+    options = ScenarioEvaluationOptions(scenario_ids=["healthy"])
+    enqueue_evaluation(
+        service.ledger, "review", record.spec["revision"], "first", options
+    )
+    with pytest.raises(ValidationError, match="already active"):
+        enqueue_evaluation(
+            service.ledger, "review", record.spec["revision"], "second", options
         )

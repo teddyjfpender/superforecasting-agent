@@ -496,3 +496,145 @@ it('supports naming a scenario and inspecting the full assumption before saving'
     ui.close()
   }
 })
+
+it.each([
+  [60, 18],
+  [100, 32]
+])('opens budgeted scenario comparison and restores cancellation at %s×%s', async (cols, rows) => {
+  const record = fixture()
+  record.document.scenarios = [
+    {
+      id: 'healthy',
+      name: 'Healthy candidate',
+      kind: 'conditional',
+      actor: 'user',
+      conditions: { health: true },
+      excluded_assumption_ids: []
+    }
+  ]
+  let job: any = null
+  let receipt: string | null = null
+
+  const request = vi.fn(async (method: string, params: any) => {
+    if (method === 'forecast.interview.list') {
+      return { interviews: [record] }
+    }
+
+    if (method === 'forecast.interview.evaluation_status') {
+      return { found: !!job, job, request_id: receipt, report: null, stale: false }
+    }
+
+    if (method === 'forecast.interview.evaluate') {
+      receipt = params.request_id
+      job = { job_id: 'evaluation', status: 'running', done_count: 0, total: 2, cancel_requested: false }
+
+      return { job_id: 'evaluation' }
+    }
+
+    if (method === 'jobs.cancel') {
+      job = { ...job, status: 'cancelled', cancel_requested: true }
+
+      return {}
+    }
+
+    throw new Error(`Unexpected ${method}`)
+  })
+
+  const ui = await screen(request, cols, rows)
+
+  try {
+    await ui.wait('What event?')
+    ui.press('\x05')
+    await ui.wait('EVALUATE SCENARIOS')
+    await ui.wait('Healthy candidate')
+    expect(ui.text()).toContain('8,000 output tokens')
+
+    for (let index = 0; index < 5; index++) {
+      ui.press('\x1b[B')
+    }
+
+    await ui.wait('Run comparison')
+    ui.press('\r')
+    await ui.wait('running')
+    const start = request.mock.calls.find(([method]) => method === 'forecast.interview.evaluate')
+    expect(start?.[1].options.scenario_ids).toEqual(['healthy'])
+    expect(start?.[1].options.repetitions).toBe(1)
+    ui.press('\x18')
+    await ui.wait('cancelled')
+    expect(request.mock.calls.some(([method]) => method === 'jobs.cancel')).toBe(true)
+  } finally {
+    ui.close()
+  }
+})
+
+it('keeps historical comparison results closed until requested and uses frozen scenario labels', async () => {
+  const record = fixture()
+
+  const report = {
+    scenarios: [
+      {
+        id: 'healthy',
+        name: 'Original health scenario',
+        kind: 'conditional',
+        conditions: { health: true },
+        excluded_assumption_ids: []
+      }
+    ],
+    assumptions: record.document.assumptions,
+    comparisons: [
+      {
+        variant_id: 'healthy',
+        kind: 'conditional',
+        repetitions: 1,
+        dimensions: { probability: { mean: 0.7, paired_delta: 0.2, model_dispersion: null } }
+      }
+    ],
+    results: [
+      {
+        variant_id: 'healthy',
+        repetition: 0,
+        response_model: 'controlled',
+        estimate: {
+          outcome_type: 'binary',
+          rationale: 'Frozen analysis text',
+          evidence_refs: [],
+          unresolved_questions: ['Check the source'],
+          units: null
+        }
+      }
+    ],
+    limitation: 'Model dispersion is not calibration.'
+  }
+
+  const request = vi.fn(async (method: string) => {
+    if (method === 'forecast.interview.list') {
+      return { interviews: [record] }
+    }
+
+    if (method === 'forecast.interview.evaluation_status') {
+      return { found: true, job: { status: 'done', done_count: 2, total: 2 }, report, stale: true }
+    }
+
+    throw new Error(`Unexpected ${method}`)
+  })
+
+  const ui = await screen(request, 100, 32)
+
+  try {
+    await ui.wait('What event?')
+    ui.press('\x05')
+    await ui.wait('done')
+    expect(ui.text()).not.toContain('Frozen analysis text')
+    ui.press('\x12')
+    await ui.wait('SCENARIO COMPARISON')
+    await ui.wait('Original health scenario')
+    expect(ui.text()).toContain('Historical result')
+    expect(ui.text()).toContain('Candidate remains healthy: true')
+    expect(ui.text()).toContain('dispersion not measured')
+    expect(ui.text()).toContain('70.0%')
+    expect(ui.text()).toContain('+20.0 pp')
+    expect(ui.text()).toContain('Frozen analysis text')
+  } finally {
+    ui.close()
+  }
+})

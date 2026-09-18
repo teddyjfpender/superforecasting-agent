@@ -6,7 +6,12 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
-from protocol.interviews import InterviewGenerationOptions, InterviewModel
+from protocol.interviews import (
+    InterviewAssumption,
+    InterviewGenerationOptions,
+    InterviewModel,
+    InterviewScenario,
+)
 
 
 class ScenarioEvaluationOptions(InterviewModel):
@@ -74,3 +79,46 @@ class ScenarioEstimate(InterviewModel):
         elif not self.q10 <= self.q50 <= self.q90:
             raise ValueError("quantiles must be ordered")
         return self
+
+
+class ScenarioRouteReceipt(InterviewModel):
+    fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    provider: str
+    model: str
+
+
+class ScenarioCallResult(InterviewModel):
+    variant_id: str
+    kind: Literal["baseline", "conditional", "ablation"]
+    repetition: int
+    prompt_digest: str
+    estimate: ScenarioEstimate
+    request_receipt: ScenarioRouteReceipt
+    response_model: str
+    output_tokens: int | None
+    created_at: str
+
+
+class ScenarioDimension(InterviewModel):
+    mean: float
+    paired_delta: float
+    model_dispersion: float | None
+
+
+class ScenarioComparison(InterviewModel):
+    variant_id: str
+    kind: Literal["baseline", "conditional", "ablation"]
+    repetitions: int
+    dimensions: dict[str, ScenarioDimension]
+
+
+class ScenarioReport(InterviewModel):
+    interview_id: str
+    revision: int
+    input_digest: str
+    matched: Literal[True]
+    scenarios: list[InterviewScenario]
+    assumptions: list[InterviewAssumption]
+    comparisons: list[ScenarioComparison]
+    results: list[ScenarioCallResult]
+    limitation: str

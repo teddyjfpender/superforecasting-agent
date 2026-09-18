@@ -202,7 +202,7 @@ export const PER_VIEW_GUIDE: Record<string, string[]> = {
   desk: [
     'Lenses group forecasts by thesis, then All and Operations. Tab or left/right switches lens; arrows select; Enter opens detail.',
     'Updates have three tiers: u re-arms, U updates now, A runs an agent. Space marks rows; Shift+arrows extends selection. T opens a task; with no rows marked, lens actions apply to its questions.',
-    'n starts a question interview; i revisits selected forecast beliefs. Inside an interview, Ctrl+G generates budgeted follow-ups and Ctrl+O edits conditional scenarios or factor ablations. Saved drafts and scenarios do not change probabilities.',
+    'n starts a question interview; i revisits selected forecast beliefs. Interview: Ctrl+G asks follow-ups, Ctrl+O edits scenarios, Ctrl+E compares them. Drafts and comparisons never change probabilities automatically.',
     'R resolves; s opens settings. / filters, o sorts and r refreshes. Next best actions ranks the book by value of information.'
   ],
   markets: [

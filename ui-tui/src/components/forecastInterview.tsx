@@ -14,6 +14,7 @@ import type {
 } from '../protocol/generated.js'
 import type { Theme } from '../theme.js'
 
+import { InterviewEvaluation } from './interviewEvaluation.js'
 import { InterviewGeneration } from './interviewGeneration.js'
 import { InterviewScenarios } from './interviewScenarios.js'
 import { ModalOverlay } from './modalOverlay.js'
@@ -46,7 +47,7 @@ export function ForecastInterview({
   const [choice, setChoice] = useState(0)
   const [selected, setSelected] = useState<string[]>([])
   const [customEditing, setCustomEditing] = useState(false)
-  const [pane, setPane] = useState<'answers' | 'generation' | 'scenarios'>('answers')
+  const [pane, setPane] = useState<'answers' | 'generation' | 'scenarios' | 'evaluation'>('answers')
   const [busy, setBusy] = useState(true)
   const [error, setError] = useState('')
   const [preview, setPreview] = useState<InterviewPreviewResponse | null>(null)
@@ -303,7 +304,13 @@ export function ForecastInterview({
 
   useInput(
     (input, key, event) => {
-      if (key.escape || key.tab || key.pageUp || key.pageDown || (key.ctrl && ['u', 's', 'g', 'o'].includes(input))) {
+      if (
+        key.escape ||
+        key.tab ||
+        key.pageUp ||
+        key.pageDown ||
+        (key.ctrl && ['u', 's', 'g', 'o', 'e'].includes(input))
+      ) {
         ;(event as unknown as { stopImmediatePropagation?: () => void }).stopImmediatePropagation?.()
       }
 
@@ -329,12 +336,12 @@ export function ForecastInterview({
         return
       }
 
-      if (key.ctrl && (input === 'g' || input === 'o')) {
+      if (key.ctrl && (input === 'g' || input === 'o' || input === 'e')) {
         if (question) {
           choiceDrafts.current.set(question.id, { choice, selected })
         }
 
-        setPane(input === 'g' ? 'generation' : 'scenarios')
+        setPane(input === 'g' ? 'generation' : input === 'e' ? 'evaluation' : 'scenarios')
 
         return
       }
@@ -420,6 +427,20 @@ export function ForecastInterview({
     )
   }
 
+  if (record && pane === 'evaluation') {
+    return (
+      <InterviewEvaluation
+        blocked={!!blocked}
+        cols={cols}
+        gw={gw}
+        onClose={() => setPane('answers')}
+        record={record}
+        rows={rows}
+        t={t}
+      />
+    )
+  }
+
   if (record && pane === 'scenarios') {
     return (
       <InterviewScenarios
@@ -441,7 +462,7 @@ export function ForecastInterview({
   return (
     <ModalOverlay
       cols={cols}
-      footerHint="[Tab/⇧Tab Move] [^G Ask] [^O Scenarios] [Esc Close]"
+      footerHint="[Tab/⇧Tab Move] [^G Ask] [^O Scenarios] [^E Compare] [Esc Close]"
       maxHeight={34}
       maxWidth={100}
       rows={rows}

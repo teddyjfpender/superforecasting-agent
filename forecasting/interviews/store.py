@@ -16,6 +16,15 @@ if TYPE_CHECKING:
 
 def initialize_schema(conn: sqlite3.Connection) -> None:
     conn.execute("""
+        CREATE TABLE IF NOT EXISTS forecast_interview_evaluation_requests (
+            interview_id TEXT NOT NULL,
+            request_id TEXT NOT NULL,
+            spec TEXT NOT NULL,
+            job_id TEXT NOT NULL,
+            PRIMARY KEY (interview_id, request_id)
+        )
+    """)
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS forecast_interview_contexts (
             interview_id TEXT PRIMARY KEY,
             document TEXT NOT NULL,

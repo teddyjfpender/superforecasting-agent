@@ -1223,3 +1223,31 @@ def _(rid, params: dict) -> dict:
         return _ok(rid, _interview_service().delete_scenario(**params))
     except Exception as exc:
         return _err(rid, 5008, str(exc))
+
+
+@rpc_validated("forecast.interview.evaluate")
+def _(rid, params: dict) -> dict:
+    try:
+        from forecasting.interviews.evaluation_jobs import enqueue_evaluation
+        from forecasting.jobs.detached import spawn_detached_job
+        from protocol.scenarios import ScenarioEvaluationOptions
+        from superforecasting_agent.constants import get_agent_home
+
+        job_id = enqueue_evaluation(
+            _interview_service().ledger, params["interview_id"], params["revision"],
+            params["request_id"], ScenarioEvaluationOptions.model_validate(params["options"]),
+        )
+        spawn_detached_job(job_id, home=get_agent_home())
+        return _ok(rid, {"job_id": job_id})
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))
+
+
+@rpc_validated("forecast.interview.evaluation_status")
+def _(rid, params: dict) -> dict:
+    try:
+        from forecasting.interviews.evaluation_jobs import evaluation_status
+
+        return _ok(rid, evaluation_status(_interview_service().ledger, params["interview_id"]))
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))
