@@ -8,6 +8,7 @@ import { ensureFeedUrlScheme, feedHost } from '../lib/newsFeedStore.js'
 import type { Theme } from '../theme.js'
 
 import { ModalOverlay } from './modalOverlay.js'
+import { ShortcutText } from './shortcutText.js'
 
 // Presentational "Add a feed" modal. State + key handling live in NewsView
 // (single useInput); this just paints the current view-model: a search line, a
@@ -162,11 +163,11 @@ export function AddFeedModal({
 
           <Box flexDirection="column" flexGrow={1} marginLeft={1} minWidth={0} overflow="hidden">
             {results.length === 0 ? (
-              <Text color={t.color.muted} wrap="truncate-end">
+              <ShortcutText color={t.color.muted} t={t} wrap="truncate-end">
                 {isUrlQuery
                   ? 'Press ⏎ to add this URL as a custom feed.'
                   : 'No feeds match — try another word or paste an RSS URL.'}
-              </Text>
+              </ShortcutText>
             ) : (
               res.items.map((feed, i) => {
                 const idx = res.start + i

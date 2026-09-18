@@ -193,47 +193,47 @@ export const PER_VIEW_KEYS: Record<string, [string, string][]> = {
 export const PER_VIEW_GUIDE: Record<string, string[]> = {
   home: [
     'Home is the forecasting chat. Enter sends; Shift+Enter inserts a newline. / starts a slash command.',
-    'Press ? in an empty composer for this modal. h opens help when focus is on Today rather than the composer. Ctrl+K opens the command palette; Ctrl+G then a letter switches views; Ctrl+T focuses Today.'
+    'Press ? in an empty composer for this modal. `h` opens help when focus is on Today rather than the composer. Ctrl+K opens the command palette; Ctrl+G then a letter switches views; Ctrl+T focuses Today.'
   ],
   desk: [
     'Lenses group forecasts by thesis, then All and Operations. Tab or left/right switches lens; arrows select; Enter opens detail.',
-    'Updates have three tiers: u re-arms, U updates now, A runs an agent. Space marks rows; Shift+arrows extends selection. T opens a task; with no rows marked, lens actions apply to its questions.',
-    'n creates; R resolves; s opens settings. / filters, o sorts and r refreshes. Next best actions ranks the book by value of information.'
+    'Updates have three tiers: u re-arms, U updates now, A runs an agent. Space marks rows; Shift+arrows extends selection. `T` opens a task; with no rows marked, lens actions apply to its questions.',
+    '`n` creates; R resolves; `s` opens settings. `/` filters, `o` sorts and `r` refreshes. Next best actions ranks the book by value of information.'
   ],
   markets: [
-    'Markets has two modes, toggled with M: Data (live quotes by category) and Models (agentic quant-research). Press p to jump to the Prediction section — Polymarket and Kalshi — where v cycles venue, 1·2·3 set the history range, and Space expands outcomes.',
-    'Market Models are quant questions the desk researches end to end. Press n to define one, Enter to open it, c to chat/refine, w to rewrite on fresh data, e to export JSON, ←→ for versions, and F to spin off a Desk forecast.',
-    'Press d (Add data) to connect a provider; / filters the tape (or deep-searches a ticker in Prediction), o sorts, r refreshes. Blank series usually mean a missing API key — the header [!] flags which; press i for the per-provider fix.'
+    'Markets has two modes, toggled with `M`: Data (live quotes by category) and Models (agentic quant-research). Press `p` to jump to the Prediction section — Polymarket and Kalshi — where `v` cycles venue, `1`·`2`·`3` set the history range, and Space expands outcomes.',
+    'Market Models are quant questions the desk researches end to end. Press `n` to define one, Enter to open it, `c` to chat/refine, `w` to rewrite on fresh data, `e` to export JSON, ←→ for versions, and `F` to spin off a Desk forecast.',
+    'Press d (Add data) to connect a provider; `/` filters the tape (or deep-searches a ticker in Prediction), `o` sorts, `r` refreshes. Blank series usually mean a missing API key — the header [!] flags which; press i for the per-provider fix.'
   ],
   news: [
     'News has sources, headlines and an independently scrolling reader. Tab or left/right switches sources; up/down selects stories. PgUp/PgDn scrolls article text without moving the selection.',
-    'Enter opens the source in a browser, / searches, a adds feeds, s selects starter feeds when available, r refreshes and m forwards the selected story.'
+    'Enter opens the source in a browser, / searches, a adds feeds, s selects starter feeds when available, `r` refreshes and `m` forwards the selected story.'
   ],
   warnings: [
     'Warnings is the desk’s alert and review queue — open alerts, stale forecasts, readiness gaps, and items awaiting judgment, grouped into tiers. Move with ↑↓ (or j/k); Enter or Space expands a row; ← collapses and → expands; Tab jumps between tiers.',
-    'Two bulk passes clear a tier: R is a free (non-LLM) pass and Shift-A hands it to an agent to reforecast (press again to cancel a running pass); x dismisses. When a row is contested, label it 1 interesting, 2 uninteresting, or 3 irrelevant to teach the triage. Press r to refresh.'
+    'Two bulk passes clear a tier: R is a free (non-LLM) pass and Shift-A hands it to an agent to reforecast (press again to cancel a running pass); `x` dismisses. When a row is contested, label it `1` interesting, `2` uninteresting, or `3` irrelevant to teach the triage. Press `r` to refresh.'
   ],
   calibration: [
-    'Calibration shows how well your forecasts track reality: a reliability curve, per-bucket hit rates, and a signed-bias verdict — whether you run over- or under-confident. Scroll with ↑↓ and press r to refresh. Run /calibration --visual to reach this from anywhere.'
+    'Calibration shows how well your forecasts track reality: a reliability curve, per-bucket hit rates, and a signed-bias verdict — whether you run over- or under-confident. Scroll with ↑↓ and press `r` to refresh. Run /calibration --visual to reach this from anywhere.'
   ],
   calendar: [
     'The Calendar lays out upcoming market closes and resolutions by date. On a wide terminal Tab switches between the month grid and an agenda list.',
-    'In the grid, arrows move the day focus, PgUp/PgDn (or [ ]) page months, and t jumps to today. In the agenda, ↑↓ select an event and o/O sort. Enter opens the focused day or deep-links into the Desk; / filters the agenda; r refreshes.'
+    'In the grid, arrows move the day focus, PgUp/PgDn (or [ ]) page months, and t jumps to today. In the agenda, ↑↓ select an event and o/O sort. Enter opens the focused day or deep-links into the Desk; `/` filters the agenda; `r` refreshes.'
   ],
   obsidian: [
     'Docs has a library, document list and independently scrolling reader. Press 1 for Obsidian or 2 for Overleaf/LaTeX. Tab cycles folders; arrows select documents; PgUp/PgDn scrolls the reader.',
-    'Press e to edit, Ctrl+Enter to save, and Esc to return to preview with the draft retained. R reconciles source changes. n creates a document; c opens connections and explicit sync. m forwards a labelled excerpt.'
+    'Press `e` to edit, Ctrl+Enter to save, and Esc to return to preview with the draft retained. `R` reconciles source changes. `n` creates a document; `c` opens connections and explicit sync. `m` forwards a labelled excerpt.'
   ],
   agents: [
     'The Agents view is the subagent and spawn-tree monitor: every delegated run, its status, and its history. Move the cursor with ↑↓ (j/k); ← steps back and →/l goes forward through the tree; [ and ] step through history. It updates live as agents work.'
   ],
   hooks: [
-    'Hooks configures forecasting rules. Tab switches between list and inspector; arrows select or scroll. c cycles severity, p cycles profile, e enables and d disables.',
-    'n creates a rule; E edits and x removes a user rule. r switches the reference page. Esc returns from reference before closing.'
+    'Hooks configures forecasting rules. Tab switches between list and inspector; arrows select or scroll. `c` cycles severity, `p` cycles profile, e enables and d disables.',
+    '`n` creates a rule; E edits and x removes a user rule. r switches the reference page. Esc returns from reference before closing.'
   ],
   messaging: [
     'Messaging is a personal Signal client. Tab cycles Inbox, Unread, Pinned, Groups, Archived and named categories. / searches; p pins, x archives and C assigns a category.',
-    'Enter opens a chat ready to type; Enter sends and Esc returns with the draft retained. PgUp/PgDn scrolls history. m opens quick compose; Alt+M also works from other views. The header badge counts unread conversations.'
+    'Enter opens a chat ready to type; Enter sends and Esc returns with the draft retained. PgUp/PgDn scrolls history. `m` opens quick compose; Alt+M also works from other views. The header badge counts unread conversations.'
   ],
   // Dev-gated — see the PER_VIEW_KEYS note above.
   demoViz: [

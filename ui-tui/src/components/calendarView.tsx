@@ -17,6 +17,7 @@ import type { Theme } from '../theme.js'
 import { type FooterChip, FooterChips } from './footerChips.js'
 import { ModalOverlay } from './modalOverlay.js'
 import { windowItems } from './overlayControls.js'
+import { ShortcutText } from './shortcutText.js'
 
 export const openCalendarView = () => patchOverlayState({ calendar: true })
 export const closeCalendarView = () => patchOverlayState({ calendar: false })
@@ -718,7 +719,7 @@ export function CalendarView({ gw, onClose, t }: CalendarViewProps) {
     body = (
       <Box flexDirection="column">
         <Text color={t.color.error}>Failed to load calendar: {error}</Text>
-        <Text color={t.color.muted}>Press r to retry · q to close</Text>
+        <ShortcutText color={t.color.muted} t={t}>Press r to retry · q to close</ShortcutText>
       </Box>
     )
   } else if (events.length === 0) {

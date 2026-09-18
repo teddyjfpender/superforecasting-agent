@@ -5,6 +5,8 @@ import type { MarketModelListItem } from '../lib/presentation.js'
 import { semantics } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
 
+import { ShortcutText } from './shortcutText.js'
+
 const relTime = (iso?: string): string => {
   if (!iso) {
     return ''
@@ -69,9 +71,9 @@ export function ModelsList({
           No market models yet.
         </Text>
         <Box marginTop={1}>
-          <Text color={t.color.muted} wrap="wrap">
+          <ShortcutText color={t.color.muted} t={t} wrap="wrap">
             Press n to define a quant question (e.g. "how has GPU compute-per-chip growth driven NVIDIA revenue; build a forward-looking regression"). The desk researches, computes, and presents it here.
-          </Text>
+          </ShortcutText>
         </Box>
       </Box>
     )

@@ -188,10 +188,11 @@ def test_include_unconfigured_appends_canonical_skeletons():
         payload = build_models_payload(ctx, include_unconfigured=True)
     # All canonical providers other than openrouter should appear as
     # skeleton rows.
-    from superforecasting_agent.runtime.models import CANONICAL_PROVIDERS
+    from superforecasting_agent.configuration.provider_catalog import SETUP_PROVIDERS
 
     seen_slugs = {r["slug"] for r in payload["providers"]}
-    for entry in CANONICAL_PROVIDERS:
+    assert "nous" not in seen_slugs
+    for entry in SETUP_PROVIDERS:
         assert entry.slug in seen_slugs, f"missing {entry.slug}"
     # Skeletons have empty models and source='canonical'.
     skeletons = [r for r in payload["providers"]
@@ -282,9 +283,9 @@ def test_canonical_order_uses_slug_not_is_user_defined_flag():
     canonical providers configured via the keyed schema get demoted to
     the tail.
     """
-    from superforecasting_agent.runtime.models import CANONICAL_PROVIDERS
+    from superforecasting_agent.configuration.provider_catalog import SETUP_PROVIDERS
 
-    canonical_slug = CANONICAL_PROVIDERS[2].slug  # any canonical
+    canonical_slug = SETUP_PROVIDERS[2].slug  # any canonical
     rows = [
         # A truly-custom row (correct: is_user_defined=True)
         {"slug": "custom:Ollama", "name": "Ollama", "models": [],
@@ -316,7 +317,7 @@ def test_canonical_order_with_unconfigured_preserves_full_universe():
     has CANONICAL_PROVIDERS in declaration order, hints applied,
     custom rows trailing.
     """
-    from superforecasting_agent.runtime.models import CANONICAL_PROVIDERS
+    from superforecasting_agent.configuration.provider_catalog import SETUP_PROVIDERS
 
     rows = [
         {"slug": "custom:Ollama", "name": "Ollama", "models": [],
@@ -333,9 +334,9 @@ def test_canonical_order_with_unconfigured_preserves_full_universe():
         )
     slugs = [r["slug"] for r in payload["providers"]]
     # First row: first canonical provider in declaration order.
-    assert slugs[0] == CANONICAL_PROVIDERS[0].slug
+    assert slugs[0] == SETUP_PROVIDERS[0].slug
     # Custom row trails canonical universe.
-    assert slugs.index("custom:Ollama") >= len(CANONICAL_PROVIDERS)
+    assert slugs.index("custom:Ollama") >= len(SETUP_PROVIDERS)
 
 
 # ─── Integration: end-to-end through real load_picker_context ──────────

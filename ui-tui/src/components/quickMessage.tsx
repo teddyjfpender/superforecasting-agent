@@ -15,6 +15,7 @@ import { ContactPicker } from './contactPicker.js'
 import { FeedShareCard } from './feedShareCard.js'
 import { MessageComposer } from './messageComposer.js'
 import { ModalOverlay } from './modalOverlay.js'
+import { ShortcutText } from './shortcutText.js'
 
 export function QuickMessage({ cols, rows, t }: { cols: number; rows: number; t: Theme }) {
   const overlay = useStore($overlayState)
@@ -225,9 +226,9 @@ export function QuickMessage({ cols, rows, t }: { cols: number; rows: number; t:
       />
       {feed ? (
         <Box flexDirection="column" flexShrink={0}>
-          <Text color={optionsFocused ? t.color.accent : t.color.muted} wrap="truncate-end">
+          <ShortcutText color={optionsFocused ? t.color.accent : t.color.muted} t={t} wrap="truncate-end">
             {chart} · latest {horizon} observations · [Shift+Tab chart/horizon]
-          </Text>
+          </ShortcutText>
           <FeedShareCard chartHeight={previewHeight} compact share={feed} t={t} width={modalWidth - 10} />
         </Box>
       ) : (

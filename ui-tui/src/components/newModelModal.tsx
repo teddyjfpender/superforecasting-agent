@@ -7,6 +7,7 @@ import type { Theme } from '../theme.js'
 
 import { type FooterChip, FooterChips } from './footerChips.js'
 import { ModalOverlay } from './modalOverlay.js'
+import { ShortcutText } from './shortcutText.js'
 
 // New-model wizard (clone of questionOnboardModal's step machine): capture a
 // quant question + key params, then hand them to the gateway via onSubmit.
@@ -251,7 +252,7 @@ export function NewModelModal({
               <Text color={t.color.muted}>{`Analysis: ${analysis} · Depth: ${depth} · Horizon: ${horizon}`}</Text>
               {assumptions ? <Text color={t.color.muted} wrap="truncate-end">{`Assumptions: ${assumptions}`}</Text> : null}
               <Box marginTop={1}>
-                <Text color={t.color.accent}>Press ⏎ to build (runs in the background — watch progress or keep working).</Text>
+                <ShortcutText color={t.color.accent} t={t}>Press ⏎ to build (runs in the background — watch progress or keep working).</ShortcutText>
               </Box>
             </Box>
           ) : null}

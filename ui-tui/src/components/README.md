@@ -75,3 +75,13 @@ layout, scopes and selection only.
 `messageComposer.tsx` owns the bounded message editor used by chat and quick
 compose. Send attempts are shared through `messagingSend.ts`; message status
 belongs in the conversation, while draft persistence remains with the caller.
+
+## Keyboard hints
+
+Use `FooterChips` for actionable footer buttons and `ShortcutText` for help prose
+or modal hints. Keys use the theme accent plus bold weight; surrounding copy keeps
+its normal color. Put ambiguous single-letter keys in backticks, for example
+``Press `f` to filter``. The renderer removes those delimiters. Named keys, chords,
+and bracketed hints are recognized automatically. Keep actual bindings in their
+existing input handlers/keymap registry; this component only renders instructions.
+Never apply it to user messages, articles, documents, or model-generated prose.

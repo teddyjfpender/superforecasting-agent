@@ -23,6 +23,7 @@ import { docAge, DocsHeader, DocsKindTabs, sizeChip, titlePath } from './docsShe
 import { type FooterChip, FooterChips } from './footerChips.js'
 import { INLINE_RE, Md, stripInlineMarkup, wikiLinkLabel } from './markdown.js'
 import { ModalOverlay } from './modalOverlay.js'
+import { ShortcutText } from './shortcutText.js'
 
 export const openObsidianView = () => patchOverlayState({ obsidian: true })
 export const closeObsidianView = () => patchOverlayState({ obsidian: false })
@@ -1846,7 +1847,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
     body = (
       <Box flexDirection="column">
         <Text color={t.color.error}>Failed to load vault: {error}</Text>
-        <Text color={t.color.muted}>Press r to retry · q to close</Text>
+        <ShortcutText color={t.color.muted} t={t}>Press r to retry · q to close</ShortcutText>
       </Box>
     )
   } else if (!hasVault) {
@@ -2234,9 +2235,9 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
                   )
                 })
               ) : (
-                <Text color={t.color.muted} wrap="wrap">
+                <ShortcutText color={t.color.muted} t={t} wrap="wrap">
                   No comments yet. Put the cursor on a line (↑↓, Shift to select more) and press c.
-                </Text>
+                </ShortcutText>
               )}
             </ScrollBox>
           </Box>

@@ -1964,7 +1964,7 @@ def select_provider_and_model(args=None):
     if active == "openrouter" and get_env_value("OPENAI_BASE_URL"):
         active = "custom"
 
-    from superforecasting_agent.runtime.models import CANONICAL_PROVIDERS, _PROVIDER_LABELS
+    from superforecasting_agent.runtime.models import _PROVIDER_LABELS
 
     provider_labels = dict(_PROVIDER_LABELS)  # derive from canonical list
     if active and active in _custom_provider_map:
@@ -1977,8 +1977,10 @@ def select_provider_and_model(args=None):
     print(f"  Active provider:  {active_label}")
     print()
 
-    # Step 1: Provider selection — flat list from CANONICAL_PROVIDERS
-    all_providers = [(p.slug, p.tui_desc) for p in CANONICAL_PROVIDERS]
+    # Step 1: Provider selection — shared setup presentation policy
+    from superforecasting_agent.configuration.provider_catalog import SETUP_PROVIDERS
+
+    all_providers = [(p.slug, p.tui_desc) for p in SETUP_PROVIDERS]
 
     for key, provider_info in _custom_provider_map.items():
         name = provider_info["name"]

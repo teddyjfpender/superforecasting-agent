@@ -4,6 +4,7 @@ import type { ReactNode, RefObject } from 'react'
 import type { Theme } from '../theme.js'
 
 import { OverlayScrollbar } from './agentsOverlay.js'
+import { ShortcutText } from './shortcutText.js'
 
 // The ONE shared modal-overlay primitive. Every view's modal paints THROUGH this
 // so the interaction design is identical: the box IS the absolute element (not a
@@ -104,9 +105,9 @@ export function ModalOverlay({
         body
       )}
       {footerHint ? (
-        <Text color={t.color.muted} wrap="truncate-end">
+        <ShortcutText color={t.color.muted} t={t} wrap="truncate-end">
           {footerHint}
-        </Text>
+        </ShortcutText>
       ) : null}
     </Box>
   )

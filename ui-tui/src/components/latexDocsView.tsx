@@ -28,6 +28,7 @@ import type { Theme } from '../theme.js'
 
 import { docAge, DocsHeader, DocsKindTabs, sizeChip, titlePath } from './docsShell.js'
 import { type FooterChip, FooterChips } from './footerChips.js'
+import { ShortcutText } from './shortcutText.js'
 
 // LaTeX side of Docs: browse local .tex files, render them readably, and sync
 // the directory with git (commit/push/pull — Overleaf projects are git-backed)
@@ -860,9 +861,9 @@ export function LatexDocsView({ docKind, onClose, onDraft, onSelectKind, t }: La
             )
           })
         ) : windowBlocks.length === 0 ? (
-          <Text color={t.color.muted} wrap="wrap">
+          <ShortcutText color={t.color.muted} t={t} wrap="wrap">
             {activeFile ? 'Empty document — press e to edit.' : 'Select a .tex file to read it here.'}
-          </Text>
+          </ShortcutText>
         ) : (
           windowBlocks.map((b, i) => renderBlock(b, i))
         )}

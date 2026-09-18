@@ -48,6 +48,7 @@ import { PmFilterModal } from './pmFilterModal.js'
 import { PredictionMarketDetail } from './predictionMarketDetail.js'
 import { PredictionMarketsTable } from './predictionMarketsTable.js'
 import { PresentationView } from './presentationView.js'
+import { ShortcutText } from './shortcutText.js'
 
 export const openMarketsView = () => patchOverlayState({ markets: true })
 export const closeMarketsView = () => patchOverlayState({ markets: false })
@@ -1410,17 +1411,17 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
                 {' '}
                 {fetching ? 'updating…' : hasContent ? 'latest data' : 'no providers'} ·{' '}
               </Text>
-              <Text color={t.color.text}>
+              <ShortcutText color={t.color.text} t={t}>
                 {hasContent
                   ? `${config.providers.length} providers · ${watchlist.length} watched`
                   : 'press d to add data'}
-              </Text>
+              </ShortcutText>
             </>
           )}
           {dataWarnings.length ? (
             <Text color={sem.star}>
               {'   [!] '}
-              <Text color={t.color.muted}>press </Text>
+              <ShortcutText color={t.color.muted} t={t}>press </ShortcutText>
               <Text color={sem.star}>i · Data status</Text>
             </Text>
           ) : null}
@@ -1448,9 +1449,9 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
         </Box>
         <Box marginTop={1}>
           <Text wrap="wrap">
-            <Text bold color={t.color.accent}>
+            <ShortcutText bold color={t.color.accent} t={t}>
               Press d
-            </Text>{' '}
+            </ShortcutText>{' '}
             to search data or load a starter set.{' '}
             <Text bold color={t.color.accent}>
               /
@@ -1664,13 +1665,13 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
       </Text>
       <Box flexDirection="column">
         {sortedRows.length === 0 ? (
-          <Text color={t.color.muted} wrap="wrap">
+          <ShortcutText color={t.color.muted} t={t} wrap="wrap">
             {searchActive
               ? `No matches for “${searchActive}” in the loaded tape — press d to add data and pull in what you're looking for.`
               : fetching
                 ? 'Fetching…'
                 : `No ${activeCategory ?? ''} series. Press d to add data.`}
-          </Text>
+          </ShortcutText>
         ) : (
           windowed.map(({ quote, series }, i) => {
             const idx = listStart + i
@@ -1807,11 +1808,11 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
               {providerStatus[s.provider].message} · r Retry · d Sources
             </Text>
           ) : q?.value == null ? (
-            <Text color={sem.subtle}>
+            <ShortcutText color={sem.subtle} t={t}>
               {fetching
                 ? 'Retrieving source data…'
                 : 'No measurement returned. Press r to retry or d for source access.'}
-            </Text>
+            </ShortcutText>
           ) : null}
           <Box marginTop={1}>
             <Text bold color={t.color.text}>
