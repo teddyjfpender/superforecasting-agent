@@ -131,3 +131,34 @@ def test_interview_worker_requires_strict_request(client, monkeypatch):
     call({"options": {"max_tokens": 512, "timeout_seconds": 5}, "messages": []})
     assert send.call_args.kwargs["strict_request"] is True
     assert send.call_args.kwargs["max_tokens"] == 512
+
+
+def test_request_receipt_compares_settings_without_exposing_endpoint(client):
+    first = {}
+    aux.call_llm(
+        messages=[{"role": "user", "content": "baseline"}],
+        strict_request=True,
+        max_tokens=512,
+        timeout=5,
+        request_receipt=first,
+    )
+    second = {}
+    aux.call_llm(
+        messages=[{"role": "user", "content": "variant"}],
+        strict_request=True,
+        max_tokens=512,
+        timeout=5,
+        request_receipt=second,
+    )
+    assert first == second
+    assert len(first["fingerprint"]) == 64
+    assert "example.invalid" not in str(first)
+    third = {}
+    aux.call_llm(
+        messages=[],
+        strict_request=True,
+        max_tokens=1024,
+        timeout=5,
+        request_receipt=third,
+    )
+    assert first["fingerprint"] != third["fingerprint"]

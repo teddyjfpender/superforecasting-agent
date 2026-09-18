@@ -14,9 +14,11 @@ def call(payload: dict[str, Any]) -> dict[str, Any]:
     from agent.auxiliary_client import call_llm, extract_content_or_reasoning
 
     options = payload["options"]
+    receipt: dict[str, Any] = {}
     response = call_llm(
         task="forecast_interview",
         strict_request=True,
+        request_receipt=receipt,
         provider=options.get("provider"),
         model=options.get("model"),
         messages=payload["messages"],
@@ -34,6 +36,7 @@ def call(payload: dict[str, Any]) -> dict[str, Any]:
     tokens = getattr(usage, "completion_tokens", None)
     return {
         "content": content,
+        "request_receipt": receipt,
         "response_model": str(getattr(response, "model", None) or "unreported"),
         "output_tokens": tokens if type(tokens) is int else None,
     }

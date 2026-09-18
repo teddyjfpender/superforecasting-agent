@@ -54,5 +54,6 @@ from forecasting.jobs.types import quorum as _quorum  # noqa: E402,F401
 from forecasting.jobs.types import backup as _backup  # noqa: E402,F401
 from forecasting.jobs.types import wiki_prune as _wiki_prune  # noqa: E402,F401
 from forecasting.jobs.types import interview as _interview  # noqa: E402,F401
+from forecasting.jobs.types import scenario as _scenario  # noqa: E402,F401
 
 __all__ = ["JobType", "register", "resolve", "registered_types"]

@@ -41,6 +41,7 @@ Payment / credit exhaustion fallback:
 """
 
 import json
+import hashlib
 import logging
 import os
 import threading
@@ -4761,6 +4762,7 @@ def call_llm(
     timeout: float = None,
     extra_body: dict = None,
     strict_request: bool = False,
+    request_receipt: dict | None = None,
 ) -> Any:
     """Centralized synchronous LLM call.
 
@@ -4779,6 +4781,8 @@ def call_llm(
         tools: Tool definitions (for function calling).
         timeout: Request timeout in seconds (None = read from auxiliary.{task}.timeout config).
         extra_body: Additional request body fields.
+        request_receipt: Optional output mapping for a strict request fingerprint.
+            Contains no credential or raw endpoint values.
         strict_request: Require a positive output cap and preserve the prepared
             request. Disable helper retries, parameter removal and provider
             fallback. SDK transport retries may still repeat the same request.
@@ -4895,6 +4899,16 @@ def call_llm(
         protected = cap_keys | {"model", "messages", "tools", "stream", "n"}
         if protected.intersection(kwargs.get("extra_body", {})):
             raise ValueError("Strict auxiliary extra_body overrides protected fields")
+        if request_receipt is not None:
+            settings = {key: value for key, value in kwargs.items() if key != "messages"}
+            fingerprint = hashlib.sha256(json.dumps(
+                {"provider": resolved_provider, "endpoint": _base_info,
+                 "adapter": type(client).__qualname__, "settings": settings},
+                sort_keys=True, allow_nan=False,
+            ).encode()).hexdigest()
+            request_receipt.clear()
+            request_receipt.update({"fingerprint": fingerprint, "model": final_model,
+                                    "provider": resolved_provider})
         return _validate_llm_response(
             client.chat.completions.create(**kwargs), task)
 

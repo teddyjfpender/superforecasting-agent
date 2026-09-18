@@ -127,3 +127,26 @@ Earlier answers are available to the interviewer as explicitly historical
 context; they are not copied into newly answered questions or represented as
 current user confirmation. A prior draft also does not replace the active
 forecast baseline.
+
+## Scenario evaluation backend
+
+The `forecast_scenarios` durable job takes an interview ID/revision and
+`ScenarioEvaluationOptions`: one to eight saved scenarios, one to three
+repetitions, and the same bounded model-call settings as generation. Each
+repetition contains one unconditional baseline and each selected variant.
+The plan is persisted before spending; completed calls are stored individually
+and reused after interruption. No result writes a forecast snapshot.
+
+Estimates use strict numeric schemas, exact category labels and units, and
+existing evidence IDs. Continuous results are direct q10/q50/q90 estimates;
+these do not authorize Gaussian tail reconstruction. Comparisons report paired
+changes and observed model dispersion (unmeasured for a single repetition).
+Request settings and reported response-model identity must match across calls.
+Fingerprints do not expose credentials or raw endpoint URLs, and cannot prove
+what happens inside a provider's infrastructure.
+
+Ablations exclude factors from the reasoning task; the same source packet is
+retained in every variant. They are sensitivity analyses, not blinded information
+experiments, causal effects or evidence of calibration. Conditional outputs stay
+conditional. TUI controls, explicit candidate promotion and scheduled invocation
+remain under implementation.
