@@ -16,6 +16,13 @@ if TYPE_CHECKING:
 
 def initialize_schema(conn: sqlite3.Connection) -> None:
     conn.execute("""
+        CREATE TABLE IF NOT EXISTS forecast_interview_contexts (
+            interview_id TEXT PRIMARY KEY,
+            document TEXT NOT NULL,
+            digest TEXT NOT NULL
+        )
+    """)
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS forecast_interview_generation_requests (
             interview_id TEXT NOT NULL,
             request_id TEXT NOT NULL,
@@ -147,6 +154,10 @@ class InterviewStore:
                 else None
             )
             if old:
+                if draft.context_digest != old.context_digest:
+                    raise ValidationError(
+                        "interview context is immutable; start a new interview"
+                    )
                 if draft.seed != old.seed:
                     raise ValidationError("source seed provenance is immutable")
                 if (draft.mode, draft.question_id, draft.baseline_forecast_id) != (
@@ -166,6 +177,27 @@ class InterviewStore:
                 ):
                     raise ValidationError(
                         "answered questions cannot change meaning; create a new question identifier"
+                    )
+            if draft.context_digest:
+                from forecasting.interviews.context import read_context
+
+                context = read_context(self.ledger, interview_id, draft.context_digest)
+                if (
+                    context["question"]["id"] != draft.question_id
+                    or (
+                        context["baseline"]["forecast_id"]
+                        if context["baseline"]
+                        else None
+                    )
+                    != draft.baseline_forecast_id
+                ):
+                    raise ValidationError(
+                        "frozen context belongs to a different baseline"
+                    )
+                frozen_refs = {item["id"] for item in context["evidence"]}
+                if set(draft.evidence_refs) != frozen_refs:
+                    raise ValidationError(
+                        "new evidence requires a new frozen interview"
                     )
             if draft.question_id:
                 question = self.ledger.get_question(draft.question_id)

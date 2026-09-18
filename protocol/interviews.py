@@ -232,6 +232,7 @@ class InterviewDraft(InterviewModel):
     mode: Literal["create", "update"]
     question_id: str | None = None
     baseline_forecast_id: str | None = None
+    context_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     title: str = Field(min_length=1, max_length=1000)
     questions: list[InterviewQuestion] = Field(default_factory=list, max_length=100)
     answers: list[InterviewAnswer] = Field(default_factory=list, max_length=100)

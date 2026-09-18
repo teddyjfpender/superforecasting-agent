@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Literal
 if TYPE_CHECKING:
     from forecasting.ledger import ForecastLedger
 
+from forecasting.interviews.context import capture_context
 from forecasting.interviews.questions import core_questions
 from forecasting.interviews.store import InterviewStore
 from forecasting.models import ValidationError, parse_timestamp
@@ -63,12 +64,21 @@ class InterviewService:
                 if seed and seed.kind == "series"
                 else "binary"
             )
+            context, context_digest = (
+                capture_context(self.ledger, interview_id, question)
+                if question
+                else (None, None)
+            )
             document = InterviewDraft(
                 mode="update" if question else "create",
                 question_id=question_id,
                 baseline_forecast_id=question.current_forecast_id if question else None,
                 title=question.title if question else seed.title if seed else title,
                 seed=seed,
+                context_digest=context_digest,
+                evidence_refs=[item["id"] for item in context["evidence"]]
+                if context
+                else [],
                 questions=core_questions(outcome, update=bool(question)),
             )
             if question:

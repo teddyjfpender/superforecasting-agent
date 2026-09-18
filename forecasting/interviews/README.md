@@ -9,6 +9,7 @@ probability.
 | -------------- | ----------------------------------------------------------------------------------- |
 | `models.py`    | Re-exports shared contracts from `protocol/interviews.py`                           |
 | `store.py`     | Append-only ledger revisions, optimistic concurrency and retry identity             |
+| `context.py` | Immutable question, baseline and evidence captures with integrity checks |
 | `questions.py` | Required interview spine and outcome-specific elicitation                           |
 | `news.py`      | Idempotent article attachment and evidence-linked update drafts                     |
 | `generation.py` | Frozen input packets, idempotent job enqueue and validated proposal application |
@@ -105,3 +106,15 @@ can be reopened and edited; Ctrl+D asks for confirmation before deletion.
 Revisions retain history. Agent writers cannot overwrite user-owned scenarios.
 These definitions are not yet evaluated predictions and cannot change the active
 forecast probability.
+
+## Frozen update context
+
+Opening an update captures the complete question contract, current snapshot and
+evidence records in the same ledger transaction as the first draft. The draft
+references that capture by SHA-256. Generation reads this packet, not later
+ledger values; corrections and newly attached evidence require a new interview.
+Evidence retains timestamps, independence metadata and verification status.
+Oversized packets fail the prompt-size check rather than silently dropping
+evidence. Legacy drafts without a capture must be reopened as a new update
+before model generation. A capture is reproducibility evidence, not a claim
+that the sources have been verified.

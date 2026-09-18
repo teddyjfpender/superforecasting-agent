@@ -2663,6 +2663,7 @@ export interface InterviewDraft {
   answers: InterviewAnswer[]
   assumptions: InterviewAssumption[]
   baseline_forecast_id: null | string
+  context_digest: null | string
   evidence_refs: string[]
   generations: InterviewGenerationRecord[]
   mode: 'create' | 'update'

@@ -12,6 +12,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from forecasting.interviews.context import read_context
 from forecasting.interviews.model_worker import MAX_RESPONSE_BYTES
 from forecasting.interviews.store import InterviewStore
 from forecasting.models import ValidationError
@@ -51,23 +52,20 @@ def build_messages(
     ledger: ForecastLedger, record: dict, options: InterviewGenerationOptions
 ) -> list[dict[str, str]]:
     draft = InterviewDraft.model_validate(record["document"])
-    evidence = []
-    for ref in draft.evidence_refs:
-        item = ledger.get_evidence(ref)
-        if item.question_id != draft.question_id:
-            raise ValidationError("interview evidence belongs to a different question")
-        evidence.append({
-            "id": item.id,
-            "claim": item.claim[:2000],
-            "summary": item.summary[:6000],
-            "url": item.source_url,
-            "published_at": item.published_at,
-            "captured_at": item.captured_at,
-            "verification": item.metadata.get("verification_status", "unassessed"),
-        })
+    context = None
+    if draft.mode == "update":
+        if not draft.context_digest:
+            raise ValidationError(
+                "legacy interview has no frozen baseline; start a new update interview"
+            )
+        context = read_context(ledger, record["interview_id"], draft.context_digest)
+    evidence = context["evidence"] if context else []
     packet = {
         "interview": draft.model_dump(),
         "evidence": evidence,
+        "frozen_question": context["question"] if context else None,
+        "frozen_baseline": context["baseline"] if context else None,
+        "context_captured_at": context["captured_at"] if context else None,
         "max_questions": options.max_questions,
         "schema": InterviewFollowups.model_json_schema(),
     }
