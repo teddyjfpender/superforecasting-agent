@@ -75,3 +75,27 @@ def test_incompatible_inherited_typescript_names_fail_closed():
         codegen._collect([Parent, Child])
     Child.TS_NAME = "DistinctChild"
     assert len(codegen._collect([Parent, Child])) == 2
+
+
+def test_compatible_parent_names_do_not_hide_incompatible_nested_types():
+    import pytest
+    from protocol.types import WireModel
+
+    class FirstChild(WireModel):
+        TS_NAME = "Nested"
+        value: str
+
+    class OtherChild(WireModel):
+        TS_NAME = "Nested"
+        value: int
+
+    class FirstParent(WireModel):
+        TS_NAME = "Parent"
+        nested: FirstChild
+
+    class OtherParent(WireModel):
+        TS_NAME = "Parent"
+        nested: OtherChild
+
+    with pytest.raises(ValueError, match="'Nested'"):
+        codegen._collect([FirstParent, OtherParent])

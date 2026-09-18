@@ -160,16 +160,22 @@ def _collect(models: list[type[BaseModel]]) -> list[type[BaseModel]]:
 
     seen: dict[str, type[BaseModel]] = {}
     stack = list(models)
+    visited: set[type[BaseModel]] = set()
     while stack:
         model = stack.pop()
+        if model in visited:
+            continue
+        visited.add(model)
         name = _ts_name(model)
         if name in seen:
             if seen[name] is not model and _interface(seen[name]) != _interface(model):
                 raise ValueError(
                     f"codegen: incompatible models share TypeScript name {name!r}; set an explicit unique TS_NAME"
                 )
-            continue
-        seen[name] = model
+        else:
+            seen[name] = model
+        # Compatible aliases can still reference incompatible nested models with
+        # the same TS name. Traverse each Python model, not only each TS name.
         candidates = [field.annotation for field in model.model_fields.values()]
         while candidates:
             candidate = candidates.pop()
