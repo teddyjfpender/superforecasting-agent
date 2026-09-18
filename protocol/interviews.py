@@ -153,6 +153,7 @@ class InterviewAnswer(InterviewModel):
     status: Literal["answered", "unknown", "skipped"]
     value: str | float | list[str] | None = None
     note: str = Field(default="", max_length=10000)
+    custom_text: str | None = Field(default=None, min_length=1, max_length=10000)
     actor: Literal["user", "agent"]
     evidence_refs: list[str] = Field(default_factory=list, max_length=100)
 
@@ -170,6 +171,7 @@ class InterviewAssumption(InterviewModel):
 
 
 class InterviewScenario(InterviewModel):
+    actor: Literal["user", "agent"] = "user"
     id: str = Field(min_length=1, max_length=80)
     name: str = Field(min_length=1, max_length=300)
     kind: Literal["conditional", "ablation"]
@@ -263,9 +265,22 @@ class InterviewDraft(InterviewModel):
             question = questions[answer.question_id]
             value = answer.value
             if answer.status != "answered":
-                if value is not None:
+                if value is not None or answer.custom_text is not None:
                     raise ValueError("unknown/skipped answers cannot carry a value")
                 continue
+            if answer.custom_text is not None:
+                if (
+                    not answer.custom_text.strip()
+                    or not question.allow_custom
+                    or question.kind not in {"single", "multiple"}
+                ):
+                    raise ValueError("custom text requires an enabled choice question")
+                if question.kind == "single":
+                    if value is not None:
+                        raise ValueError(
+                            "single choice accepts a selection or custom text, not both"
+                        )
+                    continue
             if question.kind in {"probability", "number"}:
                 if not isinstance(value, float):
                     raise ValueError("numeric answers require a number")
@@ -274,7 +289,7 @@ class InterviewDraft(InterviewModel):
             elif question.kind == "multiple":
                 if (
                     not isinstance(value, list)
-                    or not value
+                    or (not value and answer.custom_text is None)
                     or len(set(value)) != len(value)
                 ):
                     raise ValueError(

@@ -71,7 +71,7 @@ def _run_claimed(
     from forecasting.jobs.policy import ApprovalRequired, PolicyRefused
 
     try:
-        raw = job_type.execute(record.spec or {}, ctx)
+        raw = {"cancelled": True} if ctx.should_cancel() else job_type.execute(record.spec or {}, ctx)
         ctx.flush()
         result: dict[str, Any]
         if isinstance(raw, dict):

@@ -304,3 +304,20 @@ def test_child_profile_aliases_are_consistent_without_mutating_parent(
         == str(tmp_path)
     )
     assert dict(os.environ) == before
+
+
+def test_generation_status_is_scoped_and_preserves_terminal_states(work, monkeypatch):
+    service, jobs, _ = work
+    service.begin("other")
+    assert generation.generation_status(service.ledger, "interview") == {"found": False, "job": None, "request_id": None}
+    job_id = generation.enqueue_generation(service.ledger, "interview", 1, "start", InterviewGenerationOptions())
+    monkeypatch.setattr(generation, "run_model", lambda *args: response())
+    assert run(job_id, store=jobs).status == "done"
+    assert generation.generation_status(service.ledger, "interview")["job"]["status"] == "done"
+    assert generation.generation_status(service.ledger, "other")["found"] is False
+    service.answer("interview", expected_revision=2, request_id="confirm-outcome", question_id="outcome",
+                   status="answered", value="binary")
+    assert service.store.read("interview")["document"]["questions"][-1]["id"] == "disconfirm"
+    jobs.path(job_id).unlink()
+    with pytest.raises(ValidationError, match="missing"):
+        generation.generation_status(service.ledger, "interview")

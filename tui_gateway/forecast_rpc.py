@@ -1197,3 +1197,29 @@ def _(rid, params: dict) -> dict:
         return _ok(rid, {"job_id": job_id})
     except Exception as exc:
         return _err(rid, 5008, str(exc))
+
+
+@rpc_validated("forecast.interview.generation_status")
+def _(rid, params: dict) -> dict:
+    try:
+        from forecasting.interviews.generation import generation_status
+
+        return _ok(rid, generation_status(_interview_service().ledger, params["interview_id"]))
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))
+
+
+@rpc_validated("forecast.interview.scenario.save")
+def _(rid, params: dict) -> dict:
+    try:
+        return _ok(rid, _interview_service().save_scenario(**params))
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))
+
+
+@rpc_validated("forecast.interview.scenario.delete")
+def _(rid, params: dict) -> dict:
+    try:
+        return _ok(rid, _interview_service().delete_scenario(**params))
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))

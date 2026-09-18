@@ -161,7 +161,14 @@ def apply_followups(
         raise ValidationError("model exceeded the requested question budget")
     if len(draft.questions) + len(output.questions) > 100:
         raise ValidationError("interview already reached its question limit")
+    from forecasting.interviews.questions import core_questions
+
     existing_ids = {q.id for q in draft.questions}
+    reserved_ids = {
+        q.id
+        for kind in ("binary", "numeric", "categorical")
+        for q in core_questions(kind, update=True)
+    }
     existing_prompts = {q.prompt.strip().casefold() for q in draft.questions}
     assumptions = {a.id for a in draft.assumptions}
     allowed_evidence = set(draft.evidence_refs)
@@ -178,6 +185,8 @@ def apply_followups(
     for question in output.questions:
         if (
             question.id in existing_ids
+            or question.id in reserved_ids
+            or question.id.startswith("category_prob_")
             or question.prompt.strip().casefold() in existing_prompts
         ):
             raise ValidationError(
@@ -257,3 +266,32 @@ def enqueue_generation(
             (interview_id, request_id, encoded, job_id),
         )
     return job_id
+
+
+def generation_status(ledger: ForecastLedger, interview_id: str) -> dict:
+    """Restore this interview's most recent job, including failures/approval waits."""
+    from forecasting.jobs.store import JobStore
+
+    InterviewStore(ledger).read(interview_id)
+    with ledger._connect() as conn:
+        row = conn.execute(
+            "SELECT job_id, request_id FROM forecast_interview_generation_requests WHERE interview_id = ? "
+            "ORDER BY rowid DESC LIMIT 1",
+            (interview_id,),
+        ).fetchone()
+    if row is None:
+        return {"found": False, "job": None, "request_id": None}
+    try:
+        record = JobStore().read(row["job_id"])
+    except FileNotFoundError as exc:
+        raise ValidationError(
+            "saved generation job is missing; inspect the profile before starting another call"
+        ) from exc
+    if (
+        record.type != "forecast_interview"
+        or record.spec.get("interview_id") != interview_id
+    ):
+        raise ValidationError(
+            "generation job identity does not match its interview receipt"
+        )
+    return {"found": True, "job": record.to_dict(), "request_id": row["request_id"]}

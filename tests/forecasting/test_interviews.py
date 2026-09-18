@@ -287,3 +287,60 @@ def test_categorical_questions_require_coherent_probability_vector(store):
         "Category probabilities must sum to 1."
         in service.preview("categories", record["revision"])["unanswered"]
     )
+
+
+def test_choice_custom_answers_are_explicit_and_unknown_stays_empty(store):
+    from forecasting.interviews.service import InterviewService
+    base = draft().model_dump()
+    base["questions"] = [{"id": "drivers", "section": "drivers", "prompt": "Which factors?",
+                           "rationale": "Choose relevant mechanisms", "kind": "multiple",
+                           "choices": [{"id": "health", "label": "Health"}], "allow_custom": True}]
+    save(store, InterviewDraft.model_validate(base))
+    service = InterviewService(store.ledger)
+    custom = service.answer("interview", expected_revision=1, request_id="custom", question_id="drivers",
+                            status="answered", value=["health"], custom_text="Supreme Court composition")
+    assert custom["document"]["answers"][0]["custom_text"] == "Supreme Court composition"
+    assert custom["document"]["answers"][0]["value"] == ["health"]
+    with pytest.raises(ModelError, match="unknown/skipped"):
+        service.answer("interview", expected_revision=2, request_id="bad", question_id="drivers",
+                       status="unknown", custom_text="Must not hide an answer")
+    with pytest.raises(ModelError, match="unknown choice"):
+        service.answer("interview", expected_revision=2, request_id="bad-choice", question_id="drivers",
+                       status="answered", value=["unregistered"])
+    assert store.read("interview")["revision"] == 2
+
+
+def test_scenario_operations_preserve_semantics_and_retry_identity(store):
+    from forecasting.interviews.service import InterviewService
+    document = draft(assumptions=[{"id": "health", "statement": "Candidate remains healthy"}])
+    save(store, document)
+    service = InterviewService(store.ledger)
+    scenario = {"id": "illness", "name": "Health condition fails", "kind": "conditional", "conditions": {"health": False}}
+    first = service.save_scenario("interview", expected_revision=1, request_id="condition", scenario=scenario)
+    assert service.save_scenario("interview", expected_revision=1, request_id="condition", scenario=scenario) == first
+    assert first["document"]["scenarios"][0]["conditions"] == {"health": False}
+    ablation = {"id": "omit", "name": "Exclude health", "kind": "ablation", "excluded_assumption_ids": ["health"]}
+    second = service.save_scenario("interview", expected_revision=2, request_id="exclude", scenario=ablation)
+    assert second["document"]["scenarios"][1]["conditions"] == {}
+    with pytest.raises(ModelError, match="unknown assumption"):
+        service.save_scenario("interview", expected_revision=3, request_id="invalid",
+                              scenario={**ablation, "excluded_assumption_ids": ["invented"]})
+    deleted = service.delete_scenario("interview", expected_revision=3, request_id="delete", scenario_id="omit")
+    assert service.delete_scenario("interview", expected_revision=3, request_id="delete", scenario_id="omit") == deleted
+    assert len(deleted["document"]["scenarios"]) == 1
+    assert service.ledger.list_questions() == []
+
+
+def test_agent_scenarios_cannot_overwrite_user_selections(store):
+    from forecasting.interviews.service import InterviewService
+    save(store, draft(assumptions=[{"id": "health", "statement": "Candidate stays healthy"}]))
+    service = InterviewService(store.ledger)
+    scenario = {"id": "condition", "name": "Healthy", "kind": "conditional", "conditions": {"health": True}, "actor": "agent"}
+    user = service.save_scenario("interview", expected_revision=1, request_id="user", scenario=scenario)
+    assert user["document"]["scenarios"][0]["actor"] == "user"
+    with pytest.raises(ValidationError, match="user scenarios"):
+        service.save_scenario("interview", expected_revision=2, request_id="agent", scenario={**scenario, "conditions": {"health": False}}, actor="agent")
+    with pytest.raises(ValidationError, match="user scenarios"):
+        service.delete_scenario("interview", expected_revision=2, request_id="delete", scenario_id="condition", actor="agent")
+    proposed = service.save_scenario("interview", expected_revision=2, request_id="proposal", scenario={**scenario, "id": "new"}, actor="agent")
+    assert proposed["document"]["scenarios"][-1]["actor"] == "agent"

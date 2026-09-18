@@ -164,6 +164,10 @@ def _collect(models: list[type[BaseModel]]) -> list[type[BaseModel]]:
         model = stack.pop()
         name = _ts_name(model)
         if name in seen:
+            if seen[name] is not model and _interface(seen[name]) != _interface(model):
+                raise ValueError(
+                    f"codegen: incompatible models share TypeScript name {name!r}; set an explicit unique TS_NAME"
+                )
             continue
         seen[name] = model
         candidates = [field.annotation for field in model.model_fields.values()]

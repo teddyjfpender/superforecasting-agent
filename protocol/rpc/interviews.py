@@ -9,7 +9,9 @@ from protocol.interviews import (
     ForecastMarketSeed,
     InterviewDraft,
     InterviewGenerationOptions,
+    InterviewScenario,
 )
+from protocol.rpc.jobs import JobsStatusResponse
 from protocol.types import WireModel
 
 
@@ -51,6 +53,7 @@ class InterviewAnswerRequest(WireModel):
     status: Literal["answered", "unknown", "skipped"]
     value: str | float | list[str] | None = None
     note: str = ""
+    custom_text: str | None = None
 
 
 class InterviewPreviewRequest(WireModel):
@@ -104,3 +107,27 @@ class InterviewGenerateRequest(WireModel):
 
 class InterviewGenerateResponse(WireModel):
     job_id: str
+
+
+class InterviewTargetRequest(WireModel):
+    interview_id: str
+
+
+class InterviewScenarioSaveRequest(WireModel):
+    interview_id: str
+    expected_revision: int
+    request_id: str
+    scenario: InterviewScenario
+
+
+class InterviewScenarioDeleteRequest(WireModel):
+    interview_id: str
+    expected_revision: int
+    request_id: str
+    scenario_id: str
+
+
+class InterviewGenerationStatusResponse(JobsStatusResponse):
+    TS_NAME = "InterviewGenerationStatusResponse"
+
+    request_id: str | None = None

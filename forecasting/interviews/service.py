@@ -18,6 +18,7 @@ from protocol.interviews import (
     InterviewAssumption,
     InterviewDraft,
     InterviewQuestion,
+    InterviewScenario,
 )
 
 
@@ -109,6 +110,7 @@ class InterviewService:
         status: Literal["answered", "unknown", "skipped"],
         value: str | float | list[str] | None = None,
         note: str = "",
+        custom_text: str | None = None,
         actor: Literal["user", "agent"] = "user",
         evidence_refs: list[str] | None = None,
     ) -> dict:
@@ -120,6 +122,7 @@ class InterviewService:
             status=status,
             value=value,
             note=note,
+            custom_text=custom_text,
             actor=actor,
             evidence_refs=evidence_refs or [],
         )
@@ -130,6 +133,23 @@ class InterviewService:
         ]
         if status == "answered" and question_id == "outcome":
             questions = core_questions(str(value), update=draft.mode == "update")
+            core_ids = {
+                q.id
+                for kind in ("binary", "numeric", "categorical")
+                for q in core_questions(kind, update=draft.mode == "update")
+            }
+            questions += [
+                q
+                for q in draft.questions
+                if q.id not in core_ids and not q.id.startswith("category_prob_")
+            ]
+            # Reconfirming the same outcome must preserve category elicitation.
+            if value == "categorical":
+                questions += [
+                    q for q in draft.questions if q.id.startswith("category_prob_")
+                ]
+                if any(q.id.startswith("category_prob_") for q in questions):
+                    questions = [q for q in questions if q.id != "category_beliefs"]
             ids = {q.id for q in questions}
             if any(a.question_id not in ids for a in draft.answers):
                 raise ValidationError(
@@ -182,6 +202,55 @@ class InterviewService:
                     )
             draft.assumptions = list(known.values())
         draft.status = "needs_user" if status == "unknown" else "draft"
+        return self.store.save(
+            interview_id,
+            draft,
+            expected_revision=expected_revision,
+            request_id=request_id,
+            actor=actor,
+        )
+
+    def save_scenario(
+        self,
+        interview_id: str,
+        *,
+        expected_revision: int,
+        request_id: str,
+        scenario: InterviewScenario | dict,
+        actor: Literal["user", "agent"] = "user",
+    ) -> dict:
+        draft = InterviewDraft.model_validate(
+            self.store.read(interview_id, expected_revision)["document"]
+        )
+        scenario = InterviewScenario.model_validate(scenario).model_copy(
+            update={"actor": actor}
+        )
+        draft.scenarios = [
+            item for item in draft.scenarios if item.id != scenario.id
+        ] + [scenario]
+        return self.store.save(
+            interview_id,
+            draft,
+            expected_revision=expected_revision,
+            request_id=request_id,
+            actor=actor,
+        )
+
+    def delete_scenario(
+        self,
+        interview_id: str,
+        *,
+        expected_revision: int,
+        request_id: str,
+        scenario_id: str,
+        actor: Literal["user", "agent"] = "user",
+    ) -> dict:
+        draft = InterviewDraft.model_validate(
+            self.store.read(interview_id, expected_revision)["document"]
+        )
+        if scenario_id not in {item.id for item in draft.scenarios}:
+            raise ValidationError("scenario not found")
+        draft.scenarios = [item for item in draft.scenarios if item.id != scenario_id]
         return self.store.save(
             interview_id,
             draft,

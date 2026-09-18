@@ -475,6 +475,21 @@ RPC_SPECS: list[RpcSpec] = [
         _rpc_interviews.ForecastQuestionChoicesResponse,
     ),
     RpcSpec(
+        "forecast.interview.generation_status",
+        _rpc_interviews.InterviewTargetRequest,
+        _rpc_interviews.InterviewGenerationStatusResponse,
+    ),
+    RpcSpec(
+        "forecast.interview.scenario.save",
+        _rpc_interviews.InterviewScenarioSaveRequest,
+        _rpc_interviews.InterviewRecord,
+    ),
+    RpcSpec(
+        "forecast.interview.scenario.delete",
+        _rpc_interviews.InterviewScenarioDeleteRequest,
+        _rpc_interviews.InterviewRecord,
+    ),
+    RpcSpec(
         "forecast.interview.generate",
         _rpc_interviews.InterviewGenerateRequest,
         _rpc_interviews.InterviewGenerateResponse,

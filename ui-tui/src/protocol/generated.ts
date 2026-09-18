@@ -105,6 +105,13 @@ export interface ApprovalRequestPayload {
   request_id?: string
 }
 
+export interface ApprovalRespondRequest {
+  all: boolean
+  choice: string
+  request_id: null | string
+  session_id: null | string
+}
+
 export interface ApprovalRespondResponse {
   ok?: boolean
 }
@@ -2606,6 +2613,7 @@ export interface InsightsResponse {
 
 export interface InterviewAnswer {
   actor: 'agent' | 'user'
+  custom_text: null | string
   evidence_refs: string[]
   note: string
   question_id: string
@@ -2614,6 +2622,7 @@ export interface InterviewAnswer {
 }
 
 export interface InterviewAnswerRequest {
+  custom_text: null | string
   expected_revision: number
   interview_id: string
   note: string
@@ -2698,6 +2707,12 @@ export interface InterviewGenerationRecord {
   summary: string
 }
 
+export interface InterviewGenerationStatusResponse {
+  found: boolean
+  job: null | JobRecordDTO
+  request_id: null | string
+}
+
 export interface InterviewListRequest {
   question_id: null | string
 }
@@ -2746,11 +2761,30 @@ export interface InterviewRecord {
 }
 
 export interface InterviewScenario {
+  actor: 'agent' | 'user'
   conditions: Record<string, boolean>
   excluded_assumption_ids: string[]
   id: string
   kind: 'ablation' | 'conditional'
   name: string
+}
+
+export interface InterviewScenarioDeleteRequest {
+  expected_revision: number
+  interview_id: string
+  request_id: string
+  scenario_id: string
+}
+
+export interface InterviewScenarioSaveRequest {
+  expected_revision: number
+  interview_id: string
+  request_id: string
+  scenario: InterviewScenario
+}
+
+export interface InterviewTargetRequest {
+  interview_id: string
 }
 
 export interface JobCompletePayload {
@@ -3572,12 +3606,6 @@ export interface ReloadMcpResponse {
   status?: string
 }
 
-export interface RespondRequest {
-  request_id: null | string
-  session_id: null | string
-  value: string
-}
-
 export interface ReviewSummaryPayload {
   text?: string
 }
@@ -3636,6 +3664,12 @@ export interface SecretRequestPayload {
   metadata?: Record<string, unknown>
   prompt: string
   request_id: string
+}
+
+export interface SecretRespondRequest {
+  request_id: null | string
+  session_id: null | string
+  value: string
 }
 
 export interface SecretRespondResponse {
@@ -4170,6 +4204,12 @@ export interface SudoRequestPayload {
   request_id: string
 }
 
+export interface SudoRespondRequest {
+  password: string
+  request_id: null | string
+  session_id: null | string
+}
+
 export interface SudoRespondResponse {
   ok?: boolean
 }
@@ -4592,6 +4632,7 @@ export interface RpcMethods {
   }
   'forecast.interview.answer': {
     params: {
+      custom_text?: null | string
       expected_revision: number
       interview_id: string
       note?: string
@@ -4627,6 +4668,12 @@ export interface RpcMethods {
     }
     result: InterviewGenerateResponse
   }
+  'forecast.interview.generation_status': {
+    params: {
+      interview_id: string
+    }
+    result: InterviewGenerationStatusResponse
+  }
   'forecast.interview.list': {
     params: {
       question_id?: null | string
@@ -4644,6 +4691,24 @@ export interface RpcMethods {
     params: {
       interview_id: string
       revision?: null | number
+    }
+    result: InterviewRecord
+  }
+  'forecast.interview.scenario.delete': {
+    params: {
+      expected_revision: number
+      interview_id: string
+      request_id: string
+      scenario_id: string
+    }
+    result: InterviewRecord
+  }
+  'forecast.interview.scenario.save': {
+    params: {
+      expected_revision: number
+      interview_id: string
+      request_id: string
+      scenario: InterviewScenario
     }
     result: InterviewRecord
   }

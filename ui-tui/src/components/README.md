@@ -75,3 +75,14 @@ layout, scopes and selection only.
 `messageComposer.tsx` owns the bounded message editor used by chat and quick
 compose. Send attempts are shared through `messagingSend.ts`; message status
 belongs in the conversation, while draft persistence remains with the caller.
+
+
+### Forecast interviews
+
+`forecastInterview.tsx` owns saved answers and navigation. `interviewGeneration.tsx`
+provides explicit model budgets and restores status by interview identity;
+`interviewScenarios.tsx` edits conditional/ablation definitions. Domain validation,
+revision checks and provenance belong in `forecasting/interviews/`, with wire
+contracts generated from `protocol/`. Never infer a custom answer from an unknown
+choice ID or treat an excluded assumption as false. Keep input handlers committed
+with the displayed state; terminal tests cover the shared Ink input hook.

@@ -14,6 +14,8 @@ import type {
 } from '../protocol/generated.js'
 import type { Theme } from '../theme.js'
 
+import { InterviewGeneration } from './interviewGeneration.js'
+import { InterviewScenarios } from './interviewScenarios.js'
 import { ModalOverlay } from './modalOverlay.js'
 import { TextInput } from './textInput.js'
 
@@ -42,6 +44,9 @@ export function ForecastInterview({
   const [index, setIndex] = useState(0)
   const [text, setText] = useState('')
   const [choice, setChoice] = useState(0)
+  const [selected, setSelected] = useState<string[]>([])
+  const [customEditing, setCustomEditing] = useState(false)
+  const [pane, setPane] = useState<'answers' | 'generation' | 'scenarios'>('answers')
   const [busy, setBusy] = useState(true)
   const [error, setError] = useState('')
   const [preview, setPreview] = useState<InterviewPreviewResponse | null>(null)
@@ -51,9 +56,12 @@ export function ForecastInterview({
   const id = useRef(randomUUID())
   const scroll = useRef<ScrollBoxHandle>(null)
   const drafts = useRef(new Map<string, string>())
+  const choiceDrafts = useRef(new Map<string, { choice: number; selected: string[] }>())
   const questions = record?.document.questions ?? []
   const question = questions[index]
   const review = record !== null && index >= questions.length
+  const choiceVisible = Math.max(2, Math.min(8, rows - 17))
+  const choiceStart = Math.max(0, choice - choiceVisible + 1)
 
   const select = (next: InterviewRecord, at: number) => {
     setRecord(next)
@@ -74,19 +82,33 @@ export function ForecastInterview({
               ? (context?.close_time ?? '')
               : ''
 
+    const choiceQuestion = item?.kind === 'single' || item?.kind === 'multiple'
+    const priorChoice = item?.choices.findIndex(option => option.id === prior?.value) ?? -1
+
+    const custom =
+      prior?.custom_text ??
+      (item?.kind === 'single' && priorChoice < 0 && typeof prior?.value === 'string' ? prior.value : '')
+
     setText(
       drafts.current.get(item?.id ?? '') ??
-        (prior?.value == null ? suggested : Array.isArray(prior.value) ? prior.value.join('\n') : String(prior.value))
+        (choiceQuestion ? custom : prior?.value == null ? suggested : String(prior.value))
     )
+    const remembered = choiceDrafts.current.get(item?.id ?? '')
     setChoice(
-      Math.max(
-        0,
-        item?.choices.findIndex(
-          option =>
-            option.id === (prior?.value ?? (item.id === 'outcome' && context?.kind === 'series' ? 'numeric' : null))
-        ) ?? 0
-      )
+      remembered?.choice ??
+        (custom
+          ? (item?.choices.length ?? 0)
+          : Math.max(
+              0,
+              priorChoice >= 0
+                ? priorChoice
+                : (item?.choices.findIndex(
+                    option => option.id === (item.id === 'outcome' && context?.kind === 'series' ? 'numeric' : null)
+                  ) ?? 0)
+            ))
     )
+    setSelected(remembered?.selected ?? (Array.isArray(prior?.value) ? prior.value : []))
+    setCustomEditing(false)
   }
 
   useEffect(() => {
@@ -170,7 +192,21 @@ export function ForecastInterview({
 
     if (status === 'answered') {
       if (question.kind === 'single') {
-        value = question.choices[choice]?.id ?? text
+        value = question.choices[choice]?.id ?? null
+
+        if (value === null && !text.trim()) {
+          setError('Write a custom answer, or choose Unknown.')
+
+          return
+        }
+      } else if (question.kind === 'multiple') {
+        value = selected
+
+        if (!selected.length && !text.trim()) {
+          setError('Select an option or write a custom answer, or choose Unknown.')
+
+          return
+        }
       } else if (question.kind === 'number' || question.kind === 'probability') {
         if (!text.trim() || !Number.isFinite(Number(text))) {
           setError('Enter a finite number, or choose Unknown.')
@@ -190,7 +226,13 @@ export function ForecastInterview({
       question_id: question.id,
       status,
       value,
-      note: ''
+      note: '',
+      custom_text:
+        status === 'answered' &&
+        question.allow_custom &&
+        (question.kind === 'multiple' || (question.kind === 'single' && choice === question.choices.length))
+          ? text.trim() || null
+          : null
     }
 
     const old = pending.current
@@ -211,6 +253,7 @@ export function ForecastInterview({
       if (mounted.current) {
         pending.current = null
         drafts.current.delete(question.id)
+        choiceDrafts.current.delete(question.id)
         select(next, Math.min(index + 1, next.document.questions.length))
       }
     } catch (cause) {
@@ -260,7 +303,7 @@ export function ForecastInterview({
 
   useInput(
     (input, key, event) => {
-      if (key.escape || key.tab || key.pageUp || key.pageDown || (key.ctrl && (input === 'u' || input === 's'))) {
+      if (key.escape || key.tab || key.pageUp || key.pageDown || (key.ctrl && ['u', 's', 'g', 'o'].includes(input))) {
         ;(event as unknown as { stopImmediatePropagation?: () => void }).stopImmediatePropagation?.()
       }
 
@@ -271,6 +314,12 @@ export function ForecastInterview({
       }
 
       if (key.escape) {
+        if (customEditing) {
+          setCustomEditing(false)
+
+          return
+        }
+
         onClose()
 
         return
@@ -280,7 +329,21 @@ export function ForecastInterview({
         return
       }
 
+      if (key.ctrl && (input === 'g' || input === 'o')) {
+        if (question) {
+          choiceDrafts.current.set(question.id, { choice, selected })
+        }
+
+        setPane(input === 'g' ? 'generation' : 'scenarios')
+
+        return
+      }
+
       if (key.tab) {
+        if (question) {
+          choiceDrafts.current.set(question.id, { choice, selected })
+        }
+
         select(record, Math.max(0, Math.min(questions.length, index + (key.shift ? -1 : 1))))
 
         return
@@ -306,29 +369,79 @@ export function ForecastInterview({
         return
       }
 
-      if (question?.kind === 'single') {
+      if (!customEditing && (question?.kind === 'single' || question?.kind === 'multiple')) {
+        const last = question.choices.length - (question.allow_custom ? 0 : 1)
+
         if (key.upArrow) {
           setChoice(value => Math.max(0, value - 1))
         }
 
         if (key.downArrow) {
-          setChoice(value => Math.min(question.choices.length - 1, value + 1))
+          setChoice(value => Math.min(last, value + 1))
         }
 
-        if (key.return) {
+        if (key.return && key.ctrl && question.kind === 'multiple') {
+          void save()
+        } else if (key.return && choice === question.choices.length) {
+          setCustomEditing(true)
+        } else if (question.kind === 'multiple' && (input === ' ' || key.return)) {
+          const id = question.choices[choice]?.id
+
+          if (id) {
+            setSelected(values => (values.includes(id) ? values.filter(value => value !== id) : [...values, id]))
+          }
+        } else if (key.return && question.kind === 'single') {
           void save()
         }
       }
     },
-    { isActive: !blocked }
+    { isActive: !blocked && pane === 'answers' }
   )
 
   const height = Math.max(3, Math.min(rows - 2, 34) - 12)
 
+  if (record && pane === 'generation') {
+    return (
+      <InterviewGeneration
+        blocked={Boolean(blocked)}
+        cols={cols}
+        gw={gw}
+        onClose={() => setPane('answers')}
+        onReview={next => {
+          const known = new Set(record.document.questions.map(item => item.id))
+          const at = next.document.questions.findIndex(item => !known.has(item.id))
+          select(next, at < 0 ? Math.min(index, next.document.questions.length) : at)
+          setPane('answers')
+        }}
+        record={record}
+        rows={rows}
+        t={t}
+      />
+    )
+  }
+
+  if (record && pane === 'scenarios') {
+    return (
+      <InterviewScenarios
+        blocked={Boolean(blocked)}
+        cols={cols}
+        gw={gw}
+        onClose={() => setPane('answers')}
+        onSaved={next => {
+          select(next, index)
+          setPane('answers')
+        }}
+        record={record}
+        rows={rows}
+        t={t}
+      />
+    )
+  }
+
   return (
     <ModalOverlay
       cols={cols}
-      footerHint="[Tab/⇧Tab Move] [^U Unknown] [^S Skip] [Esc Close]"
+      footerHint="[Tab/⇧Tab Move] [^G Ask] [^O Scenarios] [Esc Close]"
       maxHeight={34}
       maxWidth={100}
       rows={rows}
@@ -361,13 +474,29 @@ export function ForecastInterview({
                 {question.required ? ' *' : ''}
               </Text>
               <Text color={t.color.muted}>{question.rationale}</Text>
-              {question.kind === 'single' ? (
-                question.choices.map((option, at) => (
-                  <Text color={at === choice ? t.color.accent : t.color.primary} key={option.id}>
-                    {at === choice ? '› ' : '  '}
-                    {option.label}
-                  </Text>
-                ))
+              {(question.kind === 'single' || question.kind === 'multiple') && !customEditing ? (
+                [
+                  ...question.choices,
+                  ...(question.allow_custom
+                    ? [{ id: '__custom', label: text ? `Other: ${text}` : 'Other — write your answer' }]
+                    : [])
+                ]
+                  .slice(choiceStart, choiceStart + choiceVisible)
+                  .map((option, offset) => {
+                    const at = choiceStart + offset
+
+                    return (
+                      <Text color={at === choice ? t.color.accent : t.color.primary} key={option.id}>
+                        {at === choice ? '› ' : '  '}
+                        {question.kind === 'multiple' && at < question.choices.length
+                          ? selected.includes(option.id)
+                            ? '[x] '
+                            : '[ ] '
+                          : ''}
+                        {option.label}
+                      </Text>
+                    )
+                  })
               ) : (
                 <TextInput
                   columns={Math.max(20, Math.min(cols - 10, 90))}
@@ -392,8 +521,13 @@ export function ForecastInterview({
               </Text>
               {record?.document.answers.map(answer => (
                 <Text color={t.color.muted} key={answer.question_id}>
-                  {answer.question_id}: {answer.status === 'answered' ? String(answer.value) : answer.status} ·{' '}
-                  {answer.actor}
+                  {answer.question_id}:{' '}
+                  {answer.status === 'answered'
+                    ? [Array.isArray(answer.value) ? answer.value.join(', ') : answer.value, answer.custom_text]
+                        .filter(value => value !== null && value !== undefined)
+                        .join(' · ')
+                    : answer.status}{' '}
+                  · {answer.actor}
                 </Text>
               ))}
               {preview?.unanswered.map(item => (
@@ -414,9 +548,13 @@ export function ForecastInterview({
             ? record?.document.mode === 'create'
               ? '[Enter Create question] [PgUp/Dn Review]'
               : 'Review draft saved · [PgUp/Dn Review]'
-            : question?.kind === 'single'
-              ? '[↑↓ Choose] [Enter Confirm]'
-              : '[Enter New line] [Ctrl+Enter Save answer]'}
+            : customEditing
+              ? '[^Enter Save custom answer] [Esc Choices]'
+              : question?.kind === 'single'
+                ? '[↑↓ Choose] [Enter Confirm] [^U Unknown] [^S Skip]'
+                : question?.kind === 'multiple'
+                  ? '[Space Toggle] [^Enter Save] [^U Unknown] [^S Skip]'
+                  : '[Enter New line] [^Enter Save] [^U Unknown] [^S Skip]'}
         </Text>
         {error ? (
           <Text color={t.color.error} wrap="truncate-end">

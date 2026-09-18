@@ -235,7 +235,7 @@ scenario. Engineering correctness and predictive usefulness need separate eviden
 - [ ] Integrate adaptive structured generation with budget, cancellation and retry.
 - [ ] Replace onboarding and add Desk update interview shortcut.
 - [ ] Implement coherent scenario evaluation and matched ablation records.
-- [ ] Add Markets-to-interview and News-to-question evidence/update flows.
+- [x] Add Markets-to-interview and News-to-question evidence/update flows.
 - [ ] Integrate cron/tool execution with explicit unresolved-user status.
 - [ ] Verify terminal layouts, keyboard collisions, reconnect/resume and failure paths.
 - [ ] Run focused unit, integration and generated-contract checks, then required gates.
@@ -282,3 +282,22 @@ lost responses; cached validated output supports recovery after partial writes.
 Tests cover stale user edits, cancelled responses, invalid/duplicate proposals,
 unknown evidence references and actual child-process termination. TUI generation
 controls, scenario execution/promotion and cron integration remain incomplete.
+
+
+### Adaptive interaction checkpoint
+
+The TUI now exposes budgeted follow-up generation with per-interview durable
+status restoration, cancellation and explicit opening of completed questions.
+Custom text is separate from selected choice IDs, and multi-select questions have
+real keyboard selection. Scenario controls create/edit conditional and ablation
+definitions, show assumption attribution, and require confirmation for deletion.
+User-owned scenarios receive the same agent-write protection as user answers.
+
+Terminal verification exposed a shared input-hook timing defect: its Node
+callback/listener updates used passive effects after paint. Handlers now install
+at layout commit with stable propagation order. The job store also now signals
+cancellation without overwriting a live owner's progress and can finish cancelling
+an unowned or approval-parked job. Both have deterministic regressions.
+
+Scenario execution/comparison, candidate promotion and scheduled-agent integration
+remain open. The final integrated suite is still deferred until those paths exist.

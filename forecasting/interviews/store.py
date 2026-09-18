@@ -192,6 +192,18 @@ class InterviewStore:
                 new_assumptions = {
                     a.id: a for a in draft.assumptions if a.actor == "user"
                 }
+                old_scenarios = (
+                    {item.id: item for item in old.scenarios if item.actor == "user"}
+                    if old
+                    else {}
+                )
+                new_scenarios = {
+                    item.id: item for item in draft.scenarios if item.actor == "user"
+                }
+                if new_scenarios != old_scenarios:
+                    raise ValidationError(
+                        "agents cannot invent, edit or remove user scenarios"
+                    )
                 if new_assumptions != old_assumptions:
                     raise ValidationError(
                         "agents cannot invent, edit or remove user assumptions"

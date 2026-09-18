@@ -159,7 +159,7 @@ class JobStore:
             tmp.unlink(missing_ok=True)
 
     @contextmanager
-    def claim(self, job_id: str) -> Iterator[JobRecord | None]:
+    def claim(self, job_id: str, *, allow_parked: bool = False) -> Iterator[JobRecord | None]:
         """Try to claim one queued or crash-stranded running job.
 
         The non-blocking kernel lock is held for the whole execution. A second
@@ -193,7 +193,7 @@ class JobStore:
                 return
 
             record = self.read(job_id)
-            if record.status not in _ACTIVE_STATUSES:
+            if record.status not in _ACTIVE_STATUSES and not (allow_parked and record.status == "awaiting_approval"):
                 yield None
                 return
             record.status = "running"
@@ -215,7 +215,11 @@ class JobStore:
     def read(self, job_id: str, *, include_legacy: bool = True) -> JobRecord:
         path = self.path(job_id)
         if path.exists():
-            return JobRecord.from_dict(json.loads(path.read_text(encoding="utf-8")))
+            record = JobRecord.from_dict(json.loads(path.read_text(encoding="utf-8")))
+            # The stop signal is independently durable. A running owner's next
+            # progress write must not make the requested cancellation disappear.
+            record.cancel_requested = record.cancel_requested or self.stop_path(job_id).exists()
+            return record
         if include_legacy:
             legacy = self._read_legacy(job_id)
             if legacy is not None:
@@ -339,19 +343,24 @@ class JobStore:
 
     # ── cancellation ─────────────────────────────────────────────────────────
     def request_cancel(self, job_id: str) -> bool:
-        """Signal a cooperative cancel: touch the durable stop file AND stamp the
-        record's ``cancel_requested`` (for observability via ``jobs.status``).
-        Returns False when the job does not exist."""
+        """Signal cancellation without overwriting a running owner's progress.
 
+        If no runner owns the record, complete cancellation under the same kernel
+        claim used for execution. This also cancels a parked approval request,
+        which otherwise has no live worker to observe the stop signal.
+        """
         if not self.exists(job_id):
             return False
         self.stop_path(job_id).write_text("1", encoding="utf-8")
         try:
-            record = self.read(job_id)
+            with self.claim(job_id, allow_parked=True) as record:
+                if record is not None:
+                    record.cancel_requested = True
+                    record.status = "cancelled"
+                    record.result = {**(record.result or {}), "cancelled": True}
+                    self.write(record)
         except FileNotFoundError:
             return False
-        record.cancel_requested = True
-        self.write(record)
         return True
 
     def is_cancel_requested(self, job_id: str) -> bool:

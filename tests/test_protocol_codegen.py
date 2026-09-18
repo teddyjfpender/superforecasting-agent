@@ -58,3 +58,20 @@ def test_render_emits_wire_event_const_object():
         ("ERROR", "error"),
     ):
         assert f"  {key}: '{name}'," in out
+
+
+def test_incompatible_inherited_typescript_names_fail_closed():
+    import pytest
+    from protocol.types import WireModel
+
+    class Parent(WireModel):
+        TS_NAME = "SharedName"
+        value: str
+
+    class Child(Parent):
+        another: int
+
+    with pytest.raises(ValueError, match="incompatible models share TypeScript name"):
+        codegen._collect([Parent, Child])
+    Child.TS_NAME = "DistinctChild"
+    assert len(codegen._collect([Parent, Child])) == 2

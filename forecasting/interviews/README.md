@@ -40,8 +40,8 @@ The review page scrolls with Page Up/Down. Creating a question requires explicit
 confirmation and is idempotent for the reviewed revision.
 
 The deterministic questionnaire works without model credentials. Adaptive model
-follow-ups, scenario execution, update promotion and scheduled review integration
-are still being implemented. An update interview currently saves the review
+follow-ups and scenario selection are available; scenario execution, update
+promotion and scheduled review integration are still being implemented. An update interview currently saves the review
 draft and does not change the active probability.
 
 ## Markets and News handoffs
@@ -66,7 +66,11 @@ probability or automatically starts an agent run.
 and optional provider/model, question count, token budget and wall deadline.
 Defaults are eight follow-ups, 4,000 output tokens and 90 seconds; hard bounds
 are enforced by the shared contract. This is an explicit paid model operation.
-The UI controls for starting and restoring these jobs are still being integrated.
+In the interview, Ctrl+G opens generation settings and restores the latest job
+for that interview. Choose budgets with arrows, optionally enter provider/model
+identifiers, then select Generate. Ctrl+X requests cancellation; Escape returns
+to answers without cancelling. Completed questions open only on Ctrl+R. A status
+lookup failure disables new calls until durable state can be read again.
 
 The `forecast_interview` job type uses the shared durable job store and spend
 policy. Poll `jobs.status` and cancel with `jobs.cancel`; detached execution uses
@@ -83,3 +87,21 @@ results remain in job annotations and cannot overwrite newer user edits.
 Cancellation terminates and reaps the owned model process; a cancelled response
 is not applied. No live-provider forecasting-quality claim follows from these
 synthetic failure and recovery checks.
+
+## Choice answers and scenarios
+
+Choice questions offer an explicit Other entry when custom input is allowed.
+Use Space to toggle multiple selections and Ctrl+Enter to save them. Custom text
+is stored separately from choice identifiers; Unknown/Skip carry neither.
+Tab and Shift+Tab move between questions without discarding local text/selection
+edits. Confirm an answer to make it durable before closing the interview.
+
+Ctrl+O opens the scenario library. A **conditional scenario** fixes selected
+assumptions true (`t`) or false (`f`); `u` removes that condition and leaves it
+uncertain. A **factor ablation** uses Space to include/exclude factors, without
+asserting excluded factors false. Use `n` to name a scenario, Enter to inspect a
+full assumption and its attribution, and Ctrl+Enter to save. Existing scenarios
+can be reopened and edited; Ctrl+D asks for confirmation before deletion.
+Revisions retain history. Agent writers cannot overwrite user-owned scenarios.
+These definitions are not yet evaluated predictions and cannot change the active
+forecast probability.
