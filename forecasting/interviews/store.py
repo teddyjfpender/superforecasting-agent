@@ -154,6 +154,8 @@ class InterviewStore:
                 else None
             )
             if old:
+                if draft.parent_interview != old.parent_interview:
+                    raise ValidationError("prior interview provenance is immutable")
                 if draft.context_digest != old.context_digest:
                     raise ValidationError(
                         "interview context is immutable; start a new interview"
@@ -178,6 +180,9 @@ class InterviewStore:
                     raise ValidationError(
                         "answered questions cannot change meaning; create a new question identifier"
                     )
+            inherited = None
+            if draft.parent_interview and not draft.context_digest:
+                raise ValidationError("inherited assumptions require frozen provenance")
             if draft.context_digest:
                 from forecasting.interviews.context import read_context
 
@@ -194,6 +199,30 @@ class InterviewStore:
                     raise ValidationError(
                         "frozen context belongs to a different baseline"
                     )
+                prior = context.get("prior_interview")
+                expected_parent = (
+                    {key: prior[key] for key in ("interview_id", "revision", "digest")}
+                    if prior
+                    else None
+                )
+                actual_parent = (
+                    draft.parent_interview.model_dump()
+                    if draft.parent_interview
+                    else None
+                )
+                if actual_parent != expected_parent:
+                    raise ValidationError(
+                        "prior interview provenance does not match frozen context"
+                    )
+                if prior:
+                    inherited = InterviewDraft.model_validate(prior["document"])
+                    if old is None and (
+                        draft.assumptions != inherited.assumptions
+                        or draft.scenarios != inherited.scenarios
+                    ):
+                        raise ValidationError(
+                            "initial inherited assumptions and scenarios must match their source"
+                        )
                 frozen_refs = {item["id"] for item in context["evidence"]}
                 if set(draft.evidence_refs) != frozen_refs:
                     raise ValidationError(
@@ -208,6 +237,7 @@ class InterviewStore:
                             "baseline belongs to a different question"
                         )
             if actor == "agent":
+                prior_ownership = old or inherited
                 old_user = (
                     {a.question_id: a for a in old.answers if a.actor == "user"}
                     if old
@@ -217,16 +247,20 @@ class InterviewStore:
                     a.question_id: a for a in draft.answers if a.actor == "user"
                 }
                 old_assumptions = (
-                    {a.id: a for a in old.assumptions if a.actor == "user"}
-                    if old
+                    {a.id: a for a in prior_ownership.assumptions if a.actor == "user"}
+                    if prior_ownership
                     else {}
                 )
                 new_assumptions = {
                     a.id: a for a in draft.assumptions if a.actor == "user"
                 }
                 old_scenarios = (
-                    {item.id: item for item in old.scenarios if item.actor == "user"}
-                    if old
+                    {
+                        item.id: item
+                        for item in prior_ownership.scenarios
+                        if item.actor == "user"
+                    }
+                    if prior_ownership
                     else {}
                 )
                 new_scenarios = {

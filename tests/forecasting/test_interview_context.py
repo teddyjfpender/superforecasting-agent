@@ -116,3 +116,96 @@ def test_corrupt_context_fails_closed(desk):
         )
     with pytest.raises(ValidationError, match="corrupt"):
         read_context(ledger, "update", record["document"]["context_digest"])
+
+
+def test_updates_inherit_attributed_assumptions_without_reanswering(desk):
+    from protocol.interviews import InterviewScenario
+
+    ledger, question, _, _ = desk
+    service = InterviewService(ledger)
+    first = service.begin("first", question_id=question.id)
+    first = service.answer(
+        "first",
+        expected_revision=first["revision"],
+        request_id="drivers",
+        question_id="drivers",
+        status="answered",
+        value="Candidate stays healthy",
+    )
+    assumption = first["document"]["assumptions"][0]
+    first = service.save_scenario(
+        "first",
+        expected_revision=first["revision"],
+        request_id="scenario",
+        scenario=InterviewScenario(
+            id="health",
+            name="Healthy candidate",
+            kind="conditional",
+            conditions={assumption["id"]: True},
+        ),
+    )
+    second = service.begin("second", question_id=question.id)
+    doc = second["document"]
+    assert doc["parent_interview"] == {
+        key: first[key] for key in ("interview_id", "revision", "digest")
+    }
+    assert doc["assumptions"] == first["document"]["assumptions"]
+    assert doc["scenarios"] == first["document"]["scenarios"]
+    assert not any(answer["actor"] == "user" for answer in doc["answers"])
+    packet = json.loads(
+        build_messages(ledger, second, InterviewGenerationOptions())[1]["content"]
+    )
+    assert (
+        packet["prior_interview"]["document"]["answers"] == first["document"]["answers"]
+    )
+    # An agent may carry inherited user content, but cannot change it afterwards.
+    draft = InterviewDraft.model_validate(doc)
+    draft.assumptions[0].statement = "Fabricated replacement"
+    with pytest.raises(ValidationError, match="user assumptions"):
+        service.store.save(
+            "second", draft, expected_revision=1, request_id="tamper", actor="agent"
+        )
+    # Editing the first interview cannot rewrite the second interview's history.
+    service.answer(
+        "first",
+        expected_revision=first["revision"],
+        request_id="later-belief",
+        question_id="belief",
+        status="answered",
+        value=0.7,
+    )
+    again = json.loads(
+        build_messages(ledger, second, InterviewGenerationOptions())[1]["content"]
+    )
+    assert again["prior_interview"] == packet["prior_interview"]
+
+
+def test_cancelled_prior_interviews_are_not_inherited(desk):
+    ledger, question, _, _ = desk
+    service = InterviewService(ledger)
+    first = service.begin("first", question_id=question.id)
+    draft = InterviewDraft.model_validate(first["document"])
+    draft.status = "cancelled"
+    service.store.save(
+        "first", draft, expected_revision=1, request_id="cancel", actor="user"
+    )
+    assert (
+        service.begin("second", question_id=question.id)["document"]["parent_interview"]
+        is None
+    )
+
+
+def test_parent_reference_is_not_caller_selectable(desk):
+    from protocol.interviews import InterviewParent
+
+    ledger, question, _, _ = desk
+    service = InterviewService(ledger)
+    first = service.begin("first", question_id=question.id)
+    draft = InterviewDraft.model_validate(first["document"])
+    draft.parent_interview = InterviewParent(
+        interview_id="unrelated", revision=1, digest="0" * 64
+    )
+    with pytest.raises(ValidationError, match="immutable"):
+        service.store.save(
+            "first", draft, expected_revision=1, request_id="forge", actor="user"
+        )

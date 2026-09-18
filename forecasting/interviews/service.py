@@ -18,6 +18,7 @@ from protocol.interviews import (
     InterviewAnswer,
     InterviewAssumption,
     InterviewDraft,
+    InterviewParent,
     InterviewQuestion,
     InterviewScenario,
 )
@@ -81,6 +82,14 @@ class InterviewService:
                 else [],
                 questions=core_questions(outcome, update=bool(question)),
             )
+            if context and context.get("prior_interview"):
+                prior = context["prior_interview"]
+                document.parent_interview = InterviewParent.model_validate({
+                    key: prior[key] for key in ("interview_id", "revision", "digest")
+                })
+                historical = InterviewDraft.model_validate(prior["document"])
+                document.assumptions = historical.assumptions
+                document.scenarios = historical.scenarios
             if question:
                 values = {
                     "title": question.title,

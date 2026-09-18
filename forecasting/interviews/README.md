@@ -118,3 +118,12 @@ Oversized packets fail the prompt-size check rather than silently dropping
 evidence. Legacy drafts without a capture must be reopened as a new update
 before model generation. A capture is reproducibility evidence, not a claim
 that the sources have been verified.
+
+An update carries assumptions and scenario definitions from the latest
+non-cancelled interview for that question, including its committed creation
+interview. The parent ID, revision and digest are immutable. Original user/agent
+attribution is retained, and an agent cannot alter inherited user content.
+Earlier answers are available to the interviewer as explicitly historical
+context; they are not copied into newly answered questions or represented as
+current user confirmation. A prior draft also does not replace the active
+forecast baseline.

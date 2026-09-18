@@ -38,6 +38,7 @@ Ask about overlooked drivers, competing hypotheses, reference-class selection, b
 resolution ambiguities, dependent causes, disconfirming evidence and what would change the estimate.
 Distinguish missing knowledge from future variability and measurement error. Do not promise to eliminate
 irreducible randomness or invent an exact epistemic/aleatoric variance split. Ask useful conditioning questions.
+Prior interview answers are historical, not newly confirmed beliefs or the active forecast.
 A conditional scenario assumes specified states; an ablation excludes a factor without asserting it false.
 Do not answer for the user, suggest their probability, revise existing answers or restate already asked questions.
 New assumptions are proposals attributed to the agent, not facts. Cite only supplied evidence identifiers.
@@ -65,6 +66,7 @@ def build_messages(
         "evidence": evidence,
         "frozen_question": context["question"] if context else None,
         "frozen_baseline": context["baseline"] if context else None,
+        "prior_interview": context.get("prior_interview") if context else None,
         "context_captured_at": context["captured_at"] if context else None,
         "max_questions": options.max_questions,
         "schema": InterviewFollowups.model_json_schema(),

@@ -188,6 +188,10 @@ def test_application_answers_adapt_resume_and_commit_once(store):
     assert store.ledger.list_snapshots(result["question_id"]) == []
     review = service.begin("review", question_id=result["question_id"])
     assert review["document"]["mode"] == "update"
+    assert review["document"]["assumptions"] == record["document"]["assumptions"]
+    assert review["document"]["parent_interview"] == {
+        key: record[key] for key in ("interview_id", "revision", "digest")
+    }
     assert review["document"]["questions"][0]["id"] == "new_evidence"
     assert all(answer["actor"] == "agent" for answer in review["document"]["answers"])
 

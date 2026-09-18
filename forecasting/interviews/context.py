@@ -34,6 +34,7 @@ def capture_context(
         "question": asdict(question),
         "baseline": asdict(baseline) if baseline else None,
         "evidence": [asdict(item) for item in evidence],
+        "prior_interview": previous_interview(ledger, question.id),
     }
     document = json.dumps(
         context, sort_keys=True, separators=(",", ":"), allow_nan=False
@@ -60,3 +61,36 @@ def read_context(ledger: ForecastLedger, interview_id: str, digest: str) -> dict
     ):
         raise ValidationError("frozen interview context is missing or corrupt")
     return json.loads(row["document"])
+
+
+def previous_interview(ledger: ForecastLedger, question_id: str) -> dict | None:
+    """Latest non-cancelled review, or the committed interview that created it.
+
+    A prior draft is historical elicitation, not the active forecast. Bind the
+    exact revision and content so later edits cannot rewrite inherited provenance.
+    """
+    from protocol.interviews import InterviewDraft
+
+    with ledger._connect() as conn:
+        row = conn.execute(
+            "SELECT r.* FROM forecast_interview_revisions r "
+            "LEFT JOIN forecast_interview_commits c ON c.interview_id = r.interview_id "
+            "WHERE ((json_extract(r.document, '$.question_id') = ? AND "
+            "r.revision = (SELECT MAX(v.revision) FROM forecast_interview_revisions v "
+            "WHERE v.interview_id = r.interview_id)) OR "
+            "(c.question_id = ? AND c.revision = r.revision)) "
+            "AND json_extract(r.document, '$.status') != 'cancelled' "
+            "ORDER BY r.created_at DESC, r.rowid DESC LIMIT 1",
+            (question_id, question_id),
+        ).fetchone()
+    if row is None:
+        return None
+    if hashlib.sha256(row["document"].encode()).hexdigest() != row["digest"]:
+        raise ValidationError("prior interview revision is corrupt")
+    InterviewDraft.model_validate_json(row["document"])
+    return {
+        "interview_id": row["interview_id"],
+        "revision": row["revision"],
+        "digest": row["digest"],
+        "document": json.loads(row["document"]),
+    }

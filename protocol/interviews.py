@@ -222,6 +222,12 @@ class InterviewGenerationRecord(InterviewModel):
     summary: str
 
 
+class InterviewParent(InterviewModel):
+    interview_id: str = Field(min_length=1)
+    revision: int = Field(ge=1)
+    digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
 class InterviewDraft(InterviewModel):
     schema_version: Literal[1] = 1
     seed: ForecastMarketSeed | None = None
@@ -233,6 +239,7 @@ class InterviewDraft(InterviewModel):
     question_id: str | None = None
     baseline_forecast_id: str | None = None
     context_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    parent_interview: InterviewParent | None = None
     title: str = Field(min_length=1, max_length=1000)
     questions: list[InterviewQuestion] = Field(default_factory=list, max_length=100)
     answers: list[InterviewAnswer] = Field(default_factory=list, max_length=100)

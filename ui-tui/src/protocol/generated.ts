@@ -2667,6 +2667,7 @@ export interface InterviewDraft {
   evidence_refs: string[]
   generations: InterviewGenerationRecord[]
   mode: 'create' | 'update'
+  parent_interview: null | InterviewParent
   question_id: null | string
   questions: InterviewQuestion[]
   scenarios: InterviewScenario[]
@@ -2720,6 +2721,12 @@ export interface InterviewListRequest {
 
 export interface InterviewListResponse {
   interviews: InterviewRecord[]
+}
+
+export interface InterviewParent {
+  digest: string
+  interview_id: string
+  revision: number
 }
 
 export interface InterviewPreviewRequest {
