@@ -6,7 +6,12 @@ import { useEffect, useRef, useState } from 'react'
 
 import { $globalModal } from '../app/overlayStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
-import type { InterviewAnswerRequest, InterviewPreviewResponse, InterviewRecord } from '../protocol/generated.js'
+import type {
+  ForecastMarketSeed,
+  InterviewAnswerRequest,
+  InterviewPreviewResponse,
+  InterviewRecord
+} from '../protocol/generated.js'
 import type { Theme } from '../theme.js'
 
 import { ModalOverlay } from './modalOverlay.js'
@@ -15,12 +20,16 @@ import { TextInput } from './textInput.js'
 export function ForecastInterview({
   gw,
   questionId = null,
+  seed = null,
+  interviewId = null,
   onClose,
   onDone,
   t
 }: {
   gw: GatewayClient
   questionId?: string | null
+  seed?: ForecastMarketSeed | null
+  interviewId?: string | null
   onClose: () => void
   onDone?: (id: string) => void
   t: Theme
@@ -52,27 +61,58 @@ export function ForecastInterview({
     setPreview(null)
     const item = next.document.questions[at]
     const prior = next.document.answers.find(answer => answer.question_id === item?.id)
+    const context = next.document.seed
+
+    const suggested =
+      item?.id === 'title' && context !== null && context !== undefined
+        ? next.document.title
+        : item?.id === 'source'
+          ? (context?.source_url ?? '')
+          : item?.id === 'units'
+            ? (context?.units ?? '')
+            : item?.id === 'deadline'
+              ? (context?.close_time ?? '')
+              : ''
+
     setText(
       drafts.current.get(item?.id ?? '') ??
-        (prior?.value == null ? '' : Array.isArray(prior.value) ? prior.value.join('\n') : String(prior.value))
+        (prior?.value == null ? suggested : Array.isArray(prior.value) ? prior.value.join('\n') : String(prior.value))
     )
-    setChoice(Math.max(0, item?.choices.findIndex(option => option.id === prior?.value) ?? 0))
+    setChoice(
+      Math.max(
+        0,
+        item?.choices.findIndex(
+          option =>
+            option.id === (prior?.value ?? (item.id === 'outcome' && context?.kind === 'series' ? 'numeric' : null))
+        ) ?? 0
+      )
+    )
   }
 
   useEffect(() => {
+    let active = true
     mounted.current = true
     setBusy(true)
-    void gw
-      .request('forecast.interview.list', { question_id: questionId })
-      .then(async result => {
-        const next =
-          result.interviews[0] ??
-          (await gw.request('forecast.interview.begin', {
-            interview_id: id.current,
-            question_id: questionId
-          }))
 
-        if (!mounted.current) {
+    const load = async () => {
+      if (interviewId) {
+        return gw.request('forecast.interview.read', { interview_id: interviewId })
+      }
+
+      if (!seed) {
+        const result = await gw.request('forecast.interview.list', { question_id: questionId })
+
+        if (result.interviews[0]) {
+          return result.interviews[0]
+        }
+      }
+
+      return gw.request('forecast.interview.begin', { interview_id: id.current, question_id: questionId, seed })
+    }
+
+    void load()
+      .then(next => {
+        if (!active) {
           return
         }
 
@@ -81,20 +121,21 @@ export function ForecastInterview({
         select(next, unanswered < 0 ? next.document.questions.length : unanswered)
       })
       .catch((cause: unknown) => {
-        if (mounted.current) {
+        if (active) {
           setError(cause instanceof Error ? cause.message : String(cause))
         }
       })
       .finally(() => {
-        if (mounted.current) {
+        if (active) {
           setBusy(false)
         }
       })
 
     return () => {
+      active = false
       mounted.current = false
     }
-  }, [gw, questionId])
+  }, [gw, questionId, seed, interviewId])
 
   useEffect(() => {
     if (!review || !record) {

@@ -465,6 +465,16 @@ RPC_SPECS: list[RpcSpec] = [
         _rpc_forecast.ForecastQuestionPacketResponse,
     ),
     RpcSpec(
+        "forecast.article.attach",
+        _rpc_interviews.ForecastArticleAttachRequest,
+        _rpc_interviews.ForecastArticleAttachResponse,
+    ),
+    RpcSpec(
+        "forecast.question.choices",
+        WireModel,
+        _rpc_interviews.ForecastQuestionChoicesResponse,
+    ),
+    RpcSpec(
         "forecast.interview.begin",
         _rpc_interviews.InterviewBeginRequest,
         _rpc_interviews.InterviewRecord,

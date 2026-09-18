@@ -4,7 +4,7 @@ import { Box, render } from '@superforecasting/ink'
 import React from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
 
-import { resetOverlayState } from '../app/overlayStore.js'
+import { $overlayState, resetOverlayState } from '../app/overlayStore.js'
 import { NewsView } from '../components/newsView.js'
 import { stripAnsi } from '../lib/text.js'
 import { DARK_THEME } from '../theme.js'
@@ -53,7 +53,20 @@ async function mount(cols: number, rows: number, configured = false) {
   let release: ((value: unknown) => void) | undefined
   let delay = false
 
-  const request = vi.fn(async (method: string, params: { action?: string; url?: string }) => {
+  const request = vi.fn(async (method: string, params: { action?: string; url?: string; prepare_update?: boolean }) => {
+    if (method === 'forecast.question.choices') {
+      return { questions: [{ id: 'q_cpi', title: 'Will CPI exceed three percent?', domain: 'economics' }] }
+    }
+
+    if (method === 'forecast.article.attach') {
+      return {
+        question_id: 'q_cpi',
+        evidence_id: 'ev_story',
+        already_attached: false,
+        interview_id: params.prepare_update ? 'news_review' : null
+      }
+    }
+
     if (method === 'news.desk') {
       return { feeds, starter, state: configured ? 'configured' : 'unconfigured' }
     }
@@ -267,5 +280,39 @@ it.each([
     }
   } finally {
     app.close()
+  }
+})
+
+it('previews article attachment and opens the selected forecast interview only after confirmation', async () => {
+  const app = await mount(120, 40, true)
+
+  try {
+    await app.press('F')
+    expect(app.text()).toContain('FIND FORECAST')
+    expect(app.request.mock.calls.some(([method]) => method === 'forecast.article.attach')).toBe(false)
+    await app.press('\r')
+    expect(app.text()).toContain('ATTACH ARTICLE · REVIEW')
+    expect(app.text()).toContain('Will CPI exceed three percent?')
+    await app.press('\t')
+    expect(app.text()).toContain('Attach + update interview')
+    await app.press('\r')
+    expect(app.request).toHaveBeenCalledWith(
+      'forecast.article.attach',
+      expect.objectContaining({
+        question_id: 'q_cpi',
+        prepare_update: true,
+        article: expect.objectContaining({
+          title: 'First source report',
+          url: 'https://example.org/first',
+          extraction: expect.stringMatching(/^(article|feed)$/)
+        })
+      })
+    )
+    expect($overlayState.get().onboardInterviewId).toBe('news_review')
+    expect($overlayState.get().onboardQuestionId).toBe('q_cpi')
+    expect($overlayState.get().onboardSeed).toBeNull()
+  } finally {
+    app.close()
+    resetOverlayState()
   }
 })

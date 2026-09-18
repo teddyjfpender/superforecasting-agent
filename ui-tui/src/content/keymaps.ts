@@ -68,6 +68,7 @@ export const PER_VIEW_KEYS: Record<string, [string, string][]> = {
   markets: [
     ['↑/↓', 'select a market'],
     ['Tab / ←→', 'switch category'],
+    ['F', 'create a forecast from the selected series or specific prediction-market outcome'],
     ['p', 'jump to the Prediction section (Polymarket + Kalshi)'],
     ['Space / v / 1·2·3', 'expand outcomes · switch venue · history range (Prediction)'],
     ['f', 'filter prediction markets (venue · volume · probability · hide sports)'],
@@ -88,6 +89,7 @@ export const PER_VIEW_KEYS: Record<string, [string, string][]> = {
     ['c / w / e / F', 'open model: chat-refine · rewrite · export JSON · spin off a Desk forecast']
   ],
   news: [
+    ['F', 'attach selected article to a forecast; optionally open an update interview'],
     ['↑/↓', 'select a story'],
     ['Tab / ←→', 'next/previous source'],
     ['Enter', 'open story in browser'],
@@ -208,6 +210,7 @@ export const PER_VIEW_GUIDE: Record<string, string[]> = {
     'Press d (Add data) to connect a provider; / filters the tape (or deep-searches a ticker in Prediction), o sorts, r refreshes. Blank series usually mean a missing API key — the header [!] flags which; press i for the per-provider fix.'
   ],
   news: [
+    'F attaches the selected article to an existing forecast, with an optional update interview. Attaching evidence does not change probability.',
     'News has sources, headlines and an independently scrolling reader. Tab or left/right switches sources; up/down selects stories. PgUp/PgDn scrolls article text without moving the selection.',
     'Enter opens the source in a browser, / searches, a adds feeds, s selects starter feeds when available, r refreshes and m forwards the selected story.'
   ],

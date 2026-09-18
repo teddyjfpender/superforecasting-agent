@@ -4,7 +4,7 @@ import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react'
 
 import { FORECAST_PACKET_TAIL_TITLES, forecastQuestionDetailSections } from '../app/forecastPanel.js'
 import type { ReviewSweepState } from '../app/interfaces.js'
-import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
+import { $globalModal, openForecastInterview, openHelpOverlay } from '../app/overlayStore.js'
 import { $reviewSweep } from '../app/uiStore.js'
 import { useJobAttach } from '../app/useJobAttach.js'
 import type { GatewayClient } from '../gatewayClient.js'
@@ -1194,7 +1194,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   // another, so hand off by closing the desk and opening onboarding (the seam the
   // empty-state text — "press n to track a new one" — points at).
   const openNewQuestion = () => {
-    patchOverlayState({ forecasts: false, forecastsInitialId: null, onboard: true, onboardQuestionId: null })
+    openForecastInterview()
   }
 
   // The id + title the settings modal targets: the selected forecast, or (on a
@@ -1368,7 +1368,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
       }
 
       if (ch === 'i' && selectedId && !lensActive) {
-        patchOverlayState({ forecasts: false, onboard: true, onboardQuestionId: selectedId })
+        openForecastInterview({ questionId: selectedId })
 
         return
       }
@@ -1771,7 +1771,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
               label: 'Interview',
               run: () => {
                 if (selectedId && !lensActive) {
-                  patchOverlayState({ forecasts: false, onboard: true, onboardQuestionId: selectedId })
+                  openForecastInterview({ questionId: selectedId })
                 }
               }
             },

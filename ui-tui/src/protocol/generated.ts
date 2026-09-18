@@ -717,6 +717,29 @@ export interface ForecastAnalystNote {
   verdict?: null | string
 }
 
+export interface ForecastArticleAttachRequest {
+  article: ForecastArticleClaim
+  prepare_update: boolean
+  question_id: string
+}
+
+export interface ForecastArticleAttachResponse {
+  already_attached: boolean
+  evidence_id: string
+  interview_id: null | string
+  question_id: string
+}
+
+export interface ForecastArticleClaim {
+  content: string
+  extraction: 'article' | 'feed'
+  feed_url: string
+  published_at: null | string
+  publisher: string
+  title: string
+  url: string
+}
+
 export interface ForecastBenchAggregate {
   mean_agent_brier?: null | number
   mean_brier_edge?: null | number
@@ -1461,6 +1484,28 @@ export interface ForecastLivePerformanceAgent {
   mean_log_score?: null | number
 }
 
+export interface ForecastMarketSeed {
+  captured_at: string
+  close_time: null | string
+  event_id: null | string
+  kind: 'prediction_market' | 'series'
+  market_price: null | number
+  observed_at: null | string
+  observed_value: null | number
+  outcome_id: null | string
+  outcome_label: null | string
+  period_end: null | string
+  period_start: null | string
+  provider: string
+  published_at: null | string
+  retrieved_at: null | string
+  revision_policy: null | string
+  source_url: null | string
+  symbol: string
+  title: string
+  units: null | string
+}
+
 export interface ForecastNextAction {
   action?: string
   question_id?: string
@@ -1519,6 +1564,16 @@ export interface ForecastPooledDiagnostic {
 export interface ForecastQuarantineSummary {
   n?: number
   reasons?: Record<string, unknown>
+}
+
+export interface ForecastQuestionChoice {
+  domain: null | string
+  id: string
+  title: string
+}
+
+export interface ForecastQuestionChoicesResponse {
+  questions: ForecastQuestionChoice[]
 }
 
 export interface ForecastQuestionPacket {
@@ -2580,6 +2635,7 @@ export interface InterviewAssumption {
 export interface InterviewBeginRequest {
   interview_id: string
   question_id: null | string
+  seed: null | ForecastMarketSeed
   title: string
 }
 
@@ -2597,11 +2653,13 @@ export interface InterviewDraft {
   answers: InterviewAnswer[]
   assumptions: InterviewAssumption[]
   baseline_forecast_id: null | string
+  evidence_refs: string[]
   mode: 'create' | 'update'
   question_id: null | string
   questions: InterviewQuestion[]
   scenarios: InterviewScenario[]
   schema_version: number
+  seed: null | ForecastMarketSeed
   status: 'cancelled' | 'draft' | 'needs_research' | 'needs_user' | 'ready'
   title: string
 }
@@ -4243,6 +4301,9 @@ export interface VoiceTtsResponse {
   status: string
 }
 
+export interface WireModel {
+}
+
 export const SERVER_REQUEST_NAMES = ['approval', 'clarify', 'secret', 'sudo'] as const
 
 export interface ServerRequestMethods {
@@ -4397,6 +4458,14 @@ export interface RpcMethods {
     }
     result: EventsReplayResponse
   }
+  'forecast.article.attach': {
+    params: {
+      article: ForecastArticleClaim
+      prepare_update?: boolean
+      question_id: string
+    }
+    result: ForecastArticleAttachResponse
+  }
   'forecast.bench': {
     params: {
       limit?: null | number
@@ -4503,6 +4572,7 @@ export interface RpcMethods {
     params: {
       interview_id: string
       question_id?: null | string
+      seed?: null | ForecastMarketSeed
       title?: string
     }
     result: InterviewRecord
@@ -4560,6 +4630,10 @@ export interface RpcMethods {
       id?: null | string
     }
     result: ForecastQuestionPacketResponse
+  }
+  'forecast.question.choices': {
+    params: Record<string, never>
+    result: ForecastQuestionChoicesResponse
   }
   'forecast.question.readiness': {
     params: {

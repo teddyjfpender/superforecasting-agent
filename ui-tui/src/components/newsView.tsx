@@ -2,7 +2,7 @@ import { useStore } from '@nanostores/react'
 import { Box, ScrollBox, type ScrollBoxHandle, Text, useStdout } from '@superforecasting/ink'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
+import { $globalModal, openForecastInterview, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
 import type { CatalogFeed } from '../content/newsFeedCatalog.js'
 import { FEED_CATEGORIES } from '../content/newsFeedCatalog.js'
 import type { GatewayClient } from '../gatewayClient.js'
@@ -30,11 +30,13 @@ import { openExternalUrl } from '../lib/openExternalUrl.js'
 import { useShareItem } from '../lib/useShareItem.js'
 import { useViewInput } from '../lib/useViewInput.js'
 import { semantics } from '../lib/visualSemantics.js'
+import type { ForecastArticleClaim } from '../protocol/generated.js'
 import type { NewsArticleResponse, NewsSubscription } from '../protocol/generated.js'
 import type { Theme } from '../theme.js'
 
 import { AddFeedModal } from './addFeedModal.js'
 import { type FooterChip, FooterChips } from './footerChips.js'
+import { ForecastArticlePicker } from './forecastArticlePicker.js'
 import { Md } from './markdown.js'
 import { NewsStarterModal } from './newsStarterModal.js'
 
@@ -186,6 +188,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
 
   // Add-feed modal state.
   const [adding, setAdding] = useState(false)
+  const [attaching, setAttaching] = useState<ForecastArticleClaim | null>(null)
   const [providerColors, setProviderColors] = useState<ProviderColors>(() => loadProviderColors())
   const [query, setQuery] = useState('')
   const [modalCat, setModalCat] = useState(ALL_CATEGORY)
@@ -567,6 +570,8 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
 
   const handleFooterKey = useViewInput(
     (ch, key) => {
+      if (attaching) {return}
+
       if (starterOpen) {
         if (saving) {
           return
@@ -731,6 +736,12 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
         return
       }
 
+      if (ch === 'F') {
+        attachSelected()
+
+        return
+      }
+
       if (ch === 'u' && !key.ctrl && !key.meta) {
         applyUpdates()
 
@@ -877,6 +888,28 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
 
   const usingArticle = articleBody?.status === 'article' && Boolean(articleBody.text.trim())
 
+  const attachSelected = () => {
+    if (!gw || !selectedArticle) {
+      setFlash('Select an article with a connected gateway')
+
+      return
+    }
+
+    const exactBody = articleBody?.status === 'article' && articleBody.url === selectedArticle.link
+    setAttaching({
+      title: selectedArticle.title,
+      url: selectedArticle.link || selectedArticle.feedUrl,
+      publisher: selectedArticle.feedTitle,
+      feed_url: selectedArticle.feedUrl,
+      published_at: selectedArticle.publishedAt > 0 ? new Date(selectedArticle.publishedAt).toISOString() : null,
+      content: (exactBody ? articleBody.text : selectedArticle.content || selectedArticle.summary || '').slice(
+        0,
+        60000
+      ),
+      extraction: exactBody ? 'article' : 'feed'
+    })
+  }
+
   const readerText = usingArticle
     ? articleBody!.text
     : selectedArticle?.content || selectedArticle?.summary || articleBody?.text || ''
@@ -976,7 +1009,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
               justifyContent="space-between"
               key={src}
               onClick={() => {
-                if (adding || starterOpen || globalModal) {
+                if (adding || attaching !== null || starterOpen || globalModal) {
                   return
                 }
 
@@ -1034,7 +1067,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
                 flexDirection="column"
                 key={`${article.feedUrl}:${idx}`}
                 onClick={() => {
-                  if (!adding && !starterOpen && !globalModal) {
+                  if (!adding && !attaching && !starterOpen && !globalModal) {
                     setSel(idx)
                   }
                 }}
@@ -1204,6 +1237,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
         ]
       : []),
     { k: 'PgUp/Dn', label: 'Read' },
+    ...(gw && selectedArticle ? [{ k: 'F', label: 'Attach to forecast', run: attachSelected }] : []),
     ...(pendingArticles ? [{ k: 'u', label: 'Apply updates', run: applyUpdates }] : []),
     {
       k: 'r',
@@ -1222,7 +1256,12 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
       {/* The FooterChips are the ONE canonical shortcuts row (the always-on prose
           duplicate below them was removed). Only a transient flash survives, and
           only when there is something to say — never a second shortcuts row. */}
-      <FooterChips chips={chips} disabled={adding || starterOpen || globalModal} onKey={handleFooterKey} t={t} />
+      <FooterChips
+        chips={chips}
+        disabled={adding || attaching !== null || starterOpen || globalModal}
+        onKey={handleFooterKey}
+        t={t}
+      />
       {flash ? (
         <Text color={t.color.accent} wrap="truncate-end">
           {flash}
@@ -1292,6 +1331,25 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
           resultSel={modalSel}
           rows={termRows}
           subscribedCount={subscribed.length}
+          t={t}
+        />
+      ) : null}
+      {attaching && gw ? (
+        <ForecastArticlePicker
+          article={attaching}
+          cols={cols}
+          gw={gw}
+          onAttached={result => {
+            setAttaching(null)
+            setFlash(
+              result.already_attached ? 'Article already linked to this forecast' : 'Article attached to forecast'
+            )
+
+            if (result.interview_id)
+              {openForecastInterview({ questionId: result.question_id, interviewId: result.interview_id })}
+          }}
+          onClose={() => setAttaching(null)}
+          rows={termRows}
           t={t}
         />
       ) : null}

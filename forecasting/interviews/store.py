@@ -40,6 +40,16 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
         )
     """)
 
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS forecast_article_attachments (
+            question_id TEXT NOT NULL REFERENCES forecast_questions(id),
+            digest TEXT NOT NULL,
+            evidence_id TEXT NOT NULL REFERENCES evidence_items(id),
+            interview_id TEXT,
+            PRIMARY KEY (question_id, digest)
+        )
+    """)
+
 
 class InterviewStore:
     """No draft operation creates a forecast snapshot or changes its probability."""
@@ -128,6 +138,8 @@ class InterviewStore:
                 else None
             )
             if old:
+                if draft.seed != old.seed:
+                    raise ValidationError("source seed provenance is immutable")
                 if (draft.mode, draft.question_id, draft.baseline_forecast_id) != (
                     old.mode,
                     old.question_id,

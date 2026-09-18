@@ -9,6 +9,7 @@ render the TUI, or change an active forecast probability.
 | `models.py`    | Re-exports shared contracts from `protocol/interviews.py`                           |
 | `store.py`     | Append-only ledger revisions, optimistic concurrency and retry identity             |
 | `questions.py` | Required interview spine and outcome-specific elicitation                           |
+| `news.py`      | Idempotent article attachment and evidence-linked update drafts                     |
 | `service.py`   | Begin/resume, attributed answers, validation preview and explicit question creation |
 
 Every save supplies the revision the caller read and a stable request ID. Retrying
@@ -39,3 +40,19 @@ The deterministic questionnaire works without model credentials. Adaptive model
 follow-ups, scenario execution, update promotion and scheduled review integration
 are still being implemented. An update interview currently saves the review
 draft and does not change the active probability.
+
+## Markets and News handoffs
+
+Press `F` on a Markets row to start a forecast interview. Multi-outcome prediction
+markets require expanding the event and selecting an outcome first. The draft
+retains the exact source identifiers, available units and timestamps; source
+prices remain observations, not answers attributed to the user. Imported source
+context is not a verified settlement binding.
+
+Press `F` in News to find an active forecast and review the article before
+attaching it. Choose either evidence only or evidence plus an update interview.
+Retries deduplicate equivalent article captures. Revised content stays grouped
+with the original URL, while syndication independence remains unassessed.
+Unknown publication times stay unknown, and these user-selected claims are not
+admissible for historical backtests by default. No attachment changes a forecast
+probability or automatically starts an agent run.

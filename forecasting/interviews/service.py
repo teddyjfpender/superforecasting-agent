@@ -13,6 +13,7 @@ from forecasting.interviews.store import InterviewStore
 from forecasting.models import ValidationError, parse_timestamp
 from forecasting.question_spec import spec_from_dict
 from protocol.interviews import (
+    ForecastMarketSeed,
     InterviewAnswer,
     InterviewAssumption,
     InterviewDraft,
@@ -31,7 +32,13 @@ class InterviewService:
         *,
         title: str = "New forecast",
         question_id: str | None = None,
+        seed: ForecastMarketSeed | dict | None = None,
     ) -> dict:
+        seed = ForecastMarketSeed.model_validate(seed) if seed is not None else None
+        if question_id and seed:
+            raise ValidationError(
+                "market seeds create new questions; they do not replace existing contracts"
+            )
         # Client-generated IDs survive request retries. Never replace an existing draft.
         with self.ledger.transaction(immediate=True) as conn:
             exists = conn.execute(
@@ -40,18 +47,27 @@ class InterviewService:
             ).fetchone()
             if exists:
                 existing = self.store.read(interview_id)
-                if existing["document"]["question_id"] != question_id:
+                if existing["document"]["question_id"] != question_id or existing[
+                    "document"
+                ].get("seed") != (seed.model_dump() if seed else None):
                     raise ValidationError(
                         "interview identifier belongs to another target"
                     )
                 return existing
             question = self.ledger.get_question(question_id) if question_id else None
-            outcome = question.outcome_space.type if question else "binary"
+            outcome = (
+                question.outcome_space.type
+                if question
+                else "numeric"
+                if seed and seed.kind == "series"
+                else "binary"
+            )
             document = InterviewDraft(
                 mode="update" if question else "create",
                 question_id=question_id,
                 baseline_forecast_id=question.current_forecast_id if question else None,
-                title=question.title if question else title,
+                title=question.title if question else seed.title if seed else title,
+                seed=seed,
                 questions=core_questions(outcome, update=bool(question)),
             )
             if question:
@@ -196,6 +212,14 @@ class InterviewService:
             "autonomy": "ask",
             "clarifications": [answer.model_dump() for answer in draft.answers],
         }
+        raw["clarifications"].append({
+            "kind": "interview_provenance",
+            "interview_id": interview_id,
+            "revision": revision,
+            "source_seed": draft.seed.model_dump() if draft.seed else None,
+            "evidence_refs": list(draft.evidence_refs),
+            "verification_status": "interview_context_not_settlement_verification",
+        })
         if outcome == "numeric":
             raw["units"] = values.get("units")
             quantiles = [values.get(f"quantile_{q}") for q in (10, 50, 90)]

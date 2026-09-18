@@ -180,6 +180,11 @@ def test_application_answers_adapt_resume_and_commit_once(store):
     assert service.commit("flow", record["revision"]) == result
     assert store.list_latest() == []
     assert len(store.ledger.list_questions()) == 1
+    created = store.ledger.get_question(result["question_id"])
+    provenance = created.metadata["onboarding"]["clarifications"][-1]
+    assert provenance["interview_id"] == "flow"
+    assert provenance["revision"] == record["revision"]
+    assert provenance["verification_status"] == "interview_context_not_settlement_verification"
     assert store.ledger.list_snapshots(result["question_id"]) == []
     review = service.begin("review", question_id=result["question_id"])
     assert review["document"]["mode"] == "update"

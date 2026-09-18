@@ -1153,3 +1153,28 @@ def _(rid, params: dict) -> dict:
         return _ok(rid, _interview_service().commit(**params))
     except Exception as exc:
         return _err(rid, 5008, str(exc))
+
+
+@rpc_validated("forecast.article.attach")
+def _(rid, params: dict) -> dict:
+    try:
+        from forecasting.interviews.news import attach_article
+        from forecasting.ledger import ForecastLedger
+        from protocol.interviews import ForecastArticleClaim
+
+        return _ok(rid, attach_article(ForecastLedger(), params["question_id"],
+                                       ForecastArticleClaim.model_validate(params["article"]),
+                                       prepare_update=params.get("prepare_update", False)))
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))
+
+
+@rpc_validated("forecast.question.choices")
+def _(rid, params: dict) -> dict:
+    try:
+        from forecasting.ledger import ForecastLedger
+
+        return _ok(rid, {"questions": [{"id": q.id, "title": q.title, "domain": q.domain}
+                                      for q in ForecastLedger().list_questions(status="active")]})
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))

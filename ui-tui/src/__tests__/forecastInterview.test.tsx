@@ -26,6 +26,8 @@ it.each([
     created_at: '2030-01-01T00:00:00Z',
     document: {
       schema_version: 1,
+      seed: null,
+      evidence_refs: [],
       mode: 'create',
       question_id: null,
       baseline_forecast_id: null,
@@ -64,7 +66,9 @@ it.each([
   let fail = true
 
   const request = vi.fn(async (method: string, params: any) => {
-    if (method === 'forecast.interview.list') {return { interviews: [record] }}
+    if (method === 'forecast.interview.list') {
+      return { interviews: [record] }
+    }
 
     if (method === 'forecast.interview.answer') {
       if (fail) {
@@ -94,7 +98,10 @@ it.each([
       return record
     }
 
-    if (method === 'forecast.interview.preview') {return { spec: {}, issues: [], unanswered: [], committable: false }}
+    if (method === 'forecast.interview.preview') {
+      return { spec: {}, issues: [], unanswered: [], committable: false }
+    }
+
     throw new Error(`Unexpected method: ${method}`)
   })
 

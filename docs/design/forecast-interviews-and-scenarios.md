@@ -267,3 +267,10 @@ Current checks cover lost-response retries, stale writes, duplicate creation,
 user-answer attribution, contract validation and keyboard operation at 60×18,
 80×24 and 120×40. These are engineering checks, not evidence of improved scores.
 The unchecked integration items above remain required for the full feature.
+
+The Markets `F` handoff now captures exact prediction-outcome or ordinary-series
+identity. A multi-outcome headline requires explicit outcome selection; raw market
+midpoints are distinct from normalized distribution probabilities and user beliefs.
+News `F` now has a searchable active-forecast picker, source preview, idempotent
+evidence attachment and an evidence-linked update interview. Agent-generated
+updates and scenario runs remain pending integration.

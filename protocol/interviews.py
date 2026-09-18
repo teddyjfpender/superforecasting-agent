@@ -2,13 +2,108 @@
 
 from __future__ import annotations
 
+from datetime import date, datetime
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class InterviewModel(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, allow_inf_nan=False)
+
+
+def _source_url(value: str | None) -> None:
+    if value is None:
+        return
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+    ):
+        raise ValueError("source URL must be an HTTP(S) URL without credentials")
+
+
+def _source_time(value: str | None) -> None:
+    if value is not None:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            raise ValueError("source timestamps require a timezone")
+
+
+class ForecastMarketSeed(InterviewModel):
+    kind: Literal["prediction_market", "series"]
+    provider: str = Field(min_length=1, max_length=100)
+    symbol: str = Field(min_length=1, max_length=500)
+    title: str = Field(min_length=1, max_length=1000)
+    event_id: str | None = Field(default=None, max_length=500)
+    outcome_id: str | None = Field(default=None, max_length=500)
+    outcome_label: str | None = Field(default=None, max_length=1000)
+    source_url: str | None = Field(default=None, max_length=4000)
+    captured_at: str
+    retrieved_at: str | None = None
+    observed_at: str | None = None
+    published_at: str | None = None
+    close_time: str | None = None
+    units: str | None = Field(default=None, max_length=200)
+    revision_policy: str | None = Field(default=None, max_length=1000)
+    period_start: str | None = None
+    period_end: str | None = None
+    market_price: float | None = Field(default=None, ge=0, le=1)
+    observed_value: float | None = None
+
+    @model_validator(mode="after")
+    def source_identity(self) -> ForecastMarketSeed:
+        _source_url(self.source_url)
+        for value in (
+            self.captured_at,
+            self.retrieved_at,
+            self.observed_at,
+            self.published_at,
+            self.close_time,
+        ):
+            _source_time(value)
+        if (self.period_start is None) != (self.period_end is None):
+            raise ValueError("observation periods require both start and end")
+        if self.period_start is not None and self.period_end is not None:
+            if date.fromisoformat(self.period_start) > date.fromisoformat(
+                self.period_end
+            ):
+                raise ValueError("observation period end precedes its start")
+        if self.kind == "prediction_market" and self.symbol != self.outcome_id:
+            raise ValueError(
+                "selected prediction-market symbol must identify its exact outcome"
+            )
+        if self.kind == "prediction_market" and not (self.event_id and self.outcome_id):
+            raise ValueError(
+                "prediction-market seeds require exact event and outcome identifiers"
+            )
+        if self.kind == "series" and (
+            self.event_id or self.outcome_id or self.market_price is not None
+        ):
+            raise ValueError(
+                "ordinary series cannot claim prediction-market identities or prices"
+            )
+        return self
+
+
+class ForecastArticleClaim(InterviewModel):
+    title: str = Field(min_length=1, max_length=2000)
+    url: str = Field(min_length=1, max_length=4000)
+    publisher: str = Field(default="", max_length=500)
+    feed_url: str = Field(max_length=4000)
+    published_at: str | None = None
+    content: str = Field(default="", max_length=60000)
+    extraction: Literal["article", "feed"]
+
+    @model_validator(mode="after")
+    def source_identity(self) -> ForecastArticleClaim:
+        _source_url(self.url)
+        _source_url(self.feed_url)
+        _source_time(self.published_at)
+        return self
 
 
 class InterviewChoice(InterviewModel):
@@ -99,6 +194,8 @@ class InterviewScenario(InterviewModel):
 
 class InterviewDraft(InterviewModel):
     schema_version: Literal[1] = 1
+    seed: ForecastMarketSeed | None = None
+    evidence_refs: list[str] = Field(default_factory=list, max_length=200)
     mode: Literal["create", "update"]
     question_id: str | None = None
     baseline_forecast_id: str | None = None

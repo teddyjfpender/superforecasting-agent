@@ -5,7 +5,7 @@ import type { PasteEvent } from '../components/textInput.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import type { BuildInfoPayload, ImageAttachResponse } from '../gatewayTypes.js'
 import type { ParsedVoiceRecordKey } from '../lib/platform.js'
-import type { RpcArgs, RpcMethod, RpcMethods } from '../protocol/generated.js'
+import type { ForecastMarketSeed, RpcArgs, RpcMethod, RpcMethods } from '../protocol/generated.js'
 import type { Theme } from '../theme.js'
 import type {
   ApprovalReq,
@@ -101,6 +101,8 @@ export interface OverlayState {
   obsidian: boolean
   onboard: boolean
   onboardQuestionId?: string | null
+  onboardSeed?: ForecastMarketSeed | null
+  onboardInterviewId?: string | null
   pager: null | PagerState
   // The Ctrl+K command palette — fuzzy-launch any slash command from anywhere.
   palette: boolean

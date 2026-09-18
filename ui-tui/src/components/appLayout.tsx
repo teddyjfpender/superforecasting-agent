@@ -604,9 +604,20 @@ const QuestionOnboardPane = memo(function QuestionOnboardPane() {
   return (
     <ForecastInterview
       gw={gw}
-      onClose={() => patchOverlayState({ onboard: false, onboardQuestionId: null })}
+      interviewId={overlay.onboardInterviewId ?? null}
+      key={
+        overlay.onboardInterviewId ??
+        overlay.onboardQuestionId ??
+        (overlay.onboardSeed
+          ? `${overlay.onboardSeed.provider}:${overlay.onboardSeed.symbol}:${overlay.onboardSeed.captured_at}`
+          : 'new')
+      }
+      onClose={() =>
+        patchOverlayState({ onboard: false, onboardQuestionId: null, onboardSeed: null, onboardInterviewId: null })
+      }
       onDone={id => patchOverlayState({ forecasts: true, forecastsInitialId: id })}
       questionId={overlay.onboardQuestionId ?? null}
+      seed={overlay.onboardSeed ?? null}
       t={ui.theme}
     />
   )

@@ -2,13 +2,14 @@
 
 from typing import Any, Literal
 
-from protocol.interviews import InterviewDraft
+from protocol.interviews import ForecastArticleClaim, ForecastMarketSeed, InterviewDraft
 from protocol.types import WireModel
 
 
 class InterviewBeginRequest(WireModel):
     interview_id: str
     title: str = "New forecast"
+    seed: ForecastMarketSeed | None = None
     question_id: str | None = None
 
 
@@ -60,3 +61,26 @@ class InterviewPreviewResponse(WireModel):
 class InterviewCommitResponse(WireModel):
     question_id: str
     revision: int
+
+
+class ForecastArticleAttachRequest(WireModel):
+    question_id: str
+    article: ForecastArticleClaim
+    prepare_update: bool = False
+
+
+class ForecastArticleAttachResponse(WireModel):
+    question_id: str
+    evidence_id: str
+    interview_id: str | None
+    already_attached: bool
+
+
+class ForecastQuestionChoice(WireModel):
+    id: str
+    title: str
+    domain: str | None
+
+
+class ForecastQuestionChoicesResponse(WireModel):
+    questions: list[ForecastQuestionChoice]
