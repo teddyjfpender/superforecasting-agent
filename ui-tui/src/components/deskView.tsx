@@ -1194,7 +1194,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   // another, so hand off by closing the desk and opening onboarding (the seam the
   // empty-state text — "press n to track a new one" — points at).
   const openNewQuestion = () => {
-    patchOverlayState({ forecasts: false, forecastsInitialId: null, onboard: true })
+    patchOverlayState({ forecasts: false, forecastsInitialId: null, onboard: true, onboardQuestionId: null })
   }
 
   // The id + title the settings modal targets: the selected forecast, or (on a
@@ -1365,6 +1365,12 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
 
       if (ch === 'R') {
         return openResolve()
+      }
+
+      if (ch === 'i' && selectedId && !lensActive) {
+        patchOverlayState({ forecasts: false, onboard: true, onboardQuestionId: selectedId })
+
+        return
       }
 
       if (ch === 'n') {
@@ -1760,6 +1766,15 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
             { k: 'u', label: 'Re-arm', run: () => runRearm() },
             { k: 'R', label: 'Resolve', run: () => openResolve() },
             { k: 'n', label: 'New', run: () => openNewQuestion() },
+            {
+              k: 'i',
+              label: 'Interview',
+              run: () => {
+                if (selectedId && !lensActive) {
+                  patchOverlayState({ forecasts: false, onboard: true, onboardQuestionId: selectedId })
+                }
+              }
+            },
             { k: 's', label: 'Settings', run: () => openSettings() },
             { k: 'o', label: 'Sort', run: () => onSortCycle() },
             {

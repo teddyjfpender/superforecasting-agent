@@ -229,9 +229,9 @@ Do not infer forecasting improvement from passing UI tests or from one attractiv
 scenario. Engineering correctness and predictive usefulness need separate evidence.
 
 - [x] Inspect current owners and write a research-grounded design.
-- [ ] Implement and test stable News publication independently of acquisition.
-- [ ] Add strict interview/answer/assumption/variant models and migrations.
-- [ ] Add durable application operations, idempotency and concurrency tests.
+- [x] Implement and test stable News publication independently of acquisition.
+- [x] Add strict interview/answer/assumption/variant models and migrations.
+- [x] Add durable interview operations, idempotency and concurrency tests.
 - [ ] Integrate adaptive structured generation with budget, cancellation and retry.
 - [ ] Replace onboarding and add Desk update interview shortcut.
 - [ ] Implement coherent scenario evaluation and matched ablation records.
@@ -253,3 +253,17 @@ preregister paired structured-versus-existing forecasts with the same informatio
 cutoff and model budget, cluster by independent outcome family, and compare proper
 scores only after resolution. Keep ablation sensitivity separate from demonstrated
 improvement. An outcome that is not yet resolved provides no score evidence.
+
+### Implementation checkpoint
+
+The shared models now live in `protocol/interviews.py`, generate TypeScript, and
+are consumed by `forecasting/interviews/`. The TUI has a deterministic, resumable
+questionnaire for new questions and Desk updates (`i`). Question creation is
+atomic and has a revision-bound commit receipt. No update interview changes a
+probability yet. Outcome branches elicit binary probabilities, numeric quantiles
+and category-specific probabilities, with coherence checks before creation.
+
+Current checks cover lost-response retries, stale writes, duplicate creation,
+user-answer attribution, contract validation and keyboard operation at 60×18,
+80×24 and 120×40. These are engineering checks, not evidence of improved scores.
+The unchecked integration items above remain required for the full feature.

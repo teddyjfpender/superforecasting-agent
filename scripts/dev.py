@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # the repository-wide encoding gate; no silent baseline hides new-layer errors.
 STRICT_PYTHON = (
     "forecasting/news",
+    "forecasting/interviews",
     "superforecasting_agent/runtime/news_desk.py",
     "superforecasting_agent/runtime/data_desk.py",
     "forecasting/marketdata/catalog.py",

@@ -1096,3 +1096,60 @@ def _(rid, params: dict) -> dict:
         return _ok(rid, {"packet": packet, "related": related, "relevant_lessons": relevant_lessons})
     except Exception as e:
         return _err(rid, 5008, str(e))
+
+
+# Questionnaire operations share a domain owner with scheduled review workers.
+# The interactive transport chooses actor=user; model JSON never chooses it.
+def _interview_service():
+    from forecasting.interviews.service import InterviewService
+    from forecasting.ledger import ForecastLedger
+
+    return InterviewService(ForecastLedger())
+
+
+@rpc_validated("forecast.interview.begin")
+def _(rid, params: dict) -> dict:
+    try:
+        return _ok(rid, _interview_service().begin(**params))
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))
+
+
+@rpc_validated("forecast.interview.read")
+def _(rid, params: dict) -> dict:
+    try:
+        return _ok(rid, _interview_service().store.read(**params))
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))
+
+
+@rpc_validated("forecast.interview.list")
+def _(rid, params: dict) -> dict:
+    try:
+        return _ok(rid, {"interviews": _interview_service().store.list_latest(params.get("question_id"))})
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))
+
+
+@rpc_validated("forecast.interview.answer")
+def _(rid, params: dict) -> dict:
+    try:
+        return _ok(rid, _interview_service().answer(**params, actor="user"))
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))
+
+
+@rpc_validated("forecast.interview.preview")
+def _(rid, params: dict) -> dict:
+    try:
+        return _ok(rid, _interview_service().preview(**params))
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))
+
+
+@rpc_validated("forecast.interview.commit")
+def _(rid, params: dict) -> dict:
+    try:
+        return _ok(rid, _interview_service().commit(**params))
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))

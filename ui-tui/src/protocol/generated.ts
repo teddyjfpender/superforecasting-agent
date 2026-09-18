@@ -2549,6 +2549,118 @@ export interface InsightsResponse {
   sessions: number
 }
 
+export interface InterviewAnswer {
+  actor: 'agent' | 'user'
+  evidence_refs: string[]
+  note: string
+  question_id: string
+  status: 'answered' | 'skipped' | 'unknown'
+  value: null | number | string | string[]
+}
+
+export interface InterviewAnswerRequest {
+  expected_revision: number
+  interview_id: string
+  note: string
+  question_id: string
+  request_id: string
+  status: 'answered' | 'skipped' | 'unknown'
+  value: null | number | string | string[]
+}
+
+export interface InterviewAssumption {
+  evidence_refs: string[]
+  id: string
+  probability: null | number
+  rationale: string
+  statement: string
+  uncertainty: 'aleatoric' | 'epistemic' | 'measurement' | 'mixed' | 'unclassified'
+}
+
+export interface InterviewBeginRequest {
+  interview_id: string
+  question_id: null | string
+  title: string
+}
+
+export interface InterviewChoice {
+  id: string
+  label: string
+}
+
+export interface InterviewCommitResponse {
+  question_id: string
+  revision: number
+}
+
+export interface InterviewDraft {
+  answers: InterviewAnswer[]
+  assumptions: InterviewAssumption[]
+  baseline_forecast_id: null | string
+  mode: 'create' | 'update'
+  question_id: null | string
+  questions: InterviewQuestion[]
+  scenarios: InterviewScenario[]
+  schema_version: number
+  status: 'cancelled' | 'draft' | 'needs_research' | 'needs_user' | 'ready'
+  title: string
+}
+
+export interface InterviewListRequest {
+  question_id: null | string
+}
+
+export interface InterviewListResponse {
+  interviews: InterviewRecord[]
+}
+
+export interface InterviewPreviewRequest {
+  interview_id: string
+  revision: number
+}
+
+export interface InterviewPreviewResponse {
+  committable: boolean
+  issues: Record<string, unknown>[]
+  spec: Record<string, unknown>
+  unanswered: string[]
+}
+
+export interface InterviewQuestion {
+  allow_custom: boolean
+  assumption_ids: string[]
+  choices: InterviewChoice[]
+  id: string
+  kind: 'multiple' | 'number' | 'probability' | 'single' | 'text'
+  prompt: string
+  rationale: string
+  required: boolean
+  section: 'beliefs' | 'challenge' | 'define' | 'drivers' | 'outside_view' | 'resolve' | 'review' | 'scenarios' | 'uncertainty' | 'update_plan'
+}
+
+export interface InterviewReadRequest {
+  interview_id: string
+  revision: null | number
+}
+
+export interface InterviewRecord {
+  actor: 'agent' | 'user'
+  created_at: string
+  digest: string
+  document: InterviewDraft
+  interview_id: string
+  request_id: string
+  revision: number
+}
+
+export interface InterviewScenario {
+  conditions: Record<string, boolean>
+  excluded_assumption_ids: string[]
+  id: string
+  kind: 'ablation' | 'conditional'
+  name: string
+}
+
 export interface JobCompletePayload {
   job_id: string
   result: Record<string, unknown>
@@ -4374,6 +4486,53 @@ export interface RpcMethods {
       value?: null | unknown
     }
     result: ForecastHooksSetResponse
+  }
+  'forecast.interview.answer': {
+    params: {
+      expected_revision: number
+      interview_id: string
+      note?: string
+      question_id: string
+      request_id: string
+      status: 'answered' | 'skipped' | 'unknown'
+      value?: null | number | string | string[]
+    }
+    result: InterviewRecord
+  }
+  'forecast.interview.begin': {
+    params: {
+      interview_id: string
+      question_id?: null | string
+      title?: string
+    }
+    result: InterviewRecord
+  }
+  'forecast.interview.commit': {
+    params: {
+      interview_id: string
+      revision: number
+    }
+    result: InterviewCommitResponse
+  }
+  'forecast.interview.list': {
+    params: {
+      question_id?: null | string
+    }
+    result: InterviewListResponse
+  }
+  'forecast.interview.preview': {
+    params: {
+      interview_id: string
+      revision: number
+    }
+    result: InterviewPreviewResponse
+  }
+  'forecast.interview.read': {
+    params: {
+      interview_id: string
+      revision?: null | number
+    }
+    result: InterviewRecord
   }
   'forecast.onboard_commit': {
     params: {

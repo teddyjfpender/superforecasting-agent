@@ -48,6 +48,7 @@ import { DemoVizView } from './demoVizView.js'
 import { DeskView } from './deskView.js'
 import { DocsView } from './docsView.js'
 import { FooterChips } from './footerChips.js'
+import { ForecastInterview } from './forecastInterview.js'
 import { FpsOverlay } from './fpsOverlay.js'
 import { HelpOverlay } from './helpOverlay.js'
 import { HelpView } from './helpView.js'
@@ -59,7 +60,6 @@ import { MessagingView } from './messagingView.js'
 import { NavBar } from './navBar.js'
 import { NewsView } from './newsView.js'
 import { PaletteOverlay } from './paletteOverlay.js'
-import { QuestionOnboardModal } from './questionOnboardModal.js'
 import { QueuedMessages } from './queuedMessages.js'
 import { QuickMessage } from './quickMessage.js'
 import { ScheduleStrip } from './scheduleStrip.js'
@@ -599,7 +599,17 @@ const QuestionOnboardPane = memo(function QuestionOnboardPane() {
   const { gw } = useGateway()
   const ui = useStore($uiState)
 
-  return <QuestionOnboardModal gw={gw} onClose={() => patchOverlayState({ onboard: false })} t={ui.theme} />
+  const overlay = useStore($overlayState)
+
+  return (
+    <ForecastInterview
+      gw={gw}
+      onClose={() => patchOverlayState({ onboard: false, onboardQuestionId: null })}
+      onDone={id => patchOverlayState({ forecasts: true, forecastsInitialId: id })}
+      questionId={overlay.onboardQuestionId ?? null}
+      t={ui.theme}
+    />
+  )
 })
 
 const DocsViewPane = memo(function DocsViewPane({ onDraft }: { onDraft: (command: string) => void }) {

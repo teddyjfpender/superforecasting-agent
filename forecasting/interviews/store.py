@@ -29,6 +29,17 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
         )
     """)
 
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS forecast_interview_commits (
+            interview_id TEXT PRIMARY KEY,
+            revision INTEGER NOT NULL,
+            question_id TEXT NOT NULL REFERENCES forecast_questions(id),
+            committed_at TEXT NOT NULL,
+            FOREIGN KEY (interview_id, revision)
+                REFERENCES forecast_interview_revisions(interview_id, revision)
+        )
+    """)
+
 
 class InterviewStore:
     """No draft operation creates a forecast snapshot or changes its probability."""
@@ -47,6 +58,20 @@ class InterviewStore:
         if row is None:
             raise ValidationError("interview revision not found")
         return {**dict(row), "document": json.loads(row["document"])}
+
+    def list_latest(self, question_id: str | None = None) -> list[dict]:
+        with self.ledger._connect() as conn:
+            rows = conn.execute(
+                "SELECT r.interview_id FROM forecast_interview_revisions r "
+                "WHERE r.revision = (SELECT MAX(v.revision) FROM forecast_interview_revisions v "
+                "WHERE v.interview_id = r.interview_id) "
+                "AND json_extract(r.document, '$.question_id') IS ? "
+                "AND json_extract(r.document, '$.status') != 'cancelled' "
+                "AND NOT EXISTS (SELECT 1 FROM forecast_interview_commits c WHERE c.interview_id = r.interview_id) "
+                "ORDER BY r.created_at DESC, r.rowid DESC LIMIT 50",
+                (question_id,),
+            ).fetchall()
+        return [self.read(row["interview_id"]) for row in rows]
 
     def save(
         self,
@@ -85,6 +110,11 @@ class InterviewStore:
                         "request identifier reused for a different revision"
                     )
                 return self.read(interview_id, retry["revision"])
+            if conn.execute(
+                "SELECT 1 FROM forecast_interview_commits WHERE interview_id = ?",
+                (interview_id,),
+            ).fetchone():
+                raise ValidationError("committed interviews cannot be edited")
             previous = conn.execute(
                 "SELECT revision, document FROM forecast_interview_revisions "
                 "WHERE interview_id = ? ORDER BY revision DESC LIMIT 1",

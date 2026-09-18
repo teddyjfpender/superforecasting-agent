@@ -1,0 +1,294 @@
+"""Shared questionnaire operations for interactive clients and scheduled agents."""
+
+from __future__ import annotations
+
+import hashlib
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from forecasting.ledger import ForecastLedger
+
+from forecasting.interviews.questions import core_questions
+from forecasting.interviews.store import InterviewStore
+from forecasting.models import ValidationError, parse_timestamp
+from forecasting.question_spec import spec_from_dict
+from protocol.interviews import (
+    InterviewAnswer,
+    InterviewAssumption,
+    InterviewDraft,
+    InterviewQuestion,
+)
+
+
+class InterviewService:
+    def __init__(self, ledger: ForecastLedger):
+        self.ledger = ledger
+        self.store = InterviewStore(ledger)
+
+    def begin(
+        self,
+        interview_id: str,
+        *,
+        title: str = "New forecast",
+        question_id: str | None = None,
+    ) -> dict:
+        # Client-generated IDs survive request retries. Never replace an existing draft.
+        with self.ledger.transaction(immediate=True) as conn:
+            exists = conn.execute(
+                "SELECT 1 FROM forecast_interview_revisions WHERE interview_id = ?",
+                (interview_id,),
+            ).fetchone()
+            if exists:
+                existing = self.store.read(interview_id)
+                if existing["document"]["question_id"] != question_id:
+                    raise ValidationError(
+                        "interview identifier belongs to another target"
+                    )
+                return existing
+            question = self.ledger.get_question(question_id) if question_id else None
+            outcome = question.outcome_space.type if question else "binary"
+            document = InterviewDraft(
+                mode="update" if question else "create",
+                question_id=question_id,
+                baseline_forecast_id=question.current_forecast_id if question else None,
+                title=question.title if question else title,
+                questions=core_questions(outcome, update=bool(question)),
+            )
+            if question:
+                values = {
+                    "title": question.title,
+                    "criteria": question.resolution_criteria,
+                    "source": question.resolution_source,
+                    "deadline": question.close_time or question.resolution_time,
+                    "outcome": outcome,
+                    "units": question.outcome_space.units,
+                }
+                ids = {q.id for q in document.questions}
+                document.answers = [
+                    InterviewAnswer(
+                        question_id=key,
+                        status="answered",
+                        value=value,
+                        actor="agent",
+                        note=f"Existing question contract: {question.id}. Confirm before changing.",
+                    )
+                    for key, value in values.items()
+                    if value and key in ids
+                ]
+            return self.store.save(
+                interview_id,
+                document,
+                expected_revision=0,
+                request_id="begin",
+                actor="agent",
+            )
+
+    def answer(
+        self,
+        interview_id: str,
+        *,
+        expected_revision: int,
+        request_id: str,
+        question_id: str,
+        status: Literal["answered", "unknown", "skipped"],
+        value: str | float | list[str] | None = None,
+        note: str = "",
+        actor: Literal["user", "agent"] = "user",
+        evidence_refs: list[str] | None = None,
+    ) -> dict:
+        # Read the stated base, not latest: a retry must reproduce the exact same revision.
+        record = self.store.read(interview_id, expected_revision)
+        draft = InterviewDraft.model_validate(record["document"])
+        answer = InterviewAnswer(
+            question_id=question_id,
+            status=status,
+            value=value,
+            note=note,
+            actor=actor,
+            evidence_refs=evidence_refs or [],
+        )
+        if question_id not in {question.id for question in draft.questions}:
+            raise ValidationError("unknown interview question")
+        draft.answers = [a for a in draft.answers if a.question_id != question_id] + [
+            answer
+        ]
+        if status == "answered" and question_id == "outcome":
+            questions = core_questions(str(value), update=draft.mode == "update")
+            ids = {q.id for q in questions}
+            if any(a.question_id not in ids for a in draft.answers):
+                raise ValidationError(
+                    "outcome change would discard prior answers; start a new interview"
+                )
+            draft.questions = questions
+        if status == "answered" and question_id == "categories":
+            labels = [
+                label.strip() for label in str(value).splitlines() if label.strip()
+            ]
+            if len(labels) < 2 or len(set(label.casefold() for label in labels)) != len(
+                labels
+            ):
+                raise ValidationError("provide at least two distinct categories")
+            if len(labels) > 20:
+                raise ValidationError("use at most 20 categories")
+            draft.questions = [
+                q
+                for q in draft.questions
+                if q.id != "category_beliefs" and not q.id.startswith("category_prob_")
+            ]
+            at = (
+                next(i for i, q in enumerate(draft.questions) if q.id == "categories")
+                + 1
+            )
+            draft.questions[at:at] = [
+                InterviewQuestion(
+                    id="category_prob_"
+                    + hashlib.sha256(label.encode()).hexdigest()[:16],
+                    section="beliefs",
+                    kind="probability",
+                    prompt=f"What is the probability of {label}?",
+                    rationale="All category probabilities must sum to 1; include residual outcomes.",
+                )
+                for label in labels
+            ]
+        if status == "answered" and question_id == "title":
+            draft.title = str(value)
+        if status == "answered" and question_id == "drivers":
+            known = {a.id: a for a in draft.assumptions}
+            for statement in str(value).splitlines():
+                statement = statement.strip()
+                if statement:
+                    id = (
+                        "assumption_"
+                        + hashlib.sha256(statement.encode()).hexdigest()[:16]
+                    )
+                    known.setdefault(
+                        id, InterviewAssumption(id=id, statement=statement)
+                    )
+            draft.assumptions = list(known.values())
+        draft.status = "needs_user" if status == "unknown" else "draft"
+        return self.store.save(
+            interview_id,
+            draft,
+            expected_revision=expected_revision,
+            request_id=request_id,
+            actor=actor,
+        )
+
+    def preview(self, interview_id: str, revision: int) -> dict:
+        if type(revision) is not int or revision < 1:
+            raise ValidationError("revision must be a positive integer")
+        draft = InterviewDraft.model_validate(
+            self.store.read(interview_id, revision)["document"]
+        )
+        values = {
+            a.question_id: a.value for a in draft.answers if a.status == "answered"
+        }
+        missing = [
+            q.prompt for q in draft.questions if q.required and q.id not in values
+        ]
+        outcome = values.get("outcome", "binary")
+        raw = {
+            "title": values.get("title", draft.title),
+            "resolution_criteria": values.get("criteria", ""),
+            "resolution_source": values.get("source"),
+            "outcome_type": outcome,
+            "close_time": values.get("deadline"),
+            "autonomy": "ask",
+            "clarifications": [answer.model_dump() for answer in draft.answers],
+        }
+        if outcome == "numeric":
+            raw["units"] = values.get("units")
+            quantiles = [values.get(f"quantile_{q}") for q in (10, 50, 90)]
+            present = [value for value in quantiles if isinstance(value, float)]
+            if present != sorted(present):
+                missing.append(
+                    "Quantiles must increase from the 10th to the 90th percentile."
+                )
+        elif outcome == "categorical":
+            raw["choices"] = [
+                v.strip()
+                for v in str(values.get("categories", "")).splitlines()
+                if v.strip()
+            ]
+        if outcome == "categorical":
+            probability_questions = [
+                q.id for q in draft.questions if q.id.startswith("category_prob_")
+            ]
+            probabilities = [values.get(key) for key in probability_questions]
+            if any(value is not None for value in probabilities):
+                if not all(isinstance(value, float) for value in probabilities):
+                    missing.append(
+                        "Complete every category probability, or leave all unknown."
+                    )
+                elif (
+                    abs(
+                        sum(
+                            value for value in probabilities if isinstance(value, float)
+                        )
+                        - 1.0
+                    )
+                    > 1e-9
+                ):
+                    missing.append("Category probabilities must sum to 1.")
+        try:
+            deadline = raw["close_time"]
+            if deadline is not None and not isinstance(deadline, str):
+                raise ValidationError("deadline must be a timestamp string")
+            raw["close_time"] = parse_timestamp(deadline, field_name="deadline")
+            spec = spec_from_dict(raw)
+            issues = [issue.to_dict() for issue in spec.validate()]
+            normalized = spec.to_dict()
+        except (ValidationError, ValueError, TypeError) as exc:
+            issues = [
+                {
+                    "field": "spec",
+                    "severity": "error",
+                    "message": str(exc),
+                    "fix": "Review the answers",
+                }
+            ]
+            normalized = raw
+        return {
+            "spec": normalized,
+            "issues": issues,
+            "unanswered": missing,
+            "committable": not missing
+            and not any(i["severity"] == "error" for i in issues),
+        }
+
+    def commit(self, interview_id: str, revision: int) -> dict:
+        from forecasting.models import utc_now_iso
+
+        if type(revision) is not int or revision < 1:
+            raise ValidationError("revision must be a positive integer")
+        with self.ledger.transaction(immediate=True) as conn:
+            receipt = conn.execute(
+                "SELECT revision, question_id FROM forecast_interview_commits WHERE interview_id = ?",
+                (interview_id,),
+            ).fetchone()
+            if receipt:
+                if receipt["revision"] != revision:
+                    raise ValidationError(
+                        "a different interview revision was already committed"
+                    )
+                return {"question_id": receipt["question_id"], "revision": revision}
+            record = self.store.read(interview_id)
+            if record["revision"] != revision:
+                raise ValidationError("interview changed; reload before committing")
+            draft = InterviewDraft.model_validate(record["document"])
+            if draft.mode != "create" or draft.status == "cancelled":
+                raise ValidationError(
+                    "only active new-question interviews can create a question"
+                )
+            preview = self.preview(interview_id, revision)
+            if not preview["committable"]:
+                raise ValidationError(
+                    "required answers or resolution criteria need review"
+                )
+            result = spec_from_dict(preview["spec"]).commit(self.ledger)
+            conn.execute(
+                "INSERT INTO forecast_interview_commits (interview_id, revision, question_id, committed_at) "
+                "VALUES (?, ?, ?, ?)",
+                (interview_id, revision, result["question_id"], utc_now_iso()),
+            )
+            return {"question_id": result["question_id"], "revision": revision}

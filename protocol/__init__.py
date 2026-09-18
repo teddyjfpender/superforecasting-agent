@@ -33,6 +33,7 @@ from protocol.rpc import config as _rpc_config
 from protocol.rpc import forecast as _rpc_forecast
 from protocol.rpc import host as _rpc_host
 from protocol.rpc import interact as _rpc_interact
+from protocol.rpc import interviews as _rpc_interviews
 from protocol.rpc import jobs as _rpc_jobs
 from protocol.rpc import market_models as _rpc_market_models
 from protocol.rpc import markets as _rpc_markets
@@ -462,6 +463,36 @@ RPC_SPECS: list[RpcSpec] = [
         "forecast.question",
         _rpc_forecast.ForecastQuestionRequest,
         _rpc_forecast.ForecastQuestionPacketResponse,
+    ),
+    RpcSpec(
+        "forecast.interview.begin",
+        _rpc_interviews.InterviewBeginRequest,
+        _rpc_interviews.InterviewRecord,
+    ),
+    RpcSpec(
+        "forecast.interview.read",
+        _rpc_interviews.InterviewReadRequest,
+        _rpc_interviews.InterviewRecord,
+    ),
+    RpcSpec(
+        "forecast.interview.list",
+        _rpc_interviews.InterviewListRequest,
+        _rpc_interviews.InterviewListResponse,
+    ),
+    RpcSpec(
+        "forecast.interview.answer",
+        _rpc_interviews.InterviewAnswerRequest,
+        _rpc_interviews.InterviewRecord,
+    ),
+    RpcSpec(
+        "forecast.interview.commit",
+        _rpc_interviews.InterviewPreviewRequest,
+        _rpc_interviews.InterviewCommitResponse,
+    ),
+    RpcSpec(
+        "forecast.interview.preview",
+        _rpc_interviews.InterviewPreviewRequest,
+        _rpc_interviews.InterviewPreviewResponse,
     ),
     RpcSpec(
         "forecast.onboard_propose",

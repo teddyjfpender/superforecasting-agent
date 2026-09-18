@@ -27,6 +27,7 @@ const buildOverlayState = (): OverlayState => ({
   newsInitialQuery: null,
   obsidian: false,
   onboard: false,
+  onboardQuestionId: null,
   pager: null,
   palette: false,
   picker: false,

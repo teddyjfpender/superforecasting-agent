@@ -100,6 +100,7 @@ export interface OverlayState {
   newsInitialQuery: null | string
   obsidian: boolean
   onboard: boolean
+  onboardQuestionId?: string | null
   pager: null | PagerState
   // The Ctrl+K command palette — fuzzy-launch any slash command from anywhere.
   palette: boolean

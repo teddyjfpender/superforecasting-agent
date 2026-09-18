@@ -1,0 +1,62 @@
+"""Forecast questionnaire operations; nested contracts also generate the TUI types."""
+
+from typing import Any, Literal
+
+from protocol.interviews import InterviewDraft
+from protocol.types import WireModel
+
+
+class InterviewBeginRequest(WireModel):
+    interview_id: str
+    title: str = "New forecast"
+    question_id: str | None = None
+
+
+class InterviewReadRequest(WireModel):
+    interview_id: str
+    revision: int | None = None
+
+
+class InterviewListRequest(WireModel):
+    question_id: str | None = None
+
+
+class InterviewRecord(WireModel):
+    interview_id: str
+    revision: int
+    request_id: str
+    actor: Literal["user", "agent"]
+    document: InterviewDraft
+    digest: str
+    created_at: str
+
+
+class InterviewListResponse(WireModel):
+    interviews: list[InterviewRecord]
+
+
+class InterviewAnswerRequest(WireModel):
+    interview_id: str
+    expected_revision: int
+    request_id: str
+    question_id: str
+    status: Literal["answered", "unknown", "skipped"]
+    value: str | float | list[str] | None = None
+    note: str = ""
+
+
+class InterviewPreviewRequest(WireModel):
+    interview_id: str
+    revision: int
+
+
+class InterviewPreviewResponse(WireModel):
+    spec: dict[str, Any]
+    issues: list[dict[str, Any]]
+    unanswered: list[str]
+    committable: bool
+
+
+class InterviewCommitResponse(WireModel):
+    question_id: str
+    revision: int

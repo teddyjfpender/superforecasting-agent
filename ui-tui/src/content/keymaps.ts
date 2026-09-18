@@ -54,6 +54,7 @@ export const PER_VIEW_KEYS: Record<string, [string, string][]> = {
     ['Space', 'mark the row (advances) · Shift+↑/↓ extend the selection'],
     ['Tab / ←→ / l', 'switch lens (h is Help)'],
     ['Enter', 'open the selected forecast'],
+    ['n / i', 'new question interview / revisit selected forecast beliefs'],
     ['U / u', 'update now / re-arm — marked rows (or a lens → all its questions)'],
     ['A / T', 'agent run · task over the selection (or a lens → all its questions)'],
     ['o / O', 'sort column · toggle asc/desc — cycles past the columns to VOI (value-of-information order)'],

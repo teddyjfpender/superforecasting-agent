@@ -146,3 +146,139 @@ def test_outer_transaction_rollback_removes_revision(store):
             raise RuntimeError("interrupt")
     with pytest.raises(ValidationError, match="not found"):
         store.read("interview")
+
+
+def test_application_answers_adapt_resume_and_commit_once(store):
+    from forecasting.interviews.service import InterviewService
+
+    service = InterviewService(store.ledger)
+    first = service.begin("flow")
+    assert service.begin("flow") == first
+    record = first
+    values = {
+        "title": "Will June 2030 CPI exceed 3 percent?",
+        "outcome": "binary",
+        "criteria": "Resolves yes if the BLS June 2030 CPI YoY first release exceeds 3.0 percent.",
+        "source": "https://www.bls.gov/cpi/",
+        "deadline": "2030-07-15T00:00:00Z",
+        "drivers": "Energy prices rise\nShelter inflation stays high",
+        "belief": 0.4,
+    }
+    for key, value in values.items():
+        record = service.answer(
+            "flow",
+            expected_revision=record["revision"],
+            request_id=key,
+            question_id=key,
+            status="answered",
+            value=value,
+        )
+    assert len(record["document"]["assumptions"]) == 2
+    assert service.preview("flow", record["revision"])["committable"]
+    assert len(store.list_latest()) == 1
+    result = service.commit("flow", record["revision"])
+    assert service.commit("flow", record["revision"]) == result
+    assert store.list_latest() == []
+    assert len(store.ledger.list_questions()) == 1
+    assert store.ledger.list_snapshots(result["question_id"]) == []
+    review = service.begin("review", question_id=result["question_id"])
+    assert review["document"]["mode"] == "update"
+    assert review["document"]["questions"][0]["id"] == "new_evidence"
+    assert all(answer["actor"] == "agent" for answer in review["document"]["answers"])
+
+
+def test_numeric_branch_and_cross_quantile_validation(store):
+    from forecasting.interviews.service import InterviewService
+
+    service = InterviewService(store.ledger)
+    service.begin("numeric")
+    record = service.answer(
+        "numeric",
+        expected_revision=1,
+        request_id="outcome",
+        question_id="outcome",
+        status="answered",
+        value="numeric",
+    )
+    assert "units" in {q["id"] for q in record["document"]["questions"]}
+    assert "belief" not in {q["id"] for q in record["document"]["questions"]}
+    for key, value in [("quantile_10", 10.0), ("quantile_50", 5.0)]:
+        record = service.answer(
+            "numeric",
+            expected_revision=record["revision"],
+            request_id=key,
+            question_id=key,
+            status="answered",
+            value=value,
+        )
+    assert any(
+        "Quantiles" in message
+        for message in service.preview("numeric", record["revision"])["unanswered"]
+    )
+
+
+def test_answer_retry_does_not_overwrite_newer_answers(store):
+    from forecasting.interviews.service import InterviewService
+
+    service = InterviewService(store.ledger)
+    service.begin("retry")
+    args = dict(
+        expected_revision=1,
+        request_id="probability",
+        question_id="belief",
+        status="answered",
+        value=0.3,
+    )
+    saved = service.answer("retry", **args)
+    newer = service.answer(
+        "retry",
+        expected_revision=2,
+        request_id="revision",
+        question_id="belief",
+        status="answered",
+        value=0.4,
+    )
+    assert service.answer("retry", **args) == saved
+    assert store.read("retry") == newer
+
+
+def test_categorical_questions_require_coherent_probability_vector(store):
+    from forecasting.interviews.service import InterviewService
+
+    service = InterviewService(store.ledger)
+    service.begin("categories")
+    record = service.answer(
+        "categories",
+        expected_revision=1,
+        request_id="outcome",
+        question_id="outcome",
+        status="answered",
+        value="categorical",
+    )
+    record = service.answer(
+        "categories",
+        expected_revision=record["revision"],
+        request_id="labels",
+        question_id="categories",
+        status="answered",
+        value="Red\nBlue\nOther",
+    )
+    probabilities = [
+        q
+        for q in record["document"]["questions"]
+        if q["id"].startswith("category_prob_")
+    ]
+    assert len(probabilities) == 3
+    for question in probabilities:
+        record = service.answer(
+            "categories",
+            expected_revision=record["revision"],
+            request_id=question["id"],
+            question_id=question["id"],
+            status="answered",
+            value=0.5,
+        )
+    assert (
+        "Category probabilities must sum to 1."
+        in service.preview("categories", record["revision"])["unanswered"]
+    )
