@@ -218,14 +218,18 @@ export function SessionPicker({ gw, onCancel, onSelect, t }: SessionPickerProps)
               </Text>
             </Box>
 
-            <ShortcutText bold={selected}
+            <Text
+              bold={selected}
               color={pendingDelete ? t.color.label : selected ? t.color.accent : t.color.muted}
               inverse={selected}
-              t={t}
               wrap="truncate-end"
             >
-              {pendingDelete ? 'press d again to delete' : s.title || s.preview || '(untitled)'}
-            </ShortcutText>
+              {pendingDelete ? (
+                <ShortcutText t={t}>press d again to delete</ShortcutText>
+              ) : (
+                s.title || s.preview || '(untitled)'
+              )}
+            </Text>
           </Box>
         )
       })}
