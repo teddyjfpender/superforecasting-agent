@@ -348,3 +348,23 @@ def test_agent_scenarios_cannot_overwrite_user_selections(store):
         service.delete_scenario("interview", expected_revision=2, request_id="delete", scenario_id="condition", actor="agent")
     proposed = service.save_scenario("interview", expected_revision=2, request_id="proposal", scenario={**scenario, "id": "new"}, actor="agent")
     assert proposed["document"]["scenarios"][-1]["actor"] == "agent"
+
+
+def test_assumption_edit_is_attributed_idempotent_and_preserves_history(store):
+    from forecasting.interviews.service import InterviewService
+    save(store, draft(assumptions=[{"id": "health", "statement": "Candidate stays healthy"}]))
+    service = InterviewService(store.ledger)
+    assumption = {"id": "health", "statement": "Candidate stays healthy", "probability": 0.65,
+                  "uncertainty": "mixed", "rationale": "Health record incomplete", "actor": "agent"}
+    result = service.save_assumption("interview", expected_revision=1, request_id="edit", assumption=assumption)
+    assert result == service.save_assumption("interview", expected_revision=1, request_id="edit", assumption=assumption)
+    assert result["document"]["assumptions"][0]["actor"] == "user"
+    assert result["document"]["assumptions"][0]["probability"] == 0.65
+    assert store.read("interview", 1)["document"]["assumptions"][0]["probability"] is None
+    with pytest.raises(ValidationError, match="user assumptions"):
+        service.save_assumption("interview", expected_revision=2, request_id="overwrite", assumption={**assumption, "probability": 0.8}, actor="agent")
+    with pytest.raises(ValidationError, match="outside the frozen interview"):
+        service.save_assumption("interview", expected_revision=2, request_id="bad-evidence", assumption={**assumption, "evidence_refs": ["invented"]})
+    with pytest.raises(ModelError):
+        service.save_assumption("interview", expected_revision=2, request_id="bad-p", assumption={**assumption, "probability": 65.0})
+    assert store.read("interview")["revision"] == 2

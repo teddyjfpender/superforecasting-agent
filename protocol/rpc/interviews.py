@@ -7,6 +7,7 @@ from pydantic import Field
 from protocol.interviews import (
     ForecastArticleClaim,
     ForecastMarketSeed,
+    InterviewAssumption,
     InterviewDraft,
     InterviewGenerationOptions,
     InterviewScenario,
@@ -173,3 +174,10 @@ class InterviewPromoteRequest(InterviewPromotionPreviewRequest):
 class InterviewPromoteResponse(WireModel):
     question_id: str
     forecast_id: str
+
+
+class InterviewAssumptionSaveRequest(WireModel):
+    interview_id: str
+    expected_revision: int
+    request_id: str
+    assumption: InterviewAssumption

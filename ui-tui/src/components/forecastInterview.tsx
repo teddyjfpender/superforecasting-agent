@@ -50,6 +50,8 @@ export function ForecastInterview({
   const [pane, setPane] = useState<'answers' | 'generation' | 'scenarios' | 'evaluation'>('answers')
   const [busy, setBusy] = useState(true)
   const [error, setError] = useState('')
+  const [freshConfirm, setFreshConfirm] = useState(false)
+  const freshId = useRef<string | null>(null)
   const [preview, setPreview] = useState<InterviewPreviewResponse | null>(null)
   const pending = useRef<InterviewAnswerRequest | null>(null)
   const mounted = useRef(true)
@@ -302,6 +304,36 @@ export function ForecastInterview({
     }
   }
 
+  const freshReview = async () => {
+    if (!record?.document.question_id || saving.current) {return}
+    saving.current = true
+    setBusy(true)
+    setError('')
+    freshId.current ??= randomUUID()
+
+    try {
+      const next = await gw.request('forecast.interview.begin', {
+        interview_id: freshId.current,
+        question_id: record.document.question_id
+      })
+
+      if (mounted.current) {
+        drafts.current.clear()
+        choiceDrafts.current.clear()
+        pending.current = null
+        freshId.current = null
+        select(next, 0)
+        setFreshConfirm(false)
+      }
+    } catch (cause) {
+      if (mounted.current) {setError(cause instanceof Error ? cause.message : String(cause))}
+    } finally {
+      saving.current = false
+
+      if (mounted.current) {setBusy(false)}
+    }
+  }
+
   useInput(
     (input, key, event) => {
       if (
@@ -309,9 +341,24 @@ export function ForecastInterview({
         key.tab ||
         key.pageUp ||
         key.pageDown ||
-        (key.ctrl && ['u', 's', 'g', 'o', 'e'].includes(input))
+        (key.ctrl && ['u', 's', 'g', 'o', 'e', 'n'].includes(input))
       ) {
         ;(event as unknown as { stopImmediatePropagation?: () => void }).stopImmediatePropagation?.()
+      }
+
+      if (freshConfirm) {
+        ;(event as unknown as { stopImmediatePropagation?: () => void }).stopImmediatePropagation?.()
+
+        if (key.escape) {setFreshConfirm(false)}
+        else if (key.return) {void freshReview()}
+
+        return
+      }
+
+      if (key.ctrl && input === 'n' && record?.document.mode === 'update' && !busy) {
+        setFreshConfirm(true)
+
+        return
       }
 
       if (key.pageUp || key.pageDown) {
@@ -407,6 +454,30 @@ export function ForecastInterview({
 
   const height = Math.max(3, Math.min(rows - 2, 34) - 12)
 
+  if (freshConfirm) {
+    return (
+      <ModalOverlay
+        cols={cols}
+        footerHint="[Enter Start] [Esc Keep current]"
+        maxHeight={16}
+        rows={rows}
+        t={t}
+        title="START A FRESH REVIEW"
+        verticalMargin={2}
+      >
+        <Text color={t.color.primary}>
+          Capture the current forecast and latest evidence. Saved assumptions and scenarios carry forward with
+          provenance; the earlier interview remains in history.
+        </Text>
+        <Text color={t.color.muted}>
+          Unconfirmed text in this panel will be discarded. Save answers first if you want to keep them.
+        </Text>
+        {busy ? <Text color={t.color.accent}>Creating review…</Text> : null}
+        {error ? <Text color={t.color.error}>{error}</Text> : null}
+      </ModalOverlay>
+    )
+  }
+
   if (record && pane === 'generation') {
     return (
       <InterviewGeneration
@@ -447,6 +518,7 @@ export function ForecastInterview({
         blocked={Boolean(blocked)}
         cols={cols}
         gw={gw}
+        onAssumptionSaved={next => select(next, index)}
         onClose={() => setPane('answers')}
         onSaved={next => {
           select(next, index)
@@ -462,7 +534,11 @@ export function ForecastInterview({
   return (
     <ModalOverlay
       cols={cols}
-      footerHint="[Tab/⇧Tab Move] [^G Ask] [^O Scenarios] [^E Compare] [Esc Close]"
+      footerHint={
+        record?.document.mode === 'update'
+          ? '[Tab/⇧Tab] [^G Ask] [^O Scenarios] [^E Compare] [^N Fresh] [Esc]'
+          : '[Tab/⇧Tab] [^G Ask] [^O Scenarios] [^E Compare] [Esc]'
+      }
       maxHeight={34}
       maxWidth={100}
       rows={rows}

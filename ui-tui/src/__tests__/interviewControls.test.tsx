@@ -658,13 +658,16 @@ it('requires a ledger preview and a separate confirmation before promotion', asy
   }
 
   const request = vi.fn(async (method: string, params: any) => {
-    if (method === 'forecast.interview.list') {return { interviews: [record] }}
+    if (method === 'forecast.interview.list') {
+      return { interviews: [record] }
+    }
 
-    if (method === 'forecast.interview.evaluation_status')
-      {return { found: true, job: { job_id: 'job', status: 'done', done_count: 2, total: 2 }, report, stale: false }}
+    if (method === 'forecast.interview.evaluation_status') {
+      return { found: true, job: { job_id: 'job', status: 'done', done_count: 2, total: 2 }, report, stale: false }
+    }
 
-    if (method === 'forecast.interview.promotion_preview')
-      {return {
+    if (method === 'forecast.interview.promotion_preview') {
+      return {
         job_id: 'job',
         repetition: 0,
         question_id: 'question',
@@ -673,7 +676,8 @@ it('requires a ledger preview and a separate confirmation before promotion', asy
         blockers: [],
         preview_digest: 'reviewed',
         promoted_forecast_id: null
-      }}
+      }
+    }
 
     if (method === 'forecast.interview.promote') {
       expect(params.preview_digest).toBe('reviewed')
@@ -701,6 +705,106 @@ it('requires a ledger preview and a separate confirmation before promotion', asy
     ui.press('\x1b[13;5u')
     await ui.wait('Forecast saved: saved-forecast')
     expect(request.mock.calls.filter(([method]) => method === 'forecast.interview.promote')).toHaveLength(1)
+  } finally {
+    ui.close()
+  }
+})
+
+it('edits assumption probability and uncertainty with stable retry identity while retaining scenario choices', async () => {
+  let record = fixture()
+  const attempts: any[] = []
+
+  const request = vi.fn(async (method: string, params: any) => {
+    if (method === 'forecast.interview.list') {
+      return { interviews: [record] }
+    }
+
+    if (method === 'forecast.interview.assumption.save') {
+      attempts.push(params)
+
+      if (attempts.length === 1) {
+        throw new Error('Disconnected after save')
+      }
+
+      record = { ...record, revision: 2, document: { ...record.document, assumptions: [params.assumption] } }
+
+      return record
+    }
+
+    throw new Error(method)
+  })
+
+  const ui = await screen(request)
+
+  try {
+    await ui.wait('What event?')
+    ui.press('\x0f')
+    await ui.wait('New conditional scenario')
+    ui.press('\r')
+    await ui.wait('[free]')
+    ui.press('t')
+    await ui.wait('[true]')
+    ui.press('\r')
+    await ui.wait('ASSUMPTION DETAILS')
+    ui.press('e')
+    await ui.wait('EDIT ASSUMPTION')
+    ui.press('\t')
+    await ui.wait('Probability (%)')
+    ui.press('65')
+    await ui.wait('65')
+    ui.press('\t')
+    await ui.wait('Uncertainty type')
+    ui.press(' ')
+    await ui.wait('unclassified')
+    ui.press('\x1b[13;5u')
+    await ui.wait('Disconnected after save')
+    ui.press('\x1b[13;5u')
+    await ui.wait('ASSUMPTION DETAILS')
+    expect(attempts).toHaveLength(2)
+    expect(attempts[0]).toEqual(attempts[1])
+    expect(attempts[1].assumption).toMatchObject({ probability: 0.65, uncertainty: 'unclassified', actor: 'user' })
+    ui.press('\x1b')
+    await ui.wait('[true]')
+  } finally {
+    ui.close()
+  }
+})
+
+it('confirms fresh review and retries the same durable interview identity', async () => {
+  const record = fixture()
+  record.document.mode = 'update'
+  record.document.question_id = 'question'
+  const attempts: any[] = []
+
+  const request = vi.fn(async (method: string, params: any) => {
+    if (method === 'forecast.interview.list') {return { interviews: [record] }}
+
+    if (method === 'forecast.interview.begin') {
+      attempts.push(params)
+
+      if (attempts.length === 1) {throw new Error('Review response lost')}
+
+      return { ...record, interview_id: params.interview_id }
+    }
+
+    throw new Error(method)
+  })
+
+  const ui = await screen(request)
+
+  try {
+    await ui.wait('What event?')
+    ui.press('\x0e')
+    await ui.wait('START A FRESH REVIEW')
+    expect(attempts).toHaveLength(0)
+    ui.press('\r')
+    await ui.wait('Review response lost')
+    ui.press('\r')
+    await ui.wait('What event?')
+    expect(attempts).toHaveLength(2)
+    expect(attempts[0]).toEqual(attempts[1])
+    expect(attempts[1].question_id).toBe('question')
+    expect(attempts[1].interview_id).not.toBe(record.interview_id)
   } finally {
     ui.close()
   }

@@ -1271,3 +1271,11 @@ def _(rid, params: dict) -> dict:
         return _ok(rid, promote(_interview_service().ledger, **params))
     except Exception as exc:
         return _err(rid, 5008, str(exc))
+
+
+@rpc_validated("forecast.interview.assumption.save")
+def _(rid, params: dict) -> dict:
+    try:
+        return _ok(rid, _interview_service().save_assumption(**params))
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))

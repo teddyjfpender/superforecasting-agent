@@ -229,6 +229,37 @@ class InterviewService:
             actor=actor,
         )
 
+    def save_assumption(
+        self,
+        interview_id: str,
+        *,
+        expected_revision: int,
+        request_id: str,
+        assumption: InterviewAssumption | dict,
+        actor: Literal["user", "agent"] = "user",
+    ) -> dict:
+        draft = InterviewDraft.model_validate(
+            self.store.read(interview_id, expected_revision)["document"]
+        )
+        assumption = InterviewAssumption.model_validate(assumption).model_copy(
+            update={"actor": actor}
+        )
+        if not set(assumption.evidence_refs) <= set(draft.evidence_refs):
+            raise ValidationError(
+                "assumption cites evidence outside the frozen interview"
+            )
+        existing = {item.id: item for item in draft.assumptions}
+        existing[assumption.id] = assumption
+        draft.assumptions = list(existing.values())
+        draft.status = "draft"
+        return self.store.save(
+            interview_id,
+            draft,
+            expected_revision=expected_revision,
+            request_id=request_id,
+            actor=actor,
+        )
+
     def save_scenario(
         self,
         interview_id: str,

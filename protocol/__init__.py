@@ -480,6 +480,11 @@ RPC_SPECS: list[RpcSpec] = [
         _rpc_interviews.InterviewGenerationStatusResponse,
     ),
     RpcSpec(
+        "forecast.interview.assumption.save",
+        _rpc_interviews.InterviewAssumptionSaveRequest,
+        _rpc_interviews.InterviewRecord,
+    ),
+    RpcSpec(
         "forecast.interview.scenario.save",
         _rpc_interviews.InterviewScenarioSaveRequest,
         _rpc_interviews.InterviewRecord,

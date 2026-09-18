@@ -204,3 +204,16 @@ recorded; skipping the review is not. The proposal stores its review revision,
 digest, unresolved questions and attributed assumptions. New evidence or a
 changed baseline requires a fresh review. The existing proposal-only runtime
 boundary remains in force, so scheduled agents cannot promote live snapshots.
+
+### Revising beliefs
+
+From an assumption's detail view, `e` edits its statement, probability (0–100%,
+blank for unknown), uncertainty type and rationale. Confirming saves a new
+user-attributed revision; it preserves evidence links and existing scenario
+selections. Retries reuse the request identity, and agent calls cannot overwrite
+user-attributed assumptions. These edits never write a forecast snapshot.
+
+In an update interview, `Ctrl+N` explicitly starts a fresh review using the latest
+baseline and evidence. The confirmation explains that unconfirmed editor text is
+discarded; saved assumptions and scenarios carry forward with provenance and the
+previous interview remains available in history.

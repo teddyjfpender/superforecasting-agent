@@ -2642,6 +2642,13 @@ export interface InterviewAssumption {
   uncertainty: 'aleatoric' | 'epistemic' | 'measurement' | 'mixed' | 'unclassified'
 }
 
+export interface InterviewAssumptionSaveRequest {
+  assumption: InterviewAssumption
+  expected_revision: number
+  interview_id: string
+  request_id: string
+}
+
 export interface InterviewBeginRequest {
   interview_id: string
   question_id: null | string
@@ -4752,6 +4759,15 @@ export interface RpcMethods {
       request_id: string
       status: 'answered' | 'skipped' | 'unknown'
       value?: null | number | string | string[]
+    }
+    result: InterviewRecord
+  }
+  'forecast.interview.assumption.save': {
+    params: {
+      assumption: InterviewAssumption
+      expected_revision: number
+      interview_id: string
+      request_id: string
     }
     result: InterviewRecord
   }

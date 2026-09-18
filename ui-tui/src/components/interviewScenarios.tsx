@@ -7,6 +7,7 @@ import type { GatewayClient } from '../gatewayClient.js'
 import type { InterviewRecord, InterviewScenario, InterviewScenarioSaveRequest } from '../protocol/generated.js'
 import type { Theme } from '../theme.js'
 
+import { InterviewAssumptionEditor } from './interviewAssumptionEditor.js'
 import { ModalOverlay } from './modalOverlay.js'
 import { TextInput } from './textInput.js'
 
@@ -18,7 +19,8 @@ export function InterviewScenarios({
   t,
   blocked,
   onClose,
-  onSaved
+  onSaved,
+  onAssumptionSaved
 }: {
   gw: GatewayClient
   record: InterviewRecord
@@ -28,10 +30,12 @@ export function InterviewScenarios({
   blocked: boolean
   onClose: () => void
   onSaved: (record: InterviewRecord) => void
+  onAssumptionSaved: (record: InterviewRecord) => void
 }) {
   const [selection, setSelection] = useState(0)
   const [scenario, setScenario] = useState<InterviewScenario | null>(null)
   const [naming, setNaming] = useState(false)
+  const [editing, setEditing] = useState(false)
   const [details, setDetails] = useState(false)
   const scroll = useRef<ScrollBoxHandle>(null)
   const [name, setName] = useState('')
@@ -171,6 +175,8 @@ export function InterviewScenarios({
       }
 
       if (details) {
+        if (input === 'e') {setEditing(true)}
+
         if (key.pageUp || key.pageDown) {
           scroll.current?.scrollBy(key.pageUp ? -5 : 5)
         }
@@ -277,7 +283,7 @@ export function InterviewScenarios({
         })
       }
     },
-    { isActive: !blocked }
+    { isActive: !blocked && !editing }
   )
 
   const hint = deleting
@@ -290,13 +296,32 @@ export function InterviewScenarios({
           ? '[t True] [f False] [u Free] [^Enter Save] [Esc Back]'
           : '[Space Include/exclude] [^Enter Save] [Esc Back]'
 
+  if (editing && assumptions[selection]) {
+    return (
+      <InterviewAssumptionEditor
+        assumption={assumptions[selection]!}
+        blocked={blocked}
+        cols={cols}
+        gw={gw}
+        onClose={() => setEditing(false)}
+        onSaved={next => {
+          onAssumptionSaved(next)
+          setEditing(false)
+        }}
+        record={record}
+        rows={rows}
+        t={t}
+      />
+    )
+  }
+
   if (details && assumptions[selection]) {
     const item = assumptions[selection]!
 
     return (
       <ModalOverlay
         cols={cols}
-        footerHint="[PgUp/Dn Read] [Esc Back]"
+        footerHint="[e Edit] [PgUp/Dn Read] [Esc Back]"
         maxHeight={34}
         maxWidth={100}
         rows={rows}
@@ -364,7 +389,7 @@ export function InterviewScenarios({
         ) : scenario ? (
           <>
             <Text bold color={t.color.primary} wrap="truncate-end">
-              {scenario.name} · [n Rename]
+              {scenario.name} · [n Rename] [Enter Assumption]
             </Text>
             <Text color={t.color.muted}>
               {scenario.kind === 'conditional'
