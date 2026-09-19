@@ -66,6 +66,7 @@ from forecasting.source_adapters import (
     load_worldbank_observations,
     load_yahoo_finance_prices,
 )
+from forecasting.sources.acquisition_requests import acquisition_request
 from forecasting.sources.filters import normalize_filter_terms as normalize_filter_terms
 from forecasting.sources.requests import CommonSourceOptions
 
@@ -83,6 +84,17 @@ def load_source_items(adapter: str, source: str, args: dict[str, Any]) -> list[A
     since = options.since
     api_base_url = options.api_base_url
     kwargs: dict[str, Any]
+
+    if adapter_name in {"fred", "bls", "kalshi", "polymarket"}:
+        request = acquisition_request(adapter_name, source, args)
+        kwargs = request.model_dump(exclude={"adapter", "source"}, exclude_none=True)
+        if request.adapter == "fred":
+            return load_fred_observations(request.source, **kwargs)
+        if request.adapter == "bls":
+            return load_bls_observations(request.source, **kwargs)
+        if request.adapter == "kalshi":
+            return [load_kalshi_market(request.source, **kwargs)]
+        return [load_polymarket_market(request.source, **kwargs)]
 
     if adapter_name in {"rss", "news"}:
         return load_news_feed_items(
@@ -117,11 +129,6 @@ def load_source_items(adapter: str, source: str, args: dict[str, Any]) -> list[A
         if api_base_url:
             kwargs["api_base_url"] = api_base_url
         return load_fivethirtyeight_polls(source, **kwargs)
-    if adapter_name == "fred":
-        kwargs = {"limit": limit, "since": since}
-        if api_base_url:
-            kwargs["api_base_url"] = api_base_url
-        return load_fred_observations(source, **kwargs)
     if adapter_name == "eia":
         kwargs = {"limit": limit, "since": since}
         if api_base_url:
@@ -138,16 +145,6 @@ def load_source_items(adapter: str, source: str, args: dict[str, Any]) -> list[A
         if api_base_url:
             kwargs["api_base_url"] = api_base_url
         return load_treasury_records(source, **kwargs)
-    if adapter_name == "bls":
-        kwargs = {
-            "limit": limit,
-            "since": since,
-            "start_year": args.get("start_year"),
-            "end_year": args.get("end_year"),
-        }
-        if api_base_url:
-            kwargs["api_base_url"] = api_base_url
-        return load_bls_observations(source, **kwargs)
     if adapter_name == "worldbank":
         kwargs = {"limit": limit, "since": since}
         if api_base_url:
@@ -451,12 +448,6 @@ def load_source_items(adapter: str, source: str, args: dict[str, Any]) -> list[A
     # import. Wiring these here means the agent imports a Polymarket/Kalshi/
     # Manifold/Metaculus price through the bounded adapter instead of writing
     # ad-hoc urllib/curl in the terminal (which hangs to the command timeout).
-    if adapter_name == "polymarket":
-        kwargs = {"api_base_url": api_base_url} if api_base_url else {}
-        return [load_polymarket_market(source, **kwargs)]
-    if adapter_name == "kalshi":
-        kwargs = {"api_base_url": api_base_url} if api_base_url else {}
-        return [load_kalshi_market(source, **kwargs)]
     if adapter_name == "manifold":
         kwargs = {"api_base_url": api_base_url} if api_base_url else {}
         return [load_manifold_market(source, **kwargs)]

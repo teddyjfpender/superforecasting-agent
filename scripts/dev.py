@@ -102,6 +102,7 @@ STRICT_PYTHON = (
     "forecasting/sources/kalshi_selection.py",
     "forecasting/sources/polymarket_selection.py",
     "forecasting/sources/requests.py",
+    "forecasting/sources/acquisition_requests.py",
     "forecasting/sources/evidence.py",
     "forecasting/sources/filters.py",
     "forecasting/sources/watched.py",

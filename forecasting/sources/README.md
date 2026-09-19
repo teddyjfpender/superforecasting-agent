@@ -21,6 +21,25 @@ These are entry points and representative modules, not an exhaustive inventory.
 | [eia_parser.py](eia_parser.py)   | Pure EIA payload parsing.                                        |
 | [sec_parsing.py](sec_parsing.py) | Pure SEC response parsing.                                       |
 
+## Typed acquisition admission
+
+`acquisition_requests.SourceAcquisitionRequest` discriminates FRED, BLS, Kalshi
+and Polymarket by stable adapter ID. Typed requests reject unknown fields; economic
+limits and BLS years are strict integers, and BLS year ranges must be ordered.
+Market requests contain endpoint/identity fields rather than economic options.
+Shared dispatch translates legacy combined tool options into these contracts,
+keeping import policy such as ratings and watches out of provider arguments.
+The direct BLS loader shares admission before credentials/network access.
+
+Add provider-specific fields to the selected request model and test rejection
+before I/O. Do not broaden another adapter's contract or stringify malformed
+values. Error text must not echo secret-bearing endpoints. Remaining adapters
+still use common admission; migration is incremental. Acquisition validation does
+not certify publication timing, measurement meaning or settlement eligibility.
+
+Focused checks: `tests/forecasting/test_acquisition_requests.py` and
+`tests/forecasting/test_source_request_admission.py`.
+
 ## Working in this directory
 
 Run checks from the repository root:

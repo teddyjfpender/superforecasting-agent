@@ -89,6 +89,7 @@
     "forecasting/news/catalog.py",
     "forecasting/news/transport.py",
     "forecasting/panel_selection.py",
+    "forecasting/sources/acquisition_requests.py",
     "forecasting/sources/dispatch.py",
     "forecasting/sources/evidence.py",
     "forecasting/sources/filters.py",

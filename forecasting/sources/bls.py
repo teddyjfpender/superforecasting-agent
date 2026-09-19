@@ -23,13 +23,16 @@ def load_bls_observations(
 ) -> list[BlsObservation]:
     """Load BLS public time-series observations as timestamped evidence rows."""
 
-    normalized_series = series_id.strip()
-    if not normalized_series:
-        raise ValidationError("bls import series id is required")
-    if limit <= 0:
-        raise ValidationError("bls import --limit must be positive")
-    if start_year is not None and end_year is not None and start_year > end_year:
-        raise ValidationError("bls import --start-year cannot be after --end-year")
+    from .acquisition_requests import acquisition_request
+
+    try:
+        request = acquisition_request("bls", series_id, {
+            "limit": limit, "since": since, "start_year": start_year,
+            "end_year": end_year, "api_base_url": api_base_url,
+        })
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from None
+    normalized_series = request.source
     since_date = _fred_date(since, field_name="since") if since else None
     api_key = (appconfig.secret("BLS_API_KEY", "") or "").strip() or None
     endpoint = _bls_endpoint(

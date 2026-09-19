@@ -1002,3 +1002,19 @@ The 71 existing batch/receipt checks pass, and five new pure-plan/race checks pa
 Strict typing passes for both owners. No full suite ran. This is provenance planning,
 not settlement approval or complete adapter-specific acquisition typing; those
 remaining W03 requirements are not claimed complete.
+
+## Discriminated acquisition requests
+
+Shared source dispatch now uses strict discriminated requests for FRED, BLS,
+Kalshi and Polymarket. Economic options remain separate from prediction-market
+options; direct typed inputs reject extra fields. A compatibility translator
+extracts acquisition fields from combined legacy tool/import options without
+forwarding ratings/watches. BLS year values reject booleans, strings, invalid
+bounds and reversed ranges before fetching. The direct BLS loader uses the same
+admission before credential lookup/network I/O, preserving its domain exception
+class. Validation errors name fields without echoing endpoint credentials.
+
+Fifty focused acquisition/dispatch/common-admission/BLS checks pass. The new
+request owner and dispatch pass strict typing; the owner is in the protected
+strict inventory. No full suite ran. Other adapters, frozen acquisition replay
+and the complete cross-interface acquisition/plan contract remain W03 work.
