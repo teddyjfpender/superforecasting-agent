@@ -649,3 +649,14 @@ and tracks their base revision. Identical restored content does not write; expli
 accepted stale content still rebases, and repeated staging coalesces. The existing real
 recovery assertion was retained, not weakened. Ten focused controller tests and 17 focused
 Python tests (questionnaire restart/conflict/death plus feedback-tier contracts) passed.
+
+## Push selection containment
+
+The f3141514f6 push passed the normal hook: 47 bounded Python tests, 59 bounded TUI
+tests and static gates. However, despite an independent changed-file preview selecting
+11 tests, the hook ran all 226 TUI test files (2337 passed, one skipped). This exceeded
+the requested focused scope. The precise source of the discrepancy is not established.
+The hook now resolves selection once, passes explicit file filters, closes test stdin,
+and rejects whole-suite expansion. Empty selection never invokes `run`; selection
+failure fails the gate. Four focused hook tests passed, including controlled subset,
+empty/full/error/invalid lists, whitespace in filenames, and per-ref orchestration.

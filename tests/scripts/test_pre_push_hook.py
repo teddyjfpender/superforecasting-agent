@@ -73,3 +73,55 @@ def test_product_quality_enforces_same_integration_tier_without_renaming_check()
     tests = yaml.safe_load((ROOT / '.github/workflows/tests.yml').read_text())
     assert any('scripts/run_tests.sh' in [line.strip() for line in step.get('run', '').splitlines()]
                for step in tests['jobs']['test']['steps'])
+
+
+def test_frontend_gate_freezes_selection_and_handles_empty_full_and_failed_listing(tmp_path):
+    import json
+
+    frontend = tmp_path / 'ui-tui'
+    binary = frontend / 'node_modules/.bin/vitest'
+    binary.parent.mkdir(parents=True)
+    for name in ('first test.ts', 'second.ts', 'third.ts'):
+        (frontend / name).touch()
+    log = tmp_path / 'calls.jsonl'
+    binary.write_text(f'#!{sys.executable}\n' + '''
+import json, os, sys
+with open(os.environ['CALL_LOG'], 'a') as log:
+    log.write(json.dumps(sys.argv[1:]) + '\\n')
+if sys.argv[1] == 'list':
+    if '--changed' not in sys.argv or os.environ['SELECTION'] == 'full':
+        print('first test.ts\\nsecond.ts\\nthird.ts')
+    elif os.environ['SELECTION'] == 'subset':
+        print('first test.ts\\nsecond.ts')
+    elif os.environ['SELECTION'] == 'failure':
+        sys.exit(2)
+    elif os.environ['SELECTION'] == 'invalid':
+        print('--watch')
+else:
+    assert '--changed' not in sys.argv
+    assert sys.stdin.read() == ''
+''')
+    binary.chmod(0o755)
+    script = '''
+source "$CHECKS"
+hook_note() { :; }
+hook_fail() { printf '%s\\n' "$1" >&2; }
+check_vitest_changed exact-base
+'''
+    for mode in ('subset', 'empty', 'full', 'failure', 'invalid'):
+        log.unlink(missing_ok=True)
+        env = {**os.environ, 'HOOKS_REPO_ROOT': str(tmp_path), 'CALL_LOG': str(log),
+               'CHECKS': str(ROOT / '.githooks/lib/checks.sh'), 'SELECTION': mode}
+        result = subprocess.run(['bash', '-c', script], env=env, cwd=tmp_path,
+                                input='other-ref must not be consumed', capture_output=True, text=True)
+        calls = [json.loads(line) for line in log.read_text().splitlines()]
+        assert calls[0] == ['list', '--changed', 'exact-base', '--filesOnly']
+        runs = [call for call in calls if call[0] == 'run']
+        if mode == 'subset':
+            assert result.returncode == 0, result.stderr
+            assert runs == [['run', 'first test.ts', 'second.ts']]
+        else:
+            assert not runs
+            assert (result.returncode == 0) == (mode == 'empty')
+        if mode == 'full':
+            assert 'full TUI suite' in result.stderr

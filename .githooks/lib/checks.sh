@@ -36,16 +36,37 @@ check_tsc() {
 }
 
 # ── vitest --changed since <base> ────────────────────────────────────────────
-check_vitest_changed() {
-  _base="$1"
-  _vitest="$HOOKS_REPO_ROOT/ui-tui/node_modules/.bin/vitest"
-  if [ ! -x "$_vitest" ]; then
+check_vitest_changed() (
+  # A subshell keeps Git context and selection variables local to this ref.
+  base="$1"
+  vitest="$HOOKS_REPO_ROOT/ui-tui/node_modules/.bin/vitest"
+  if [ ! -x "$vitest" ]; then
     hook_fail "vitest missing" "Local Gates: Git Hooks" \
       "ui-tui changed but ui-tui/node_modules is absent. Run:  ( cd ui-tui && npm install )"
     return 1
   fi
-  ( cd "$HOOKS_REPO_ROOT/ui-tui" && "$_vitest" run --changed "$_base" --passWithNoTests )
-}
+  cd "$HOOKS_REPO_ROOT/ui-tui" || return 1
+  selected="$("$vitest" list --changed "$base" --filesOnly </dev/null)" || return 1
+  [ -z "$selected" ] && return 0
+  all="$("$vitest" list --filesOnly </dev/null)" || return 1
+  if [ "$(printf '%s\n' "$selected" | LC_ALL=C sort)" = "$(printf '%s\n' "$all" | LC_ALL=C sort)" ]; then
+    hook_fail "Affected selection expands to the full TUI suite" "Local Gates: Git Hooks" \
+      "Push feedback will not silently run release qualification. Review the selection and run explicit focused tests; use the documented logged exception if needed. Full qualification remains a separate tier."
+    return 1
+  fi
+  files=()
+  while IFS= read -r file; do
+    # Only actual files may become CLI filters, never output banners/options.
+    if [ ! -f "$file" ] || [[ "$file" == -* ]]; then
+      hook_fail "Invalid TUI test selection" "Local Gates: Git Hooks" "$file"
+      return 1
+    fi
+    files+=("$file")
+  done <<< "$selected"
+  hook_note "pre-push: ${#files[@]} affected TUI files against $base"
+  # Freeze the preview into explicit filters. Do not ask run to rediscover scope.
+  "$vitest" run "${files[@]}" </dev/null
+)
 
 # ── commit message shape + WHY-body for feat/refactor ────────────────────────
 # check_commit_msg <msgfile>

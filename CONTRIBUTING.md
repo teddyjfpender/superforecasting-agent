@@ -195,6 +195,11 @@ It does not qualify installed wheels, upgrades, or other native platforms. Follo
 release verification for those exact-artifact checks. A successful local tier is
 not a reusable qualification receipt; this runner performs no result caching.
 
+Affected TUI tests are listed first and that exact file selection is passed to the runner.
+An empty selection does not invoke the runner; a selection covering the whole suite stops
+with an actionable diagnostic instead of silently turning push feedback into qualification.
+Use the documented, logged exception only with explicit verification evidence.
+
 Pre-push runs the canonical integration tier once per admitted tree, then affected
 TUI tests against each pushed ref's own base. The existing Product quality job also
 runs this tier; its check identity is unchanged. Full suites remain in Tests CI and
