@@ -516,3 +516,24 @@ required W02 work. No full Python or TUI suite was run.
 - This completes the first read-only provenance surface, not all W07 acceptance.
   Classified new-question lesson selection and integrated conflict/reconnect evidence
   remain outstanding. Learning effectiveness is not inferred from these tests.
+
+### W07/W08 — real questionnaire reconnect, conflict and process-death recovery
+
+- Strengthened editor restore ownership: a superseded restore success/failure cannot
+  replace the current controller, cross-interview and duplicate-question responses
+  fail closed, and buffer revisions newer than the displayed interview are conflicts
+  even when the server reports them current. Recovered durable text is explicitly
+  labelled unconfirmed and saved locally.
+- Extended the existing real Ink/stdio gateway/SQLite/dashboard WebSocket/PTY harness,
+  not a mock reconstruction. It types a draft, waits for the rendered saved receipt,
+  checks the ledger, reconnects three times without duplicate writes, then restarts
+  the terminal. A concurrent answer requires explicit conflict restoration; an owned
+  process-group SIGKILL proves recovery does not depend on graceful flushing.
+- Intermediate and final assertions bind visible status to saved text, interview and
+  buffer revisions. No restored text becomes an answer, and no forecast question is
+  created. The harness checks old and replacement terminal ownership/termination.
+- Verification on macOS ARM64, Python 3.13.12, Node 26.0.0: two normal/conflict integration
+  cases passed in 7.40s; the process-death case passed in 5.36s; 46 focused TUI buffer and
+  interview tests passed. Canonical static checks passed. No full suite was run.
+- Native Windows/Linux repetition and the remaining W08 scenario matrix are still
+  unqualified; this receipt does not imply cross-platform completion.

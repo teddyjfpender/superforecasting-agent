@@ -19,11 +19,16 @@ export class InterviewBuffers {
   private timer: ReturnType<typeof setTimeout> | undefined
   private disposed = false
   private available = false
+  private restoreEpoch = 0
 
   constructor(private gw: Pick<GatewayClient, 'request'>, private status: (message: string) => void) {}
 
   async restore(record: Pick<InterviewRecord, 'interview_id' | 'revision'>) {
+    const epoch = ++this.restoreEpoch
+
     if (this.running) { await this.running }
+
+    if (this.disposed || epoch !== this.restoreEpoch) { return [] }
     clearTimeout(this.timer)
     this.entries.clear()
     this.available = false
@@ -32,20 +37,36 @@ export class InterviewBuffers {
     try {
       const result = await this.gw.request('forecast.interview.buffers', { interview_id: record.interview_id })
 
-      if (this.disposed) { return [] }
-      this.available = true
+      if (this.disposed || epoch !== this.restoreEpoch) { return [] }
+      const seen = new Set<string>()
 
       for (const item of result.buffers) {
+        if (item.interview_id !== record.interview_id || seen.has(item.question_id)) {
+          throw new Error('Draft response does not match the requested interview')
+        }
+
+        seen.add(item.question_id)
+      }
+
+      const recovered = result.buffers.map(item => ({
+        ...item, stale: item.stale || item.base_revision !== record.revision
+      }))
+
+      this.available = true
+
+      for (const item of recovered) {
         this.entries.set(item.question_id, {
           revision: item.buffer_revision, version: 0, acknowledged: 0, buffer: item.buffer
         })
       }
 
-      this.emit(result.buffers.some(item => item.stale && item.buffer)
-        ? 'Recovered drafts need review: interview changed.' : 'Draft storage ready')
+      this.emit(recovered.some(item => item.stale && item.buffer)
+        ? 'Recovered drafts need review: interview changed.'
+        : recovered.some(item => item.buffer) ? 'Recovered unconfirmed drafts · saved locally' : 'Draft storage ready')
 
-      return result.buffers
+      return recovered
     } catch {
+      if (this.disposed || epoch !== this.restoreEpoch) { return [] }
       this.available = false
       this.emit('Draft storage unavailable · unconfirmed edits are not saved')
 

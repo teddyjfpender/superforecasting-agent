@@ -493,3 +493,85 @@ def test_real_desk_repeated_reconnects_match_durable_failure_and_completion(loca
             assert len(bridges) == 1
             ws.close(code=1000 if index == len(scenarios) - 1 else 1006)
         assert receipt(home) == previous
+
+
+@pytest.mark.parametrize('conflict,abrupt', [(False, False), (True, False), (False, True)],
+                         ids=['unchanged', 'concurrent-answer', 'process-death'])
+def test_real_questionnaire_draft_survives_reconnect_and_terminal_restart(local_desk, conflict, abrupt):
+    """A rendered saved acknowledgement must correspond to recoverable SQLite text."""
+    from functools import partial
+    from forecasting.interviews.buffers import read_buffers
+    from forecasting.interviews.service import InterviewService
+    from forecasting.ledger import ForecastLedger
+    from tests.tui_pty.vt import VTScreen
+
+    client, home, bridges = local_desk
+    service = InterviewService(ForecastLedger())
+    url = '/api/pty?token=local-engineering&channel=interview-recovery'
+    text = 'Will the independent fixture resolve by 2030?'
+    with client.websocket_connect(url) as ws:
+        ws.send_text('\x1b[RESIZE:120;40]')
+        observe = partial(until, ws, screen=VTScreen(rows=40, cols=120))
+        observe(lambda out: b'local-fixture' in out)
+        ws.send_text('/onboard\r')
+        observe(lambda out: b'FORECAST INTERVIEW' in out and b'Draft storage ready' in out)
+        ws.send_text(text)
+        observe(lambda out: b'saved locally' in out)
+        record = service.store.list_latest()[0]
+        stored = read_buffers(service.ledger, record['interview_id'])['buffers'][0]
+        assert stored['buffer']['text'] == text
+        assert record['document']['answers'] == []
+        assert record['revision'] == 1
+        ws.close(code=1006)
+
+    for index in range(3):
+        assert bridges[0].is_alive()
+        with client.websocket_connect(url) as ws:
+            observe = partial(until, ws, screen=VTScreen(rows=40, cols=120))
+            observe(lambda out: text.encode() in out and b'saved locally' in out)
+            assert len(bridges) == 1
+            assert read_buffers(service.ledger, record['interview_id'])['buffers'][0] == stored
+            if index == 2 and abrupt:
+                # The harness owns this live, unreaped child and its new POSIX session.
+                pid = bridges[0].pid
+                assert bridges[0].is_alive() and os.getpgid(pid) == pid
+                os.killpg(pid, signal.SIGKILL)  # windows-footgun: ok — POSIX-only PTY integration
+                for _ in range(300):
+                    if ws.receive().get('type') == 'websocket.close':
+                        break
+                else:
+                    pytest.fail('dashboard did not close after owned process death')
+            else:
+                ws.close(code=1000 if index == 2 else 1006)
+    assert not bridges[0].is_alive()
+    if conflict:
+        service.answer(record['interview_id'], expected_revision=1, request_id='other-client',
+                       question_id='criteria', status='unknown', value=None)
+        assert read_buffers(service.ledger, record['interview_id'])['buffers'][0]['stale']
+
+    with client.websocket_connect(url) as ws:
+        ws.send_text('\x1b[RESIZE:120;40]')
+        observe = partial(until, ws, screen=VTScreen(rows=40, cols=120))
+        observe(lambda out: b'local-fixture' in out)
+        ws.send_text('/onboard\r')
+        if conflict:
+            observe(lambda out: b'RECOVERED DRAFT CONFLICT' in out)
+            assert read_buffers(service.ledger, record['interview_id'])['buffers'][0]['base_revision'] == 1
+            ws.send_text('\r')  # Explicitly restore unconfirmed text against the new revision.
+        observe(lambda out: b'FORECAST INTERVIEW' in out and text.encode() in out and b'saved locally' in out)
+        assert len(bridges) == 2
+        restored = service.store.read(record['interview_id'])
+        assert restored['revision'] == (2 if conflict else 1)
+        answers = restored['document']['answers']
+        assert [item['question_id'] for item in answers] == (['criteria'] if conflict else [])
+        assert service.ledger.list_questions() == []
+        durable = read_buffers(service.ledger, record['interview_id'])['buffers'][0]
+        if conflict:
+            assert durable['base_revision'] == 2
+            assert durable['buffer_revision'] == stored['buffer_revision'] + 1
+            assert durable['buffer']['text'] == text
+            assert not durable['stale']
+        else:
+            assert durable == stored
+        ws.close(code=1000)
+    assert not bridges[1].is_alive()

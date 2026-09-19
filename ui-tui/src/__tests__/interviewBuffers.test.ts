@@ -93,3 +93,57 @@ it('rejects an acknowledgement from another revision without claiming saved', as
   expect(status.mock.calls.flat()).not.toContain('Unconfirmed edits · saved locally')
   controller.dispose()
 })
+
+it('treats buffers newer than the displayed interview as conflicts', async () => {
+  const provider = new RpcFixtures().handle('forecast.interview.buffers', () => ({ buffers: [{
+    interview_id: 'draft', question_id: 'title', base_revision: 2, buffer_revision: 1,
+    request_id: 'newer', saved_at: '2030-01-01', buffer, discarded: false, stale: false
+  }] }))
+
+  const status = vi.fn()
+  const controller = new InterviewBuffers(provider, status)
+  const recovered = await controller.restore(record)
+  expect(recovered[0].stale).toBe(true)
+  expect(status).toHaveBeenLastCalledWith('Recovered drafts need review: interview changed.')
+  controller.dispose()
+})
+
+it('ignores an older restore failure after a replacement restore succeeded', async () => {
+  let rejectOld: (cause: Error) => void = () => {}
+  const old = new Promise<never>((_, reject) => { rejectOld = reject })
+
+  const provider = new RpcFixtures()
+    .handle('forecast.interview.buffers', params => params.interview_id === 'draft' ? old : { buffers: [] })
+    .handle('forecast.interview.buffer.save', request => ({ ...request,
+      buffer_revision: request.expected_buffer_revision + 1, saved_at: '2030-01-01', discarded: request.buffer === null
+    }))
+
+  const status = vi.fn()
+  const controller = new InterviewBuffers(provider, status)
+  const first = controller.restore(record)
+  await controller.restore({ interview_id: 'replacement', revision: 1 })
+  rejectOld(new Error('old connection lost'))
+  await first
+  controller.stage('title', buffer)
+  await controller.preserve()
+  expect(status).toHaveBeenLastCalledWith('Unconfirmed edits · saved locally')
+  controller.dispose()
+})
+
+it.each(['wrong-interview', 'duplicate-question'])('rejects %s restoration before enabling writes', async fault => {
+  const item = { interview_id: fault === 'wrong-interview' ? 'other' : 'draft', question_id: 'title',
+    base_revision: 1, buffer_revision: 1, request_id: 'saved', saved_at: '2030-01-01',
+    buffer, discarded: false, stale: false }
+
+  const provider = new RpcFixtures().handle('forecast.interview.buffers', () => ({
+    buffers: fault === 'duplicate-question' ? [item, item] : [item]
+  }))
+
+  const status = vi.fn()
+  const controller = new InterviewBuffers(provider, status)
+  expect(await controller.restore(record)).toEqual([])
+  controller.stage('title', buffer)
+  await expect(controller.preserve()).rejects.toThrow('Draft storage unavailable')
+  expect(status).toHaveBeenLastCalledWith('Draft storage unavailable · unconfirmed edits are not saved')
+  controller.dispose()
+})

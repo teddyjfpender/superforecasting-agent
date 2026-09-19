@@ -385,3 +385,10 @@ library. Historical interviews without lesson selection report that absence; cor
 contexts fail closed. Responses for a different revision or context are rejected by
 the reader, and failed loads offer an explicit retry. This is advisory provenance,
 not evidence that learning improves calibration.
+
+The real recovery harness in `tests/runtime_cli/test_local_desk_lifecycle.py` drives
+Ink, the stdio gateway, SQLite and dashboard PTY together. Its questionnaire cases
+verify acknowledged draft recovery after repeated reconnects, concurrent answers
+and owned process-group death. Controller tests additionally reject superseded or
+misaddressed restores. Native platform qualification is recorded separately from
+local test success in the engineering delivery log.
