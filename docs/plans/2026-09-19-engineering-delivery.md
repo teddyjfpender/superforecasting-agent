@@ -559,3 +559,21 @@ required W02 work. No full Python or TUI suite was run.
   ownership tests passed in 7.23 seconds. Canonical Python static checks passed.
   No full suite ran. Full typed acquisition/import parity remains outstanding;
   this fixes a concrete semantic divergence rather than claiming W03 complete.
+
+### W02 — align push feedback with the bounded integration tier
+
+- Pre-push now invokes the canonical integration tier once for its admitted tree,
+  instead of implicitly running the full Python suite. Per-ref remote-base naming,
+  exact index/worktree/tree checks before and after validation, and affected TUI
+  tests remain enforced for every pushed ref. A different pushed tree is rejected
+  before checks run against the wrong checkout. No cached receipt or bypass was added.
+- Updated the existing Product quality / quality job to invoke the identical tier
+  and retain failure artifacts; its check identity is unchanged. Full Python/TUI
+  CI and explicit release qualification remain separate gates. Contributor and
+  script instructions now state that pre-push requires the full development
+  environment, including Node, and does not certify release readiness.
+- Verification: 28 focused hook/runner/planning tests passed, plus three policy tests
+  and a final exact full-CI-gate preservation assertion. The actual canonical
+  integration tier passed in 42.80s: static gates, product build, 36 Python and
+  59 TUI recovery tests. No full suite was run. This is a local duration receipt,
+  not a cross-platform flakiness estimate or qualification claim.

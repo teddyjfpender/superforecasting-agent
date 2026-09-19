@@ -181,3 +181,10 @@ check_snapshot() {
   _py="$(hook_python)" || return 1
   ( cd "$HOOKS_REPO_ROOT" && "$_py" scripts/dev.py snapshot "$@" )
 }
+
+# The same bounded tier is required by the Product quality CI job. Full suites
+# remain in Tests/release qualification; this is not a qualification receipt.
+check_integration() {
+  _py="$(hook_python)" || return 1
+  ( cd "$HOOKS_REPO_ROOT" && "$_py" scripts/dev.py verify --tier integration )
+}

@@ -10,23 +10,19 @@ _py="$(hook_python)" || exit 1
 plan="$("$_py" "$HOOKS_REPO_ROOT/scripts/push_plan.py" "${2:-${1:-origin}}")" || exit 1
 [ -z "$plan" ] && exit 0
 
-quality_args=(--python-only)
 while read -r base head; do
   # Different commits with the same tree are safe. Different trees must be
   # checked separately, never accidentally against the last ref's checkout.
   check_snapshot --ref "$head" || exit 1
   "$_py" "$HOOKS_REPO_ROOT/scripts/check_naming.py" --base "$base" --head "$head" || exit 1
-  if git diff --name-only "$base" "$head" | grep -Eq '^ui-tui/'; then
-    quality_args=()
-  fi
 done <<< "$plan"
 
 rc=0
-if ! check_quality "${quality_args[@]}"; then rc=1; fi
-# Every admitted ref has this exact tree; run the full suite once for the push.
-hook_note "pre-push: full Python suite..."
-if ! "$HOOKS_REPO_ROOT/scripts/run_tests.sh"; then
-  hook_fail "Full Python suite failed" "Commit provenance" "Reproduce: scripts/run_tests.sh"
+# Every admitted ref has this exact tree. The integration tier includes all
+# canonical static checks and its bounded provider-independent recovery tests.
+hook_note "pre-push: canonical integration tier..."
+if ! check_integration; then
+  hook_fail "Integration tier failed" "Commit provenance" "Reproduce: python3 scripts/dev.py verify --tier integration"
   rc=1
 fi
 while read -r base head; do

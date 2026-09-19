@@ -23,7 +23,7 @@ hook_fail() { :; }
 ''')
     (hooks / 'lib/checks.sh').write_text('''
 check_snapshot() { [ "$2" != "$DENIED_HEAD" ]; }
-check_quality() { printf 'quality:%s\\n' "$*" >> "$CALL_LOG"; }
+check_integration() { printf 'integration\\n' >> "$CALL_LOG"; }
 check_vitest_changed() { printf 'frontend:%s\\n' "$1" >> "$CALL_LOG"; }
 ''')
     (tmp_path / 'scripts/push_plan.py').write_text(
@@ -49,13 +49,27 @@ check_vitest_changed() { printf 'frontend:%s\\n' "$1" >> "$CALL_LOG"; }
     return result, log.read_text().splitlines() if log.exists() else []
 
 
-def test_multiple_refs_run_suite_once_and_check_second_frontend_base(tmp_path):
+def test_multiple_refs_run_integration_once_and_check_second_frontend_base(tmp_path):
     result, calls = hook_fixture(tmp_path)
     assert result.returncode == 0, result.stderr
-    assert calls == ['destination:ssh://push-destination/repo', 'quality:', 'suite', 'frontend:base-two']
+    assert calls == ['destination:ssh://push-destination/repo', 'integration', 'frontend:base-two']
 
 
 def test_different_tree_rejected_before_testing_wrong_checkout(tmp_path):
     result, calls = hook_fixture(tmp_path, denied='head-two')
     assert result.returncode != 0
     assert calls == ['destination:ssh://push-destination/repo']
+
+
+def test_product_quality_enforces_same_integration_tier_without_renaming_check():
+    import yaml
+
+    workflow = yaml.safe_load((ROOT / '.github/workflows/product-quality.yml').read_text())
+    assert workflow['name'] == 'Product quality'
+    steps = workflow['jobs']['quality']['steps']
+    assert any(step.get('run') == 'python3 scripts/dev.py verify --tier integration' for step in steps)
+    assert any(step.get('if') == 'always()' and step.get('with', {}).get('path') == '.test-results/' for step in steps)
+    # The push feedback change does not remove the complete Python CI gate.
+    tests = yaml.safe_load((ROOT / '.github/workflows/tests.yml').read_text())
+    assert any('scripts/run_tests.sh' in [line.strip() for line in step.get('run', '').splitlines()]
+               for step in tests['jobs']['test']['steps'])

@@ -185,8 +185,12 @@ It does not qualify installed wheels, upgrades, or other native platforms. Follo
 release verification for those exact-artifact checks. A successful local tier is
 not a reusable qualification receipt; this runner performs no result caching.
 
-These commands do not change hook or protected-check policy. Pre-push still runs
-the full Python suite and affected TUI tests; tier selection is not a bypass.
+Pre-push runs the canonical integration tier once per admitted tree, then affected
+TUI tests against each pushed ref's own base. The existing Product quality job also
+runs this tier; its check identity is unchanged. Full suites remain in Tests CI and
+explicit qualification. A passing push gate does not certify release readiness.
+Pre-push requires the complete contributor environment, including Node, even for
+backend changes. No success receipt is reused across different trees or runtimes.
 
 ## Local Gates: Git Hooks
 
@@ -206,7 +210,7 @@ callers, no drift.
 |------|-------|-------|
 | **pre-commit** | fast | Index/worktree agreement; shared Python quality and import/protocol checks; wire drift; TUI lint/types when staged |
 | **commit-msg** | instant | message shape `type(scope): subject`; a WHY-body for `feat`/`refactor`; the oversize / `MOVES-ONLY` gate |
-| **pre-push** | full Python suite plus changed TUI tests | Every pushed tree must match the index/worktree; shared quality gates; full Python tests and changed TUI tests |
+| **pre-push** | bounded integration plus affected TUI tests | Every pushed tree must match the index/worktree; canonical static checks and controlled recovery tests; affected TUI tests against every ref base |
 
 Hooks run tools in place and require the checked files to match the submitted
 index (commit) or every submitted commit tree (push), before and after checks.

@@ -161,16 +161,18 @@ def test_local_desk_fixture_import_does_not_modify_runtime(monkeypatch):
 @pytest.mark.skipif(os.name == "nt", reason="Git hooks execute with POSIX bash")
 @pytest.mark.parametrize("suite_status", [0, 1])
 @pytest.mark.parametrize("changed", ["tui_gateway/commands.py", "README.md"])
-def test_pre_push_runs_full_suite_and_propagates_failure(snapshot_repo, suite_status, changed):
+def test_pre_push_runs_integration_and_propagates_failure(snapshot_repo, suite_status, changed):
     root, git, _ = snapshot_repo
     shutil.copytree(SOURCE.parents[1] / ".githooks", root / ".githooks",
                     ignore=shutil.ignore_patterns("skips.log"))
     checks = root / ".githooks/lib/checks.sh"
     with checks.open("a", encoding="utf-8") as stream:
-        stream.write("\ncheck_quality() { return 0; }\ncheck_snapshot() { return 0; }\n")
-    runner = root / "scripts/run_tests.sh"
-    runner.write_text('#!/bin/sh\nprintf "%s\\n" "$#" > suite-arguments\nexit ' + str(suite_status) + '\n', encoding="utf-8")
-    runner.chmod(0o755)
+        stream.write("\ncheck_snapshot() { return 0; }\n")
+    (root / "scripts/dev.py").write_text(
+        "import sys\nfrom pathlib import Path\n"
+        "Path('suite-arguments').write_text(' '.join(sys.argv[1:]))\n"
+        + f"sys.exit({suite_status})\n", encoding="utf-8"
+    )
     git("add", ".")
     git("commit", "-qm", "gate fixture")
     base = git("rev-parse", "HEAD")
@@ -187,10 +189,10 @@ def test_pre_push_runs_full_suite_and_propagates_failure(snapshot_repo, suite_st
         input=f"refs/heads/current {current} refs/heads/current {base}\n",
         cwd=root, env=env, capture_output=True, text=True,
     )
-    assert (root / "suite-arguments").read_text(encoding="utf-8").strip() == "0"
+    assert (root / "suite-arguments").read_text(encoding="utf-8").strip() == "verify --tier integration"
     assert result.returncode == suite_status
     if suite_status:
-        assert "Full Python suite failed" in result.stderr
+        assert "Integration tier failed" in result.stderr
 
 
 def test_canonical_check_runs_reference_freshness_and_propagates_rejection(monkeypatch):

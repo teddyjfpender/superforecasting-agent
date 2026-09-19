@@ -74,7 +74,8 @@ TUI files relative to `ui-tui/`; `--python-only` is available for backend work.
 An empty fast selection is an error, never an implicit full-suite run.
 
 `dev.py verify --tier integration` builds and runs the bounded controlled-provider
-lifecycle selection declared in `dev.py`. `--tier qualification` explicitly runs
+lifecycle selection declared in `dev.py`. Pre-push and the existing Product quality
+CI job both invoke this tier; full-suite CI remains separate. `--tier qualification` explicitly runs
 both full local suites. Neither command certifies other platforms or installed
 release artifacts. See [contributor guidance](../CONTRIBUTING.md#validation-feedback-tiers)
 for scope, timing, skips and hook policy.

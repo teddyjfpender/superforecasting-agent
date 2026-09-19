@@ -23,6 +23,15 @@ jobs:
           node-version: '22'
       - name: Bootstrap and enforce the contributor quality gates
         run: python3 scripts/dev.py bootstrap
+      - name: Enforce the shared pre-push integration tier
+        run: python3 scripts/dev.py verify --tier integration
+      - name: Preserve integration failure evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: contributor-integration
+          include-hidden-files: true
+          path: .test-results/
   installed-products:
     strategy:
       fail-fast: false
