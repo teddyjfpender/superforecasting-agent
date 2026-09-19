@@ -29,9 +29,9 @@ const renderPlain = (node: React.ReactNode) => {
 
   const instance = renderSync(node, {
     patchConsole: false,
-    stderr: stderr as NodeJS.WriteStream,
-    stdin: stdin as NodeJS.ReadStream,
-    stdout: stdout as NodeJS.WriteStream
+    stderr: stderr,
+    stdin: stdin,
+    stdout: stdout
   })
 
   instance.unmount()

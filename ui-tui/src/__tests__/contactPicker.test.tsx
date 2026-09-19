@@ -57,7 +57,7 @@ it.each([
     <Box height={rows} width={cols}>
       <ContactPicker cols={cols} onCancel={cancel} onNewGroup={group} onSelect={select} rows={rows} t={DARK_THEME} />
     </Box>,
-    { stdout: stdout as never, stdin: stdin as never, debug: true, patchConsole: false, exitOnCtrlC: false }
+    { stdout: stdout, stdin: stdin, patchConsole: false, exitOnCtrlC: false }
   )
 
   try {

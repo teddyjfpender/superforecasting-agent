@@ -43,7 +43,7 @@ it('refreshes names in the real messaging view, opens f search and enters a chat
     <Box height={32} width={100}>
       <MessagingView onClose={() => {}} t={DARK_THEME} />
     </Box>,
-    { stdout: stdout as never, stdin: stdin as never, debug: true, patchConsole: false, exitOnCtrlC: false }
+    { stdout: stdout, stdin: stdin, patchConsole: false, exitOnCtrlC: false }
   )
 
   try {

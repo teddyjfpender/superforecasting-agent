@@ -306,9 +306,9 @@ const renderForecastDesk = async (
     ),
     {
       patchConsole: false,
-      stderr: stderr.stream as NodeJS.WriteStream,
-      stdin: stdin.stream as NodeJS.ReadStream,
-      stdout: stdout.stream as NodeJS.WriteStream
+      stderr: stderr.stream,
+      stdin: stdin.stream,
+      stdout: stdout.stream
     }
   )
 

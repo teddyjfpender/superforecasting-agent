@@ -67,9 +67,9 @@ describe('MessageLine', () => {
       }),
       {
         patchConsole: false,
-        stderr: stderr as NodeJS.WriteStream,
-        stdin: stdin as NodeJS.ReadStream,
-        stdout: stdout as NodeJS.WriteStream
+        stderr: stderr,
+        stdin: stdin,
+        stdout: stdout
       }
     )
 

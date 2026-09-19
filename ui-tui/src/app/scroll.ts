@@ -8,12 +8,23 @@ export interface SelectionSnap {
   isDragging?: boolean
 }
 
+export type ScrollSurface = Pick<
+  ScrollBoxHandle,
+  | 'getViewportHeight'
+  | 'getScrollHeight'
+  | 'getFreshScrollHeight'
+  | 'getScrollTop'
+  | 'getPendingDelta'
+  | 'getViewportTop'
+  | 'scrollBy'
+>
+
 export interface ScrollWithSelectionOptions {
-  readonly scrollRef: { readonly current: ScrollBoxHandle | null }
-  readonly selection: SelectionApi
+  readonly scrollRef: { readonly current: ScrollSurface | null }
+  readonly selection: Pick<SelectionApi, 'getState' | 'shiftAnchor' | 'shiftSelection' | 'captureScrolledRows'>
 }
 
-function scrollBoundsForDelta(s: ScrollBoxHandle, cur: number, delta: number) {
+function scrollBoundsForDelta(s: ScrollSurface, cur: number, delta: number) {
   const viewport = Math.max(0, s.getViewportHeight())
   const cachedHeight = Math.max(viewport, s.getScrollHeight())
   let max = Math.max(0, cachedHeight - viewport)

@@ -37,9 +37,8 @@ async function mount(view: React.ReactNode, cols = 100, rows = 32) {
       view
     ),
     {
-      stdout: stdout as never,
-      stdin: stdin as never,
-      debug: true,
+      stdout: stdout,
+      stdin: stdin,
       patchConsole: false,
       exitOnCtrlC: false
     }

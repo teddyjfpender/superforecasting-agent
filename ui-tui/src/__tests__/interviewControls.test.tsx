@@ -83,7 +83,7 @@ async function screen(
     <Box height={rows} width={cols}>
       <ForecastInterview gw={{ request } as never} onClose={onClose} t={DARK_THEME} />
     </Box>,
-    { stdout, stdin, debug: true, patchConsole: false, exitOnCtrlC: false }
+    { stdout, stdin, patchConsole: false, exitOnCtrlC: false }
   )
 
   return {

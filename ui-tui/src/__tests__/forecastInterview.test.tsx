@@ -117,7 +117,7 @@ it.each([
     <Box height={rows} width={cols}>
       <ForecastInterview gw={fixture} onClose={close} t={DARK_THEME} />
     </Box>,
-    { stdout, stdin, debug: true, patchConsole: false, exitOnCtrlC: false }
+    { stdout, stdin, patchConsole: false, exitOnCtrlC: false }
   )
 
   try {

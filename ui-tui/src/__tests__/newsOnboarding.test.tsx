@@ -122,7 +122,7 @@ async function mount(cols: number, rows: number, configured = false) {
     <Box height={rows} width={cols}>
       <NewsView gw={{ request } as never} onClose={() => undefined} t={DARK_THEME} />
     </Box>,
-    { stdin, stdout, debug: true, patchConsole: false, exitOnCtrlC: false }
+    { stdin, stdout, patchConsole: false, exitOnCtrlC: false }
   )
 
   await tick()

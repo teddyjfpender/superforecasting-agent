@@ -107,9 +107,8 @@ it('real Markets and News remounts paint retained data without reacquiring feeds
   )
 
   const app = await render(market, {
-    stdout: stdout as never,
-    stdin: stdin as never,
-    debug: true,
+    stdout: stdout,
+    stdin: stdin,
     patchConsole: false,
     exitOnCtrlC: false
   })

@@ -50,9 +50,8 @@ it.each([false, true])('keeps the framed editor and submit action visible (multi
   }
 
   const app = await render(<Editor />, {
-    stdout: stdout as never,
-    stdin: stdin as never,
-    debug: true,
+    stdout: stdout,
+    stdin: stdin,
     patchConsole: false,
     exitOnCtrlC: false
   })

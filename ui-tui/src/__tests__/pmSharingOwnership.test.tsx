@@ -38,8 +38,8 @@ it('hides old history immediately and ignores late replies after outcome selecti
     stdin = new PassThrough()
 
   const app = await render(<Probe id="A" />, {
-    stdout: stdout as never,
-    stdin: stdin as never,
+    stdout: stdout,
+    stdin: stdin,
     patchConsole: false,
     exitOnCtrlC: false
   })

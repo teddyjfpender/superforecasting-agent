@@ -51,9 +51,8 @@ it('keeps the link alive through resize and renders every QR row once it fits', 
   )
 
   const app = await render(view(80, 24), {
-    stdout: stdout as never,
-    stdin: stdin as never,
-    debug: true,
+    stdout: stdout,
+    stdin: stdin,
     patchConsole: false,
     exitOnCtrlC: false
   })

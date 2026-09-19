@@ -98,9 +98,9 @@ describe('useVirtualHistory offset cache reuse', () => {
 
     const instance = renderSync(React.createElement(Harness, { expose, items: tall }), {
       patchConsole: false,
-      stderr: streams.stderr as NodeJS.WriteStream,
-      stdin: streams.stdin as NodeJS.ReadStream,
-      stdout: streams.stdout as NodeJS.WriteStream
+      stderr: streams.stderr,
+      stdin: streams.stdin,
+      stdout: streams.stdout
     })
 
     try {
@@ -126,9 +126,9 @@ describe('useVirtualHistory offset cache reuse', () => {
 
     const instance = renderSync(React.createElement(Harness, { expose, items: beforeShrink }), {
       patchConsole: false,
-      stderr: streams.stderr as NodeJS.WriteStream,
-      stdin: streams.stdin as NodeJS.ReadStream,
-      stdout: streams.stdout as NodeJS.WriteStream
+      stderr: streams.stderr,
+      stdin: streams.stdin,
+      stdout: streams.stdout
     })
 
     try {

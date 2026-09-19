@@ -63,7 +63,7 @@ it('installs input handlers at commit, reads current state and retains propagati
     </StdinContext.Provider>
   )
 
-  const app = await render(view(1, true), { stdout, stdin, debug: true, patchConsole: false, exitOnCtrlC: false })
+  const app = await render(view(1, true), { stdout, stdin, patchConsole: false, exitOnCtrlC: false })
 
   try {
     await vi.waitFor(() => expect(hits, output).toEqual(['first:1']))

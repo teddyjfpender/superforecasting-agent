@@ -337,3 +337,18 @@ server-import prohibition. No full suite was run.
 
 Other RPC families, singleton profile services and complete integrated recovery
 qualification remain open; these tests establish this family's ownership only.
+
+## TUI renderer fixture contracts and scroll capabilities
+
+The complete test TypeScript project reported 204 diagnostics. Removed inert
+renderer `debug` options and unnecessary stream-to-OS-terminal/never casts from
+affected fixtures. The scroll helper now requires only the scroll and selection
+capabilities it calls; its fixtures use that actual interface without casts.
+Production behavior remains unchanged. The testing guide now distinguishes typed
+RPC fixtures, inherited untyped helpers, stream ownership and native qualification.
+
+All 129 tests in the 18 changed test files passed. Canonical Python/TUI static
+checks passed, including production TypeScript and all 77 import contracts.
+The complete test project now reports 174 diagnostics, down 30; it is still not
+clean or blocking. The large slash fixture and remaining RPC/view fixtures remain
+required W02 work. No full Python or TUI suite was run.

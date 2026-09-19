@@ -242,7 +242,7 @@ const renderRaw = async (windowed: PMDisplayRow[], clampedSel: number, sortState
         windowed
       } as never)
     ),
-    { exitOnCtrlC: false, patchConsole: false, stdout: stdout as never }
+    { exitOnCtrlC: false, patchConsole: false, stdout: stdout }
   )
 
   await tick(50)
@@ -311,7 +311,7 @@ describe('#3 header click-sort fires through the real hit-test', () => {
         React.createElement(Box as never, { onClick: boxSpy } as never, React.createElement(Text as never, {}, 'BOX')),
         React.createElement(Text as never, { onClick: textSpy }, 'TXT')
       ),
-      { exitOnCtrlC: false, patchConsole: false, stdout: stdout as never }
+      { exitOnCtrlC: false, patchConsole: false, stdout: stdout }
     )
     await tick(50)
     const ink: any = instances.get(stdout)
@@ -362,7 +362,7 @@ describe('#3 header click-sort fires through the real hit-test', () => {
       )
     }
 
-    renderSync(React.createElement(Harness), { exitOnCtrlC: false, patchConsole: false, stdout: stdout as never })
+    renderSync(React.createElement(Harness), { exitOnCtrlC: false, patchConsole: false, stdout: stdout })
     await tick(60)
     const ink: any = instances.get(stdout)
 

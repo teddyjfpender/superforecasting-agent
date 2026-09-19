@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { scrollWithSelectionBy } from '../app/scroll.js'
+import { type ScrollSurface, scrollWithSelectionBy } from '../app/scroll.js'
 
-function makeScroll(overrides: Partial<Record<string, unknown>> = {}) {
-  const getScrollHeight = (overrides.getScrollHeight as (() => number) | undefined) ?? vi.fn(() => 100)
+function makeScroll(overrides: Partial<ScrollSurface> = {}) {
+  const getScrollHeight = overrides.getScrollHeight ?? vi.fn(() => 100)
 
   return {
     getFreshScrollHeight: vi.fn(() => getScrollHeight()),
@@ -32,7 +32,7 @@ describe('scrollWithSelectionBy', () => {
       shiftSelection: vi.fn()
     }
 
-    scrollWithSelectionBy(10, { scrollRef: { current: s as never }, selection })
+    scrollWithSelectionBy(10, { scrollRef: { current: s }, selection })
 
     expect(s.scrollBy).toHaveBeenCalledWith(1)
   })
@@ -52,7 +52,7 @@ describe('scrollWithSelectionBy', () => {
       shiftSelection: vi.fn()
     }
 
-    scrollWithSelectionBy(10, { scrollRef: { current: s as never }, selection })
+    scrollWithSelectionBy(10, { scrollRef: { current: s }, selection })
 
     expect(s.scrollBy).toHaveBeenCalledWith(4)
   })
@@ -73,7 +73,7 @@ describe('scrollWithSelectionBy', () => {
       shiftSelection: vi.fn()
     }
 
-    scrollWithSelectionBy(10, { scrollRef: { current: s as never }, selection })
+    scrollWithSelectionBy(10, { scrollRef: { current: s }, selection })
 
     expect(s.scrollBy).toHaveBeenCalledWith(6)
   })
@@ -92,7 +92,7 @@ describe('scrollWithSelectionBy', () => {
       shiftSelection: vi.fn()
     }
 
-    scrollWithSelectionBy(10, { scrollRef: { current: s as never }, selection })
+    scrollWithSelectionBy(10, { scrollRef: { current: s }, selection })
 
     expect(s.scrollBy).not.toHaveBeenCalled()
   })
