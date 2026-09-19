@@ -74,6 +74,7 @@ STRICT_PYTHON = (
     "tui_gateway/command_routes.py",
     "tui_gateway/commands_rpc.py",
     "tui_gateway/tools_rpc.py",
+    "tui_gateway/completion_rpc.py",
     "tui_gateway/rpc_binding.py",
     "scripts/prepare_upgrade_baselines.py",
     "scripts/verify_profile_migrations.py",

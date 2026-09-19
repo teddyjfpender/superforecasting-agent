@@ -1,101 +1,124 @@
-"""Gateway RPCs for the completion family — carved from server.py.
+"""Completion and paste RPCs bound to one host's explicit capabilities."""
 
-Moves-only slice of the Wave-2 server family-split (docs/plans/2026-07-10-
-modularization-program.md §W2.a). ``complete.path`` (filesystem path/@-mention
-completion), ``complete.slash`` (slash-command + details completion) and
-``paste.collapse`` (bracketed-paste folding) moved here VERBATIM. The local
-``rpc_validated`` / ``method`` decorators capture handlers into ``_REGISTRARS``;
-``server.py`` calls :func:`register` (at load AND on ``importlib.reload`` — the
-pm_rpc/jobs_rpc sibling contract), replaying them through the REAL
-``server.rpc_validated`` / ``server.method`` so registration lands in the same
-``tui_gateway.server._methods`` dispatch dict — wire byte-identical.
-
-``_agent_home`` is monkeypatched by the test suite, so it is reached via the
-``_core._agent_home`` call-time hop. The completion helpers
-(``_list_repo_files`` / ``_fuzzy_basename_rank`` / ``_details_completions`` /
-``_normalize_completion_path``) and ``_ok`` / ``_err`` are not patched — imported
-bare from core.
-"""
 from __future__ import annotations
 
 import os
+import tempfile
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass, field
+from itertools import count
+from pathlib import Path
+from typing import Any
 
-import tui_gateway.server as _core
-from tui_gateway.server import (
-    _details_completions,
-    _err,
-    _fuzzy_basename_rank,
-    _list_repo_files,
-    _normalize_completion_path,
-    _ok,
+from superforecasting_agent.hosting.runtime import RuntimeHost
+from tui_gateway.rpc_binding import (
+    ErrorResponse,
+    Registrar,
+    RpcHandler,
+    bind_host_handler,
 )
 
-_REGISTRARS: list[tuple[str, str, object]] = []
+
+@dataclass(frozen=True)
+class CompletionContext:
+    host: Callable[[], RuntimeHost]
+    home: Callable[[], Path]
+    cwd: Callable[[], str]
+    list_repo_files: Callable[[str], list[str]]
+    fuzzy_basename_rank: Callable[[str, str], tuple[int, int] | None]
+    normalize_path: Callable[[str], str]
+    details: Callable[[str], list[dict[str, Any]] | None]
+    skill_commands: Callable[[], dict[str, dict[str, Any]]]
+    skill_bundles: Callable[[], dict[str, dict[str, Any]]]
+    ok: Callable[[Any, dict[str, Any]], dict[str, Any]]
+    error: ErrorResponse
+    paste_numbers: Iterator[int] = field(default_factory=lambda: count(1))
 
 
-def rpc_validated(name: str):
-    def _dec(fn):
-        _REGISTRARS.append(("rpc_validated", name, fn))
-        return fn
+def register_handlers(
+    context: CompletionContext, *, method: Registrar, rpc_validated: Registrar
+) -> None:
+    def bind(
+        handler: Callable[[CompletionContext, Any, dict[str, Any]], dict[str, Any]],
+    ) -> RpcHandler:
+        return bind_host_handler(
+            context.host,
+            context.error,
+            lambda owner, rid, params: handler(context, rid, params),
+        )
 
-    return _dec
-
-
-def method(name: str):
-    def _dec(fn):
-        _REGISTRARS.append(("method", name, fn))
-        return fn
-
-    return _dec
+    method("paste.collapse")(bind(collapse_paste))
+    rpc_validated("complete.path")(bind(complete_path))
+    rpc_validated("complete.slash")(bind(complete_slash))
 
 
 def register(server) -> None:
-    """(Re-)register every carved completion handler into ``server._methods``."""
-    global _core, _details_completions, _err, _fuzzy_basename_rank, _list_repo_files, _normalize_completion_path, _ok
-    _core = server
-    _details_completions = server._details_completions
-    _err = server._err
-    _fuzzy_basename_rank = server._fuzzy_basename_rank
-    _list_repo_files = server._list_repo_files
-    _normalize_completion_path = server._normalize_completion_path
-    _ok = server._ok
-    for kind, name, fn in _REGISTRARS:
-        getattr(server, kind)(name)(fn)
+    """Legacy singleton composition, including its existing call-time reload hooks."""
+    from agent.skill_bundles import get_skill_bundles
+    from agent.skill_commands import get_skill_commands
+
+    context = CompletionContext(
+        host=lambda: server._host,
+        home=lambda: server._agent_home,
+        cwd=os.getcwd,
+        list_repo_files=lambda root: server._list_repo_files(root),
+        fuzzy_basename_rank=lambda name, query: server._fuzzy_basename_rank(
+            name, query
+        ),
+        normalize_path=lambda path: server._normalize_completion_path(path),
+        details=lambda text: server._details_completions(text),
+        skill_commands=get_skill_commands,
+        skill_bundles=get_skill_bundles,
+        ok=lambda rid, result: server._ok(rid, result),
+        error=lambda rid, code, message: server._err(rid, code, message),
+    )
+    register_handlers(context, method=server.method, rpc_validated=server.rpc_validated)
 
 
-__all__ = ["register"]
-@method("paste.collapse")
-def _(rid, params: dict) -> dict:
-    global _paste_counter
+def collapse_paste(
+    context: CompletionContext, rid: Any, params: dict[str, Any]
+) -> dict[str, Any]:
     text = params.get("text", "")
     if not text:
-        return _err(rid, 4004, "empty paste")
-
-    _paste_counter += 1
+        return context.error(rid, 4004, "empty paste")
+    number = next(context.paste_numbers)
     line_count = text.count("\n") + 1
-    paste_dir = _core._agent_home / "pastes"
+    paste_dir = context.home() / "pastes"
     paste_dir.mkdir(parents=True, exist_ok=True)
-
-    from datetime import datetime
-
-    paste_file = (
-        paste_dir / f"paste_{_paste_counter}_{datetime.now().strftime('%H%M%S')}.txt"
+    # Exclusive creation protects separate hosts/restarts, even in the same profile.
+    paste_file = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=paste_dir,
+            prefix=f"paste_{number}_",
+            suffix=".txt",
+            delete=False,
+        ) as stream:
+            paste_file = Path(stream.name)
+            stream.write(text)
+            stream.flush()
+    except BaseException:
+        if paste_file is not None:
+            paste_file.unlink(missing_ok=True)
+        raise
+    return context.ok(
+        rid,
+        {
+            "placeholder": f"[Pasted text #{number}: {line_count} lines → {paste_file}]",
+            "path": str(paste_file),
+            "lines": line_count,
+        },
     )
-    paste_file.write_text(text, encoding="utf-8")
-
-    placeholder = (
-        f"[Pasted text #{_paste_counter}: {line_count} lines \u2192 {paste_file}]"
-    )
-    return _ok(
-        rid, {"placeholder": placeholder, "path": str(paste_file), "lines": line_count}
-    )
 
 
-@rpc_validated("complete.path")
-def _(rid, params: dict) -> dict:
+def complete_path(
+    context: CompletionContext, rid: Any, params: dict[str, Any]
+) -> dict[str, Any]:
     word = params.get("word", "")
     if not word:
-        return _ok(rid, {"items": []})
+        return context.ok(rid, {"items": []})
 
     items: list[dict] = []
     try:
@@ -111,7 +134,7 @@ def _(rid, params: dict) -> dict:
                 {"text": "@url:", "display": "@url:", "meta": "fetch url"},
                 {"text": "@git:", "display": "@git:", "meta": "git log"},
             ]
-            return _ok(rid, {"items": items})
+            return context.ok(rid, {"items": items})
 
         # Accept both `@folder:path` and the bare `@folder` form so the user
         # sees directory listings as soon as they finish typing the keyword,
@@ -132,13 +155,13 @@ def _(rid, params: dict) -> dict:
         # `/`, `./`, `~/`, `/abs`) fall through to the directory-listing
         # path so explicit navigation intent is preserved.
         if is_context and path_part and "/" not in path_part and prefix_tag != "folder":
-            root = os.getcwd()
+            root = context.cwd()
             ranked: list[tuple[tuple[int, int], str, str]] = []
-            for rel in _list_repo_files(root):
+            for rel in context.list_repo_files(root):
                 basename = os.path.basename(rel)
                 if basename.startswith(".") and not path_part.startswith("."):
                     continue
-                rank = _fuzzy_basename_rank(basename, path_part)
+                rank = context.fuzzy_basename_rank(basename, path_part)
                 if rank is None:
                     continue
                 ranked.append((rank, rel, basename))
@@ -146,17 +169,15 @@ def _(rid, params: dict) -> dict:
             ranked.sort(key=lambda r: (r[0], len(r[1]), r[1]))
             tag = prefix_tag or "file"
             for _, rel, basename in ranked[:30]:
-                items.append(
-                    {
-                        "text": f"@{tag}:{rel}",
-                        "display": basename,
-                        "meta": os.path.dirname(rel),
-                    }
-                )
+                items.append({
+                    "text": f"@{tag}:{rel}",
+                    "display": basename,
+                    "meta": os.path.dirname(rel),
+                })
 
-            return _ok(rid, {"items": items})
+            return context.ok(rid, {"items": items})
 
-        expanded = _normalize_completion_path(path_part) if path_part else "."
+        expanded = context.normalize_path(path_part) if path_part else "."
         if expanded == "." or not expanded:
             search_dir, match = ".", ""
         elif expanded.endswith("/"):
@@ -165,8 +186,10 @@ def _(rid, params: dict) -> dict:
             search_dir = os.path.dirname(expanded) or "."
             match = os.path.basename(expanded)
 
+        root = context.cwd()
+        search_dir = os.path.join(root, search_dir)
         if not os.path.isdir(search_dir):
-            return _ok(rid, {"items": []})
+            return context.ok(rid, {"items": []})
 
         want_dir = prefix_tag == "folder"
         match_lower = match.lower()
@@ -182,7 +205,7 @@ def _(rid, params: dict) -> dict:
             # which used to defeat the prefix and let `@folder:` list files.
             if prefix_tag and want_dir != is_dir:
                 continue
-            rel = os.path.relpath(full)
+            rel = os.path.relpath(full, root)
             suffix = "/" if is_dir else ""
 
             if is_context and prefix_tag:
@@ -197,38 +220,35 @@ def _(rid, params: dict) -> dict:
             else:
                 text = rel + suffix
 
-            items.append(
-                {
-                    "text": text,
-                    "display": entry + suffix,
-                    "meta": "dir" if is_dir else "",
-                }
-            )
+            items.append({
+                "text": text,
+                "display": entry + suffix,
+                "meta": "dir" if is_dir else "",
+            })
             if len(items) >= 30:
                 break
     except Exception as e:
-        return _err(rid, 5021, str(e))
+        return context.error(rid, 5021, str(e))
 
-    return _ok(rid, {"items": items})
+    return context.ok(rid, {"items": items})
 
 
-@rpc_validated("complete.slash")
-def _(rid, params: dict) -> dict:
+def complete_slash(
+    context: CompletionContext, rid: Any, params: dict[str, Any]
+) -> dict[str, Any]:
     text = params.get("text", "")
     if not text.startswith("/"):
-        return _ok(rid, {"items": []})
+        return context.ok(rid, {"items": []})
 
     try:
-        from superforecasting_agent.runtime.commands import SlashCommandCompleter
         from prompt_toolkit.document import Document
         from prompt_toolkit.formatted_text import to_plain_text
 
-        from agent.skill_commands import get_skill_commands
-        from agent.skill_bundles import get_skill_bundles
+        from superforecasting_agent.runtime.commands import SlashCommandCompleter
 
         completer = SlashCommandCompleter(
-            skill_commands_provider=lambda: get_skill_commands(),
-            skill_bundles_provider=lambda: get_skill_bundles(),
+            skill_commands_provider=context.skill_commands,
+            skill_bundles_provider=context.skill_bundles,
         )
         doc = Document(text, len(text))
         items = [
@@ -296,9 +316,9 @@ def _(rid, params: dict) -> dict:
             ):
                 items.append(extra)
 
-        details_items = _details_completions(text)
+        details_items = context.details(text)
         if details_items is not None:
-            return _ok(
+            return context.ok(
                 rid,
                 {
                     "items": details_items,
@@ -306,9 +326,9 @@ def _(rid, params: dict) -> dict:
                 },
             )
 
-        return _ok(
+        return context.ok(
             rid,
             {"items": items, "replace_from": text.rfind(" ") + 1 if " " in text else 1},
         )
     except Exception as e:
-        return _err(rid, 5020, str(e))
+        return context.error(rid, 5020, str(e))

@@ -660,3 +660,23 @@ The hook now resolves selection once, passes explicit file filters, closes test 
 and rejects whole-suite expansion. Empty selection never invokes `run`; selection
 failure fails the gate. Four focused hook tests passed, including controlled subset,
 empty/full/error/invalid lists, whitespace in filenames, and per-ref orchestration.
+
+## Completion and paste host ownership
+
+`CompletionContext` replaces completion-family server imports/global rebinding with explicit
+host, directory, profile and catalog capabilities. Path searches use the supplied host root;
+registered handlers retain their owner through another registration and shutdown. The singleton
+adapter preserves existing call-time helpers. Legacy skill discovery remains process-profile
+based; independent hosts supply scoped catalog callbacks.
+
+Inspection found `paste.collapse` referenced an uninitialized module counter. Per-context
+numbering now accompanies exclusive private temporary-file allocation, preventing collisions
+between hosts/restarts in one profile. Failed writes close and remove only their partial file.
+The wire shape and documented completion errors remain unchanged. Complete strict checks and
+the no-singleton-server import contract now cover this family.
+
+Focused validation: 27 completion/path compatibility tests and four independent-host,
+concurrent paste and failed-write cleanup tests passed. Canonical Python static gates passed.
+The f314 native Linux integration result passed 46 tests, including portable PTY startup,
+but timed out in the handoff test at the combined rendered-queue/durable-running wait.
+That failure remains open; it is not evidence that all integration qualification passed.

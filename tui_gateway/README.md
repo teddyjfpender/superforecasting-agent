@@ -72,3 +72,13 @@ owner: it pins the runtime for each call and retains worker ownership until exit
 Tests in `test_tool_context.py` verify separate configuration/reset destinations
 for hosts with identical session IDs. This family and the binding owner receive
 complete strict checks and cannot directly import the singleton server.
+
+`completion_rpc.CompletionContext` owns path/slash completion capabilities and paste
+numbering. Independent hosts supply their working directory, profile home and skill
+catalog callbacks explicitly. Paste files are exclusively created with private temporary
+file permissions: overlapping hosts and restarts cannot overwrite earlier text. Failed
+writes remove only their allocation. Restoring/re-registering the singleton cannot rebind
+another host's handlers. Path/completer errors retain codes `5021`/`5020`; shutdown uses
+shared host admission. `tests/tui_gateway/test_completion_context.py` covers isolation,
+concurrent paste creation and failure cleanup. The legacy skill discovery callbacks still
+use their existing process profile; independent hosts must supply scoped callbacks.

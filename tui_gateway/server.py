@@ -4875,7 +4875,6 @@ _PENDING_INPUT_COMMANDS: frozenset[str] = frozenset(
 
 # ── Methods: paste ────────────────────────────────────────────────────
 
-_paste_counter = 0
 
 
 # ── Methods: complete ─────────────────────────────────────────────────
