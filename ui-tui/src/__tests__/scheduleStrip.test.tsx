@@ -100,7 +100,7 @@ const mount = async (status: unknown) => {
 
   const stdout = writeStream(120, 40)
 
-  const instance = render(React.createElement(ScheduleStrip, { gw: fakeGw(status) as never, t: DARK_THEME, width: 100 }), {
+  const instance = await render(React.createElement(ScheduleStrip, { gw: fakeGw(status) as never, t: DARK_THEME, width: 100 }), {
     exitOnCtrlC: false,
     patchConsole: false,
     stdout: stdout.stream

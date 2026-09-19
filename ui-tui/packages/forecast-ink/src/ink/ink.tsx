@@ -75,6 +75,7 @@ import {
   startSelection,
   updateSelection
 } from './selection.js'
+import type { TerminalInput, TerminalOutput } from './streams.js'
 import {
   needsAltScreenResizeScrollbackClear,
   supportsExtendedKeys,
@@ -146,9 +147,9 @@ function makeAltScreenParkPatch(terminalRows: number) {
 }
 
 export type Options = {
-  stdout: NodeJS.WriteStream
-  stdin: NodeJS.ReadStream
-  stderr: NodeJS.WriteStream
+  stdout: TerminalOutput
+  stdin: TerminalInput
+  stderr: TerminalOutput
   exitOnCtrlC: boolean
   patchConsole: boolean
   waitUntilExit?: () => Promise<void>
@@ -186,6 +187,7 @@ export default class Ink {
   private charPool: CharPool
   private hyperlinkPool: HyperlinkPool
   private exitPromise?: Promise<void>
+  private exitResult?: { error?: Error }
   private restoreConsole?: () => void
   private restoreStderr?: () => void
   private readonly unsubscribeTTYHandlers?: () => void
@@ -707,7 +709,7 @@ export default class Ink {
     const frame = this.renderer({
       frontFrame: this.frontFrame,
       backFrame: this.backFrame,
-      isTTY: this.options.stdout.isTTY,
+      isTTY: this.options.stdout.isTTY === true,
       terminalWidth,
       terminalRows,
       altScreen: this.altScreenActive,
@@ -1387,7 +1389,7 @@ export default class Ink {
     // short-circuiting that path. Must use this.options.stdin — NOT
     // process.stdin — because getStdinOverride() may have opened /dev/tty
     // when stdin is piped.
-    const stdin = this.options.stdin as NodeJS.ReadStream & {
+    const stdin = this.options.stdin as TerminalInput & {
       isRaw?: boolean
       setRawMode?: (m: boolean) => void
     }
@@ -2159,7 +2161,7 @@ export default class Ink {
     logForDebugging(
       `[stdin] suspendStdin: removing ${readableListeners.length} readable listener(s), wasRawMode=${
         (
-          stdin as NodeJS.ReadStream & {
+          stdin as TerminalInput & {
             isRaw?: boolean
           }
         ).isRaw ?? false
@@ -2174,7 +2176,7 @@ export default class Ink {
     })
 
     // If raw mode is enabled, disable it temporarily
-    const stdinWithRaw = stdin as NodeJS.ReadStream & {
+    const stdinWithRaw = stdin as TerminalInput & {
       isRaw?: boolean
       setRawMode?: (mode: boolean) => void
     }
@@ -2208,7 +2210,7 @@ export default class Ink {
 
     // Re-enable raw mode if it was enabled before
     if (this.wasRawMode) {
-      const stdinWithRaw = stdin as NodeJS.ReadStream & {
+      const stdinWithRaw = stdin as TerminalInput & {
         setRawMode?: (mode: boolean) => void
       }
 
@@ -2424,13 +2426,18 @@ export default class Ink {
 
     reconciler.updateContainerSync(null, this.container, null, noop)
     reconciler.flushSyncWork()
-    instances.delete(this.options.stdout)
+
+    if (instances.get(this.options.stdout) === this) {
+      instances.delete(this.options.stdout)
+    }
 
     // Free the root yoga node, then clear its reference. Children are already
     // freed by the reconciler's removeChildFromContainer; using .free() (not
     // .freeRecursive()) avoids double-freeing them.
     this.rootNode.yogaNode?.free()
     this.rootNode.yogaNode = undefined
+
+    this.exitResult = error instanceof Error ? { error } : {}
 
     if (error instanceof Error) {
       this.rejectExitPromise(error)
@@ -2439,6 +2446,12 @@ export default class Ink {
     }
   }
   async waitUntilExit(): Promise<void> {
+    if (this.exitResult) {
+      if (this.exitResult.error) { throw this.exitResult.error }
+
+      return
+    }
+
     this.exitPromise ||= new Promise((resolve, reject) => {
       this.resolveExitPromise = resolve
       this.rejectExitPromise = reject
@@ -2595,7 +2608,7 @@ export default class Ink {
  * arrive for a few ms after it's written.
  */
 
-export function drainStdin(stdin: NodeJS.ReadStream = process.stdin): void {
+export function drainStdin(stdin: TerminalInput = process.stdin): void {
   if (!stdin.isTTY) {
     return
   }
@@ -2619,7 +2632,7 @@ export function drainStdin(stdin: NodeJS.ReadStream = process.stdin): void {
   // termios is per-device: flip stdin to raw so canonical-mode line
   // buffering doesn't hide partial input from the non-blocking read.
   // Restored in the finally block.
-  const tty = stdin as NodeJS.ReadStream & {
+  const tty = stdin as TerminalInput & {
     isRaw?: boolean
     setRawMode?: (raw: boolean) => void
   }

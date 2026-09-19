@@ -392,7 +392,7 @@ const mountDesk = async (columns: number, response: ForecastWorkspaceResponse, g
   const stdout = writeStream(columns, 40)
   const stdin = writeStream(columns, 40, true)
 
-  const instance = render(
+  const instance = await render(
     React.createElement(DeskView, { gw: (gwOverride ?? fakeGw(response)) as never, onClose: () => undefined, t: DARK_THEME }),
     { exitOnCtrlC: false, patchConsole: false, stdin: stdin.stream, stdout: stdout.stream }
   )
@@ -2203,7 +2203,7 @@ describe('sidebar wrap law', () => {
     const item = plainRow('fq_long', 'Will the market begin pricing AI-infrastructure scarcity as a persistent macro constraint through 2027?')
     const stdout = writeStream(60, 40)
 
-    const inst = render(
+    const inst = await render(
       React.createElement(DeskSummary as never, {
         latestNote: {
           body: 'Still a lean no at 37 percent, with overbuild risk reading as more of a 2027 tail scenario than the base case for the year ahead.',

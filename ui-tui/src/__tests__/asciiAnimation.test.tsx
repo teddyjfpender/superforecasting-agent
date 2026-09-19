@@ -64,7 +64,7 @@ const renderAnim = async (props: { active?: boolean } = {}) => {
   const stdout = writeStream(40, 10)
   const stdin = writeStream(40, 10, true)
 
-  const instance = render(
+  const instance = await render(
     React.createElement(AsciiAnimation, { animation: FIXTURE, ...props }),
     { exitOnCtrlC: false, patchConsole: false, stdin: stdin.stream, stdout: stdout.stream }
   )

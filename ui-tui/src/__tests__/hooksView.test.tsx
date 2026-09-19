@@ -49,7 +49,7 @@ const renderView = async (cols = 120) => {
   const stdout = writeStream(cols, 50)
   const stdin = writeStream(cols, 50, true)
   const fakeGw = { request: () => Promise.resolve(fixture()) } as unknown as Parameters<typeof HooksView>[0]['gw']
-  const instance = render(React.createElement(HooksView, { gw: fakeGw, onClose: () => undefined, t: DARK_THEME }), { exitOnCtrlC: false, patchConsole: false, stdin: stdin.stream, stdout: stdout.stream })
+  const instance = await render(React.createElement(HooksView, { gw: fakeGw, onClose: () => undefined, t: DARK_THEME }), { exitOnCtrlC: false, patchConsole: false, stdin: stdin.stream, stdout: stdout.stream })
   await tick(60)
   const text = normalize(stdout.text(), stripAnsi)
   instance.unmount?.()

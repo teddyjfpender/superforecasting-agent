@@ -117,7 +117,7 @@ const mountPicker = async (payload: ModelOptionsResponse) => {
   const stdout = writeStream(120, 40)
   const stdin = writeStream(120, 40, true)
 
-  const instance = render(
+  const instance = await render(
     React.createElement(
       Box,
       { flexDirection: 'column', height: 40, width: 120 },

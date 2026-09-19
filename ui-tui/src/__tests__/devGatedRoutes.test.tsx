@@ -119,7 +119,7 @@ const renderExpandedHelp = async (value?: string) => {
   const stdout = writeStream(120, 44)
   const stdin = writeStream(120, 44, true)
 
-  const instance = render(
+  const instance = await render(
     React.createElement(
       Box,
       { flexDirection: 'column', height: 44, width: 120 },

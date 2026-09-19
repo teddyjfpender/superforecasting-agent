@@ -138,7 +138,7 @@ const mountModal = async (cfg: ForecastConfigResponse) => {
   // The modal is an ABSOLUTE overlay; in the real desk it paints above a full-
   // height body. Mount it inside an explicitly-sized parent so the headless
   // (inline) renderer has a flow box to place the absolute overlay against.
-  const instance = render(
+  const instance = await render(
     React.createElement(
       Box,
       { flexDirection: 'column', height: 40, width: 120 },

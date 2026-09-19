@@ -7,6 +7,7 @@ import { logForDebugging } from '../utils/debug.js'
 import type { FrameEvent } from './frame.js'
 import Ink, { type Options as InkOptions } from './ink.js'
 import instances from './instances.js'
+import type { TerminalInput, TerminalOutput } from './streams.js'
 
 export type RenderOptions = {
   /**
@@ -14,18 +15,18 @@ export type RenderOptions = {
    *
    * @default process.stdout
    */
-  stdout?: NodeJS.WriteStream
+  stdout?: TerminalOutput
   /**
    * Input stream where app will listen for input.
    *
    * @default process.stdin
    */
-  stdin?: NodeJS.ReadStream
+  stdin?: TerminalInput
   /**
    * Error stream.
    * @default process.stderr
    */
-  stderr?: NodeJS.WriteStream
+  stderr?: TerminalOutput
   /**
    * Configure whether Ink should listen to Ctrl+C keyboard input and exit the app. This is needed in case `process.stdin` is in raw mode, because then Ctrl+C is ignored by default and process is expected to handle it manually.
    *
@@ -89,7 +90,7 @@ export type Root = {
   waitUntilExit: () => Promise<void>
 }
 
-export const forceRedraw = (stdout: NodeJS.WriteStream = process.stdout): boolean => {
+export const forceRedraw = (stdout: TerminalOutput = process.stdout): boolean => {
   const instance = instances.get(stdout)
 
   if (!instance) {
@@ -104,7 +105,7 @@ export const forceRedraw = (stdout: NodeJS.WriteStream = process.stdout): boolea
 /**
  * Mount a component and render the output.
  */
-export const renderSync = (node: ReactNode, options?: NodeJS.WriteStream | RenderOptions): Instance => {
+export const renderSync = (node: ReactNode, options?: TerminalOutput | RenderOptions): Instance => {
   const opts = getOptions(options)
 
   const inkOptions: InkOptions = {
@@ -122,15 +123,19 @@ export const renderSync = (node: ReactNode, options?: NodeJS.WriteStream | Rende
 
   return {
     rerender: instance.render,
-    unmount() {
-      instance.unmount()
+    unmount(error) {
+      instance.unmount(error)
     },
     waitUntilExit: instance.waitUntilExit,
-    cleanup: () => instances.delete(inkOptions.stdout)
+    cleanup: () => {
+      if (instances.get(inkOptions.stdout) === instance) {
+        instances.delete(inkOptions.stdout)
+      }
+    }
   }
 }
 
-const wrappedRender = async (node: ReactNode, options?: NodeJS.WriteStream | RenderOptions): Promise<Instance> => {
+const wrappedRender = async (node: ReactNode, options?: TerminalOutput | RenderOptions): Promise<Instance> => {
   // Preserve the microtask boundary that `await loadYoga()` used to provide.
   // Without it, the first render fires synchronously before async startup work
   // (e.g. useReplBridge notification state) settles, and the subsequent Static
@@ -181,7 +186,7 @@ export async function createRoot({
   }
 }
 
-const getOptions = (stdout: NodeJS.WriteStream | RenderOptions | undefined = {}): RenderOptions => {
+const getOptions = (stdout: TerminalOutput | RenderOptions | undefined = {}): RenderOptions => {
   if (stdout instanceof Stream) {
     return {
       stdout,
@@ -192,7 +197,7 @@ const getOptions = (stdout: NodeJS.WriteStream | RenderOptions | undefined = {})
   return stdout
 }
 
-const getInstance = (stdout: NodeJS.WriteStream, createInstance: () => Ink): Ink => {
+const getInstance = (stdout: TerminalOutput, createInstance: () => Ink): Ink => {
   let instance = instances.get(stdout)
 
   if (!instance) {

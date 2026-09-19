@@ -420,7 +420,7 @@ const renderWorkspace = async (columns: number, response: ForecastWorkspaceRespo
         : Promise.resolve(response)
   } as unknown as Parameters<typeof DeskView>[0]['gw']
 
-  const instance = render(
+  const instance = await render(
     React.createElement(DeskView, { gw: fakeGw, onClose: () => undefined, t: DARK_THEME }),
     { exitOnCtrlC: false, patchConsole: false, stdin: stdin.stream, stdout: stdout.stream }
   )

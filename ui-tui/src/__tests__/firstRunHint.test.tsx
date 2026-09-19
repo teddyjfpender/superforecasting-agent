@@ -66,7 +66,7 @@ const mountHint = async (columns = 80) => {
   const stdout = writeStream(columns, 40)
   const stdin = writeStream(columns, 40, true)
 
-  const instance = render(React.createElement(FirstRunHint, { t: DARK_THEME }), {
+  const instance = await render(React.createElement(FirstRunHint, { t: DARK_THEME }), {
     exitOnCtrlC: false,
     patchConsole: false,
     stdin: stdin.stream,

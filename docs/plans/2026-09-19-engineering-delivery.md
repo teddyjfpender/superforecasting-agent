@@ -105,3 +105,22 @@ Editor integration commit: `92607a6938`. The complete test TypeScript project re
 non-blocking and incomplete: stream harness types and legacy callback fixtures still
 need migration. New typed RPC fixtures are accepted by the interaction harness without
 requiring a caller to widen their closed method catalog to arbitrary strings.
+
+## Terminal contracts and lifecycle tranche
+
+W02/W05 work replaced renderer socket requirements with readable/writable stream
+capabilities and corrected the public `render()` declaration to return a promise.
+Twenty-one view test files now await rendering before retaining cleanup handles;
+previous optional cleanup calls could silently target a promise instead of an instance.
+Raw-mode support checks the actual input capability.
+
+Focused regression testing exposed and fixed two additional lifecycle defects:
+`waitUntilExit()` now preserves completed results/errors for late observers, and an old
+render handle cannot remove a replacement from the instance registry. The public unmount
+wrapper now forwards its error argument. Renderer cleanup keeps borrowed streams alive.
+
+The changed-view run passed 357 tests and exposed one new exit-error regression; after
+fixing error forwarding, the final renderer/recovery subset passed all 12 tests. Canonical
+static checks passed. The full Python or TUI suite was not run. Complete test-project
+strict typing remains unfinished; remaining fixtures and handwritten declarations need
+migration, and renderer/native qualification remains distinct from these local tests.

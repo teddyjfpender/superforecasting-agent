@@ -1,5 +1,7 @@
 import type * as React from 'react'
 
+import type { TerminalInput, TerminalOutput } from '../../packages/forecast-ink/src/ink/streams.js'
+
 declare module '@superforecasting/ink' {
   export type Key = {
     readonly ctrl: boolean
@@ -64,9 +66,9 @@ declare module '@superforecasting/ink' {
   }
 
   export type RenderOptions = {
-    readonly stdin?: NodeJS.ReadStream
-    readonly stdout?: NodeJS.WriteStream
-    readonly stderr?: NodeJS.WriteStream
+    readonly stdin?: TerminalInput
+    readonly stdout?: TerminalOutput
+    readonly stderr?: TerminalOutput
     readonly exitOnCtrlC?: boolean
     readonly patchConsole?: boolean
     readonly onFrame?: (event: FrameEvent) => void
@@ -75,7 +77,7 @@ declare module '@superforecasting/ink' {
 
   export type Instance = {
     readonly rerender: (node: React.ReactNode) => void
-    readonly unmount: () => void
+    readonly unmount: (error?: Error | number | null) => void
     readonly waitUntilExit: () => Promise<void>
     readonly cleanup: () => void
   }
@@ -138,8 +140,8 @@ declare module '@superforecasting/ink' {
   }
   export function evictInkCaches(level?: EvictLevel): InkCacheSizes
 
-  export function forceRedraw(stdout?: NodeJS.WriteStream): boolean
-  export function render(node: React.ReactNode, options?: NodeJS.WriteStream | RenderOptions): Instance
+  export function forceRedraw(stdout?: TerminalOutput): boolean
+  export function render(node: React.ReactNode, options?: TerminalOutput | RenderOptions): Promise<Instance>
 
   export function useApp(): { readonly exit: (error?: Error) => void }
   export type RunExternalProcess = () => Promise<void>
@@ -171,7 +173,7 @@ declare module '@superforecasting/ink' {
   }): (el: unknown) => void
   export function useCursorAdvance(): (dx: number, dy?: number) => void
   export function useStdin(): {
-    readonly stdin: NodeJS.ReadStream
+    readonly stdin: TerminalInput
     readonly setRawMode: (value: boolean) => void
     readonly isRawModeSupported: boolean
     readonly exitOnCtrlC: boolean

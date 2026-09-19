@@ -18,6 +18,7 @@ import {
 } from '../parse-keypress.js'
 import reconciler from '../reconciler.js'
 import { finishSelection, hasSelection, type SelectionState, startSelection } from '../selection.js'
+import type { TerminalInput, TerminalOutput } from '../streams.js'
 import { getTerminalFocused, setTerminalFocused } from '../terminal-focus-state.js'
 import { TerminalQuerier, xtversion } from '../terminal-querier.js'
 import { isXtermJs, setXtversionName, supportsExtendedKeys } from '../terminal.js'
@@ -51,9 +52,9 @@ const SUPPORTS_SUSPEND = false
 const STDIN_RESUME_GAP_MS = 5000
 type Props = {
   readonly children: ReactNode
-  readonly stdin: NodeJS.ReadStream
-  readonly stdout: NodeJS.WriteStream
-  readonly stderr: NodeJS.WriteStream
+  readonly stdin: TerminalInput
+  readonly stdout: TerminalOutput
+  readonly stderr: TerminalOutput
   readonly exitOnCtrlC: boolean
   readonly onExit: (error?: Error) => void
   readonly terminalColumns: number
@@ -181,7 +182,7 @@ export default class App extends PureComponent<Props, State> {
 
   // Determines if TTY is supported on the provided stdin
   isRawModeSupported(): boolean {
-    return this.props.stdin.isTTY
+    return this.props.stdin.isTTY === true && typeof this.props.stdin.setRawMode === 'function'
   }
   override render() {
     return (
@@ -269,8 +270,8 @@ export default class App extends PureComponent<Props, State> {
         // coexist -- our handler would drain stdin before Ink's can see it.
         // The buffered text is preserved for REPL.tsx via consumeEarlyInput().
         stopCapturingEarlyInput()
-        stdin.ref()
-        stdin.setRawMode(true)
+        stdin.ref?.()
+        stdin.setRawMode?.(true)
         stdin.addListener('readable', this.handleReadable)
         // Enable bracketed paste mode
         this.props.stdout.write(EBP)
@@ -320,9 +321,9 @@ export default class App extends PureComponent<Props, State> {
       this.props.stdout.write(DFE)
       // Disable bracketed paste mode
       this.props.stdout.write(DBP)
-      stdin.setRawMode(false)
+      stdin.setRawMode?.(false)
       stdin.removeListener('readable', this.handleReadable)
-      stdin.unref()
+      stdin.unref?.()
     }
   }
 

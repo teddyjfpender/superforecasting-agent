@@ -1,3 +1,4 @@
+import type { TerminalResponse } from './parse-keypress.js'
 /**
  * Query the terminal and await responses without timeouts.
  *
@@ -19,8 +20,7 @@
  *   ])
  *   // sync and grapheme are DECRPM responses or undefined if unsupported
  */
-
-import type { TerminalResponse } from './parse-keypress.js'
+import type { TerminalOutput } from './streams.js'
 import { csi } from './termio/csi.js'
 import { osc } from './termio/osc.js'
 
@@ -133,7 +133,7 @@ export class TerminalQuerier {
    */
   private queue: Pending[] = []
 
-  constructor(private stdout: NodeJS.WriteStream) {}
+  constructor(private stdout: TerminalOutput) {}
 
   /**
    * Send a query and wait for its response.

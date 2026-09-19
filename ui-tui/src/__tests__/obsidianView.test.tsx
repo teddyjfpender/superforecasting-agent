@@ -120,7 +120,7 @@ const renderView = async () => {
       method === 'obsidian.note' ? Promise.resolve(noteFixture()) : Promise.resolve(statusFixture())
   } as unknown as Parameters<typeof ObsidianView>[0]['gw']
 
-  const instance = render(
+  const instance = await render(
     React.createElement(ObsidianView, { gw: fakeGw, onClose: () => undefined, t: DARK_THEME }),
     { exitOnCtrlC: false, patchConsole: false, stdin: stdin.stream, stdout: stdout.stream }
   )

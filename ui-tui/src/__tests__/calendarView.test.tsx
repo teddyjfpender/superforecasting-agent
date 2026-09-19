@@ -208,7 +208,7 @@ const mount = async (columns: number, response: ForecastDashboardResponse) => {
   const stdout = writeStream(columns, 40)
   const stdin = writeStream(columns, 40, true)
 
-  const instance = render(
+  const instance = await render(
     React.createElement(CalendarView, { gw: fakeGw(response), onClose: () => undefined, t: DARK_THEME }),
     { exitOnCtrlC: false, patchConsole: false, stdin: stdin.stream, stdout: stdout.stream }
   )

@@ -45,3 +45,16 @@ ConPTY or PTY behavior.
 Update this guide when entry points or ownership change. See the
 [ownership map](../../../docs/architecture/ownership-map.md)
 and [engineering backlog](../../../TODO.md) for cross-package context.
+
+## Host stream and exit contract
+
+`render()` is asynchronous: await its instance before rerendering or cleanup.
+Input/output accept Node readable/writable streams with optional terminal capabilities,
+not arbitrary socket APIs. The host owns the streams; renderer cleanup must not destroy
+them. Raw mode is available only when input advertises TTY support and supplies
+`setRawMode`. Stream contracts live in `src/ink/streams.ts`.
+
+`waitUntilExit()` also works after unmount and retains the original error for late
+observers. Duplicate unmount is harmless; an old handle's cleanup cannot deregister a
+replacement instance sharing its output stream. Regression coverage lives in
+`ui-tui/src/__tests__/terminalStreamContract.test.tsx` (path relative to repository root).

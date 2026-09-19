@@ -47,7 +47,7 @@ describe('session vitals on the conversation bar', () => {
     const { DARK_THEME } = await import('../theme.js')
     const { PassThrough } = await import('stream')
 
-    const frame = (vitals?: object): Promise<string> => {
+    const frame = async (vitals?: object): Promise<string> => {
       const stream = new PassThrough() as never as PassThrough & { columns: number; isTTY: boolean; rows: number }
       stream.columns = 120
       stream.rows = 6
@@ -55,7 +55,7 @@ describe('session vitals on the conversation bar', () => {
       let out = ''
       stream.on('data', (c: Buffer) => (out += c.toString()))
 
-      const inst = render(
+      const inst = await render(
         React.createElement(HomeStatusBar, {
           agents: null, cols: 120, cwdLabel: '~/x', deskStatus: null,
           model: 'gpt-5.5', onOpenAgents: () => undefined,

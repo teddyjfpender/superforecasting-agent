@@ -142,7 +142,7 @@ const renderView = async (response: ForecastCalibrationResponse) => {
     request: (_method: string, _params: Record<string, unknown>) => Promise.resolve(response)
   } as unknown as Parameters<typeof CalibrationView>[0]['gw']
 
-  const instance = render(
+  const instance = await render(
     React.createElement(CalibrationView, { gw: fakeGw, onClose: () => undefined, t: DARK_THEME }),
     { exitOnCtrlC: false, patchConsole: false, stdin: stdin.stream, stdout: stdout.stream }
   )

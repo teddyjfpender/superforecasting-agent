@@ -93,7 +93,7 @@ const mountPicker = async (
       method === 'config.set' ? configSet(params) : Promise.resolve(response)
   } as unknown as Parameters<typeof ThemePicker>[0]['gw']
 
-  const instance = render(
+  const instance = await render(
     React.createElement(ThemePicker, { gw: fakeGw, onClose, t: DARK_THEME }),
     { exitOnCtrlC: false, patchConsole: false, stdin: stdin.stream, stdout: stdout.stream }
   )

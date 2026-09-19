@@ -155,7 +155,7 @@ const paint = async (node: React.ReactElement, cols = 110, rows = 34): Promise<s
   const stdin = writeStream(cols, rows, true)
   const stderr = writeStream(cols, rows)
 
-  const inst = render(node, {
+  const inst = await render(node, {
     exitOnCtrlC: false,
     patchConsole: false,
     stderr: stderr.stream as never,

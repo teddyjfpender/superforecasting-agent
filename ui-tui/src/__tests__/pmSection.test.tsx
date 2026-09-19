@@ -423,7 +423,7 @@ const mount = async (
   const stdout = writeStream(120, 40)
   const stdin = writeStream(120, 40, true)
 
-  const instance = render(
+  const instance = await render(
     React.createElement(MarketsView, {
       gw: gw as never,
       onAsk: () => undefined,
@@ -693,7 +693,7 @@ describe('PredictionMarketsTable column contract', () => {
     const stdout = writeStream(tableWidth + 4, 40)
     const stdin = writeStream(tableWidth + 4, 40, true)
 
-    const instance = render(
+    const instance = await render(
       React.createElement(
         Box as never,
         { flexDirection: 'column', height: 40, width: tableWidth + 4 } as never,

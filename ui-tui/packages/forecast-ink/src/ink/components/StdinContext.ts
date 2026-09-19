@@ -1,10 +1,11 @@
 import { createContext } from 'react'
 
 import { EventEmitter } from '../events/emitter.js'
+import type { TerminalInput } from '../streams.js'
 import type { TerminalQuerier } from '../terminal-querier.js'
 
 export type Props = {
-  readonly stdin: NodeJS.ReadStream
+  readonly stdin: TerminalInput
   readonly setRawMode: (value: boolean) => void
   readonly isRawModeSupported: boolean
   readonly exitOnCtrlC: boolean

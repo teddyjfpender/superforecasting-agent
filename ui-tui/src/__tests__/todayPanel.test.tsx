@@ -281,7 +281,7 @@ const mountToday = async (columns: number, sections: PanelSection[], opts: Mount
   const stdout = writeStream(columns, 40)
   const stdin = writeStream(columns, 40, true)
 
-  const instance = render(
+  const instance = await render(
     React.createElement(TodayPanel, {
       contestedCount,
       focused,

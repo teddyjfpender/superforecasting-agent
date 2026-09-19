@@ -111,7 +111,7 @@ describe('global palette / cheat-sheet gating over fullscreen views', () => {
     const stdout = writeStream(120, 40)
     const stdin = writeStream(120, 40, true)
 
-    const instance = render(
+    const instance = await render(
       React.createElement(
         Box,
         { flexDirection: 'column', height: 40, width: 120 },
@@ -152,7 +152,7 @@ describe('global palette / cheat-sheet gating over fullscreen views', () => {
     const stdout = writeStream(120, 40)
     const stdin = writeStream(120, 40, true)
 
-    const instance = render(viewFactory(() => { closed = true }), {
+    const instance = await render(viewFactory(() => { closed = true }), {
       exitOnCtrlC: false,
       patchConsole: false,
       stdin: stdin.stream,

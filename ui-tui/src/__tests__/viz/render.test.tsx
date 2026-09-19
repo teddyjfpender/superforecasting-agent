@@ -54,7 +54,7 @@ const renderChart = async (props: Record<string, unknown>) => {
   const stdout = writeStream(110, 40)
   const stdin = writeStream(110, 40, true)
 
-  const instance = render(React.createElement(Chart, { t: DARK_THEME, ...props } as never), {
+  const instance = await render(React.createElement(Chart, { t: DARK_THEME, ...props } as never), {
     exitOnCtrlC: false,
     patchConsole: false,
     stdin: stdin.stream,
