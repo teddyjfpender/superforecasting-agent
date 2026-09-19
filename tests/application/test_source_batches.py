@@ -176,3 +176,75 @@ def test_batch_honors_source_dedupe_override(desk, monkeypatch):
     assert [item['imported_count'] for item in result['results']] == [1, 1, 0]
     assert result['skipped_duplicates'] == 1
     assert len(ledger.list_evidence(qid)) == 2
+
+
+@pytest.mark.parametrize('changed', [
+    {'source': 'OTHER'},
+    {'adapter_item': {'entry_id': 'observation', 'value': 2, 'unit': 'percent'}},
+    {'adapter_item': {'entry_id': 'observation', 'value': 1, 'unit': 'dollars'}},
+])
+def test_changed_observation_is_not_silently_classified_as_duplicate(desk, changed):
+    from forecasting.application.source_batches import SourceRevisionConflict
+    ledger, qid = desk
+    metadata = {'entry_id': 'observation', 'source': 'SERIES', 'adapter': 'fred',
+                'adapter_item': {'entry_id': 'observation', 'value': 1, 'unit': 'percent'}}
+    original = payload('observation', metadata=metadata)
+    persisted = commit_source_payloads(ledger, qid, [original]).imported[0].evidence
+    with pytest.raises(SourceRevisionConflict) as error:
+        commit_source_payloads(ledger, qid, [payload('new'), {**original, 'metadata': {**metadata, **changed}}])
+    assert error.value.reason_code == 'source_revision_conflict'
+    assert error.value.index == 1
+    assert [item.id for item in ledger.list_evidence(qid)] == [persisted.id]
+    assert commit_source_payloads(ledger, qid, [original]).duplicate_indices == (0,)
+
+
+def test_conflicting_same_batch_entries_roll_back_and_explicit_revision_preserves_history(desk):
+    from forecasting.application.source_batches import SourceRevisionConflict
+    ledger, qid = desk
+    first = payload('revision', metadata={'entry_id': 'revision', 'adapter_item': {'value': 1}})
+    revised = payload('revision', metadata={'entry_id': 'revision', 'adapter_item': {'value': 2}})
+    with pytest.raises(SourceRevisionConflict):
+        commit_source_payloads(ledger, qid, [first, revised])
+    assert ledger.list_evidence(qid) == []
+    commit_source_payloads(ledger, qid, [first])
+    commit_source_payloads(ledger, qid, [revised], dedupe=False)
+    assert len(ledger.list_evidence(qid)) == 2
+    # Legacy/imported divergent identities cannot be resolved by last-row-wins.
+    with pytest.raises(SourceRevisionConflict):
+        commit_source_payloads(ledger, qid, [first])
+    assert len(ledger.list_evidence(qid)) == 2
+
+
+def test_duplicate_comparison_normalizes_published_time_and_inferred_url(desk):
+    ledger, qid = desk
+    original = payload('published', source_or_note='https://example.test/observation',
+                       published_at='2026-01-01T00:00:00Z')
+    commit_source_payloads(ledger, qid, [original])
+    assert commit_source_payloads(ledger, qid, [
+        {**original, 'published_at': '2026-01-01T01:00:00+01:00', 'reliability_rating': 0.9}
+    ]).duplicate_indices == (0,)
+
+
+@pytest.mark.parametrize('action', ['single', 'batch'])
+def test_tool_consumers_surface_revision_conflicts_without_partial_writes(desk, monkeypatch, action):
+    from forecasting.application.source_batches import SourceRevisionConflict
+    from tools import forecasting_tool as tool
+    from tools.forecast_actions.evidence import import_source_evidence
+    ledger, qid = desk
+    items = [{'entry_id': 'one', 'value': 1, 'series_id': 'UNRATE', 'observation_date': '2026-01-01'}]
+    monkeypatch.setattr(tool, '_load_source_adapter_items', lambda *args: items)
+    request = {'question_id': qid, 'source_type': 'fred', 'source': 'UNRATE'}
+    import_source_evidence(request, ledger)
+    items[0] = {**items[0], 'value': 2}
+    if action == 'single':
+        with pytest.raises(SourceRevisionConflict):
+            import_source_evidence(request, ledger)
+    else:
+        result = json.loads(tool._import_source_evidence_batch_payload(ledger, {
+            'question_id': qid, 'sources': [request],
+        }))
+        assert not result['results'][0]['success']
+        assert result['results'][0]['imported_count'] == 0
+        assert 'source_revision_conflict' in result['results'][0]['error']
+    assert len(ledger.list_evidence(qid)) == 1
+    assert ledger.list_evidence(qid)[0].metadata['adapter_item']['value'] == 1

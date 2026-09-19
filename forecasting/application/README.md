@@ -105,3 +105,13 @@ This operation preserves existing entry-ID deduplication semantics. It does not
 establish revision equivalence, deduplicate observations without IDs, or replace
 the typed FRED/market request receipts. Those acquisition-plan and cross-interface
 migrations remain in W03. Tests: `tests/application/test_source_batches.py`.
+
+Shared source batches compare provider entry identity **and** acquired provenance
+before declaring a duplicate. `SourceRevisionConflict.reason_code` is
+`source_revision_conflict`; it identifies the conflicting input row and entry ID.
+Changed raw observations, source identity, publication time or URL require review,
+and any conflict rolls back that source's whole batch. User ratings do not change
+publisher provenance. Explicit `dedupe=False` appends a separate historical record;
+it never replaces an earlier observation. Divergent historical records sharing an
+entry ID remain ambiguous for automatic deduplication. This is conservative import
+admission, not a source-specific first-release/revision settlement policy.

@@ -821,3 +821,21 @@ Focused checks cover independent services, shutdown isolation, active-call drain
 domain errors, lazy search compatibility, installation results, cron command parity
 and quiet installation output. Native qualification of the previous runtime fixture
 commit continues in run 35461440285; no second run was started for observation latency.
+
+## Source revision conflicts at the shared commit boundary
+
+The shared source batch owner no longer treats matching entry IDs as sufficient
+proof of duplicate observations. It compares acquired adapter records, source
+identity, source URL and normalized publication time. A mismatch raises
+`SourceRevisionConflict` with stable `source_revision_conflict` reason and input
+index, rolling back the entire source batch. Same-batch conflicting identities and
+ambiguous historical revisions are also rejected. Ratings/annotations do not
+change publisher provenance. Explicit dedupe-disabled imports append records and
+preserve the earlier history; no record is silently replaced.
+
+39 focused batch tests passed, including conflict rollback, changed units/values/
+source identity, retry, historical ambiguity and normalized timestamps/URLs.
+21 further focused consumer/publication checks passed, covering equivalent single
+and batch tool rejection and preservation of the original observation. Strict
+owner typing passes. Source-specific revision policy, missing-entry request receipts
+and the remaining discriminated acquisition API migration still belong to W03.
