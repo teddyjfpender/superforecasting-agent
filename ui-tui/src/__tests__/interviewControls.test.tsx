@@ -63,7 +63,7 @@ function fixture(): InterviewRecord {
 }
 
 async function screen(
-  request: (method: string, params: any) => Promise<any>,
+  request: RpcFixtures['request'] | ((method: string, params: any) => Promise<any>),
   cols = 80,
   rows = 24,
   tty = false,

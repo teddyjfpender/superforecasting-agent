@@ -100,3 +100,8 @@ tests (editor controller, interview interactions and component flow) passed. Can
 `scripts/dev.py check` passed, including production TypeScript. The full suite was not run.
 This does not close W07: new-question lesson capture, full provenance presentation and wider
 reconnect/conflict qualification remain. Other W01–W09 criteria remain as recorded above.
+
+Editor integration commit: `92607a6938`. The complete test TypeScript project remains
+non-blocking and incomplete: stream harness types and legacy callback fixtures still
+need migration. New typed RPC fixtures are accepted by the interaction harness without
+requiring a caller to widen their closed method catalog to arbitrary strings.
