@@ -52,6 +52,27 @@ def test_threaded_spawn_has_controlling_terminal_without_python_fork(monkeypatch
             list(pool.map(run_one, range(8)))
 
 
+
+def test_spawn_without_optional_native_setsid_extension(monkeypatch):
+    original = os.posix_spawn
+
+    def without_setsid(path, argv, env, **kwargs):
+        if kwargs.get("setsid"):
+            raise NotImplementedError("setsid is not supported on this platform")
+        return original(path, argv, env, **kwargs)
+
+    monkeypatch.setattr(os, "posix_spawn", without_setsid)
+    script = (
+        "import os; print('SESSION', "
+        "os.getsid(0) == os.getpid() == os.getpgrp() == os.tcgetpgrp(0), flush=True)"
+    )
+    bridge = PtyBridge.spawn([sys.executable, "-c", script])
+    try:
+        read_until(bridge, b"SESSION True")
+    finally:
+        bridge.close()
+
+
 def test_unrelated_inheritable_descriptor_does_not_reach_target(tmp_path):
     path = tmp_path / "private-owner"
     fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)

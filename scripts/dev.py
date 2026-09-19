@@ -261,6 +261,7 @@ def check_snapshot(ref: str | None = None) -> None:
 # Bounded, credential-free lifecycle coverage. Native/platform skips remain visible;
 # this list is an integration feedback tier, not the release support matrix.
 INTEGRATION_PYTHON = (
+    "tests/hosting/test_pty_spawn.py",
     "tests/runtime_cli/test_local_desk_lifecycle.py",
     "tests/runtime_cli/test_dashboard_pty_reconnect.py",
     "tests/tui_gateway/test_runtime_host_owner.py",

@@ -15,7 +15,7 @@ and installed-artifact requirements still need evidence at the appropriate miles
 
 | Package | State | Evidence / remaining work |
 |---|---|---|
-| W01 qualification | In progress | Reproduced provider test failure; preserved legacy active-provider menu; macOS boot identity replaces network discovery; docs freshness added to canonical check. Focused tests below. Windows boot identity/versioning implemented with mocked ABI checks; native Windows/Linux receipts remain. |
+| W01 qualification | In progress | Reproduced provider test failure; preserved legacy active-provider menu; macOS boot identity replaces network discovery; docs freshness added to canonical check. Focused tests below. Windows boot identity/versioning implemented. All six installed-product jobs passed at 08c0a60b6b; Linux dashboard integration separately failed at terminal startup (see native receipt below). |
 | W02 quality ratchet | In progress | Production and test TypeScript checks are blocking; initial fixture diagnostics resolved. Protected strict-file inventory and measured coverage added. Push/CI integration tier aligned. Inherited diagnostic baselines and further ownership coverage remain. |
 | W03 typed sources | In progress | Common option admission, atomic FRED and prediction-market import owners/receipts, exact market identity/units, and publication provenance fixes implemented. Remaining adapters and cross-interface plan/error parity need migration. |
 | W04 CLI parity | In progress | Provider selection compatibility, slash capability/alias checks and shared command contexts improved. Complete command inventory, machine-output contracts and parity remain. |
@@ -613,3 +613,39 @@ required W02 work. No full Python or TUI suite was run.
   Canonical Python gates run at commit; no full suite was run.
 - W01 still requires real native Windows/Linux evidence. This commit is a capability
   implementation and conservative migration boundary, not platform qualification.
+
+
+## Native qualification and portable terminal session creation
+
+[Product quality run 35455537961](https://github.com/teddyjfpender/superforecasting-agent/actions/runs/35455537961)
+completed against `08c0a60b6b638e7182d50cb1f8304ecb5cf64cd3`:
+all six installed-product jobs passed (Linux/macOS/Windows, Node 20.19.2/22).
+The formerly failing macOS Node 22 job and Windows boot identity checks now pass.
+This does not qualify all dashboard interactions: the separate Linux integration job
+failed with 21 terminal-startup failures and 15 passes.
+
+The terminal adapter reports unsupported safe spawning on `NotImplementedError`.
+Its new spawn path depended on the optional `posix_spawn(setsid=True)` extension.
+Session creation now happens with `os.setsid()` in the already-isolated helper,
+before acquiring the controlling terminal. This preserves the no-Python-after-threaded-fork
+property without requiring that optional spawn extension. A regression simulates an
+unavailable extension and verifies that PID, session, process group and controlling
+terminal foreground group all agree. Existing cleanup, ignored-signal, closed-stdio,
+threaded startup and reconnect tests remain in place. The bounded integration tier now
+includes the terminal owner tests so native CI exercises this capability directly.
+Native confirmation of this fix remains pending; the preceding CI message alone does
+not prove every detail of the runner's Python build configuration.
+
+The branch push at 08c0a60b6b used the documented logged hook exception because the
+changed-test selector selected all 226 TUI files, conflicting with the user's focused-test
+instruction. Exact-tree/naming checks and the bounded integration tier passed manually
+before that push. No full-suite or unmodified-hook success is claimed.
+
+Local follow-up validation: 26 terminal-owner/bridge/reconnect tests passed. The first
+bounded integration run passed static gates and 46 of 47 Python tests, exposing a real
+questionnaire restore write: an unchanged buffer advanced its revision on reopen. The
+controller now compares buffer contents structurally (independent of wire field order)
+and tracks their base revision. Identical restored content does not write; explicitly
+accepted stale content still rebases, and repeated staging coalesces. The existing real
+recovery assertion was retained, not weakened. Ten focused controller tests and 17 focused
+Python tests (questionnaire restart/conflict/death plus feedback-tier contracts) passed.

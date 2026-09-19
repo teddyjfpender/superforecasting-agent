@@ -23,8 +23,8 @@ These are entry points and representative modules, not an exhaustive inventory.
 ## POSIX terminal startup
 
 `pty_spawn.spawn_pty` owns allocation through confirmed executable startup. It uses
-`posix_spawn` with a new session and an isolated Python helper (`pty_exec.py`), so
-application threads and Python locks are not copied into a fork child. The helper
+`posix_spawn` into an isolated Python helper (`pty_exec.py`) that creates its own
+session with `setsid`, so application threads and Python locks are not copied into a fork child. The helper
 acquires the controlling terminal and closes unrelated inherited descriptors before
 exec. Native spawn restores terminal signal defaults and clears the child signal mask;
 ignored daemon signals cannot disable Ctrl+C or job control in the TUI. Parent signal
@@ -32,7 +32,7 @@ settings remain unchanged. A bounded error pipe preserves ordinary executable/cw
 allocations and reaps the direct child; success transfers its PID/master descriptor
 to the dashboard's existing PTY process owner. No unsafe fork fallback is used.
 
-This path requires POSIX `posix_spawn(setsid=True)`, `/dev/fd`, and controlling-terminal
+This path requires POSIX `posix_spawn` and `setsid`, `/dev/fd`, and controlling-terminal
 ioctls. Native Windows continues to use its existing unavailable/WSL behavior.
 Tests live in `tests/hosting/test_pty_spawn.py` and `tests/runtime_cli/test_pty_bridge.py`.
 This change does not identify the historical SSL or bad-file-descriptor crash causes.

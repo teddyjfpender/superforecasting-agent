@@ -147,3 +147,32 @@ it.each(['wrong-interview', 'duplicate-question'])('rejects %s restoration befor
   expect(status).toHaveBeenLastCalledWith('Draft storage unavailable · unconfirmed edits are not saved')
   controller.dispose()
 })
+
+
+it.each([1, 2])('only rewrites restored content when its base revision changed (%s)', async baseRevision => {
+  const saves = vi.fn()
+
+  const provider = new RpcFixtures()
+    .handle('forecast.interview.buffers', () => ({ buffers: [{
+      interview_id: 'draft', question_id: 'title', base_revision: baseRevision, buffer_revision: 3,
+      request_id: 'old', saved_at: '2030-01-01', buffer, discarded: false, stale: baseRevision !== 1
+    }] }))
+    .handle('forecast.interview.buffer.save', request => {
+      saves(request)
+
+      return { ...request, buffer_revision: request.expected_buffer_revision + 1,
+        saved_at: '2030-01-02', discarded: false }
+    })
+
+  const controller = new InterviewBuffers(provider, () => {})
+  await controller.restore(record)
+  // Wire object ordering may differ from the editor's construction order.
+  controller.stage('title', { custom_editing: false, selected: [], choice: 0, note: '', text: buffer.text })
+  controller.stage('title', buffer)
+  await controller.flush()
+  expect(saves).toHaveBeenCalledTimes(baseRevision === 1 ? 0 : 1)
+  controller.stage('title', buffer)
+  await controller.flush()
+  expect(saves).toHaveBeenCalledTimes(baseRevision === 1 ? 0 : 1)
+  controller.dispose()
+})

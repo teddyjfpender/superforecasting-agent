@@ -30,6 +30,9 @@ def main() -> None:
             raise OSError(errno.EINVAL, "PTY command is empty")
         if cwd:
             os.chdir(cwd)
+        # This fresh interpreter can create its own session without depending on
+        # the optional POSIX_SPAWN_SETSID extension in the parent Python build.
+        os.setsid()
         fcntl.ioctl(0, termios.TIOCSCTTY, 0)
         signal.signal(signal.SIGPIPE, signal.SIG_DFL)
         os.write(3, b"ready\n")

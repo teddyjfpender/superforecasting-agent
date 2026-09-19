@@ -1,10 +1,12 @@
 /** Durable editor state: acknowledged saves never imply confirmed answers. */
 import { randomUUID } from 'node:crypto'
+import { isDeepStrictEqual } from 'node:util'
 
 import type { GatewayClient } from '../gatewayClient.js'
 import type { InterviewBufferSaveRequest, InterviewEditorBuffer, InterviewRecord } from '../protocol/generated.js'
 
 type Entry = {
+  baseRevision: number
   revision: number
   version: number
   acknowledged: number
@@ -56,7 +58,7 @@ export class InterviewBuffers {
 
       for (const item of recovered) {
         this.entries.set(item.question_id, {
-          revision: item.buffer_revision, version: 0, acknowledged: 0, buffer: item.buffer
+          baseRevision: item.base_revision, revision: item.buffer_revision, version: 0, acknowledged: 0, buffer: item.buffer
         })
       }
 
@@ -75,10 +77,12 @@ export class InterviewBuffers {
   }
 
   stage(questionId: string, buffer: InterviewEditorBuffer | null) {
-    if (!this.available || this.disposed) { return }
-    const entry = this.entries.get(questionId) ?? { revision: 0, version: 0, acknowledged: 0, buffer: null }
+    if (!this.available || this.disposed || !this.record) { return }
+    const entry = this.entries.get(questionId) ?? { baseRevision: this.record.revision, revision: 0, version: 0, acknowledged: 0, buffer: null }
 
-    if (JSON.stringify(entry.buffer) === JSON.stringify(buffer) && entry.version > 0) { return }
+    // Restoring the same content is read-only. A stale base still needs an explicit rebase save.
+    if (isDeepStrictEqual(entry.buffer, buffer) && entry.baseRevision === this.record?.revision) { return }
+    entry.baseRevision = this.record.revision
     entry.buffer = buffer === null ? null : structuredClone(buffer)
     entry.version += 1
     this.entries.set(questionId, entry)
@@ -162,6 +166,7 @@ export class InterviewBuffers {
           throw new Error('Draft acknowledgement does not match the saved revision')
         }
 
+        entry.baseRevision = receipt.base_revision
         entry.revision = receipt.buffer_revision
         entry.acknowledged = entry.pending.version
         entry.pending = undefined
