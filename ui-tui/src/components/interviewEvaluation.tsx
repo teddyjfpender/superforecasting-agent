@@ -26,7 +26,7 @@ export function InterviewEvaluation({
   blocked,
   onClose
 }: {
-  gw: GatewayClient
+  gw: Pick<GatewayClient, 'request'>
   record: InterviewRecord
   cols: number
   rows: number

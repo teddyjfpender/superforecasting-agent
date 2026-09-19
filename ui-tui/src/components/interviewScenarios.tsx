@@ -22,7 +22,7 @@ export function InterviewScenarios({
   onSaved,
   onAssumptionSaved
 }: {
-  gw: GatewayClient
+  gw: Pick<GatewayClient, 'request'>
   record: InterviewRecord
   cols: number
   rows: number

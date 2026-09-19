@@ -209,3 +209,139 @@ def test_parent_reference_is_not_caller_selectable(desk):
         service.store.save(
             "first", draft, expected_revision=1, request_id="forge", actor="user"
         )
+
+
+def test_lesson_selection_is_frozen_explainable_and_advisory(desk):
+    ledger, question, _, _ = desk
+    original = ledger.create_calibration_lesson(
+        scope_type="global",
+        scope_ref=None,
+        lesson="Check the reference class.",
+        status="active",
+    )
+    replacement = ledger.create_calibration_lesson(
+        scope_type="global",
+        scope_ref=None,
+        lesson="Check independent reference classes.",
+        status="active",
+        supersedes_lesson_id=original["id"],
+    )
+    conditional = ledger.create_calibration_lesson(
+        scope_type="global",
+        scope_ref=None,
+        lesson="Weather-only guidance.",
+        status="active",
+        recommended_adjustment={"applicability": {"topics_any": ["weather"]}},
+    )
+    record = InterviewService(ledger).begin("update", question_id=question.id)
+    before = build_messages(ledger, record, InterviewGenerationOptions())
+    packet = json.loads(before[1]["content"])
+    selection = packet["lesson_selection"]
+    assert [item["lesson_id"] for item in selection["records"]] == [replacement["id"]]
+    item = selection["records"][0]
+    assert item["advisory_only"] and item["support_score_count"] == 0
+    assert item["independent_cluster_count"] is None
+    assert len(item["content_digest"]) == 64
+    exclusions = {item["lesson_id"]: item["reason"] for item in selection["exclusions"]}
+    assert exclusions[original["id"]] == "superseded_in_scope"
+    assert exclusions[conditional["id"]] == "topic_mismatch"
+    ledger.update_calibration_lesson(replacement["id"], confidence=0.9)
+    assert build_messages(ledger, record, InterviewGenerationOptions()) == before
+
+
+def test_future_lesson_cannot_suppress_prior_guidance_or_leak_into_prompt(desk):
+    ledger, question, _, _ = desk
+    prior = ledger.create_calibration_lesson(
+        scope_type="global",
+        scope_ref=None,
+        lesson="Available guidance",
+        status="active",
+    )
+    future = ledger.create_calibration_lesson(
+        scope_type="global",
+        scope_ref=None,
+        lesson="Future outcome secret",
+        status="active",
+        supersedes_lesson_id=prior["id"],
+    )
+    with ledger._connect() as conn:
+        conn.execute(
+            "UPDATE calibration_lessons SET updated_at=? WHERE id=?",
+            ("2999-01-01T00:00:00Z", future["id"]),
+        )
+    record = InterviewService(ledger).begin("update", question_id=question.id)
+    messages = build_messages(ledger, record, InterviewGenerationOptions())
+    selection = json.loads(messages[1]["content"])["lesson_selection"]
+    assert [item["lesson_id"] for item in selection["records"]] == [prior["id"]]
+    assert selection["exclusions"] == [
+        {"lesson_id": future["id"], "reason": "post_cutoff_lesson_revision"}
+    ]
+    assert "Future outcome secret" not in messages[1]["content"]
+
+
+def test_legacy_context_is_read_without_live_lesson_backfill(desk):
+    import hashlib
+
+    ledger, question, _, _ = desk
+    record = InterviewService(ledger).begin("update", question_id=question.id)
+    digest = record["document"]["context_digest"]
+    context = read_context(ledger, record["interview_id"], digest)
+    context.pop("lesson_selection")
+    context["schema_version"] = 1
+    document = json.dumps(
+        context, sort_keys=True, separators=(",", ":"), allow_nan=False
+    )
+    legacy_digest = hashlib.sha256(document.encode()).hexdigest()
+    # Construct an actual historical v1 context; ordinary application writes cannot replace it.
+    with ledger._connect() as conn:
+        conn.execute(
+            "UPDATE forecast_interview_contexts SET document=?,digest=? WHERE interview_id=?",
+            (document, legacy_digest, record["interview_id"]),
+        )
+    record["document"]["context_digest"] = legacy_digest
+    ledger.create_calibration_lesson(
+        scope_type="global", scope_ref=None, lesson="New guidance", status="active"
+    )
+    packet = json.loads(
+        build_messages(ledger, record, InterviewGenerationOptions())[1]["content"]
+    )
+    assert "lesson_selection" not in packet
+    assert read_context(ledger, record["interview_id"], legacy_digest) == context
+
+
+def test_missing_score_support_is_excluded_not_invented(desk):
+    ledger, question, _, _ = desk
+    lesson = ledger.create_calibration_lesson(
+        scope_type="global",
+        scope_ref=None,
+        lesson="Unsupported learned correction",
+        status="active",
+        source_score_record_refs=["missing-score"],
+    )
+    record = InterviewService(ledger).begin("update", question_id=question.id)
+    selection = json.loads(
+        build_messages(ledger, record, InterviewGenerationOptions())[1]["content"]
+    )["lesson_selection"]
+    assert selection["records"] == []
+    assert selection["exclusions"] == [
+        {"lesson_id": lesson["id"], "reason": "missing_source_score"}
+    ]
+
+
+def test_missing_postmortem_support_is_not_used_as_guidance(desk):
+    ledger, question, _, _ = desk
+    lesson = ledger.create_calibration_lesson(
+        scope_type="global",
+        scope_ref=None,
+        lesson="Unsupported postmortem correction",
+        status="active",
+        source_postmortem_refs=["missing-postmortem"],
+    )
+    record = InterviewService(ledger).begin("update", question_id=question.id)
+    selection = json.loads(
+        build_messages(ledger, record, InterviewGenerationOptions())[1]["content"]
+    )["lesson_selection"]
+    assert selection["records"] == []
+    assert selection["exclusions"] == [
+        {"lesson_id": lesson["id"], "reason": "missing_source_postmortem"}
+    ]

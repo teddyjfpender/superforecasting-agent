@@ -1,9 +1,17 @@
 import { describe, expect, it } from 'vitest'
 
+import type { TurnState } from '../app/turnStore.js'
 import { abbrevTokens, activityAdjective, turnTokenCount, workTokens } from '../lib/liveStatus.js'
 
+const subagent = (status: TurnState['subagents'][number]['status']): TurnState['subagents'][number] => ({
+  status, depth: 1, goal: 'Fixture', id: 'child', index: 0, notes: [], parentId: null,
+  taskCount: 1, thinking: [], toolCount: 0, tools: [],
+})
+
 // A minimal turn shape — only the fields activityAdjective/turnTokenCount read.
-const turn = (over: Partial<Parameters<typeof activityAdjective>[0]> = {}) => ({
+const turn = (over: Partial<Pick<TurnState, 'reasoningActive' | 'reasoningStreaming' | 'streaming' | 'subagents' | 'tools' | 'reasoningTokens' | 'toolTokens'>> = {}) => ({
+  reasoningTokens: 0,
+  toolTokens: 0,
   reasoningActive: false,
   reasoningStreaming: false,
   streaming: '',
@@ -14,35 +22,35 @@ const turn = (over: Partial<Parameters<typeof activityAdjective>[0]> = {}) => ({
 
 describe('activityAdjective — honest gerund from live turn state', () => {
   it('a running tool wins, mapped to a tool-appropriate verb', () => {
-    expect(activityAdjective(turn({ tools: [{ id: '1', name: 'web_search' }] }) as never)).toBe('Searching')
-    expect(activityAdjective(turn({ tools: [{ id: '1', name: 'read_file' }] }) as never)).toBe('Reading')
-    expect(activityAdjective(turn({ tools: [{ id: '1', name: 'apply_patch' }] }) as never)).toBe('Writing')
-    expect(activityAdjective(turn({ tools: [{ id: '1', name: 'bash' }] }) as never)).toBe('Running')
+    expect(activityAdjective(turn({ tools: [{ id: '1', name: 'web_search' }] }))).toBe('Searching')
+    expect(activityAdjective(turn({ tools: [{ id: '1', name: 'read_file' }] }))).toBe('Reading')
+    expect(activityAdjective(turn({ tools: [{ id: '1', name: 'apply_patch' }] }))).toBe('Writing')
+    expect(activityAdjective(turn({ tools: [{ id: '1', name: 'bash' }] }))).toBe('Running')
   })
 
   it('streamed prose reads as Writing', () => {
-    expect(activityAdjective(turn({ streaming: 'the answer so far' }) as never)).toBe('Writing')
+    expect(activityAdjective(turn({ streaming: 'the answer so far' }))).toBe('Writing')
   })
 
   it('reasoning (thinking) reads as Reasoning', () => {
-    expect(activityAdjective(turn({ reasoningActive: true }) as never)).toBe('Reasoning')
-    expect(activityAdjective(turn({ reasoningStreaming: true }) as never)).toBe('Reasoning')
+    expect(activityAdjective(turn({ reasoningActive: true }))).toBe('Reasoning')
+    expect(activityAdjective(turn({ reasoningStreaming: true }))).toBe('Reasoning')
   })
 
   it('a fanned-out panel of agents reads as Deliberating', () => {
-    expect(activityAdjective(turn({ subagents: [{ status: 'running' }] }) as never)).toBe('Deliberating')
+    expect(activityAdjective(turn({ subagents: [subagent('running')] }))).toBe('Deliberating')
   })
 
   it('falls back to Working when nothing concrete is happening', () => {
-    expect(activityAdjective(turn() as never)).toBe('Working')
+    expect(activityAdjective(turn())).toBe('Working')
     // A finished subagent is NOT an active panel — honest fallback.
-    expect(activityAdjective(turn({ subagents: [{ status: 'completed' }] }) as never)).toBe('Working')
+    expect(activityAdjective(turn({ subagents: [subagent('completed')] }))).toBe('Working')
   })
 
   it('precedence: a live tool outranks streaming/reasoning', () => {
     expect(
       activityAdjective(
-        turn({ reasoningActive: true, streaming: 'x', tools: [{ id: '1', name: 'web_search' }] }) as never
+        turn({ reasoningActive: true, streaming: 'x', tools: [{ id: '1', name: 'web_search' }] })
       )
     ).toBe('Searching')
   })
@@ -80,19 +88,20 @@ describe('workTokens — honest work tally: fresh input + output, no cached re-s
   })
 
   it('treats a missing split as zero', () => {
-    expect(workTokens({} as never)).toBe(0)
+    // @ts-expect-error Deliberately exercise malformed runtime input with missing usage fields.
+    expect(workTokens({})).toBe(0)
   })
 })
 
 describe('turnTokenCount — honest work delta (input+output), never usage.total', () => {
   it('reports the fresh input+output delta since turn start', () => {
-    const t = turn({ reasoningTokens: 0, streaming: '', toolTokens: 0 }) as never
+    const t = turn({ reasoningTokens: 0, streaming: '', toolTokens: 0 })
     // input 100k + output 20k = 120k now; baseline 100k → 20k of real work.
     expect(turnTokenCount(t, { input: 100_000, output: 20_000 }, 100_000)).toBe(20_000)
   })
 
   it('a long multi-call turn does NOT inflate — cached context re-sends excluded', () => {
-    const t = turn({ reasoningTokens: 0, streaming: '', toolTokens: 0 }) as never
+    const t = turn({ reasoningTokens: 0, streaming: '', toolTokens: 0 })
     // Baseline (input+output) at turn start = 300k. Over 50 tool calls the billing
     // meter (usage.total) would climb into the MILLIONS as the whole context is
     // re-sent each call, but fresh input only rose 40k and output 8k → honest 48k.
@@ -100,7 +109,7 @@ describe('turnTokenCount — honest work delta (input+output), never usage.total
   })
 
   it('a simulated 10-call turn reports the SUM of fresh input+output, not the last call', () => {
-    const t = turn({ reasoningTokens: 0, streaming: '', toolTokens: 0 }) as never
+    const t = turn({ reasoningTokens: 0, streaming: '', toolTokens: 0 })
 
     // Realistic per-call fresh (cache-excluded) work: call 1 pays full input,
     // later calls are mostly cache reads so their fresh input is small.
@@ -134,19 +143,19 @@ describe('turnTokenCount — honest work delta (input+output), never usage.total
 
   it('falls back to the live in-flight estimate before usage lands', () => {
     // No fresh delta yet (input+output == baseline) → reasoning+tool+prose estimate.
-    const t = turn({ reasoningTokens: 120, streaming: 'abcd', toolTokens: 30 }) as never
+    const t = turn({ reasoningTokens: 120, streaming: 'abcd', toolTokens: 30 })
     // estimateTokensRough('abcd') = (4 + 3) >> 2 = 1 → 120 + 30 + 1 = 151.
     expect(turnTokenCount(t, { input: 5000, output: 0 }, 5000)).toBe(151)
   })
 
   it('never regresses below the reported delta', () => {
-    const t = turn({ reasoningTokens: 10, toolTokens: 10 }) as never
+    const t = turn({ reasoningTokens: 10, toolTokens: 10 })
     // input 8000 + output 1000 = 9000; baseline 5000 → 4000 (beats the 20 estimate).
     expect(turnTokenCount(t, { input: 8000, output: 1000 }, 5000)).toBe(4000)
   })
 
   it('resets cleanly per turn: a fresh baseline zeroes the counter', () => {
-    const t = turn({ reasoningTokens: 0, streaming: '', toolTokens: 0 }) as never
+    const t = turn({ reasoningTokens: 0, streaming: '', toolTokens: 0 })
     // Baseline captured AT the current snapshot → 0 work for the brand-new turn,
     // even though the session cumulative is already large.
     expect(turnTokenCount(t, { input: 500_000, output: 90_000 }, 590_000)).toBe(0)

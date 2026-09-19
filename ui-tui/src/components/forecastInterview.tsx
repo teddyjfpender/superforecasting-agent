@@ -30,7 +30,7 @@ export function ForecastInterview({
   onDone,
   t
 }: {
-  gw: GatewayClient
+  gw: Pick<GatewayClient, 'request'>
   questionId?: string | null
   seed?: ForecastMarketSeed | null
   interviewId?: string | null

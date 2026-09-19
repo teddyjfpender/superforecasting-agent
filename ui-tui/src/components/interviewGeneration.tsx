@@ -33,7 +33,7 @@ export function InterviewGeneration({
   onClose,
   onReview
 }: {
-  gw: GatewayClient
+  gw: Pick<GatewayClient, 'request'>
   record: InterviewRecord
   cols: number
   rows: number

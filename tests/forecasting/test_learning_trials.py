@@ -10,6 +10,7 @@ from forecasting.models import ValidationError
 def trial_setup(tmp_path, monkeypatch):
     now = ['2026-09-01T00:00:00Z']
     monkeypatch.setattr('forecasting.learning_trials.utc_now_iso', lambda: now[0])
+    monkeypatch.setattr('forecasting.ledger.lessons.utc_now_iso', lambda: now[0])
     monkeypatch.setattr('forecasting.ledger.evidence.utc_now_iso', lambda: now[0])
     monkeypatch.setattr('forecasting.ledger.resolutions.utc_now_iso', lambda: now[0])
     ledger = ForecastLedger(tmp_path/'ledger.db')

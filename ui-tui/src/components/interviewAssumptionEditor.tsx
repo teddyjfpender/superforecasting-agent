@@ -37,7 +37,7 @@ export function InterviewAssumptionEditor({
   onClose,
   onSaved
 }: {
-  gw: GatewayClient
+  gw: Pick<GatewayClient, 'request'>
   record: InterviewRecord
   assumption: InterviewAssumption
   cols: number

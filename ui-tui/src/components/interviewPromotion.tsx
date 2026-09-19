@@ -17,7 +17,7 @@ export function InterviewPromotion({
   blocked,
   onClose
 }: {
-  gw: GatewayClient
+  gw: Pick<GatewayClient, 'request'>
   jobId: string
   report: ScenarioReport
   cols: number

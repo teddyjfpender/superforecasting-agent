@@ -26,6 +26,8 @@ function fixture(): InterviewRecord {
       mode: 'create',
       question_id: null,
       baseline_forecast_id: null,
+      context_digest: null,
+      parent_interview: null,
       title: 'Example forecast',
       status: 'draft',
       answers: [],

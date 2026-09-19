@@ -7,11 +7,13 @@ import json
 from dataclasses import asdict
 from typing import TYPE_CHECKING
 
+from forecasting.interviews.lesson_context import capture_lessons
 from forecasting.models import ValidationError, utc_now_iso
 
 if TYPE_CHECKING:
+    from forecasting.interviews.lesson_context import capture_lessons
     from forecasting.ledger import ForecastLedger
-    from forecasting.models import ForecastQuestion
+from forecasting.models import ForecastQuestion
 
 
 def capture_context(
@@ -28,9 +30,11 @@ def capture_context(
     evidence = ledger.list_evidence(question.id)
     # Keep the complete packet durable. A prompt's size limit is a separate
     # admission check; it must never silently discard evidence or provenance.
+    captured_at = utc_now_iso()
     context = {
-        "schema_version": 1,
-        "captured_at": utc_now_iso(),
+        "schema_version": 2,
+        "captured_at": captured_at,
+        "lesson_selection": capture_lessons(ledger, question, captured_at),
         "question": asdict(question),
         "baseline": asdict(baseline) if baseline else None,
         "evidence": [asdict(item) for item in evidence],

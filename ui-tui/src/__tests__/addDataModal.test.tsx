@@ -40,6 +40,7 @@ const catalog: DataCatalog = {
       location: null,
       kind: 'observation',
       frequency: 'monthly',
+      change_basis: 'previous_observation',
       unit: '% annual change',
       dimensions: {},
       concept_id: 'inflation:de',

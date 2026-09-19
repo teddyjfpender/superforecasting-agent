@@ -312,3 +312,23 @@ Question creation, AI follow-ups and scenario work require pending questionnaire
 edits to be confirmed first. The review shows saved answers and explicitly marks
 unconfirmed edits. Navigating to review never saves them implicitly. Required
 answer errors and unsaved edits have visible recovery instructions.
+
+## Frozen learning guidance
+
+New update interviews capture a version-2 context with lesson selection from the
+shared learning owner. Scope, explicit applicability and supersession are evaluated
+at capture time. Later lesson revisions cannot stand in for earlier knowledge.
+The capture retains exact lesson content/digests, selection reasons and recorded
+score/postmortem support. Missing or invalid support excludes guidance.
+
+Generation and scenario evaluation share the frozen packet. Only included guidance
+is exposed to the model; excluded records contribute IDs/reasons, not rejected
+lesson text. Guidance is advisory and cannot automatically change a probability.
+Independent cluster counts remain explicitly unknown unless an authoritative
+assignment exists; distinct question counts are not a proxy for independence.
+Legacy version-1 contexts remain readable without adding current library content.
+
+`lesson_context.py` owns this capture/projection. It does not create, activate or
+adjust lessons. Tests: `tests/forecasting/test_interview_context.py` and the lesson
+and learning-trial suites. New-question context and TUI provenance presentation
+remain tracked in the engineering delivery record.

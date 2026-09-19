@@ -319,7 +319,7 @@ export interface SlashHandlerContext {
     hasSelection: boolean
     paste: (quiet?: boolean) => void
     queueRef: MutableRefObject<string[]>
-    selection: SelectionApi
+    selection: Pick<SelectionApi, 'copySelection'>
     setInput: StateSetter<string>
   }
   gateway: GatewayServices

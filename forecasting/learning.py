@@ -190,7 +190,7 @@ def _canonical_question_type(question: Any) -> str | None:
     return None
 
 
-def _in_scope_lessons(ledger: ForecastLedger, question: Any) -> list[dict[str, Any]]:
+def _in_scope_lessons(ledger: ForecastLedger, question: Any, *, active_only: bool = True) -> list[dict[str, Any]]:
     scopes: list[tuple[str, str | None]] = [("global", None)]
     if question.domain:
         scopes.append(("domain", question.domain))
@@ -213,13 +213,34 @@ def _in_scope_lessons(ledger: ForecastLedger, question: Any) -> list[dict[str, A
         for lesson in ledger.list_calibration_lessons(
             scope_type=scope_type,
             scope_ref=scope_ref,
-            active_only=True,
+            active_only=active_only,
         ):
             if lesson["id"] in seen:
                 continue
             seen.add(lesson["id"])
             lessons.append(lesson)
     return lessons
+
+
+def lesson_candidates_for_question(ledger: ForecastLedger, question: Any) -> list[dict[str, Any]]:
+    """All scoped records, including inactive ones, for auditable selection."""
+    return _in_scope_lessons(ledger, question, active_only=False)
+
+
+def lesson_cutoff_reason(lesson: dict[str, Any], cutoff: str | None) -> str | None:
+    """A later mutable revision cannot stand in for what was known at a cutoff."""
+    if cutoff is None:
+        return None
+    from forecasting.models import timestamp_to_datetime, ValidationError
+    try:
+        at = timestamp_to_datetime(cutoff)
+        if any(not lesson.get(key) for key in ("created_at", "updated_at")):
+            return "missing_lesson_timestamp"
+        if any(timestamp_to_datetime(lesson[key]) > at for key in ("created_at", "updated_at")):
+            return "post_cutoff_lesson_revision"
+    except (ValidationError, ValueError, TypeError):
+        return "invalid_lesson_timestamp"
+    return None
 
 
 def validate_lesson_applicability(adjustment):
@@ -295,7 +316,8 @@ def active_lessons_for_question(ledger: ForecastLedger, question: Any, *, contex
     invalidated/inactive replacements cannot suppress an otherwise active lesson.
     """
     lessons = [item for item in _in_scope_lessons(ledger, question)
-               if lesson_applicability(item, question, context, ledger=ledger)[0]]
+               if lesson_cutoff_reason(item, (context or {}).get("_fact_cutoff")) is None
+               and lesson_applicability(item, question, context, ledger=ledger)[0]]
     superseded = {item.get("supersedes_lesson_id") for item in lessons}
     return [item for item in lessons if item["id"] not in superseded]
 

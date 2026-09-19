@@ -36,3 +36,8 @@ and [engineering backlog](../../../TODO.md) for cross-package context.
 
 `dataDesk.ts` supplies a controlled backend for product-view tests from the real
 catalog manifest, keeping client-local files out of the production selection flow.
+
+`rpcFixtures.ts` registers handlers against generated method-specific parameter and
+result types. Missing handlers reject; they never return an empty success. Use it
+for controlled RPC providers instead of arbitrary string methods or return-type casts.
+`rpcFixtures.test.ts` includes compiler-checked negative contract cases.

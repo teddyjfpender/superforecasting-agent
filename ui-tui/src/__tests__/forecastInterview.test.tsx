@@ -7,6 +7,7 @@ import { resetOverlayState } from '../app/overlayStore.js'
 import { ForecastInterview } from '../components/forecastInterview.js'
 import { stripAnsi } from '../lib/text.js'
 import type { InterviewRecord } from '../protocol/generated.js'
+import { RpcFixtures } from '../testing/rpcFixtures.js'
 import { waitForText } from '../testing/settle.js'
 import { DARK_THEME } from '../theme.js'
 
@@ -32,6 +33,8 @@ it.each([
       mode: 'create',
       question_id: null,
       baseline_forecast_id: null,
+      context_digest: null,
+      parent_interview: null,
       title: 'Example forecast',
       status: 'draft',
       answers: [],
@@ -66,12 +69,9 @@ it.each([
 
   let fail = true
 
-  const request = vi.fn(async (method: string, params: any) => {
-    if (method === 'forecast.interview.list') {
-      return { interviews: [record] }
-    }
-
-    if (method === 'forecast.interview.answer') {
+  const fixture = new RpcFixtures()
+    .handle('forecast.interview.list', () => ({ interviews: [record] }))
+    .handle('forecast.interview.answer', params => {
       if (fail) {
         fail = false
         throw new Error('Connection lost; retry')
@@ -86,9 +86,10 @@ it.each([
             ...record.document.answers,
             {
               question_id: params.question_id,
-              value: params.value,
+              value: params.value ?? null,
               status: params.status,
               note: '',
+              custom_text: null,
               evidence_refs: [],
               actor: 'user'
             }
@@ -97,14 +98,10 @@ it.each([
       }
 
       return record
-    }
+    })
+    .handle('forecast.interview.preview', () => ({ spec: {}, issues: [], unanswered: [], committable: false }))
 
-    if (method === 'forecast.interview.preview') {
-      return { spec: {}, issues: [], unanswered: [], committable: false }
-    }
-
-    throw new Error(`Unexpected method: ${method}`)
-  })
+  const request = vi.spyOn(fixture, 'request')
 
   const stdout = new PassThrough()
   const stdin = new PassThrough()
@@ -118,7 +115,7 @@ it.each([
 
   const app = await render(
     <Box height={rows} width={cols}>
-      <ForecastInterview gw={{ request } as never} onClose={close} t={DARK_THEME} />
+      <ForecastInterview gw={fixture} onClose={close} t={DARK_THEME} />
     </Box>,
     { stdout, stdin, debug: true, patchConsole: false, exitOnCtrlC: false }
   )
@@ -135,7 +132,7 @@ it.each([
     const saves = request.mock.calls.filter(([method]) => method === 'forecast.interview.answer')
     expect(saves).toHaveLength(2)
     expect(saves[0][1]).toEqual(saves[1][1])
-    expect(saves[0][1].value).toBe('Will it rain on Friday?')
+    expect(saves[0][1]).toMatchObject({ value: 'Will it rain on Friday?' })
     stdin.write('\x15') // Ctrl+U records Unknown; it must not become a numeric zero.
     await waitForText(() => stripAnsi(output), 'Review answers')
     const unknown = record.document.answers.at(-1)
