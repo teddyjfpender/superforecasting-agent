@@ -110,3 +110,21 @@ substitute a PID-only check. Missing/invalid identity fails closed.
 PID creation time must also match before a process is considered the same owner.
 Only positively established absence or PID reuse permits retirement. Tests live
 in `tests/storage/test_process_identity.py` and the background/research-job suites.
+
+
+### Windows boot identity
+
+Windows now records a versioned kernel boot identifier (`v2:win32:`), obtained
+from `NtQuerySystemInformation(SystemBootEnvironmentInformation)`. The native
+probe loads only the system DLL, uses fixed-width ABI types, and rejects failed,
+short, oversized or empty results. It never falls back to network discovery or
+an estimated boot timestamp. This internal API can change: an unsupported runtime
+reports unavailable ownership capability rather than authorizing PID retirement.
+See [Microsoft's API compatibility notice](https://learn.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-ntquerysysteminformation)
+and the [phnt layout definition](https://github.com/winsiderss/phnt/blob/master/ntexapi.h).
+
+Previous unversioned Windows receipts remain unverified; they are not rewritten as
+current owners. Review them explicitly instead of inferring exit from PID absence
+on a different identity. PID/start-time coordinates must also be valid and finite
+before checking absence or reuse. The existing native matrix runs cross-process
+identity agreement tests; mocked ABI tests alone do not qualify Windows support.

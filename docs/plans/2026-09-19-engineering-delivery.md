@@ -15,7 +15,7 @@ and installed-artifact requirements still need evidence at the appropriate miles
 
 | Package | State | Evidence / remaining work |
 |---|---|---|
-| W01 qualification | In progress | Reproduced provider test failure; preserved legacy active-provider menu; macOS boot identity replaces network discovery; docs freshness added to canonical check. Focused tests below. Windows identity capability/versioning and remote native receipts remain. |
+| W01 qualification | In progress | Reproduced provider test failure; preserved legacy active-provider menu; macOS boot identity replaces network discovery; docs freshness added to canonical check. Focused tests below. Windows boot identity/versioning implemented with mocked ABI checks; native Windows/Linux receipts remain. |
 | W02 quality ratchet | In progress | Production and test TypeScript checks are blocking; initial fixture diagnostics resolved. Protected strict-file inventory and measured coverage added. Push/CI integration tier aligned. Inherited diagnostic baselines and further ownership coverage remain. |
 | W03 typed sources | In progress | Common option admission, atomic FRED and prediction-market import owners/receipts, exact market identity/units, and publication provenance fixes implemented. Remaining adapters and cross-interface plan/error parity need migration. |
 | W04 CLI parity | In progress | Provider selection compatibility, slash capability/alias checks and shared command contexts improved. Complete command inventory, machine-output contracts and parity remain. |
@@ -595,3 +595,21 @@ required W02 work. No full Python or TUI suite was run.
   empty-reason rejection. Canonical Python static checks passed. No full suite ran.
 - Updated the package status table above to distinguish delivered work from the
   early baseline; remaining work is not inferred complete from these local checks.
+
+### W01 — versioned Windows ownership capability
+
+- Replaced Windows hostname/network fallback with a versioned kernel boot GUID
+  query. Fixed-width ABI and exact successful return-length admission fail closed
+  on unavailable/changed capabilities. System-only DLL lookup avoids local search.
+  The native structure is internal, so documentation explicitly records that risk
+  and links Microsoft and phnt definitions; unsupported results never fall back.
+- Old unversioned Windows receipts remain foreign/unverified, not silently relabeled.
+  Added rejection of empty Linux boot UUIDs and invalid/nonfinite process coordinates
+  before PID-exit checks. Positive absence/reuse and AccessDenied behavior remain.
+- Verification: 48 focused process identity/background/research-job tests passed
+  locally, including native cross-process agreement on macOS and mocked Windows ABI,
+  failure, layout and versioning cases. The existing native product matrix selects
+  this test module, so Windows execution is wired but not claimed passed here.
+  Canonical Python gates run at commit; no full suite was run.
+- W01 still requires real native Windows/Linux evidence. This commit is a capability
+  implementation and conservative migration boundary, not platform qualification.
