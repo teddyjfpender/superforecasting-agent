@@ -442,3 +442,40 @@ def test_new_interview_context_cannot_be_replaced(desk):
             actor="user",
         )
     assert service.store.read("new-immutable") == record
+
+
+def test_lesson_provenance_is_frozen_typed_and_explains_exclusions(desk):
+    from protocol.rpc.interviews import InterviewLessonsResponse
+
+    ledger, _, _, _ = desk
+    included = ledger.create_calibration_lesson(
+        scope_type="global",
+        scope_ref=None,
+        lesson="Inspect the reference class",
+        status="active",
+    )
+    excluded = ledger.create_calibration_lesson(
+        scope_type="global",
+        scope_ref=None,
+        lesson="Do not present rejected text",
+        status="active",
+        recommended_adjustment={"applicability": {"outcome_types": ["binary"]}},
+    )
+    service = InterviewService(ledger)
+    record = service.begin("provenance")
+    response = service.lessons("provenance", record["revision"])
+    parsed = InterviewLessonsResponse.model_validate(response)
+    assert parsed.context_digest == record["document"]["context_digest"]
+    by_id = {item.lesson_id: item for item in parsed.lessons}
+    assert by_id[included["id"]].guidance == "Inspect the reference class"
+    assert by_id[included["id"]].independent_cluster_count is None
+    assert by_id[excluded["id"]].guidance is None
+    assert by_id[excluded["id"]].reason == "outcome_type_mismatch"
+    ledger.update_calibration_lesson(included["id"], confidence=0.99)
+    assert service.lessons("provenance", record["revision"]) == response
+    with ledger.transaction(immediate=True) as conn:
+        conn.execute(
+            "UPDATE forecast_interview_contexts SET document='{}' WHERE interview_id='provenance'"
+        )
+    with pytest.raises(ValidationError, match="corrupt"):
+        service.lessons("provenance")

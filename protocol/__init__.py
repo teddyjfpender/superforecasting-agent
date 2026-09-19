@@ -525,6 +525,11 @@ RPC_SPECS: list[RpcSpec] = [
         _rpc_interviews.InterviewRecord,
     ),
     RpcSpec(
+        "forecast.interview.lessons",
+        _rpc_interviews.InterviewReadRequest,
+        _rpc_interviews.InterviewLessonsResponse,
+    ),
+    RpcSpec(
         "forecast.interview.read",
         _rpc_interviews.InterviewReadRequest,
         _rpc_interviews.InterviewRecord,

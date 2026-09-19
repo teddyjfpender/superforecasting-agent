@@ -9,7 +9,7 @@
 
 > **Source of truth:** `protocol/__init__.py (RPC_SPECS, EVENT_SPECS) + protocol/rpc, protocol/events`
 
-The gateway speaks **protocol version 1**. Every request, response, and event below is a pydantic model in the `protocol/` package; the TUI's TypeScript wire types (`ui-tui/src/protocol/generated.ts`) are generated from the same registry via `python -m protocol.codegen`. There are **174 RPCs** and **49 events**.
+The gateway speaks **protocol version 1**. Every request, response, and event below is a pydantic model in the `protocol/` package; the TUI's TypeScript wire types (`ui-tui/src/protocol/generated.ts`) are generated from the same registry via `python -m protocol.codegen`. There are **175 RPCs** and **49 events**.
 
 
 ## RPC methods
@@ -61,6 +61,7 @@ The gateway speaks **protocol version 1**. Every request, response, and event be
 | `forecast.interview.evaluation_status` | [`InterviewTargetRequest`](#interviewtargetrequest) | [`InterviewEvaluationStatusResponse`](#interviewevaluationstatusresponse) |
 | `forecast.interview.generate` | [`InterviewGenerateRequest`](#interviewgeneraterequest) | [`InterviewGenerateResponse`](#interviewgenerateresponse) |
 | `forecast.interview.generation_status` | [`InterviewTargetRequest`](#interviewtargetrequest) | [`InterviewGenerationStatusResponse`](#interviewgenerationstatusresponse) |
+| `forecast.interview.lessons` | [`InterviewReadRequest`](#interviewreadrequest) | [`InterviewLessonsResponse`](#interviewlessonsresponse) |
 | `forecast.interview.list` | [`InterviewListRequest`](#interviewlistrequest) | [`InterviewListResponse`](#interviewlistresponse) |
 | `forecast.interview.preview` | [`InterviewPreviewRequest`](#interviewpreviewrequest) | [`InterviewPreviewResponse`](#interviewpreviewresponse) |
 | `forecast.interview.promote` | [`InterviewPromoteRequest`](#interviewpromoterequest) | [`InterviewPromoteResponse`](#interviewpromoteresponse) |
@@ -3604,6 +3605,37 @@ _(no fields)_
 | `found` | `boolean` |
 | `job` | `JobRecordDTO | null` |
 | `request_id` | `string | null` |
+
+### InterviewLessonProvenance
+
+| field | type |
+| --- | --- |
+| `applicability` | `Record<string, unknown>` |
+| `content_digest` | `string` |
+| `distinct_outcome_count` | `number` |
+| `guidance` | `string | null` |
+| `included` | `boolean` |
+| `independent_cluster_count` | `number | null` |
+| `lesson_id` | `string` |
+| `reason` | `string` |
+| `revision` | `string` |
+| `scope_ref` | `string | null` |
+| `scope_type` | `string` |
+| `source_postmortem_ids` | `string[]` |
+| `source_score_ids` | `string[]` |
+| `support_score_count` | `number` |
+
+### InterviewLessonsResponse
+
+| field | type |
+| --- | --- |
+| `advisory_only` | `boolean` |
+| `context_digest` | `string | null` |
+| `cutoff` | `string | null` |
+| `interview_id` | `string` |
+| `lessons` | `InterviewLessonProvenance[]` |
+| `policy` | `string | null` |
+| `revision` | `number` |
 
 ### InterviewListRequest
 

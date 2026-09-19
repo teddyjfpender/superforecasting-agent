@@ -496,3 +496,23 @@ required W02 work. No full Python or TUI suite was run.
   import contracts and generated-reference checks. No full suite was run.
 - Remaining W07 work includes classified new-question selection, visible lesson
   provenance, and the outstanding TUI conflict/reconnect acceptance criteria.
+
+### W07 — inspectable frozen lesson provenance
+
+- Added the typed `forecast.interview.lessons` operation and generated client contract.
+  It projects an exact saved context with cutoff/policy, lesson revision and digest,
+  scope/applicability, inclusion/exclusion reasons and supporting record references.
+  Historical absence stays absent; corrupt context fails closed. Excluded guidance
+  text is not presented as advice, and no live library read occurs.
+- Ctrl+Y opens the TUI guidance reader without confirming pending answers. A compact
+  summary distinguishes support counts from independent outcomes; Enter exposes
+  provenance, Left/Right selects records and arrows/Page keys scroll. The reader
+  ignores late unmounted responses and rejects mismatched interview/revision/context
+  identities. Explicit retry handles failed loads. Fixed overlapping reader content
+  exposed at 60 columns; inherited modal/theme and bounded scrolling are retained.
+- Verification: 72 focused Python context/protocol tests and 38 TUI interview controls
+  tests passed, including guidance navigation at 60×18, 80×24 and 120×40 and response
+  mismatch/retry. Canonical static checks passed; no full suite was run.
+- This completes the first read-only provenance surface, not all W07 acceptance.
+  Classified new-question lesson selection and integrated conflict/reconnect evidence
+  remain outstanding. Learning effectiveness is not inferred from these tests.

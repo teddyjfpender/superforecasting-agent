@@ -2784,6 +2784,33 @@ export interface InterviewGenerationStatusResponse {
   request_id: null | string
 }
 
+export interface InterviewLessonProvenance {
+  applicability: Record<string, unknown>
+  content_digest: string
+  distinct_outcome_count: number
+  guidance: null | string
+  included: boolean
+  independent_cluster_count: null | number
+  lesson_id: string
+  reason: string
+  revision: string
+  scope_ref: null | string
+  scope_type: string
+  source_postmortem_ids: string[]
+  source_score_ids: string[]
+  support_score_count: number
+}
+
+export interface InterviewLessonsResponse {
+  advisory_only: boolean
+  context_digest: null | string
+  cutoff: null | string
+  interview_id: string
+  lessons: InterviewLessonProvenance[]
+  policy: null | string
+  revision: number
+}
+
 export interface InterviewListRequest {
   question_id: null | string
 }
@@ -4892,6 +4919,13 @@ export interface RpcMethods {
       interview_id: string
     }
     result: InterviewGenerationStatusResponse
+  }
+  'forecast.interview.lessons': {
+    params: {
+      interview_id: string
+      revision?: null | number
+    }
+    result: InterviewLessonsResponse
   }
   'forecast.interview.list': {
     params: {

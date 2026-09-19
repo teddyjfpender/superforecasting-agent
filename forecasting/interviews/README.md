@@ -336,8 +336,8 @@ outcome contract exist. The title and questionnaire default do not establish tho
 facts. No scoreable question is created by context capture. Legacy create interviews
 without context remain readable without live lesson backfill. Context and draft
 creation commit together; retries preserve the original selection. Classified
-new-question selection and TUI provenance presentation remain tracked in the
-engineering delivery record.
+new-question selection and remaining conflict/reconnect qualification stay tracked
+in the engineering delivery record.
 
 ## Durable editor buffer API
 
@@ -366,5 +366,22 @@ an old answer cannot erase edits based on a newer revision. Cancellation and com
 also purge text. Tests cover rollback, lost acknowledgements, remount restoration,
 stale drafts and unavailable storage in `tests/forecasting/test_interview_buffers.py`
 and `ui-tui/src/__tests__/interview{Buffers,Controls}.test.*`. Remaining W07 scope,
-including classified new-question lesson selection and provenance presentation, is tracked in the
+including classified new-question lesson selection and conflict/reconnect qualification, is tracked in the
 engineering delivery record.
+
+### Inspecting frozen guidance
+
+**Ctrl+Y Guidance** opens the read-only lesson reader from the questionnaire,
+including when unconfirmed edits exist. Left/Right selects a lesson; Enter toggles
+its provenance; arrows and Page Up/Down scroll; Escape returns without confirming
+answers. The reader distinguishes included and excluded records, reports supporting
+score/outcome counts, and marks unknown independent-cluster counts explicitly.
+Exclusions expose reasons, not rejected guidance text.
+
+`forecast.interview.lessons` accepts an interview ID and optional revision. Its typed
+response projects the frozen context, including policy, cutoff, exact lesson revision,
+digest, applicability and source references. It never consults the current lesson
+library. Historical interviews without lesson selection report that absence; corrupt
+contexts fail closed. Responses for a different revision or context are rejected by
+the reader, and failed loads offer an explicit retry. This is advisory provenance,
+not evidence that learning improves calibration.

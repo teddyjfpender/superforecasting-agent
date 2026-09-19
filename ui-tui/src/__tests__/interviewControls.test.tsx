@@ -1275,3 +1275,66 @@ it('does not claim discard when storage is unavailable and permits explicitly le
     await vi.waitFor(() => expect(close).toHaveBeenCalledOnce())
   } finally { ui.close() }
 })
+
+it.each([[60, 18], [80, 24], [120, 40]])('opens frozen guidance without confirming answers at %s×%s', async (cols, rows) => {
+  const record = fixture()
+  record.document.context_digest = 'a'.repeat(64)
+
+  const rpc = new RpcFixtures()
+    .handle('forecast.interview.list', () => ({ interviews: [record] }))
+    .handle('forecast.interview.buffers', () => ({ buffers: [] }))
+    .handle('forecast.interview.lessons', params => {
+      expect(params).toEqual({ interview_id: 'draft', revision: 1 })
+
+      return {
+        interview_id: 'draft', revision: 1, context_digest: record.document.context_digest ?? null,
+        advisory_only: true, policy: 'interview-lessons-v1', cutoff: '2030-01-01',
+        lessons: [{
+          lesson_id: 'lesson-reference', revision: '2029-12-01', content_digest: 'b'.repeat(64),
+          included: true, reason: 'applicable', guidance: 'Inspect the reference class.',
+          scope_type: 'global', scope_ref: null, applicability: {}, support_score_count: 0,
+          distinct_outcome_count: 0, independent_cluster_count: null, source_score_ids: [], source_postmortem_ids: []
+        }]
+      }
+    })
+
+  const ui = await screen(rpc.request.bind(rpc), cols, rows)
+
+  try {
+    await ui.wait('Example forecast')
+    ui.press('\x19')
+    await ui.wait('Inspect the reference class.')
+    await ui.wait('Independent clusters: unknown')
+    ui.press('\r')
+    await ui.wait('Scope: global')
+    ui.press('\x1b')
+    await ui.wait('FORECAST INTERVIEW')
+    expect(record.document.answers).toEqual([])
+  } finally { ui.close() }
+})
+
+it('rejects mismatched guidance and retries without mutating the interview', async () => {
+  const record = fixture()
+  let attempts = 0
+
+  const rpc = new RpcFixtures()
+    .handle('forecast.interview.list', () => ({ interviews: [record] }))
+    .handle('forecast.interview.buffers', () => ({ buffers: [] }))
+    .handle('forecast.interview.lessons', () => ({
+      interview_id: ++attempts === 1 ? 'another-interview' : record.interview_id,
+      revision: record.revision, context_digest: null, policy: null, cutoff: null,
+      advisory_only: true, lessons: []
+    }))
+
+  const ui = await screen(rpc.request.bind(rpc))
+
+  try {
+    await ui.wait('Example forecast')
+    ui.press('\x19')
+    await ui.wait('different interview revision')
+    ui.press('r')
+    await ui.wait('no frozen lesson selection')
+    expect(attempts).toBe(2)
+    expect(record.document.answers).toEqual([])
+  } finally { ui.close() }
+})

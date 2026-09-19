@@ -18,6 +18,7 @@ import type { Theme } from '../theme.js'
 
 import { InterviewEvaluation } from './interviewEvaluation.js'
 import { InterviewGeneration } from './interviewGeneration.js'
+import { InterviewLessons } from './interviewLessons.js'
 import { InterviewContext, InterviewOutline, InterviewRail } from './interviewNavigation.js'
 import { InterviewScenarios } from './interviewScenarios.js'
 import { ModalOverlay } from './modalOverlay.js'
@@ -56,7 +57,7 @@ export function ForecastInterview({
   const [choice, setChoice] = useState(0)
   const [selected, setSelected] = useState<string[]>([])
   const [customEditing, setCustomEditing] = useState(false)
-  const [pane, setPane] = useState<'answers' | 'generation' | 'scenarios' | 'evaluation' | 'outline'>('answers')
+  const [pane, setPane] = useState<'answers' | 'generation' | 'scenarios' | 'evaluation' | 'outline' | 'lessons'>('answers')
   const [busy, setBusy] = useState(true)
   const [error, setError] = useState('')
   const [freshConfirm, setFreshConfirm] = useState(false)
@@ -428,7 +429,7 @@ export function ForecastInterview({
         key.tab ||
         key.pageUp ||
         key.pageDown ||
-        (key.ctrl && ['u', 's', 'g', 'o', 'e', 'n', 'l', 't'].includes(input))
+        (key.ctrl && ['u', 's', 'g', 'o', 'e', 'n', 'l', 't', 'y'].includes(input))
       ) {
         ;(event as unknown as { stopImmediatePropagation?: () => void }).stopImmediatePropagation?.()
       }
@@ -546,8 +547,8 @@ export function ForecastInterview({
         return
       }
 
-      if (key.ctrl && (input === 'g' || input === 'o' || input === 'e' || input === 'l')) {
-        if (input !== 'l' && dirtyQuestions.current.size) {
+      if (key.ctrl && (input === 'g' || input === 'o' || input === 'e' || input === 'l' || input === 'y')) {
+        if (input !== 'l' && input !== 'y' && dirtyQuestions.current.size) {
           setError('Confirm your edits first; analysis and scenarios use saved answers.')
 
           return
@@ -557,7 +558,7 @@ export function ForecastInterview({
           choiceDrafts.current.set(question.id, { choice, selected })
         }
 
-        setPane(input === 'l' ? 'outline' : input === 'g' ? 'generation' : input === 'e' ? 'evaluation' : 'scenarios')
+        setPane(input === 'y' ? 'lessons' : input === 'l' ? 'outline' : input === 'g' ? 'generation' : input === 'e' ? 'evaluation' : 'scenarios')
 
         return
       }
@@ -740,6 +741,11 @@ export function ForecastInterview({
     )
   }
 
+  if (record && pane === 'lessons') {
+    return <InterviewLessons blocked={Boolean(blocked)} cols={cols} gw={gw} onClose={() => setPane('answers')} record={record}
+      rows={rows} t={t} />
+  }
+
   if (record && pane === 'outline') {
     return (
       <InterviewOutline
@@ -801,7 +807,7 @@ export function ForecastInterview({
           {review
             ? 'Review answers'
             : `${index + 1}/${questions.length} · ${question?.section.replaceAll('_', ' ') ?? ''}`}
-          {busy ? ' · saving…' : ' · [Tab/⇧Tab] [^L List]'}
+          {busy ? ' · saving…' : ' · [Tab/⇧Tab] [^L List] [^Y Guidance]'}
         </Text>
         <Box flexDirection="row" flexShrink={0} height={height} overflow="hidden">
           {wide && record ? <InterviewRail index={index} record={record} t={t} /> : null}

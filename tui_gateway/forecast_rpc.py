@@ -1115,6 +1115,14 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5008, str(exc))
 
 
+@rpc_validated("forecast.interview.lessons")
+def _(rid, params: dict) -> dict:
+    try:
+        return _ok(rid, _interview_service().lessons(**params))
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))
+
+
 @rpc_validated("forecast.interview.read")
 def _(rid, params: dict) -> dict:
     try:

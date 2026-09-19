@@ -37,6 +37,20 @@ class InterviewService:
         self.ledger = ledger
         self.store = InterviewStore(ledger)
 
+    def lessons(self, interview_id: str, revision: int | None = None) -> dict:
+        """Present frozen provenance without consulting or changing the live library."""
+        from forecasting.interviews.lesson_context import lesson_provenance
+
+        record = self.store.read(interview_id, revision)
+        digest = record["document"].get("context_digest")
+        context = read_context(self.ledger, interview_id, digest) if digest else None
+        return {
+            "interview_id": interview_id,
+            "revision": record["revision"],
+            "context_digest": digest,
+            **lesson_provenance(context),
+        }
+
     def begin(
         self,
         interview_id: str,

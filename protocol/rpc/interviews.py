@@ -31,6 +31,33 @@ class InterviewReadRequest(WireModel):
     revision: int | None = None
 
 
+class InterviewLessonProvenance(WireModel):
+    lesson_id: str
+    revision: str
+    content_digest: str
+    included: bool
+    reason: str
+    guidance: str | None
+    scope_type: str
+    scope_ref: str | None
+    applicability: dict[str, Any]
+    support_score_count: int = Field(ge=0)
+    distinct_outcome_count: int = Field(ge=0)
+    independent_cluster_count: int | None = Field(default=None, ge=0)
+    source_score_ids: list[str]
+    source_postmortem_ids: list[str]
+
+
+class InterviewLessonsResponse(WireModel):
+    interview_id: str
+    revision: int
+    context_digest: str | None
+    policy: str | None
+    cutoff: str | None
+    advisory_only: Literal[True] = True
+    lessons: list[InterviewLessonProvenance]
+
+
 class InterviewListRequest(WireModel):
     question_id: str | None = None
 

@@ -161,3 +161,39 @@ def model_lessons(selection: dict[str, Any]) -> dict[str, Any]:
             if not item["included"]
         ],
     }
+
+
+def lesson_provenance(context: dict | None) -> dict:
+    """A compact UI projection; full supporting records remain in frozen storage."""
+    selection = context.get("lesson_selection") if context else None
+    return {
+        "policy": selection["policy"] if selection else None,
+        "cutoff": selection["cutoff"] if selection else None,
+        "advisory_only": True,
+        "lessons": [
+            {
+                **{
+                    key: item[key]
+                    for key in (
+                        "lesson_id",
+                        "revision",
+                        "content_digest",
+                        "included",
+                        "reason",
+                        "support_score_count",
+                        "distinct_outcome_count",
+                        "independent_cluster_count",
+                    )
+                },
+                "guidance": item["lesson"]["lesson"] if item["included"] else None,
+                "scope_type": item["lesson"]["scope_type"],
+                "scope_ref": item["lesson"]["scope_ref"],
+                "applicability": item["lesson"]["recommended_adjustment"].get(
+                    "applicability", {}
+                ),
+                "source_score_ids": item["lesson"]["source_score_record_refs"],
+                "source_postmortem_ids": item["lesson"]["source_postmortem_refs"],
+            }
+            for item in (selection["records"] if selection else [])
+        ],
+    }

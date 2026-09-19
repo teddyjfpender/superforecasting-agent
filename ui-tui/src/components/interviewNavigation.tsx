@@ -73,7 +73,7 @@ export function InterviewContext({ record, index, t }: { record: InterviewRecord
           </Text>
         ) : null
       })}
-      <Text color={t.color.muted}>Only confirmed answers are durable.</Text>
+      <Text color={t.color.muted}>Draft saves preserve unconfirmed edits; answers require confirmation.</Text>
       <Text color={t.color.muted}>Scenarios do not change the active forecast.</Text>
     </Box>
   )
