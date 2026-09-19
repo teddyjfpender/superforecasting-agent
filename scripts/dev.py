@@ -13,12 +13,14 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 # The stricter scope grows with ownership extractions. Legacy code still runs
 # the repository-wide encoding gate; no silent baseline hides new-layer errors.
 STRICT_PYTHON = (
+    "scripts/dev.py",
     "forecasting/news",
     "forecasting/interviews",
     "superforecasting_agent/runtime/news_desk.py",
@@ -156,7 +158,11 @@ CORRECTNESS_PYTHON = (
 
 def run(*command: str, cwd: Path = ROOT) -> None:
     print("+ " + " ".join(command), flush=True)
-    subprocess.run(command, cwd=cwd, check=True)
+    started = time.monotonic()
+    try:
+        subprocess.run(command, cwd=cwd, check=True)
+    finally:
+        print(f"Elapsed: {time.monotonic() - started:.2f}s", flush=True)
 
 
 def executable(name: str) -> str:
@@ -250,22 +256,129 @@ def check_snapshot(ref: str | None = None) -> None:
             )
 
 
+# Bounded, credential-free lifecycle coverage. Native/platform skips remain visible;
+# this list is an integration feedback tier, not the release support matrix.
+INTEGRATION_PYTHON = (
+    "tests/runtime_cli/test_local_desk_lifecycle.py",
+    "tests/runtime_cli/test_dashboard_pty_reconnect.py",
+    "tests/tui_gateway/test_runtime_host_owner.py",
+)
+INTEGRATION_TUI = (
+    "src/__tests__/gatewayRecovery.test.ts",
+    "src/__tests__/gatewayClient.test.ts",
+    "src/__tests__/useJobAttach.test.ts",
+)
+
+
+def selected_tests(values: list[str], *, frontend: bool) -> list[str]:
+    """Admit explicit test files before any command executes; never infer a full suite."""
+    root = ROOT / "ui-tui" if frontend else ROOT
+    allowed = root / ("src/__tests__" if frontend else "tests")
+    result: list[str] = []
+    for value in values:
+        filename, separator, node = value.partition("::")
+        path = (root / filename).resolve()
+        if (
+            not path.is_relative_to(allowed.resolve())
+            or not path.is_file()
+            or (frontend and (separator or path.suffix not in {".ts", ".tsx"}))
+            or (not frontend and path.suffix != ".py")
+            or (separator and not node)
+        ):
+            raise RuntimeError(
+                f"Expected an explicit {'TUI' if frontend else 'Python'} test file: {value!r}"
+            )
+        normalized = path.relative_to(root.resolve()).as_posix()
+        if separator:
+            normalized += separator + node
+        if normalized not in result:
+            result.append(normalized)
+    return result
+
+
+def verify(
+    tier: str,
+    python_tests: list[str],
+    tui_tests: list[str],
+    *,
+    python_only: bool = False,
+) -> None:
+    """Share static gates and test runners without confusing feedback with qualification."""
+    if tier != "fast" and (python_tests or tui_tests or python_only):
+        raise RuntimeError(
+            "Test selections and --python-only apply to the fast tier only"
+        )
+    if python_only and tui_tests:
+        raise RuntimeError("--python-only cannot run TUI tests")
+    if tier == "fast":
+        python_tests = selected_tests(python_tests, frontend=False)
+        tui_tests = selected_tests(tui_tests, frontend=True)
+        if not python_tests and not tui_tests:
+            raise RuntimeError(
+                "Fast verification needs --python-test or --tui-test; use check for static checks alone"
+            )
+    elif tier == "integration":
+        python_tests = selected_tests(list(INTEGRATION_PYTHON), frontend=False)
+        tui_tests = selected_tests(list(INTEGRATION_TUI), frontend=True)
+    elif tier != "qualification":
+        raise RuntimeError(f"Unknown verification tier: {tier}")
+
+    started = time.monotonic()
+    print(f"Verification tier: {tier} (local checkout; no receipt reuse)", flush=True)
+    try:
+        check(python_only=python_only)
+        if tier != "fast":
+            run(executable("npm"), "run", "build", cwd=ROOT / "ui-tui")
+        if python_tests or tier == "qualification":
+            run(executable("bash"), str(ROOT / "scripts/run_tests.sh"), *python_tests)
+        if tui_tests or tier == "qualification":
+            run(executable("npm"), "test", "--", *tui_tests, cwd=ROOT / "ui-tui")
+    finally:
+        print(f"Tier elapsed: {time.monotonic() - started:.2f}s", flush=True)
+    print(
+        "Local tier passed. Native installed-artifact and upgrade qualification remain separate.",
+        flush=True,
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("bootstrap", "check", "snapshot"))
+    parser.add_argument("command", choices=("bootstrap", "check", "snapshot", "verify"))
     parser.add_argument(
         "--python-only",
         action="store_true",
         help="Check Python/contracts without requiring Node",
     )
     parser.add_argument("--ref", help="Pushed commit whose tree must match the index")
+    parser.add_argument("--tier", choices=("fast", "integration", "qualification"))
+    parser.add_argument(
+        "--python-test",
+        action="append",
+        default=[],
+        help="Python test file or node ID; repeatable",
+    )
+    parser.add_argument(
+        "--tui-test",
+        action="append",
+        default=[],
+        help="TUI test file relative to ui-tui; repeatable",
+    )
     args = parser.parse_args()
+    if args.command != "verify" and (args.tier or args.python_test or args.tui_test):
+        parser.error("Tier and test selections apply to verify only")
     if args.ref and args.command != "snapshot":
         parser.error("--ref applies to snapshot only")
     if args.command == "bootstrap" and args.python_only:
         parser.error("--python-only applies to check, not bootstrap")
     try:
-        if args.command == "snapshot":
+        if args.command == "verify":
+            verify(
+                args.tier or "fast",
+                args.python_test,
+                args.tui_test,
+                python_only=args.python_only,
+            )
+        elif args.command == "snapshot":
             check_snapshot(args.ref)
         elif args.command == "bootstrap":
             bootstrap()

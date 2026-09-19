@@ -13,7 +13,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 | File                                                   | Responsibility                                                          |
 | ------------------------------------------------------ | ----------------------------------------------------------------------- |
 | [dev.py](dev.py)                                       | Bootstrap and run the repository's shared, blocking quality checks.     |
-| [run_tests.sh](run_tests.sh)                           | run tests.                                                              |
+| [run_tests.sh](run_tests.sh)                           | Hermetic Python runner for explicit selections or the full suite.                                                              |
 | [verify_profiles.py](verify_profiles.py)               | Verify built product wheels outside the checkout in fresh environments. |
 | [benchmark_browser_eval.py](benchmark_browser_eval.py) | Quick benchmark: subprocess eval vs supervisor-WS eval.                 |
 | [benchmark_tui_perf.py](benchmark_tui_perf.py)         | Desk-load performance benchmark for the superforecasting-agent TUI.     |
@@ -65,3 +65,16 @@ is synthetic: this command never queries or mutates a live forecast ledger.
 Model mode uses the configured provider credentials.
 Reports include fixture and implementation hashes; retain the report alongside
 the tested commit. Mechanical retention alone does not establish model quality.
+
+### Feedback tiers
+
+`dev.py verify --tier fast --python-test tests/scripts/test_dev_tiers.py` runs
+static gates plus the selected file. Use repeatable `--tui-test` selectors for
+TUI files relative to `ui-tui/`; `--python-only` is available for backend work.
+An empty fast selection is an error, never an implicit full-suite run.
+
+`dev.py verify --tier integration` builds and runs the bounded controlled-provider
+lifecycle selection declared in `dev.py`. `--tier qualification` explicitly runs
+both full local suites. Neither command certifies other platforms or installed
+release artifacts. See [contributor guidance](../CONTRIBUTING.md#validation-feedback-tiers)
+for scope, timing, skips and hook policy.

@@ -157,6 +157,37 @@ never commit half a contract. The wire-drift gate enforces the most common case:
 
 ---
 
+## Validation feedback tiers
+
+Use the shared runner for repeatable feedback. Fast checks require explicit files
+(or Python node IDs); repeat either selector for additional affected tests:
+
+```sh
+python3 scripts/dev.py verify --tier fast --python-test tests/scripts/test_dev_tiers.py
+python3 scripts/dev.py verify --tier fast --tui-test src/__tests__/gatewayRecovery.test.ts
+python3 scripts/dev.py verify --tier integration
+```
+
+Fast verification runs canonical static checks followed by the selected tests.
+Add `--python-only` for backend-only work without Node. For static checks alone,
+use `python3 scripts/dev.py check`. Each command and tier reports elapsed time;
+failed commands stop the tier and never print a passing summary.
+
+The integration tier builds the TUI and runs the controlled local desk lifecycle,
+dashboard PTY reconnect, runtime host ownership and selected TUI recovery tests.
+It requires development dependencies but no external provider credentials. Platform
+skips remain unverified, even if the test runner exits successfully. This bounded
+selection is not the complete integration acceptance matrix.
+
+`python3 scripts/dev.py verify --tier qualification` is an **explicit full-suite**
+local operation: static checks, TUI build, all Python tests and all TUI tests.
+It does not qualify installed wheels, upgrades, or other native platforms. Follow
+release verification for those exact-artifact checks. A successful local tier is
+not a reusable qualification receipt; this runner performs no result caching.
+
+These commands do not change hook or protected-check policy. Pre-push still runs
+the full Python suite and affected TUI tests; tier selection is not a bypass.
+
 ## Local Gates: Git Hooks
 
 The laws above are enforced locally by git hooks in [`.githooks/`](.githooks), installed

@@ -420,3 +420,29 @@ required W02 work. No full Python or TUI suite was run.
 - This completes the dedicated test-typecheck gate criterion, not all W02: Python strict
   coverage ratchets, feedback tiers and existing unchecked fixture escapes remain work.
   Typechecking alone does not certify native rendering, integration recovery or releases.
+
+
+### W02 feedback tiers — explicit canonical runner
+
+- Added `scripts/dev.py verify` with fast, integration and local qualification tiers.
+  Fast requires explicit existing Python test files/node IDs or TUI test files and
+  validates every selector before commands run. Empty selections, traversal, directories
+  and unsupported selector/tier combinations fail closed. The qualification tier alone
+  explicitly plans complete suites; it was tested using intercepted commands, not run.
+- Integration reuses the real local desk/dashboard/host fixtures and selected TUI recovery
+  tests, builds the client first, and retains canonical hermetic Python execution. Every
+  command and tier prints elapsed time; errors stop execution and suppress a success claim.
+  The runner is now itself under complete selected lint/format/type checks.
+- Measured on this macOS checkout: fast tier with 26 script tests passed in 8.10s;
+  integration tier passed in 37.73s with 33 Python tests and 59 TUI tests. These are observed local
+  durations, not cross-platform performance or a flakiness baseline. No full suite run.
+- Hook/protected-check policy is unchanged. Pre-push still requires full Python tests;
+  a safe changed-owner selection policy and exact-tree receipt design remain incomplete.
+  Tier success is explicitly not installed-artifact/native matrix qualification and no
+  cached receipt is reused. Contributor and script guides describe the same distinction.
+
+- Integration emitted 18 Python 3.13 `forkpty()` multithreaded-process deprecation
+  warnings in the real dashboard/local desk scenarios. No deadlock occurred in this run,
+  but safe child spawning is not established by that outcome. W05/W08 must examine the
+  PTY spawn boundary; do not silence the warning or attribute historical SSL/BFD failures
+  from this evidence. The focused tests retained their normal warning output.
