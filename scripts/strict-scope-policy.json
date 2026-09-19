@@ -41,6 +41,7 @@
     "forecasting/application/sharing.py",
     "forecasting/application/source_batches.py",
     "forecasting/application/source_imports.py",
+    "forecasting/application/source_plans.py",
     "forecasting/application/triage.py",
     "forecasting/application/warning_runners.py",
     "forecasting/configuration/__init__.py",

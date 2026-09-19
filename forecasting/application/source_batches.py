@@ -13,8 +13,14 @@ from forecasting.application.import_receipts import (
     read_receipt,
     write_receipt,
 )
+from forecasting.application.source_plans import (
+    SourceRevisionConflict as SourceRevisionConflict,
+)
+from forecasting.application.source_plans import (
+    prepare_source_import,
+)
 from forecasting.ledger import ForecastLedger
-from forecasting.models import EvidenceItem, parse_timestamp
+from forecasting.models import EvidenceItem
 
 
 @dataclass(frozen=True)
@@ -27,37 +33,6 @@ class ImportedSourceRow:
 class SourceBatchResult:
     imported: tuple[ImportedSourceRow, ...]
     duplicate_indices: tuple[int, ...]
-
-
-class SourceRevisionConflict(ValueError):
-    """A provider reused an entry identity for a different acquired observation."""
-
-    reason_code = "source_revision_conflict"
-
-    def __init__(self, index: int, entry_id: str) -> None:
-        self.index = index
-        self.entry_id = entry_id
-        super().__init__(
-            f"source_revision_conflict: row {index} reuses entry {entry_id!r} with changed provenance; "
-            "review the revision before importing it"
-        )
-
-
-def _provenance(metadata: Mapping[str, Any], source_url: Any, published_at: Any) -> str:
-    # User ratings and annotations do not revise publisher observations. The raw
-    # parsed record and its source identity do. Missing provenance cannot be
-    # silently upgraded by an entry-ID-only duplicate decision.
-    return json.dumps(
-        {
-            "source": metadata.get("source"),
-            "adapter": metadata.get("adapter"),
-            "adapter_item": metadata.get("adapter_item"),
-            "source_url": source_url,
-            "published_at": parse_timestamp(published_at, field_name="published_at"),
-        },
-        sort_keys=True,
-        allow_nan=False,
-    )
 
 
 def commit_source_payloads(
@@ -87,7 +62,11 @@ def commit_source_payloads(
         raise ValueError(
             "request_id must be a nonempty string of at most 200 characters"
         )
-    rows = [dict(payload) for payload in payloads]
+    # Detach nested provenance from caller-owned mappings before digesting or
+    # entering the transaction. JSON is the evidence transfer representation.
+    rows = json.loads(
+        json.dumps([dict(payload) for payload in payloads], allow_nan=False)
+    )
     digest = (
         hashlib.sha256(
             json.dumps(
@@ -135,44 +114,21 @@ def commit_source_payloads(
                     ),
                     indices.duplicates,
                 )
-        seen: dict[tuple[str, str], set[str]] = {}
-        if dedupe:
-            for item in ledger.list_evidence(question_id):
-                entry_id = item.metadata.get("entry_id")
-                if entry_id:
-                    key = (item.source_type or "", str(entry_id))
-                    seen.setdefault(key, set()).add(
-                        _provenance(item.metadata, item.source_url, item.published_at)
-                    )
-        for index, payload in enumerate(rows):
-            entry_id = (payload.get("metadata") or {}).get("entry_id")
-            key = (
-                (payload.get("source_type") or "", str(entry_id)) if entry_id else None
-            )
-            provenance = _provenance(
-                payload.get("metadata") or {},
-                payload.get("source_url")
-                or (
-                    payload["source_or_note"]
-                    if isinstance(payload.get("source_or_note"), str)
-                    and payload["source_or_note"].startswith(("http://", "https://"))
-                    else None
-                ),
-                payload.get("published_at"),
-            )
-            if dedupe and key is not None and key in seen:
-                # Multiple historical revisions sharing a key are ambiguous even
-                # when this acquisition happens to match one of those versions.
-                if seen[key] != {provenance}:
-                    raise SourceRevisionConflict(index, key[1])
+        plan = prepare_source_import(
+            rows, ledger.list_evidence(question_id) if dedupe else (), dedupe=dedupe
+        )
+        for decision in plan.rows:
+            if decision.disposition == "rejected":
+                raise SourceRevisionConflict(decision.index, decision.entry_id or "")
+        for decision in plan.rows:
+            index = decision.index
+            if decision.disposition == "duplicate":
                 duplicates.append(index)
                 continue
             evidence = ledger.add_evidence(
-                question_id=question_id, archive_url_snapshot=False, **payload
+                question_id=question_id, archive_url_snapshot=False, **rows[index]
             )
             imported.append(ImportedSourceRow(index, evidence))
-            if key is not None:
-                seen.setdefault(key, set()).add(provenance)
         if request_id is not None and digest is not None:
             write_receipt(
                 conn,

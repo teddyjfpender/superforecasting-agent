@@ -21,6 +21,20 @@ These are entry points and representative modules, not an exhaustive inventory.
 | [question_reuse.py](question_reuse.py)           | Read-only candidate matching shared by question creation and forecast entrypoints. |
 | [resolution.py](resolution.py)                   | Resolution use case; product adapters do not own settlement policy.                |
 
+## Source import plans
+
+`source_plans.prepare_source_import` plans provenance decisions from payloads and
+an explicit evidence snapshot without network or ledger access. It freezes JSON
+inputs and reports `new_observation`, `exact_duplicate`, or
+`source_revision_conflict` per input index. Missing publication times stay missing.
+This is provenance planning, not full field validation or settlement approval.
+
+`source_batches.commit_source_payloads` uses the same planner inside its immediate
+transaction, rejects revision conflicts before the first write, and retains
+atomic field validation and durable retry receipts. A preview cannot bypass
+revalidation against current evidence. Provider acquisition and source-specific
+measurement contracts remain with their existing owners.
+
 ## Job cancellation
 
 `job_cancellation.request_job_cancellation` is shared by CLI and job RPC adapters.

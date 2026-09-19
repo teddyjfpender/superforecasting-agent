@@ -986,3 +986,19 @@ and startup/admission failures. The new handle owner passes strict typing and is
 included in the protected strict inventory. No full suite ran. Legacy reforecast
 configuration/ledger lookup and complete typed service injection remain W05 work;
 this is not a claim that every job-family dependency is independently scoped.
+
+## Pure source provenance planning
+
+The shared batch commit now uses `prepare_source_import`, a side-effect-free
+planner taking explicit payloads/evidence. It freezes JSON input, records a digest,
+and returns indexed accepted/duplicate/rejected provenance decisions with stable
+reason codes. Commit rebuilds the plan under its immediate transaction and rejects
+revision conflicts before the first evidence write. Nested caller-owned metadata
+is detached before receipt hashing and persistence. Atomic field validation and
+receipt behavior remain in the existing commit owner.
+
+The 71 existing batch/receipt checks pass, and five new pure-plan/race checks pass
+(after correcting two test questions rejected by the existing scoreability guard).
+Strict typing passes for both owners. No full suite ran. This is provenance planning,
+not settlement approval or complete adapter-specific acquisition typing; those
+remaining W03 requirements are not claimed complete.
