@@ -387,3 +387,19 @@ required W02 work. No full Python or TUI suite was run.
   Canonical static checks passed; test-project diagnostics fell from 165 to 160.
 - W02/W06 remain partial: this does not establish real transport reconnect qualification,
   complete test-fixture typing, or the remaining route/modal ownership requirements.
+
+### W02 follow-up — slash command fixture contracts
+
+- Converted slash-command RPC fixtures to generated method-bound responses, including
+  auth, forecast dashboard/detail/operations, configuration, voice, browser management,
+  native command dispatch and explicit legacy handoffs. Unknown methods no longer receive
+  a fabricated empty success from the default fixture.
+- Filled required operation/reload response fields, provided actual reconnect capabilities,
+  and typed delayed native-command completion. Local catalog/history fixtures now expose
+  their actual consumer types rather than null-only/empty-array inference. Preserved the
+  existing routing, alias, session replacement, scope and stale-result assertions.
+- Validation: 105 tests passed across createSlashHandler, slashCapabilities and RpcFixtures.
+  The slash-command test file has no remaining TypeScript diagnostics; the complete test
+  project remains failing with 33 diagnostics (previously 160). No full suite was run.
+- W02 remains partial until the remaining fixtures pass and the dedicated typecheck is
+  included in the blocking canonical quality path. No runtime API was weakened for these tests.

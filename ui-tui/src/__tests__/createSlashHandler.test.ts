@@ -1,10 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createSlashHandler } from '../app/createSlashHandler.js'
+import type { SlashHandlerContext } from '../app/interfaces.js'
 import { getOverlayState, resetOverlayState } from '../app/overlayStore.js'
 import { getUiState, patchUiState, resetUiState } from '../app/uiStore.js'
 import { TUI_SESSION_MODEL_FLAG } from '../domain/slash.js'
 import { GatewayRpcError } from '../lib/rpc.js'
+import type { CommandDispatchResponse } from '../protocol/generated.js'
+import type { RpcMethod, RpcMethods } from '../protocol/generated.js'
+import { RpcFixtures } from '../testing/rpcFixtures.js'
+import type { Msg } from '../types.js'
+
+const rpcProvider = (fixtures = new RpcFixtures()) => vi.fn(fixtures.request.bind(fixtures))
+
+const rpcReply = <M extends RpcMethod>(method: M, result: RpcMethods[NoInfer<M>]['result']) => {
+  const fixtures = new RpcFixtures().handle(method, () => result)
+
+  return vi.fn(fixtures.request.bind(fixtures))
+}
 
 describe('createSlashHandler', () => {
   beforeEach(() => {
@@ -27,7 +40,7 @@ describe('createSlashHandler', () => {
   })
 
   it('sets a theme directly for /theme <name> without opening the picker', () => {
-    const rpc = vi.fn(() => Promise.resolve({ value: 'slate' }))
+    const rpc = rpcReply('config.set', { value: 'slate' })
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/theme slate')).toBe(true)
@@ -61,7 +74,7 @@ describe('createSlashHandler', () => {
 
   it('handles /style locally while preserving the personality backend key', async () => {
     patchUiState({ sid: 'sid-abc' })
-    const rpc = vi.fn(() => Promise.resolve({ value: 'quant' }))
+    const rpc = rpcReply('config.set', { value: 'quant' })
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/style quant')).toBe(true)
@@ -97,22 +110,20 @@ describe('createSlashHandler', () => {
   it('runs the in-TUI device-code sign-in for /auth and reports success', async () => {
     patchUiState({ sid: 'sid-auth' })
 
-    const rpc = vi.fn((method: string) => {
-      if (method === 'auth.start') {
-        return Promise.resolve({
-          interval: 3,
-          provider: 'openai-codex',
-          url: 'https://auth.openai.com/codex/device',
-          user_code: 'ABCD-1234'
+    const rpc = rpcProvider(
+      new RpcFixtures()
+        .handle('auth.start', () => {
+          return Promise.resolve({
+            interval: 3,
+            provider: 'openai-codex',
+            url: 'https://auth.openai.com/codex/device',
+            user_code: 'ABCD-1234'
+          })
         })
-      }
-
-      if (method === 'auth.poll') {
-        return Promise.resolve({ credentials_applied: true, status: 'success' })
-      }
-
-      return Promise.resolve({})
-    })
+        .handle('auth.poll', () => {
+          return Promise.resolve({ credentials_applied: true, status: 'success' })
+        })
+    )
 
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
@@ -145,7 +156,7 @@ describe('createSlashHandler', () => {
 
   it('routes /status to live forecast session.status instead of slash worker', async () => {
     patchUiState({ sid: 'sid-abc' })
-    const rpc = vi.fn(() => Promise.resolve({ output: 'Superforecasting Agent TUI Status' }))
+    const rpc = rpcReply('session.status', { output: 'Superforecasting Agent TUI Status' })
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/status')).toBe(true)
@@ -157,7 +168,7 @@ describe('createSlashHandler', () => {
   })
 
   it('opens the interactive forecasts workspace for bare /forecast', () => {
-    const rpc = vi.fn(() => Promise.resolve({}))
+    const rpc = rpcProvider()
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/forecast')).toBe(true)
@@ -180,7 +191,7 @@ describe('createSlashHandler', () => {
   })
 
   it('opens the workspace for a numeric /forecast arg', () => {
-    const rpc = vi.fn(() => Promise.resolve({}))
+    const rpc = rpcProvider()
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/forecast 5')).toBe(true)
@@ -197,7 +208,7 @@ describe('createSlashHandler', () => {
   })
 
   it('routes /forecast status to the legacy dashboard dump', () => {
-    const rpc = vi.fn(() => Promise.resolve({ output: 'ACTIVE FORECASTS' }))
+    const rpc = rpcReply('forecast.dashboard', { output: 'ACTIVE FORECASTS' })
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/forecast status')).toBe(true)
@@ -206,8 +217,8 @@ describe('createSlashHandler', () => {
   })
 
   it('renders /questions as a numbered forecast summary without requiring ids', async () => {
-    const rpc = vi.fn((method: string) => {
-      if (method === 'forecast.dashboard') {
+    const rpc = rpcProvider(
+      new RpcFixtures().handle('forecast.dashboard', () => {
         return Promise.resolve({
           summary: {
             active_count: 1,
@@ -229,10 +240,8 @@ describe('createSlashHandler', () => {
             review_queue_count: 0
           }
         })
-      }
-
-      return Promise.resolve({})
-    })
+      })
+    )
 
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
@@ -258,42 +267,40 @@ describe('createSlashHandler', () => {
   })
 
   it('opens the forecasts workspace focused on a numbered /questions row', async () => {
-    const rpc = vi.fn((method: string, params: Record<string, unknown>) => {
-      if (method === 'forecast.dashboard') {
-        return Promise.resolve({
-          summary: {
-            active_count: 2,
-            open_alert_count: 0,
-            product: 'Superforecasting Agent',
-            questions: [
-              { id: 'fq_first', probability: 0.4, title: 'First forecast' },
-              { id: 'fq_second', probability: 0.6, title: 'Second forecast' }
-            ],
-            review_queue_count: 0
-          }
+    const rpc = rpcProvider(
+      new RpcFixtures()
+        .handle('forecast.dashboard', params => {
+          return Promise.resolve({
+            summary: {
+              active_count: 2,
+              open_alert_count: 0,
+              product: 'Superforecasting Agent',
+              questions: [
+                { id: 'fq_first', probability: 0.4, title: 'First forecast' },
+                { id: 'fq_second', probability: 0.6, title: 'Second forecast' }
+              ],
+              review_queue_count: 0
+            }
+          })
         })
-      }
-
-      if (method === 'forecast.question') {
-        return Promise.resolve({
-          packet: {
-            forecast_history: [
-              {
-                as_of: '2026-05-24T00:00:00Z',
-                confidence: 0.6,
-                forecast_id: 'fc_second',
-                forecast_origin: 'live',
-                probability_or_distribution: 0.6,
-                rationale: 'Second forecast rationale.'
-              }
-            ],
-            question: { id: params.id, status: 'active', title: 'Second forecast' }
-          }
+        .handle('forecast.question', params => {
+          return Promise.resolve({
+            packet: {
+              forecast_history: [
+                {
+                  as_of: '2026-05-24T00:00:00Z',
+                  confidence: 0.6,
+                  forecast_id: 'fc_second',
+                  forecast_origin: 'live',
+                  probability_or_distribution: 0.6,
+                  rationale: 'Second forecast rationale.'
+                }
+              ],
+              question: { id: params.id ?? 'fixture', status: 'active', title: 'Second forecast' }
+            }
+          })
         })
-      }
-
-      return Promise.resolve({})
-    })
+    )
 
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
@@ -309,8 +316,8 @@ describe('createSlashHandler', () => {
   })
 
   it('searches forecasts from /questions without requiring a forecast id', async () => {
-    const rpc = vi.fn((method: string) => {
-      if (method === 'forecast.dashboard') {
+    const rpc = rpcProvider(
+      new RpcFixtures().handle('forecast.dashboard', () => {
         return Promise.resolve({
           summary: {
             active_count: 2,
@@ -329,10 +336,8 @@ describe('createSlashHandler', () => {
             review_queue_count: 0
           }
         })
-      }
-
-      return Promise.resolve({})
-    })
+      })
+    )
 
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
@@ -353,49 +358,50 @@ describe('createSlashHandler', () => {
   })
 
   it('opens and edits forecasts by search terms through id-free shortcuts', async () => {
-    const rpc = vi.fn((method: string, params: Record<string, unknown>) => {
-      if (method === 'forecast.dashboard') {
-        return Promise.resolve({
-          summary: {
-            active_count: 1,
-            open_alert_count: 0,
-            product: 'Superforecasting Agent',
-            questions: [
-              {
-                domain: 'macro',
-                id: 'fq_cpi',
-                probability: 0.61,
-                title: 'Will the CPI release exceed consensus?',
-                topics: ['inflation']
-              }
-            ],
-            review_queue_count: 0
-          }
+    const rpc = rpcProvider(
+      new RpcFixtures()
+        .handle('forecast.dashboard', params => {
+          return Promise.resolve({
+            summary: {
+              active_count: 1,
+              open_alert_count: 0,
+              product: 'Superforecasting Agent',
+              questions: [
+                {
+                  domain: 'macro',
+                  id: 'fq_cpi',
+                  probability: 0.61,
+                  title: 'Will the CPI release exceed consensus?',
+                  topics: ['inflation']
+                }
+              ],
+              review_queue_count: 0
+            }
+          })
         })
-      }
-
-      if (method === 'forecast.command') {
-        return Promise.resolve({ code: 0, output: `ran ${params.arg}` })
-      }
-
-      if (method === 'forecast.question') {
-        return Promise.resolve({
-          packet: {
-            forecast_history: [
-              {
-                as_of: '2026-05-24T00:00:00Z',
-                forecast_id: 'fc_cpi',
-                probability_or_distribution: 0.61,
-                rationale: 'Inflation rationale.'
-              }
-            ],
-            question: { id: params.id, status: 'active', title: 'Will the CPI release exceed consensus?' }
-          }
+        .handle('forecast.command', params => {
+          return Promise.resolve({ code: 0, output: `ran ${params.arg}` })
         })
-      }
-
-      return Promise.resolve({})
-    })
+        .handle('forecast.question', params => {
+          return Promise.resolve({
+            packet: {
+              forecast_history: [
+                {
+                  as_of: '2026-05-24T00:00:00Z',
+                  forecast_id: 'fc_cpi',
+                  probability_or_distribution: 0.61,
+                  rationale: 'Inflation rationale.'
+                }
+              ],
+              question: {
+                id: params.id ?? 'fixture',
+                status: 'active',
+                title: 'Will the CPI release exceed consensus?'
+              }
+            }
+          })
+        })
+    )
 
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
     const handler = createSlashHandler(ctx)
@@ -446,21 +452,21 @@ describe('createSlashHandler', () => {
   })
 
   it('routes the /rerun and /refresh aliases to forecast refresh', async () => {
-    const rpc = vi.fn((method: string) => {
-      if (method === 'forecast.dashboard') {
-        return Promise.resolve({
-          summary: {
-            active_count: 1,
-            open_alert_count: 0,
-            product: 'Superforecasting Agent',
-            questions: [{ domain: 'macro', id: 'fq_cpi', probability: 0.61, title: 'CPI?', topics: ['inflation'] }],
-            review_queue_count: 0
-          }
+    const rpc = rpcProvider(
+      new RpcFixtures()
+        .handle('forecast.command', () => ({ code: 0, output: 'ok' }))
+        .handle('forecast.dashboard', () => {
+          return Promise.resolve({
+            summary: {
+              active_count: 1,
+              open_alert_count: 0,
+              product: 'Superforecasting Agent',
+              questions: [{ domain: 'macro', id: 'fq_cpi', probability: 0.61, title: 'CPI?', topics: ['inflation'] }],
+              review_queue_count: 0
+            }
+          })
         })
-      }
-
-      return Promise.resolve({ output: 'ok' })
-    })
+    )
 
     const handler = createSlashHandler(buildCtx({ gateway: { ...buildGateway(), rpc } }))
 
@@ -476,17 +482,15 @@ describe('createSlashHandler', () => {
   })
 
   it('keeps /book as a forecast-question shortcut alias', async () => {
-    const rpc = vi.fn(() =>
-      Promise.resolve({
-        summary: {
-          active_count: 0,
-          open_alert_count: 0,
-          product: 'Superforecasting Agent',
-          questions: [],
-          review_queue_count: 0
-        }
-      })
-    )
+    const rpc = rpcReply('forecast.dashboard', {
+      summary: {
+        active_count: 0,
+        open_alert_count: 0,
+        product: 'Superforecasting Agent',
+        questions: [],
+        review_queue_count: 0
+      }
+    })
 
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
@@ -495,22 +499,20 @@ describe('createSlashHandler', () => {
   })
 
   it('routes /ledger views to the native forecast ledger panel', async () => {
-    const rpc = vi.fn(() =>
-      Promise.resolve({
-        summary: {
-          active_count: 1,
-          evidence_status: {
-            gaps: ['live_scored_forecasts'],
-            verdict: 'insufficient_live_evidence'
-          },
-          open_alert_count: 0,
-          product: 'Superforecasting Agent',
-          questions: [{ id: 'fq_cpi', probability: 0.61, title: 'Will the CPI release exceed consensus?' }],
-          review_queue: [],
-          review_queue_count: 0
-        }
-      })
-    )
+    const rpc = rpcReply('forecast.dashboard', {
+      summary: {
+        active_count: 1,
+        evidence_status: {
+          gaps: ['live_scored_forecasts'],
+          verdict: 'insufficient_live_evidence'
+        },
+        open_alert_count: 0,
+        product: 'Superforecasting Agent',
+        questions: [{ id: 'fq_cpi', probability: 0.61, title: 'Will the CPI release exceed consensus?' }],
+        review_queue: [],
+        review_queue_count: 0
+      }
+    })
 
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
@@ -528,22 +530,20 @@ describe('createSlashHandler', () => {
   })
 
   it('routes numeric forecast view aliases as portable shortcut fallbacks', async () => {
-    const rpc = vi.fn(() =>
-      Promise.resolve({
-        summary: {
-          active_count: 1,
-          evidence_status: {
-            gaps: ['live_scored_forecasts'],
-            verdict: 'insufficient_live_evidence'
-          },
-          open_alert_count: 0,
-          product: 'Superforecasting Agent',
-          questions: [{ id: 'fq_cpi', probability: 0.61, title: 'Will the CPI release exceed consensus?' }],
-          review_queue: [],
-          review_queue_count: 0
-        }
-      })
-    )
+    const rpc = rpcReply('forecast.dashboard', {
+      summary: {
+        active_count: 1,
+        evidence_status: {
+          gaps: ['live_scored_forecasts'],
+          verdict: 'insufficient_live_evidence'
+        },
+        open_alert_count: 0,
+        product: 'Superforecasting Agent',
+        questions: [{ id: 'fq_cpi', probability: 0.61, title: 'Will the CPI release exceed consensus?' }],
+        review_queue: [],
+        review_queue_count: 0
+      }
+    })
 
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
@@ -558,25 +558,23 @@ describe('createSlashHandler', () => {
   })
 
   it('routes /forecast lifecycle subcommands to the forecast command RPC', async () => {
-    const rpc = vi.fn((method: string) => {
-      if (method === 'forecast.command') {
-        return Promise.resolve({ code: 0, output: 'created forecast question fq_123' })
-      }
-
-      if (method === 'forecast.dashboard') {
-        return Promise.resolve({
-          summary: {
-            active_count: 2,
-            open_alert_count: 1,
-            product: 'Superforecasting Agent',
-            questions: [],
-            review_queue_count: 1
-          }
+    const rpc = rpcProvider(
+      new RpcFixtures()
+        .handle('forecast.command', () => {
+          return Promise.resolve({ code: 0, output: 'created forecast question fq_123' })
         })
-      }
-
-      return Promise.resolve({})
-    })
+        .handle('forecast.dashboard', () => {
+          return Promise.resolve({
+            summary: {
+              active_count: 2,
+              open_alert_count: 1,
+              product: 'Superforecasting Agent',
+              questions: [],
+              review_queue_count: 1
+            }
+          })
+        })
+    )
 
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
@@ -602,7 +600,7 @@ describe('createSlashHandler', () => {
     ['/resolve fq_example --outcome true', 'resolve', 'fq_example --outcome true'],
     ['/forecast resolve fq_example --outcome false', 'resolve', 'fq_example --outcome false']
   ])('routes %s through the shared application operation', async (command, operation, arg) => {
-    const rpc = vi.fn(() => Promise.resolve({ code: 0, output: 'operation complete' }))
+    const rpc = rpcReply('forecast.operation', { code: 0, data: null, output: 'operation complete' })
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)(command)).toBe(true)
@@ -612,7 +610,7 @@ describe('createSlashHandler', () => {
   })
 
   it('routes a natural-language /forecast new to the agent instead of the argparse CLI', () => {
-    const rpc = vi.fn(() => Promise.resolve({}))
+    const rpc = rpcProvider()
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/forecast new will inflation exceed 3% by year end?')).toBe(true)
@@ -635,7 +633,7 @@ describe('createSlashHandler', () => {
   })
 
   it('keeps /forecast new on the deterministic CLI when --resolution-criteria is supplied', () => {
-    const rpc = vi.fn(() => Promise.resolve({ code: 0, output: 'created forecast question fq_z' }))
+    const rpc = rpcReply('forecast.command', { code: 0, output: 'created forecast question fq_z' })
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/forecast new "Will X?" --resolution-criteria "Resolved by source"')).toBe(true)
@@ -654,7 +652,7 @@ describe('createSlashHandler', () => {
   })
 
   it('routes /api-key (bare, list, set, unset) to the api-key CLI subcommand', () => {
-    const rpc = vi.fn(() => Promise.resolve({ code: 0, output: 'PROVIDER ...' }))
+    const rpc = rpcReply('forecast.command', { code: 0, output: 'PROVIDER ...' })
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
     const handle = createSlashHandler(ctx)
     // Bare /api-key defaults to `list` so the user always sees what's set.
@@ -672,13 +670,11 @@ describe('createSlashHandler', () => {
   })
 
   it('routes forecast-native review shortcuts to the shared operation RPC', async () => {
-    const rpc = vi.fn((method: string) => {
-      if (method === 'forecast.operation') {
-        return Promise.resolve({ code: 0, output: 'No forecasts need review.' })
-      }
-
-      return Promise.resolve({})
-    })
+    const rpc = rpcProvider(
+      new RpcFixtures().handle('forecast.operation', () => {
+        return Promise.resolve({ code: 0, data: null, output: 'No forecasts need review.' })
+      })
+    )
 
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
@@ -691,7 +687,12 @@ describe('createSlashHandler', () => {
   })
 
   it('routes forecast lifecycle shortcuts to the forecast command RPC', () => {
-    const rpc = vi.fn(() => Promise.resolve({ code: 0, output: 'ok' }))
+    const rpc = rpcProvider(
+      new RpcFixtures()
+        .handle('forecast.command', () => ({ code: 0, output: 'ok' }))
+        .handle('forecast.operation', () => ({ code: 0, data: null, output: 'ok' }))
+    )
+
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
     const handler = createSlashHandler(ctx)
 
@@ -736,7 +737,7 @@ describe('createSlashHandler', () => {
   })
 
   it('opens the native calibration view for /calibration --visual without touching the CLI', () => {
-    const rpc = vi.fn(() => Promise.resolve({ code: 0, output: 'count: 12' }))
+    const rpc = rpcReply('forecast.command', { code: 0, output: 'count: 12' })
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
     const handle = createSlashHandler(ctx)
 
@@ -753,7 +754,7 @@ describe('createSlashHandler', () => {
   })
 
   it('routes forecast-native analytics shortcuts with args', async () => {
-    const rpc = vi.fn(() => Promise.resolve({ code: 0, output: 'count: 12' }))
+    const rpc = rpcReply('forecast.command', { code: 0, output: 'count: 12' })
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/calibration')).toBe(true)
@@ -827,7 +828,7 @@ describe('createSlashHandler', () => {
     const ctx = buildCtx({
       gateway: {
         ...buildGateway(),
-        rpc: vi.fn(() => Promise.resolve({ value: 'x-model' }))
+        rpc: rpcReply('config.set', { value: 'x-model' })
       }
     })
 
@@ -845,7 +846,7 @@ describe('createSlashHandler', () => {
     const ctx = buildCtx({
       gateway: {
         ...buildGateway(),
-        rpc: vi.fn(() => Promise.resolve({ value: 'anthropic/claude-sonnet-4.6' }))
+        rpc: rpcReply('config.set', { value: 'anthropic/claude-sonnet-4.6' })
       }
     })
 
@@ -877,7 +878,7 @@ describe('createSlashHandler', () => {
     const ctx = buildCtx({
       gateway: {
         ...buildGateway(),
-        rpc: vi.fn(() => Promise.resolve({ value: 'hide' }))
+        rpc: rpcReply('config.set', { value: 'hide' })
       }
     })
 
@@ -984,17 +985,15 @@ describe('createSlashHandler', () => {
   })
 
   it('reloads skills in the live gateway and refreshes the catalog', async () => {
-    const rpc = vi.fn((method: string) => {
-      if (method === 'skills.reload') {
-        return Promise.resolve({ output: '42 skill(s) available' })
-      }
-
-      if (method === 'commands.catalog') {
-        return Promise.resolve({ canon: { '/new-skill': '/new-skill' }, pairs: [['/new-skill', 'demo']] })
-      }
-
-      return Promise.resolve({})
-    })
+    const rpc = rpcProvider(
+      new RpcFixtures()
+        .handle('skills.reload', () => {
+          return Promise.resolve({ result: {}, output: '42 skill(s) available' })
+        })
+        .handle('commands.catalog', () => {
+          return Promise.resolve({ canon: { '/new-skill': '/new-skill' }, pairs: [['/new-skill', 'demo']] })
+        })
+    )
 
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
@@ -1016,7 +1015,7 @@ describe('createSlashHandler', () => {
   // while push-to-talk still fires the old one until the next mtime
   // poll (~5s).
   it('/voice status renders the gateway record_key and pushes it into frontend state', async () => {
-    const rpc = vi.fn(() => Promise.resolve({ enabled: true, record_key: 'ctrl+space', tts: false }))
+    const rpc = rpcReply('voice.toggle', { enabled: true, record_key: 'ctrl+space', tts: false })
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/voice status')).toBe(true)
@@ -1029,7 +1028,7 @@ describe('createSlashHandler', () => {
   })
 
   it('/voice on renders the configured binding for the start/stop hint', async () => {
-    const rpc = vi.fn(() => Promise.resolve({ enabled: true, record_key: 'alt+r', tts: false }))
+    const rpc = rpcReply('voice.toggle', { enabled: true, record_key: 'alt+r', tts: false })
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/voice on')).toBe(true)
@@ -1041,7 +1040,7 @@ describe('createSlashHandler', () => {
   })
 
   it('/voice falls back to Ctrl+B when the gateway response omits record_key', async () => {
-    const rpc = vi.fn(() => Promise.resolve({ enabled: false, tts: false }))
+    const rpc = rpcReply('voice.toggle', { enabled: false, tts: false })
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/voice status')).toBe(true)
@@ -1056,7 +1055,7 @@ describe('createSlashHandler', () => {
   // Ctrl+B. The label still renders the default for display; the
   // frontend state keeps whatever was last authoritatively set.
   it('/voice tts without record_key does not clobber cached frontend binding', async () => {
-    const rpc = vi.fn(() => Promise.resolve({ enabled: true, tts: true }))
+    const rpc = rpcReply('voice.toggle', { enabled: true, tts: true })
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/voice tts')).toBe(true)
@@ -1138,7 +1137,15 @@ describe('createSlashHandler', () => {
     ['/busy status', 'config.get', { key: 'busy' }],
     ['/indicator', 'config.get', { key: 'indicator' }]
   ])('routes %s through native RPC (no slash worker)', (command, method, params) => {
-    const rpc = vi.fn(() => Promise.resolve({}))
+    const rpc = rpcProvider(
+      new RpcFixtures()
+        .handle('browser.manage', () => ({}))
+        .handle('reload.mcp', () => ({}))
+        .handle('reload.env', () => ({}))
+        .handle('slash.exec', () => ({}))
+        .handle('config.get', () => ({}))
+    )
+
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)(command)).toBe(true)
@@ -1147,16 +1154,14 @@ describe('createSlashHandler', () => {
   })
 
   it('renders browser connect progress messages from the gateway', async () => {
-    const rpc = vi.fn(() =>
-      Promise.resolve({
-        connected: false,
-        messages: [
-          "Chromium-family browser isn't running with remote debugging — attempting to launch...",
-          'Browser not connected — start a Chromium-family browser with remote debugging and retry /browser connect'
-        ],
-        url: 'http://127.0.0.1:9222'
-      })
-    )
+    const rpc = rpcReply('browser.manage', {
+      connected: false,
+      messages: [
+        "Chromium-family browser isn't running with remote debugging — attempting to launch...",
+        'Browser not connected — start a Chromium-family browser with remote debugging and retry /browser connect'
+      ],
+      url: 'http://127.0.0.1:9222'
+    })
 
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
@@ -1178,7 +1183,7 @@ describe('createSlashHandler', () => {
 
   it('routes /rollback through native RPC when a session is active', () => {
     patchUiState({ sid: 'sid-abc' })
-    const rpc = vi.fn(() => Promise.resolve({}))
+    const rpc = rpcReply('rollback.list', {})
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/rollback')).toBe(true)
@@ -1187,7 +1192,7 @@ describe('createSlashHandler', () => {
   })
 
   it('hot-swaps the live indicator when /indicator <style> succeeds', async () => {
-    const rpc = vi.fn(() => Promise.resolve({ value: 'markers' }))
+    const rpc = rpcReply('config.set', { value: 'markers' })
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/indicator markers')).toBe(true)
@@ -1196,7 +1201,7 @@ describe('createSlashHandler', () => {
   })
 
   it('accepts the legacy kaomoji indicator name as a markers alias', async () => {
-    const rpc = vi.fn(() => Promise.resolve({ value: 'markers' }))
+    const rpc = rpcReply('config.set', { value: 'markers' })
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/indicator kaomoji')).toBe(true)
@@ -1205,7 +1210,7 @@ describe('createSlashHandler', () => {
   })
 
   it('rejects unknown indicator styles before hitting the gateway', () => {
-    const rpc = vi.fn(() => Promise.resolve({}))
+    const rpc = rpcProvider()
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/indicator sparkle')).toBe(true)
@@ -1214,37 +1219,39 @@ describe('createSlashHandler', () => {
   })
 
   it('drops stale native command output after a newer slash', async () => {
-    let resolveLate: (v: { output?: string }) => void
+    let resolveLate: (v: CommandDispatchResponse) => void = () => {
+      throw new Error('No pending command')
+    }
+
     let slashExecCalls = 0
 
     const ctx = buildCtx({
       gateway: {
         gw: {
+          ...buildGateway().gw,
           getLogTail: vi.fn(() => ''),
-          request: vi.fn((method: string) => {
-            if (method === 'command.dispatch') {
+          request: rpcProvider(
+            new RpcFixtures().handle('command.dispatch', () => {
               slashExecCalls += 1
 
               if (slashExecCalls === 1) {
-                return new Promise<{ output?: string }>(res => {
+                return new Promise<CommandDispatchResponse>(res => {
                   resolveLate = res
                 })
               }
 
               return Promise.resolve({ type: 'exec', output: 'fresh' })
-            }
-
-            return Promise.resolve({})
-          })
+            })
+          )
         },
-        rpc: vi.fn(() => Promise.resolve({}))
+        rpc: rpcProvider()
       }
     })
 
     const h = createSlashHandler(ctx)
     expect(h('/slow')).toBe(true)
     expect(h('/later')).toBe(true)
-    resolveLate!({ output: 'too late' })
+    resolveLate({ type: 'exec', output: 'too late' })
     await vi.waitFor(() => {
       expect(ctx.transcript.sys).toHaveBeenCalled()
     })
@@ -1284,53 +1291,70 @@ describe('createSlashHandler', () => {
   })
 
   it('runs a native command without contacting the legacy dispatcher', async () => {
-    const ctx = buildCtx()
-    ctx.gateway.gw.request.mockResolvedValue({ type: 'exec', output: 'native result' })
+    const ctx = buildCtx({
+      gateway: buildGateway(
+        new RpcFixtures().handle('command.dispatch', () => ({ type: 'exec', output: 'native result' }))
+      )
+    })
+
     createSlashHandler(ctx)('/fixture-command')
     await vi.waitFor(() => expect(ctx.transcript.sys).toHaveBeenCalledWith('native result'))
     expect(ctx.gateway.gw.request).toHaveBeenCalledTimes(1)
-    expect(ctx.gateway.gw.request).toHaveBeenCalledWith('command.dispatch', expect.objectContaining({ name: 'fixture-command' }))
+    expect(ctx.gateway.gw.request).toHaveBeenCalledWith(
+      'command.dispatch',
+      expect.objectContaining({ name: 'fixture-command' })
+    )
   })
 
   it('uses the legacy worker once after an explicit native handoff', async () => {
-    const ctx = buildCtx()
-    ctx.gateway.gw.request
-      .mockRejectedValueOnce(new GatewayRpcError('handoff', 4018, { dispatch: 'slash.exec', execution_started: false }))
-      .mockResolvedValueOnce({ output: 'legacy result' })
+    const ctx = buildCtx({
+      gateway: buildGateway(
+        new RpcFixtures()
+          .handle('command.dispatch', () => {
+            throw new GatewayRpcError('handoff', 4018, { dispatch: 'slash.exec', execution_started: false })
+          })
+          .handle('slash.exec', () => ({ output: 'legacy result' }))
+      )
+    })
+
     createSlashHandler(ctx)('/fixture-legacy')
     await vi.waitFor(() => expect(ctx.transcript.sys).toHaveBeenCalledWith('legacy result'))
     expect(ctx.gateway.gw.request.mock.calls.map(call => call[0])).toEqual(['command.dispatch', 'slash.exec'])
   })
 
   it('rejects a terminal handoff unsupported by this client without redispatching', async () => {
-    const ctx = buildCtx()
-    vi.mocked(ctx.gateway.gw.request).mockResolvedValue({ type: 'alias', target: 'future-command' })
+    const ctx = buildCtx({
+      gateway: buildGateway(
+        new RpcFixtures().handle('command.dispatch', () => ({ type: 'alias', target: 'future-command' }))
+      )
+    })
+
     createSlashHandler(ctx)('/future-command')
-    await Promise.resolve()
-    expect(ctx.gateway.gw.request).toHaveBeenCalledTimes(1)
-    expect(ctx.transcript.sys).toHaveBeenCalledWith(
-      '/future-command requires a terminal command handler unavailable in this client'
+    await vi.waitFor(() =>
+      expect(ctx.transcript.sys).toHaveBeenCalledWith(
+        '/future-command requires a terminal command handler unavailable in this client'
+      )
     )
+    expect(ctx.gateway.gw.request).toHaveBeenCalledTimes(1)
   })
 
   it('dispatches command.dispatch with typed alias', async () => {
     const ctx = buildCtx({
       gateway: {
         gw: {
+          ...buildGateway().gw,
           getLogTail: vi.fn(() => ''),
-          request: vi.fn((method: string) => {
-            if (method === 'slash.exec') {
-              return Promise.reject(new GatewayRpcError('configured command: use command.dispatch', 4018))
-            }
-
-            if (method === 'command.dispatch') {
-              return Promise.resolve({ type: 'alias', target: 'help' })
-            }
-
-            return Promise.resolve({})
-          })
+          request: rpcProvider(
+            new RpcFixtures()
+              .handle('slash.exec', () => {
+                return Promise.reject(new GatewayRpcError('configured command: use command.dispatch', 4018))
+              })
+              .handle('command.dispatch', () => {
+                return Promise.resolve({ type: 'alias', target: 'help' })
+              })
+          )
         },
-        rpc: vi.fn(() => Promise.resolve({}))
+        rpc: rpcProvider()
       }
     })
 
@@ -1345,6 +1369,10 @@ describe('createSlashHandler', () => {
     const ctx = buildCtx({
       local: {
         catalog: {
+          categories: [],
+          pairs: [],
+          skillCount: 0,
+          sub: {},
           canon: {
             '/h': '/help',
             '/help': '/help'
@@ -1361,6 +1389,10 @@ describe('createSlashHandler', () => {
     const ctx = buildCtx({
       local: {
         catalog: {
+          categories: [],
+          pairs: [],
+          skillCount: 0,
+          sub: {},
           canon: {
             '/profile': '/profile',
             '/plugins': '/plugins'
@@ -1384,6 +1416,10 @@ describe('createSlashHandler', () => {
     const ctx = buildCtx({
       local: {
         catalog: {
+          categories: [],
+          pairs: [],
+          skillCount: 0,
+          sub: {},
           canon: {
             '/status': '/status',
             '/statusbar': '/statusbar'
@@ -1403,20 +1439,19 @@ describe('createSlashHandler', () => {
     const ctx = buildCtx({
       gateway: {
         gw: {
+          ...buildGateway().gw,
           getLogTail: vi.fn(() => ''),
-          request: vi.fn((method: string) => {
-            if (method === 'slash.exec') {
-              return Promise.reject(new GatewayRpcError('skill command: use command.dispatch', 4018))
-            }
-
-            if (method === 'command.dispatch') {
-              return Promise.resolve({ type: 'skill', message: skillMessage, name: 'hermes-agent-dev' })
-            }
-
-            return Promise.resolve({})
-          })
+          request: rpcProvider(
+            new RpcFixtures()
+              .handle('slash.exec', () => {
+                return Promise.reject(new GatewayRpcError('skill command: use command.dispatch', 4018))
+              })
+              .handle('command.dispatch', () => {
+                return Promise.resolve({ type: 'skill', message: skillMessage, name: 'hermes-agent-dev' })
+              })
+          )
         },
-        rpc: vi.fn(() => Promise.resolve({}))
+        rpc: rpcProvider()
       }
     })
 
@@ -1467,7 +1502,7 @@ describe('createSlashHandler', () => {
   it('/save forwards to session.save RPC and reports the returned file', async () => {
     patchUiState({ sid: 'sid-abc' })
 
-    const rpc = vi.fn(() => Promise.resolve({ file: '/tmp/forecast_transcript_test.json' }))
+    const rpc = rpcReply('session.save', { file: '/tmp/forecast_transcript_test.json' })
 
     const ctx = buildCtx({
       gateway: { ...buildGateway(), rpc },
@@ -1494,7 +1529,7 @@ describe('createSlashHandler', () => {
   })
 
   it('/save reports empty state without calling the RPC or slash worker', () => {
-    const rpc = vi.fn(() => Promise.resolve({}))
+    const rpc = rpcProvider()
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     createSlashHandler(ctx)('/save')
@@ -1506,7 +1541,7 @@ describe('createSlashHandler', () => {
 
   it('/save without an active session tells the user instead of hitting the RPC', () => {
     // sid stays null (default) but there IS visible forecast transcript
-    const rpc = vi.fn(() => Promise.resolve({}))
+    const rpc = rpcProvider()
 
     const ctx = buildCtx({
       gateway: { ...buildGateway(), rpc },
@@ -1523,7 +1558,7 @@ describe('createSlashHandler', () => {
   })
 
   it('/rollback without an active session tells the user instead of hitting the RPC', () => {
-    const rpc = vi.fn(() => Promise.resolve({}))
+    const rpc = rpcProvider()
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     createSlashHandler(ctx)('/rollback')
@@ -1534,7 +1569,7 @@ describe('createSlashHandler', () => {
 
   it('/title <name> uses session.title RPC and bypasses slash.exec', async () => {
     patchUiState({ sid: 'sid-abc' })
-    const rpc = vi.fn(() => Promise.resolve({ pending: false, title: 'my title' }))
+    const rpc = rpcReply('session.title', { pending: false, title: 'my title' })
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     createSlashHandler(ctx)('/title my title')
@@ -1548,7 +1583,7 @@ describe('createSlashHandler', () => {
 
   it('/title with no args fetches and displays the current title', async () => {
     patchUiState({ sid: 'sid-abc' })
-    const rpc = vi.fn(() => Promise.resolve({ title: 'demo title' }))
+    const rpc = rpcReply('session.title', { title: 'demo title' })
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     createSlashHandler(ctx)('/title')
@@ -1561,7 +1596,7 @@ describe('createSlashHandler', () => {
   })
 })
 
-const buildCtx = (overrides: Partial<Ctx> = {}): Ctx => ({
+const buildCtx = (overrides: Omit<Partial<Ctx>, 'local'> & { local?: Partial<Ctx['local']> } = {}): Ctx => ({
   ...overrides,
   slashFlightRef: overrides.slashFlightRef ?? { current: 0 },
   composer: { ...buildComposer(), ...overrides.composer },
@@ -1581,18 +1616,20 @@ const buildComposer = () => ({
   setInput: vi.fn()
 })
 
-const buildGateway = () => ({
+const buildGateway = (requests = new RpcFixtures()) => ({
   gw: {
     getLogTail: vi.fn(() => ''),
     kill: vi.fn(),
-    request: vi.fn(() => Promise.resolve({}))
+    isRestartPending: vi.fn(() => false),
+    reconnect: vi.fn(),
+    request: rpcProvider(requests)
   },
-  rpc: vi.fn(() => Promise.resolve({}))
+  rpc: rpcProvider(new RpcFixtures().handle('config.set', () => ({})).handle('config.get', () => ({})))
 })
 
 const buildLocal = () => ({
-  catalog: null,
-  getHistoryItems: vi.fn(() => []),
+  catalog: null as SlashHandlerContext['local']['catalog'],
+  getHistoryItems: vi.fn<() => Msg[]>(() => []),
   getLastUserMsg: vi.fn(() => ''),
   maybeWarn: vi.fn(),
   setCatalog: vi.fn()
@@ -1632,7 +1669,6 @@ interface Ctx {
   transcript: ReturnType<typeof buildTranscript>
   voice: ReturnType<typeof buildVoice>
 }
-
 
 it('sends the current session owner with delegation pause', () => {
   patchUiState({ sid: 'desk' })
