@@ -1041,6 +1041,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
                 help="Override OpenFEMA Disaster Declarations endpoint for tests or private mirrors",
             )
         if name == "fred":
+            adapter.add_argument("--request-id", help="Stable retry identifier; reuse only for the same import input")
             adapter.add_argument(
                 "--api-base-url",
                 default="https://fred.stlouisfed.org/graph/fredgraph.csv",
@@ -5308,7 +5309,7 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
         from forecasting.sources.requests import CommonSourceOptions
 
         request = FredImportRequest(
-            source=args.source, question_id=args.question_id,
+            source=args.source, question_id=args.question_id, request_id=args.request_id,
             options=CommonSourceOptions.read({
                 "limit": args.limit, "since": args.since, "api_base_url": args.api_base_url,
             }),

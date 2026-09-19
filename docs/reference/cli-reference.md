@@ -1331,6 +1331,7 @@ The full `forecast` command tree — **95 top-level commands** (also reachable a
 | `--claim-type` |  |
 | `--reliability` |  |
 | `--relevance` |  |
+| `--request-id` | Stable retry identifier; reuse only for the same import input |
 | `--api-base-url` | Override FRED CSV endpoint for tests or private mirrors |
 | `--resolution-criteria` |  |
 | `--close-time` |  |

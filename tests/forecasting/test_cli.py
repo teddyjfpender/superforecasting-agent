@@ -15975,3 +15975,30 @@ def test_quorum_config_shows_panel_keys(capsys):
     assert "QUORUM_PANEL_MODELS" in out
     assert "openai-codex:gpt-5.5" in out
     assert "QUORUM_JUDGE_MODEL" in out
+
+
+def test_fred_import_request_id_replays_without_refetch(tmp_path, capsys, monkeypatch):
+    ledger = ForecastLedger(tmp_path / "imports.db")
+    question = ledger.create_question(
+        title="Will FRED evidence import work?",
+        resolution_criteria="Resolved yes if FRED evidence is imported.",
+    )
+    calls = []
+
+    def fetch(source, **kwargs):
+        calls.append(source)
+        return [FredObservation(
+            series_id="UNRATE", observation_date="2026-01-01", value=4.2,
+            published_at=None, source_url=None, source_name="FRED",
+            entry_id="UNRATE:2026-01-01", raw={},
+        )]
+
+    monkeypatch.setattr("forecasting.cli.load_fred_observations", fetch)
+    args = ["forecast", "--db", str(tmp_path / "imports.db"), "import", "fred", "UNRATE",
+            "--question", question.id, "--request-id", "operator-retry"]
+    _run(_parser(), args)
+    first = capsys.readouterr().out
+    _run(_parser(), args)
+    assert capsys.readouterr().out == first
+    assert calls == ["UNRATE"]
+    assert len(ledger.list_evidence(question.id)) == 1

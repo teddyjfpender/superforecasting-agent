@@ -178,3 +178,19 @@ batch rejection, provider defaults and injected mid-write rollback. Python stati
 checks and all 76 import contracts pass. Cross-request idempotent receipts, typed
 import plans and prediction-market/remaining CLI adapter migrations are still open;
 this first migration does not close W03 or W04. No full suite was run.
+
+## Durable FRED import receipts
+
+The shared request now accepts a stable optional request ID; the CLI exposes it as
+`--request-id`. Evidence IDs and a versioned request digest commit in the same ledger
+transaction. Acknowledged retries return the same evidence without network access;
+conflicting input fails before fetch. Concurrent callers recheck inside the commit
+transaction so one receipt and one batch win. Legacy calls without IDs remain
+independent imports; a fresh acquisition intentionally needs a new ID.
+
+Fourteen focused tests passed, including CLI replay, conflicting reuse, concurrent
+callers, receipt-write rollback and subprocess exit immediately after commit. Python
+lint/types and all 76 import contracts passed; the CLI-reference freshness check
+correctly required regeneration for the new option, and the reference was regenerated.
+This closes retry receipts for this operation, not the broader typed-plan/provider
+migration requirements. No full suite was run.

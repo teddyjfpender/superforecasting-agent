@@ -52,6 +52,14 @@ are not promoted to publication timestamps. Raw evidence claims remain distinct
 from verified settlement bindings.
 
 Identical entries within a batch collapse; conflicting entries fail the batch.
-Cross-request import receipts and additional adapter migrations remain tracked in
-the engineering plan. Tests: `tests/application/test_source_imports.py` and the
+FRED imports accept an optional stable `request_id`. Evidence IDs and the request
+digest are committed atomically; replay returns the original evidence without
+refetching, and different input under the same ID fails. Additional adapter
+migrations remain tracked in the engineering plan. Tests: `tests/application/test_source_imports.py` and the
 FRED CLI import regression in `tests/forecasting/test_cli.py`.
+
+For CLI retries, supply `forecast import fred UNRATE --question <id> --request-id <id>`.
+Reuse the ID only to retry the same operation and options, including after a lost
+acknowledgement. Use a new ID for a deliberate fresh acquisition. Without an ID,
+legacy invocations remain independent imports. Receipts live in the profile ledger;
+missing referenced evidence fails closed rather than silently importing again.
