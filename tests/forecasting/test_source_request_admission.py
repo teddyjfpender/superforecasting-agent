@@ -88,3 +88,14 @@ def test_errors_do_not_echo_endpoint_credentials():
         )
     assert str(error.value) == "invalid source options: api_base_url"
     assert "token-secret" not in str(error.value)
+
+
+def test_annual_since_is_forwarded_without_inventing_a_day(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        dispatch,
+        "load_imf_datamapper_observations",
+        lambda source, **args: calls.append(args) or [],
+    )
+    dispatch.load_source_items("imf", "NGDP_RPCH/USA", {"since": "2023"})
+    assert calls[0]["since"] == "2023"

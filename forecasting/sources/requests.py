@@ -28,6 +28,14 @@ class CommonSourceOptions(BaseModel):
     def validate_since(cls, value: str | None) -> str | None:
         if value is None:
             return None
+        # Annual adapters accept a year without inventing a day or timezone.
+        if (
+            len(value) == 4
+            and value.isascii()
+            and value.isdigit()
+            and 1 <= int(value) <= 9999
+        ):
+            return value
         try:
             date.fromisoformat(value)
         except ValueError:

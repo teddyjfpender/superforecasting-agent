@@ -537,3 +537,25 @@ required W02 work. No full Python or TUI suite was run.
   interview tests passed. Canonical static checks passed. No full suite was run.
 - Native Windows/Linux repetition and the remaining W08 scenario matrix are still
   unqualified; this receipt does not imply cross-platform completion.
+
+### W03/W04 — preserve source publication semantics across ingestion paths
+
+- Found that the shared tool/watch mapper undid parser safeguards: an explicitly
+  absent publication date fell back to an economic observation date. It now honors
+  explicit absence and removes event occurrence, observation/forecast validity,
+  deadline, execution-start, refresh and geometry dates from generic publication
+  fallback. Actual record-update fields remain available for revision provenance.
+  Raw observation fields are retained; no historical ledger rows are rewritten.
+- Added cross-consumer evidence proving the FRED CLI application owner, tool import
+  and watched acquisition preserve unknown publication, plus pure fixtures for seven
+  adapter families and unclassified event dates. Updated assertions that incorrectly
+  expected weather validity/geometry times or execution/earthquake start times to be
+  publication of the current record.
+- The focused checks also exposed two adjacent admission inconsistencies. Annual
+  IMF `since` values now pass common admission unchanged, without fabricating a day;
+  provider-specific date constraints remain with the adapter. Watched acquisition
+  rejects non-mapping options before invoking its fetch capability.
+- Verification: 147 focused source publication/admission, tool, refresh and watched
+  ownership tests passed in 7.23 seconds. Canonical Python static checks passed.
+  No full suite ran. Full typed acquisition/import parity remains outstanding;
+  this fixes a concrete semantic divergence rather than claiming W03 complete.

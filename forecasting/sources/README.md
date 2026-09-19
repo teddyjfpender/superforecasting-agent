@@ -91,3 +91,18 @@ permit documented event/closed-market fallback. Nonempty mismatches, duplicate
 matches and malformed records fail closed. Identity checks run before parsing
 probabilities or ledger writes. See `test_polymarket_identity_contract.py` for
 ordering, ambiguity, selector admission and CLI no-write regressions.
+
+## Publication and observation times
+
+`evidence.source_evidence_payload` preserves the parser's explicit `published_at`,
+including `None`. It must not fill an unknown publication time from observation
+periods, weather validity dates, event occurrence, deadlines or execution start times.
+Adapters without a publication field may use supported record-update/release fields;
+the original source fields remain in `metadata.adapter_item`. An explicit caller
+availability time is separate from publication and never proves source verification.
+Without either, ledger ingestion supplies the first-seen availability time.
+
+This policy applies to tool imports and watched refreshes. The FRED application/CLI
+owner also preserves unknown publication. Regression coverage lives in
+`tests/forecasting/test_source_publication_provenance.py`. Existing ledger rows are
+not silently re-dated: reviewing older records requires an audited correction.

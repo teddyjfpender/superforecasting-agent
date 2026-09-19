@@ -49,39 +49,33 @@ def source_evidence_payload(
     )
     claim = args.get("claim") or _adapter_claim(adapter_name, data)
     summary = args.get("summary") or _adapter_summary(data)
-    published_at = _first_adapter_value(
-        data,
-        "published_at",
-        "revised_at",
-        "latest_upload_at",
-        "uploaded_at",
-        "time",
-        "latest_geometry_at",
-        "sent_at",
-        "last_update_posted_at",
-        "last_update_submitted_at",
-        "latest_submission_status_date",
-        "declaration_date",
-        "last_refresh",
-        "run_started_at",
-        "updated_at",
-        "last_updated",
-        "metadata_modified",
-        "metadata_created",
-        "observation_time",
-        "committed_at",
-        "authored_at",
-        "created_at",
-        "date_added",
-        "due_date",
-        "date_filed",
-        "date_argued",
-        "observation_date",
-        "observation_time",
-        "forecast_time",
-        "forecast_date",
-        "filing_date",
-    )
+    # A parser's explicit absence is authoritative. Economic observation periods,
+    # forecast validity dates and retrieval times cannot fill a publication gap.
+    if "published_at" in data:
+        published_at = _first_adapter_value(data, "published_at")
+    else:
+        published_at = _first_adapter_value(
+            data,
+            "published_at",
+            "revised_at",
+            "latest_upload_at",
+            "uploaded_at",
+            "sent_at",
+            "last_update_posted_at",
+            "last_update_submitted_at",
+            "latest_submission_status_date",
+            "declaration_date",
+            "updated_at",
+            "last_updated",
+            "metadata_modified",
+            "metadata_created",
+            "committed_at",
+            "authored_at",
+            "created_at",
+            "date_added",
+            "date_filed",
+            "filing_date",
+        )
     available_at = args.get("available_at") or published_at
     source_name = args.get("source_name") or data.get("source_name") or adapter_name
     metadata = {

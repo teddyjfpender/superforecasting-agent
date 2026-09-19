@@ -510,7 +510,7 @@ def test_forecast_ledger_tool_imports_airquality_forecasts(tmp_path, monkeypatch
     evidence = imported["imported"][0]["evidence"]
     assert evidence["source_type"] == "adapter:airquality"
     assert evidence["source_name"] == "Open-Meteo Air Quality"
-    assert evidence["published_at"] == "2026-05-21T00:00:00Z"
+    assert evidence["published_at"] is None  # observation/validity time is not publication
     assert evidence["claim_type"] == "estimate"
     assert evidence["claim"].startswith("Open-Meteo air quality forecast for 37.77,-122.42")
     assert evidence["metadata"]["adapter"] == "airquality"
@@ -722,7 +722,7 @@ def test_forecast_ledger_tool_imports_weatherhistory_observations(tmp_path, monk
     evidence = imported["imported"][0]["evidence"]
     assert evidence["source_type"] == "adapter:weatherhistory"
     assert evidence["source_name"] == "Open-Meteo Historical Weather"
-    assert evidence["published_at"] == "2026-05-20T00:00:00Z"
+    assert evidence["published_at"] is None  # observation/validity time is not publication
     assert evidence["claim_type"] == "fact"
     assert evidence["claim"].startswith("Open-Meteo historical weather for 37.77,-122.42")
     assert evidence["metadata"]["adapter"] == "weatherhistory"
@@ -3292,7 +3292,7 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
     assert githubactions_evidence["source_type"] == "adapter:githubactions"
     assert githubactions_evidence["source_name"] == "GitHub"
     assert githubactions_evidence["claim"] == "GitHub Actions run acme/desk 987: success"
-    assert githubactions_evidence["published_at"] == "2026-05-21T10:30:00Z"
+    assert githubactions_evidence["published_at"] == "2026-05-21T11:00:00Z"  # current result, not execution start
     assert githubactions_evidence["metadata"]["adapter"] == "githubactions"
     assert githubactions_evidence["metadata"]["adapter_item"]["run_id"] == "987"
 
@@ -4415,7 +4415,7 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
     assert usgs_evidence["source_type"] == "adapter:usgs"
     assert usgs_evidence["source_name"] == "USGS Earthquake Catalog"
     assert usgs_evidence["claim"] == "USGS earthquake M5.7: Testville"
-    assert usgs_evidence["published_at"] == "2026-05-20T00:00:00Z"
+    assert usgs_evidence["published_at"] == "2026-05-20T01:00:00Z"  # record revision, not earthquake occurrence
     assert usgs_evidence["metadata"]["adapter"] == "usgs"
     assert usgs_evidence["metadata"]["adapter_item"]["event_id"] == "us7000abcd"
 
@@ -4465,7 +4465,7 @@ def test_forecast_ledger_tool_imports_structured_source_evidence(tmp_path, monke
     assert eonet_evidence["source_type"] == "adapter:eonet"
     assert eonet_evidence["source_name"] == "NASA EONET"
     assert eonet_evidence["claim"] == "NASA EONET Wildfires: Wildfire near Test Ridge"
-    assert eonet_evidence["published_at"] == "2026-05-20T00:00:00Z"
+    assert eonet_evidence["published_at"] is None  # geometry date is not publication
     assert eonet_evidence["metadata"]["adapter"] == "eonet"
     assert eonet_evidence["metadata"]["adapter_item"]["event_id"] == "EONET_123"
 

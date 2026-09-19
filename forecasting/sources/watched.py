@@ -38,6 +38,8 @@ def fetch_watched_source_payloads(
             adapter_args = spec.get("args")
             if adapter_args is None:
                 adapter_args = {}
+            if not isinstance(adapter_args, dict):
+                raise ValueError("source options must be a mapping")
             # Admission sees the original types; display labels must not turn an
             # invalid source identity or options list into a valid request.
             items = load_source_items(
