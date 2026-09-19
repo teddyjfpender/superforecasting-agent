@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import { $chordPending, armChord, clearChord } from '../app/chordStore.js'
 import { activeNavKey, canOpenGlobalOverlay, navPatchFor, selectNavView } from '../app/navRoutes.js'
-import { $overlayState, resetOverlayState } from '../app/overlayStore.js'
+import { $overlayState, patchOverlayState, resetOverlayState } from '../app/overlayStore.js'
 import { rankSlashCommands } from '../components/paletteOverlay.js'
 import { PER_VIEW_GUIDE, PER_VIEW_KEYS, resolveViewChord, VIEW_CHORDS } from '../content/keymaps.js'
 
@@ -356,11 +356,11 @@ describe('canOpenGlobalOverlay', () => {
   })
 
   it('is suppressed while a blocking prompt or floating picker owns the keyboard', () => {
-    $overlayState.set({ ...$overlayState.get(), modelPicker: true })
+    patchOverlayState({ ...$overlayState.get(), modelPicker: true })
     expect(canOpenGlobalOverlay($overlayState.get())).toBe(false)
 
     resetOverlayState()
-    $overlayState.set({ ...$overlayState.get(), palette: true })
+    patchOverlayState({ ...$overlayState.get(), palette: true })
     expect(canOpenGlobalOverlay($overlayState.get())).toBe(false)
   })
 })

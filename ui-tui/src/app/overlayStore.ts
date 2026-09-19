@@ -1,8 +1,9 @@
-import { atom, computed } from 'nanostores'
+import { atom, computed, type ReadableAtom } from 'nanostores'
 
 import { $quickMessage } from '../lib/messagingState.js'
 
 import type { OverlayState } from './interfaces.js'
+import { navigationState, primaryFlags, type PrimaryRoute, resolvePrimaryRoute } from './primaryRoute.js'
 
 const buildOverlayState = (): OverlayState => ({
   agents: false,
@@ -39,7 +40,18 @@ const buildOverlayState = (): OverlayState => ({
   themePicker: false
 })
 
-export const $overlayState = atom<OverlayState>(buildOverlayState())
+const $navigationState = atom(navigationState(buildOverlayState(), 'home'))
+export const $primaryRoute: ReadableAtom<PrimaryRoute> = computed($navigationState, state => state.primaryRoute)
+
+/** Legacy flags are a read-only projection of the route and independent overlays. */
+export const $overlayState: ReadableAtom<OverlayState> = computed(
+  $navigationState, state => ({ ...state.overlays, ...primaryFlags(state.primaryRoute) })
+)
+
+function setOverlayState(next: OverlayState) {
+  const route = resolvePrimaryRoute($overlayState.get(), next)
+  $navigationState.set(navigationState(next, route))
+}
 
 /**
  * The BLOCKING prompt overlays.  They are MUTUALLY EXCLUSIVE — at most one
@@ -172,7 +184,7 @@ export const patchOverlayState = (next: Partial<OverlayState> | ((state: Overlay
     resolved = { ...resolved, ...pendingPrompts.shift() }
   }
 
-  $overlayState.set(resolved)
+  setOverlayState(resolved)
 }
 
 /**
@@ -203,7 +215,7 @@ export const raisePrompt = (patch: Partial<OverlayState>) => {
 export const resetOverlayState = () => {
   $quickMessage.set(null)
   pendingPrompts = []
-  $overlayState.set(buildOverlayState())
+  setOverlayState(buildOverlayState())
 }
 
 /**
@@ -218,7 +230,7 @@ export const resetFlowOverlays = () => {
   // A turn ended/was interrupted: any prompts buffered behind the (now-cleared)
   // active prompt belong to that turn and must NOT pop back up afterwards.
   pendingPrompts = []
-  $overlayState.set({
+  setOverlayState({
     ...buildOverlayState(),
     agents: $overlayState.get().agents,
     agentsInitialHistoryIndex: $overlayState.get().agentsInitialHistoryIndex,
@@ -240,6 +252,9 @@ export const resetFlowOverlays = () => {
     newsInitialQuery: $overlayState.get().newsInitialQuery,
     obsidian: $overlayState.get().obsidian,
     onboard: $overlayState.get().onboard,
+    onboardQuestionId: $overlayState.get().onboardQuestionId,
+    onboardSeed: $overlayState.get().onboardSeed,
+    onboardInterviewId: $overlayState.get().onboardInterviewId,
     picker: $overlayState.get().picker,
     skillsHub: $overlayState.get().skillsHub,
     themePicker: $overlayState.get().themePicker

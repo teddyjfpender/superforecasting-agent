@@ -750,3 +750,30 @@ race: Ctrl+C arrived after READY was printed but before entering the exception h
 The readiness marker now lives inside the protected block; the expected interrupt is
 caught regardless of whether input() has started. The test's interrupt assertion and
 parent-signal preservation assertion remain intact. Native repeat is still required.
+
+## Authoritative TUI primary route
+
+W06 now stores one primary route with independent overlay state in one navigation
+atom. Existing view flags are read-only projections; legacy patch callers pass
+through one admission function. Switching views publishes atomically, ambiguous
+multi-view requests fail before mutation, and a late dismissal of the preceding
+view cannot close its replacement. Navigation labels and flags share one registry.
+Prompt FIFO and modal behavior remain separate. The app directory README now
+specifies these ownership and reset contracts rather than listing bare filenames.
+
+A concrete questionnaire reset bug was also fixed: turn completion retained the
+open questionnaire flag but cleared its interview/question/seed identity. Flow
+reset now preserves that identity; full reset still clears it and returns Home.
+
+83 focused TUI tests passed across route/reset, prompt FIFO, global chrome, modal
+input gating and shortcut truthfulness. Production and test TypeScript checks
+passed. An authored-source AST scan found no object literals selecting multiple
+primary flags simultaneously. Remaining W06 focus/controller and epoch work is
+not declared complete by this tranche.
+
+Native run 35460460902 passed bounded quality integration and both Linux jobs.
+Its macOS Node 22 job received an unexpected `ok` completion in the independent
+background-result test; its Windows Node 22 nested-process test reached the
+kernel execution deadline. These are distinct unresolved qualification failures,
+not evidence that all platforms have passed. Logs were retrieved for follow-up;
+no full suite was run to investigate them.
