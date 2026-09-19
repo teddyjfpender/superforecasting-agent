@@ -345,6 +345,7 @@
     "tui_gateway/command_routes.py",
     "tui_gateway/commands_rpc.py",
     "tui_gateway/completion_rpc.py",
+    "tui_gateway/cron_skills_rpc.py",
     "tui_gateway/rpc_binding.py",
     "tui_gateway/server_requests.py",
     "tui_gateway/tools_rpc.py",

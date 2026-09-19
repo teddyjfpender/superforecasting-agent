@@ -1,57 +1,128 @@
-"""Gateway RPCs for the cron + skills family — carved from server.py.
+"""Cron and skills RPC adapters bound to an admitted host and explicit services."""
 
-Moves-only slice of the Wave-2 server family-split (docs/plans/2026-07-10-
-modularization-program.md §W2.a). ``cron.manage`` (schedule CRUD),
-``skills.manage`` (enable/disable) and ``skills.reload`` (in-process reload)
-moved here VERBATIM. The local ``method`` decorator captures handlers into
-``_REGISTRARS``; ``server.py`` calls :func:`register` (at load AND on
-``importlib.reload`` — the pm_rpc/jobs_rpc sibling contract), replaying them
-through the REAL ``server.method`` so registration lands in the same
-``tui_gateway.server._methods`` dispatch dict — wire byte-identical.
-
-No monkeypatched names are referenced: ``_ok`` / ``_err`` stay in core and are
-imported bare (no ``_core.`` hop).
-"""
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
 
-from tui_gateway.server import _err, _ok
+from superforecasting_agent.hosting.runtime import RuntimeHost
+from tui_gateway.rpc_binding import ErrorResponse, Registrar, bind_host_handler
 
-_REGISTRARS: list[tuple[str, str, object]] = []
+
+@dataclass(frozen=True)
+class CronSkillsContext:
+    host: Callable[[], RuntimeHost]
+    cron: Callable[..., str]
+    available_skills: Callable[[], dict[str, list[str]]]
+    search: Callable[[str], list[dict[str, str]]]
+    install: Callable[[str], bool]
+    browse: Callable[[int, int], dict[str, Any]]
+    inspect: Callable[[str], dict[str, Any] | None]
+    reload: Callable[[], dict[str, Any]]
+    ok: Callable[[Any, dict[str, Any]], dict[str, Any]]
+    error: ErrorResponse
 
 
-def method(name: str):
-    def _dec(fn):
-        _REGISTRARS.append(("method", name, fn))
-        return fn
-
-    return _dec
+def register_handlers(context: CronSkillsContext, *, method: Registrar) -> None:
+    for name, handler in (
+        ("cron.manage", manage_cron),
+        ("skills.manage", manage_skills),
+        ("skills.reload", reload_skills),
+    ):
+        method(name)(
+            bind_host_handler(
+                context.host,
+                context.error,
+                lambda owner, rid, params, operation=handler: operation(
+                    context, rid, params
+                ),
+            )
+        )
 
 
 def register(server) -> None:
-    """(Re-)register every carved cron/skills handler into ``server._methods``."""
-    global _err, _ok
-    _err = server._err
-    _ok = server._ok
-    for kind, name, fn in _REGISTRARS:
-        getattr(server, kind)(name)(fn)
+    """Compose legacy singleton services; independent hosts inject scoped services."""
+    context = CronSkillsContext(
+        host=lambda: server._host,
+        cron=_cron,
+        available_skills=_available,
+        search=_search,
+        install=_install,
+        browse=_browse,
+        inspect=_inspect,
+        reload=_reload,
+        ok=lambda rid, result: server._ok(rid, result),
+        error=lambda rid, code, message: server._err(rid, code, message),
+    )
+    register_handlers(context, method=server.method)
 
 
-__all__ = ["register"]
-@method("cron.manage")
-def _(rid, params: dict) -> dict:
+def _search(query: str) -> list[dict[str, str]]:
+    from tools.skills_hub import GitHubAuth, create_source_router, unified_search
+
+    results = (
+        unified_search(
+            query, create_source_router(GitHubAuth()), source_filter="all", limit=20
+        )
+        or []
+    )
+    return [
+        {"name": result.name, "description": result.description} for result in results
+    ]
+
+
+def _install(query: str) -> bool:
+    from rich.console import Console
+
+    from superforecasting_agent.runtime.skills_hub import do_install
+
+    return do_install(query, skip_confirm=True, console=Console(quiet=True)) is True
+
+
+def _cron(**kwargs: Any) -> str:
+    from tools.cronjob_tools import cronjob
+
+    return cronjob(**kwargs)
+
+
+def _available() -> dict[str, list[str]]:
+    from superforecasting_agent.runtime.banner import get_available_skills
+
+    return get_available_skills()
+
+
+def _browse(page: int, size: int) -> dict[str, Any]:
+    from superforecasting_agent.runtime.skills_hub import browse_skills
+
+    return browse_skills(page=page, page_size=size)
+
+
+def _inspect(query: str) -> dict[str, Any] | None:
+    from superforecasting_agent.runtime.skills_hub import inspect_skill
+
+    return inspect_skill(query)
+
+
+def _reload() -> dict[str, Any]:
+    from agent.skill_commands import reload_skills
+
+    return reload_skills()
+
+
+def manage_cron(
+    context: CronSkillsContext, rid: Any, params: dict[str, Any]
+) -> dict[str, Any]:
     action, jid = params.get("action", "list"), params.get("name", "")
     try:
-        from tools.cronjob_tools import cronjob
-
         if action == "list":
-            return _ok(rid, json.loads(cronjob(action="list")))
+            return context.ok(rid, json.loads(context.cron(action="list")))
         if action == "add":
-            return _ok(
+            return context.ok(
                 rid,
                 json.loads(
-                    cronjob(
+                    context.cron(
                         action="create",
                         name=jid,
                         schedule=params.get("schedule", ""),
@@ -60,77 +131,40 @@ def _(rid, params: dict) -> dict:
                 ),
             )
         if action in {"remove", "pause", "resume"}:
-            return _ok(rid, json.loads(cronjob(action=action, job_id=jid)))
-        return _err(rid, 4016, f"unknown cron action: {action}")
+            return context.ok(rid, json.loads(context.cron(action=action, job_id=jid)))
+        return context.error(rid, 4016, f"unknown cron action: {action}")
     except Exception as e:
-        return _err(rid, 5023, str(e))
+        return context.error(rid, 5023, str(e))
 
 
-@method("skills.manage")
-def _(rid, params: dict) -> dict:
+def manage_skills(
+    context: CronSkillsContext, rid: Any, params: dict[str, Any]
+) -> dict[str, Any]:
     action, query = params.get("action", "list"), params.get("query", "")
     try:
         if action == "list":
-            from superforecasting_agent.runtime.banner import get_available_skills
-
-            return _ok(rid, {"skills": get_available_skills()})
+            return context.ok(rid, {"skills": context.available_skills()})
         if action == "search":
-            from tools.skills_hub import (
-                GitHubAuth,
-                create_source_router,
-                unified_search,
-            )
-
-            raw = (
-                unified_search(
-                    query,
-                    create_source_router(GitHubAuth()),
-                    source_filter="all",
-                    limit=20,
-                )
-                or []
-            )
-            return _ok(
-                rid,
-                {
-                    "results": [
-                        {"name": r.name, "description": r.description} for r in raw
-                    ]
-                },
-            )
+            return context.ok(rid, {"results": context.search(query)})
         if action == "install":
-            from superforecasting_agent.runtime.skills_hub import do_install
-
-            class _Q:
-                def print(self, *a, **k):
-                    pass
-
-            installed = do_install(query, skip_confirm=True, console=_Q())
-            return _ok(rid, {"installed": installed is True, "name": query})
+            return context.ok(rid, {"installed": context.install(query), "name": query})
         if action == "browse":
-            from superforecasting_agent.runtime.skills_hub import browse_skills
-
             pg = int(params.get("page", 0) or 0) or (
                 int(query) if query.isdigit() else 1
             )
-            return _ok(
-                rid, browse_skills(page=pg, page_size=int(params.get("page_size", 20)))
-            )
+            return context.ok(rid, context.browse(pg, int(params.get("page_size", 20))))
         if action == "inspect":
-            from superforecasting_agent.runtime.skills_hub import inspect_skill
-
-            return _ok(rid, {"info": inspect_skill(query) or {}})
-        return _err(rid, 4017, f"unknown skills action: {action}")
+            return context.ok(rid, {"info": context.inspect(query) or {}})
+        return context.error(rid, 4017, f"unknown skills action: {action}")
     except Exception as e:
-        return _err(rid, 5024, str(e))
+        return context.error(rid, 5024, str(e))
 
 
-@method("skills.reload")
-def _(rid, params: dict) -> dict:
+def reload_skills(
+    context: CronSkillsContext, rid: Any, params: dict[str, Any]
+) -> dict[str, Any]:
     try:
-        from agent.skill_commands import reload_skills
-
-        result = reload_skills()
+        result = context.reload()
         added = result.get("added") or []
         removed = result.get("removed") or []
         total = int(result.get("total") or 0)
@@ -145,6 +179,6 @@ def _(rid, params: dict) -> dict:
             lines.append("Removed skills:")
             lines.extend(f"  - {item.get('name', '')}" for item in removed)
         lines.append(f"{total} skill(s) available")
-        return _ok(rid, {"output": "\n".join(lines), "result": result})
+        return context.ok(rid, {"output": "\n".join(lines), "result": result})
     except Exception as e:
-        return _err(rid, 5025, str(e))
+        return context.error(rid, 5025, str(e))

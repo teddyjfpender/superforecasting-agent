@@ -19,8 +19,8 @@ and installed-artifact requirements still need evidence at the appropriate miles
 | W02 quality ratchet | In progress | Production and test TypeScript checks are blocking; initial fixture diagnostics resolved. Protected strict-file inventory and measured coverage added. Push/CI integration tier aligned. Inherited diagnostic baselines and further ownership coverage remain. |
 | W03 typed sources | In progress | Common option admission, atomic FRED and prediction-market import owners/receipts, exact market identity/units, and publication provenance fixes implemented. Remaining adapters and cross-interface plan/error parity need migration. |
 | W04 CLI parity | In progress | Provider selection compatibility, slash capability/alias checks and shared command contexts improved. Complete command inventory, machine-output contracts and parity remain. |
-| W05 runtime ownership | In progress | Command/tool RPC families have explicit contexts and host admission; threaded forkpty replaced with owned posix_spawn startup and signal defaults. Other global RPC families and full lifecycle-phase ownership remain. |
-| W06 TUI state | In progress | Job attachment epochs and stale-response admission improved; renderer fixtures are typed. Route/modal/focus ownership and broader asynchronous view behavior remain. |
+| W05 runtime ownership | In progress | Command/tool/completion/cron-skills RPC families have explicit contexts and host admission; threaded forkpty replaced with owned posix_spawn startup and signal defaults. Other global RPC families and full lifecycle-phase ownership remain. |
+| W06 TUI state | In progress | Job attachment epochs, stale-response admission and one authoritative primary route implemented; renderer fixtures are typed. Modal/focus ownership and broader asynchronous view behavior remain. |
 | W07 questionnaire durability/lessons | In progress | Durable unconfirmed buffers, atomic confirmation, frozen update/general new-question lessons, typed provenance API and TUI reader implemented. Real reconnect/conflict/process-death scenarios pass locally. Remaining acceptance review and native repetition are required. |
 | W08 integrated recovery | In progress | Canonical bounded tier passes locally, including real Ink/gateway/SQLite/dashboard questionnaire recovery. Full specified scenario matrix and supported-platform repeatability remain. |
 | W09 merged product qualification | Pending | All specification criteria remain, subject to focused-test policy above. |
@@ -800,3 +800,24 @@ The preceding primary-route commit passed a frozen affected selection of 60 file
 780 TUI tests, plus canonical static checks and bounded integration (47 Python /
 59 TUI). The push hook independently expanded to the full suite and refused it;
 a documented logged exception honored the user's focused-test-only requirement.
+
+
+## Cron and skills RPC host context
+
+W05 now admits cron/skills work through an explicit `CronSkillsContext`, reusing
+shared host admission. Registration captures services and response builders instead
+of rebinding module globals or importing the singleton server. Lazy singleton
+composition preserves current service lookup and startup behavior; independently
+owned hosts inject their own scoped services. Existing wire results and domain
+error codes remain. This does not claim profile isolation or cancellation for the
+legacy process-global skills cache and I/O services.
+
+The family now participates in complete selected lint/format/type checks, the
+protected strict inventory and the no-singleton-server import contract. Typing
+exposed the unsupported quiet-console stub used by installation; a real Rich quiet
+console preserves the noninteractive call without printing progress into RPC stdout.
+
+Focused checks cover independent services, shutdown isolation, active-call draining,
+domain errors, lazy search compatibility, installation results, cron command parity
+and quiet installation output. Native qualification of the previous runtime fixture
+commit continues in run 35461440285; no second run was started for observation latency.

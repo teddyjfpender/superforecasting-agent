@@ -33,7 +33,8 @@ scripts/run_tests.sh tests/tui_gateway/
 Use the canonical runner for Python tests so isolation and environment settings
 match repository policy. Extend a regression around the changed contract; use
 controlled failures for retries, cancellation and interrupted writes. The full
-Python suite is required before pushing.
+Python suite remains a separate qualification tier; pushes use the bounded
+integration tier from `scripts/dev.py`.
 
 Update this guide when entry points or ownership change. See the
 [ownership map](../docs/architecture/ownership-map.md)
@@ -82,3 +83,21 @@ another host's handlers. Path/completer errors retain codes `5021`/`5020`; shutd
 shared host admission. `tests/tui_gateway/test_completion_context.py` covers isolation,
 concurrent paste creation and failure cleanup. The legacy skill discovery callbacks still
 use their existing process profile; independent hosts must supply scoped callbacks.
+
+
+## Cron and skills host ownership
+
+`cron_skills_rpc.CronSkillsContext` injects schedule operations, skill discovery,
+installation, inspection and reload alongside host admission and response builders.
+Use `register_handlers(context, method=...)` for independently owned services.
+Each handler retains its context; registering a second host cannot replace the
+first host's response functions or services. Accepted calls pin their host until
+completion; stopped hosts return `5030` without starting service work. Existing
+cron/skills domain error codes remain unchanged.
+
+The singleton `register(server)` adapter lazily resolves the existing services to
+preserve startup and reload behavior. Those services still use the active process
+profile and skill cache; independent profiles must inject scoped implementations.
+This does not make all legacy skill services multi-host or add I/O cancellation.
+Focused coverage lives in `tests/tui_gateway/test_cron_skills_context.py`, with
+wire and install compatibility checks in the protocol and command-dispatch tests.
