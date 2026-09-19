@@ -889,3 +889,29 @@ Focused real-process tests exercise direct stdin EOF, child stdin EOF and a late
 successful control frame alongside deadline, EOF and nested-process recovery.
 Native confirmation is pending; this is a concrete ownership fix, not yet final
 attribution of the Windows startup failure.
+
+## Native control-input confirmation
+
+Windows/Python 3.11.15 run 35462630197 at 5bc33b1abd passed all four targeted
+cases: nested subprocesses through both interpreter paths, the execution deadline,
+and direct/child stdin isolation with a subsequent RPC frame. The same nested
+variants failed before isolation in run 35462370806. This supports control-pipe
+inheritance as the actionable mechanism; it does not establish an internal OS
+stack trace or attribute the historical SSL crash. Broader final-product native
+qualification still belongs to W09.
+
+## Durable generic source-batch receipts
+
+The existing import-receipt store now records versioned batch input indices via
+an additive column, preserving older FRED/market receipts. Shared batch commits
+accept a bounded request identity, atomically write evidence and receipts, and
+return the same records/indices on exact retries—including anonymous records.
+Changed payload/policy reuse and corrupt index mappings fail closed. Single and
+batch tool consumers expose the option; batch identities are scoped per source
+position. Tools still fetch before commit comparison, explicitly documented in
+the schema/reference; frozen acquisition replay remains separate W03 work.
+
+77 existing source/FRED/market-receipt checks and nine new batch-receipt tests pass.
+The new cases cover concurrent retries, failure after receipt insertion, invalid
+receipt mappings, duplicate-row association and anonymous-record tool parity.
+Strict owner typing passes. No full suite was run.

@@ -88,7 +88,15 @@ class CommonSourceOptions(BaseModel):
 class SourceImportOptions(CommonSourceOptions):
     """Shared import controls; malformed flags must not enable persistence effects."""
 
+    request_id: str | None = Field(default=None, min_length=1, max_length=200)
     metadata: dict[str, Any] | None = None
+
+    @field_validator("request_id")
+    @classmethod
+    def validate_request_id(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("request identity cannot be blank")
+        return value
 
     @field_validator("metadata", mode="before")
     @classmethod

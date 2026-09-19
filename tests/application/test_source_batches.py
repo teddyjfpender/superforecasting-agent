@@ -119,7 +119,7 @@ def test_source_payload_cannot_redirect_ownership_or_enable_fetching(desk, overr
     {'admissible_for_backtests': 'false'}, {'reliability_rating': True}, {'dedupe': 'false'},
     {'metadata': {'entry_id': 'forged'}}, {'metadata': {'adapter_item': {'value': 9}}},
     {'metadata': {'source': 'OTHER'}}, {'metadata': {'adapter': 'OTHER'}},
-    {'metadata': []},
+    {'metadata': []}, {'request_id': ' '}, {'request_id': True},
 ])
 def test_import_admission_rejects_coercion_before_fetch(desk, monkeypatch, surface, invalid):
     from tools import forecasting_tool as tool

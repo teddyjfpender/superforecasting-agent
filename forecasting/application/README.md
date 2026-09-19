@@ -115,3 +115,17 @@ publisher provenance. Explicit `dedupe=False` appends a separate historical reco
 it never replaces an earlier observation. Divergent historical records sharing an
 entry ID remain ambiguous for automatic deduplication. This is conservative import
 admission, not a source-specific first-release/revision settlement policy.
+
+`commit_source_payloads(..., request_id=...)` uses the shared import-receipt store
+for atomic evidence/result receipts. Exact payload and policy retries return the
+original evidence and row indices, including records without provider entry IDs.
+Changed inputs with an existing identity fail; evidence and receipt writes roll
+back together. Versioned batch-index metadata validates complete, disjoint input
+coverage while existing FRED/market receipts migrate additively.
+
+Single-source tools accept `request_id`. Batch tools derive an identity per source
+position from the batch request ID, unless a source provides its own. Keep source
+order and acquired payloads stable for retries. This is commit-level idempotency:
+tools still acquire data before comparison, and changed acquisitions fail instead
+of being silently substituted. Acquisition-level frozen retry remains the typed
+provider operation's responsibility.

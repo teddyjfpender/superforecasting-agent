@@ -1,10 +1,18 @@
 """Atomic persistence for one acquired source batch; no fetching or presentation."""
 
+import hashlib
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from forecasting.application.import_receipts import (
+    BatchIndices,
+    ImportReceipt,
+    ensure_receipts,
+    read_receipt,
+    write_receipt,
+)
 from forecasting.ledger import ForecastLedger
 from forecasting.models import EvidenceItem, parse_timestamp
 
@@ -58,6 +66,7 @@ def commit_source_payloads(
     payloads: Sequence[Mapping[str, Any]],
     *,
     dedupe: bool = True,
+    request_id: str | None = None,
 ) -> SourceBatchResult:
     """Commit all accepted rows or none, using the ledger's evidence validation.
 
@@ -70,7 +79,31 @@ def commit_source_payloads(
         raise ValueError("dedupe must be a boolean")
     if not isinstance(question_id, str) or not question_id.strip():
         raise ValueError("question_id is required")
+    if request_id is not None and (
+        not isinstance(request_id, str)
+        or not request_id.strip()
+        or len(request_id) > 200
+    ):
+        raise ValueError(
+            "request_id must be a nonempty string of at most 200 characters"
+        )
     rows = [dict(payload) for payload in payloads]
+    digest = (
+        hashlib.sha256(
+            json.dumps(
+                {
+                    "operation": "source_batch_v1",
+                    "question_id": question_id,
+                    "dedupe": dedupe,
+                    "rows": rows,
+                },
+                sort_keys=True,
+                allow_nan=False,
+            ).encode()
+        ).hexdigest()
+        if request_id is not None
+        else None
+    )
     for payload in rows:
         # Prevent payloads from redirecting ownership or enabling network effects
         # while holding the SQLite write transaction.
@@ -78,8 +111,30 @@ def commit_source_payloads(
             raise ValueError("source payload cannot override import ownership")
     imported = []
     duplicates = []
-    with ledger.transaction(immediate=True):
+    with ledger.transaction(immediate=True) as conn:
         ledger.get_question(question_id)
+        if request_id is not None and digest is not None:
+            ensure_receipts(conn)
+            prior = read_receipt(
+                ledger,
+                conn,
+                question_id=question_id,
+                request_id=request_id,
+                digest=digest,
+            )
+            if prior is not None:
+                indices = prior.batch_indices
+                if indices is None or len(indices.imported) + len(
+                    indices.duplicates
+                ) != len(rows):
+                    raise ValueError("invalid source batch receipt")
+                return SourceBatchResult(
+                    tuple(
+                        ImportedSourceRow(index, item)
+                        for index, item in zip(indices.imported, prior.evidence)
+                    ),
+                    indices.duplicates,
+                )
         seen: dict[tuple[str, str], set[str]] = {}
         if dedupe:
             for item in ledger.list_evidence(question_id):
@@ -118,4 +173,18 @@ def commit_source_payloads(
             imported.append(ImportedSourceRow(index, evidence))
             if key is not None:
                 seen.setdefault(key, set()).add(provenance)
+        if request_id is not None and digest is not None:
+            write_receipt(
+                conn,
+                question_id=question_id,
+                request_id=request_id,
+                digest=digest,
+                receipt=ImportReceipt(
+                    [row.evidence for row in imported],
+                    [],
+                    BatchIndices(
+                        tuple(row.index for row in imported), tuple(duplicates)
+                    ),
+                ),
+            )
     return SourceBatchResult(tuple(imported), tuple(duplicates))

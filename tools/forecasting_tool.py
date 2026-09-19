@@ -1031,9 +1031,13 @@ FORECAST_LEDGER_SCHEMA = {
                 "type": "boolean",
                 "description": "For import_source_evidence: after a successful import, also attach the (source_type, source) tuple as a watched source on the question so future reruns start from the known identifier instead of broad search. Deduped — a no-op if an identical watch already exists.",
             },
+            "request_id": {
+                "type": "string", "minLength": 1, "maxLength": 200,
+                "description": "Source import retry identity. Exact acquired payload retries return the original evidence, including records without entry IDs; changed payloads with the same identity fail. Batch imports derive an identity per source position unless that source supplies its own request_id. Fetching still occurs before receipt comparison.",
+            },
             "dedupe": {
                 "type": "boolean",
-                "description": "For import_source_evidence / import_source_evidence_batch: skip a reading already imported for this question (same source_type + adapter entry_id), so repeated refreshes don't pile up duplicate observations. Default true; the response reports skipped_duplicates. Free-form notes (no entry_id) are never deduped.",
+                "description": "For import_source_evidence / import_source_evidence_batch: skip a reading already imported for this question (same source_type + adapter entry_id and unchanged provenance; conflicting revisions fail), so repeated refreshes don't pile up duplicate observations. Default true; the response reports skipped_duplicates. Free-form notes (no entry_id) are never deduped.",
             },
             "allow_missing_resolution_source": {"type": "boolean"},
             "enabled": {"type": "boolean"},
@@ -1729,6 +1733,7 @@ def _import_source_evidence_batch_payload(ledger: "ForecastLedger", args: dict[s
     """
 
     import time
+    import hashlib
     from forecasting.application.source_batches import commit_source_payloads
     from forecasting.sources.requests import SourceBatchOptions, SourceIdentity, SourceImportOptions
 
@@ -1750,6 +1755,10 @@ def _import_source_evidence_batch_payload(ledger: "ForecastLedger", args: dict[s
         if not isinstance(spec, dict):
             return {"index": index, "success": False, "error": "each source spec must be an object"}
         merged: dict[str, Any] = {**inherited, **spec}
+        if options.request_id is not None and "request_id" not in merged:
+            merged["request_id"] = "batch:" + hashlib.sha256(
+                json.dumps([options.request_id, index]).encode()
+            ).hexdigest()
         source_type = source = None
         started = time.time()
         try:
@@ -1762,6 +1771,7 @@ def _import_source_evidence_batch_payload(ledger: "ForecastLedger", args: dict[s
                 "index": index, "success": True, "source_type": source_type, "source": source,
                 "items": items, "payloads": payloads, "merged_args": merged,
                 "dedupe": import_options.dedupe, "auto_watch": import_options.auto_watch,
+                "request_id": import_options.request_id,
                 "elapsed_s": round(time.time() - started, 3),
             }
         except Exception as exc:
@@ -1784,7 +1794,7 @@ def _import_source_evidence_batch_payload(ledger: "ForecastLedger", args: dict[s
             results.append({k: fetch[k] for k in ("index", "source_type", "source", "error", "elapsed_s") if k in fetch} | {"success": False, "imported_count": 0})
             continue
         try:
-            committed = commit_source_payloads(ledger, question_id, fetch["payloads"], dedupe=fetch["dedupe"])
+            committed = commit_source_payloads(ledger, question_id, fetch["payloads"], dedupe=fetch["dedupe"], request_id=fetch["request_id"])
         except Exception as exc:
             results.append({
                 "index": fetch["index"], "source_type": fetch["source_type"], "source": fetch["source"],

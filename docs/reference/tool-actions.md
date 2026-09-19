@@ -234,7 +234,7 @@ Every parameter the tool accepts, sorted by name. Descriptions are often prefixe
 | `decision_deadline` | string |  | ISO-8601 timestamp by which the decision must be made. |
 | `decision_owner` | string |  | Who owns the decision this forecast informs (e.g. 'ops lead'). |
 | `declaration_type` | string |  |  |
-| `dedupe` | boolean |  | For import_source_evidence / import_source_evidence_batch: skip a reading already imported for this question (same source_type + adapter entry_id), so repeated refreshes don't pile up duplicate observations. Default true; the response reports skipped_duplicates. Free-form notes (no entry_id) are never deduped. |
+| `dedupe` | boolean |  | For import_source_evidence / import_source_evidence_batch: skip a reading already imported for this question (same source_type + adapter entry_id and unchanged provenance; conflicting revisions fail), so repeated refreshes don't pile up duplicate observations. Default true; the response reports skipped_duplicates. Free-form notes (no entry_id) are never deduped. |
 | `default_forecast_time_cutoff` | string |  |  |
 | `delphi_rounds` | integer | `0`, `1` | start_quorum: 0 (default) runs the standard sealed quorum; 1 adds one anonymous Delphi revision round. |
 | `depth` | string |  | build_model: research depth (quick|standard|deep|ultra). |
@@ -415,6 +415,7 @@ Every parameter the tool accepts, sorted by name. Descriptions are often prefixe
 | `reference_class_refs` | array<string> |  |  |
 | `relevance_rating` | number |  |  |
 | `reliability_rating` | number |  |  |
+| `request_id` | string |  | Source import retry identity. Exact acquired payload retries return the original evidence, including records without entry IDs; changed payloads with the same identity fail. Batch imports derive an identity per source position unless that source supplies its own request_id. Fetching still occurs before receipt comparison. |
 | `require_citations` | boolean |  |  |
 | `require_components` | boolean |  | Refuse to save a live snapshot unless ensemble_components is populated (the pooled drivers — base rate, mechanism, market/crowd, case-specific — each with a stable source slug). Defaults true; stops a serious forecast collapsing into a bare number. Set false or use forecast_origin='exploratory' for scratch work. |
 | `require_decision_readiness` | boolean |  | Refuse to save the snapshot unless the question has decision_owner, action_threshold, and at least one update_trigger. |

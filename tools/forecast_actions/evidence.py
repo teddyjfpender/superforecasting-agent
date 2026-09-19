@@ -75,7 +75,7 @@ def import_source_evidence(args: dict[str, Any], ledger) -> str:
         if _default_prior is not None and payload.get("reliability_rating") is None:
             payload["reliability_rating"] = _default_prior
         payloads.append(payload)
-    result = commit_source_payloads(ledger, question_id, payloads, dedupe=options.dedupe)
+    result = commit_source_payloads(ledger, question_id, payloads, dedupe=options.dedupe, request_id=options.request_id)
     imported = [
         {"evidence": row.evidence.__dict__, "adapter_item": _adapter_item_dict(items[row.index])}
         for row in result.imported
