@@ -18,6 +18,8 @@ import {
 } from '../lib/pmData.js'
 import { filterPMItems, flattenPMRows, pmExpandable, pmRowId, pmSortValue } from '../lib/pmRows.js'
 import { hbar } from '../lib/sparkline.js'
+import type { PmListResponse } from '../protocol/generated.js'
+import { RpcFixtures } from '../testing/rpcFixtures.js'
 
 const outcome = (label: string, prob: number, id: string) => ({
   label,
@@ -208,12 +210,16 @@ describe('applyBookTick / tickEstimate', () => {
 
   it('a non-matching market id is a no-op (same reference)', () => {
     const b = book()
-    expect(applyBookTick(b, { estimate: 0.9, kind: 'book', market_id: 'other', venue: 'polymarket' })).toBe(b)
+    expect(
+      applyBookTick(b, { estimate: 0.9, kind: 'book', payload: {}, market_id: 'other', venue: 'polymarket' })
+    ).toBe(b)
   })
 
   it('ignores a different venue even when the market identifier collides', () => {
     const b = book()
-    expect(applyBookTick(b, { estimate: 0.9, kind: 'book', market_id: b.market_id, venue: 'kalshi' })).toBe(b)
+    expect(
+      applyBookTick(b, { estimate: 0.9, kind: 'book', payload: {}, market_id: b.market_id, venue: 'kalshi' })
+    ).toBe(b)
   })
 
   it('tickEstimate folds ONLY the server estimate — never derived from the raw book', () => {
@@ -239,8 +245,11 @@ describe('applyBookTick / tickEstimate', () => {
       })
     ).toBeNull()
     // …a missing / NaN estimate is null (defensive).
+    // @ts-expect-error Deliberately malformed event: missing required estimate.
     expect(tickEstimate({ kind: 'noise', market_id: 'x', payload: {}, venue: 'polymarket' })).toBeNull()
-    expect(tickEstimate({ estimate: Number.NaN, kind: 'book', market_id: 'x', venue: 'polymarket' })).toBeNull()
+    expect(
+      tickEstimate({ estimate: Number.NaN, kind: 'book', payload: {}, market_id: 'x', venue: 'polymarket' })
+    ).toBeNull()
   })
 })
 
@@ -280,13 +289,33 @@ describe('pmRows flatten / sort / filter', () => {
 })
 
 describe('fetchPMListResult — cold-start staleness', () => {
-  const gwReturning = (result: unknown) => ({ request: async () => result })
+  const gwReturning = (result: PmListResponse) => {
+    const rpc = new RpcFixtures().handle('pm.list', () => result)
+
+    return { request: rpc.request.bind(rpc) }
+  }
 
   it('surfaces the gateway stale marker on a cold cache hit', async () => {
     const gw = gwReturning({ count: 1, events: [categorical()], stale: true })
     const res = await fetchPMListResult(gw)
     expect(res.stale).toBe(true)
     expect(res.items).toHaveLength(1)
+  })
+
+  it('preserves catalog coverage and an unknown catalog refresh time', async () => {
+    const catalog = {
+      ready: true,
+      refreshing: true,
+      events: 3,
+      markets: 7,
+      updated_at: null,
+      venues: { kalshi: 3 }
+    }
+
+    const res = await fetchPMListResult(gwReturning({ count: 0, events: [], catalog }))
+
+    expect(res.catalog).toEqual(catalog)
+    expect(res.stale).toBe(false)
   })
 
   it('defaults stale to false when the marker is absent (warm/fresh tape)', async () => {

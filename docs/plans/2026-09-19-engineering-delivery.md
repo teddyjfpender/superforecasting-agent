@@ -352,3 +352,21 @@ checks passed, including production TypeScript and all 77 import contracts.
 The complete test project now reports 174 diagnostics, down 30; it is still not
 clean or blocking. The large slash fixture and remaining RPC/view fixtures remain
 required W02 work. No full Python or TUI suite was run.
+
+
+### W02 follow-up — prediction-market fixture and response contracts
+
+- Declared optional `pm.list` freshness and catalog status in the Python wire owner,
+  regenerated TypeScript/reference documentation, and removed the client's separate
+  catalog shape. Existing fresh responses may omit these additive fields; an unknown
+  catalog refresh timestamp remains null.
+- Replaced prediction-market list and delayed book/history fakes with method-bound
+  `RpcFixtures`. Selection-race fixtures now carry complete event/distribution/outcome
+  and order-book records, without gateway or DTO casts. The deliberately malformed
+  missing-estimate event remains an explicit compile-negative test.
+- Validation: 44 focused Python protocol/gateway tests passed; 19 focused TUI tests
+  passed; canonical `scripts/dev.py check` passed (including 77 import contracts).
+  Dedicated test-project compilation still fails with 165 diagnostics, down from 174;
+  W02 remains partial and no full suite was run.
+- The protocol round-trip test now excludes unset additive fields, matching the actual
+  gateway's validate-without-rewriting behavior. Required null values are preserved.

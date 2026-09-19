@@ -130,7 +130,8 @@ def test_real_response_frame_is_wire_identical(method):
     spec = RPC_BY_METHOD[method]
     frame = REAL_RESULTS[method]
     model = spec.response.model_validate(frame)  # (manual TS check: matches ../protocol/generated.ts)
-    dumped = model.model_dump(mode="json", exclude_none=spec.exclude_none)
+    # The wrapper validates the original frame; absent additive fields stay absent.
+    dumped = model.model_dump(mode="json", exclude_none=spec.exclude_none, exclude_unset=True)
     assert dumped == frame
 
 
@@ -235,3 +236,36 @@ def test_gateway_wrapper_names_field_on_invalid_payload():
     resp = server.handle_request({"id": "1", "method": "pm.detail", "params": {"venue": "kalshi"}})
     assert resp["error"]["code"] == -32602
     assert "event_id" in resp["error"]["message"]
+
+
+def test_list_freshness_and_catalog_are_declared_and_validated():
+    from protocol.rpc.pm import PmListResponse
+
+    payload = {
+        "events": [],
+        "count": 0,
+        "stale": True,
+        "catalog": {
+            "ready": True,
+            "refreshing": False,
+            "events": 3,
+            "markets": 7,
+            "updated_at": None,
+            "venues": {"kalshi": 3},
+        },
+    }
+    assert (
+        PmListResponse.model_validate(payload, strict=True).model_dump(
+            exclude_unset=True
+        )
+        == payload
+    )
+    assert PmListResponse.model_validate({"events": [], "count": 0}).model_dump(
+        exclude_unset=True
+    ) == {"events": [], "count": 0}
+    with pytest.raises(ValidationError):
+        PmListResponse.model_validate({**payload, "stale": "true"}, strict=True)
+    with pytest.raises(ValidationError):
+        PmListResponse.model_validate(
+            {**payload, "catalog": {**payload["catalog"], "events": "3"}}, strict=True
+        )

@@ -4634,6 +4634,17 @@ _(no fields)_
 | --- | --- |
 | `book` | `PMOrderBookDTO` |
 
+### PmCatalogStatus
+
+| field | type |
+| --- | --- |
+| `events` | `number` |
+| `markets` | `number` |
+| `ready` | `boolean` |
+| `refreshing` | `boolean` |
+| `updated_at` | `number? | null` |
+| `venues` | `Record<string, number>?` |
+
 ### PmDetailRequest
 
 | field | type |
@@ -4680,8 +4691,10 @@ _(no fields)_
 
 | field | type |
 | --- | --- |
+| `catalog` | `PmCatalogStatus?` |
 | `count` | `number` |
 | `events` | `PMListItem[]` |
+| `stale` | `boolean?` |
 
 ### PmStreamStartRequest
 

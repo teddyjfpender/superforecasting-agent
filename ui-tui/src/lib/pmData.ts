@@ -6,6 +6,7 @@ import type { RpcRequest } from '../protocol/generated.js'
 // is a pure consumer: the Python service is the one source of truth, so this
 // module only fetches, normalises light-touch, and formats for display.
 import type {
+  PmCatalogStatus,
   PMEventDTO,
   PMHistoryPointDTO,
   PMListItem,
@@ -54,14 +55,7 @@ export type PMHistoryRange = '1d' | '1w' | 'all'
 // carry their original honest estimates) while a live revalidate is in flight —
 // the UI can show that subtly. `stale` is absent (→ false) on a warm/fresh tape.
 export interface PMListResult {
-  catalog: null | {
-    events: number
-    markets: number
-    ready: boolean
-    refreshing: boolean
-    updated_at?: null | number
-    venues?: Record<string, number>
-  }
+  catalog: null | PmCatalogStatus
   items: PMListItem[]
   stale: boolean
 }
@@ -77,7 +71,7 @@ export async function fetchPMListResult(
     limit: opts.limit ?? 40
   })
 
-  const res = asRpcResult<{ catalog?: PMListResult['catalog']; events?: PMListItem[]; stale?: boolean }>(raw)
+  const res = raw
 
   return {
     catalog: res?.catalog ?? null,

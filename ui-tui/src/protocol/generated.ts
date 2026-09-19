@@ -3573,6 +3573,15 @@ export interface PmBookResponse {
   book: PMOrderBookDTO
 }
 
+export interface PmCatalogStatus {
+  events: number
+  markets: number
+  ready: boolean
+  refreshing: boolean
+  updated_at?: null | number
+  venues?: Record<string, number>
+}
+
 export interface PmDetailRequest {
   event_id: string
   venue: string
@@ -3606,8 +3615,10 @@ export interface PmListRequest {
 }
 
 export interface PmListResponse {
+  catalog?: PmCatalogStatus
   count: number
   events: PMListItem[]
+  stale?: boolean
 }
 
 export interface PmStreamStartRequest {

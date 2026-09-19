@@ -177,11 +177,24 @@ class PmListRequest(WireModel):
         return _lenient_int(value)
 
 
+class PmCatalogStatus(WireModel):
+    """Coverage and refresh state of the cached cross-venue catalog."""
+
+    ready: bool
+    refreshing: bool
+    events: int
+    markets: int
+    updated_at: float | None = wire_optional(nullable=True)
+    venues: dict[str, int] | None = wire_optional()
+
+
 class PmListResponse(WireModel):
     TS_NAME = "PmListResponse"
 
     events: list[PmListItem]
     count: int
+    stale: bool | None = wire_optional()
+    catalog: PmCatalogStatus | None = wire_optional()
 
 
 # ── pm.detail ─────────────────────────────────────────────────────────────────
