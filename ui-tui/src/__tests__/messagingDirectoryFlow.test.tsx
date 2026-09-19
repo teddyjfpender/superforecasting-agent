@@ -122,3 +122,78 @@ it('refreshes names in the real messaging view, opens f search and enters a chat
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+it('retains failed category drafts and cannot redirect them to another chat', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'category-owner-'))
+  vi.stubEnv('SUPERFORECASTING_AGENT_HOME', root)
+  vi.stubEnv('SIGNAL_ACCOUNT', '+15550000999')
+  const { mkdirSync } = await import('node:fs')
+  const { MessagingView } = await import('../components/messagingView.js')
+  const { recordSignalMessage, signalCache, stopSignalReceiver } = await import('../lib/signalLive.js')
+  const { $chatState } = await import('../lib/messagingState.js')
+  const { resetOverlayState } = await import('../app/overlayStore.js')
+  const { Box, render } = await import('@superforecasting/ink')
+  const { DARK_THEME } = await import('../theme.js')
+  const { stripAnsi } = await import('../lib/text.js')
+  resetOverlayState()
+  $chatState.set({})
+  const stdout = new PassThrough()
+  Object.assign(stdout, { columns: 100, rows: 32, isTTY: false })
+  const stdin = new PassThrough()
+  Object.assign(stdin, { isTTY: true, isRaw: false, setRawMode: () => {}, ref: () => stdin, unref: () => stdin })
+  let output = ''
+  stdout.on('data', chunk => { output += String(chunk) })
+
+  const app = await render(<Box height={32} width={100}><MessagingView onClose={() => {}} t={DARK_THEME} /></Box>,
+    { stdout, stdin, patchConsole: false, exitOnCtrlC: false })
+
+  try {
+    recordSignalMessage({ chatId: 'original', author: 'original', text: 'Original chat', timestamp: Date.now(), fromMe: false, attachments: 0 })
+    await waitForText(() => stripAnsi(output), 'Original chat')
+    stdin.write('C')
+    await waitForText(() => stripAnsi(output), 'CHAT CATEGORY')
+    stdin.write('Research')
+    await waitForText(() => stripAnsi(output), 'Research▌')
+    delete signalCache().original
+    recordSignalMessage({ chatId: 'replacement', author: 'replacement', text: 'Replacement chat', timestamp: Date.now() + 1, fromMe: false, attachments: 0 })
+    const destination = join(root, 'messaging_desk.json')
+    mkdirSync(destination)
+    output = ''
+    stdin.write('\r')
+    await waitForText(() => stripAnsi(output), 'Could not save messaging state')
+    expect(stripAnsi(output)).toContain('Research▌')
+    expect($chatState.get().original?.category).toBeUndefined()
+    rmSync(destination, { recursive: true })
+    stdin.write('\r')
+    await vi.waitFor(() => expect($chatState.get().original?.category).toBe('Research'))
+    expect($chatState.get().replacement?.category).toBeUndefined()
+    const { $signalDirectory } = await import('../lib/signalDirectory.js')
+    output = ''
+    stdin.write('c')
+    await waitForText(() => stripAnsi(output), 'Name from')
+    stdin.write('Pinned name')
+    await waitForText(() => stripAnsi(output), 'Pinned name')
+    delete signalCache().replacement
+    recordSignalMessage({ chatId: 'third', author: 'third', text: 'Third chat', timestamp: Date.now() + 2, fromMe: false, attachments: 0 })
+    stdin.write('\r')
+    await vi.waitFor(() => expect($signalDirectory.get().replacement?.name).toBe('Pinned name'))
+    expect($signalDirectory.get().third?.name).not.toBe('Pinned name')
+    output = ''
+    stdin.write('C')
+    await waitForText(() => stripAnsi(output), 'CHAT CATEGORY')
+    stdin.write('qnm')
+    await waitForText(() => stripAnsi(output), 'qnm▌')
+    output = ''
+    stdin.write('\x1b')
+    await waitForText(() => stripAnsi(output), 'New / group')
+    expect($chatState.get().third?.category).toBeUndefined()
+  } finally {
+    app.unmount()
+    app.cleanup()
+    stopSignalReceiver()
+    stdout.destroy()
+    stdin.destroy()
+    vi.unstubAllEnvs()
+    rmSync(root, { recursive: true, force: true })
+  }
+})

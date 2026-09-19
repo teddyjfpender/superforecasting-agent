@@ -173,7 +173,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   const [filter, setFilter] = useState('Inbox')
   const [query, setQuery] = useState('')
   const [searching, setSearching] = useState(false)
-  const [categoryEdit, setCategoryEdit] = useState<string | null>(null)
+  const [categoryEdit, setCategoryEdit] = useState<{ chatId: string; text: string } | null>(null)
   const sendAttempts = useStore($messageSendAttempts)
 
   const filters = [
@@ -211,8 +211,9 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   const [groupMembers, setGroupMembers] = useState<string[]>([])
 
   // Contact card (press c): view + rename the highlighted chat's contact.
-  const [contactView, setContactView] = useState(false)
-  const [editName, setEditName] = useState('')
+  const [contactDraft, setContactDraft] = useState<{ chatId: string; text: string } | null>(null)
+  const contactView = contactDraft !== null
+  const editName = contactDraft?.text ?? ''
 
   // The message cache + unread set live in the app-level singleton receiver
   // (so nothing is lost when this view is closed). Mirror its version into local
@@ -508,13 +509,12 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
       return
     }
 
-    setEditName(contactBook[activeConv.chatId]?.name ?? '')
-    setContactView(true)
+    setContactDraft({ chatId: activeConv.chatId, text: contactBook[activeConv.chatId]?.name ?? '' })
   }
 
   const saveContact = () => {
-    if (activeConv) {
-      const book = upsertContact(contactBook, { chatId: activeConv.chatId, name: editName })
+    if (contactDraft) {
+      const book = upsertContact(contactBook, { chatId: contactDraft.chatId, name: editName })
 
       if (!persistDirectory(book)) {
         setFlash('Could not save contact')
@@ -525,7 +525,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
       setFlash(`contact saved${editName.trim() ? ` · ${editName.trim()}` : ''}`)
     }
 
-    setContactView(false)
+    setContactDraft(null)
   }
 
   // Open a message's first attachment in the OS default app (signal-cli saved
@@ -713,7 +713,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
       // Contact card: edit the saved name for the highlighted chat.
       if (contactView) {
         if (key.escape) {
-          return setContactView(false)
+          return setContactDraft(null)
         }
 
         if (key.return) {
@@ -721,19 +721,44 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
         }
 
         if (key.backspace || key.delete) {
-          return setEditName(s => s.slice(0, -1))
+          return setContactDraft(value => value && ({ ...value, text: value.text.slice(0, -1) }))
         }
 
         if (ch && !key.ctrl && !key.meta) {
           const printable = [...ch].filter(c => c >= ' ').join('')
 
           if (printable) {
-            setEditName(s => s + printable)
+            setContactDraft(value => value && ({ ...value, text: value.text + printable }))
           }
         }
 
         return
       }
+
+      if (categoryEdit !== null) {
+        if (key.escape) {
+          return setCategoryEdit(null)
+        }
+
+        if (key.return) {
+          if (updateChatState(categoryEdit.chatId, { category: categoryEdit.text.trim() })) {
+            setCategoryEdit(null)
+          }
+
+          return
+        }
+
+        if (key.backspace || key.delete) {
+          return setCategoryEdit(v => v && ({ ...v, text: v.text.slice(0, -1) }))
+        }
+
+        if (ch && !key.ctrl && !key.meta) {
+          setCategoryEdit(v => v && ({ ...v, text: (v.text + ch).slice(0, 80) }))
+        }
+
+        return
+      }
+
 
       // Open thread: the composer is always active here (type immediately).
       // Enter sends, arrows/wheel scroll history, Esc returns to the list. All
@@ -766,29 +791,6 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
 
         if (key.ctrl && ch.toLowerCase() === 'o') {
           return openLatestAttachment()
-        }
-
-        return
-      }
-
-      if (categoryEdit !== null) {
-        if (key.escape) {
-          return setCategoryEdit(null)
-        }
-
-        if (key.return && activeConv) {
-          updateChatState(activeConv.chatId, { category: categoryEdit.trim() })
-          setCategoryEdit(null)
-
-          return
-        }
-
-        if (key.backspace || key.delete) {
-          return setCategoryEdit(v => v?.slice(0, -1) || '')
-        }
-
-        if (ch && !key.ctrl && !key.meta) {
-          setCategoryEdit(v => (v + ch).slice(0, 80))
         }
 
         return
@@ -838,7 +840,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
       }
 
       if (ch === 'C' && activeConv) {
-        return setCategoryEdit(desk[activeConv.chatId]?.category || '')
+        return setCategoryEdit({ chatId: activeConv.chatId, text: desk[activeConv.chatId]?.category || '' })
       }
 
       if (key.tab || key.leftArrow || ch === '[' || ch === ']') {
@@ -1044,9 +1046,9 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   // Contact card — an overlay (NOT a body replacement) so the conversation stays
   // visible behind it, consistent with the rest of the views.
   const contactOverlay =
-    contactView && activeConv
+    contactDraft
       ? (() => {
-          const saved = contactBook[activeConv.chatId]
+          const saved = contactBook[contactDraft.chatId]
 
           const row = (label: string, value: string, color = t.color.text) => (
             <Text wrap="truncate-end">
@@ -1083,8 +1085,8 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
                 </Box>
                 {row('Signal', saved?.aliases?.join(' · ') || '')}
                 {row('Name from', saved?.nameSource === 'signal' ? 'Signal profile/contact' : 'Saved local label')}
-                {row('Number', activeConv.chatId.startsWith('group:') ? '' : saved?.number || activeConv.chatId)}
-                {row(activeConv.chatId.startsWith('group:') ? 'Group' : 'Chat id', activeConv.chatId, t.color.muted)}
+                {row('Number', contactDraft.chatId.startsWith('group:') ? '' : saved?.number || contactDraft.chatId)}
+                {row(contactDraft.chatId.startsWith('group:') ? 'Group' : 'Chat id', contactDraft.chatId, t.color.muted)}
                 {row(
                   'Added',
                   saved?.addedAt
@@ -1154,7 +1156,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
             t={t}
             title="CHAT CATEGORY"
           >
-            <Text color={t.color.text}>{categoryEdit}▌</Text>
+            <Text color={t.color.text}>{categoryEdit.text}▌</Text>
           </ModalOverlay>
         )}
         {setup ? setupOverlay : newChat ? newChatOverlay : null}
@@ -1199,7 +1201,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
               <Box
                 key={conv.chatId}
                 onClick={() => {
-                  if (setup || newChat || contactView || globalModal) {
+                  if (setup || newChat || contactView || globalModal || categoryEdit !== null) {
                     return
                   }
 
@@ -1315,7 +1317,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
                   {m.attachments > 0 ? (
                     <Box
                       onClick={() => {
-                        if (!setup && !newChat && !contactView && !globalModal) {
+                        if (!setup && !newChat && !contactView && !globalModal && categoryEdit === null) {
                           openMessageAttachment(m)
                         }
                       }}
@@ -1352,7 +1354,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
       {/* Native bottom composer — sits below the history, doesn't overlap it. */}
       {composing ? (
         <MessageComposer
-          active={!globalModal && !setup && !newChat && !contactView}
+          active={!globalModal && !setup && !newChat && !contactView && categoryEdit === null}
           busy={attempt?.status === 'sending'}
           columns={composerColumns}
           inputRows={inputRows}
@@ -1461,7 +1463,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
           t={t}
           title="CHAT CATEGORY"
         >
-          <Text color={t.color.text}>{categoryEdit}▌</Text>
+          <Text color={t.color.text}>{categoryEdit.text}▌</Text>
         </ModalOverlay>
       )}
       {setup ? setupOverlay : newChat ? newChatOverlay : contactView ? contactOverlay : null}

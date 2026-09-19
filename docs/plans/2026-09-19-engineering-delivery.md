@@ -1103,3 +1103,19 @@ characters, bounded output width/height and a visible short exit hint. Productio
 and test TypeScript checks pass. This does not qualify arbitrary long footer text,
 all form layouts or every modal's keyboard ownership; W06 remains open. No full
 suite ran.
+
+## Messaging editor ownership and failed-save recovery
+
+Category and contact-name drafts now carry their target chat ID instead of using
+the current selection at confirmation. A refreshed/removed conversation cannot
+redirect a draft into another chat. Category saves close only after persistence
+succeeds; storage failures retain editable text. The category editor takes keyboard
+priority over thread composition, and background conversation/attachment/composer
+mouse/input actions are gated while it is open.
+
+Eight focused messaging/directory/contact/send tests and both TypeScript projects
+pass. The real Ink regression injects a failed filesystem save, changes conversation
+history while each editor is open, verifies writes stay with the original IDs, and
+checks printable shortcut letters plus Escape return without saving. The final
+interaction rerun passes both directory cases. No full suite ran. This fixes these
+concrete local modal boundaries; profile-switch admission and other views remain W06.

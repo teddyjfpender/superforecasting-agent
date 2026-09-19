@@ -115,3 +115,11 @@ Title text is clipped by the terminal renderer, preserving wide characters.
 Forms still own their internal compact layout and keyboard/mouse gating; the modal
 does not install a competing input handler. Verify changed consumers with the
 focused modal render tests and the relevant keyboard tests.
+
+### Messaging label editors
+
+Category and contact-name drafts retain the original chat ID throughout editing.
+Confirmation must use that ID even if history refresh changes selection. Keep
+failed saves open with their text intact; close only on successful persistence or
+explicit cancellation. A local editor owns keyboard input and blocks background
+mouse/composer actions. The directory-flow test drives these rules through real Ink.
