@@ -871,3 +871,11 @@ name = "credential services never import runtime or presentation"
 type = "forbidden"
 source_modules = ["superforecasting_agent.credentials"]
 forbidden_modules = ["superforecasting_agent.runtime", "cli", "tui_gateway", "gateway", "forecasting.cli"]
+
+
+[[tool.importlinter.contracts]]
+name = "command RPC handlers do not import the singleton server"
+type = "forbidden"
+source_modules = ["tui_gateway.commands_rpc"]
+forbidden_modules = ["tui_gateway.server"]
+allow_indirect_imports = true

@@ -1012,7 +1012,7 @@ def test_background_curator_remains_owned_until_review_finishes(configure, monke
         assert host.shutdown(0, **shutdown_args) is False
         assert closed == []
         rejected = dispatch('curator', 'run --background')
-        assert rejected['error']['code'] == 5017
+        assert rejected['error']['code'] == 5030  # Host admission rejects before curator dispatch.
         assert calls == [(True, True)]
     finally:
         release.set()

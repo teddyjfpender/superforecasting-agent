@@ -42,3 +42,22 @@ and [engineering backlog](../TODO.md) for cross-package context.
 [↑ Parent directory](../README.md)
 
 Interactive prompts share the correlated request owner in `server_requests.py`. See the [protocol and reconnect contract](../protocol/README.md) for capability negotiation, legacy adapters, cancellation, and reply ownership.
+
+
+## Command host ownership
+
+`commands_rpc.CommandContext` supplies the command family's typed capabilities.
+Use `register_handlers(context, method=..., rpc_validated=...)` for independently
+owned hosts. Each registered handler captures its context and pins its runtime
+host for one invocation. Admission and draining use that host's worker owner;
+stopped hosts return the existing `5030` host-stopping error.
+
+`register(server)` remains the singleton server composition adapter. Its callbacks
+follow that server object's explicit reload behavior, without rebinding globals in
+the command module or redirecting another registration. This does not make the
+whole gateway multi-host: other RPC families and profile-dependent plugin/skill
+services still have separate ownership work. Keep those limitations explicit.
+
+An import contract forbids direct command-handler imports of `tui_gateway.server`.
+Tests in `tests/tui_gateway/test_command_context.py` cover independent registration,
+repeated shutdown, active-call draining and host replacement during a call.

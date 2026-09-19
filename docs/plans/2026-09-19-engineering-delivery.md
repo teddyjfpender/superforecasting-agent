@@ -292,3 +292,27 @@ The CLI reference and application guide are updated. No full suite was run.
 The schema addition is backward-readable by this version; downgrade to older
 positional-insert code needs a pre-upgrade backup. Full typed import plans,
 remaining adapters and all participating gateway/tool parity remain incomplete.
+
+
+## Command RPC context and registration ownership
+
+Removed the command family's server imports, registrar globals and mutable `_core`
+rebinding. Named handlers now capture a typed `CommandContext`; registering a second
+host cannot redirect the first host's callbacks. The direct context registration
+API supports independently supplied capabilities. The singleton adapter preserves
+its explicit server reload behavior. Each invocation pins its runtime host and
+participates in worker admission/draining. Stopped-host requests consistently fail
+with the existing `5030` admission code, before curator-specific dispatch.
+
+179 focused registration/configured-command/goal tests passed after extraction.
+The expanded run passed 181 tests with one new test teardown error (attempting to
+drain before closing admission); after correcting that teardown, all three context
+tests passed. They exercise two real RuntimeHost instances, repeated shutdown,
+barrier-controlled in-flight ownership and host replacement during a call.
+Python static checks passed, with a new direct import boundary bringing the count
+to 77 kept contracts. Pre-commit rechecks the staged result. No full suite was run.
+
+This closes command-family registration rebinding, not all W05 host ownership:
+other carved RPC modules still use the server adapter; singleton callbacks and
+profile-global plugin/skill services require further migration and integrated
+qualification before claiming arbitrary multi-host isolation.

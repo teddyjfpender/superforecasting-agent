@@ -1,8 +1,8 @@
 """Command catalog, guarded execution and command dispatch RPC handlers.
 
-Handlers are registered by server.py at load/reload time. Runtime state is read
-through the server module at call time so reconnects and tests share the current
-host. Validation and reusable operations belong to the application package;
+Handlers capture an explicit command context when registered. Registering another
+host never changes previously registered handlers. The singleton server adapter
+retains its existing reload behavior. Validation and reusable operations belong to the application package;
 this adapter maps their results and errors to the product protocol.
 """
 
@@ -11,47 +11,113 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, replace
+from typing import Any, Protocol
 
-import tui_gateway.server as _core
 from superforecasting_agent.configuration.goals import configured_goal_turn_budget
-from tui_gateway.server import _TUI_EXTRA, _TUI_HIDDEN, _err, _ok
+from superforecasting_agent.hosting.runtime import RuntimeHost
+from superforecasting_agent.hosting.workers import HostStopping
 
-_REGISTRARS: list[tuple[str, str, object]] = []
-
-
-def rpc_validated(name: str):
-    def _dec(fn):
-        _REGISTRARS.append(("rpc_validated", name, fn))
-        return fn
-
-    return _dec
+RpcHandler = Callable[[Any, dict[str, Any]], dict[str, Any]]
+Registrar = Callable[[str], Callable[[RpcHandler], RpcHandler]]
 
 
-def method(name: str):
-    def _dec(fn):
-        _REGISTRARS.append(("method", name, fn))
-        return fn
+class ErrorResponse(Protocol):
+    def __call__(self, rid: Any, code: int, message: str) -> dict[str, Any]: ...
 
-    return _dec
+
+class DatabaseError(Protocol):
+    def __call__(self, rid: Any, *, code: int) -> dict[str, Any]: ...
+
+
+class Handoff(Protocol):
+    def __call__(
+        self, rid: Any, message: str, dispatch: str = ...
+    ) -> dict[str, Any]: ...
+
+
+@dataclass(frozen=True)
+class CommandContext:
+    """Capabilities owned by one command host; no module-global registration state."""
+
+    host: Callable[[], RuntimeHost]
+    load_config: Callable[[], dict[str, Any]]
+    save_config: Callable[[dict[str, Any]], None]
+    database: Callable[[], Any]
+    database_error: DatabaseError
+    ok: Callable[[Any, dict[str, Any]], dict[str, Any]]
+    error: ErrorResponse
+    handoff: Handoff
+    block: Callable[[str, str, dict[str, Any]], str]
+    background_output: Callable[[dict[str, Any], str], str]
+    enabled_toolsets: Callable[[], list[str] | None]
+    methods: Mapping[str, RpcHandler]
+    extra_commands: Sequence[tuple[str, str, str]]
+    hidden_commands: frozenset[str]
+
+
+def register_handlers(
+    context: CommandContext, *, method: Registrar, rpc_validated: Registrar
+) -> None:
+    def bind(
+        handler: Callable[[CommandContext, Any, dict[str, Any]], dict[str, Any]],
+    ) -> RpcHandler:
+        def invoke(rid: Any, params: dict[str, Any]) -> dict[str, Any]:
+            try:
+                owner = context.host()
+                with owner.workers.operation():
+                    # Host replacement during this call cannot move its session
+                    # lookup or worker ownership into the replacement lifetime.
+                    return handler(replace(context, host=lambda: owner), rid, params)
+            except HostStopping:
+                return context.error(rid, 5030, "runtime host is stopping")
+
+        return invoke
+
+    rpc_validated("commands.catalog")(bind(command_catalog))
+    method("cli.exec")(bind(cli_exec))
+    method("command.resolve")(bind(command_resolve))
+    method("command.dispatch")(bind(command_dispatch))
 
 
 def register(server) -> None:
-    """(Re-)register every carved command/cli.exec handler into ``server._methods``."""
-    global _core, _ok, _err, _TUI_EXTRA, _TUI_HIDDEN
-    _core = server
-    _ok = server._ok
-    _err = server._err
-    _TUI_EXTRA = server._TUI_EXTRA
-    _TUI_HIDDEN = server._TUI_HIDDEN
-    for kind, name, fn in _REGISTRARS:
-        getattr(server, kind)(name)(fn)
+    """Adapt the singleton server without changing any previous registration.
+
+    Resolve legacy server callbacks at call time for its explicit reload lifecycle.
+    Independent hosts should pass their own bound capabilities to register_handlers.
+    """
+    context = CommandContext(
+        host=lambda: server._host,
+        load_config=lambda: server._load_cfg(),
+        save_config=lambda cfg: server._save_cfg(cfg),
+        database=lambda: server._get_db(),
+        database_error=lambda rid, *, code: server._db_unavailable_error(
+            rid, code=code
+        ),
+        ok=lambda rid, value: server._ok(rid, value),
+        error=lambda rid, code, message: server._err(rid, code, message),
+        handoff=lambda rid, message, dispatch="command.dispatch": (
+            server._command_handoff(rid, message, dispatch=dispatch)
+        ),
+        block=lambda event, sid, payload: server._block(event, sid, payload),
+        background_output=lambda session, name: server._background_command_output(
+            session, name
+        ),
+        enabled_toolsets=lambda: server._load_enabled_toolsets(),
+        methods=server._methods,
+        extra_commands=tuple(server._TUI_EXTRA),
+        hidden_commands=frozenset(server._TUI_HIDDEN),
+    )
+    register_handlers(context, method=server.method, rpc_validated=server.rpc_validated)
 
 
-__all__ = ["register"]
+__all__ = ["CommandContext", "register", "register_handlers"]
 
 
-@rpc_validated("commands.catalog")
-def _(rid, params: dict) -> dict:
+def command_catalog(
+    context: CommandContext, rid: Any, params: dict[str, Any]
+) -> dict[str, Any]:
     """Registry-backed slash metadata for the TUI — categorized, no aliases."""
     try:
         from superforecasting_agent.application.command_catalog import (
@@ -67,7 +133,7 @@ def _(rid, params: dict) -> dict:
         cat_order: list[str] = []
 
         for cmd in COMMAND_REGISTRY:
-            if cmd.name in _TUI_HIDDEN or cmd.gateway_only:
+            if cmd.name in context.hidden_commands or cmd.gateway_only:
                 continue
 
             c = f"/{cmd.name}"
@@ -84,7 +150,7 @@ def _(rid, params: dict) -> dict:
                 cat_order.append(cat)
             cat_map[cat].append([c, desc])
 
-        for name, desc, cat in _TUI_EXTRA:
+        for name, desc, cat in context.extra_commands:
             all_pairs.append([name, desc])
             if cat not in cat_map:
                 cat_map[cat] = []
@@ -93,7 +159,7 @@ def _(rid, params: dict) -> dict:
 
         warning = ""
         try:
-            qcmds = _core._load_cfg().get("quick_commands", {}) or {}
+            qcmds = context.load_config().get("quick_commands", {}) or {}
             if isinstance(qcmds, dict) and qcmds:
                 bucket = "User commands"
                 if bucket not in cat_map:
@@ -158,7 +224,7 @@ def _(rid, params: dict) -> dict:
             categories.append({"name": cat, "pairs": cat_map[cat]})
 
         sub = {k: v[:] for k, v in SUBCOMMANDS.items()}
-        return _ok(
+        return context.ok(
             rid,
             {
                 "pairs": all_pairs,
@@ -170,7 +236,7 @@ def _(rid, params: dict) -> dict:
             },
         )
     except Exception as e:
-        return _err(rid, 5020, str(e))
+        return context.error(rid, 5020, str(e))
 
 
 def _cli_exec_blocked(argv: list[str]) -> str | None:
@@ -189,15 +255,18 @@ def _cli_exec_blocked(argv: list[str]) -> str | None:
     return None
 
 
-@method("cli.exec")
-def _(rid, params: dict) -> dict:
+def cli_exec(
+    context: CommandContext, rid: Any, params: dict[str, Any]
+) -> dict[str, Any]:
     """Run `python -m superforecasting_agent.runtime.main` with argv; capture stdout/stderr (non-interactive only)."""
     argv = params.get("argv", [])
     if not isinstance(argv, list) or not all(isinstance(x, str) for x in argv):
-        return _err(rid, 4003, "argv must be list[str]")
+        return context.error(rid, 4003, "argv must be list[str]")
     hint = _cli_exec_blocked(argv)
     if hint:
-        return _ok(rid, {"blocked": True, "hint": hint, "code": -1, "output": ""})
+        return context.ok(
+            rid, {"blocked": True, "hint": hint, "code": -1, "output": ""}
+        )
     try:
         r = subprocess.run(
             [sys.executable, "-m", "superforecasting_agent.runtime.main", *argv],
@@ -209,23 +278,24 @@ def _(rid, params: dict) -> dict:
         )
         parts = [r.stdout or "", r.stderr or ""]
         out = "\n".join(p for p in parts if p).strip() or "(no output)"
-        return _ok(
+        return context.ok(
             rid, {"blocked": False, "code": r.returncode, "output": out[:48_000]}
         )
     except subprocess.TimeoutExpired:
-        return _err(rid, 5016, "cli.exec: timeout")
+        return context.error(rid, 5016, "cli.exec: timeout")
     except Exception as e:
-        return _err(rid, 5017, str(e))
+        return context.error(rid, 5017, str(e))
 
 
-@method("command.resolve")
-def _(rid, params: dict) -> dict:
+def command_resolve(
+    context: CommandContext, rid: Any, params: dict[str, Any]
+) -> dict[str, Any]:
     try:
         from superforecasting_agent.application.command_catalog import resolve_command
 
         r = resolve_command(params.get("name", ""))
         if r:
-            return _ok(
+            return context.ok(
                 rid,
                 {
                     "canonical": r.name,
@@ -233,9 +303,9 @@ def _(rid, params: dict) -> dict:
                     "category": r.category,
                 },
             )
-        return _err(rid, 4011, f"unknown command: {params.get('name')}")
+        return context.error(rid, 4011, f"unknown command: {params.get('name')}")
     except Exception as e:
-        return _err(rid, 5012, str(e))
+        return context.error(rid, 5012, str(e))
 
 
 def _resolve_name(name: str) -> str:
@@ -248,19 +318,20 @@ def _resolve_name(name: str) -> str:
         return name
 
 
-@method("command.dispatch")
-def _(rid, params: dict) -> dict:
+def command_dispatch(
+    context: CommandContext, rid: Any, params: dict[str, Any]
+) -> dict[str, Any]:
     from superforecasting_agent.application.command_input import command_fields
 
     try:
         invocation = command_fields(params.get("name", ""), params.get("arg", ""))
     except ValueError as exc:
-        return _err(rid, 4004, str(exc))
+        return context.error(rid, 4004, str(exc))
     name, arg = invocation.name, invocation.arguments
     resolved = _resolve_name(name)
     if resolved != name:
         name = resolved
-    session = _core._host.sessions.get(params.get("session_id", ""))
+    session = context.host().sessions.get(params.get("session_id", ""))
 
     from superforecasting_agent.application.command_catalog import (
         configured_command,
@@ -268,23 +339,23 @@ def _(rid, params: dict) -> dict:
         resolve_command,
     )
 
-    qcmds = _core._load_cfg().get("quick_commands", {})
+    qcmds = context.load_config().get("quick_commands", {})
     try:
         qc = configured_command(name, qcmds)
         if qc is not None and qc["type"] == "alias":
             # The client appends the invocation's original arguments once.
             target = expand_quick_alias(f"/{name}", qcmds)
-            return _ok(rid, {"type": "alias", "target": target.lstrip("/")})
+            return context.ok(rid, {"type": "alias", "target": target.lstrip("/")})
     except ValueError as exc:
-        return _err(rid, 4018, str(exc))
+        return context.error(rid, 4018, str(exc))
     if qc is not None:
         if qc.get("type") == "exec":
             from superforecasting_agent.runtime.quick_commands import execute_sync
 
             result = execute_sync(qc["command"])
             if result.error:
-                return _err(rid, 4018, result.error)
-            return _ok(rid, {"type": "exec", "output": result.message})
+                return context.error(rid, 4018, result.error)
+            return context.ok(rid, {"type": "exec", "output": result.message})
 
     try:
         from superforecasting_agent.runtime.plugins import (
@@ -297,8 +368,8 @@ def _(rid, params: dict) -> dict:
             try:
                 result = resolve_plugin_command_result(handler(arg))
             except Exception as exc:
-                return _err(rid, 5030, f"Plugin command error: {exc}")
-            return _ok(rid, {"type": "plugin", "output": str(result or "")})
+                return context.error(rid, 5030, f"Plugin command error: {exc}")
+            return context.ok(rid, {"type": "plugin", "output": str(result or "")})
     except Exception:
         pass
 
@@ -319,14 +390,16 @@ def _(rid, params: dict) -> dict:
                 task_id=session.get("session_key", "") if session else "",
             )
             if result is None:
-                return _err(rid, 4018, f"Failed to load bundle for /{name}")
+                return context.error(rid, 4018, f"Failed to load bundle for /{name}")
             message, loaded, missing = result
             notice = f"Loading bundle: {bundle['name']} ({len(loaded)} skills)"
             if missing:
                 notice += f"\nSkipped missing skills: {', '.join(missing)}"
-            return _ok(rid, {"type": "send", "notice": notice, "message": message})
+            return context.ok(
+                rid, {"type": "send", "notice": notice, "message": message}
+            )
         except Exception as exc:
-            return _err(rid, 5030, f"Bundle command error: {exc}")
+            return context.error(rid, 5030, f"Bundle command error: {exc}")
 
     try:
         from agent.skill_commands import (
@@ -342,11 +415,11 @@ def _(rid, params: dict) -> dict:
                     key, arg, task_id=session.get("session_key", "") if session else ""
                 )
             except Exception as exc:
-                return _err(rid, 5030, f"Skill command error: {exc}")
+                return context.error(rid, 5030, f"Skill command error: {exc}")
             if not msg:
-                return _err(rid, 4018, f"skill payload missing message: {key}")
+                return context.error(rid, 4018, f"skill payload missing message: {key}")
             if msg:
-                return _ok(
+                return context.ok(
                     rid,
                     {
                         "type": "skill",
@@ -359,31 +432,31 @@ def _(rid, params: dict) -> dict:
 
     if name in {"agents", "stop"}:
         if session is None:
-            return _err(rid, 4001, "session not found")
+            return context.error(rid, 4001, "session not found")
         try:
-            return _ok(
+            return context.ok(
                 rid,
                 {
                     "type": "exec",
-                    "output": _core._background_command_output(session, name),
+                    "output": context.background_output(session, name),
                 },
             )
         except ValueError as exc:
-            return _err(rid, 4004, str(exc))
+            return context.error(rid, 4004, str(exc))
         except Exception as exc:
-            return _err(rid, 5030, f"Background command failed: {exc}")
+            return context.error(rid, 5030, f"Background command failed: {exc}")
 
     if name == "config":
         from superforecasting_agent.application.configuration_view import (
             configuration_text,
         )
 
-        result = _core._methods["config.show"](
+        result = context.methods["config.show"](
             rid, {"session_id": params.get("session_id")}
         )
         if "error" in result:
             return result
-        return _ok(
+        return context.ok(
             rid,
             {
                 "type": "exec",
@@ -397,7 +470,7 @@ def _(rid, params: dict) -> dict:
         def confirm(question):
             if session is None:
                 raise ValueError("Curator confirmation requires an active session")
-            return _core._block(
+            return context.block(
                 "clarify.request",
                 params.get("session_id", ""),
                 {"question": question, "choices": ["No", "Yes"]},
@@ -405,21 +478,21 @@ def _(rid, params: dict) -> dict:
 
         try:
             code, output = command_output(
-                arg, confirm=confirm, workers=_core._host.workers
+                arg, confirm=confirm, workers=context.host().workers
             )
             if code:
-                return _err(rid, 5017, output or "Curator command failed")
-            return _ok(rid, {"type": "exec", "output": output})
+                return context.error(rid, 5017, output or "Curator command failed")
+            return context.ok(rid, {"type": "exec", "output": output})
         except Exception as exc:
-            return _err(rid, 5017, f"Curator command failed: {exc}")
+            return context.error(rid, 5017, f"Curator command failed: {exc}")
 
     if name == "cron":
         from superforecasting_agent.runtime.cron_commands import cron_command_output
 
         try:
-            return _ok(rid, {"type": "exec", "output": cron_command_output(arg)})
+            return context.ok(rid, {"type": "exec", "output": cron_command_output(arg)})
         except Exception as exc:
-            return _err(rid, 5017, f"Scheduled task command failed: {exc}")
+            return context.error(rid, 5017, f"Scheduled task command failed: {exc}")
 
     if name == "platforms":
         from superforecasting_agent.runtime.platform_commands import (
@@ -427,7 +500,7 @@ def _(rid, params: dict) -> dict:
         )
 
         try:
-            return _ok(
+            return context.ok(
                 rid,
                 {
                     "type": "exec",
@@ -435,42 +508,45 @@ def _(rid, params: dict) -> dict:
                 },
             )
         except ValueError as exc:
-            return _err(rid, 4004, str(exc))
+            return context.error(rid, 4004, str(exc))
         except Exception as exc:
-            return _err(rid, 5017, f"Platform configuration unavailable: {exc}")
+            return context.error(
+                rid, 5017, f"Platform configuration unavailable: {exc}"
+            )
 
     if name == "gquota":
         from superforecasting_agent.runtime.quota_commands import google_quota_lines
 
         try:
-            return _ok(
+            return context.ok(
                 rid, {"type": "exec", "output": "\n".join(google_quota_lines(arg))}
             )
         except ValueError as exc:
-            return _err(rid, 4004, str(exc))
+            return context.error(rid, 4004, str(exc))
         except Exception as exc:
-            return _err(rid, 5017, str(exc))
+            return context.error(rid, 5017, str(exc))
 
     if name == "codex-runtime":
         from superforecasting_agent.runtime import codex_runtime_switch
 
         value, errors = codex_runtime_switch.parse_args(arg)
         if errors:
-            return _err(rid, 4004, "\n".join(errors))
+            return context.error(rid, 4004, "\n".join(errors))
         try:
-            config = _core._load_cfg()
-            if _core._host.configuration.last_error:
-                return _err(rid, 5017, _core._host.configuration.last_error)
+            config = context.load_config()
+            config_error = context.host().configuration.last_error
+            if config_error:
+                return context.error(rid, 5017, config_error)
             result = codex_runtime_switch.apply(
                 config,
                 value,
-                persist_callback=_core._save_cfg if value is not None else None,
+                persist_callback=context.save_config if value is not None else None,
             )
             if not result.success:
-                return _err(rid, 5017, result.message)
-            return _ok(rid, {"type": "exec", "output": result.message})
+                return context.error(rid, 5017, result.message)
+            return context.ok(rid, {"type": "exec", "output": result.message})
         except Exception as exc:
-            return _err(rid, 5017, str(exc))
+            return context.error(rid, 5017, str(exc))
 
     if name == "insights":
         from superforecasting_agent.application.insights import parse_insights_arguments
@@ -478,18 +554,20 @@ def _(rid, params: dict) -> dict:
         try:
             query = parse_insights_arguments(arg)
         except ValueError as exc:
-            return _err(rid, 4004, str(exc))
-        database = _core._get_db()
+            return context.error(rid, 4004, str(exc))
+        database = context.database()
         if database is None:
-            return _core._db_unavailable_error(rid, code=5017)
+            return context.database_error(rid, code=5017)
         try:
             from agent.insights import InsightsEngine
 
             engine = InsightsEngine(database)
             report = engine.generate(days=query.days, source=query.source)
-            return _ok(rid, {"type": "exec", "output": engine.format_terminal(report)})
+            return context.ok(
+                rid, {"type": "exec", "output": engine.format_terminal(report)}
+            )
         except Exception as exc:
-            return _err(rid, 5017, str(exc))
+            return context.error(rid, 5017, str(exc))
 
     if name == "profile":
         from superforecasting_agent.constants import (
@@ -500,7 +578,7 @@ def _(rid, params: dict) -> dict:
         output = (
             f"Profile: {get_active_profile_name()}\nHome:    {display_agent_home()}"
         )
-        return _ok(rid, {"type": "exec", "output": output})
+        return context.ok(rid, {"type": "exec", "output": output})
 
     if name == "bundles":
         try:
@@ -529,9 +607,9 @@ def _(rid, params: dict) -> dict:
                     "Invoke a bundle with /<slug>. Manage with `superforecasting-agent bundles`.",
                 ])
                 output = "\n".join(lines)
-            return _ok(rid, {"type": "exec", "output": output})
+            return context.ok(rid, {"type": "exec", "output": output})
         except Exception as exc:
-            return _err(rid, 5030, f"Bundle subsystem unavailable: {exc}")
+            return context.error(rid, 5030, f"Bundle subsystem unavailable: {exc}")
 
     if name == "toolsets":
         from superforecasting_agent.tooling.inventory import (
@@ -541,8 +619,8 @@ def _(rid, params: dict) -> dict:
 
         try:
             selection = session_toolset_selection(
-                _core._host.sessions.get(params.get("session_id", "")),
-                _core._load_enabled_toolsets,
+                context.host().sessions.get(params.get("session_id", "")),
+                context.enabled_toolsets,
             )
             items = toolset_inventory(selection, include_legacy=False)
             lines = ["Forecast Desk Toolsets", ""]
@@ -552,17 +630,17 @@ def _(rid, params: dict) -> dict:
                     f"{marker} {item['name']} [{item['tool_count']} tools] - {item['description']}"
                 )
             lines.extend(["", "(*) = currently enabled"])
-            return _ok(rid, {"type": "exec", "output": "\n".join(lines)})
+            return context.ok(rid, {"type": "exec", "output": "\n".join(lines)})
         except Exception as exc:
-            return _err(rid, 5032, str(exc))
+            return context.error(rid, 5032, str(exc))
 
     if name == "plugins":
         from superforecasting_agent.runtime.plugin_commands import describe_plugins
 
         try:
-            return _ok(rid, {"type": "exec", "output": describe_plugins()})
+            return context.ok(rid, {"type": "exec", "output": describe_plugins()})
         except Exception as exc:
-            return _err(rid, 5030, f"Plugin system error: {exc}")
+            return context.error(rid, 5030, f"Plugin system error: {exc}")
 
     # ── Commands that queue messages onto _pending_input in the CLI ───
     # In the TUI the slash worker subprocess has no reader for that queue,
@@ -570,8 +648,8 @@ def _(rid, params: dict) -> dict:
 
     if name in {"queue", "q"}:
         if not arg:
-            return _err(rid, 4004, "usage: /queue <forecast note>")
-        return _ok(rid, {"type": "send", "message": arg})
+            return context.error(rid, 4004, "usage: /queue <forecast note>")
+        return context.ok(rid, {"type": "send", "message": arg})
 
     if name == "learn":
         # Open-ended: build the standards-guided prompt and submit it as a
@@ -580,11 +658,11 @@ def _(rid, params: dict) -> dict:
         # tools and authors the skill via skill_manage. Works on any backend.
         from agent.learn_prompt import build_learn_prompt
 
-        return _ok(rid, {"type": "send", "message": build_learn_prompt(arg)})
+        return context.ok(rid, {"type": "send", "message": build_learn_prompt(arg)})
 
     if name == "retry":
         if not session:
-            return _err(rid, 4001, "no active forecast session to retry")
+            return context.error(rid, 4001, "no active forecast session to retry")
         from superforecasting_agent.application.retry import (
             RetryUnavailable,
             prepare_retry,
@@ -592,7 +670,7 @@ def _(rid, params: dict) -> dict:
 
         with session["history_lock"]:
             if session.get("running"):
-                return _err(
+                return context.error(
                     rid,
                     4009,
                     "session busy — /interrupt the current turn before /retry",
@@ -600,20 +678,20 @@ def _(rid, params: dict) -> dict:
             try:
                 plan = prepare_retry(session.get("history", []))
             except RetryUnavailable as exc:
-                return _err(rid, 4018, str(exc))
+                return context.error(rid, 4018, str(exc))
             session["history"] = plan.history
             session["history_version"] = int(session.get("history_version", 0)) + 1
-        return _ok(rid, {"type": "send", "message": plan.message})
+        return context.ok(rid, {"type": "send", "message": plan.message})
 
     if name == "steer":
         if not arg:
-            return _err(rid, 4004, "usage: /steer <forecast note>")
+            return context.error(rid, 4004, "usage: /steer <forecast note>")
         agent = session.get("agent") if session else None
         if agent and hasattr(agent, "steer"):
             try:
                 accepted = agent.steer(arg)
                 if accepted:
-                    return _ok(
+                    return context.ok(
                         rid,
                         {
                             "type": "exec",
@@ -623,51 +701,53 @@ def _(rid, params: dict) -> dict:
             except Exception:
                 pass
         # Fallback: no active run, treat as next-turn message
-        return _ok(rid, {"type": "send", "message": arg})
+        return context.ok(rid, {"type": "send", "message": arg})
 
     if name in {"goal", "subgoal"}:
         if not session:
-            return _err(rid, 4001, "no active forecast session")
+            return context.error(rid, 4001, "no active forecast session")
         try:
             from superforecasting_agent.runtime.goals import GoalManager
         except Exception as exc:
-            return _err(rid, 5030, f"goals unavailable: {exc}")
+            return context.error(rid, 5030, f"goals unavailable: {exc}")
 
         sid_key = session.get("session_key") or ""
         if not sid_key:
-            return _err(rid, 4001, "no session key")
+            return context.error(rid, 4001, "no session key")
 
         try:
-            goals_cfg = _core._load_cfg().get("goals") or {}
+            goals_cfg = context.load_config().get("goals") or {}
             max_turns = configured_goal_turn_budget(goals_cfg)
         except Exception:
             max_turns = configured_goal_turn_budget(None)
         mgr = GoalManager(
             session_id=sid_key,
             default_max_turns=max_turns,
-            database_provider=_core._get_db,
+            database_provider=context.database,
         )
         if name == "subgoal":
             from superforecasting_agent.application.goals import execute_subgoal
 
-            return _ok(rid, {"type": "exec", "output": execute_subgoal(mgr, arg)})
+            return context.ok(
+                rid, {"type": "exec", "output": execute_subgoal(mgr, arg)}
+            )
 
         from superforecasting_agent.application.goals import execute_goal
 
         try:
             result = execute_goal(mgr, arg)
         except ValueError as exc:
-            return _err(rid, 4004, f"invalid goal: {exc}")
+            return context.error(rid, 4004, f"invalid goal: {exc}")
         state = result.state
         if result.action == "status":
-            return _ok(rid, {"type": "exec", "output": result.status})
+            return context.ok(rid, {"type": "exec", "output": result.status})
         if result.action == "pause":
             out = "No goal set." if state is None else f"⏸ Goal paused: {state.goal}"
-            return _ok(rid, {"type": "exec", "output": out})
+            return context.ok(rid, {"type": "exec", "output": out})
         if result.action == "resume":
             if state is None:
-                return _ok(rid, {"type": "exec", "output": "No goal to resume."})
-            return _ok(
+                return context.ok(rid, {"type": "exec", "output": "No goal to resume."})
+            return context.ok(
                 rid,
                 {
                     "type": "exec",
@@ -678,7 +758,7 @@ def _(rid, params: dict) -> dict:
                 },
             )
         if result.action == "clear":
-            return _ok(
+            return context.ok(
                 rid,
                 {
                     "type": "exec",
@@ -699,7 +779,7 @@ def _(rid, params: dict) -> dict:
         # {type: send, notice, message} → renders `notice` as a sys line,
         # then submits `message` as a user turn. The post-turn judge
         # wired in _run_prompt_submit takes over from there.
-        return _ok(
+        return context.ok(
             rid,
             {"type": "send", "notice": notice, "message": state.goal},
         )
@@ -708,23 +788,23 @@ def _(rid, params: dict) -> dict:
         from superforecasting_agent.application.snapshots import execute_snapshot
 
         try:
-            return _ok(
+            return context.ok(
                 rid,
                 {"type": "exec", "output": execute_snapshot(arg, allow_restore=False)},
             )
         except ValueError as exc:
-            return _err(rid, 4004, str(exc))
+            return context.error(rid, 4004, str(exc))
         except OSError as exc:
-            return _err(rid, 5017, str(exc))
+            return context.error(rid, 5017, str(exc))
 
     from superforecasting_agent.application.command_catalog import resolve_command
 
     if resolve_command(name) is None:
-        return _err(rid, 4011, f"unknown command: {name}")
+        return context.error(rid, 4011, f"unknown command: {name}")
     from tui_gateway.command_routes import terminal_command_names
 
     if name in terminal_command_names():
-        return _ok(rid, {"type": "alias", "target": name})
-    return _core._command_handoff(
+        return context.ok(rid, {"type": "alias", "target": name})
+    return context.handoff(
         rid, f"not a quick/plugin/skill command: {name}", dispatch="slash.exec"
     )

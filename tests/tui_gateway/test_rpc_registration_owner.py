@@ -31,22 +31,27 @@ def test_tools_registration_rebinds_runtime_and_callbacks(monkeypatch):
     assert 'tools.list' in handlers
 
 
-def test_command_registration_rebinds_receiving_owner(monkeypatch):
+def test_command_registration_keeps_receiving_owner():
     from tui_gateway import commands_rpc
+    from superforecasting_agent.hosting.runtime import RuntimeHost
 
-    names = ('_core', '_ok', '_err', '_TUI_EXTRA', '_TUI_HIDDEN')
-    for name in names:
-        monkeypatch.setattr(commands_rpc, name, getattr(commands_rpc, name))
-    def register(name):
-        return lambda fn: fn
-    replacement = SimpleNamespace(
-        method=register, rpc_validated=register, _ok=Mock(), _err=Mock(),
-        _TUI_EXTRA=[], _TUI_HIDDEN=set(),
-    )
-    commands_rpc.register(replacement)
-    assert commands_rpc._core is replacement
-    for name in names[1:]:
-        assert getattr(commands_rpc, name) is getattr(replacement, name)
+    def make_server(label):
+        handlers = {}
+        def register(name):
+            return lambda fn: handlers.setdefault(name, fn)
+        return SimpleNamespace(
+            _host=RuntimeHost(), _methods=handlers, method=register, rpc_validated=register,
+            _ok=lambda rid, result: {"owner": label, "result": result},
+            _err=lambda rid, code, message: {"owner": label, "error": {"code": code, "message": message}},
+            _TUI_EXTRA=[], _TUI_HIDDEN=set(), _load_cfg=lambda: {},
+        )
+    first, second = make_server("first"), make_server("second")
+    commands_rpc.register(first)
+    original = first._methods["command.resolve"]
+    commands_rpc.register(second)
+    assert original(1, {"name": "help"})["owner"] == "first"
+    assert second._methods["command.resolve"](1, {"name": "help"})["owner"] == "second"
+    assert not hasattr(commands_rpc, "_core")
 
 
 def test_every_import_bound_rpc_family_rebinds_its_server_dependencies(monkeypatch):
