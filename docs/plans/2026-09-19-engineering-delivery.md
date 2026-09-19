@@ -680,3 +680,15 @@ concurrent paste and failed-write cleanup tests passed. Canonical Python static 
 The f314 native Linux integration result passed 46 tests, including portable PTY startup,
 but timed out in the handoff test at the combined rendered-queue/durable-running wait.
 That failure remains open; it is not evidence that all integration qualification passed.
+
+## Deterministic handoff pickup barrier
+
+The native handoff timeout occurred in `until` after rendering the queue message: its
+predicate also checked SQLite, but the helper only rechecked predicates when another
+terminal frame arrived. Remote pickup may commit without a repaint. The test now first
+asserts the visible queued state and durable pending state, then releases an explicit
+fixture pickup barrier and waits for the durable running transition with a bounded deadline.
+All cancellation, reconnect, receipt preservation and independent-session assertions remain.
+The controlled barrier reproduces queued-before-claim ordering rather than hoping the race
+occurs. The focused real Ink/gateway/SQLite/dashboard test passed in 6.96 seconds locally;
+native repeat remains required.

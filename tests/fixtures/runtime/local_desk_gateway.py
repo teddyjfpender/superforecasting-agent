@@ -53,6 +53,16 @@ def main():
             result = original_request(db, key, platform, attempt_id=attempt_id)
             if result:
                 def transfer():
+                    # A test-controlled pickup barrier makes queued-before-claim
+                    # ordering deterministic, without requiring a terminal repaint.
+                    barrier = os.environ.get('FORECAST_TEST_HANDOFF_BARRIER')
+                    if barrier:
+                        import time
+                        deadline = time.monotonic() + 10
+                        while not Path(barrier).exists():
+                            if time.monotonic() >= deadline:
+                                raise RuntimeError('handoff pickup barrier was not released')
+                            time.sleep(.01)
                     with closing(SessionDB(db_path=db.db_path)) as remote:
                         if remote.claim_handoff(key, attempt_id=attempt_id) and os.environ.get('FORECAST_TEST_HANDOFF') != 'running':
                             remote.complete_handoff(key, attempt_id=attempt_id)

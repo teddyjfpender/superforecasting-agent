@@ -394,6 +394,8 @@ def test_real_desk_handoff_cancel_and_dashboard_reconnect(local_desk, monkeypatc
 
     client, home, bridges = local_desk
     monkeypatch.setenv('FORECAST_TEST_HANDOFF', 'running')
+    pickup = home / 'allow-handoff-pickup'
+    monkeypatch.setenv('FORECAST_TEST_HANDOFF_BARRIER', str(pickup))
     monkeypatch.setenv('SUPERFORECASTING_AGENT_TUI_NO_CONFIRM', '1')
     screen = VTScreen(rows=45, cols=160)
     url = '/api/pty?token=local-engineering&channel=handoff-cancel'
@@ -409,8 +411,20 @@ def test_real_desk_handoff_cancel_and_dashboard_reconnect(local_desk, monkeypatc
         data += until(ws, lambda out: receipt(home) and receipt(home)['status'] == 'complete', screen=screen)
         before = receipt(home)
         ws.send_text('/handoff telegram\r')
-        data += until(ws, lambda out: b'Queued handoff' in out and transfer_state() and transfer_state()[1] == 'running', screen=screen)
-        transferred = transfer_state()
+        data += until(ws, lambda out: b'Queued handoff' in out, screen=screen)
+        assert transfer_state()[1] == 'pending'
+        pickup.touch()
+        # Gateway pickup commits independently of terminal repaint. Requiring a
+        # new frame to re-check SQLite deadlocks when the queue message is last.
+        deadline = time.monotonic() + 10
+        while True:
+            transferred = transfer_state()
+            if transferred and transferred[1] == 'running':
+                break
+            if time.monotonic() >= deadline:
+                pytest.fail(f'gateway did not claim queued transfer: {transferred!r}')
+            time.sleep(.01)
+
         ws.send_text('\x03')
         data += until(ws, lambda out: b'Gateway transfer is still running' in out, screen=screen)
         assert transfer_state() == transferred
