@@ -30,21 +30,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
+      - name: Install locked contributor runtime
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          version: '0.10.9'
+          python-version: '3.11.15'
 
-      - name: Set up Python 3.11
-        run: uv python install 3.11
+      - name: Install locked dependencies
+        run: uv sync --frozen --extra dev --extra web --extra pty
 
-      - name: Install dependencies
-        run: |
-          uv venv .venv --python 3.11
-          source .venv/bin/activate
-          uv pip install -e ".[all,dev]"
+      - name: Verify stale-reference rejection and safe argument handling
+        run: scripts/run_tests.sh tests/scripts/test_docgen_gate.py -q
 
       - name: Reference-docs staleness gate
-        run: |
-          source .venv/bin/activate
-          # Fails if any docs/reference/*.md is out of date with its code source.
-          # Fix: python -m scripts.docgen  (then commit the regenerated files)
-          python -m scripts.docgen --check
+        run: uv run --no-sync python -m scripts.docgen --check

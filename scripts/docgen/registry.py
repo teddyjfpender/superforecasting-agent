@@ -7,6 +7,7 @@ generated index — picks it up automatically.
 
 from __future__ import annotations
 
+import argparse
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -177,9 +178,11 @@ def check() -> list[Path]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    argv = list(sys.argv[1:] if argv is None else argv)
+    parser = argparse.ArgumentParser(description="Generate or check the code-derived reference documentation.")
+    parser.add_argument("--check", action="store_true", help="Report stale references without writing files")
+    args = parser.parse_args(argv)
     root = repo_root()
-    if "--check" in argv:
+    if args.check:
         stale = check()
         if stale:
             sys.stderr.write(

@@ -1018,3 +1018,20 @@ Fifty focused acquisition/dispatch/common-admission/BLS checks pass. The new
 request owner and dispatch pass strict typing; the owner is in the protected
 strict inventory. No full suite ran. Other adapters, frozen acquisition replay
 and the complete cross-interface acquisition/plan contract remain W03 work.
+
+## Documentation qualification and native rerun
+
+Docgen now parses arguments explicitly: help and unknown options cannot silently
+rewrite generated references. The Docs workflow uses the same frozen dependency
+resolution and pinned Python/uv versions as product quality, and runs the focused
+staleness/argument-safety test before its real freshness gate. Eighteen focused
+docgen/developer-workflow checks pass, including isolated deliberate stale/missing
+references and propagation through the canonical local check. CLI help and the
+actual current-reference check also pass. No full suite ran.
+
+Native Product quality run `35464861454` was dispatched for exact source
+`74ec3aaa68ae914b7196973abfe3ec94dcdfc08f`. Its six installed-product jobs and
+contributor integration job were confirmed running while this increment was
+prepared. This is a live qualification attempt, not evidence of success; inspect
+that run before drawing platform conclusions. The subsequent documentation-only
+commit is not the source of that native run.
