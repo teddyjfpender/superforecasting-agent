@@ -225,14 +225,10 @@ class InterviewStore:
 
                 context = read_context(self.ledger, interview_id, draft.context_digest)
                 if (
-                    context["question"]["id"] != draft.question_id
-                    or (
-                        context["baseline"]["forecast_id"]
-                        if context["baseline"]
-                        else None
-                    )
-                    != draft.baseline_forecast_id
-                ):
+                    context["question"]["id"] if context["question"] else None
+                ) != draft.question_id or (
+                    context["baseline"]["forecast_id"] if context["baseline"] else None
+                ) != draft.baseline_forecast_id:
                     raise ValidationError(
                         "frozen context belongs to a different baseline"
                     )

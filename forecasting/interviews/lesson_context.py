@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict
+from dataclasses import asdict, dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from forecasting.learning import (
@@ -25,8 +25,27 @@ if TYPE_CHECKING:
     from forecasting.models import ForecastQuestion
 
 
+@dataclass(frozen=True)
+class UnclassifiedOutcome:
+    type: None = None
+    choices: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class UnclassifiedInterviewTarget:
+    """A policy query target, never a scoreable or persisted forecast question."""
+
+    id: str
+    domain: None = None
+    topics: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+    outcome_space: UnclassifiedOutcome = field(default_factory=UnclassifiedOutcome)
+
+
 def capture_lessons(
-    ledger: ForecastLedger, question: ForecastQuestion, cutoff: str
+    ledger: ForecastLedger,
+    question: ForecastQuestion | UnclassifiedInterviewTarget,
+    cutoff: str,
 ) -> dict[str, Any]:
     """Reuse scope, applicability and supersession; never apply an adjustment.
 

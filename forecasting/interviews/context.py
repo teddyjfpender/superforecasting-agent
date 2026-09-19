@@ -7,11 +7,13 @@ import json
 from dataclasses import asdict
 from typing import TYPE_CHECKING
 
-from forecasting.interviews.lesson_context import capture_lessons
+from forecasting.interviews.lesson_context import (
+    UnclassifiedInterviewTarget,
+    capture_lessons,
+)
 from forecasting.models import ValidationError, utc_now_iso
 
 if TYPE_CHECKING:
-    from forecasting.interviews.lesson_context import capture_lessons
     from forecasting.ledger import ForecastLedger
 from forecasting.models import ForecastQuestion
 
@@ -41,6 +43,34 @@ def capture_context(
         "reference_classes": ledger.list_reference_classes(question.id),
         "prior_interview": previous_interview(ledger, question.id),
     }
+    return _write_context(ledger, interview_id, context)
+
+
+def capture_new_context(ledger: ForecastLedger, interview_id: str) -> tuple[dict, str]:
+    """Freeze general guidance without inventing a domain, outcome or ledger question."""
+    captured_at = utc_now_iso()
+    target = UnclassifiedInterviewTarget(id=f"interview:{interview_id}")
+    context = {
+        "schema_version": 3,
+        "captured_at": captured_at,
+        "question": None,
+        "baseline": None,
+        "evidence": [],
+        "reference_classes": [],
+        "prior_interview": None,
+        "lesson_selection": capture_lessons(ledger, target, captured_at),
+        "lesson_target": {
+            "kind": "unclassified_interview",
+            "domain": None,
+            "outcome_type": None,
+        },
+    }
+    return _write_context(ledger, interview_id, context)
+
+
+def _write_context(
+    ledger: ForecastLedger, interview_id: str, context: dict
+) -> tuple[dict, str]:
     document = json.dumps(
         context, sort_keys=True, separators=(",", ":"), allow_nan=False
     )

@@ -480,3 +480,19 @@ required W02 work. No full Python or TUI suite was run.
   child signal-mask reset and helper SIGPIPE restoration remain in place.
 - Verification: the regression failed before the change; all 23 focused spawn/bridge
   tests passed afterward. No full suite or historical crash attribution is claimed.
+
+### W07 — frozen general guidance for new-question interviews
+
+- New create interviews now capture version-3 context in the same transaction as
+  their first draft. The learning owner receives an explicitly unclassified target,
+  never a fabricated forecast question. General guidance is eligible; domain and
+  outcome conditions must not be inferred from a title or questionnaire default.
+- Generation and evaluation reuse the exact frozen lesson packet. Begin retries
+  return the original capture; later lesson changes cannot rewrite it. Historical
+  create interviews without context retain their original behavior without live
+  backfill. Update contexts and their contract checks are unchanged.
+- Verification: 100 focused interview/context/source/buffer/agent/generation tests
+  passed in 2.58 seconds. Canonical Python static checks passed, including all 77
+  import contracts and generated-reference checks. No full suite was run.
+- Remaining W07 work includes classified new-question selection, visible lesson
+  provenance, and the outstanding TUI conflict/reconnect acceptance criteria.

@@ -330,8 +330,14 @@ Legacy version-1 contexts remain readable without adding current library content
 
 `lesson_context.py` owns this capture/projection. It does not create, activate or
 adjust lessons. Tests: `tests/forecasting/test_interview_context.py` and the lesson
-and learning-trial suites. New-question context and TUI provenance presentation
-remain tracked in the engineering delivery record.
+and learning-trial suites. New-question interviews capture version-3 contexts with an explicit unclassified
+target: only generally applicable guidance is eligible until a confirmed domain and
+outcome contract exist. The title and questionnaire default do not establish those
+facts. No scoreable question is created by context capture. Legacy create interviews
+without context remain readable without live lesson backfill. Context and draft
+creation commit together; retries preserve the original selection. Classified
+new-question selection and TUI provenance presentation remain tracked in the
+engineering delivery record.
 
 ## Durable editor buffer API
 
@@ -360,5 +366,5 @@ an old answer cannot erase edits based on a newer revision. Cancellation and com
 also purge text. Tests cover rollback, lost acknowledgements, remount restoration,
 stale drafts and unavailable storage in `tests/forecasting/test_interview_buffers.py`
 and `ui-tui/src/__tests__/interview{Buffers,Controls}.test.*`. Remaining W07 scope,
-including new-question lesson context and provenance presentation, is tracked in the
+including classified new-question lesson selection and provenance presentation, is tracked in the
 engineering delivery record.

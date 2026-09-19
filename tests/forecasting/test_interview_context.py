@@ -345,3 +345,100 @@ def test_missing_postmortem_support_is_not_used_as_guidance(desk):
     assert selection["exclusions"] == [
         {"lesson_id": lesson["id"], "reason": "missing_source_postmortem"}
     ]
+
+
+def test_new_interview_freezes_general_lessons_without_inventing_question(desk):
+    ledger, _, _, _ = desk
+    general = ledger.create_calibration_lesson(
+        scope_type="global",
+        scope_ref=None,
+        lesson="Ask for the reference class.",
+        status="active",
+    )
+    conditional = ledger.create_calibration_lesson(
+        scope_type="global",
+        scope_ref=None,
+        lesson="Binary-only guidance.",
+        status="active",
+        recommended_adjustment={"applicability": {"outcome_types": ["binary"]}},
+    )
+    ledger.create_calibration_lesson(
+        scope_type="domain",
+        scope_ref="weather",
+        lesson="Weather-only source secret.",
+        status="active",
+    )
+    service = InterviewService(ledger)
+    record = service.begin("new-frozen", title="Will it rain?")
+    context = read_context(ledger, "new-frozen", record["document"]["context_digest"])
+    assert context["question"] is None and context["baseline"] is None
+    before = build_messages(ledger, record, InterviewGenerationOptions())
+    packet = json.loads(before[1]["content"])
+    assert packet["lesson_target"]["domain"] is None
+    assert [item["lesson_id"] for item in packet["lesson_selection"]["records"]] == [
+        general["id"]
+    ]
+    assert {
+        "lesson_id": conditional["id"],
+        "reason": "outcome_type_mismatch",
+    } in packet["lesson_selection"]["exclusions"]
+    assert "Weather-only source secret" not in before[1]["content"]
+    ledger.update_calibration_lesson(general["id"], confidence=0.99)
+    assert build_messages(ledger, record, InterviewGenerationOptions()) == before
+    assert service.begin("new-frozen", title="ignored retry") == record
+
+
+def test_new_context_rolls_back_with_failed_draft_creation(desk, monkeypatch):
+    ledger, _, _, _ = desk
+    service = InterviewService(ledger)
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("interrupted creation")
+
+    monkeypatch.setattr(service.store, "save", fail)
+    with pytest.raises(RuntimeError, match="interrupted creation"):
+        service.begin("new-interrupted")
+    with ledger._connect() as conn:
+        assert (
+            conn.execute(
+                "SELECT 1 FROM forecast_interview_contexts WHERE interview_id = ?",
+                ("new-interrupted",),
+            ).fetchone()
+            is None
+        )
+
+
+def test_legacy_new_interview_does_not_gain_live_lessons(desk):
+    ledger, _, _, _ = desk
+    service = InterviewService(ledger)
+    record = service.store.save(
+        "legacy-new",
+        InterviewDraft(mode="create", title="Legacy question"),
+        expected_revision=0,
+        request_id="legacy-create",
+        actor="user",
+    )
+    before = build_messages(ledger, record, InterviewGenerationOptions())
+    ledger.create_calibration_lesson(
+        scope_type="global", scope_ref=None, lesson="Later guidance", status="active"
+    )
+    assert service.begin("legacy-new") == record
+    assert build_messages(ledger, record, InterviewGenerationOptions()) == before
+    assert "lesson_selection" not in json.loads(before[1]["content"])
+
+
+def test_new_interview_context_cannot_be_replaced(desk):
+    ledger, _, _, _ = desk
+    service = InterviewService(ledger)
+    record = service.begin("new-immutable")
+    draft = InterviewDraft.model_validate(record["document"])
+    draft.context_digest = None
+    with pytest.raises(ValidationError, match="context is immutable"):
+        service.store.save(
+            "new-immutable",
+            draft,
+            expected_revision=1,
+            request_id="replace",
+            actor="user",
+        )
+    assert service.store.read("new-immutable") == record

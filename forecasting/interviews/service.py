@@ -8,7 +8,11 @@ from typing import TYPE_CHECKING, Literal
 if TYPE_CHECKING:
     from forecasting.ledger import ForecastLedger
 
-from forecasting.interviews.context import capture_context, read_context
+from forecasting.interviews.context import (
+    capture_context,
+    capture_new_context,
+    read_context,
+)
 from forecasting.interviews.questions import category_questions, core_questions
 from forecasting.interviews.review import (
     belief_errors,
@@ -72,7 +76,7 @@ class InterviewService:
             context, context_digest = (
                 capture_context(self.ledger, interview_id, question)
                 if question
-                else (None, None)
+                else capture_new_context(self.ledger, interview_id)
             )
             document = InterviewDraft(
                 mode="update" if question else "create",

@@ -66,11 +66,11 @@ def build_messages(
 ) -> list[dict[str, str]]:
     draft = InterviewDraft.model_validate(record["document"])
     context = None
-    if draft.mode == "update":
-        if not draft.context_digest:
-            raise ValidationError(
-                "legacy interview has no frozen baseline; start a new update interview"
-            )
+    if draft.mode == "update" and not draft.context_digest:
+        raise ValidationError(
+            "legacy interview has no frozen baseline; start a new update interview"
+        )
+    if draft.context_digest:
         context = read_context(ledger, record["interview_id"], draft.context_digest)
     evidence = context["evidence"] if context else []
     packet = {
@@ -84,13 +84,15 @@ def build_messages(
         "max_questions": options.max_questions,
         "elicitation_gaps": review_findings(draft),
         "contract_conflicts": contract_errors(draft, context["question"])
-        if context
+        if context and context["question"]
         else [],
         "schema": InterviewFollowups.model_json_schema(),
     }
     # Historical v1 packets remain unchanged; never backfill from a live library.
     if context and "lesson_selection" in context:
         packet["lesson_selection"] = model_lessons(context["lesson_selection"])
+        if "lesson_target" in context:
+            packet["lesson_target"] = context["lesson_target"]
     encoded = json.dumps(packet, ensure_ascii=False, allow_nan=False)
     if len(encoded.encode("utf-8")) > 180_000:
         raise ValidationError(
