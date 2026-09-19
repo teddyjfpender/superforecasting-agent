@@ -26,7 +26,9 @@ These are entry points and representative modules, not an exhaustive inventory.
 `posix_spawn` with a new session and an isolated Python helper (`pty_exec.py`), so
 application threads and Python locks are not copied into a fork child. The helper
 acquires the controlling terminal and closes unrelated inherited descriptors before
-exec. A bounded error pipe preserves ordinary executable/cwd errors. Failure closes
+exec. Native spawn restores terminal signal defaults and clears the child signal mask;
+ignored daemon signals cannot disable Ctrl+C or job control in the TUI. Parent signal
+settings remain unchanged. A bounded error pipe preserves ordinary executable/cwd errors. Failure closes
 allocations and reaps the direct child; success transfers its PID/master descriptor
 to the dashboard's existing PTY process owner. No unsafe fork fallback is used.
 

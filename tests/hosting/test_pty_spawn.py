@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
 import os
 import sys
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -170,3 +170,26 @@ def test_unsupported_native_spawn_fails_closed_with_platform_diagnostic(monkeypa
     monkeypatch.setattr(pty_bridge, "spawn_pty", unsupported)
     with pytest.raises(pty_bridge.PtyUnavailableError, match="Safe POSIX"):
         PtyBridge.spawn([sys.executable, "-c", "pass"])
+
+
+def test_ignored_parent_signals_do_not_disable_terminal_interrupts():
+    import signal
+
+    original = signal.getsignal(signal.SIGINT)
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    script = (
+        "print('READY', flush=True)\n"
+        "try: input()\n"
+        "except KeyboardInterrupt: print('INTERRUPTED', flush=True)\n"
+    )
+    bridge = None
+    try:
+        bridge = PtyBridge.spawn([sys.executable, "-c", script])
+        read_until(bridge, b"READY")
+        bridge.write(b"\x03")
+        read_until(bridge, b"INTERRUPTED")
+        assert signal.getsignal(signal.SIGINT) == signal.SIG_IGN
+    finally:
+        if bridge is not None:
+            bridge.close()
+        signal.signal(signal.SIGINT, original)

@@ -76,6 +76,18 @@ def spawn_pty(
             file_actions=actions,
             setsid=True,
             setsigmask=(),
+            # Ignored dispositions survive exec. A dashboard started by a daemon
+            # must not disable Ctrl+C, hangup or job control in its terminal child.
+            setsigdef=(
+                signal.SIGHUP,
+                signal.SIGINT,
+                signal.SIGQUIT,
+                signal.SIGTERM,
+                signal.SIGTSTP,
+                signal.SIGTTIN,
+                signal.SIGTTOU,
+                signal.SIGWINCH,
+            ),
         )
         os.close(write_error)
         write_error = None

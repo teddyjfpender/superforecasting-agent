@@ -468,3 +468,15 @@ required W02 work. No full Python or TUI suite was run.
 - This is evidence for removal of the observed threaded-fork hazard, not attribution
   of historical SSL or bad-file-descriptor incidents. Native Linux and installed-artifact
   requalification, other runtime lifecycle seams and the full W08 matrix remain open.
+
+
+### W05 PTY follow-up — inherited signal dispositions
+
+- A focused regression reproduced Ctrl+C failure when the dashboard parent ignored
+  SIGINT: the terminal displayed `^C` but the child never received KeyboardInterrupt.
+  Ignored dispositions survive exec, so a fresh helper alone did not solve this case.
+- POSIX spawn now resets terminal interrupt/quit/hangup/termination, job-control and
+  resize signal defaults, without changing the parent's dispositions. The existing
+  child signal-mask reset and helper SIGPIPE restoration remain in place.
+- Verification: the regression failed before the change; all 23 focused spawn/bridge
+  tests passed afterward. No full suite or historical crash attribution is claimed.
