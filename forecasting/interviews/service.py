@@ -154,6 +154,9 @@ class InterviewService:
         # Read the stated base, not latest: a retry must reproduce the exact same revision.
         record = self.store.read(interview_id, expected_revision)
         draft = InterviewDraft.model_validate(record["document"])
+        prior_answer = next(
+            (a for a in draft.answers if a.question_id == question_id), None
+        )
         answer = InterviewAnswer(
             question_id=question_id,
             status=status,
@@ -161,13 +164,14 @@ class InterviewService:
             note=note,
             custom_text=custom_text,
             actor=actor,
-            evidence_refs=evidence_refs or [],
+            evidence_refs=evidence_refs
+            if evidence_refs is not None
+            else list(prior_answer.evidence_refs)
+            if prior_answer
+            else [],
         )
         if question_id not in {question.id for question in draft.questions}:
             raise ValidationError("unknown interview question")
-        prior_answer = next(
-            (a for a in draft.answers if a.question_id == question_id), None
-        )
         draft.answers = [a for a in draft.answers if a.question_id != question_id] + [
             answer
         ]

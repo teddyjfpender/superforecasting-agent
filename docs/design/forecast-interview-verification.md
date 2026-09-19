@@ -101,3 +101,19 @@ Shared belief validation prevents contradictory quantiles and incomplete or
 unnormalized supplied category probabilities from reaching comparison or unattended
 update paths. Partial drafts remain editable. Comparisons also reject changes to
 the frozen title and category identities, alongside the existing units/source checks.
+
+### Additional review, pass two: engagement and provenance
+
+Added a discoverable reasoning/uncertainty-note editor, including saving Unknown
+without inventing a numeric answer. Notes survive navigation and are included in
+review and frozen AI inputs. Exit confirmation protects unconfirmed text, choices
+and notes; it does not silently confirm answers. Compact layouts reserve room for
+the note editor. Answer edits now preserve evidence references unless explicitly
+replaced. Rendered tests exercise notes, Unknown and exit recovery at 60×18, 80×24
+and 120×40. These are functional safeguards, not evidence of forecasting lift.
+
+Validation for the two additional passes: the canonical targeted backend and
+integration run passed **125 tests**, including outcome-space and citation-edit
+regressions. The rendered questionnaire coverage includes explicit discard without
+implicit saving, alongside note editing at three terminal sizes. The complete
+repository suite has not been rerun for these bounded changes.

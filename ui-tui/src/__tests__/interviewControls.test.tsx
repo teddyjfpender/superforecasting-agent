@@ -58,7 +58,13 @@ function fixture(): InterviewRecord {
   }
 }
 
-async function screen(request: (method: string, params: any) => Promise<any>, cols = 80, rows = 24, tty = false) {
+async function screen(
+  request: (method: string, params: any) => Promise<any>,
+  cols = 80,
+  rows = 24,
+  tty = false,
+  onClose = () => {}
+) {
   resetOverlayState()
   const stdout = new PassThrough()
   const stdin = new PassThrough()
@@ -71,7 +77,7 @@ async function screen(request: (method: string, params: any) => Promise<any>, co
 
   const app = await render(
     <Box height={rows} width={cols}>
-      <ForecastInterview gw={{ request } as never} onClose={() => {}} t={DARK_THEME} />
+      <ForecastInterview gw={{ request } as never} onClose={onClose} t={DARK_THEME} />
     </Box>,
     { stdout, stdin, debug: true, patchConsole: false, exitOnCtrlC: false }
   )
@@ -944,6 +950,82 @@ it('distinguishes unknown and skipped from answered and explains review gaps bef
     await ui.wait('INTERVIEW OUTLINE')
     expect(ui.text()).toContain('[unknown]')
     expect(ui.text()).toContain('[skipped]')
+  } finally {
+    ui.close()
+  }
+})
+
+it.each([
+  [80, 24],
+  [60, 18],
+  [120, 40]
+])('saves uncertainty notes and protects unconfirmed work at %s×%s', async (cols, rows) => {
+  let record = fixture()
+
+  const request = vi.fn(async (method: string, params: any) => {
+    if (method === 'forecast.interview.list') {
+      return { interviews: [record] }
+    }
+
+    if (method === 'forecast.interview.preview') {
+      return { spec: {}, issues: [], unanswered: [], committable: false }
+    }
+
+    if (method === 'forecast.interview.answer') {
+      expect(params.status).toBe('unknown')
+      expect(params.value).toBeNull()
+      expect(params.note).toBe('Need a dated primary source')
+      record = {
+        ...record,
+        revision: 2,
+        document: { ...record.document, answers: [{ ...params, actor: 'user', evidence_refs: [] }] }
+      }
+
+      return record
+    }
+
+    throw new Error(`Unexpected ${method}`)
+  })
+
+  const ui = await screen(request, cols, rows)
+
+  try {
+    await ui.wait('What event?')
+    ui.press('\x14')
+    await ui.wait('REASONING / UNCERTAINTY NOTE')
+    ui.press('Need a dated primary source')
+    await ui.wait('Need a dated primary source')
+    ui.press('\x1b')
+    await ui.wait('What event?')
+    ui.press('\x1b')
+    await ui.wait('UNSAVED INTERVIEW EDITS')
+    ui.press('\x1b')
+    await ui.wait('What event?')
+    ui.press('\x14')
+    await ui.wait('Need a dated primary source')
+    ui.press('\x15')
+    await ui.wait('Review answers')
+    expect(request.mock.calls.some(([method]) => method === 'forecast.interview.answer')).toBe(true)
+  } finally {
+    ui.close()
+  }
+})
+
+it('requires explicit discard to close edited answers without silently saving them', async () => {
+  const request = vi.fn(async () => ({ interviews: [fixture()] }))
+  const close = vi.fn()
+  const ui = await screen(request, 80, 24, false, close)
+
+  try {
+    await ui.wait('What event?')
+    ui.press('Unconfirmed forecast')
+    await ui.wait('Unconfirmed forecast')
+    ui.press('\x1b')
+    await ui.wait('UNSAVED INTERVIEW EDITS')
+    expect(close).not.toHaveBeenCalled()
+    ui.press('\x18')
+    await vi.waitFor(() => expect(close).toHaveBeenCalledOnce())
+    expect(request.mock.calls).toHaveLength(1)
   } finally {
     ui.close()
   }

@@ -271,3 +271,17 @@ job may be active per interview; retries retain their original job identity.
 All draft writes validate answer and assumption citations against the interview
 packet, including direct store callers. Reconfirming an outcome preserves the
 wording of existing questions across software upgrades.
+
+### Notes and unconfirmed edits
+
+In the questionnaire, **Ctrl+T** opens a reasoning/uncertainty note. Record why
+an answer is uncertain, a source to investigate, or what would change your view.
+**Ctrl+Enter** returns to the answer; confirming the answer saves its note too.
+**Ctrl+U** saves Unknown with the note, while **Ctrl+S** saves Skipped with it.
+Notes remain elicited claims, not automatically verified evidence. Existing
+citation identifiers survive answer edits unless explicitly replaced.
+
+Leaving with unconfirmed edits requires **Ctrl+X** to discard them, or **Esc**
+to keep editing. Confirmed answers remain durable. Notes and unconfirmed text
+survive question navigation and resizing within the open interview; they are
+not automatically persisted on close or process termination.

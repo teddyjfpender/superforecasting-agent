@@ -498,3 +498,15 @@ def test_review_feedback_is_nonblocking_and_shared(store):
         for f in packet["elicitation_gaps"]
     )
     assert store.ledger.list_questions() == []
+
+
+def test_editing_answer_preserves_citations_unless_explicitly_replaced(store):
+    from forecasting.interviews.service import InterviewService
+
+    save(store, draft(evidence_refs=["source"], answers=[{**answer(), "evidence_refs": ["source"]}]))
+    service = InterviewService(store.ledger)
+    record = service.answer("interview", expected_revision=1, request_id="edit-note", question_id="belief", status="answered", value=0.5, note="Source may be revised")
+    assert record["document"]["answers"][0]["evidence_refs"] == ["source"]
+    assert record["document"]["answers"][0]["note"] == "Source may be revised"
+    record = service.answer("interview", expected_revision=2, request_id="remove-ref", question_id="belief", status="unknown", evidence_refs=[])
+    assert record["document"]["answers"][0]["evidence_refs"] == []

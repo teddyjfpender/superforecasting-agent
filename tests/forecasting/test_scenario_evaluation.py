@@ -594,7 +594,7 @@ def test_existing_outcome_contracts_have_typed_elicitation_and_reject_incoherenc
     ledger = ForecastLedger(tmp_path / "typed.db")
     with allow_ledger_writes(reason="fixture"):
         question = ledger.create_question(
-            title="Measured outcome", resolution_criteria="Official result in 2030",
+            title="Measured outcome", resolution_criteria="Official confirmation before December 2030.",
             outcome_space=OutcomeSpace(type=kind, units="USD" if kind != "categorical" else None,
                                        choices=["A", "B"] if kind == "categorical" else []),
         )
@@ -621,7 +621,7 @@ def test_comparison_rejects_changed_categorical_contract(tmp_path):
 
     ledger = ForecastLedger(tmp_path / "categories.db")
     with allow_ledger_writes(reason="fixture"):
-        question = ledger.create_question(title="Which result?", resolution_criteria="Official result",
+        question = ledger.create_question(title="Which result?", resolution_criteria="Official confirmation before December 2030.",
                                           outcome_space=OutcomeSpace(type="categorical", choices=["A", "B"]))
     service = InterviewService(ledger)
     service.begin("categories", question_id=question.id)

@@ -43,6 +43,11 @@ export function ForecastInterview({
   const [record, setRecord] = useState<InterviewRecord | null>(null)
   const [index, setIndex] = useState(0)
   const [text, setText] = useState('')
+  const [note, setNote] = useState('')
+  const [noteEditing, setNoteEditing] = useState(false)
+  const [closeConfirm, setCloseConfirm] = useState(false)
+  const noteDrafts = useRef(new Map<string, string>())
+  const dirtyQuestions = useRef(new Set<string>())
   const [choice, setChoice] = useState(0)
   const [selected, setSelected] = useState<string[]>([])
   const [customEditing, setCustomEditing] = useState(false)
@@ -71,6 +76,8 @@ export function ForecastInterview({
     setPreview(null)
     const item = next.document.questions[at]
     const prior = next.document.answers.find(answer => answer.question_id === item?.id)
+    setNote(noteDrafts.current.get(item?.id ?? '') ?? prior?.note ?? '')
+    setNoteEditing(false)
     const context = next.document.seed
 
     const suggested =
@@ -228,7 +235,7 @@ export function ForecastInterview({
       question_id: question.id,
       status,
       value,
-      note: '',
+      note,
       custom_text:
         status === 'answered' &&
         question.allow_custom &&
@@ -254,6 +261,8 @@ export function ForecastInterview({
 
       if (mounted.current) {
         pending.current = null
+        noteDrafts.current.delete(question.id)
+        dirtyQuestions.current.delete(question.id)
         drafts.current.delete(question.id)
         choiceDrafts.current.delete(question.id)
         select(next, Math.min(index + 1, next.document.questions.length))
@@ -320,6 +329,8 @@ export function ForecastInterview({
       })
 
       if (mounted.current) {
+        noteDrafts.current.clear()
+        dirtyQuestions.current.clear()
         drafts.current.clear()
         choiceDrafts.current.clear()
         pending.current = null
@@ -347,9 +358,21 @@ export function ForecastInterview({
         key.tab ||
         key.pageUp ||
         key.pageDown ||
-        (key.ctrl && ['u', 's', 'g', 'o', 'e', 'n', 'l'].includes(input))
+        (key.ctrl && ['u', 's', 'g', 'o', 'e', 'n', 'l', 't'].includes(input))
       ) {
         ;(event as unknown as { stopImmediatePropagation?: () => void }).stopImmediatePropagation?.()
+      }
+
+      if (closeConfirm) {
+        ;(event as unknown as { stopImmediatePropagation?: () => void }).stopImmediatePropagation?.()
+
+        if (key.escape) {
+          setCloseConfirm(false)
+        } else if (key.ctrl && input === 'x') {
+          onClose()
+        }
+
+        return
       }
 
       if (freshConfirm) {
@@ -377,13 +400,27 @@ export function ForecastInterview({
       }
 
       if (key.escape) {
+        if (busy) {
+          return
+        }
+
+        if (noteEditing) {
+          setNoteEditing(false)
+
+          return
+        }
+
         if (customEditing) {
           setCustomEditing(false)
 
           return
         }
 
-        onClose()
+        if (dirtyQuestions.current.size) {
+          setCloseConfirm(true)
+        } else {
+          onClose()
+        }
 
         return
       }
@@ -420,6 +457,12 @@ export function ForecastInterview({
         return
       }
 
+      if (key.ctrl && input === 't') {
+        setNoteEditing(value => !value)
+
+        return
+      }
+
       if (key.ctrl && input === 'u') {
         void save('unknown')
 
@@ -432,14 +475,26 @@ export function ForecastInterview({
         return
       }
 
+      if (noteEditing) {
+        return
+      }
+
       if (!customEditing && (question?.kind === 'single' || question?.kind === 'multiple')) {
         const last = question.choices.length - (question.allow_custom ? 0 : 1)
 
         if (key.upArrow) {
+          if (choice > 0 && question.kind === 'single') {
+            dirtyQuestions.current.add(question.id)
+          }
+
           setChoice(value => Math.max(0, value - 1))
         }
 
         if (key.downArrow) {
+          if (choice < last && question.kind === 'single') {
+            dirtyQuestions.current.add(question.id)
+          }
+
           setChoice(value => Math.min(last, value + 1))
         }
 
@@ -451,6 +506,7 @@ export function ForecastInterview({
           const id = question.choices[choice]?.id
 
           if (id) {
+            dirtyQuestions.current.add(question.id)
             setSelected(values => (values.includes(id) ? values.filter(value => value !== id) : [...values, id]))
           }
         } else if (key.return && question.kind === 'single') {
@@ -465,6 +521,25 @@ export function ForecastInterview({
   const contentWidth = (cols < 100 ? Math.max(40, cols - 2) : Math.min(cols - 6, wide ? 140 : 100)) - 6
   const questionWidth = contentWidth - (wide ? 46 : 0)
   const height = Math.max(3, Math.min(rows - 2, 34) - 12)
+
+  if (closeConfirm) {
+    return (
+      <ModalOverlay
+        cols={cols}
+        footerHint="[Esc Keep editing] [Ctrl+X Discard and close]"
+        maxHeight={14}
+        rows={rows}
+        t={t}
+        title="UNSAVED INTERVIEW EDITS"
+        verticalMargin={2}
+      >
+        <Text color={t.color.primary}>{dirtyQuestions.current.size} question(s) have unconfirmed edits.</Text>
+        <Text color={t.color.muted}>
+          Confirmed answers remain saved. Keep editing to confirm answers or save Unknown with a note.
+        </Text>
+      </ModalOverlay>
+    )
+  }
 
   if (freshConfirm) {
     return (
@@ -581,6 +656,7 @@ export function ForecastInterview({
           {record?.document.title ?? 'Opening saved interview…'}
         </Text>
         <Text color={t.color.accent}>
+          {!review && question ? '[^T Note] ' : ''}
           {review
             ? 'Review answers'
             : `${index + 1}/${questions.length} · ${question?.section.replaceAll('_', ' ') ?? ''}`}
@@ -600,12 +676,36 @@ export function ForecastInterview({
           >
             {question ? (
               <>
-                <Text bold color={t.color.primary}>
+                <Text bold color={t.color.primary} wrap={noteEditing ? 'truncate-end' : 'wrap'}>
                   {question.prompt}
                   {question.required ? ' *' : ''}
                 </Text>
-                <Text color={t.color.muted}>{question.rationale}</Text>
-                {(question.kind === 'single' || question.kind === 'multiple') && !customEditing ? (
+                {!noteEditing ? <Text color={t.color.muted}>{question.rationale}</Text> : null}
+                {noteEditing ? (
+                  <>
+                    <Text color={t.color.accent}>REASONING / UNCERTAINTY NOTE</Text>
+                    {rows >= 26 ? (
+                      <Text color={t.color.muted}>
+                        Record a source, reason, or what would resolve the uncertainty. This note is not a probability.
+                      </Text>
+                    ) : null}
+                    <TextInput
+                      columns={Math.max(20, questionWidth - 2)}
+                      focus={!busy && !blocked}
+                      immediateChange
+                      key={`${question.id}:note`}
+                      multiline
+                      onChange={value => {
+                        noteDrafts.current.set(question.id, value)
+                        dirtyQuestions.current.add(question.id)
+                        setNote(value)
+                      }}
+                      onSubmit={() => setNoteEditing(false)}
+                      placeholder="Why uncertain? What evidence would help?"
+                      value={note}
+                    />
+                  </>
+                ) : (question.kind === 'single' || question.kind === 'multiple') && !customEditing ? (
                   [
                     ...question.choices,
                     ...(question.allow_custom
@@ -636,6 +736,7 @@ export function ForecastInterview({
                     key={question.id}
                     multiline
                     onChange={value => {
+                      dirtyQuestions.current.add(question.id)
                       drafts.current.set(question.id, value)
                       setText(value)
                     }}
@@ -682,6 +783,7 @@ export function ForecastInterview({
                           .join(' · ')
                       : answer.status}{' '}
                     · {answer.actor}
+                    {answer.note ? ` · Note: ${answer.note}` : ''}
                   </Text>
                 ))}
               </>
@@ -690,17 +792,20 @@ export function ForecastInterview({
           {wide && record ? <InterviewContext index={index} record={record} t={t} /> : null}
         </Box>
         <Text color={t.color.accent}>
+          {!review && question ? '[^T Note] ' : ''}
           {review
             ? record?.document.mode === 'create'
               ? '[Enter Create question] [PgUp/Dn Review]'
               : 'Review draft saved · [PgUp/Dn Review]'
             : customEditing
               ? '[^Enter Save custom answer] [Esc Choices]'
-              : question?.kind === 'single'
-                ? '[↑↓ Choose] [Enter Confirm] [^U Unknown] [^S Skip]'
-                : question?.kind === 'multiple'
-                  ? '[Space Toggle] [^Enter Save] [^U Unknown] [^S Skip]'
-                  : '[Enter New line] [^Enter Save] [^U Unknown] [^S Skip]'}
+              : noteEditing
+                ? '[^Enter Back] [^U Save Unknown] [^S Save Skipped]'
+                : question?.kind === 'single'
+                  ? '[↑↓ Choose] [Enter Confirm] [^U Unknown] [^S Skip]'
+                  : question?.kind === 'multiple'
+                    ? '[Space Toggle] [^Enter Save] [^U Unknown] [^S Skip]'
+                    : '[Enter New line] [^Enter Save] [^U Unknown] [^S Skip]'}
         </Text>
         {error ? (
           <Text color={t.color.error} wrap="truncate-end">
