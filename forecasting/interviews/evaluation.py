@@ -34,6 +34,13 @@ without assuming they are false. These are reasoning-factor sensitivity analyses
 of all information: the evidence packet is deliberately identical between variants.
 Prior interview answers are historical, not newly confirmed beliefs. Agent assumptions are proposals.
 Do not multiply correlated marginal probabilities or invent a decomposition of uncertainty.
+Start from a defensible outside view when available: identify comparable cases, denominator, time period
+and selection limitations. A questionnaire base rate is an unverified claim, not an empirical reference class.
+Explain which independent evidence warrants moving away from that outside view and, for updates, the
+frozen active forecast. Repeated reports of one source are not independent evidence. Give the strongest
+alternative explanation and the observation that would reverse your judgment. When support is absent,
+say so; do not invent sample sizes, likelihood ratios, sources or numerical decomposition.
+Treat user probabilities as elicited judgments, not privileged truth; explain agreement or disagreement.
 Distinguish missing knowledge, irreducible future variability and measurement ambiguity in your rationale.
 Identify unresolved questions. Cite only supplied evidence IDs and reference-class IDs actually used. Respect exact category labels and units.
 For continuous quantities return ordered q10/q50/q90, never invent a Gaussian or an explicit tail probability.

@@ -311,6 +311,11 @@ class InterviewDraft(InterviewModel):
                 if question.kind == "single" and not question.allow_custom:
                     if value not in {choice.id for choice in question.choices}:
                         raise ValueError("unknown choice identifier")
+        for item in [*self.answers, *self.assumptions]:
+            if not set(item.evidence_refs) <= set(self.evidence_refs):
+                raise ValueError(
+                    "answer or assumption cites evidence outside the interview"
+                )
         for question in self.questions:
             if not set(question.assumption_ids) <= assumption_ids:
                 raise ValueError("question references an unknown assumption")

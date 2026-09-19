@@ -63,3 +63,31 @@ Test paths above are under `tests/forecasting/`, `tests/tui_gateway/`, or
   wide and compact layouts. Typed causal dependencies and distribution-valued
   assumptions remain unimplemented design extensions; current factors are explicit
   statements with probabilities, true/false conditions and exclusion toggles.
+
+## Superforecasting and engagement review
+
+The follow-up review corrected outcome-inappropriate base-rate prompts, misleading
+section completion counts, unresolved-state regression, citation checks bypassed
+by direct draft callers, overlapping generation requests and questionnaire wording
+changes on reconfirmation. Regression coverage lives in `test_interviews.py`,
+`test_interview_generation.py` and `interviewControls.test.tsx`.
+
+Shared elicitation feedback now reaches the review screen and both AI paths.
+It distinguishes missing reasoning from settlement errors and never treats an
+answered questionnaire as proof of sound reasoning. The model instructions
+prioritize useful cruxes, permit zero follow-ups, require outside-view/update
+justification and distinguish repeated reporting from independent evidence.
+Those instructions improve the requested behavior; controlled-provider tests
+cannot establish compliance by every model or improved forecasting accuracy.
+
+Remaining limits: base-rate prose is not an automatically verified reference
+class; arbitrary causal dependencies remain elicited descriptions rather than a
+validated probabilistic graph. Unconfirmed editor text is not durable after
+closing the modal. These are explicit limits, not implied capabilities.
+
+Review validation: the canonical runner passed **120 tests** covering interviews,
+source attachments, frozen context, scenario evaluation, RPC, signed webhooks and
+proposal commits. The rendered questionnaire suite passed **22 tests**, including
+Unknown/Skipped progress, review guidance, resizing, recovery and old comparison
+reports without reference-class fields. This is targeted validation of the review
+changes; the earlier full-suite counts above belong to the preceding commit.

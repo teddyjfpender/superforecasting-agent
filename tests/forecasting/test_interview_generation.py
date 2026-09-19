@@ -345,3 +345,34 @@ def test_rolled_back_generation_enqueue_cannot_spend(work, monkeypatch):
     assert "receipt was not committed" in result.error
     call.assert_not_called()
     assert service.store.read("interview")["revision"] == 1
+
+
+def test_distinct_generation_requests_cannot_overlap(work):
+    service, jobs, _ = work
+    options = InterviewGenerationOptions()
+    first = generation.enqueue_generation(
+        service.ledger, "interview", 1, "first", options
+    )
+    with pytest.raises(ValidationError, match="already active"):
+        generation.enqueue_generation(service.ledger, "interview", 1, "second", options)
+    assert (
+        generation.enqueue_generation(service.ledger, "interview", 1, "first", options)
+        == first
+    )
+    record = jobs.read(first)
+    record.status = "cancelled"
+    jobs.write(record)
+    assert (
+        generation.enqueue_generation(service.ledger, "interview", 1, "second", options)
+        != first
+    )
+
+
+def test_no_followups_does_not_manufacture_pending_user_work(work, monkeypatch):
+    service, jobs, record = work
+    monkeypatch.setattr(generation, "run_model", Mock(return_value={**response(), "content": json.dumps({"questions": [], "assumptions": [], "summary": "No useful new questions."})}))
+    result = run(record.job_id, store=jobs)
+    assert result.status == "done", result.error
+    document = service.store.read("interview")["document"]
+    assert document["status"] == "draft"
+    assert len(document["generations"]) == 1

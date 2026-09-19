@@ -246,3 +246,28 @@ question and a saved-context panel with answer attribution and evidence/assumpti
 counts. Smaller terminals retain the single-question layout and the same outline.
 The layout uses renderer-owned dimensions and responds to resize events without
 resetting the active question or its editor.
+
+### Reviewing reasoning, not rewarding form completion
+
+`review.py` supplies non-blocking elicitation feedback to preview, adaptive
+questioning and unattended reviews. It identifies missing outside-view work,
+shared-cause checks, counterevidence, cruxes and review triggers. These are
+coverage checks, **not a grade of evidence quality or forecasting skill**.
+Unknown and skipped answers remain visible gaps; neither is interpreted as
+false or filled in by the model. Unknown user answers keep `needs_user`; agent
+unknowns keep `needs_research` even after later answers are saved.
+
+The outside-view question follows the outcome space: binary counts, category
+counts, or a numeric distribution in the specified units. A prose base rate
+remains an elicited claim until independently supported through the ledger's
+reference-class workflow. Creating a question stores elicitation, not a scored
+probability. Scenario results expose their reference-class citations and require
+separate, explicit unconditional baseline promotion.
+
+Adaptive questioning may return zero follow-ups. Its budget is a ceiling;
+questions should address answerable cruxes rather than repeat a checklist or
+pressure people to replace Unknown with false precision. Only one generation
+job may be active per interview; retries retain their original job identity.
+All draft writes validate answer and assumption citations against the interview
+packet, including direct store callers. Reconfirming an outcome preserves the
+wording of existing questions across software upgrades.

@@ -400,6 +400,10 @@ export function InterviewEvaluation({
                         Evidence: {item.estimate.evidence_refs.join(', ') || 'No cited evidence'} · model{' '}
                         {item.response_model}
                       </Text>
+                      <Text color={t.color.muted}>
+                        Reference classes:{' '}
+                        {item.estimate.reference_class_refs?.join(', ') || 'No cited reference class'}
+                      </Text>
                     </Box>
                   ))}
               </Box>

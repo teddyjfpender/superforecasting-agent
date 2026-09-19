@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 from forecasting.interviews.context import read_context
 from forecasting.interviews.model_worker import MAX_RESPONSE_BYTES
+from forecasting.interviews.review import review_findings
 from forecasting.interviews.store import InterviewStore
 from forecasting.models import ValidationError
 from protocol.interviews import (
@@ -34,6 +35,12 @@ class InterviewGenerationCancelled(Exception):
 
 SYSTEM = """You are an expert forecasting interviewer. Return only JSON matching the supplied schema.
 Propose specific, decision-relevant follow-up questions based on the provided interview and evidence.
+The question budget is a ceiling, not a target: return zero questions when no useful follow-up remains.
+Prioritize unresolved cruxes and settlement ambiguities, then discriminating counterevidence. Ask one
+thing at a time in plain language; put the expected value of answering in the rationale. Do not repeat
+Unknown/Skipped questions unless a supplied fact enables a genuinely different, answerable question.
+For unknowns, ask what observation or source could resolve them instead of demanding false precision.
+Do not interpret answer counts or the supplied elicitation_gaps as a score of forecasting quality.
 Ask about overlooked drivers, competing hypotheses, reference-class selection, base rates and sample size,
 resolution ambiguities, dependent causes, disconfirming evidence and what would change the estimate.
 Distinguish missing knowledge from future variability and measurement error. Do not promise to eliminate
@@ -70,6 +77,7 @@ def build_messages(
         "prior_interview": context.get("prior_interview") if context else None,
         "context_captured_at": context["captured_at"] if context else None,
         "max_questions": options.max_questions,
+        "elicitation_gaps": review_findings(draft),
         "schema": InterviewFollowups.model_json_schema(),
     }
     encoded = json.dumps(packet, ensure_ascii=False, allow_nan=False)
@@ -204,7 +212,8 @@ def apply_followups(
         raise ValidationError(
             "agent question proposals require a stable request identifier"
         )
-    draft.status = "needs_user"
+    if output.questions or output.assumptions:
+        draft.status = "needs_user"
     return InterviewStore(ledger).save(
         record["interview_id"],
         draft,
@@ -268,6 +277,21 @@ def enqueue_generation(
             ).fetchone()
         ):
             raise ValidationError("closed interviews cannot generate questions")
+        previous_job = conn.execute(
+            "SELECT job_id FROM forecast_interview_generation_requests WHERE interview_id = ? ORDER BY rowid DESC LIMIT 1",
+            (interview_id,),
+        ).fetchone()
+        if previous_job:
+            try:
+                existing = jobs.read(previous_job["job_id"])
+            except FileNotFoundError as exc:
+                raise ValidationError(
+                    "saved interview job is missing; inspect the profile before starting another call"
+                ) from exc
+            if existing.status not in {"done", "error", "cancelled"}:
+                raise ValidationError(
+                    "question generation is already active for this interview; resume or cancel it first"
+                )
         job_id = jobs.new_id()
         jobs.write(JobRecord(job_id=job_id, type="forecast_interview", spec=spec))
         conn.execute(

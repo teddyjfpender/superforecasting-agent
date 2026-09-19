@@ -368,3 +368,133 @@ def test_assumption_edit_is_attributed_idempotent_and_preserves_history(store):
     with pytest.raises(ModelError):
         service.save_assumption("interview", expected_revision=2, request_id="bad-p", assumption={**assumption, "probability": 65.0})
     assert store.read("interview")["revision"] == 2
+
+
+def test_unknown_state_survives_later_answers(store):
+    from forecasting.interviews.service import InterviewService
+
+    service = InterviewService(store.ledger)
+    record = service.begin("uncertain")
+    for key, status, actor, value, expected in [
+        ("base_rate", "unknown", "agent", None, "needs_research"),
+        ("drivers", "answered", "agent", "Demand remains stable", "needs_research"),
+        ("belief", "unknown", "user", None, "needs_user"),
+        ("counterevidence", "answered", "user", "Demand may fall", "needs_user"),
+        ("belief", "answered", "user", 0.5, "needs_research"),
+    ]:
+        record = service.answer(
+            "uncertain",
+            expected_revision=record["revision"],
+            request_id=str(record["revision"]),
+            question_id=key,
+            status=status,
+            actor=actor,
+            value=value,
+        )
+        assert record["document"]["status"] == expected
+    record = service.save_assumption(
+        "uncertain", expected_revision=record["revision"], request_id="edit-assumption",
+        assumption={"id": "new", "statement": "A new proposed factor"},
+    )
+    assert record["document"]["status"] == "needs_research"
+
+
+@pytest.mark.parametrize("owner", ["answers", "assumptions"])
+def test_direct_draft_writes_reject_invented_citations(store, owner):
+    entries = (
+        [dict(answer(), evidence_refs=["invented"])]
+        if owner == "answers"
+        else [{"id": "a", "statement": "A claim", "evidence_refs": ["invented"]}]
+    )
+    with pytest.raises(ModelError, match="outside the interview"):
+        save(store, draft(**{owner: entries}))
+    assert store.list_latest() == []
+
+
+@pytest.mark.parametrize(
+    "outcome,phrase",
+    [
+        ("numeric", "distribution"),
+        ("categorical", "each category"),
+        ("binary", "succeeded"),
+    ],
+)
+def test_outside_view_matches_outcome_space(outcome, phrase):
+    from forecasting.interviews.questions import core_questions
+
+    questions = core_questions(outcome)
+    assert phrase in next(q.prompt for q in questions if q.id == "base_rate")
+    belief_id = {
+        "numeric": "quantile_10",
+        "categorical": "categories",
+        "binary": "belief",
+    }[outcome]
+    assert next(i for i, q in enumerate(questions) if q.id == belief_id) < next(
+        i for i, q in enumerate(questions) if q.id == "base_rate"
+    )
+
+
+def test_reconfirm_outcome_preserves_frozen_question_wording(store):
+    from forecasting.interviews.questions import core_questions
+    from forecasting.interviews.service import InterviewService
+    from protocol.interviews import InterviewAnswer
+
+    document = draft(
+        questions=core_questions(),
+        answers=[
+            InterviewAnswer(
+                question_id="outcome", status="answered", value="binary", actor="user"
+            )
+        ],
+    )
+    document.questions[0].prompt = "Historical title wording"
+    save(store, document)
+    record = InterviewService(store.ledger).answer(
+        "interview",
+        expected_revision=1,
+        request_id="reconfirm",
+        question_id="outcome",
+        status="answered",
+        value="binary",
+    )
+    assert record["document"]["questions"][0]["prompt"] == "Historical title wording"
+
+
+def test_review_feedback_is_nonblocking_and_shared(store):
+    import json
+
+    from forecasting.interviews.generation import build_messages
+    from forecasting.interviews.service import InterviewService
+    from protocol.interviews import InterviewGenerationOptions
+
+    service = InterviewService(store.ledger)
+    record = service.begin("review-feedback")
+    for key, value in [
+        ("title", "Will the event occur?"),
+        ("criteria", "Official confirmation by December 2030"),
+        ("source", "Official registry"),
+        ("deadline", "2030-12-01T00:00:00Z"),
+        ("outcome", "binary"),
+        ("belief", 1.0),
+        ("base_rate", "One of two comparable cases"),
+    ]:
+        record = service.answer(
+            "review-feedback",
+            expected_revision=record["revision"],
+            request_id=key,
+            question_id=key,
+            status="answered",
+            value=value,
+        )
+    preview = service.preview("review-feedback", record["revision"])
+    assert preview["committable"]
+    packet = json.loads(
+        build_messages(store.ledger, record, InterviewGenerationOptions())[1]["content"]
+    )
+    assert all(finding in preview["issues"] for finding in packet["elicitation_gaps"])
+    assert any(f["field"] == "belief" for f in packet["elicitation_gaps"])
+    assert any(
+        f["field"] == "base_rate" and f["severity"] == "info"
+        for f in packet["elicitation_gaps"]
+    )
+    assert store.ledger.list_questions() == []

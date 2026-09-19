@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from forecasting.interviews.context import read_context
 from forecasting.interviews.generation import apply_followups
+from forecasting.interviews.review import review_findings
 from forecasting.interviews.service import InterviewService
 from forecasting.models import ValidationError
 from protocol.interview_agent import InterviewAgentRequest
@@ -86,6 +87,9 @@ def operate(ledger: ForecastLedger, request: InterviewAgentRequest) -> dict:
     return {
         "interview": result,
         "review_questions": list(REVIEW_QUESTIONS),
+        "elicitation_gaps": review_findings(
+            InterviewDraft.model_validate(result["document"])
+        ),
         "guidance": "Answer as the agent using frozen evidence; record Unknown when unsupported. Prior user beliefs are historical. Do not impersonate the user or silently change probabilities.",
     }
 
@@ -148,6 +152,8 @@ def review_for_update(
         "interview_id": interview_id,
         "revision": record["revision"],
         "digest": record["digest"],
+        "elicitation_gaps": review_findings(draft),
+        "review_complete_is_not_evidence_of_quality": True,
         "unresolved_questions": [
             key for key in REVIEW_QUESTIONS if answers[key].status == "unknown"
         ],

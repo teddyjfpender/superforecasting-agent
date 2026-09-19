@@ -22,7 +22,7 @@ export function InterviewRail({ record, index, t }: { record: InterviewRecord; i
         const questions = record.document.questions.filter(item => item.section === section)
 
         const answered = questions.filter(item =>
-          record.document.answers.some(answer => answer.question_id === item.id)
+          record.document.answers.some(answer => answer.question_id === item.id && answer.status === 'answered')
         ).length
 
         return (
@@ -31,6 +31,8 @@ export function InterviewRail({ record, index, t }: { record: InterviewRecord; i
           </Text>
         )
       })}
+      <Text color={t.color.muted}>Counts = answered.</Text>
+      <Text color={t.color.muted}>Unknown ≠ answered.</Text>
       <Text color={!current ? t.color.accent : t.color.muted}> Review</Text>
       <Text bold color={t.color.accent}>
         [Ctrl+L Outline]
@@ -62,6 +64,15 @@ export function InterviewContext({ record, index, t }: { record: InterviewRecord
             : answer.note || 'No belief inferred'}
         </Text>
       ) : null}
+      {question?.assumption_ids.map(id => {
+        const assumption = record.document.assumptions.find(item => item.id === id)
+
+        return assumption ? (
+          <Text color={t.color.muted} key={id} wrap="truncate-end">
+            {assumption.actor}: {assumption.statement}
+          </Text>
+        ) : null
+      })}
       <Text color={t.color.muted}>Only confirmed answers are durable.</Text>
       <Text color={t.color.muted}>Scenarios do not change the active forecast.</Text>
     </Box>

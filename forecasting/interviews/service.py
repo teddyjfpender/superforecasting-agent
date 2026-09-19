@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 
 from forecasting.interviews.context import capture_context
 from forecasting.interviews.questions import core_questions
+from forecasting.interviews.review import review_findings
 from forecasting.interviews.store import InterviewStore
 from forecasting.models import ValidationError, parse_timestamp
 from forecasting.question_spec import spec_from_dict
@@ -147,6 +148,9 @@ class InterviewService:
         )
         if question_id not in {question.id for question in draft.questions}:
             raise ValidationError("unknown interview question")
+        prior_answer = next(
+            (a for a in draft.answers if a.question_id == question_id), None
+        )
         draft.answers = [a for a in draft.answers if a.question_id != question_id] + [
             answer
         ]
@@ -174,6 +178,14 @@ class InterviewService:
                 raise ValidationError(
                     "outcome change would discard prior answers; start a new interview"
                 )
+            if (
+                prior_answer
+                and prior_answer.status == "answered"
+                and prior_answer.value == value
+            ):
+                # Reconfirmation must not rewrite questions from a frozen older version.
+                existing_questions = {q.id: q for q in draft.questions}
+                questions = [existing_questions.get(q.id, q) for q in questions]
             draft.questions = questions
         if status == "answered" and question_id == "categories":
             labels = [
@@ -220,7 +232,13 @@ class InterviewService:
                         id, InterviewAssumption(id=id, statement=statement, actor=actor)
                     )
             draft.assumptions = list(known.values())
-        draft.status = "needs_user" if status == "unknown" else "draft"
+        draft.status = (
+            "needs_user"
+            if any(a.status == "unknown" and a.actor == "user" for a in draft.answers)
+            else "needs_research"
+            if any(a.status == "unknown" for a in draft.answers)
+            else "draft"
+        )
         return self.store.save(
             interview_id,
             draft,
@@ -251,7 +269,8 @@ class InterviewService:
         existing = {item.id: item for item in draft.assumptions}
         existing[assumption.id] = assumption
         draft.assumptions = list(existing.values())
-        draft.status = "draft"
+        if draft.status == "ready":
+            draft.status = "draft"
         return self.store.save(
             interview_id,
             draft,
@@ -393,7 +412,7 @@ class InterviewService:
             normalized = raw
         return {
             "spec": normalized,
-            "issues": issues,
+            "issues": issues + review_findings(draft),
             "unanswered": missing,
             "committable": not missing
             and not any(i["severity"] == "error" for i in issues),

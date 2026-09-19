@@ -109,7 +109,7 @@ def core_questions(
             "crux",
             "challenge",
             "Which assumption would most change your estimate if it failed?",
-            "A crux directs research toward information with decision value.",
+            "Describe estimates if it holds and if it fails; research matters when plausible answers would change your judgment or decision.",
             False,
         ),
         (
@@ -177,7 +177,7 @@ def core_questions(
                 id=f"quantile_{q}",
                 section="beliefs",
                 kind="number",
-                prompt=f"What value has a {q}% chance of being below it?",
+                prompt=f"What value do you expect the outcome to fall at or below with {q}% probability?",
                 rationale="Use quantiles to represent a distribution, not a false-precision point estimate.",
             )
             for q in (10, 50, 90)
@@ -198,6 +198,14 @@ def core_questions(
                 rationale="Record a complete distribution, including low-probability alternatives.",
             ),
         ]
+    if outcome != "binary":
+        base_rate = next(q for q in result if q.id == "base_rate")
+        base_rate.prompt = (
+            "Across comparable cases, what is the distribution (median, spread and tails), in these units? State the sample size and period."
+            if outcome == "numeric"
+            else "Across comparable cases, how many fell in each category? State the total sample size and period."
+        )
+        base_rate.rationale = "Use comparable measurements and a defined sample; do not substitute a binary success rate or treat a small sample as precise."
     # An initial independent judgment precedes model advice or outside-view anchoring.
     result[6:6] = belief
     if update:

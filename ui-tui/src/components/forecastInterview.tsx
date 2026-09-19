@@ -650,6 +650,29 @@ export function ForecastInterview({
                 <Text color={t.color.primary}>
                   Answers are saved. Nothing has changed the active forecast probability.
                 </Text>
+                <Text color={t.color.muted}>
+                  {record?.document.mode === 'create'
+                    ? 'Creating a question saves the interview, not a scored forecast.'
+                    : 'This review preserves the active forecast.'}{' '}
+                  Compare scenarios, then explicitly promote an unconditional baseline if warranted.
+                </Text>
+                <Text color={t.color.muted}>
+                  Answer coverage is not evidence quality. Use{' '}
+                  <Text bold color={t.color.accent}>
+                    [Ctrl+L Outline]
+                  </Text>{' '}
+                  to revisit gaps.
+                </Text>
+                {preview?.unanswered.map(item => (
+                  <Text color={t.color.error} key={item}>
+                    Required: {item}
+                  </Text>
+                ))}
+                {preview?.issues.map((issue, at) => (
+                  <Text color={issue.severity === 'error' ? t.color.error : t.color.muted} key={at}>
+                    {String(issue.field)}: {String(issue.message)} {String(issue.fix ?? '')}
+                  </Text>
+                ))}
                 {record?.document.answers.map(answer => (
                   <Text color={t.color.muted} key={answer.question_id}>
                     {answer.question_id}:{' '}
@@ -659,16 +682,6 @@ export function ForecastInterview({
                           .join(' · ')
                       : answer.status}{' '}
                     · {answer.actor}
-                  </Text>
-                ))}
-                {preview?.unanswered.map(item => (
-                  <Text color={t.color.error} key={item}>
-                    Required: {item}
-                  </Text>
-                ))}
-                {preview?.issues.map((issue, at) => (
-                  <Text color={t.color.error} key={at}>
-                    {String(issue.message)}
                   </Text>
                 ))}
               </>

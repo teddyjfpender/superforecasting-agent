@@ -889,3 +889,62 @@ it('responds to viewport resizing without losing the current answer', async () =
     ui.close()
   }
 })
+
+it('distinguishes unknown and skipped from answered and explains review gaps before the transcript', async () => {
+  const record = fixture()
+  record.document.questions.push({ ...record.document.questions[0]!, id: 'drivers', prompt: 'Which drivers?' })
+  record.document.answers = [
+    {
+      question_id: 'title',
+      status: 'unknown',
+      value: null,
+      actor: 'user',
+      evidence_refs: [],
+      note: '',
+      custom_text: null
+    },
+    {
+      question_id: 'drivers',
+      status: 'skipped',
+      value: null,
+      actor: 'user',
+      evidence_refs: [],
+      note: '',
+      custom_text: null
+    }
+  ]
+
+  const request = vi.fn(async (method: string) => {
+    if (method === 'forecast.interview.list') {
+      return { interviews: [record] }
+    }
+
+    if (method === 'forecast.interview.preview') {
+      return {
+        spec: {},
+        committable: false,
+        unanswered: [],
+        issues: [
+          { field: 'base_rate', severity: 'warning', message: 'Record comparable cases.', fix: 'Open the outline.' }
+        ]
+      }
+    }
+
+    throw new Error(`Unexpected ${method}`)
+  })
+
+  const ui = await screen(request, 120, 40)
+
+  try {
+    await ui.wait('Record comparable cases.')
+    expect(ui.text()).toContain('define 0/2')
+    expect(ui.text()).toContain('Answer coverage is not evidence quality')
+    expect(ui.text().lastIndexOf('Record comparable cases.')).toBeLessThan(ui.text().lastIndexOf('title: unknown'))
+    ui.press('\x0c')
+    await ui.wait('INTERVIEW OUTLINE')
+    expect(ui.text()).toContain('[unknown]')
+    expect(ui.text()).toContain('[skipped]')
+  } finally {
+    ui.close()
+  }
+})
