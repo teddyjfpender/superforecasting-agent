@@ -3,13 +3,18 @@
 import hashlib
 import json
 import math
-import sqlite3
 from collections.abc import Sequence
 from datetime import date
 from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from forecasting.application.import_receipts import (
+    ImportReceipt,
+    ensure_receipts,
+    read_receipt,
+    write_receipt,
+)
 from forecasting.ledger import ForecastLedger
 from forecasting.models import EVIDENCE_CLAIM_TYPES, EvidenceItem, parse_timestamp
 from forecasting.sources.economic_records import FredObservation
@@ -49,40 +54,6 @@ class FredFetcher(Protocol):
     ) -> Sequence[FredObservation]: ...
 
 
-def _receipt_table(conn: sqlite3.Connection) -> None:
-    conn.execute("""CREATE TABLE IF NOT EXISTS forecast_source_import_receipts (
-        question_id TEXT NOT NULL,
-        request_id TEXT NOT NULL,
-        request_digest TEXT NOT NULL,
-        evidence_ids TEXT NOT NULL,
-        PRIMARY KEY (question_id, request_id)
-    )""")
-
-
-def _prior_import(
-    ledger: ForecastLedger,
-    conn: sqlite3.Connection,
-    request: FredImportRequest,
-    digest: str,
-) -> list[EvidenceItem] | None:
-    row = conn.execute(
-        "SELECT request_digest,evidence_ids FROM forecast_source_import_receipts "
-        "WHERE question_id=? AND request_id=?",
-        (request.question_id, request.request_id),
-    ).fetchone()
-    if row is None:
-        return None
-    if row["request_digest"] != digest:
-        raise ValueError("import request identifier reused for different input")
-    ids = json.loads(row["evidence_ids"])
-    if not isinstance(ids, list) or not all(isinstance(item, str) for item in ids):
-        raise ValueError("invalid import receipt")
-    evidence = [ledger.get_evidence(item) for item in ids]
-    if any(item.question_id != request.question_id for item in evidence):
-        raise ValueError("import receipt refers to another question")
-    return evidence
-
-
 def import_fred_evidence(
     ledger: ForecastLedger, request: FredImportRequest, *, fetch: FredFetcher
 ) -> list[EvidenceItem]:
@@ -107,10 +78,16 @@ def import_fred_evidence(
     ).hexdigest()
     if request.request_id is not None:
         with ledger.transaction(immediate=True) as conn:
-            _receipt_table(conn)
-            prior = _prior_import(ledger, conn, request, digest)
+            ensure_receipts(conn)
+            prior = read_receipt(
+                ledger,
+                conn,
+                question_id=request.question_id,
+                request_id=request.request_id,
+                digest=digest,
+            )
             if prior is not None:
-                return prior
+                return prior.evidence
     options = request.options
     if options.api_base_url is None:
         observations = list(
@@ -147,9 +124,15 @@ def import_fred_evidence(
     with ledger.transaction(immediate=True) as conn:
         if request.request_id is not None:
             # Another caller may have committed this operation during our fetch.
-            prior = _prior_import(ledger, conn, request, digest)
+            prior = read_receipt(
+                ledger,
+                conn,
+                question_id=request.question_id,
+                request_id=request.request_id,
+                digest=digest,
+            )
             if prior is not None:
-                return prior
+                return prior.evidence
         for observation in seen.values():
             evidence_items.append(
                 ledger.add_evidence(
@@ -178,13 +161,11 @@ def import_fred_evidence(
                 )
             )
         if request.request_id is not None:
-            conn.execute(
-                "INSERT INTO forecast_source_import_receipts VALUES (?,?,?,?)",
-                (
-                    request.question_id,
-                    request.request_id,
-                    digest,
-                    json.dumps([item.id for item in evidence_items]),
-                ),
+            write_receipt(
+                conn,
+                question_id=request.question_id,
+                request_id=request.request_id,
+                digest=digest,
+                receipt=ImportReceipt(evidence_items, []),
             )
     return evidence_items

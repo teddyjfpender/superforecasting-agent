@@ -1331,7 +1331,7 @@ The full `forecast` command tree — **95 top-level commands** (also reachable a
 | `--claim-type` |  |
 | `--reliability` |  |
 | `--relevance` |  |
-| `--request-id` | Stable retry identifier; reuse only for the same import input |
+| `--request-id` | Stable evidence-import retry identifier; reuse only for the same input |
 | `--api-base-url` | Override FRED CSV endpoint for tests or private mirrors |
 | `--resolution-criteria` |  |
 | `--close-time` |  |
@@ -1512,6 +1512,7 @@ The full `forecast` command tree — **95 top-level commands** (also reachable a
 | `--question` |  |
 | `--title` |  |
 | `--api-base-url` | Override Kalshi Trade API base URL for tests or private mirrors |
+| `--request-id` | Stable evidence-import retry identifier; reuse only for the same input |
 | `--resolution-criteria` |  |
 | `--close-time` |  |
 | `--resolution-time` |  |
@@ -1769,6 +1770,7 @@ The full `forecast` command tree — **95 top-level commands** (also reachable a
 | `--question` |  |
 | `--title` |  |
 | `--api-base-url` | Override Polymarket Gamma API base URL for tests or private mirrors |
+| `--request-id` | Stable evidence-import retry identifier; reuse only for the same input |
 | `--resolution-criteria` |  |
 | `--close-time` |  |
 | `--resolution-time` |  |

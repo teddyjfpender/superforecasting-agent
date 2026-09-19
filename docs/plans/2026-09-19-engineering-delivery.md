@@ -268,3 +268,27 @@ Canonical Python checks and all 76 import contracts passed before the final
 regressions; pre-commit repeats these checks against the final staged code. No full
 suite was run. This closes single-market identity selection, not all Polymarket
 probability semantics, typed source plans, shared command parity or retry receipts.
+
+
+## Shared import receipts and prediction-market acquisition retries
+
+Extracted FRED's receipt persistence into the shared application owner and added
+comparison IDs through an additive schema migration, preserving historical FRED
+digests. Kalshi/Polymarket acquisition now has a typed request/fetch boundary;
+request-ID replay checks precede fetching and repeat under the commit transaction.
+Evidence, baseline comparison and receipt commit together. Concurrent acquisition
+may make two reads but commits one result; retry after acknowledgement loss makes
+no new source read. CLI evidence imports expose `--request-id`, reject candidate
+use and render request conflicts through the normal domain error path.
+
+70 focused source/import/identity tests passed. The final nine receipt tests passed,
+including both-provider CLI replay/conflicts, concurrent callers, storage rollback,
+legacy schema preservation, missing referenced comparison, and subprocess exit
+immediately after commit. A missing CLI error import exposed by the conflict test
+was fixed. Python static/generated checks and 76 import contracts passed before
+that small final correction; pre-commit validates the final staged tree again.
+The CLI reference and application guide are updated. No full suite was run.
+
+The schema addition is backward-readable by this version; downgrade to older
+positional-insert code needs a pre-upgrade backup. Full typed import plans,
+remaining adapters and all participating gateway/tool parity remain incomplete.

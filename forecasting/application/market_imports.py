@@ -1,16 +1,25 @@
 """Prediction-market evidence imports; candidate promotion remains explicit."""
 
+import hashlib
+import json
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from forecasting.application.import_receipts import (
+    ImportReceipt,
+    ensure_receipts,
+    read_receipt,
+    write_receipt,
+)
 from forecasting.ledger import ForecastLedger
 from forecasting.models import EvidenceItem, parse_timestamp
 from forecasting.sources.market_records import (
     KalshiMarketImport,
     PolymarketMarketImport,
 )
+from forecasting.sources.requests import CommonSourceOptions
 
 MarketImport = KalshiMarketImport | PolymarketMarketImport
 
@@ -102,3 +111,94 @@ def import_market_evidence(
                 metadata=metadata,
             )
     return MarketEvidenceResult(evidence, comparison)
+
+
+class MarketAcquisitionRequest(MarketEvidenceRequest):
+    provider: Literal["kalshi", "polymarket"]
+    api_base_url: str
+    request_id: str | None = Field(default=None, min_length=1, max_length=200)
+
+    @field_validator("api_base_url")
+    @classmethod
+    def validate_endpoint(cls, value: str) -> str:
+        CommonSourceOptions(api_base_url=value)
+        return value
+
+
+class MarketFetcher(Protocol):
+    def __call__(self, source: str, *, api_base_url: str) -> MarketImport: ...
+
+
+def acquire_market_evidence(
+    ledger: ForecastLedger, request: MarketAcquisitionRequest, *, fetch: MarketFetcher
+) -> MarketEvidenceResult:
+    """Replay committed imports before fetching; serialize concurrent commit winners."""
+    request = MarketAcquisitionRequest.model_validate(request.model_dump())
+    ledger.get_question(request.question_id)
+    digest = hashlib.sha256(
+        json.dumps(
+            {
+                "version": 1,
+                "adapter": request.provider,
+                "request": request.model_dump(exclude={"request_id"}),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode()
+    ).hexdigest()
+
+    def restore(receipt: ImportReceipt) -> MarketEvidenceResult:
+        if len(receipt.evidence) != 1 or len(receipt.comparisons) > 1:
+            raise ValueError("invalid prediction-market import receipt")
+        return MarketEvidenceResult(
+            receipt.evidence[0], receipt.comparisons[0] if receipt.comparisons else None
+        )
+
+    if request.request_id is not None:
+        with ledger.transaction(immediate=True) as conn:
+            ensure_receipts(conn)
+            prior = read_receipt(
+                ledger,
+                conn,
+                question_id=request.question_id,
+                request_id=request.request_id,
+                digest=digest,
+            )
+            if prior is not None:
+                return restore(prior)
+    market = fetch(request.source, api_base_url=request.api_base_url)
+    if market_import_metadata(market, request.source)["adapter"] != request.provider:
+        raise ValueError("acquired market belongs to another provider")
+    with ledger.transaction(immediate=True) as conn:
+        if request.request_id is not None:
+            prior = read_receipt(
+                ledger,
+                conn,
+                question_id=request.question_id,
+                request_id=request.request_id,
+                digest=digest,
+            )
+            if prior is not None:
+                return restore(prior)
+        result = import_market_evidence(
+            ledger,
+            MarketEvidenceRequest(
+                question_id=request.question_id,
+                source=request.source,
+                as_of=request.as_of,
+            ),
+            market,
+        )
+        if request.request_id is not None:
+            write_receipt(
+                conn,
+                question_id=request.question_id,
+                request_id=request.request_id,
+                digest=digest,
+                receipt=ImportReceipt(
+                    [result.evidence],
+                    [result.comparison] if result.comparison is not None else [],
+                ),
+            )
+        return result

@@ -53,6 +53,7 @@ from forecasting.learning import (
 )
 from forecasting.ledger import CRUX_MATERIALITY, CRUX_STATUS, FORECAST_LINK_TYPES, ForecastLedger, WATCH_SOURCE_ROLES, WATCH_SOURCE_TYPES
 from forecasting.models import (
+    ValidationError,
     ASSUMPTION_STATUSES,
     CALIBRATION_LESSON_STATUSES,
     EVIDENCE_CLAIM_TYPES,
@@ -1040,8 +1041,9 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
                 default="https://www.fema.gov/api/open/v2/DisasterDeclarationsSummaries",
                 help="Override OpenFEMA Disaster Declarations endpoint for tests or private mirrors",
             )
+        if name in {"fred", "kalshi", "polymarket"}:
+            adapter.add_argument("--request-id", help="Stable evidence-import retry identifier; reuse only for the same input")
         if name == "fred":
-            adapter.add_argument("--request-id", help="Stable retry identifier; reuse only for the same import input")
             adapter.add_argument(
                 "--api-base-url",
                 default="https://fred.stlouisfed.org/graph/fredgraph.csv",
@@ -3333,25 +3335,31 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
             print(f"market_probability: {_format_probability(baseline['probability_or_distribution'])}")
         return
     if args.import_kind == "polymarket":
-        market = load_polymarket_market(args.source, api_base_url=args.api_base_url)
-        baseline = market.baseline_payload()
         from forecasting.application.market_imports import (
-            MarketEvidenceRequest, import_market_evidence, market_import_metadata,
+            MarketAcquisitionRequest, acquire_market_evidence, market_import_metadata,
         )
 
-        polymarket_metadata = market_import_metadata(market, args.source)
         if args.question_id:
-            result = import_market_evidence(
-                ledger,
-                MarketEvidenceRequest(question_id=args.question_id, source=args.source, as_of=args.as_of),
-                market,
-            )
+            try:
+                result = acquire_market_evidence(
+                    ledger,
+                    MarketAcquisitionRequest(question_id=args.question_id, source=args.source,
+                        as_of=args.as_of, provider="polymarket", api_base_url=args.api_base_url,
+                        request_id=getattr(args, "request_id", None)),
+                    fetch=load_polymarket_market,
+                )
+            except ValueError as exc:
+                raise ValidationError(str(exc)) from exc
             print(f"captured polymarket evidence {result.evidence.id}")
             if result.comparison is not None:
                 print(f"captured polymarket baseline comparison {result.comparison['id']}")
                 print(f"probability: {_format_probability(result.comparison['probability_or_distribution'])}")
             return
-        metadata = polymarket_metadata
+        if getattr(args, "request_id", None) is not None:
+            raise ValidationError("--request-id requires --question for evidence imports")
+        market = load_polymarket_market(args.source, api_base_url=args.api_base_url)
+        baseline = market.baseline_payload()
+        metadata = market_import_metadata(market, args.source)
         if baseline is not None:
             metadata["baseline"] = baseline
         candidate = ledger.create_ingest_candidate(
@@ -3370,25 +3378,31 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
             print(f"market_probability: {_format_probability(baseline['probability_or_distribution'])}")
         return
     if args.import_kind == "kalshi":
-        market = load_kalshi_market(args.source, api_base_url=args.api_base_url)
-        baseline = market.baseline_payload()
         from forecasting.application.market_imports import (
-            MarketEvidenceRequest, import_market_evidence, market_import_metadata,
+            MarketAcquisitionRequest, acquire_market_evidence, market_import_metadata,
         )
 
-        kalshi_metadata = market_import_metadata(market, args.source)
         if args.question_id:
-            result = import_market_evidence(
-                ledger,
-                MarketEvidenceRequest(question_id=args.question_id, source=args.source, as_of=args.as_of),
-                market,
-            )
+            try:
+                result = acquire_market_evidence(
+                    ledger,
+                    MarketAcquisitionRequest(question_id=args.question_id, source=args.source,
+                        as_of=args.as_of, provider="kalshi", api_base_url=args.api_base_url,
+                        request_id=getattr(args, "request_id", None)),
+                    fetch=load_kalshi_market,
+                )
+            except ValueError as exc:
+                raise ValidationError(str(exc)) from exc
             print(f"captured kalshi evidence {result.evidence.id}")
             if result.comparison is not None:
                 print(f"captured kalshi baseline comparison {result.comparison['id']}")
                 print(f"probability: {_format_probability(result.comparison['probability_or_distribution'])}")
             return
-        metadata = kalshi_metadata
+        if getattr(args, "request_id", None) is not None:
+            raise ValidationError("--request-id requires --question for evidence imports")
+        market = load_kalshi_market(args.source, api_base_url=args.api_base_url)
+        baseline = market.baseline_payload()
+        metadata = market_import_metadata(market, args.source)
         if baseline is not None:
             metadata["baseline"] = baseline
         candidate = ledger.create_ingest_candidate(

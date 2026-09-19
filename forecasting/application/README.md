@@ -72,3 +72,22 @@ partial evidence. A missing quote creates evidence without inventing a baseline.
 active forecast promotion remain separate operations. Tests live in
 `tests/application/test_market_imports.py`, with local-HTTP CLI regressions in
 `tests/forecasting/test_cli.py`.
+
+
+`acquire_market_evidence` accepts `MarketAcquisitionRequest` and a typed fetch
+capability. It checks durable receipts before acquisition and again before commit.
+CLI Kalshi/Polymarket imports with `--question` support `--request-id`; repeated
+input returns the original evidence/comparison without refetching. Different
+input with the same identifier fails. Candidate imports cannot use this option.
+No request ID preserves independent-import behavior.
+
+`import_receipts.py` is the shared FRED/market receipt owner. Its migration adds
+comparison IDs while retaining old FRED IDs and digests. Receipt, evidence and
+comparison writes share a transaction; a missing referenced record fails closed.
+Tests: `tests/application/test_market_import_receipts.py` (concurrent calls,
+rollback, CLI replay, historical schema and process exit after commit).
+
+Downgrades require a pre-upgrade ledger backup: binaries using the previous
+four-column positional receipt insert cannot write after the comparison column
+has been added. Do not remove the new column and discard market receipt data to
+force an in-place downgrade.
