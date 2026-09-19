@@ -417,14 +417,21 @@ def test_confirmed_dead_descendant_is_not_signalled_again(owner):
     dead.kill.assert_not_called()
 
 
-def test_nested_background_processes_are_stopped_before_their_parents(owner, tmp_path):
+@pytest.mark.parametrize("interpreter", ["sys.executable", "getattr(sys, '_base_executable', sys.executable)"])
+def test_nested_background_processes_are_stopped_before_their_parents(owner, tmp_path, interpreter):
     import psutil
 
     trace_path = tmp_path / "nested-process-trace.txt"
+    child_trace_path = tmp_path / "nested-child-trace.txt"
     nested = (
-        'import subprocess,sys,time; '
+        'import subprocess,sys,time,faulthandler; '
+        f'trace=open({str(child_trace_path)!r},"w"); '
+        'trace.write("started stdout="+repr(sys.stdout)+"\\n"); trace.flush(); '
+        'faulthandler.dump_traceback_later(3,file=trace); '
         'child=subprocess.Popen([sys.executable,"-c","import time; time.sleep(30)"]); '
-        'print(child.pid,flush=True); time.sleep(30)'
+        'trace.write("spawned grandchild\\n"); trace.flush(); '
+        'print(child.pid,flush=True); '
+        'trace.write("printed PID\\n"); trace.flush(); time.sleep(30)'
     )
     # This exercises descendant ownership, not execution-budget enforcement.
     # Two nested interpreter/venv launches can exceed the ordinary 3s cell
@@ -434,7 +441,7 @@ def test_nested_background_processes_are_stopped_before_their_parents(owner, tmp
         f'_trace=open({str(trace_path)!r},"w")\n'
         'faulthandler.dump_traceback_later(3,file=_trace)\n'
         'try:\n'
-        f'    child=subprocess.Popen([sys.executable,"-c",{nested!r}],stdout=subprocess.PIPE,text=True)\n'
+        f'    child=subprocess.Popen([{interpreter},"-c",{nested!r}],stdout=subprocess.PIPE,text=True)\n'
         '    print(child.pid, child.stdout.readline().strip())\n'
         'finally:\n'
         '    faulthandler.cancel_dump_traceback_later()\n'
@@ -447,7 +454,8 @@ def test_nested_background_processes_are_stopped_before_their_parents(owner, tmp
         # diagnostics. Preserve the actual wait location in native CI output.
         trace = trace_path.read_text() if trace_path.exists() else 'trace not created'
         diagnostics = bytes(owner.kernel.diagnostics).decode('utf-8', errors='replace')
-        pytest.fail(f'Nested process deadline exceeded\n{trace}\nNative stderr:\n{diagnostics}')
+        child_trace = child_trace_path.read_text() if child_trace_path.exists() else 'child did not start'
+        pytest.fail(f'Nested process deadline exceeded\n{trace}\nChild:\n{child_trace}\nNative stderr:\n{diagnostics}')
     assert result['retirement_reason'] == 'cell_left_running_processes'
     assert not result['state_preserved']
     for pid in map(int, result['stdout'].split()):

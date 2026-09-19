@@ -850,3 +850,10 @@ only this case and the execution-deadline regression on Windows/Python 3.11.15
 with locked dependencies. Ordinary dispatch/PR/push product qualification is
 unchanged. Five focused local kernel/hook checks pass; native attribution remains
 pending and no runtime fix is claimed from instrumentation alone.
+
+Windows investigation run 35462154972 reproduces the deadline with the main kernel
+blocked at the child stdout `readline`; captured native stderr is empty. The next
+bounded probe adds child-side stage/stack diagnostics and compares the Windows
+venv launcher with the base interpreter. This distinguishes child startup or
+nested launch blocking from output transport failure. Both variants pass locally;
+Windows attribution remains unproven until the controlled comparison finishes.
