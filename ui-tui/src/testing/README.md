@@ -30,19 +30,19 @@ require the capabilities they actually use, so minimal fixtures remain truthful.
 
 ## Validation
 
-Run the affected test files, then production lint/types. From `ui-tui/`:
+Run the affected test files, then lint and the shared typecheck. From `ui-tui/`:
 
 ```sh
 npx vitest run src/__tests__/rpcFixtures.test.ts src/__tests__/scroll.test.ts
 npm run lint
 npm run type-check
-npx tsc --noEmit -p tsconfig.tests.json
 ```
 
-The last command includes test fixtures. It currently reports inherited errors;
-production typechecking does not establish test type safety. Do not hide those
-errors with broad casts, exclusions or blanket suppressions. The engineering plan
-requires the complete test project to become blocking after migration.
+The shared `type-check` command checks production and the complete test project.
+It is blocking in the canonical developer checks and existing CI typecheck steps.
+Use `npm run type-check:tests` for focused fixture feedback. Do not hide errors
+with broad casts, exclusions or blanket suppressions. Compilation cannot detect
+existing `any`/`never` escapes; replace those with typed fixtures when touching tests.
 
 Native terminal qualification is separate: controlled streams do not prove PTY,
 ConPTY, resize or platform shutdown behavior. See the

@@ -108,7 +108,7 @@ describe('memoized TranscriptPane: scroll position survives re-renders', () => {
 
     // A tall transcript so the ScrollBox actually overflows and scrolls.
     const items = Array.from({ length: 60 }, (_, i) => ({
-      role: (i % 2 ? 'assistant' : 'user') as const,
+      role: i % 2 ? ('assistant' as const) : ('user' as const),
       text: `message number ${i} with several words to force some real height`
     }))
 
@@ -134,10 +134,9 @@ describe('memoized TranscriptPane: scroll position survives re-renders', () => {
       React.createElement(
         Box,
         { flexDirection: 'column', height: ROWS, width: COLS },
-        React.createElement(
-          GatewayProvider,
-          { value: gwValue },
-          React.createElement(AppLayout, {
+        React.createElement(GatewayProvider, {
+          value: gwValue,
+          children: React.createElement(AppLayout, {
             actions,
             composer: buildComposer(input, COLS),
             mouseTracking: false,
@@ -145,7 +144,7 @@ describe('memoized TranscriptPane: scroll position survives re-renders', () => {
             status,
             transcript
           })
-        )
+        })
       )
 
     const instance: any = await render(React.createElement(App, { input: 'hi' }), {

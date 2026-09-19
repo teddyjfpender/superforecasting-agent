@@ -212,7 +212,14 @@ const renderForecastDesk = async (
     // once a command has returned data.
     ...(landing
       ? []
-      : [{ kind: 'panel', panelData: { sections: panelSections, title: 'Forecast Desk' }, role: 'system', text: '' } as Msg])
+      : [
+          {
+            kind: 'panel',
+            panelData: { sections: panelSections, title: 'Forecast Desk' },
+            role: 'system',
+            text: ''
+          } as Msg
+        ])
   ]
 
   const virtualRows = historyItems.map((msg, index) => ({ index, key: `row-${index}`, msg }))
@@ -299,11 +306,10 @@ const renderForecastDesk = async (
   }
 
   const instance = renderSync(
-    React.createElement(
-      GatewayProvider,
-      { value: { gw: { request: async () => null } as never, rpc: async () => null } },
-      React.createElement(AppLayout, props)
-    ),
+    React.createElement(GatewayProvider, {
+      value: { gw: { request: async () => null } as never, rpc: async () => null },
+      children: React.createElement(AppLayout, props)
+    }),
     {
       patchConsole: false,
       stderr: stderr.stream,

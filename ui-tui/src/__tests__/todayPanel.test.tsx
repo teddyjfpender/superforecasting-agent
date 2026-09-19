@@ -187,7 +187,9 @@ describe('fitTodayRow', () => {
     )
 
     // Contract: note is the WHOLE input or empty — never a truncated fragment.
-    expect(fitted.note === '' || fitted.note === 'interval_50_high 4.4 · interval_50_low 2.1 · as-of 2026-06-24').toBe(true)
+    expect(fitted.note === '' || fitted.note === 'interval_50_high 4.4 · interval_50_low 2.1 · as-of 2026-06-24').toBe(
+      true
+    )
     expect(fitted.note).toBe('')
     expect(within(fitted, 36)).toBe(true)
   })
@@ -246,11 +248,11 @@ const normalize = (value: string, stripAnsi: (input: string) => string) =>
     .trim()
 
 interface TodaySpies {
-  onBlur: ReturnType<typeof vi.fn>
-  onNewQuestion: ReturnType<typeof vi.fn>
-  onOpenAlerts: ReturnType<typeof vi.fn>
-  onOpenQuestion: ReturnType<typeof vi.fn>
-  onRunCommand: ReturnType<typeof vi.fn>
+  onBlur: ReturnType<typeof vi.fn<() => void>>
+  onNewQuestion: ReturnType<typeof vi.fn<() => void>>
+  onOpenAlerts: ReturnType<typeof vi.fn<(focus?: 'contested') => void>>
+  onOpenQuestion: ReturnType<typeof vi.fn<(...args: string[]) => void>>
+  onRunCommand: ReturnType<typeof vi.fn<(...args: string[]) => void>>
 }
 
 interface MountTodayOpts {

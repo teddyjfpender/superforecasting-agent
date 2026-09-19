@@ -3,6 +3,8 @@ import { PassThrough } from 'stream'
 import React from 'react'
 import { describe, expect, it } from 'vitest'
 
+import { DEFAULT_VOICE_RECORD_KEY } from '../lib/platform.js'
+
 // REAL-SESSION KEYSTROKE FLASH — "the right chat blinks when I type" (operator
 // capture /tmp/tui-capture-1783499859.raw: kitty 202x56, ~7.3 KB written to the
 // TRANSCRIPT region on every keystroke in an idle "ready" session).
@@ -138,7 +140,7 @@ describe('Home: a background $uiState notify must not re-blit the transcript whi
     // bottom (stickyScroll) — the geometry where a window shift re-blits the
     // whole region under decstbm={false}.
     const historyItems = Array.from({ length: 40 }, (_, i) => ({
-      role: (i % 2 ? 'assistant' : 'user') as const,
+      role: i % 2 ? ('assistant' as const) : ('user' as const),
       text: `• ${DESK_LINES[i % DESK_LINES.length]} (turn ${i})`
     }))
 
@@ -177,7 +179,7 @@ describe('Home: a background $uiState notify must not re-blit the transcript whi
         () => ({
           cols: COLS,
           compIdx: 0,
-          completions: [] as string[],
+          completions: [],
           empty: false,
           handleTextPaste: async () => null,
           pagerPageSize: 10,
@@ -185,7 +187,7 @@ describe('Home: a background $uiState notify must not re-blit the transcript whi
           queuedDisplay: [],
           submit: noop,
           updateInput: setInput,
-          voiceRecordKey: null
+          voiceRecordKey: DEFAULT_VOICE_RECORD_KEY
         }),
         []
       )
@@ -193,10 +195,9 @@ describe('Home: a background $uiState notify must not re-blit the transcript whi
       return React.createElement(
         Box,
         { flexDirection: 'column', height: ROWS, width: COLS },
-        React.createElement(
-          GatewayProvider,
-          { value: gwValue },
-          React.createElement(AppLayout, {
+        React.createElement(GatewayProvider, {
+          value: gwValue,
+          children: React.createElement(AppLayout, {
             actions,
             composer,
             mouseTracking: false,
@@ -204,7 +205,7 @@ describe('Home: a background $uiState notify must not re-blit the transcript whi
             status,
             transcript
           })
-        )
+        })
       )
     }
 

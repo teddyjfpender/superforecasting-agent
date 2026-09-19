@@ -1,7 +1,14 @@
 import { stringWidth } from '@superforecasting/ink'
 import { describe, expect, it } from 'vitest'
 
-import { diverging, renderCandles, renderDepth, renderDistribution, renderScatter, renderSparkgrid } from '../../lib/viz/index.js'
+import {
+  diverging,
+  renderCandles,
+  renderDepth,
+  renderDistribution,
+  renderScatter,
+  renderSparkgrid
+} from '../../lib/viz/index.js'
 import type { ChartTheme, ColorMode, RenderCtx, StyledRow, TerminalCaps } from '../../lib/viz/index.js'
 
 const THEME: ChartTheme = {
@@ -25,7 +32,14 @@ const ctx = (width = 60, over?: Partial<TerminalCaps>, height?: number): RenderC
 
 const text = (row: StyledRow): string => row.map(r => r.text).join('')
 const isBraille = (s: string): boolean => [...s].some(c => c.codePointAt(0)! >= 0x2800 && c.codePointAt(0)! <= 0x28ff)
-const colors = (rows: StyledRow[]): Set<string | undefined> => new Set(rows.flat().flatMap(r => [r.color, r.backgroundColor]).filter(Boolean))
+
+const colors = (rows: StyledRow[]): Set<string | undefined> =>
+  new Set(
+    rows
+      .flat()
+      .flatMap(r => [r.color, r.backgroundColor])
+      .filter(Boolean)
+  )
 
 // Width invariant shared by all charts (run per fixture below).
 const MODES: ColorMode[] = ['truecolor', '256', '16']
@@ -42,10 +56,14 @@ describe('renderDistribution', () => {
   const cdf = pdf.map((_, i) => pdf.slice(0, i + 1).reduce((a, b) => a + b, 0) / pdf.reduce((a, b) => a + b, 0))
 
   it('renders a braille PDF with CDF + interval bands + markers', () => {
-    const r = renderDistribution({ cdf, intervals: [{ hi: 1.28, lo: -1.28, p: 0.8 }], mean: 0, median: 0, pdf, support }, ctx(60, undefined, 9))
+    const r = renderDistribution(
+      { cdf, intervals: [{ hi: 1.28, lo: -1.28, p: 0.8 }], mean: 0, median: 0, pdf, support },
+      ctx(60, undefined, 9)
+    )
+
     expect(r.rows.length).toBe(9)
     expect(r.rows.some(row => isBraille(text(row)))).toBe(true)
-    expect(text(r.rows.flat ? r.rows[Math.floor(9 / 2)]! : r.rows[0]!)).toContain('│') // mean marker (or gutter)
+    expect(text(r.rows[Math.floor(9 / 2)]!)).toContain('│') // mean marker (or gutter)
     expect(r.legend?.[0]?.some(run => run.text.includes('pdf'))).toBe(true)
   })
 
@@ -183,7 +201,11 @@ describe('renderScatter', () => {
   })
 
   it('coerces malformed points (NaN/non-object) without crashing', () => {
-    const bad = [{ x: 1, y: 2 }, { x: Number.NaN, y: 3 }, null, { x: 'z', y: 4 }] as unknown as { x: number; y: number }[]
+    const bad = [{ x: 1, y: 2 }, { x: Number.NaN, y: 3 }, null, { x: 'z', y: 4 }] as unknown as {
+      x: number
+      y: number
+    }[]
+
     const r = renderScatter({ points: bad }, ctx(40, undefined, 8))
     widthSafe(r.rows, 40)
   })

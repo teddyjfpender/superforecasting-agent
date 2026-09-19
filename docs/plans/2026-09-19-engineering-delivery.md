@@ -403,3 +403,20 @@ required W02 work. No full Python or TUI suite was run.
   project remains failing with 33 diagnostics (previously 160). No full suite was run.
 - W02 remains partial until the remaining fixtures pass and the dedicated typecheck is
   included in the blocking canonical quality path. No runtime API was weakened for these tests.
+
+### W02 milestone — blocking TUI test typecheck
+
+- The complete `tsconfig.tests.json` project now passes without exclusions or blanket
+  suppressions. `npm run type-check` checks production plus tests; the dedicated
+  `type-check:tests` command supports focused feedback. Existing canonical developer,
+  hook and CI callers of `type-check` inherit this gate without another workflow owner.
+- Corrected renderer/provider child props, awaited asynchronous renderer creation before
+  cleanup, supplied complete chart/terminal capabilities, and aligned completion, voice,
+  callback and tool-progress fixtures with their real consumer types. The completion
+  fixture uses an unstarted GatewayClient with typed local RPC handlers. Removed `never`
+  casts from desk grouping fixtures; no production interfaces were weakened.
+- Verification: 219 tests passed across the 22 changed fixture files; production and full
+  test-project typechecking passed. No full Python or TUI suite was run.
+- This completes the dedicated test-typecheck gate criterion, not all W02: Python strict
+  coverage ratchets, feedback tiers and existing unchecked fixture escapes remain work.
+  Typechecking alone does not certify native rendering, integration recovery or releases.

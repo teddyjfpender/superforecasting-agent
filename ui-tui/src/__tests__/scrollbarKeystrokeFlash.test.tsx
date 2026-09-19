@@ -3,6 +3,8 @@ import { PassThrough } from 'stream'
 import React from 'react'
 import { describe, expect, it } from 'vitest'
 
+import { DEFAULT_VOICE_RECORD_KEY } from '../lib/platform.js'
+
 // SCROLLBAR KEYSTROKE FLASH — "the RIGHT SIDE of historical chats is still
 // blinking on every keystroke" (operator, post df8660bcc). That commit fixed the
 // transcript BODY (narrowed TranscriptPane's $uiState subscription to computed
@@ -128,7 +130,7 @@ describe('Home: a gateway heartbeat must not re-blit the transcript scrollbar wh
     const gwValue = { gw, rpc: gw.rpc }
 
     const historyItems = Array.from({ length: 40 }, (_, i) => ({
-      role: (i % 2 ? 'assistant' : 'user') as const,
+      role: i % 2 ? ('assistant' as const) : ('user' as const),
       text: `• ${DESK_LINES[i % DESK_LINES.length]} (turn ${i})`
     }))
 
@@ -159,7 +161,7 @@ describe('Home: a gateway heartbeat must not re-blit the transcript scrollbar wh
         () => ({
           cols: COLS,
           compIdx: 0,
-          completions: [] as string[],
+          completions: [],
           empty: false,
           handleTextPaste: async () => null,
           pagerPageSize: 10,
@@ -167,7 +169,7 @@ describe('Home: a gateway heartbeat must not re-blit the transcript scrollbar wh
           queuedDisplay: [],
           submit: noop,
           updateInput: setInput,
-          voiceRecordKey: null
+          voiceRecordKey: DEFAULT_VOICE_RECORD_KEY
         }),
         []
       )
@@ -175,10 +177,9 @@ describe('Home: a gateway heartbeat must not re-blit the transcript scrollbar wh
       return React.createElement(
         Box,
         { flexDirection: 'column', height: ROWS, width: COLS },
-        React.createElement(
-          GatewayProvider,
-          { value: gwValue },
-          React.createElement(AppLayout, {
+        React.createElement(GatewayProvider, {
+          value: gwValue,
+          children: React.createElement(AppLayout, {
             actions,
             composer,
             mouseTracking: false,
@@ -186,7 +187,7 @@ describe('Home: a gateway heartbeat must not re-blit the transcript scrollbar wh
             status,
             transcript
           })
-        )
+        })
       )
     }
 

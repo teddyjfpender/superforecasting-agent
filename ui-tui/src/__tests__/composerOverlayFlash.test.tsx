@@ -3,6 +3,8 @@ import { PassThrough } from 'stream'
 import React from 'react'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 
+import { GatewayClient } from '../gatewayClient.js'
+import { RpcFixtures } from '../testing/rpcFixtures.js'
 import { waitForQuiet } from '../testing/settle.js'
 
 // COMPLETION-OVERLAY FLASH CONTRACT.
@@ -47,7 +49,10 @@ const writeStream = (columns: number, rows: number, isTTY = true) => {
   const stream = new PassThrough() as any
   let output = ''
   Object.assign(stream, {
-    columns, isRaw: false, isTTY, rows,
+    columns,
+    isRaw: false,
+    isTTY,
+    rows,
     ref: () => stream,
     setRawMode: (m: boolean) => (stream.isRaw = m),
     unref: () => stream
@@ -67,24 +72,21 @@ const SLASH_ITEMS = [
   { text: '/alerts', display: '/alerts', meta: 'price alerts' }
 ]
 
-const buildGw = () => ({
-  off: noop,
-  on: noop,
-  request: async (method: string, params: any) => {
-    if (method === 'complete.slash') {
-      const text: string = params.text ?? ''
+const buildGw = () => {
+  // Construct the transport without starting it; only the typed request capability is replaced.
+  const gw = new GatewayClient()
 
-      return { items: SLASH_ITEMS.filter(i => i.text.startsWith(text.toLowerCase())), replace_from: 1 }
-    }
+  const fixtures = new RpcFixtures()
+    .handle('complete.slash', params => ({
+      items: SLASH_ITEMS.filter(i => i.text.startsWith((params.text ?? '').toLowerCase())),
+      replace_from: 1
+    }))
+    .handle('complete.path', () => ({ items: [{ text: '@file:src/foo.ts', display: 'foo.ts', meta: 'src' }] }))
 
-    if (method === 'complete.path') {
-      return { items: [{ text: '@file:src/foo.ts', display: 'foo.ts', meta: 'src' }] }
-    }
+  gw.request = fixtures.request.bind(fixtures)
 
-    return null
-  },
-  rpc: async () => null
-})
+  return gw
+}
 
 const OVERLAY_CHROME = /api-key|foo\.ts|API KEYS/i
 
@@ -113,7 +115,7 @@ const mount = async () => {
   const ROWS = 30
   const COLS = 120
   const gw = buildGw()
-  const gwValue = { gw, rpc: gw.rpc }
+  const gwValue = { gw, rpc: async () => null }
   const msg = { role: 'user' as const, text: 'hello world' }
 
   const transcript: any = {
@@ -124,14 +126,27 @@ const mount = async () => {
   }
 
   const actions: any = {
-    answerApproval: noop, answerClarify: noop, answerSecret: noop, answerSudo: noop,
-    clearSelection: noop, draftCommand: noop, onModelSelect: noop, resumeById: noop,
-    runCommand: noop, setStickyPrompt: noop
+    answerApproval: noop,
+    answerClarify: noop,
+    answerSecret: noop,
+    answerSudo: noop,
+    clearSelection: noop,
+    draftCommand: noop,
+    onModelSelect: noop,
+    resumeById: noop,
+    runCommand: noop,
+    setStickyPrompt: noop
   }
 
   const status: any = {
-    cwdLabel: '~/x', forecastPulseTick: 0, sessionStartedAt: null, showStickyPrompt: false,
-    statusColor: 'white', stickyPrompt: '', turnStartedAt: null, voiceLabel: ''
+    cwdLabel: '~/x',
+    forecastPulseTick: 0,
+    sessionStartedAt: null,
+    showStickyPrompt: false,
+    statusColor: 'white',
+    stickyPrompt: '',
+    turnStartedAt: null,
+    voiceLabel: ''
   }
 
   const progress: any = { showProgressArea: false }
@@ -140,7 +155,7 @@ const mount = async () => {
 
   const Harness = () => {
     const [input, setInput] = React.useState('')
-    const { armPath, completions, compIdx } = comp.useCompletion(input, false, gw as any)
+    const { armPath, completions, compIdx } = comp.useCompletion(input, false, gw)
     drive.set = setInput
     drive.arm = armPath
     React.useLayoutEffect(() => {
@@ -148,21 +163,43 @@ const mount = async () => {
     }, [input])
 
     const composer: any = {
-      cols: COLS, compIdx, completions, empty: input === '',
-      handleTextPaste: async () => null, pagerPageSize: 10,
-      queueEditIdx: null, queuedDisplay: [], submit: noop,
-      updateInput: setInput, voiceRecordKey: null
+      cols: COLS,
+      compIdx,
+      completions,
+      empty: input === '',
+      handleTextPaste: async () => null,
+      pagerPageSize: 10,
+      queueEditIdx: null,
+      queuedDisplay: [],
+      submit: noop,
+      updateInput: setInput,
+      voiceRecordKey: null
     }
 
-    return React.createElement(ink.Box, { flexDirection: 'column', height: ROWS, width: COLS },
-      React.createElement(GatewayProvider, { value: gwValue },
-        React.createElement(AppLayout, { actions, composer, mouseTracking: false, progress, status, transcript })))
+    return React.createElement(
+      ink.Box,
+      { flexDirection: 'column', height: ROWS, width: COLS },
+      React.createElement(GatewayProvider, {
+        value: gwValue,
+        children: React.createElement(AppLayout, {
+          actions,
+          composer,
+          mouseTracking: false,
+          progress,
+          status,
+          transcript
+        })
+      })
+    )
   }
 
   const out = writeStream(COLS, ROWS)
 
   const instance: any = await ink.render(React.createElement(Harness), {
-    exitOnCtrlC: false, patchConsole: false, stdin: writeStream(COLS, ROWS, true).stream, stdout: out.stream
+    exitOnCtrlC: false,
+    patchConsole: false,
+    stdin: writeStream(COLS, ROWS, true).stream,
+    stdout: out.stream
   })
 
   // Wait for the real AppLayout to have PAINTED rather than sleeping a flat

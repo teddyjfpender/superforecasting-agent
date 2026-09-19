@@ -11,13 +11,21 @@ const THEME: ChartTheme = {
   bands: ['#222222', '#555555'],
   down: '#0000ff',
   fg: '#ffffff',
+  gain: '#00cc66',
+  loss: '#ff3344',
   grid: '#444444',
   heat: diverging('#0000ff', '#888888', '#ff0000'),
   muted: '#888888',
   up: '#ff0000'
 }
 
-const ctx = (over?: Partial<TerminalCaps>, width = 60): RenderCtx => ({ caps: { blitterMax: 'braille', colorMode: 'truecolor', imageProtocol: 'none', ...over }, height: 8, theme: THEME, width })
+const ctx = (over?: Partial<TerminalCaps>, width = 60): RenderCtx => ({
+  caps: { blitterMax: 'braille', colorMode: 'truecolor', imageProtocol: 'none', ...over },
+  height: 8,
+  theme: THEME,
+  width
+})
+
 const text = (row: StyledRow): string => row.map(r => r.text).join('')
 
 // Rows must never overflow the budget. (The stricter "plot has no width-2 glyph"
@@ -61,7 +69,13 @@ describe('heatmap robustness (malformed agent input)', () => {
 
   it('wide-char (CJK/emoji) row labels do not desync the gutter', () => {
     const r = renderHeatmap(
-      { matrix: [[1, 0], [0, 1]], rowLabels: ['日本語ロング', '😀emoji'] },
+      {
+        matrix: [
+          [1, 0],
+          [0, 1]
+        ],
+        rowLabels: ['日本語ロング', '😀emoji']
+      },
       ctx({ colorMode: '256' }, 40)
     )
 
@@ -72,7 +86,12 @@ describe('heatmap robustness (malformed agent input)', () => {
 
   it('256-color diverging: extreme + and - map to distinct colors (sign survives)', () => {
     const r = renderHeatmap({ diverging: true, matrix: [[1, -1]] }, ctx({ colorMode: '256' }, 24))
-    const colors = r.rows.flat().flatMap(x => [x.color, x.backgroundColor]).filter(Boolean)
+
+    const colors = r.rows
+      .flat()
+      .flatMap(x => [x.color, x.backgroundColor])
+      .filter(Boolean)
+
     expect(new Set(colors).size).toBeGreaterThanOrEqual(2) // +1 and -1 are not merged
   })
 })

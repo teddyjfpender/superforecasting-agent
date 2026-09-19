@@ -48,7 +48,12 @@ describe('session vitals on the conversation bar', () => {
     const { PassThrough } = await import('stream')
 
     const frame = async (vitals?: object): Promise<string> => {
-      const stream = new PassThrough() as never as PassThrough & { columns: number; isTTY: boolean; rows: number }
+      const stream = new PassThrough() as InstanceType<typeof PassThrough> & {
+        columns: number
+        isTTY: boolean
+        rows: number
+      }
+
       stream.columns = 120
       stream.rows = 6
       stream.isTTY = false
@@ -57,15 +62,26 @@ describe('session vitals on the conversation bar', () => {
 
       const inst = await render(
         React.createElement(HomeStatusBar, {
-          agents: null, cols: 120, cwdLabel: '~/x', deskStatus: null,
-          model: 'gpt-5.5', onOpenAgents: () => undefined,
-          status: 'ready', statusColor: '#0f0', t: DARK_THEME,
+          agents: null,
+          cols: 120,
+          cwdLabel: '~/x',
+          deskStatus: null,
+          model: 'gpt-5.5',
+          onOpenAgents: () => undefined,
+          status: 'ready',
+          statusColor: '#0f0',
+          t: DARK_THEME,
           ...(vitals ? { vitals } : {})
         } as never),
         { exitOnCtrlC: false, patchConsole: false, stdout: stream as never }
       )
 
-      return new Promise(res => setTimeout(() => { inst.unmount?.(); res(out) }, 80))
+      return new Promise(res =>
+        setTimeout(() => {
+          inst.unmount?.()
+          res(out)
+        }, 80)
+      )
     }
 
     const bare = await frame()

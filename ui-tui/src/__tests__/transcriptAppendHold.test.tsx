@@ -34,7 +34,10 @@ import type { Msg } from '../types.js'
 const writeStream = (columns: number, rows: number, isTTY = true) => {
   const stream = new PassThrough() as any
   Object.assign(stream, {
-    columns, isRaw: false, isTTY, rows,
+    columns,
+    isRaw: false,
+    isTTY,
+    rows,
     ref: () => stream,
     setRawMode: (m: boolean) => (stream.isRaw = m),
     unref: () => stream
@@ -168,8 +171,11 @@ const App = ({
         // The live tail (StreamingAssistant) — a child at the very bottom of the
         // same ScrollBox. Activity / subagent / streaming rows grow it.
         tailH > 0
-          ? React.createElement(Box, { flexDirection: 'column', height: tailH, key: 'tail' },
-              React.createElement(Text, null, 'live tail'))
+          ? React.createElement(
+              Box,
+              { flexDirection: 'column', height: tailH, key: 'tail' },
+              React.createElement(Text, null, 'live tail')
+            )
           : null
       )
     )
@@ -200,8 +206,7 @@ const mount = async (items: Msg[]): Promise<Ctx> => {
   const heightsRef: HeightsRef = { current: null }
   const offsetsRef: OffsetsRef = { current: null }
 
-  const el = (its: Msg[], tailH = 0) =>
-    React.createElement(App, { handle, heightsRef, items: its, offsetsRef, tailH })
+  const el = (its: Msg[], tailH = 0) => React.createElement(App, { handle, heightsRef, items: its, offsetsRef, tailH })
 
   const instance: any = await render(el(items), {
     exitOnCtrlC: false,
@@ -271,16 +276,13 @@ describe('append-path hold: a parked reader is never moved by an agent update', 
 
   it('P3 — tool-progress lines merged into the current turn shelf (appendToolShelfMessage) holds', async () => {
     // Seed a current-turn tool shelf at the bottom (a trail carrying one tool).
-    const items = [
-      ...makeConversation(30),
-      { kind: 'trail', role: 'system', text: '', tools: [{ label: 'read', line: 'read a.ts' }] } as any
-    ]
+    const items = [...makeConversation(30), { kind: 'trail', role: 'system', text: '', tools: ['read a.ts'] } as any]
 
     const ctx = await mount(items)
     const { topBefore, topAtBefore } = await parkMidHistory(ctx)
 
     // More tool activity streams into the same shelf — the bottom trail grows.
-    const shelf = { kind: 'trail', role: 'system', text: '', tools: [{ label: 'edit', line: 'edit a.ts' }] } as Msg
+    const shelf = { kind: 'trail', role: 'system', text: '', tools: ['edit a.ts'] } as Msg
     const next = appendToolShelfMessage(items, shelf)
     // The merge must have grown the existing trail in place (not appended a row).
     expect(next.length).toBe(items.length)

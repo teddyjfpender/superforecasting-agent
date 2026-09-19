@@ -7,14 +7,28 @@ const THEME: ChartTheme = {
   bands: ['#222222', '#555555'],
   down: '#0000ff',
   fg: '#ffffff',
+  gain: '#00cc66',
+  loss: '#ff3344',
   grid: '#444444',
   heat: diverging('#0000ff', '#888888', '#ff0000'),
   muted: '#888888',
   up: '#ff0000'
 }
 
-const caps = (over?: Partial<TerminalCaps>): TerminalCaps => ({ blitterMax: 'braille', colorMode: 'truecolor', imageProtocol: 'none', ...over })
-const ctx = (width: number, over?: Partial<TerminalCaps>, height?: number): RenderCtx => ({ caps: caps(over), height, theme: THEME, width })
+const caps = (over?: Partial<TerminalCaps>): TerminalCaps => ({
+  blitterMax: 'braille',
+  colorMode: 'truecolor',
+  imageProtocol: 'none',
+  ...over
+})
+
+const ctx = (width: number, over?: Partial<TerminalCaps>, height?: number): RenderCtx => ({
+  caps: caps(over),
+  height,
+  theme: THEME,
+  width
+})
+
 const text = (row: StyledRow): string => row.map(r => r.text).join('')
 const isBraille = (s: string): boolean => [...s].some(c => c.codePointAt(0)! >= 0x2800 && c.codePointAt(0)! <= 0x28ff)
 

@@ -64,7 +64,10 @@ describe('market config', () => {
   it('round-trips providers, categories + watchlist', () => {
     const file = join(tmp, 'markets.json')
     const watch = [{ category: 'Stocks', name: 'Nvidia', provider: 'yahoo', symbol: 'NVDA' }]
-    saveMarketConfig({ categories: ['Indices', 'Crypto'], providers: ['yahoo', 'coingecko'], watchlist: watch }, file)
+    saveMarketConfig(
+      { custom: [], categories: ['Indices', 'Crypto'], providers: ['yahoo', 'coingecko'], watchlist: watch },
+      file
+    )
     const loaded = loadMarketConfig(file)
     expect(loaded.providers).toEqual(['yahoo', 'coingecko'])
     expect(loaded.categories).toEqual(['Indices', 'Crypto'])
@@ -72,7 +75,13 @@ describe('market config', () => {
   })
 
   it('returns empty config when the file is missing', () => {
-    expect(loadMarketConfig(join(tmp, 'nope.json'))).toEqual({ categories: [], custom: [], pmSaved: [], providers: [], watchlist: [] })
+    expect(loadMarketConfig(join(tmp, 'nope.json'))).toEqual({
+      categories: [],
+      custom: [],
+      pmSaved: [],
+      providers: [],
+      watchlist: []
+    })
   })
 
   it('sanitizes a malformed agent-written config so it can never crash the renderer', () => {

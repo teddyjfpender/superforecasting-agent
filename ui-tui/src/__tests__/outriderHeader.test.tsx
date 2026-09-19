@@ -26,7 +26,7 @@ const render = async (cols: number, rows: number) => {
   const stdout = writeStream(cols, rows)
   const stdin = writeStream(cols, rows)
 
-  const inst = inkRender(React.createElement(OutriderHeader, { t: DARK_THEME }), {
+  const inst = await inkRender(React.createElement(OutriderHeader, { t: DARK_THEME }), {
     exitOnCtrlC: false,
     patchConsole: false,
     stdin: stdin.s,
@@ -35,8 +35,10 @@ const render = async (cols: number, rows: number) => {
 
   await tick(40)
   const text = stdout.text()
-  inst.unmount?.()
-  inst.cleanup?.()
+  inst.unmount()
+  inst.cleanup()
+  stdout.s.destroy()
+  stdin.s.destroy()
 
   return text
 }

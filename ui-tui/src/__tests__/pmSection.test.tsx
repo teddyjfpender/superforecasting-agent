@@ -1064,7 +1064,10 @@ describe('first-open loading state (no 0-events flash)', () => {
   it('shows an honest loading line before the first venue list lands', async () => {
     const gw = fakeGw([])
     const base = gw.request.bind(gw)
-    let releaseList: ((v: unknown) => void) | null = null
+
+    let releaseList: (v: unknown) => void = () => {
+      throw new Error('List request not pending')
+    }
 
     gw.request = (method: string, params: Record<string, unknown> = {}) => {
       if (method === 'pm.list' && !params.query) {

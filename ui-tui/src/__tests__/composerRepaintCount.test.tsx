@@ -136,10 +136,9 @@ describe('Home composer: keystrokes do not re-render the transcript', () => {
       return React.createElement(
         Box,
         { flexDirection: 'column', height: ROWS, width: COLS },
-        React.createElement(
-          GatewayProvider,
-          { value: gwValue },
-          React.createElement(AppLayout, {
+        React.createElement(GatewayProvider, {
+          value: gwValue,
+          children: React.createElement(AppLayout, {
             actions,
             composer,
             mouseTracking: false,
@@ -147,7 +146,7 @@ describe('Home composer: keystrokes do not re-render the transcript', () => {
             status,
             transcript
           })
-        )
+        })
       )
     }
 

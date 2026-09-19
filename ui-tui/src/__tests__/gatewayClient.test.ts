@@ -174,41 +174,47 @@ describe('GatewayClient websocket attach mode', () => {
     }
   })
 
-  it.each([false, true])('restores server-owned prompts after reconnect, including a lost answer (%s)', async lostAnswer => {
-    process.env.SUPERFORECASTING_AGENT_TUI_GATEWAY_URL = 'ws://gateway.test/api/ws'
-    const gw = new GatewayClient()
-    gw.start()
-    const first = FakeWebSocket.instances[0]!
-    first.open()
-    const frame = { jsonrpc: '2.0', id: 'srq-one', method: 'sudo', params: { session_id: 's' } }
+  it.each([false, true])(
+    'restores server-owned prompts after reconnect, including a lost answer (%s)',
+    async lostAnswer => {
+      process.env.SUPERFORECASTING_AGENT_TUI_GATEWAY_URL = 'ws://gateway.test/api/ws'
+      const gw = new GatewayClient()
+      gw.start()
+      const first = FakeWebSocket.instances[0]!
+      first.open()
+      const frame = { jsonrpc: '2.0', id: 'srq-one', method: 'sudo', params: { session_id: 's' } }
 
-    try {
-      first.message(JSON.stringify(frame))
+      try {
+        first.message(JSON.stringify(frame))
 
-      if (lostAnswer) {await gw.replyPrompt('sudo', 'srq-one', {password: 'lost-in-transit'})}
-      first.close()
-      expect(gw.hasPrompt('srq-one')).toBe(false)
-      gw.reconnect()
-      const second = FakeWebSocket.instances.at(-1)!
-      second.open()
-      const resume = gw.request('session.resume', { session_id: 's' })
-      await Promise.resolve()
-      const outbound = JSON.parse(second.sent.at(-1)!)
-      second.message(
-        JSON.stringify({ jsonrpc: '2.0', id: outbound.id, result: { session_id: 's', open_requests: [frame] } })
-      )
-      await resume
-      await gw.replyPrompt('sudo', 'srq-one', { password: 'only-new-peer' })
-      expect(JSON.parse(second.sent.at(-1)!)).toEqual({
-        jsonrpc: '2.0',
-        id: 'srq-one',
-        result: { password: 'only-new-peer' }
-      })
-      expect(first.sent).toHaveLength(lostAnswer ? 1 : 0)
-    } finally {
-      await gw.kill()
+        if (lostAnswer) {
+          await gw.replyPrompt('sudo', 'srq-one', { password: 'lost-in-transit' })
+        }
+
+        first.close()
+        expect(gw.hasPrompt('srq-one')).toBe(false)
+        gw.reconnect()
+        const second = FakeWebSocket.instances.at(-1)!
+        second.open()
+        const resume = gw.request('session.resume', { session_id: 's' })
+        await Promise.resolve()
+        const outbound = JSON.parse(second.sent.at(-1)!)
+        second.message(
+          JSON.stringify({ jsonrpc: '2.0', id: outbound.id, result: { session_id: 's', open_requests: [frame] } })
+        )
+        await resume
+        await gw.replyPrompt('sudo', 'srq-one', { password: 'only-new-peer' })
+        expect(JSON.parse(second.sent.at(-1)!)).toEqual({
+          jsonrpc: '2.0',
+          id: 'srq-one',
+          result: { password: 'only-new-peer' }
+        })
+        expect(first.sent).toHaveLength(lostAnswer ? 1 : 0)
+      } finally {
+        await gw.kill()
+      }
     }
-  })
+  )
 
   it('waits for websocket open and resolves RPC requests', async () => {
     process.env.HERMES_TUI_GATEWAY_URL = 'ws://gateway.test/api/ws?token=abc'
@@ -480,9 +486,9 @@ describe('GatewayClient websocket attach mode', () => {
     const socket = FakeWebSocket.instances[0]!
     socket.open()
     gw.drain()
-    const pending = gw.request('fixture.command', {})
-    await vi.waitFor(() => expect(socket.sent.some(frame => JSON.parse(frame).method === 'fixture.command')).toBe(true))
-    const request = JSON.parse(socket.sent.find(frame => JSON.parse(frame).method === 'fixture.command')!)
+    const pending = gw.request('session.status', {})
+    await vi.waitFor(() => expect(socket.sent.some(frame => JSON.parse(frame).method === 'session.status')).toBe(true))
+    const request = JSON.parse(socket.sent.find(frame => JSON.parse(frame).method === 'session.status')!)
     const data = { dispatch: 'command.dispatch', execution_started: false }
     const assertion = expect(pending).rejects.toMatchObject({ code: 4018, data, message: 'handoff' })
     socket.message(JSON.stringify({ jsonrpc: '2.0', id: request.id, error: { code: 4018, message: 'handoff', data } }))
@@ -631,7 +637,7 @@ describe('GatewayClient websocket attach mode', () => {
     const secretUrl = 'ws://gateway.test/api/ws?token=hunter2&channel=secret'
 
     process.env.HERMES_TUI_GATEWAY_URL = secretUrl
-    ;(globalThis as { WebSocket?: unknown }).WebSocket = class ThrowingWebSocket extends FakeWebSocket {
+    ;(globalThis as { WebSocket?: unknown }).WebSocket = class ThrowingWebSocket {
       constructor(url: string) {
         throw new TypeError(`Invalid URL: ${url}`)
       }

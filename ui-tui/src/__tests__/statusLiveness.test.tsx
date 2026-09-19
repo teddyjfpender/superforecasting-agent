@@ -60,7 +60,10 @@ const writeStream = (columns: number, rows: number, isTTY = true) => {
   const stream = new PassThrough() as any
   let output = ''
   Object.assign(stream, {
-    columns, isRaw: false, isTTY, rows,
+    columns,
+    isRaw: false,
+    isTTY,
+    rows,
     ref: () => stream,
     setRawMode: (m: boolean) => (stream.isRaw = m),
     unref: () => stream
@@ -75,22 +78,43 @@ const tick = (ms: number) => new Promise(r => setTimeout(r, ms))
 const noop = () => {}
 
 const actions: any = {
-  answerApproval: noop, answerClarify: noop, answerSecret: noop, answerSudo: noop,
-  clearSelection: noop, draftCommand: noop, onModelSelect: noop, resumeById: noop,
-  runCommand: noop, setStickyPrompt: noop
+  answerApproval: noop,
+  answerClarify: noop,
+  answerSecret: noop,
+  answerSudo: noop,
+  clearSelection: noop,
+  draftCommand: noop,
+  onModelSelect: noop,
+  resumeById: noop,
+  runCommand: noop,
+  setStickyPrompt: noop
 }
 
 const status: any = {
-  cwdLabel: '~/x', forecastPulseTick: 0, sessionStartedAt: null, showStickyPrompt: false,
-  statusColor: 'white', stickyPrompt: '', turnStartedAt: null, voiceLabel: ''
+  cwdLabel: '~/x',
+  forecastPulseTick: 0,
+  sessionStartedAt: null,
+  showStickyPrompt: false,
+  statusColor: 'white',
+  stickyPrompt: '',
+  turnStartedAt: null,
+  voiceLabel: ''
 }
 
 const progress: any = { showProgressArea: false }
 
 const buildComposer = (cols: number): any => ({
-  cols, compIdx: 0, completions: [], empty: false,
-  handleTextPaste: async () => null, pagerPageSize: 10,
-  queueEditIdx: null, queuedDisplay: [], submit: noop, updateInput: noop, voiceRecordKey: null
+  cols,
+  compIdx: 0,
+  completions: [],
+  empty: false,
+  handleTextPaste: async () => null,
+  pagerPageSize: 10,
+  queueEditIdx: null,
+  queuedDisplay: [],
+  submit: noop,
+  updateInput: noop,
+  voiceRecordKey: null
 })
 
 const ROWS = 30
@@ -124,17 +148,17 @@ const mountBusyApp = async () => {
   }
 
   const items = Array.from({ length: 40 }, (_, i) => ({
-    role: (i % 2 ? 'assistant' : 'user') as const,
+    role: i % 2 ? ('assistant' as const) : ('user' as const),
     text: `message number ${i} with several words to force some real height here`
   }))
 
   const virtualRows = items.map((m, i) => ({ index: i, key: `m${i}`, msg: m }))
 
-  const { AppLayout, Box, GatewayProvider, patchTurnState, patchUiState, render, useVirtualHistory } =
-    await setup()
+  const { AppLayout, Box, GatewayProvider, patchTurnState, patchUiState, render, useVirtualHistory } = await setup()
 
   const gw: any = {
-    off: noop, on: noop,
+    off: noop,
+    on: noop,
     request: async () => null,
     rpc: async () => null
   }
@@ -152,17 +176,30 @@ const mountBusyApp = async () => {
       [virtualHistory, rows]
     )
 
-    return React.createElement(Box, { flexDirection: 'column', height: ROWS, width: COLS },
-      React.createElement(GatewayProvider, { value: gwValue },
-        React.createElement(AppLayout, {
-          actions, composer, mouseTracking: false, progress, status, transcript
-        })))
+    return React.createElement(
+      Box,
+      { flexDirection: 'column', height: ROWS, width: COLS },
+      React.createElement(GatewayProvider, {
+        value: gwValue,
+        children: React.createElement(AppLayout, {
+          actions,
+          composer,
+          mouseTracking: false,
+          progress,
+          status,
+          transcript
+        })
+      })
+    )
   }
 
   const out = writeStream(COLS, ROWS)
 
   const instance: any = await render(React.createElement(App), {
-    exitOnCtrlC: false, patchConsole: false, stdin: writeStream(COLS, ROWS, true).stream, stdout: out.stream
+    exitOnCtrlC: false,
+    patchConsole: false,
+    stdin: writeStream(COLS, ROWS, true).stream,
+    stdout: out.stream
   })
 
   await tick(250)

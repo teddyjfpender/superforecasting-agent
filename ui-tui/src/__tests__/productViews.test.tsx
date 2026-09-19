@@ -7,6 +7,7 @@ import { getOverlayState, resetOverlayState } from '../app/overlayStore.js'
 import { catalogSeries } from '../lib/dataDesk.js'
 import { dataDeskGateway, testDataCatalog } from '../testing/dataDesk.js'
 import { waitForText } from '../testing/settle.js'
+import type { Theme } from '../theme.js'
 
 // Smoke tests for the three "serious product" views — Markets, News, and
 // Messaging. They ship without a live data source wired yet, so these assert
@@ -57,7 +58,7 @@ const normalize = (value: string, stripAnsi: (input: string) => string) =>
 
 const tick = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
-const renderComponent = async (component: React.ComponentType<{ onClose: () => void; t: unknown }>) => {
+const renderComponent = async (component: React.ComponentType<{ onClose: () => void; t: Theme }>) => {
   process.env.FORECAST_TUI_INLINE = '1'
 
   const [{ render }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
@@ -127,12 +128,15 @@ describe('MarketsView', () => {
     const stdout = writeStream(120, 36)
     const stdin = writeStream(120, 36, true)
 
-    const instance = await render(React.createElement(MarketsView, { gw: dataDeskGateway() as never, onClose: () => undefined, t: DARK_THEME }), {
-      exitOnCtrlC: false,
-      patchConsole: false,
-      stdin: stdin.stream,
-      stdout: stdout.stream
-    })
+    const instance = await render(
+      React.createElement(MarketsView, { gw: dataDeskGateway() as never, onClose: () => undefined, t: DARK_THEME }),
+      {
+        exitOnCtrlC: false,
+        patchConsole: false,
+        stdin: stdin.stream,
+        stdout: stdout.stream
+      }
+    )
 
     await tick(40)
 
@@ -223,7 +227,12 @@ describe('MarketsView', () => {
 })
 
 describe('AddProviderModal', () => {
-  const renderModal = async (initial: { categories: string[]; custom: never[]; providers: string[]; watchlist: never[] }) => {
+  const renderModal = async (initial: {
+    categories: string[]
+    custom: never[]
+    providers: string[]
+    watchlist: never[]
+  }) => {
     process.env.FORECAST_TUI_INLINE = '1'
 
     const [{ Box, render }, { AddProviderModal }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
@@ -284,7 +293,6 @@ describe('AddProviderModal', () => {
     expect(text).toContain('Starter sets')
     expect(text).toContain('Browse data')
     expect(text).toContain('Sources')
-
   })
 })
 

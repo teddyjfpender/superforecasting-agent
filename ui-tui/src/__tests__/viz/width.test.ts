@@ -12,6 +12,8 @@ const THEME: ChartTheme = {
   bands: ['#222222', '#555555'],
   down: '#0000ff',
   fg: '#ffffff',
+  gain: '#00cc66',
+  loss: '#ff3344',
   grid: '#444444',
   heat: diverging('#0000ff', '#888888', '#ff0000'),
   muted: '#888888',
@@ -37,7 +39,12 @@ const paths = Array.from({ length: 12 }, (_, k) => median.map((m, i) => m + (k -
 describe('width safety — every row is width-1 glyphs and fits the budget', () => {
   for (const w of [24, 40, 56, 80, 120]) {
     for (const { blitter, mode } of MODES) {
-      const ctx: RenderCtx = { caps: { blitterMax: blitter, colorMode: mode, imageProtocol: 'none' }, height: 8, theme: THEME, width: w }
+      const ctx: RenderCtx = {
+        caps: { blitterMax: blitter, colorMode: mode, imageProtocol: 'none' },
+        height: 8,
+        theme: THEME,
+        width: w
+      }
 
       it(`heatmap @w=${w} ${mode}`, () => {
         const r = renderHeatmap({ diverging: true, matrix: matrix(9, 13), rowLabels: ['alpha', 'beta', 'gamma'] }, ctx)
@@ -74,7 +81,13 @@ describe('width safety — every row is width-1 glyphs and fits the budget', () 
 
 describe('perf shape — heatmap coalescing bounds run count', () => {
   it('120×40 truecolor heatmap: each row has at most `cols` runs (coalesced, not per-cell nodes)', () => {
-    const ctx: RenderCtx = { caps: { blitterMax: 'braille', colorMode: 'truecolor', imageProtocol: 'none' }, height: 40, theme: THEME, width: 120 }
+    const ctx: RenderCtx = {
+      caps: { blitterMax: 'braille', colorMode: 'truecolor', imageProtocol: 'none' },
+      height: 40,
+      theme: THEME,
+      width: 120
+    }
+
     const r = renderHeatmap({ diverging: true, matrix: matrix(80, 120) }, ctx)
     expect(r.rows.length).toBeGreaterThan(0)
 
