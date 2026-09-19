@@ -20,6 +20,19 @@ These are entry points and representative modules, not an exhaustive inventory.
 | [browser_processes.py](browser_processes.py)   | Daemon identity, PID reuse safeguards and confirmed termination. |
 | [browser_connection.py](browser_connection.py) | Browser endpoint connection ownership.                           |
 
+## Gateway job workers
+
+`job_workers.JobWorkers` owns cancellation handles for one registered gateway.
+Signalling and retirement require the original event identity, so stale cleanup
+cannot remove or stop a replacement. Job RPC execution uses `RuntimeWorkers` for
+admission and draining; shutdown becomes a cooperative cancellation condition.
+Late progress/completion is suppressed when its host or worker lifetime changes.
+Durable records remain in `forecasting.jobs.store`, including queued records whose
+thread failed to start. Recovery must explicitly claim those records.
+
+Focused coverage: `tests/application/test_job_worker_ownership.py`. This does not
+make legacy reforecast configuration/ledger lookups independently profile-scoped.
+
 ## POSIX terminal startup
 
 `pty_spawn.spawn_pty` owns allocation through confirmed executable startup. It uses

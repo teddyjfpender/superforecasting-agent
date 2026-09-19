@@ -967,3 +967,22 @@ all command machine-output contracts.
 checks including the additional replacement-worker race. Real subprocess cases
 verify empty-profile JSON listing and missing-job cancellation without prompts or
 tracebacks. All 38 questionnaire-control TUI tests passed. No full suite ran.
+
+## Gateway job worker ownership
+
+Each job RPC registration now captures an instance-owned cancellation registry;
+there is no module-global worker map. Identity-checked signalling and retirement
+protect replacements. Job execution uses the admitted host's tracked worker
+lifetime, contributes to draining, observes cooperative shutdown, and suppresses
+late events when its host/lifetime changes. All registered job-family handlers
+reject admission during shutdown. Thread-start failure retires the local handle
+but preserves the queued durable record for explicit recovery; shutdown races
+retain error 5030.
+
+Twenty-four focused job ownership, cancellation and gateway checks passed. Tests
+exercise two hosts/stores with the same job ID, independent cancellation/repeated
+draining, host replacement without stopping the old host first, stale cleanup,
+and startup/admission failures. The new handle owner passes strict typing and is
+included in the protected strict inventory. No full suite ran. Legacy reforecast
+configuration/ledger lookup and complete typed service injection remain W05 work;
+this is not a claim that every job-family dependency is independently scoped.

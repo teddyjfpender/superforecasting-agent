@@ -236,6 +236,7 @@
     "superforecasting_agent/hosting/delegations.py",
     "superforecasting_agent/hosting/desk_agent.py",
     "superforecasting_agent/hosting/device_auth.py",
+    "superforecasting_agent/hosting/job_workers.py",
     "superforecasting_agent/hosting/notifications.py",
     "superforecasting_agent/hosting/pty_exec.py",
     "superforecasting_agent/hosting/pty_spawn.py",

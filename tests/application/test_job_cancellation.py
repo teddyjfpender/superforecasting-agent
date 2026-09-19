@@ -9,7 +9,7 @@ from forecasting.application.job_cancellation import request_job_cancellation
 from forecasting.cli.jobs_admin import _cmd_jobs_cancel
 from forecasting.jobs.model import JobRecord
 from forecasting.jobs.store import JobStore
-from tui_gateway import jobs_rpc, server
+from tui_gateway import server
 
 
 def test_live_owner_receipt_does_not_claim_terminal_status():
@@ -28,7 +28,7 @@ def test_live_owner_receipt_does_not_claim_terminal_status():
 @pytest.mark.parametrize("method", ["jobs.cancel", "forecast.warnings.automode.cancel"])
 def test_storage_failure_is_not_acknowledged_or_locally_signalled(monkeypatch, method):
     event = Mock()
-    monkeypatch.setitem(jobs_rpc._running, "job_failure", event)
+    monkeypatch.setitem(server._job_workers._events, "job_failure", event)
     def fail(*args):
         raise OSError("disk unavailable")
     monkeypatch.setattr(JobStore, "request_cancel", fail)
@@ -98,13 +98,13 @@ def test_cli_machine_output_and_errors_are_noninteractive(tmp_path, arguments, c
 
 def test_cancel_does_not_signal_replacement_worker(monkeypatch):
     original, replacement = Mock(), Mock()
-    monkeypatch.setitem(jobs_rpc._running, "job_swap", original)
+    monkeypatch.setitem(server._job_workers._events, "job_swap", original)
     store = JobStore()
     store.write(JobRecord(job_id="job_swap", type="warnings", status="queued"))
     request = JobStore.request_cancel
     def replace_after_admission(self, job_id):
         accepted = request(self, job_id)
-        jobs_rpc._running[job_id] = replacement
+        server._job_workers.install(job_id, replacement)
         return accepted
     monkeypatch.setattr(JobStore, "request_cancel", replace_after_admission)
     result = server.handle_request({"id": "cancel", "method": "jobs.cancel", "params": {"job_id": "job_swap"}})

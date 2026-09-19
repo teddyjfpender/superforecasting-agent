@@ -34,12 +34,9 @@ import logging
 import threading
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from superforecasting_agent.hosting.workers import HostStopping
 
-# job_id -> stop Event for the in-process fast-cancel path (the durable stop file
-# is the cross-process path; both are polled by JobContext.should_cancel).
-_running: dict[str, threading.Event] = {}
-_running_lock = threading.Lock()
+logger = logging.getLogger(__name__)
 
 
 def _get_store():
@@ -53,9 +50,33 @@ def active_jobs(types: list[str] | None = None) -> list[dict[str, Any]]:
     return [r.to_dict() for r in _get_store().active(types=types)]
 
 
-def register(server) -> None:
+def register(server, *, store_factory=None):
     """Register every ``jobs.*`` handler + the warnings aliases into the gateway
     dispatch table."""
+
+    from superforecasting_agent.hosting.job_workers import JobWorkers
+    from tui_gateway.rpc_binding import bind_host_handler
+
+    workers = JobWorkers()
+    # Compatibility composition exposes the owner for diagnostics; handlers and
+    # workers capture this instance, never a module-level replacement.
+    server._job_workers = workers
+    get_store = store_factory or _get_store
+
+    admitted_host = contextvars.ContextVar("job_rpc_host")
+
+    def register_method(name, handler):
+        def invoke(owner, rid, params):
+            token = admitted_host.set(owner)
+            try:
+                return handler(rid, params)
+            finally:
+                admitted_host.reset(token)
+
+        server.register_method(name, bind_host_handler(
+            lambda: server._host, server._err,
+            invoke,
+        ))
 
     def _spawn(job_type_name: str, spec: dict[str, Any], sid: str) -> str:
         """Create a JobRecord + run it on a daemon thread, streaming events.
@@ -69,43 +90,48 @@ def register(server) -> None:
         from forecasting.jobs.types import resolve as resolve_type
 
         job_type = resolve_type(job_type_name)  # raises KeyError on unknown type
-        store = _get_store()
+        owner = admitted_host.get()
+        lifetime = owner.workers
+        store = get_store()
         job_id = store.new_id()
         store.write(JobRecord(job_id=job_id, type=job_type_name, spec=dict(spec or {})))
 
         stop = threading.Event()
-        with _running_lock:
-            _running[job_id] = stop
+        workers.install(job_id, stop)
+
+        def emit(event, session_id, payload):
+            if server._host is owner and owner.workers is lifetime and not lifetime.stopping:
+                server._emit(event, session_id, payload)
 
         ns = job_type.alias_namespace
 
         def _emit_progress(event: dict[str, Any]) -> None:
-            server._emit(
+            emit(
                 "jobs.progress",
                 sid,
                 {"job_id": job_id, "type": job_type_name, "progress": event},
             )
             if ns:
-                server._emit(f"{ns}.progress", sid, {"job_id": job_id, **event})
+                emit(f"{ns}.progress", sid, {"job_id": job_id, **event})
 
         def _emit_complete(result: dict[str, Any]) -> None:
-            server._emit(
+            emit(
                 "jobs.complete",
                 sid,
                 {"job_id": job_id, "type": job_type_name, "result": result},
             )
             if ns:
                 payload = result if isinstance(result, dict) else {}
-                server._emit(f"{ns}.complete", sid, {"job_id": job_id, **payload})
+                emit(f"{ns}.complete", sid, {"job_id": job_id, **payload})
 
         def _emit_error(message: str) -> None:
-            server._emit(
+            emit(
                 "jobs.error",
                 sid,
                 {"job_id": job_id, "type": job_type_name, "message": message},
             )
             if ns:
-                server._emit(f"{ns}.error", sid, {"job_id": job_id, "message": message})
+                emit(f"{ns}.error", sid, {"job_id": job_id, "message": message})
 
         snapshot = contextvars.copy_context()
 
@@ -115,15 +141,19 @@ def register(server) -> None:
                     job_id,
                     store=store,
                     sink=_emit_progress,
-                    extra_should_cancel=stop.is_set,
+                    extra_should_cancel=lambda: stop.is_set() or lifetime.stopping,
                     on_complete=_emit_complete,
                     on_error=_emit_error,
                 )
             finally:
-                with _running_lock:
-                    _running.pop(job_id, None)
+                workers.retire(job_id, stop)
 
-        threading.Thread(target=lambda: snapshot.run(_run), daemon=True).start()
+        try:
+            lifetime.start(lambda: snapshot.run(_run), name=f"forecast-job-{job_id}")
+        except BaseException:
+            workers.retire(job_id, stop)
+            # Keep the queued record for explicit recovery; it has not executed.
+            raise
         return job_id
 
     # ── jobs.start / status / active / cancel ────────────────────────────────
@@ -139,6 +169,8 @@ def register(server) -> None:
             job_id = _spawn(job_type, spec, sid)
         except KeyError as exc:
             return server._err(rid, -32602, str(exc))
+        except HostStopping:
+            raise
         except Exception as exc:  # noqa: BLE001
             return server._err(rid, 5008, str(exc))
         return server._ok(rid, {"job_id": job_id, "type": job_type})
@@ -148,7 +180,7 @@ def register(server) -> None:
         if not job_id:
             return server._err(rid, -32602, "jobs.status requires a 'job_id'")
         try:
-            record = _get_store().read(job_id)
+            record = get_store().read(job_id)
         except (FileNotFoundError, ValueError):
             return server._ok(rid, {"found": False, "job": None})
         return server._ok(rid, {"found": True, "job": record.to_dict()})
@@ -159,7 +191,7 @@ def register(server) -> None:
             types = [types]
         elif types is not None and not isinstance(types, list):
             types = None
-        jobs = [r.to_dict() for r in _get_store().active(types=types)]
+        jobs = [r.to_dict() for r in get_store().active(types=types)]
         return server._ok(rid, {"jobs": jobs, "count": len(jobs)})
 
     def jobs_cancel(rid, params):
@@ -168,21 +200,15 @@ def register(server) -> None:
             return server._err(rid, -32602, "jobs.cancel requires a 'job_id'")
         from forecasting.application.job_cancellation import request_job_cancellation
 
-        with _running_lock:
-            admitted_event = _running.get(job_id)
+        admitted_event = workers.get(job_id)
         try:
-            receipt = request_job_cancellation(_get_store(), job_id)
+            receipt = request_job_cancellation(get_store(), job_id)
         except ValueError as exc:
             return server._err(rid, -32602, str(exc))
         except OSError as exc:
             return server._err(rid, 5008, f"Cancellation could not be persisted: {exc}")
-        with _running_lock:
-            if (
-                receipt.accepted
-                and admitted_event is not None
-                and _running.get(receipt.job_id) is admitted_event
-            ):
-                admitted_event.set()
+        if receipt.accepted:
+            workers.signal(receipt.job_id, admitted_event)
         return server._ok(rid, {
             "job_id": receipt.job_id,
             "found": receipt.accepted,
@@ -192,10 +218,10 @@ def register(server) -> None:
             "status": receipt.record.status if receipt.record is not None else None,
         })
 
-    server.register_method("jobs.start", jobs_start)
-    server.register_method("jobs.status", jobs_status)
-    server.register_method("jobs.active", jobs_active)
-    server.register_method("jobs.cancel", jobs_cancel)
+    register_method("jobs.start", jobs_start)
+    register_method("jobs.status", jobs_status)
+    register_method("jobs.active", jobs_active)
+    register_method("jobs.cancel", jobs_cancel)
 
     # ── ALIASES: forecast.warnings.automode.run / .cancel ────────────────────
     # Byte-compatible responses + the legacy event names, over the runtime. The
@@ -222,6 +248,8 @@ def register(server) -> None:
         }
         try:
             job_id = _spawn("warnings", spec, sid)
+        except HostStopping:
+            raise
         except Exception as exc:  # noqa: BLE001
             return server._err(rid, 5008, str(exc))
         return server._ok(rid, {"job_id": job_id, "dry_run": dry_run})
@@ -237,8 +265,8 @@ def register(server) -> None:
                 result.pop("cancelled", None)
         return response
 
-    server.register_method("forecast.warnings.automode.run", automode_run)
-    server.register_method("forecast.warnings.automode.cancel", automode_cancel)
+    register_method("forecast.warnings.automode.run", automode_run)
+    register_method("forecast.warnings.automode.cancel", automode_cancel)
 
     # ── ALIASES: forecast.reforecast.* / forecast.desk.task ──────────────────
     # Byte-compatible responses over the REFORECAST/TASK types on the runtime. The
@@ -316,6 +344,8 @@ def register(server) -> None:
                     ),
                 },
             )
+        except HostStopping:
+            raise
         except Exception as exc:  # noqa: BLE001
             return server._err(rid, 5008, str(exc))
 
@@ -368,6 +398,8 @@ def register(server) -> None:
                     "quorums_started": sum(1 for r in results if r.get("quorum_autorun")),
                 },
             )
+        except HostStopping:
+            raise
         except Exception as exc:  # noqa: BLE001
             return server._err(rid, 5008, str(exc))
 
@@ -427,13 +459,17 @@ def register(server) -> None:
                     ),
                 },
             )
+        except HostStopping:
+            raise
         except Exception as exc:  # noqa: BLE001
             return server._err(rid, 5008, str(exc))
 
-    server.register_method("forecast.reforecast.start", reforecast_start)
-    server.register_method("forecast.reforecast.active", reforecast_active)
-    server.register_method("forecast.reforecast.status", reforecast_status)
-    server.register_method("forecast.desk.task", desk_task)
+    register_method("forecast.reforecast.start", reforecast_start)
+    register_method("forecast.reforecast.active", reforecast_active)
+    register_method("forecast.reforecast.status", reforecast_status)
+    register_method("forecast.desk.task", desk_task)
+
+    return workers
 
 
 __all__ = ["register", "active_jobs"]
