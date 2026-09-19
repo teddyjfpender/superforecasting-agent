@@ -417,9 +417,10 @@ def test_confirmed_dead_descendant_is_not_signalled_again(owner):
     dead.kill.assert_not_called()
 
 
-def test_nested_background_processes_are_stopped_before_their_parents(owner):
+def test_nested_background_processes_are_stopped_before_their_parents(owner, tmp_path):
     import psutil
 
+    trace_path = tmp_path / "nested-process-trace.txt"
     nested = (
         'import subprocess,sys,time; '
         'child=subprocess.Popen([sys.executable,"-c","import time; time.sleep(30)"]); '
@@ -428,9 +429,25 @@ def test_nested_background_processes_are_stopped_before_their_parents(owner):
     # This exercises descendant ownership, not execution-budget enforcement.
     # Two nested interpreter/venv launches can exceed the ordinary 3s cell
     # fixture budget on Windows. Keep a bounded budget, below the 30s sleepers.
-    result = run(owner, 'import subprocess,sys\n'
-                 f'child=subprocess.Popen([sys.executable,"-c",{nested!r}],stdout=subprocess.PIPE,text=True)\n'
-                 'print(child.pid, child.stdout.readline().strip())', timeout=10)
+    code = (
+        'import subprocess,sys,faulthandler\n'
+        f'_trace=open({str(trace_path)!r},"w")\n'
+        'faulthandler.dump_traceback_later(3,file=_trace)\n'
+        'try:\n'
+        f'    child=subprocess.Popen([sys.executable,"-c",{nested!r}],stdout=subprocess.PIPE,text=True)\n'
+        '    print(child.pid, child.stdout.readline().strip())\n'
+        'finally:\n'
+        '    faulthandler.cancel_dump_traceback_later()\n'
+        '    _trace.close()\n'
+    )
+    try:
+        result = run(owner, code, timeout=10)
+    except TimeoutError:
+        # The owned kernel has been retired before inspecting synthetic-test
+        # diagnostics. Preserve the actual wait location in native CI output.
+        trace = trace_path.read_text() if trace_path.exists() else 'trace not created'
+        diagnostics = bytes(owner.kernel.diagnostics).decode('utf-8', errors='replace')
+        pytest.fail(f'Nested process deadline exceeded\n{trace}\nNative stderr:\n{diagnostics}')
     assert result['retirement_reason'] == 'cell_left_running_processes'
     assert not result['state_preserved']
     for pid in map(int, result['stdout'].split()):

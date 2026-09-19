@@ -1,6 +1,12 @@
 name: Product quality
 on:
   workflow_dispatch:
+    inputs:
+      focus:
+        description: Bounded native kernel investigation or normal product qualification
+        type: choice
+        options: [products, windows-kernel]
+        default: products
   pull_request:
   push:
     branches: [main, superforecasting-agent-snapshot]
@@ -8,6 +14,7 @@ permissions:
   contents: read
 jobs:
   quality:
+    if: inputs.focus != 'windows-kernel'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -33,6 +40,7 @@ jobs:
           include-hidden-files: true
           path: .test-results/
   installed-products:
+    if: inputs.focus != 'windows-kernel'
     strategy:
       fail-fast: false
       matrix:
@@ -101,3 +109,29 @@ jobs:
             qualification/
             dist/upgrade-baselines/provenance.json
             .test-results/
+
+  windows-kernel-investigation:
+    if: inputs.focus == 'windows-kernel'
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          version: '0.10.9'
+          python-version: '3.11.15'
+      - name: Install the affected runtime with locked dependencies
+        run: uv sync --frozen --extra dev --extra web --extra pty
+      - name: Reproduce nested-process ownership and execution deadlines
+        shell: bash
+        run: >-
+          scripts/run_tests.sh
+          tests/tools/test_code_kernel.py::test_nested_background_processes_are_stopped_before_their_parents
+          tests/tools/test_code_kernel.py::test_timeout_retires_exact_process_and_requires_explicit_reset
+      - name: Preserve bounded investigation evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows-kernel-investigation
+          include-hidden-files: true
+          path: .test-results/

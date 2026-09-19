@@ -839,3 +839,14 @@ source identity, retry, historical ambiguity and normalized timestamps/URLs.
 and batch tool rejection and preservation of the original observation. Strict
 owner typing passes. Source-specific revision policy, missing-entry request receipts
 and the remaining discriminated acquisition API migration still belong to W03.
+
+## Bounded Windows kernel investigation
+
+Run 35461440285 confirms that the nested-process case still times out at ten
+seconds; the previous launch-latency hypothesis is insufficient. The synthetic
+fixture now captures a delayed interpreter traceback and reports the retired
+kernel's native stderr on timeout. A `windows-kernel` workflow-dispatch focus runs
+only this case and the execution-deadline regression on Windows/Python 3.11.15
+with locked dependencies. Ordinary dispatch/PR/push product qualification is
+unchanged. Five focused local kernel/hook checks pass; native attribution remains
+pending and no runtime fix is claimed from instrumentation alone.
