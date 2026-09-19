@@ -16,6 +16,7 @@ import time
 from typing import Any, Callable
 from urllib.parse import urlencode
 
+from forecasting.sources.kalshi_prices import kalshi_price
 from forecasting.pm._http import http_get_json
 from forecasting.pm.model import (
     PMEvent,
@@ -45,11 +46,10 @@ def _to_float(value: object) -> float | None:
 
 
 def _price(raw: dict, dollar_key: str, cents_key: str) -> float | None:
-    """Kalshi returns either ``*_dollars`` strings (0-1) or cents ints."""
-    if raw.get(dollar_key) is not None:
-        return _to_float(raw.get(dollar_key))
-    cents = _to_float(raw.get(cents_key))
-    return None if cents is None else cents / 100.0
+    """Compatibility wrapper around the shared field-aware quote parser."""
+    if dollar_key != f"{cents_key}_dollars":
+        raise ValueError("Kalshi price keys must describe the same measurement")
+    return kalshi_price(raw, cents_key)
 
 
 def _nonzero_price(raw: dict, dollar_key: str, cents_key: str) -> float | None:

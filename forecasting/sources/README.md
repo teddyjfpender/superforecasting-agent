@@ -57,3 +57,19 @@ Those stricter semantics remain separately required before ledger settlement.
 
 Focused regressions: `tests/forecasting/test_source_request_admission.py` and
 `tests/forecasting/test_source_dispatch.py`.
+
+
+## Kalshi quote units
+
+`kalshi_prices.kalshi_price` owns quote conversion for prediction-market display
+and evidence/benchmark imports. Fixed-point `*_dollars` fields take precedence;
+legacy unsuffixed and `*_cents` prices are divided by 100, even at one cent.
+Absent fields remain unavailable. Invalid selected values raise a validation
+error; they are never clamped or replaced with a lower-priority field. Separate
+consumer policies (such as the display's no-trade sentinel) remain explicit.
+
+The [Kalshi market response](https://docs.kalshi.com/api-reference/events/get-multivariate-events)
+documents the fixed-point dollar fields. Tests in
+`tests/forecasting/test_kalshi_price_contract.py` cover cross-consumer units,
+legacy precedence and malformed values. Keep measurement conversion here rather
+than duplicating it in another transport or ledger adapter.

@@ -524,7 +524,6 @@ from forecasting.sources.kalshi_parsing import (
     _kalshi_endpoint_for_source as _kalshi_endpoint_for_source,
     _kalshi_yes_probability as _kalshi_yes_probability,
     _kalshi_previous_yes_probability as _kalshi_previous_yes_probability,
-    _kalshi_price as _kalshi_price,
     _kalshi_description as _kalshi_description,
     _kalshi_public_url as _kalshi_public_url,
     _kalshi_timestamp as _kalshi_timestamp,

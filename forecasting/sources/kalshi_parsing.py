@@ -1,6 +1,7 @@
 """Pure Kalshi endpoint, price, and metadata parsing."""
 from __future__ import annotations
 from .market_records import KalshiMarketImport
+from .kalshi_prices import kalshi_price
 from forecasting.models import OutcomeSpace
 from urllib.parse import quote, urlparse
 from forecasting.models import ValidationError
@@ -26,74 +27,25 @@ def _kalshi_endpoint_for_source(source: str, *, api_base_url: str) -> str:
 
 
 def _kalshi_yes_probability(payload: dict) -> float | None:
-    bid = _kalshi_price(
-        _first_present(
-            payload.get("yes_bid"),
-            payload.get("yes_bid_cents"),
-            payload.get("yes_bid_dollars"),
-        )
-    )
-    ask = _kalshi_price(
-        _first_present(
-            payload.get("yes_ask"),
-            payload.get("yes_ask_cents"),
-            payload.get("yes_ask_dollars"),
-        )
-    )
+    bid = kalshi_price(payload, "yes_bid")
+    ask = kalshi_price(payload, "yes_ask")
     if bid is not None and ask is not None:
         return (bid + ask) / 2
-    last = _kalshi_price(
-        _first_present(
-            payload.get("last_price"),
-            payload.get("last_price_cents"),
-            payload.get("last_price_dollars"),
-        )
-    )
+    last = kalshi_price(payload, "last_price")
     if last is not None:
         return last
-    if bid is not None:
-        return bid
-    return ask
+    return bid if bid is not None else ask
 
 
 def _kalshi_previous_yes_probability(payload: dict) -> float | None:
-    previous = _kalshi_price(
-        _first_present(
-            payload.get("previous_price"),
-            payload.get("previous_price_cents"),
-            payload.get("previous_price_dollars"),
-        )
-    )
+    previous = kalshi_price(payload, "previous_price")
     if previous is not None:
         return previous
-    previous_bid = _kalshi_price(
-        _first_present(
-            payload.get("previous_yes_bid"),
-            payload.get("previous_yes_bid_cents"),
-            payload.get("previous_yes_bid_dollars"),
-        )
-    )
-    previous_ask = _kalshi_price(
-        _first_present(
-            payload.get("previous_yes_ask"),
-            payload.get("previous_yes_ask_cents"),
-            payload.get("previous_yes_ask_dollars"),
-        )
-    )
-    if previous_bid is not None and previous_ask is not None:
-        return (previous_bid + previous_ask) / 2
-    if previous_bid is not None:
-        return previous_bid
-    return previous_ask
-
-
-def _kalshi_price(value: object) -> float | None:
-    number = _optional_float(value)
-    if number is None:
-        return None
-    if number > 1:
-        number = number / 100
-    return max(0.0, min(1.0, number))
+    bid = kalshi_price(payload, "previous_yes_bid")
+    ask = kalshi_price(payload, "previous_yes_ask")
+    if bid is not None and ask is not None:
+        return (bid + ask) / 2
+    return bid if bid is not None else ask
 
 
 def _kalshi_description(payload: dict) -> str:

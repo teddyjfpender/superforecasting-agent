@@ -210,3 +210,21 @@ checks, generated-reference checks and all 76 import contracts pass. Acquisition
 still precedes this persistence operation; full typed acquisition plans, receipt
 support for these providers and remaining adapter migrations remain open. No full
 suite was run.
+
+
+## Shared Kalshi quote-unit contract
+
+Found divergent conversion in evidence imports and the prediction-market display:
+the former treated legacy one-cent prices as probability 1.0 and clamped invalid
+numbers. Both now use `forecasting/sources/kalshi_prices.py`, included in the full
+strict Python scope. Explicit dollar fields take precedence over rounded legacy
+cents; invalid selected values fail closed rather than silently falling back.
+Historical benchmark prices use the same conversion. The obsolete private
+magnitude-guessing helper and its unused re-export were removed.
+
+45 focused tests passed, including recorded market fixtures, legacy/dollar parity,
+non-finite and out-of-range rejection, historical prices, atomic market imports,
+and local-HTTP CLI evidence/benchmark imports. Canonical Python static and generated
+checks passed, with all 76 import contracts kept. No full suite was run. This closes
+quote conversion for those consumers, not order-book/candlestick validation,
+market identity selection, provider retry receipts or full W03 acceptance.
