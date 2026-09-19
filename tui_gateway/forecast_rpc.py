@@ -1096,3 +1096,188 @@ def _(rid, params: dict) -> dict:
         return _ok(rid, {"packet": packet, "related": related, "relevant_lessons": relevant_lessons})
     except Exception as e:
         return _err(rid, 5008, str(e))
+
+
+# Questionnaire operations share a domain owner with scheduled review workers.
+# The interactive transport chooses actor=user; model JSON never chooses it.
+def _interview_service():
+    from forecasting.interviews.service import InterviewService
+    from forecasting.ledger import ForecastLedger
+
+    return InterviewService(ForecastLedger())
+
+
+@rpc_validated("forecast.interview.begin")
+def _(rid, params: dict) -> dict:
+    try:
+        return _ok(rid, _interview_service().begin(**params))
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))
+
+
+@rpc_validated("forecast.interview.read")
+def _(rid, params: dict) -> dict:
+    try:
+        return _ok(rid, _interview_service().store.read(**params))
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))
+
+
+@rpc_validated("forecast.interview.list")
+def _(rid, params: dict) -> dict:
+    try:
+        return _ok(rid, {"interviews": _interview_service().store.list_latest(params.get("question_id"))})
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))
+
+
+@rpc_validated("forecast.interview.answer")
+def _(rid, params: dict) -> dict:
+    try:
+        return _ok(rid, _interview_service().answer(**params, actor="user"))
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))
+
+
+@rpc_validated("forecast.interview.preview")
+def _(rid, params: dict) -> dict:
+    try:
+        return _ok(rid, _interview_service().preview(**params))
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))
+
+
+@rpc_validated("forecast.interview.commit")
+def _(rid, params: dict) -> dict:
+    try:
+        return _ok(rid, _interview_service().commit(**params))
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))
+
+
+@rpc_validated("forecast.article.attach")
+def _(rid, params: dict) -> dict:
+    try:
+        from forecasting.interviews.news import attach_article
+        from forecasting.ledger import ForecastLedger
+        from protocol.interviews import ForecastArticleClaim
+
+        return _ok(rid, attach_article(ForecastLedger(), params["question_id"],
+                                       ForecastArticleClaim.model_validate(params["article"]),
+                                       prepare_update=params.get("prepare_update", False)))
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))
+
+
+@rpc_validated("forecast.question.choices")
+def _(rid, params: dict) -> dict:
+    try:
+        from forecasting.ledger import ForecastLedger
+
+        return _ok(rid, {"questions": [{"id": q.id, "title": q.title, "domain": q.domain}
+                                      for q in ForecastLedger().list_questions(status="active")]})
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))
+
+
+@rpc_validated("forecast.interview.generate")
+def _(rid, params: dict) -> dict:
+    try:
+        from forecasting.interviews.generation import enqueue_generation
+        from forecasting.jobs.detached import spawn_detached_job
+        from protocol.interviews import InterviewGenerationOptions
+        from superforecasting_agent.constants import get_agent_home
+
+        job_id = enqueue_generation(
+            _interview_service().ledger, params["interview_id"], params["revision"],
+            params["request_id"], InterviewGenerationOptions.model_validate(params.get("options", {})),
+        )
+        # The runtime's kernel claim prevents duplicate execution on start retries.
+        spawn_detached_job(job_id, home=get_agent_home())
+        return _ok(rid, {"job_id": job_id})
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))
+
+
+@rpc_validated("forecast.interview.generation_status")
+def _(rid, params: dict) -> dict:
+    try:
+        from forecasting.interviews.generation import generation_status
+
+        return _ok(rid, generation_status(_interview_service().ledger, params["interview_id"]))
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))
+
+
+@rpc_validated("forecast.interview.scenario.save")
+def _(rid, params: dict) -> dict:
+    try:
+        return _ok(rid, _interview_service().save_scenario(**params))
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))
+
+
+@rpc_validated("forecast.interview.scenario.delete")
+def _(rid, params: dict) -> dict:
+    try:
+        return _ok(rid, _interview_service().delete_scenario(**params))
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))
+
+
+@rpc_validated("forecast.interview.evaluate")
+def _(rid, params: dict) -> dict:
+    try:
+        from forecasting.interviews.evaluation_jobs import enqueue_evaluation
+        from forecasting.jobs.detached import spawn_detached_job
+        from protocol.scenarios import ScenarioEvaluationOptions
+        from superforecasting_agent.constants import get_agent_home
+
+        job_id = enqueue_evaluation(
+            _interview_service().ledger, params["interview_id"], params["revision"],
+            params["request_id"], ScenarioEvaluationOptions.model_validate(params["options"]),
+        )
+        spawn_detached_job(job_id, home=get_agent_home())
+        return _ok(rid, {"job_id": job_id})
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))
+
+
+@rpc_validated("forecast.interview.evaluation_status")
+def _(rid, params: dict) -> dict:
+    try:
+        from forecasting.interviews.evaluation_jobs import evaluation_status
+
+        return _ok(rid, evaluation_status(_interview_service().ledger, params["interview_id"]))
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))
+
+
+@rpc_validated("forecast.interview.promotion_preview")
+def _(rid, params: dict) -> dict:
+    try:
+        from forecasting.interviews.promotion import preview_promotion
+
+        return _ok(rid, preview_promotion(_interview_service().ledger, **params))
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))
+
+
+@rpc_validated("forecast.interview.promote")
+def _(rid, params: dict) -> dict:
+    try:
+        from forecasting.interviews.promotion import promote
+        from protocol.rpc.interviews import InterviewPromoteRequest
+
+        request = InterviewPromoteRequest.model_validate(params)
+        return _ok(rid, promote(_interview_service().ledger, **request.model_dump()))
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))
+
+
+@rpc_validated("forecast.interview.assumption.save")
+def _(rid, params: dict) -> dict:
+    try:
+        return _ok(rid, _interview_service().save_assumption(**params))
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))

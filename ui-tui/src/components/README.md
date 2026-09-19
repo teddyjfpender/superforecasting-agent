@@ -76,6 +76,26 @@ layout, scopes and selection only.
 compose. Send attempts are shared through `messagingSend.ts`; message status
 belongs in the conversation, while draft persistence remains with the caller.
 
+
+### Forecast interviews
+
+`forecastInterview.tsx` owns saved answers and navigation. `interviewGeneration.tsx`
+provides explicit model budgets and restores status by interview identity;
+`interviewScenarios.tsx` edits conditional/ablation definitions. Domain validation,
+revision checks and provenance belong in `forecasting/interviews/`, with wire
+contracts generated from `protocol/`. Never infer a custom answer from an unknown
+choice ID or treat an excluded assumption as false. Keep input handlers committed
+with the displayed state; terminal tests cover the shared Ink input hook.
+
+## Forecast interview navigation
+
+`forecastInterview.tsx` owns the active question and local editor state.
+`interviewNavigation.tsx` presents section progress, saved context and the bounded
+question outline; it never saves answers on selection. Use the renderer's
+`useTerminalSize` for responsive modal layout so custom terminals and resizing
+share the same dimensions. Assumption edits and scenario runs have separate
+components, with durable state owned by `forecasting/interviews/`.
+
 ## Keyboard hints
 
 Use `FooterChips` for actionable footer buttons and `ShortcutText` for help prose

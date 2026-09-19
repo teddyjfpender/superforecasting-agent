@@ -27,6 +27,9 @@ const buildOverlayState = (): OverlayState => ({
   newsInitialQuery: null,
   obsidian: false,
   onboard: false,
+  onboardQuestionId: null,
+  onboardSeed: null,
+  onboardInterviewId: null,
   pager: null,
   palette: false,
   picker: false,
@@ -240,5 +243,24 @@ export const resetFlowOverlays = () => {
     picker: $overlayState.get().picker,
     skillsHub: $overlayState.get().skillsHub,
     themePicker: $overlayState.get().themePicker
+  })
+}
+
+/** One handoff keeps stale source context out of unrelated forecast interviews. */
+export function openForecastInterview(
+  options: {
+    questionId?: string | null
+    seed?: OverlayState['onboardSeed']
+    interviewId?: string | null
+  } = {}
+) {
+  patchOverlayState({
+    forecasts: false,
+    markets: false,
+    news: false,
+    onboard: true,
+    onboardQuestionId: options.questionId ?? null,
+    onboardSeed: options.seed ?? null,
+    onboardInterviewId: options.interviewId ?? null
   })
 }

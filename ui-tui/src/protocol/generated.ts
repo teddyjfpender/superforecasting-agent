@@ -105,6 +105,13 @@ export interface ApprovalRequestPayload {
   request_id?: string
 }
 
+export interface ApprovalRespondRequest {
+  all: boolean
+  choice: string
+  request_id: null | string
+  session_id: null | string
+}
+
 export interface ApprovalRespondResponse {
   ok?: boolean
 }
@@ -715,6 +722,29 @@ export interface ForecastAnalystNote {
   looking_for?: string
   stance?: null | string
   verdict?: null | string
+}
+
+export interface ForecastArticleAttachRequest {
+  article: ForecastArticleClaim
+  prepare_update: boolean
+  question_id: string
+}
+
+export interface ForecastArticleAttachResponse {
+  already_attached: boolean
+  evidence_id: string
+  interview_id: null | string
+  question_id: string
+}
+
+export interface ForecastArticleClaim {
+  content: string
+  extraction: 'article' | 'feed'
+  feed_url: string
+  published_at: null | string
+  publisher: string
+  title: string
+  url: string
 }
 
 export interface ForecastBenchAggregate {
@@ -1461,6 +1491,28 @@ export interface ForecastLivePerformanceAgent {
   mean_log_score?: null | number
 }
 
+export interface ForecastMarketSeed {
+  captured_at: string
+  close_time: null | string
+  event_id: null | string
+  kind: 'prediction_market' | 'series'
+  market_price: null | number
+  observed_at: null | string
+  observed_value: null | number
+  outcome_id: null | string
+  outcome_label: null | string
+  period_end: null | string
+  period_start: null | string
+  provider: string
+  published_at: null | string
+  retrieved_at: null | string
+  revision_policy: null | string
+  source_url: null | string
+  symbol: string
+  title: string
+  units: null | string
+}
+
 export interface ForecastNextAction {
   action?: string
   question_id?: string
@@ -1519,6 +1571,16 @@ export interface ForecastPooledDiagnostic {
 export interface ForecastQuarantineSummary {
   n?: number
   reasons?: Record<string, unknown>
+}
+
+export interface ForecastQuestionChoice {
+  domain: null | string
+  id: string
+  title: string
+}
+
+export interface ForecastQuestionChoicesResponse {
+  questions: ForecastQuestionChoice[]
 }
 
 export interface ForecastQuestionPacket {
@@ -2549,6 +2611,239 @@ export interface InsightsResponse {
   sessions: number
 }
 
+export interface InterviewAnswer {
+  actor: 'agent' | 'user'
+  custom_text: null | string
+  evidence_refs: string[]
+  note: string
+  question_id: string
+  status: 'answered' | 'skipped' | 'unknown'
+  value: null | number | string | string[]
+}
+
+export interface InterviewAnswerRequest {
+  custom_text: null | string
+  expected_revision: number
+  interview_id: string
+  note: string
+  question_id: string
+  request_id: string
+  status: 'answered' | 'skipped' | 'unknown'
+  value: null | number | string | string[]
+}
+
+export interface InterviewAssumption {
+  actor: 'agent' | 'user'
+  evidence_refs: string[]
+  id: string
+  probability: null | number
+  rationale: string
+  statement: string
+  uncertainty: 'aleatoric' | 'epistemic' | 'measurement' | 'mixed' | 'unclassified'
+}
+
+export interface InterviewAssumptionSaveRequest {
+  assumption: InterviewAssumption
+  expected_revision: number
+  interview_id: string
+  request_id: string
+}
+
+export interface InterviewBeginRequest {
+  interview_id: string
+  question_id: null | string
+  seed: null | ForecastMarketSeed
+  title: string
+}
+
+export interface InterviewChoice {
+  id: string
+  label: string
+}
+
+export interface InterviewCommitResponse {
+  question_id: string
+  revision: number
+}
+
+export interface InterviewDraft {
+  answers: InterviewAnswer[]
+  assumptions: InterviewAssumption[]
+  baseline_forecast_id: null | string
+  context_digest: null | string
+  evidence_refs: string[]
+  generations: InterviewGenerationRecord[]
+  mode: 'create' | 'update'
+  parent_interview: null | InterviewParent
+  question_id: null | string
+  questions: InterviewQuestion[]
+  scenarios: InterviewScenario[]
+  schema_version: number
+  seed: null | ForecastMarketSeed
+  status: 'cancelled' | 'draft' | 'needs_research' | 'needs_user' | 'ready'
+  title: string
+}
+
+export interface InterviewEvaluateRequest {
+  interview_id: string
+  options: ScenarioEvaluationOptions
+  request_id: string
+  revision: number
+}
+
+export interface InterviewEvaluationStatusResponse {
+  found: boolean
+  job: null | JobRecordDTO
+  report: null | ScenarioReport
+  request_id: null | string
+  stale: boolean
+}
+
+export interface InterviewGenerateRequest {
+  interview_id: string
+  options: InterviewGenerationOptions
+  request_id: string
+  revision: number
+}
+
+export interface InterviewGenerateResponse {
+  job_id: string
+}
+
+export interface InterviewGenerationOptions {
+  max_questions: number
+  max_tokens: number
+  model: null | string
+  provider: null | string
+  timeout_seconds: number
+}
+
+export interface InterviewGenerationRecord {
+  created_at: string
+  input_digest: string
+  input_revision: number
+  job_id: string
+  max_tokens: number
+  output_tokens: null | number
+  prompt_digest: string
+  requested_provider: null | string
+  response_model: string
+  summary: string
+}
+
+export interface InterviewGenerationStatusResponse {
+  found: boolean
+  job: null | JobRecordDTO
+  request_id: null | string
+}
+
+export interface InterviewListRequest {
+  question_id: null | string
+}
+
+export interface InterviewListResponse {
+  interviews: InterviewRecord[]
+}
+
+export interface InterviewParent {
+  digest: string
+  interview_id: string
+  revision: number
+}
+
+export interface InterviewPreviewRequest {
+  interview_id: string
+  revision: number
+}
+
+export interface InterviewPreviewResponse {
+  committable: boolean
+  issues: Record<string, unknown>[]
+  spec: Record<string, unknown>
+  unanswered: string[]
+}
+
+export interface InterviewPromoteRequest {
+  job_id: string
+  preview_digest: string
+  repetition: number
+}
+
+export interface InterviewPromoteResponse {
+  forecast_id: string
+  question_id: string
+}
+
+export interface InterviewPromotionPreviewRequest {
+  job_id: string
+  repetition: number
+}
+
+export interface InterviewPromotionPreviewResponse {
+  blockers: string[]
+  candidate: Record<string, number> | number
+  job_id: string
+  preview_digest: string
+  promoted_forecast_id: null | string
+  question_id: string
+  repetition: number
+  would_commit: boolean
+}
+
+export interface InterviewQuestion {
+  allow_custom: boolean
+  assumption_ids: string[]
+  choices: InterviewChoice[]
+  id: string
+  kind: 'multiple' | 'number' | 'probability' | 'single' | 'text'
+  prompt: string
+  rationale: string
+  required: boolean
+  section: 'beliefs' | 'challenge' | 'define' | 'drivers' | 'outside_view' | 'resolve' | 'review' | 'scenarios' | 'uncertainty' | 'update_plan'
+}
+
+export interface InterviewReadRequest {
+  interview_id: string
+  revision: null | number
+}
+
+export interface InterviewRecord {
+  actor: 'agent' | 'user'
+  created_at: string
+  digest: string
+  document: InterviewDraft
+  interview_id: string
+  request_id: string
+  revision: number
+}
+
+export interface InterviewScenario {
+  actor: 'agent' | 'user'
+  conditions: Record<string, boolean>
+  excluded_assumption_ids: string[]
+  id: string
+  kind: 'ablation' | 'conditional'
+  name: string
+}
+
+export interface InterviewScenarioDeleteRequest {
+  expected_revision: number
+  interview_id: string
+  request_id: string
+  scenario_id: string
+}
+
+export interface InterviewScenarioSaveRequest {
+  expected_revision: number
+  interview_id: string
+  request_id: string
+  scenario: InterviewScenario
+}
+
+export interface InterviewTargetRequest {
+  interview_id: string
+}
+
 export interface JobCompletePayload {
   job_id: string
   result: Record<string, unknown>
@@ -3368,12 +3663,6 @@ export interface ReloadMcpResponse {
   status?: string
 }
 
-export interface RespondRequest {
-  request_id: null | string
-  session_id: null | string
-  value: string
-}
-
 export interface ReviewSummaryPayload {
   text?: string
 }
@@ -3427,11 +3716,80 @@ export interface RollbackRestoreResponse {
   success?: boolean
 }
 
+export interface ScenarioCallResult {
+  created_at: string
+  estimate: ScenarioEstimate
+  kind: 'ablation' | 'baseline' | 'conditional'
+  output_tokens: null | number
+  prompt_digest: string
+  repetition: number
+  request_receipt: ScenarioRouteReceipt
+  response_model: string
+  variant_id: string
+}
+
+export interface ScenarioComparison {
+  dimensions: Record<string, ScenarioDimension>
+  kind: 'ablation' | 'baseline' | 'conditional'
+  repetitions: number
+  variant_id: string
+}
+
+export interface ScenarioDimension {
+  mean: number
+  model_dispersion: null | number
+  paired_delta: number
+}
+
+export interface ScenarioEstimate {
+  categories: Record<string, number>
+  evidence_refs: string[]
+  outcome_type: 'binary' | 'categorical' | 'distribution' | 'numeric'
+  probability: null | number
+  q10: null | number
+  q50: null | number
+  q90: null | number
+  rationale: string
+  reference_class_refs: string[]
+  units: null | string
+  unresolved_questions: string[]
+}
+
+export interface ScenarioEvaluationOptions {
+  model: InterviewGenerationOptions
+  repetitions: number
+  scenario_ids: string[]
+}
+
+export interface ScenarioReport {
+  assumptions: InterviewAssumption[]
+  comparisons: ScenarioComparison[]
+  input_digest: string
+  interview_id: string
+  limitation: string
+  matched: boolean
+  results: ScenarioCallResult[]
+  revision: number
+  scenarios: InterviewScenario[]
+}
+
+export interface ScenarioRouteReceipt {
+  fingerprint: string
+  model: string
+  provider: string
+}
+
 export interface SecretRequestPayload {
   env_var: string
   metadata?: Record<string, unknown>
   prompt: string
   request_id: string
+}
+
+export interface SecretRespondRequest {
+  request_id: null | string
+  session_id: null | string
+  value: string
 }
 
 export interface SecretRespondResponse {
@@ -3966,6 +4324,12 @@ export interface SudoRequestPayload {
   request_id: string
 }
 
+export interface SudoRespondRequest {
+  password: string
+  request_id: null | string
+  session_id: null | string
+}
+
 export interface SudoRespondResponse {
   ok?: boolean
 }
@@ -4131,6 +4495,9 @@ export interface VoiceTtsResponse {
   status: string
 }
 
+export interface WireModel {
+}
+
 export const SERVER_REQUEST_NAMES = ['approval', 'clarify', 'secret', 'sudo'] as const
 
 export interface ServerRequestMethods {
@@ -4285,6 +4652,14 @@ export interface RpcMethods {
     }
     result: EventsReplayResponse
   }
+  'forecast.article.attach': {
+    params: {
+      article: ForecastArticleClaim
+      prepare_update?: boolean
+      question_id: string
+    }
+    result: ForecastArticleAttachResponse
+  }
   'forecast.bench': {
     params: {
       limit?: null | number
@@ -4375,6 +4750,127 @@ export interface RpcMethods {
     }
     result: ForecastHooksSetResponse
   }
+  'forecast.interview.answer': {
+    params: {
+      custom_text?: null | string
+      expected_revision: number
+      interview_id: string
+      note?: string
+      question_id: string
+      request_id: string
+      status: 'answered' | 'skipped' | 'unknown'
+      value?: null | number | string | string[]
+    }
+    result: InterviewRecord
+  }
+  'forecast.interview.assumption.save': {
+    params: {
+      assumption: InterviewAssumption
+      expected_revision: number
+      interview_id: string
+      request_id: string
+    }
+    result: InterviewRecord
+  }
+  'forecast.interview.begin': {
+    params: {
+      interview_id: string
+      question_id?: null | string
+      seed?: null | ForecastMarketSeed
+      title?: string
+    }
+    result: InterviewRecord
+  }
+  'forecast.interview.commit': {
+    params: {
+      interview_id: string
+      revision: number
+    }
+    result: InterviewCommitResponse
+  }
+  'forecast.interview.evaluate': {
+    params: {
+      interview_id: string
+      options: ScenarioEvaluationOptions
+      request_id: string
+      revision: number
+    }
+    result: InterviewGenerateResponse
+  }
+  'forecast.interview.evaluation_status': {
+    params: {
+      interview_id: string
+    }
+    result: InterviewEvaluationStatusResponse
+  }
+  'forecast.interview.generate': {
+    params: {
+      interview_id: string
+      options?: InterviewGenerationOptions
+      request_id: string
+      revision: number
+    }
+    result: InterviewGenerateResponse
+  }
+  'forecast.interview.generation_status': {
+    params: {
+      interview_id: string
+    }
+    result: InterviewGenerationStatusResponse
+  }
+  'forecast.interview.list': {
+    params: {
+      question_id?: null | string
+    }
+    result: InterviewListResponse
+  }
+  'forecast.interview.preview': {
+    params: {
+      interview_id: string
+      revision: number
+    }
+    result: InterviewPreviewResponse
+  }
+  'forecast.interview.promote': {
+    params: {
+      job_id: string
+      preview_digest: string
+      repetition?: number
+    }
+    result: InterviewPromoteResponse
+  }
+  'forecast.interview.promotion_preview': {
+    params: {
+      job_id: string
+      repetition?: number
+    }
+    result: InterviewPromotionPreviewResponse
+  }
+  'forecast.interview.read': {
+    params: {
+      interview_id: string
+      revision?: null | number
+    }
+    result: InterviewRecord
+  }
+  'forecast.interview.scenario.delete': {
+    params: {
+      expected_revision: number
+      interview_id: string
+      request_id: string
+      scenario_id: string
+    }
+    result: InterviewRecord
+  }
+  'forecast.interview.scenario.save': {
+    params: {
+      expected_revision: number
+      interview_id: string
+      request_id: string
+      scenario: InterviewScenario
+    }
+    result: InterviewRecord
+  }
   'forecast.onboard_commit': {
     params: {
       spec?: null | Record<string, unknown>
@@ -4401,6 +4897,10 @@ export interface RpcMethods {
       id?: null | string
     }
     result: ForecastQuestionPacketResponse
+  }
+  'forecast.question.choices': {
+    params: Record<string, never>
+    result: ForecastQuestionChoicesResponse
   }
   'forecast.question.readiness': {
     params: {

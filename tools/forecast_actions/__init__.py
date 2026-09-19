@@ -26,6 +26,7 @@ from . import (
     triage,
     diagnostics,
     share,
+    interviews,
 )
 
 ACTIONS: dict[str, Callable[[dict[str, Any], Any], str]] = {}
@@ -44,6 +45,7 @@ for _module in (
     triage,
     diagnostics,
     share,
+    interviews,
 ):
     ACTIONS.update(_module.HANDLERS)
 

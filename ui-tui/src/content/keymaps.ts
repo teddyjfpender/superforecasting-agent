@@ -54,6 +54,7 @@ export const PER_VIEW_KEYS: Record<string, [string, string][]> = {
     ['Space', 'mark the row (advances) · Shift+↑/↓ extend the selection'],
     ['Tab / ←→ / l', 'switch lens (h is Help)'],
     ['Enter', 'open the selected forecast'],
+    ['n / i', 'new question interview / revisit selected forecast beliefs'],
     ['U / u', 'update now / re-arm — marked rows (or a lens → all its questions)'],
     ['A / T', 'agent run · task over the selection (or a lens → all its questions)'],
     ['o / O', 'sort column · toggle asc/desc — cycles past the columns to VOI (value-of-information order)'],
@@ -67,6 +68,7 @@ export const PER_VIEW_KEYS: Record<string, [string, string][]> = {
   markets: [
     ['↑/↓', 'select a market'],
     ['Tab / ←→', 'switch category'],
+    ['F', 'create a forecast from the selected series or specific prediction-market outcome'],
     ['p', 'jump to the Prediction section (Polymarket + Kalshi)'],
     ['Space / v / 1·2·3', 'expand outcomes · switch venue · history range (Prediction)'],
     ['f', 'filter prediction markets (venue · volume · probability · hide sports)'],
@@ -87,6 +89,7 @@ export const PER_VIEW_KEYS: Record<string, [string, string][]> = {
     ['c / w / e / F', 'open model: chat-refine · rewrite · export JSON · spin off a Desk forecast']
   ],
   news: [
+    ['F', 'attach selected article to a forecast; optionally open an update interview'],
     ['↑/↓', 'select a story'],
     ['Tab / ←→', 'next/previous source'],
     ['Enter', 'open story in browser'],
@@ -94,7 +97,8 @@ export const PER_VIEW_KEYS: Record<string, [string, string][]> = {
     ['a / s', 'add feed / starter feeds'],
     ['PgUp/PgDn', 'scroll the reader'],
     ['m', 'message / forward story'],
-    ['r', 'refresh'],
+    ['r', 'fetch updates without moving the current story'],
+    ['u', 'apply fetched updates'],
     ['q / Esc', 'close; Esc clears search first']
   ],
   warnings: [
@@ -197,8 +201,9 @@ export const PER_VIEW_GUIDE: Record<string, string[]> = {
   ],
   desk: [
     'Lenses group forecasts by thesis, then All and Operations. Tab or left/right switches lens; arrows select; Enter opens detail.',
-    'Updates have three tiers: `u` re-arms, `U` updates now, `A` runs an agent. Space marks rows; `Shift+arrows` extends selection. `T` opens a task; with no rows marked, lens actions apply to its questions.',
-    '`n` creates; `R` resolves; `s` opens settings. `/` filters, `o` sorts and `r` refreshes. Next best actions ranks the book by value of information.'
+    'Updates have three tiers: u re-arms, U updates now, A runs an agent. Space marks rows; Shift+arrows extends selection. T opens a task; with no rows marked, lens actions apply to its questions.',
+    '`n` starts a question interview; `i` revisits selected forecast beliefs. Interview: Ctrl+G asks follow-ups, Ctrl+O edits scenarios, Ctrl+E compares them. Drafts and comparisons never change probabilities automatically.',
+    '`R` resolves; `s` opens settings. `/` filters, `o` sorts and `r` refreshes. Next best actions ranks the book by value of information.'
   ],
   markets: [
     'Markets has two modes, toggled with `M`: Data (live quotes by category) and Models (agentic quant-research). Press `p` to jump to the Prediction section — Polymarket and Kalshi — where `v` cycles venue, `1`·`2`·`3` set the history range, and Space expands outcomes.',
@@ -206,6 +211,7 @@ export const PER_VIEW_GUIDE: Record<string, string[]> = {
     'Press d (Add data) to connect a provider; `/` filters the tape (or deep-searches a ticker in Prediction), `o` sorts, `r` refreshes. Blank series usually mean a missing API key — the header [!] flags which; press i for the per-provider fix.'
   ],
   news: [
+    '`F` attaches the selected article to an existing forecast, with an optional update interview. Attaching evidence does not change probability.',
     'News has sources, headlines and an independently scrolling reader. Tab or left/right switches sources; up/down selects stories. PgUp/PgDn scrolls article text without moving the selection.',
     'Enter opens the source in a browser, `/` searches, `a` adds feeds, `s` selects starter feeds when available, `r` refreshes and `m` forwards the selected story.'
   ],

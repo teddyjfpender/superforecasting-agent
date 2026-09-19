@@ -1,5 +1,4 @@
-import { useEffect, useLayoutEffect } from 'react'
-import { useEventCallback } from 'usehooks-ts'
+import { useLayoutEffect, useRef } from 'react'
 
 import type { InputEvent, Key } from '../events/input-event.js'
 
@@ -61,35 +60,37 @@ const useInput = (inputHandler: Handler, options: Options = {}) => {
     }
   }, [options.isActive, setRawMode])
 
-  // Register the listener once on mount so its slot in the EventEmitter's
-  // listener array is stable. If isActive were in the effect's deps, the
-  // listener would re-append on false→true, moving it behind listeners
-  // that registered while it was inactive — breaking
-  // stopImmediatePropagation() ordering. useEventCallback keeps the
-  // reference stable while reading latest isActive/inputHandler from
-  // closure (it syncs via useLayoutEffect, so it's compiler-safe).
-  const handleData = useEventCallback((event: InputEvent) => {
-    if (options.isActive === false) {
-      return
-    }
-
-    const { input, key } = event
-
-    // If app is not supposed to exit on Ctrl+C, then let input listener handle it
-    // Note: discreteUpdates is called at the App level when emitting events,
-    // so all listeners are already within a high-priority update context.
-    if (!(input === 'c' && key.ctrl) || !exitOnCtrlC) {
-      inputHandler(input, key, event)
-    }
+  // Node must use a real layout effect: browser-detecting "isomorphic" helpers
+  // choose passive effects in a terminal, leaving a painted control with a stale
+  // handler (or no listener yet). Keep one listener slot and commit its handler
+  // before users can act on the new frame, preserving propagation order.
+  const current = useRef({ inputHandler, isActive: options.isActive, exitOnCtrlC })
+  useLayoutEffect(() => {
+    current.current = { inputHandler, isActive: options.isActive, exitOnCtrlC }
   })
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    const handleData = (event: InputEvent) => {
+      const state = current.current
+
+      if (state.isActive === false) {
+        return
+      }
+
+      const { input, key } = event
+
+      // The App already emits within a discrete update.
+      if (!(input === 'c' && key.ctrl) || !state.exitOnCtrlC) {
+        state.inputHandler(input, key, event)
+      }
+    }
+
     inputEmitter?.on('input', handleData)
 
     return () => {
       inputEmitter?.removeListener('input', handleData)
     }
-  }, [inputEmitter, handleData])
+  }, [inputEmitter])
 }
 
 export default useInput

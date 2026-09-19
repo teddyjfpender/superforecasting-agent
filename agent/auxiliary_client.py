@@ -41,6 +41,7 @@ Payment / credit exhaustion fallback:
 """
 
 import json
+import hashlib
 import logging
 import os
 import threading
@@ -4760,6 +4761,8 @@ def call_llm(
     tools: list = None,
     timeout: float = None,
     extra_body: dict = None,
+    strict_request: bool = False,
+    request_receipt: dict | None = None,
 ) -> Any:
     """Centralized synchronous LLM call.
 
@@ -4778,6 +4781,11 @@ def call_llm(
         tools: Tool definitions (for function calling).
         timeout: Request timeout in seconds (None = read from auxiliary.{task}.timeout config).
         extra_body: Additional request body fields.
+        request_receipt: Optional output mapping for a strict request fingerprint.
+            Contains no credential or raw endpoint values.
+        strict_request: Require a positive output cap and preserve the prepared
+            request. Disable helper retries, parameter removal and provider
+            fallback. SDK transport retries may still repeat the same request.
 
     Returns:
         Response object with .choices[0].message.content
@@ -4785,6 +4793,9 @@ def call_llm(
     Raises:
         RuntimeError: If no provider is configured.
     """
+    if strict_request and (type(max_tokens) is not int or max_tokens <= 0):
+        raise ValueError("Strict auxiliary requests require a positive max_tokens")
+
     resolved_provider, resolved_model, resolved_base_url, resolved_api_key, resolved_api_mode = _resolve_task_provider_model(
         task, provider, model, base_url, api_key)
     effective_extra_body = _get_task_extra_body(task)
@@ -4802,7 +4813,7 @@ def call_llm(
             api_key=resolved_api_key or api_key,
             async_mode=False,
         )
-        if client is None and resolved_provider != "auto" and not resolved_base_url:
+        if client is None and not strict_request and resolved_provider != "auto" and not resolved_base_url:
             logger.warning(
                 "Vision provider %s unavailable, falling back to auto vision backends",
                 resolved_provider,
@@ -4843,7 +4854,7 @@ def call_llm(
             # Pass model=None so each provider uses its own default —
             # resolved_model may be an OpenRouter-format slug that doesn't
             # work on other providers.
-            if not resolved_base_url:
+            if not strict_request and not resolved_base_url:
                 logger.info("Auxiliary %s: provider %s unavailable, trying auto-detection chain",
                             task or "call", resolved_provider)
                 client, final_model = _get_cached_client("auto", main_runtime=main_runtime)
@@ -4874,6 +4885,32 @@ def call_llm(
     _client_base = str(getattr(client, "base_url", "") or "")
     if _is_anthropic_compat_endpoint(resolved_provider, _client_base):
         kwargs["messages"] = _convert_openai_images_to_anthropic(kwargs["messages"])
+
+    if strict_request:
+        # Some adapters intentionally discard output limits. Refuse those routes
+        # before spending rather than misrepresenting a UI budget as enforced.
+        if isinstance(client, CodexAuxiliaryClient):
+            raise ValueError("Codex OAuth does not support a bounded output request")
+        cap_keys = {"max_tokens", "max_completion_tokens", "max_output_tokens"}
+        if not any(kwargs.get(key) == max_tokens for key in cap_keys):
+            raise ValueError("Provider cannot preserve the requested output cap")
+        # OpenAI merges extra_body into the final wire payload. Do not let task
+        # configuration replace the contract, route or cap after validation.
+        protected = cap_keys | {"model", "messages", "tools", "stream", "n"}
+        if protected.intersection(kwargs.get("extra_body", {})):
+            raise ValueError("Strict auxiliary extra_body overrides protected fields")
+        if request_receipt is not None:
+            settings = {key: value for key, value in kwargs.items() if key != "messages"}
+            fingerprint = hashlib.sha256(json.dumps(
+                {"provider": resolved_provider, "endpoint": _base_info,
+                 "adapter": type(client).__qualname__, "settings": settings},
+                sort_keys=True, allow_nan=False,
+            ).encode()).hexdigest()
+            request_receipt.clear()
+            request_receipt.update({"fingerprint": fingerprint, "model": final_model,
+                                    "provider": resolved_provider})
+        return _validate_llm_response(
+            client.chat.completions.create(**kwargs), task)
 
     # Handle unsupported temperature, max_tokens vs max_completion_tokens retry,
     # then payment fallback.

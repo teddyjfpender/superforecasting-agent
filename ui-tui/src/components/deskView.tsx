@@ -4,7 +4,7 @@ import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react'
 
 import { FORECAST_PACKET_TAIL_TITLES, forecastQuestionDetailSections } from '../app/forecastPanel.js'
 import type { ReviewSweepState } from '../app/interfaces.js'
-import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
+import { $globalModal, openForecastInterview, openHelpOverlay } from '../app/overlayStore.js'
 import { $reviewSweep } from '../app/uiStore.js'
 import { useJobAttach } from '../app/useJobAttach.js'
 import type { GatewayClient } from '../gatewayClient.js'
@@ -1195,7 +1195,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   // another, so hand off by closing the desk and opening onboarding (the seam the
   // empty-state text — "press n to track a new one" — points at).
   const openNewQuestion = () => {
-    patchOverlayState({ forecasts: false, forecastsInitialId: null, onboard: true })
+    openForecastInterview()
   }
 
   // The id + title the settings modal targets: the selected forecast, or (on a
@@ -1366,6 +1366,12 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
 
       if (ch === 'R') {
         return openResolve()
+      }
+
+      if (ch === 'i' && selectedId && !lensActive) {
+        openForecastInterview({ questionId: selectedId })
+
+        return
       }
 
       if (ch === 'n') {
@@ -1761,6 +1767,15 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
             { k: 'u', label: 'Re-arm', run: () => runRearm() },
             { k: 'R', label: 'Resolve', run: () => openResolve() },
             { k: 'n', label: 'New', run: () => openNewQuestion() },
+            {
+              k: 'i',
+              label: 'Interview',
+              run: () => {
+                if (selectedId && !lensActive) {
+                  openForecastInterview({ questionId: selectedId })
+                }
+              }
+            },
             { k: 's', label: 'Settings', run: () => openSettings() },
             { k: 'o', label: 'Sort', run: () => onSortCycle() },
             {

@@ -416,3 +416,35 @@ def test_include_legacy_false_scopes_to_new_store(legacy_home):
     store = JobStore()
     assert store.list(include_legacy=False) == []
     assert store.active(include_legacy=False) == []
+
+
+def test_cancel_does_not_overwrite_running_owner_and_remains_visible(tmp_path):
+    store = _store(tmp_path)
+    store.write(JobRecord(job_id="job_cancel_owner", type="forecast_interview"))
+    with store.claim("job_cancel_owner") as owner:
+        assert owner is not None
+        owner.annotations["generated_followups"] = {"output": "validated"}
+        store.write(owner)
+        assert store.request_cancel(owner.job_id)
+        # The owner still controls terminal state and can flush newer provenance.
+        assert store.read(owner.job_id).status == "running"
+        owner.progress.append({"phase": "response_saved"})
+        store.write(owner)
+        observed = store.read(owner.job_id)
+        assert observed.cancel_requested
+        assert observed.annotations == owner.annotations
+        assert observed.progress == owner.progress
+
+
+@pytest.mark.parametrize("status", ["queued", "running", "awaiting_approval"])
+def test_cancel_unowned_jobs_finishes_without_a_worker(tmp_path, status):
+    store = _store(tmp_path)
+    store.write(JobRecord(job_id="job_unowned", type="forecast_interview", status=status,
+                          annotations={"proposal": "retained"}))
+    assert store.request_cancel("job_unowned")
+    record = store.read("job_unowned")
+    assert record.status == "cancelled"
+    assert record.result["cancelled"]
+    assert record.annotations == {"proposal": "retained"}
+    with store.claim("job_unowned") as unavailable:
+        assert unavailable is None

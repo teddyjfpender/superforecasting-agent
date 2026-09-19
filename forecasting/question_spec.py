@@ -379,106 +379,109 @@ class QuestionSpec:
         if gaps:
             onboarding_meta["waived_readiness"] = [g.field for g in gaps]
 
-        # The spec IS a recognised commit path (it is driven by the gated forecast
-        # tool / the CLI `onboard --commit`), so its create_question is allowed.
-        with allow_ledger_writes(reason="question_spec.commit"):
-            question = ledger.create_question(
-                title=self.title.strip(),
-                resolution_criteria=self.resolution_criteria.strip(),
-                outcome_space=self.outcome_space(),
-                description=self.description,
-                resolution_source=self.resolution_source,
-                close_time=self.close_time,
-                resolution_time=self.resolution_time,
-                tags=list(self.tags),
-                domain=self.domain,
-                topics=list(self.topics),
-                owner=self.owner,
-                impact=self.impact,
-                review_cadence=self.review_cadence,
-                next_review_at=self.next_review_at,
-                metadata={"onboarding": onboarding_meta},
-                decision_owner=self.decision_owner,
-                decision_deadline=self.decision_deadline,
-                action_threshold=self.action_threshold,
-                update_triggers=normalize_update_triggers([t.to_trigger() for t in self.update_triggers]) if self.update_triggers else None,
-            )
-        question_id = question.id if hasattr(question, "id") else question["id"]
+        # A questionnaire commit must not leave a question without its selected
+        # sources, reference classes or resolution contract after a failed write.
+        with ledger.transaction(immediate=True):
+            # The spec IS a recognised commit path (it is driven by the gated forecast
+            # tool / the CLI `onboard --commit`), so its create_question is allowed.
+            with allow_ledger_writes(reason="question_spec.commit"):
+                question = ledger.create_question(
+                    title=self.title.strip(),
+                    resolution_criteria=self.resolution_criteria.strip(),
+                    outcome_space=self.outcome_space(),
+                    description=self.description,
+                    resolution_source=self.resolution_source,
+                    close_time=self.close_time,
+                    resolution_time=self.resolution_time,
+                    tags=list(self.tags),
+                    domain=self.domain,
+                    topics=list(self.topics),
+                    owner=self.owner,
+                    impact=self.impact,
+                    review_cadence=self.review_cadence,
+                    next_review_at=self.next_review_at,
+                    metadata={"onboarding": onboarding_meta},
+                    decision_owner=self.decision_owner,
+                    decision_deadline=self.decision_deadline,
+                    action_threshold=self.action_threshold,
+                    update_triggers=normalize_update_triggers([t.to_trigger() for t in self.update_triggers]) if self.update_triggers else None,
+                )
+            question_id = question.id if hasattr(question, "id") else question["id"]
 
-        watched: list[dict[str, Any]] = []
-        for ws in self.watched_sources:
-            watched.append(
-                ledger.add_watched_source(
+            watched: list[dict[str, Any]] = []
+            for ws in self.watched_sources:
+                watched.append(
+                    ledger.add_watched_source(
+                        scope_type="question",
+                        scope_ref=question_id,
+                        source=ws.source.strip(),
+                        source_type=ws.source_type,
+                        metadata=ws.watch_metadata(),
+                    )
+                )
+
+            ref_classes: list[dict[str, Any]] = []
+            for rc in self.reference_classes:
+                ref_classes.append(
+                    ledger.add_reference_class(
+                        question_id=question_id,
+                        name=rc.name.strip(),
+                        inclusion_criteria=rc.inclusion_criteria.strip(),
+                        exclusion_criteria=rc.exclusion_criteria,
+                        base_rate=rc.base_rate,
+                        base_rate_uncertainty=rc.base_rate_uncertainty,
+                        source_refs=list(rc.source_refs) or None,
+                        check_cadence=rc.check_cadence,
+                        notes=rc.notes,
+                    )
+                )
+
+            # Auto-resolver rule: attach the structured metric_threshold rule so the desk
+            # can PROPOSE a resolution from ingested source data (propose-then-confirm)
+            # instead of resolving by hand. Gated write, so re-open the write context.
+            resolution_rule = None
+            if self.resolution_rule is not None:
+                with allow_ledger_writes(reason="question_spec.commit"):
+                    resolution_rule = ledger.set_resolution_rule(
+                        question_id,
+                        field=self.resolution_rule.field,
+                        comparator=self.resolution_rule.comparator,
+                        threshold=self.resolution_rule.threshold,
+                        resolver=self.resolution_rule.resolver,
+                        source_role=self.resolution_rule.source_role,
+                    )
+
+            # Loop coverage: a committed (serious) question is put on the review cycle
+            # so it is actually re-checked + auto-scored/postmortemed without the
+            # operator remembering to schedule it (the "review runs = 0" pain). The spec
+            # only stored review_cadence on the question; nothing created the schedule
+            # row the cycle reads. Idempotent (schedule_review dedups), so a re-commit
+            # or an explicit schedule won't spawn a duplicate. Fail-open: a scheduling
+            # hiccup must never block the commit.
+            #
+            # trigger_reason="question_review_cadence" deliberately MATCHES the reason
+            # create_question uses for the weekly review it now auto-creates for eligible
+            # live questions. schedule_review is idempotent on
+            # (scope_type, scope_ref, cadence, trigger_reason), so this UPSERTS the
+            # auto_score/auto_postmortem flags onto that single row instead of spawning a
+            # second question-scoped review.
+            scheduled_review = None
+            scheduled_review_error = None
+            try:
+                scheduled_review = ledger.schedule_review(
                     scope_type="question",
                     scope_ref=question_id,
-                    source=ws.source.strip(),
-                    source_type=ws.source_type,
-                    metadata=ws.watch_metadata(),
+                    cadence=(self.review_cadence or "weekly"),
+                    trigger_reason="question_review_cadence",
+                    auto_score=True,
+                    auto_postmortem=True,
                 )
-            )
-
-        ref_classes: list[dict[str, Any]] = []
-        for rc in self.reference_classes:
-            ref_classes.append(
-                ledger.add_reference_class(
-                    question_id=question_id,
-                    name=rc.name.strip(),
-                    inclusion_criteria=rc.inclusion_criteria.strip(),
-                    exclusion_criteria=rc.exclusion_criteria,
-                    base_rate=rc.base_rate,
-                    base_rate_uncertainty=rc.base_rate_uncertainty,
-                    source_refs=list(rc.source_refs) or None,
-                    check_cadence=rc.check_cadence,
-                    notes=rc.notes,
-                )
-            )
-
-        # Auto-resolver rule: attach the structured metric_threshold rule so the desk
-        # can PROPOSE a resolution from ingested source data (propose-then-confirm)
-        # instead of resolving by hand. Gated write, so re-open the write context.
-        resolution_rule = None
-        if self.resolution_rule is not None:
-            with allow_ledger_writes(reason="question_spec.commit"):
-                resolution_rule = ledger.set_resolution_rule(
-                    question_id,
-                    field=self.resolution_rule.field,
-                    comparator=self.resolution_rule.comparator,
-                    threshold=self.resolution_rule.threshold,
-                    resolver=self.resolution_rule.resolver,
-                    source_role=self.resolution_rule.source_role,
-                )
-
-        # Loop coverage: a committed (serious) question is put on the review cycle
-        # so it is actually re-checked + auto-scored/postmortemed without the
-        # operator remembering to schedule it (the "review runs = 0" pain). The spec
-        # only stored review_cadence on the question; nothing created the schedule
-        # row the cycle reads. Idempotent (schedule_review dedups), so a re-commit
-        # or an explicit schedule won't spawn a duplicate. Fail-open: a scheduling
-        # hiccup must never block the commit.
-        #
-        # trigger_reason="question_review_cadence" deliberately MATCHES the reason
-        # create_question uses for the weekly review it now auto-creates for eligible
-        # live questions. schedule_review is idempotent on
-        # (scope_type, scope_ref, cadence, trigger_reason), so this UPSERTS the
-        # auto_score/auto_postmortem flags onto that single row instead of spawning a
-        # second question-scoped review.
-        scheduled_review = None
-        scheduled_review_error = None
-        try:
-            scheduled_review = ledger.schedule_review(
-                scope_type="question",
-                scope_ref=question_id,
-                cadence=(self.review_cadence or "weekly"),
-                trigger_reason="question_review_cadence",
-                auto_score=True,
-                auto_postmortem=True,
-            )
-        except Exception as exc:
-            # Fail-open: a scheduling hiccup must never block the commit. But record
-            # WHY rather than swallowing it silently, so a real misconfiguration
-            # (e.g. a bad cadence) surfaces in the commit result instead of vanishing.
-            scheduled_review = None
-            scheduled_review_error = str(exc)
+            except Exception as exc:
+                # Fail-open: a scheduling hiccup must never block the commit. But record
+                # WHY rather than swallowing it silently, so a real misconfiguration
+                # (e.g. a bad cadence) surfaces in the commit result instead of vanishing.
+                scheduled_review = None
+                scheduled_review_error = str(exc)
 
         # Recurrence by default: a committed forecast should REFRESH ITSELF without
         # the operator remembering to schedule a cron. Idempotently ensure the

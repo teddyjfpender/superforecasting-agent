@@ -517,11 +517,24 @@ async def test_signed_job_cannot_commit_forecast_and_replay_does_not_rerun(monke
         evidence = {'db': str(ledger_path), 'action': 'add_evidence',
                     'question_id': question.id, 'source_or_note': 'Synthetic source release',
                     'claim': 'The controlled source reports a new positive observation.'}
+        from forecasting.interviews.agent import REVIEW_QUESTIONS
+        arguments['interview_id'] = 'webhook-review'
+        review_calls = [{
+            'db': str(ledger_path), 'action': 'interview',
+            'interview_request': {'operation': 'begin', 'interview_id': 'webhook-review', 'question_id': question.id},
+        }]
+        review_calls.extend({
+            'db': str(ledger_path), 'action': 'interview',
+            'interview_request': {'operation': 'answer', 'interview_id': 'webhook-review',
+                          'revision': index + 1, 'request_id': f'review-{topic}',
+                          'answer': {'question_id': topic, 'status': 'unknown',
+                                     'note': 'Controlled fixture has no additional information.'}},
+        } for index, topic in enumerate(REVIEW_QUESTIONS))
+        tool_requests = [evidence, *review_calls, arguments]
         model_calls.side_effect = [
-            _mock_response(content='', finish_reason='tool_calls', tool_calls=[
-                _mock_tool_call('forecast_ledger', json.dumps(evidence), 'evidence')]),
-            _mock_response(content='', finish_reason='tool_calls', tool_calls=[
-                _mock_tool_call('forecast_ledger', json.dumps(arguments), 'propose')]),
+            *[_mock_response(content='', finish_reason='tool_calls', tool_calls=[
+                _mock_tool_call('forecast_ledger', json.dumps(params), f'call-{index}')])
+              for index, params in enumerate(tool_requests)],
             _mock_response(content='Research complete; proposed revision awaits approval.'),
         ]
         class PreparedAgent(type(agent)):
@@ -555,22 +568,26 @@ async def test_signed_job_cannot_commit_forecast_and_replay_does_not_rerun(monke
             assert 'proposal-only' in receipt['result']['error']
         else:
             assert receipt['state'] == 'completed', receipt['result']
-            assert model_calls.call_count == 3
+            assert model_calls.call_count == len(tool_requests) + 1
             messages = model_calls.call_args.kwargs['messages']
             outcomes = [json.loads(message['content']) for message in messages
                         if message.get('role') == 'tool']
-            assert len(outcomes) == 2
-            assert outcomes[1].get('status') == 'proposal_created', outcomes
-            assert outcomes[1]['proposal']['status'] == 'pending'
+            assert len(outcomes) == len(tool_requests)
+            assert all(item.get("success") for item in outcomes), outcomes
+            assert outcomes[-1].get('status') == 'proposal_created', outcomes
+            assert outcomes[-1]['proposal']['status'] == 'pending'
+            review = outcomes[-1]['proposal']['snapshot_args']['metadata']['structured_interview_review']
+            assert review['interview_id'] == 'webhook-review'
+            assert set(review['unresolved_questions']) == set(REVIEW_QUESTIONS)
         repeated = await client.post('/webhooks/source', data=body, headers=headers)
         assert (await repeated.json())['trigger_id'] == identity
         assert await asyncio.to_thread(scheduler.tick, verbose=False) == 0
     if execution == 'script':
         assert attempts.read_text() == 'attempt\n'
     else:
-        assert model_calls.call_count == 3
+        assert model_calls.call_count == len(tool_requests) + 1
         reopened = ForecastLedger(ledger_path)
-        proposal = reopened.get_forecast_update_proposal(outcomes[1]['proposal']['id'])
+        proposal = reopened.get_forecast_update_proposal(outcomes[-1]['proposal']['id'])
         assert proposal['status'] == 'pending'
         assert len(reopened.list_evidence(question.id)) == 1
     assert len(ledger.list_snapshots(question.id)) == 1

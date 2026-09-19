@@ -33,6 +33,7 @@ from protocol.rpc import config as _rpc_config
 from protocol.rpc import forecast as _rpc_forecast
 from protocol.rpc import host as _rpc_host
 from protocol.rpc import interact as _rpc_interact
+from protocol.rpc import interviews as _rpc_interviews
 from protocol.rpc import jobs as _rpc_jobs
 from protocol.rpc import market_models as _rpc_market_models
 from protocol.rpc import markets as _rpc_markets
@@ -462,6 +463,91 @@ RPC_SPECS: list[RpcSpec] = [
         "forecast.question",
         _rpc_forecast.ForecastQuestionRequest,
         _rpc_forecast.ForecastQuestionPacketResponse,
+    ),
+    RpcSpec(
+        "forecast.article.attach",
+        _rpc_interviews.ForecastArticleAttachRequest,
+        _rpc_interviews.ForecastArticleAttachResponse,
+    ),
+    RpcSpec(
+        "forecast.question.choices",
+        WireModel,
+        _rpc_interviews.ForecastQuestionChoicesResponse,
+    ),
+    RpcSpec(
+        "forecast.interview.generation_status",
+        _rpc_interviews.InterviewTargetRequest,
+        _rpc_interviews.InterviewGenerationStatusResponse,
+    ),
+    RpcSpec(
+        "forecast.interview.assumption.save",
+        _rpc_interviews.InterviewAssumptionSaveRequest,
+        _rpc_interviews.InterviewRecord,
+    ),
+    RpcSpec(
+        "forecast.interview.scenario.save",
+        _rpc_interviews.InterviewScenarioSaveRequest,
+        _rpc_interviews.InterviewRecord,
+    ),
+    RpcSpec(
+        "forecast.interview.scenario.delete",
+        _rpc_interviews.InterviewScenarioDeleteRequest,
+        _rpc_interviews.InterviewRecord,
+    ),
+    RpcSpec(
+        "forecast.interview.promotion_preview",
+        _rpc_interviews.InterviewPromotionPreviewRequest,
+        _rpc_interviews.InterviewPromotionPreviewResponse,
+    ),
+    RpcSpec(
+        "forecast.interview.promote",
+        _rpc_interviews.InterviewPromoteRequest,
+        _rpc_interviews.InterviewPromoteResponse,
+    ),
+    RpcSpec(
+        "forecast.interview.evaluate",
+        _rpc_interviews.InterviewEvaluateRequest,
+        _rpc_interviews.InterviewGenerateResponse,
+    ),
+    RpcSpec(
+        "forecast.interview.evaluation_status",
+        _rpc_interviews.InterviewTargetRequest,
+        _rpc_interviews.InterviewEvaluationStatusResponse,
+    ),
+    RpcSpec(
+        "forecast.interview.generate",
+        _rpc_interviews.InterviewGenerateRequest,
+        _rpc_interviews.InterviewGenerateResponse,
+    ),
+    RpcSpec(
+        "forecast.interview.begin",
+        _rpc_interviews.InterviewBeginRequest,
+        _rpc_interviews.InterviewRecord,
+    ),
+    RpcSpec(
+        "forecast.interview.read",
+        _rpc_interviews.InterviewReadRequest,
+        _rpc_interviews.InterviewRecord,
+    ),
+    RpcSpec(
+        "forecast.interview.list",
+        _rpc_interviews.InterviewListRequest,
+        _rpc_interviews.InterviewListResponse,
+    ),
+    RpcSpec(
+        "forecast.interview.answer",
+        _rpc_interviews.InterviewAnswerRequest,
+        _rpc_interviews.InterviewRecord,
+    ),
+    RpcSpec(
+        "forecast.interview.commit",
+        _rpc_interviews.InterviewPreviewRequest,
+        _rpc_interviews.InterviewCommitResponse,
+    ),
+    RpcSpec(
+        "forecast.interview.preview",
+        _rpc_interviews.InterviewPreviewRequest,
+        _rpc_interviews.InterviewPreviewResponse,
     ),
     RpcSpec(
         "forecast.onboard_propose",

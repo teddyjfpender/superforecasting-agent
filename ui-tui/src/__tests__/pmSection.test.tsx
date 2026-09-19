@@ -246,6 +246,9 @@ const fakeGw = (calls: Call[]) => {
   }
 
   gw.setMaxListeners(50)
+  // Match the real gateway: a connection owns one profile, even if another test
+  // changes the process environment while an old asynchronous request settles.
+  let profile: string | undefined
 
   gw.request = (method: string, params: Record<string, unknown> = {}) => {
     calls.push({ method, params })
@@ -253,7 +256,8 @@ const fakeGw = (calls: Call[]) => {
     // The fake backend owns this test profile. The real TUI must reach it
     // through RPC, including saved-event writes and configuration revisions.
     if (method.startsWith('market.')) {
-      const path = join(process.env.SUPERFORECASTING_AGENT_HOME!, 'markets.json')
+      profile ??= process.env.SUPERFORECASTING_AGENT_HOME!
+      const path = join(profile, 'markets.json')
       const stored = JSON.parse(readFileSync(path, 'utf8'))
 
       if (method === 'market.selection.update') {
@@ -436,6 +440,8 @@ const mount = async (
     cleanup: (keepHome = false) => {
       instance.unmount?.()
       instance.cleanup?.()
+      stdin.stream.destroy()
+      stdout.stream.destroy()
 
       if (!keepHome) {
         rmSync(home, { force: true, recursive: true })
@@ -459,6 +465,32 @@ afterEach(() => {
 })
 
 describe('Prediction section inside the Data tape', () => {
+  it('requires a specific multi-outcome row and carries that outcome into a forecast interview', async () => {
+    const { $overlayState, resetOverlayState } = await import('../app/overlayStore.js')
+    resetOverlayState()
+    const m = await mount()
+
+    try {
+      await m.press('F')
+      expect($overlayState.get().onboard).toBe(false)
+      expect(m.text()).toContain('specific outcome')
+      await m.press(' ')
+      await m.press('\x1b[B')
+      await m.press('\x1b[B')
+      await m.press('F')
+      expect($overlayState.get().onboard).toBe(true)
+      const seed = $overlayState.get().onboardSeed
+      expect(seed?.event_id).toBe('evt-nba')
+      expect(seed?.outcome_label).toBe('Nuggets')
+      expect(seed?.outcome_id).toBe('cond-nug')
+      expect(seed?.market_price).toBeCloseTo(0.31)
+      expect(seed?.provider).toBe('polymarket')
+    } finally {
+      m.cleanup()
+      resetOverlayState()
+    }
+  })
+
   it('renders the Prediction tab + PM header in the Data tape (no [Prediction] mode chip)', async () => {
     const m = await mount()
     const text = m.text()

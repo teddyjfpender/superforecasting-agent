@@ -4,7 +4,7 @@ import { Box, render } from '@superforecasting/ink'
 import React from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
 
-import { resetOverlayState } from '../app/overlayStore.js'
+import { $overlayState, resetOverlayState } from '../app/overlayStore.js'
 import { NewsView } from '../components/newsView.js'
 import { stripAnsi } from '../lib/text.js'
 import { DARK_THEME } from '../theme.js'
@@ -47,12 +47,26 @@ async function mount(cols: number, rows: number, configured = false) {
     'Disasters'
   ].map((category, i) => ({ ...feed, category, url: `https://example.org/feed${i}` }))
 
+  let responseXml = xml
   let feeds = configured ? [feed] : []
   let fail = false
   let release: ((value: unknown) => void) | undefined
   let delay = false
 
-  const request = vi.fn(async (method: string, params: { action?: string; url?: string }) => {
+  const request = vi.fn(async (method: string, params: { action?: string; url?: string; prepare_update?: boolean }) => {
+    if (method === 'forecast.question.choices') {
+      return { questions: [{ id: 'q_cpi', title: 'Will CPI exceed three percent?', domain: 'economics' }] }
+    }
+
+    if (method === 'forecast.article.attach') {
+      return {
+        question_id: 'q_cpi',
+        evidence_id: 'ev_story',
+        already_attached: false,
+        interview_id: params.prepare_update ? 'news_review' : null
+      }
+    }
+
     if (method === 'news.desk') {
       return { feeds, starter, state: configured ? 'configured' : 'unconfigured' }
     }
@@ -68,7 +82,7 @@ async function mount(cols: number, rows: number, configured = false) {
         throw new Error('Source offline')
       }
 
-      return { xml, url: feed.url }
+      return { xml: responseXml, url: feed.url }
     }
 
     if (method === 'news.article') {
@@ -115,6 +129,9 @@ async function mount(cols: number, rows: number, configured = false) {
 
   return {
     request,
+    revise: () => {
+      responseXml = xml.replaceAll('First source report', 'Revised source report')
+    },
     frames,
     text: () => stripAnsi(output),
     fail: () => {
@@ -238,5 +255,64 @@ it.each([
     }
   } finally {
     app.close()
+  }
+})
+
+it.each([
+  [80, 24],
+  [120, 40]
+])('holds the current story until updates are explicitly applied at %ix%i', async (cols, rows) => {
+  const app = await mount(cols, rows, true)
+
+  try {
+    await tick(650)
+    app.revise()
+    await app.press('r')
+    await tick(150)
+    expect(app.text()).toContain('First source report')
+    expect(app.text()).not.toContain('Revised source report')
+    expect(app.text()).toContain('Updates ready')
+    await app.press('u')
+    expect(app.text()).toContain('Revised source report')
+
+    for (const frame of app.frames) {
+      expect(frame.trimEnd().split('\n').length).toBeLessThanOrEqual(rows)
+    }
+  } finally {
+    app.close()
+  }
+})
+
+it('previews article attachment and opens the selected forecast interview only after confirmation', async () => {
+  const app = await mount(120, 40, true)
+
+  try {
+    await app.press('F')
+    expect(app.text()).toContain('FIND FORECAST')
+    expect(app.request.mock.calls.some(([method]) => method === 'forecast.article.attach')).toBe(false)
+    await app.press('\r')
+    expect(app.text()).toContain('ATTACH ARTICLE · REVIEW')
+    expect(app.text()).toContain('Will CPI exceed three percent?')
+    await app.press('\t')
+    expect(app.text()).toContain('Attach + update interview')
+    await app.press('\r')
+    expect(app.request).toHaveBeenCalledWith(
+      'forecast.article.attach',
+      expect.objectContaining({
+        question_id: 'q_cpi',
+        prepare_update: true,
+        article: expect.objectContaining({
+          title: 'First source report',
+          url: 'https://example.org/first',
+          extraction: expect.stringMatching(/^(article|feed)$/)
+        })
+      })
+    )
+    expect($overlayState.get().onboardInterviewId).toBe('news_review')
+    expect($overlayState.get().onboardQuestionId).toBe('q_cpi')
+    expect($overlayState.get().onboardSeed).toBeNull()
+  } finally {
+    app.close()
+    resetOverlayState()
   }
 })

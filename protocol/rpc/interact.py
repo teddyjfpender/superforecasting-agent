@@ -280,13 +280,19 @@ __all__ = [
 
 
 class SudoRespondRequest(RespondRequest):
+    TS_NAME = "SudoRespondRequest"
+
     password: str = ""
 
 
 class SecretRespondRequest(RespondRequest):
+    TS_NAME = "SecretRespondRequest"
+
     value: str = ""
 
 
 class ApprovalRespondRequest(RespondRequest):
+    TS_NAME = "ApprovalRespondRequest"
+
     choice: str = "deny"
     all: bool = False

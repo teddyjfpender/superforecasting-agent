@@ -2,7 +2,7 @@ import { useStore } from '@nanostores/react'
 import { Box, ScrollBox, type ScrollBoxHandle, Text, useStdout } from '@superforecasting/ink'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
+import { $globalModal, openForecastInterview, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
 import type { CatalogFeed } from '../content/newsFeedCatalog.js'
 import { FEED_CATEGORIES } from '../content/newsFeedCatalog.js'
 import type { GatewayClient } from '../gatewayClient.js'
@@ -25,15 +25,18 @@ import {
 } from '../lib/newsFeedStore.js'
 import { nextProviderColor, providerColor } from '../lib/newsProviderColor.js'
 import { loadProviderColors, type ProviderColors, saveProviderColors } from '../lib/newsProviderColorStore.js'
+import { sameNewsArticles } from '../lib/newsPublication.js'
 import { openExternalUrl } from '../lib/openExternalUrl.js'
 import { useShareItem } from '../lib/useShareItem.js'
 import { useViewInput } from '../lib/useViewInput.js'
 import { semantics } from '../lib/visualSemantics.js'
+import type { ForecastArticleClaim } from '../protocol/generated.js'
 import type { NewsArticleResponse, NewsSubscription } from '../protocol/generated.js'
 import type { Theme } from '../theme.js'
 
 import { AddFeedModal } from './addFeedModal.js'
 import { type FooterChip, FooterChips } from './footerChips.js'
+import { ForecastArticlePicker } from './forecastArticlePicker.js'
 import { Md } from './markdown.js'
 import { NewsStarterModal } from './newsStarterModal.js'
 import { ShortcutText } from './shortcutText.js'
@@ -164,10 +167,29 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
     )
   )
 
+  // Acquisition may continue while reading; publication is a deliberate action.
+  const displayedArticles = useRef(articles)
+  const [pendingArticles, setPendingArticles] = useState<Article[] | null>(null)
+
+  const publishArticles = (next: Article[]) => {
+    displayedArticles.current = next
+    setArticles(next)
+    setPendingArticles(null)
+  }
+
+  const applyUpdates = () => {
+    if (pendingArticles) {
+      publishArticles(pendingArticles)
+      setSel(0)
+    }
+  }
+
   const [fetching, setFetching] = useState(false)
+  const [, setCacheRevision] = useState(0)
 
   // Add-feed modal state.
   const [adding, setAdding] = useState(false)
+  const [attaching, setAttaching] = useState<ForecastArticleClaim | null>(null)
   const [providerColors, setProviderColors] = useState<ProviderColors>(() => loadProviderColors())
   const [query, setQuery] = useState('')
   const [modalCat, setModalCat] = useState(ALL_CATEGORY)
@@ -228,7 +250,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
     cacheRef.current = retained.articles
     bodyCache.current = retained.bodies
     setArticleBody(null)
-    setArticles(
+    publishArticles(
       uniqueArticles(
         (retained.newsDesk?.feeds ?? []).flatMap(feed => retained.articles[normalizeFeedUrl(feed.url)]?.articles ?? [])
       )
@@ -280,6 +302,13 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
 
     const controller = new AbortController()
     const keep = new Set(subscribed.map(f => normalizeFeedUrl(f.url)))
+    const keptArticles = displayedArticles.current.filter(article => keep.has(normalizeFeedUrl(article.feedUrl)))
+
+    if (keptArticles.length !== displayedArticles.current.length) {
+      publishArticles(keptArticles)
+      setSel(0)
+    }
+
     const pruned = pruneArticleCache(cacheRef.current, { keep, maxAgeMs: 30 * 24 * 60 * 60 * 1000, maxFeeds: 700 })
 
     // Keep the record identity stable for requests already owned by this connection.
@@ -296,9 +325,15 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
         return
       }
 
-      setArticles(
-        uniqueArticles(subscribed.flatMap(feed => cacheRef.current[normalizeFeedUrl(feed.url)]?.articles ?? []))
+      const next = uniqueArticles(
+        subscribed.flatMap(feed => cacheRef.current[normalizeFeedUrl(feed.url)]?.articles ?? [])
       )
+
+      if (!displayedArticles.current.length) {
+        publishArticles(next)
+      } else {
+        setPendingArticles(sameNewsArticles(displayedArticles.current, next) ? null : next)
+      }
     }
 
     rebuild()
@@ -323,6 +358,8 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
           error: result.error ?? undefined,
           fetchedAt: result.error ? (previous?.fetchedAt ?? 0) : Date.now()
         }
+        // Status updates must render even when the published articles stay fixed.
+        setCacheRevision(value => value + 1)
         rebuild()
       },
       6,
@@ -534,6 +571,10 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
 
   const handleFooterKey = useViewInput(
     (ch, key) => {
+      if (attaching) {
+        return
+      }
+
       if (starterOpen) {
         if (saving) {
           return
@@ -698,6 +739,18 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
         return
       }
 
+      if (ch === 'F') {
+        attachSelected()
+
+        return
+      }
+
+      if (ch === 'u' && !key.ctrl && !key.meta) {
+        applyUpdates()
+
+        return
+      }
+
       if (ch === 'r') {
         setFlash('refreshing…')
 
@@ -838,6 +891,28 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
 
   const usingArticle = articleBody?.status === 'article' && Boolean(articleBody.text.trim())
 
+  const attachSelected = () => {
+    if (!gw || !selectedArticle) {
+      setFlash('Select an article with a connected gateway')
+
+      return
+    }
+
+    const exactBody = articleBody?.status === 'article' && articleBody.url === selectedArticle.link
+    setAttaching({
+      title: selectedArticle.title,
+      url: selectedArticle.link || selectedArticle.feedUrl,
+      publisher: selectedArticle.feedTitle,
+      feed_url: selectedArticle.feedUrl,
+      published_at: selectedArticle.publishedAt > 0 ? new Date(selectedArticle.publishedAt).toISOString() : null,
+      content: (exactBody ? articleBody.text : selectedArticle.content || selectedArticle.summary || '').slice(
+        0,
+        60000
+      ),
+      extraction: exactBody ? 'article' : 'feed'
+    })
+  }
+
   const readerText = usingArticle
     ? articleBody!.text
     : selectedArticle?.content || selectedArticle?.summary || articleBody?.text || ''
@@ -891,6 +966,12 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
             {' · '}
             {hasFeeds ? `${subscribed.length} feeds · ${articles.length} articles` : 'press a to add feeds'}
           </ShortcutText>
+          {pendingArticles ? (
+            <ShortcutText color={t.color.accent} t={t}>
+              {' '}
+              · Updates ready [u apply]
+            </ShortcutText>
+          ) : null}
           {searchActive ? (
             <Text>
               <Text color={t.color.muted}>{'  ·  '}</Text>
@@ -936,7 +1017,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
               justifyContent="space-between"
               key={src}
               onClick={() => {
-                if (adding || starterOpen || globalModal) {
+                if (adding || attaching !== null || starterOpen || globalModal) {
                   return
                 }
 
@@ -994,7 +1075,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
                 flexDirection="column"
                 key={`${article.feedUrl}:${idx}`}
                 onClick={() => {
-                  if (!adding && !starterOpen && !globalModal) {
+                  if (!adding && !attaching && !starterOpen && !globalModal) {
                     setSel(idx)
                   }
                 }}
@@ -1164,6 +1245,8 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
         ]
       : []),
     { k: 'PgUp/Dn', label: 'Read' },
+    ...(gw && selectedArticle ? [{ k: 'F', label: 'Attach to forecast', run: attachSelected }] : []),
+    ...(pendingArticles ? [{ k: 'u', label: 'Apply updates', run: applyUpdates }] : []),
     {
       k: 'r',
       label: 'Refresh',
@@ -1181,7 +1264,12 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
       {/* The FooterChips are the ONE canonical shortcuts row (the always-on prose
           duplicate below them was removed). Only a transient flash survives, and
           only when there is something to say — never a second shortcuts row. */}
-      <FooterChips chips={chips} disabled={adding || starterOpen || globalModal} onKey={handleFooterKey} t={t} />
+      <FooterChips
+        chips={chips}
+        disabled={adding || attaching !== null || starterOpen || globalModal}
+        onKey={handleFooterKey}
+        t={t}
+      />
       {flash ? (
         <Text color={t.color.accent} wrap="truncate-end">
           {flash}
@@ -1251,6 +1339,26 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
           resultSel={modalSel}
           rows={termRows}
           subscribedCount={subscribed.length}
+          t={t}
+        />
+      ) : null}
+      {attaching && gw ? (
+        <ForecastArticlePicker
+          article={attaching}
+          cols={cols}
+          gw={gw}
+          onAttached={result => {
+            setAttaching(null)
+            setFlash(
+              result.already_attached ? 'Article already linked to this forecast' : 'Article attached to forecast'
+            )
+
+            if (result.interview_id) {
+              openForecastInterview({ questionId: result.question_id, interviewId: result.interview_id })
+            }
+          }}
+          onClose={() => setAttaching(null)}
+          rows={termRows}
           t={t}
         />
       ) : null}

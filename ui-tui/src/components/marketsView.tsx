@@ -4,11 +4,13 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { $marketJobs, pruneStaleMarketJobs, setMarketJob, STALE_MARKET_JOB_MS } from '../app/marketJobsStore.js'
 import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
+import { openForecastInterview } from '../app/overlayStore.js'
 import type { MarketSeries } from '../content/marketProviders.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import { catalogSeries, deskConfig, saveDeskFields } from '../lib/dataDesk.js'
 import { deskViewCache } from '../lib/deskViewCache.js'
 import { sharePredictionMarket, shareQuote } from '../lib/feedShare.js'
+import { predictionForecastSeed, seriesForecastSeed } from '../lib/forecastSeeds.js'
 import { type FieldSpec, rankItems } from '../lib/fuzzyRank.js'
 import { statusGlyph } from '../lib/icons.js'
 import { changeReference, displayedChange, formatMarketChange, lastMovement } from '../lib/marketChange.js'
@@ -905,6 +907,28 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   const clampedSel = Math.min(sel, Math.max(0, sortedRows.length - 1))
   const selectedRow = sortedRows[clampedSel]
 
+  const forecastSelected = () => {
+    if (!gw) {
+      setFlash('Connect the gateway before creating a forecast')
+
+      return
+    }
+
+    try {
+      if (pmTabActive) {
+        const row = pm.rows[pm.clampedSel]
+
+        if (row) {
+          openForecastInterview({ seed: predictionForecastSeed(row) })
+        }
+      } else if (selectedRow) {
+        openForecastInterview({ seed: seriesForecastSeed(selectedRow.series, selectedRow.quote ?? undefined) })
+      }
+    } catch (cause) {
+      setFlash(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+
   // Keep the SELECTED tape row selected across a re-sort (track by provider:symbol,
   // not index): a sort action stashes the current key, and once the re-sorted order
   // lands we move the cursor to wherever that row now sits. A filter/quote update
@@ -1250,6 +1274,12 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
       // On the Prediction tab, the section owns its keys (open / expand / venue /
       // range / sort / select). It returns false for the shared keys (q/Esc, d,
       // /, m, h, Tab) so they still fall through to the handlers below.
+      if (ch === 'F') {
+        forecastSelected()
+
+        return
+      }
+
       if (pmTabActive && pm.handleKey(ch, key)) {
         return
       }
@@ -1421,7 +1451,9 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
           {dataWarnings.length ? (
             <Text color={sem.star}>
               {'   [!] '}
-              <ShortcutText color={t.color.muted} t={t}>press </ShortcutText>
+              <ShortcutText color={t.color.muted} t={t}>
+                press{' '}
+              </ShortcutText>
               <Text color={sem.star}>i · Data status</Text>
             </Text>
           ) : null}
@@ -1992,6 +2024,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   )
 
   const dataChips: FooterChip[] = [
+    { k: 'F', label: 'Forecast', run: forecastSelected },
     { k: '↑↓', label: 'Select' },
     {
       k: '⇥',
@@ -2064,6 +2097,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   // The Prediction section's own chip row (it owns venue/range/expand where the
   // quote tape has none), still sharing Filter / Models / Help / Close.
   const pmChips: FooterChip[] = [
+    { k: 'F', label: 'Forecast', run: forecastSelected },
     { k: '↑↓', label: 'Select' },
     { k: '←→/Tab', label: 'Topics' },
     { k: 'Space', label: 'Expand' },
