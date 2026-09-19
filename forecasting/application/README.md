@@ -63,3 +63,12 @@ Reuse the ID only to retry the same operation and options, including after a los
 acknowledgement. Use a new ID for a deliberate fresh acquisition. Without an ID,
 legacy invocations remain independent imports. Receipts live in the profile ledger;
 missing referenced evidence fails closed rather than silently importing again.
+
+`market_imports.py` owns Kalshi/Polymarket evidence and baseline-comparison persistence.
+Callers supply a parsed provider record and `MarketEvidenceRequest`. Both writes use
+one transaction, so invalid probabilities or failed comparison storage cannot leave
+partial evidence. A missing quote creates evidence without inventing a baseline.
+`market_import_metadata` also supplies candidate metadata; candidate confirmation and
+active forecast promotion remain separate operations. Tests live in
+`tests/application/test_market_imports.py`, with local-HTTP CLI regressions in
+`tests/forecasting/test_cli.py`.

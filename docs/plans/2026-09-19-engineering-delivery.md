@@ -194,3 +194,19 @@ lint/types and all 76 import contracts passed; the CLI-reference freshness check
 correctly required regeneration for the new option, and the reference was regenerated.
 This closes retry receipts for this operation, not the broader typed-plan/provider
 migration requirements. No full suite was run.
+
+## Prediction-market persistence owner
+
+Kalshi and Polymarket CLI evidence branches now share
+`forecasting/application/market_imports.py`. The typed request and provider-record
+operation persists evidence and baseline comparison atomically through existing
+ledger validation. Metadata construction is shared with candidate imports. Existing
+CLI text remains compatible; unquoted markets do not invent a baseline, and neither
+path changes an active forecast probability.
+
+Nine focused tests passed, including local-HTTP CLI imports for both providers,
+invalid-probability rollback and injected comparison-write failures. Python static
+checks, generated-reference checks and all 76 import contracts pass. Acquisition
+still precedes this persistence operation; full typed acquisition plans, receipt
+support for these providers and remaining adapter migrations remain open. No full
+suite was run.

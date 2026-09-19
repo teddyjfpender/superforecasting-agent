@@ -3335,40 +3335,21 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
     if args.import_kind == "polymarket":
         market = load_polymarket_market(args.source, api_base_url=args.api_base_url)
         baseline = market.baseline_payload()
-        polymarket_metadata = {
-            "adapter": "polymarket",
-            "source": args.source,
-            "market_id": market.market_id,
-            "slug": market.slug,
-            "market_url": market.url,
-        }
+        from forecasting.application.market_imports import (
+            MarketEvidenceRequest, import_market_evidence, market_import_metadata,
+        )
+
+        polymarket_metadata = market_import_metadata(market, args.source)
         if args.question_id:
-            item = ledger.add_evidence(
-                question_id=args.question_id,
-                source_or_note=market.url or args.source,
-                source_url=market.url,
-                source_name="Polymarket",
-                source_type="adapter:polymarket",
-                published_at=market.as_of,
-                available_at=market.as_of or args.as_of,
-                claim=market.question,
-                summary=market.description,
-                stance="context",
-                claim_type="estimate",
-                metadata=polymarket_metadata,
+            result = import_market_evidence(
+                ledger,
+                MarketEvidenceRequest(question_id=args.question_id, source=args.source, as_of=args.as_of),
+                market,
             )
-            print(f"captured polymarket evidence {item.id}")
-            if baseline is not None:
-                comparison = ledger.add_baseline_comparison(
-                    question_id=args.question_id,
-                    source=str(baseline["source"]),
-                    baseline_type=str(baseline["baseline_type"]),
-                    probability_or_distribution=baseline["probability_or_distribution"],
-                    as_of=str(baseline.get("as_of") or args.as_of or ""),
-                    metadata=polymarket_metadata,
-                )
-                print(f"captured polymarket baseline comparison {comparison['id']}")
-                print(f"probability: {_format_probability(comparison['probability_or_distribution'])}")
+            print(f"captured polymarket evidence {result.evidence.id}")
+            if result.comparison is not None:
+                print(f"captured polymarket baseline comparison {result.comparison['id']}")
+                print(f"probability: {_format_probability(result.comparison['probability_or_distribution'])}")
             return
         metadata = polymarket_metadata
         if baseline is not None:
@@ -3391,41 +3372,21 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
     if args.import_kind == "kalshi":
         market = load_kalshi_market(args.source, api_base_url=args.api_base_url)
         baseline = market.baseline_payload()
-        kalshi_metadata = {
-            "adapter": "kalshi",
-            "source": args.source,
-            "ticker": market.ticker,
-            "event_ticker": market.event_ticker,
-            "status": market.status,
-            "market_url": market.url,
-        }
+        from forecasting.application.market_imports import (
+            MarketEvidenceRequest, import_market_evidence, market_import_metadata,
+        )
+
+        kalshi_metadata = market_import_metadata(market, args.source)
         if args.question_id:
-            item = ledger.add_evidence(
-                question_id=args.question_id,
-                source_or_note=market.url or args.source,
-                source_url=market.url,
-                source_name="Kalshi",
-                source_type="adapter:kalshi",
-                published_at=market.as_of,
-                available_at=market.as_of or args.as_of,
-                claim=market.question,
-                summary=market.description,
-                stance="context",
-                claim_type="estimate",
-                metadata=kalshi_metadata,
+            result = import_market_evidence(
+                ledger,
+                MarketEvidenceRequest(question_id=args.question_id, source=args.source, as_of=args.as_of),
+                market,
             )
-            print(f"captured kalshi evidence {item.id}")
-            if baseline is not None:
-                comparison = ledger.add_baseline_comparison(
-                    question_id=args.question_id,
-                    source=str(baseline["source"]),
-                    baseline_type=str(baseline["baseline_type"]),
-                    probability_or_distribution=baseline["probability_or_distribution"],
-                    as_of=str(baseline.get("as_of") or args.as_of or ""),
-                    metadata=kalshi_metadata,
-                )
-                print(f"captured kalshi baseline comparison {comparison['id']}")
-                print(f"probability: {_format_probability(comparison['probability_or_distribution'])}")
+            print(f"captured kalshi evidence {result.evidence.id}")
+            if result.comparison is not None:
+                print(f"captured kalshi baseline comparison {result.comparison['id']}")
+                print(f"probability: {_format_probability(result.comparison['probability_or_distribution'])}")
             return
         metadata = kalshi_metadata
         if baseline is not None:
