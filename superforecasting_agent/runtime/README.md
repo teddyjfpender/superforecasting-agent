@@ -21,6 +21,20 @@ These are entry points and representative modules, not an exhaustive inventory.
 | [assistant_text.py](assistant_text.py)          | Normalize visible assistant content for the CLI transcript and clipboard. |
 | [audit_discovery.py](audit_discovery.py)        | Discover pinned audit components from the environment, plugins, and MCP.  |
 
+## Parser composition
+
+`main.py::build_runtime_parser(include_plugins=False)` constructs the built-in
+argparse tree without startup cleanup, argument parsing or command execution.
+The executable entrypoint opts into plugin registration when needed. Metadata
+consumers must leave plugin discovery disabled: registration can execute external
+code and depends on the active profile.
+
+The [generated runtime inventory](../../docs/reference/runtime-commands.md)
+uses this same builder. Public routing in `../cli.py` precedes runtime dispatch,
+so forecast shorthand and TUI fast paths are documented separately. Parser
+callbacks are composition adapters; shared validation and persistence belong in
+application owners.
+
 ## Subdirectories
 
 - [proxy/](proxy/README.md) — Provider proxy runtime.
@@ -31,13 +45,13 @@ Run checks from the repository root:
 
 ```sh
 python3 scripts/dev.py check
-scripts/run_tests.sh tests/runtime_cli/
+scripts/run_tests.sh tests/runtime_cli/test_parser_construction.py tests/runtime_cli/test_plugin_cli_registration.py -q
 ```
 
 Use the canonical runner for Python tests so isolation and environment settings
 match repository policy. Extend a regression around the changed contract; use
-controlled failures for retries, cancellation and interrupted writes. The full
-Python suite is required before pushing.
+controlled failures for retries, cancellation and interrupted writes. The pre-push hook runs the bounded integration tier; use focused tests for
+changed behavior and the qualification tier only when explicitly required.
 
 Update this guide when entry points or ownership change. See the
 [ownership map](../../docs/architecture/ownership-map.md)

@@ -20,6 +20,7 @@ from scripts.docgen import (
     job_types_doc,
     protocol_doc,
     providers_doc,
+    runtime_commands_doc,
     skills_doc,
     tool_actions_doc,
 )
@@ -38,6 +39,12 @@ class Generated:
 
 
 GENERATORS: list[Generated] = [
+    Generated(
+        "runtime-commands.md",
+        "Built-in runtime commands",
+        runtime_commands_doc.render,
+        "The actual runtime parser's built-in command paths, aliases and bound callbacks.",
+    ),
     Generated(
         "command-surfaces.md",
         "Command identities and surfaces",

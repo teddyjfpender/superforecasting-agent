@@ -21,7 +21,7 @@ def render() -> str:
         "",
         "Classic CLI dispatch belongs to `cli.py`; messaging dispatch belongs to `gateway/run.py`. Terminal-native commands route through `command.dispatch` / `slash.exec`; other terminal commands are owned by Ink. A configuration gate indicates conditional messaging availability, not a separate command.",
         "",
-        "The [forecast CLI reference](cli-reference.md) inventories the argparse forecast tree separately. Root runtime commands, plugin commands and local TUI actions are distinct surfaces; this table does not claim to inventory those or establish machine-output/error parity.",
+        "The [forecast CLI reference](cli-reference.md) inventories the argparse forecast tree separately. [Runtime parser commands](runtime-commands.md), plugin commands and local TUI actions are distinct surfaces; this table does not claim to inventory those or establish machine-output/error parity.",
         "",
         "## Slash commands",
         "",

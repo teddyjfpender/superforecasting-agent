@@ -8774,26 +8774,15 @@ def main():
         return _main()
 
 
-def _main():
-    """Main entry point for the runtime CLI."""
-    # Force UTF-8 stdio on Windows before anything prints.  No-op elsewhere.
-    try:
-        from superforecasting_agent.runtime.stdio import configure_windows_stdio
-        configure_windows_stdio()
-    except Exception:
-        pass
+def build_runtime_parser(
+    *, include_plugins: bool = False,
+) -> tuple[argparse.ArgumentParser, argparse._SubParsersAction]:
+    """Construct command metadata without startup cleanup, parsing or execution.
 
-    # Sweep stale ``hermes.exe.old.*`` quarantine files left by previous
-    # ``superforecasting-agent update`` runs on Windows. Silent no-op on non-Windows or when
-    # there's nothing to clean. See ``_quarantine_running_agent_exe``.
-    try:
-        _cleanup_quarantined_exes()
-    except Exception:
-        pass
-
-    if _try_launch_top_level_tui_fast_path(sys.argv[1:]):
-        return
-
+    Plugin contributions are opt-in. Introspection should use the default;
+    normal CLI dispatch selects discovery according to its existing argv policy.
+    This is a composition seam, not a claim that all callbacks are shared owners.
+    """
     from superforecasting_agent.runtime._parser import build_top_level_parser
 
     parser, subparsers, chat_parser = build_top_level_parser()
@@ -10267,7 +10256,7 @@ Examples:
     # (google.cloud.pubsub_v1, aiohttp, grpc, PIL …) which costs
     # 500-650ms on typical installs.
     # =========================================================================
-    if _plugin_cli_discovery_needed():
+    if include_plugins:
         try:
             from plugins.memory import discover_plugin_cli_commands
             from superforecasting_agent.runtime.plugins import discover_plugins, get_plugin_manager
@@ -11501,6 +11490,35 @@ Examples:
         help="Filter by component: gateway, agent, tools, cli, cron",
     )
     logs_parser.set_defaults(func=cmd_logs)
+
+    return parser, subparsers
+
+
+def _main():
+    """Main entry point for the runtime CLI."""
+    # Force UTF-8 stdio on Windows before anything prints.  No-op elsewhere.
+    try:
+        from superforecasting_agent.runtime.stdio import configure_windows_stdio
+        configure_windows_stdio()
+    except Exception:
+        pass
+
+    # Sweep stale ``hermes.exe.old.*`` quarantine files left by previous
+    # ``superforecasting-agent update`` runs on Windows. Silent no-op on non-Windows or when
+    # there's nothing to clean. See ``_quarantine_running_agent_exe``.
+    try:
+        _cleanup_quarantined_exes()
+    except Exception:
+        pass
+
+    if _try_launch_top_level_tui_fast_path(sys.argv[1:]):
+        return
+
+    from forecasting.cli import cmd_forecast
+
+    parser, subparsers = build_runtime_parser(
+        include_plugins=_plugin_cli_discovery_needed()
+    )
 
     # =========================================================================
     # Parse and execute

@@ -932,3 +932,18 @@ The page explicitly distinguishes this inventory from root runtime/plugin/local
 TUI actions and from behavioral or machine-output parity; those W04 requirements
 remain open. Five focused catalog/docgen checks passed and strict catalog typing
 passes. Existing quick-command compatibility was also checked separately.
+
+## Runtime parser composition and inventory
+
+Runtime argparse construction is now independently callable with plugin discovery
+explicitly opt-in. Startup cleanup, TUI fast paths, parsing and execution remain
+in the executable entrypoint. The generated runtime reference walks the actual
+built-in parser, grouping aliases and recording bound callbacks/output flags.
+It distinguishes public forecast shorthand and other early routing from runtime
+parser bindings; it does not claim behavioral or machine-output parity.
+
+Seventeen focused parser, real CLI subprocess, plugin registration and docgen
+checks passed. They cover disabled discovery during metadata inspection, explicit
+plugin callbacks, startup/execution exactly once and deterministic inventories.
+No full suite was run. W04 still requires shared command behavior and error/output
+contracts across surfaces; this change provides an inspectable composition seam.
