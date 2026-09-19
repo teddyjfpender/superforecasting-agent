@@ -166,17 +166,31 @@ def register(server) -> None:
         job_id = str(params.get("job_id") or "").strip()
         if not job_id:
             return server._err(rid, -32602, "jobs.cancel requires a 'job_id'")
-        store = _get_store()
+        from forecasting.application.job_cancellation import request_job_cancellation
+
         with _running_lock:
-            ev = _running.get(job_id)
-        found = ev is not None or store.exists(job_id)
+            admitted_event = _running.get(job_id)
         try:
-            store.request_cancel(job_id)
-        except Exception:  # noqa: BLE001 — best-effort durable signal
-            pass
-        if ev is not None:
-            ev.set()
-        return server._ok(rid, {"job_id": job_id, "found": found, "cancelled": found})
+            receipt = request_job_cancellation(_get_store(), job_id)
+        except ValueError as exc:
+            return server._err(rid, -32602, str(exc))
+        except OSError as exc:
+            return server._err(rid, 5008, f"Cancellation could not be persisted: {exc}")
+        with _running_lock:
+            if (
+                receipt.accepted
+                and admitted_event is not None
+                and _running.get(receipt.job_id) is admitted_event
+            ):
+                admitted_event.set()
+        return server._ok(rid, {
+            "job_id": receipt.job_id,
+            "found": receipt.accepted,
+            # Legacy field means admission, NOT worker termination.
+            "cancelled": receipt.accepted,
+            "cancel_requested": receipt.accepted,
+            "status": receipt.record.status if receipt.record is not None else None,
+        })
 
     server.register_method("jobs.start", jobs_start)
     server.register_method("jobs.status", jobs_status)
@@ -213,17 +227,15 @@ def register(server) -> None:
         return server._ok(rid, {"job_id": job_id, "dry_run": dry_run})
 
     def automode_cancel(rid, params):
-        job_id = str(params.get("job_id") or "").strip()
-        with _running_lock:
-            ev = _running.get(job_id)
-        if ev is None:
-            return server._ok(rid, {"job_id": job_id, "found": False})
-        try:
-            _get_store().request_cancel(job_id)
-        except Exception:  # noqa: BLE001 — durable signal is best-effort
-            pass
-        ev.set()
-        return server._ok(rid, {"job_id": job_id, "found": True, "cancelled": True})
+        response = jobs_cancel(rid, params)
+        result = response.get("result")
+        if result is not None:
+            # Preserve the legacy envelope while sharing durable admission.
+            result.pop("cancel_requested", None)
+            result.pop("status", None)
+            if not result["found"]:
+                result.pop("cancelled", None)
+        return response
 
     server.register_method("forecast.warnings.automode.run", automode_run)
     server.register_method("forecast.warnings.automode.cancel", automode_cancel)

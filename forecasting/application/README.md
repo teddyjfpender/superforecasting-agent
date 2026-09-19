@@ -21,6 +21,15 @@ These are entry points and representative modules, not an exhaustive inventory.
 | [question_reuse.py](question_reuse.py)           | Read-only candidate matching shared by question creation and forecast entrypoints. |
 | [resolution.py](resolution.py)                   | Resolution use case; product adapters do not own settlement policy.                |
 
+## Job cancellation
+
+`job_cancellation.request_job_cancellation` is shared by CLI and job RPC adapters.
+Its receipt acknowledges durable admission; its record reports observed status.
+Adapters must not label a live worker stopped merely because cancellation was
+requested. Storage failures propagate, and an in-memory stop signal is sent only
+after durable admission. The RPC's legacy `cancelled` field is an acknowledgement;
+new consumers use `cancel_requested` and `status` to distinguish the two states.
+
 ## Working in this directory
 
 Run checks from the repository root:

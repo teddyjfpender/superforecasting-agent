@@ -3845,9 +3845,11 @@ _(no fields)_
 
 | field | type |
 | --- | --- |
+| `cancel_requested` | `boolean?` |
 | `cancelled` | `boolean` |
 | `found` | `boolean` |
 | `job_id` | `string` |
+| `status` | `string?` |
 
 ### JobsStartRequest
 

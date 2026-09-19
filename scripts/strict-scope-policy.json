@@ -29,6 +29,7 @@
     "forecasting/application/aggregate_summaries.py",
     "forecasting/application/benchmarks.py",
     "forecasting/application/import_receipts.py",
+    "forecasting/application/job_cancellation.py",
     "forecasting/application/market_imports.py",
     "forecasting/application/market_output.py",
     "forecasting/application/model_build.py",

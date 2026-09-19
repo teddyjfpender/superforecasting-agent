@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from protocol.types import WireModel
+from protocol.types import WireModel, wire_optional
 
 
 class JobRecordDTO(WireModel):
@@ -106,7 +106,10 @@ class JobsCancelResponse(WireModel):
 
     job_id: str
     found: bool
+    # Compatibility acknowledgement; this does not assert worker termination.
     cancelled: bool
+    cancel_requested: bool | None = wire_optional()
+    status: str | None = wire_optional()
 
 
 __all__ = [

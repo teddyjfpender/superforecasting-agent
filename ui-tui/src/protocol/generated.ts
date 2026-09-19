@@ -2970,9 +2970,11 @@ export interface JobsCancelRequest {
 }
 
 export interface JobsCancelResponse {
+  cancel_requested?: boolean
   cancelled: boolean
   found: boolean
   job_id: string
+  status?: string
 }
 
 export interface JobsStartRequest {

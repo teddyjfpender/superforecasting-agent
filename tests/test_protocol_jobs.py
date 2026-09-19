@@ -80,7 +80,7 @@ def test_start_and_cancel_response_roundtrip():
 
     cancel = RPC_BY_METHOD["jobs.cancel"]
     cframe = {"job_id": "job_x", "found": True, "cancelled": True}
-    assert cancel.response.model_validate(cframe).model_dump(mode="json") == cframe
+    assert cancel.response.model_validate(cframe).model_dump(mode="json", exclude_unset=True) == cframe
 
 
 @pytest.mark.parametrize(

@@ -947,3 +947,23 @@ checks passed. They cover disabled discovery during metadata inspection, explici
 plugin callbacks, startup/execution exactly once and deterministic inventories.
 No full suite was run. W04 still requires shared command behavior and error/output
 contracts across surfaces; this change provides an inspectable composition seam.
+
+## Shared durable job cancellation
+
+CLI, jobs RPC and the legacy warnings alias now share cancellation admission.
+Storage failures no longer become successful RPC acknowledgements or uncaught CLI
+tracebacks. The local stop event is signalled only after durable admission and
+only if it is still the originally observed worker's event. Missing records and
+concurrent deletion remain explicit rather than inventing a terminal status.
+
+The legacy RPC `cancelled` boolean remains an admission acknowledgement for
+compatibility. Additive `cancel_requested` and observed `status` fields distinguish
+that from worker termination. The warnings alias retains its legacy envelope.
+Existing CLI JSON success payloads and failure exit status remain unchanged;
+errors use stderr. This does not make the job RPC family host-isolated or finish
+all command machine-output contracts.
+
+36 focused operation/gateway/protocol checks passed, followed by ten operation
+checks including the additional replacement-worker race. Real subprocess cases
+verify empty-profile JSON listing and missing-job cancellation without prompts or
+tracebacks. All 38 questionnaire-control TUI tests passed. No full suite ran.

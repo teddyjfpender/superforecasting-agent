@@ -118,18 +118,21 @@ def _cmd_jobs_active(args: argparse.Namespace) -> None:
 
 
 def _cmd_jobs_cancel(args: argparse.Namespace) -> None:
+    from forecasting.application.job_cancellation import request_job_cancellation
     from forecasting.jobs.store import JobStore
 
-    store = JobStore()
     try:
-        ok = store.request_cancel(args.job_id)
-    except ValueError as exc:
+        receipt = request_job_cancellation(JobStore(), args.job_id)
+    except (OSError, ValueError) as exc:
         print(f"forecast: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
-    if not ok:
+    if not receipt.accepted:
         print(f"forecast: no job '{args.job_id}'", file=sys.stderr)
         raise SystemExit(1)
-    payload = _record_payload(store.read(args.job_id))
+    if receipt.record is None:
+        print("forecast: cancellation accepted; job record was removed", file=sys.stderr)
+        raise SystemExit(1)
+    payload = receipt.record.to_dict()
     if getattr(args, "json", False):
         print(json.dumps(payload, indent=2, sort_keys=True))
         return
