@@ -254,13 +254,22 @@ class InterviewService:
             if any(a.status == "unknown" for a in draft.answers)
             else "draft"
         )
-        return self.store.save(
-            interview_id,
-            draft,
-            expected_revision=expected_revision,
-            request_id=request_id,
-            actor=actor,
-        )
+        with self.ledger.transaction(immediate=True) as conn:
+            confirmed = self.store.save(
+                interview_id,
+                draft,
+                expected_revision=expected_revision,
+                request_id=request_id,
+                actor=actor,
+            )
+            # Confirmation and retirement of its editor text are one transition.
+            # Replaying an old answer must preserve edits based on newer revisions.
+            conn.execute(
+                "UPDATE forecast_interview_buffers SET document=NULL "
+                "WHERE interview_id=? AND question_id=? AND base_revision<?",
+                (interview_id, question_id, confirmed["revision"]),
+            )
+            return confirmed
 
     def save_assumption(
         self,

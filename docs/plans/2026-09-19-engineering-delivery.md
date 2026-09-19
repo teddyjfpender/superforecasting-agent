@@ -85,3 +85,18 @@ and gateway contracts. Canonical Python/TUI static quality checks pass (includin
 contracts, reference freshness, 76 import contracts, lint and production TypeScript).
 The full suite was not run. The new RPC request models retain the required `WireModel`
 contract and explicitly enforce strict, extra-forbidden editor input.
+
+## Questionnaire editor integration tranche
+
+The TUI now restores acknowledged unconfirmed editor buffers, autosaves with serialized
+and coalesced requests, preserves exact uncertain requests for retry, and requires explicit
+review of stale buffers. Save/discard-and-close wait for their acknowledgements; unavailable
+storage fails truthfully and an explicit leave-unsaved action allows exit. Receipt identity
+is checked before displaying saved status. Confirmation retires prior editor text atomically
+with the answer, while old retries preserve newer edits. Cleanup failure rolls back the answer.
+
+Validation: 49 focused Python tests (buffers, interview lifecycle, gateway RPC) and 41 TUI
+tests (editor controller, interview interactions and component flow) passed. Canonical
+`scripts/dev.py check` passed, including production TypeScript. The full suite was not run.
+This does not close W07: new-question lesson capture, full provenance presentation and wider
+reconnect/conflict qualification remain. Other W01–W09 criteria remain as recorded above.

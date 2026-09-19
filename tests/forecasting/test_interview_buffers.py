@@ -195,3 +195,80 @@ def test_additive_schema_upgrade_preserves_confirmed_interviews(desk):
     upgraded = ForecastLedger(path)
     assert InterviewService(upgraded).store.read("draft") == original
     assert save_buffer(upgraded, edit())["buffer_revision"] == 1
+
+
+def test_confirmation_retires_buffer_without_erasing_later_edits_on_retry(desk):
+    ledger, service = desk
+    original = edit()
+    save_buffer(ledger, original)
+    answer = dict(
+        expected_revision=1,
+        request_id="confirm",
+        question_id="title",
+        status="answered",
+        value="Confirmed question",
+    )
+    confirmed = service.answer("draft", **answer)
+    assert read_buffers(ledger, "draft")["buffers"][0]["buffer"] is None
+    # An uncertain old save cannot resurrect the now-confirmed editor contents.
+    save_buffer(ledger, original)
+    assert read_buffers(ledger, "draft")["buffers"][0]["buffer"] is None
+    save_buffer(
+        ledger,
+        edit(
+            base_revision=confirmed["revision"],
+            expected_buffer_revision=1,
+            request_id="new-edit",
+            buffer={"text": "A later unconfirmed revision"},
+        ),
+    )
+    assert service.answer("draft", **answer) == confirmed
+    assert (
+        read_buffers(ledger, "draft")["buffers"][0]["buffer"]["text"]
+        == "A later unconfirmed revision"
+    )
+
+
+def test_confirmation_cleanup_failure_rolls_back_answer(desk, monkeypatch):
+    ledger, service = desk
+    save_buffer(ledger, edit())
+    transaction = ledger.transaction
+
+    class FailCleanup:
+        def __init__(self, conn):
+            self.conn = conn
+
+        def execute(self, sql, params=()):
+            if sql.startswith("UPDATE forecast_interview_buffers SET document=NULL"):
+                raise RuntimeError("cleanup interrupted")
+            return self.conn.execute(sql, params)
+
+    @contextmanager
+    def interrupted(*args, **kwargs):
+        with transaction(*args, **kwargs) as conn:
+            yield FailCleanup(conn)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(ledger, "transaction", interrupted)
+        with pytest.raises(RuntimeError, match="cleanup interrupted"):
+            service.answer(
+                "draft",
+                expected_revision=1,
+                request_id="confirm",
+                question_id="title",
+                status="answered",
+                value="Confirmed",
+            )
+    assert service.store.read("draft")["revision"] == 1
+    assert read_buffers(ledger, "draft")["buffers"][0]["buffer"] is not None
+    assert (
+        service.answer(
+            "draft",
+            expected_revision=1,
+            request_id="confirm",
+            question_id="title",
+            status="answered",
+            value="Confirmed",
+        )["revision"]
+        == 2
+    )

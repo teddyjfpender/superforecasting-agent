@@ -349,7 +349,16 @@ cancellation and interview commit remove buffer text; profile removal removes it
 database. Buffers otherwise remain available until an explicit discard, allowing
 long-running interviews to resume. They must never contain secret-prompt content.
 
-The API is ready for TUI integration; autosave, restoration and save-status presentation
-are still tracked in the engineering delivery record. Until that integration lands,
-ordinary TUI edits remain in component memory. Focused persistence/recovery tests are
-in `tests/forecasting/test_interview_buffers.py` and the gateway contract suite.
+The TUI debounces editor saves and reports unsaved, saving, acknowledged or failed
+state. Reopening restores acknowledged edits as unconfirmed. A changed interview
+requires explicit review before restoring a stale buffer. Save-and-close waits for
+acknowledgement; discard-and-close requires durable discard. An explicit leave-unsaved
+action remains available when storage cannot be reached.
+
+Answer confirmation retires its prior editor text in the same transaction. Retrying
+an old answer cannot erase edits based on a newer revision. Cancellation and commit
+also purge text. Tests cover rollback, lost acknowledgements, remount restoration,
+stale drafts and unavailable storage in `tests/forecasting/test_interview_buffers.py`
+and `ui-tui/src/__tests__/interview{Buffers,Controls}.test.*`. Remaining W07 scope,
+including new-question lesson context and provenance presentation, is tracked in the
+engineering delivery record.

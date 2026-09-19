@@ -6,7 +6,9 @@ import { expect, it, vi } from 'vitest'
 import { resetOverlayState } from '../app/overlayStore.js'
 import { ForecastInterview } from '../components/forecastInterview.js'
 import { stripAnsi } from '../lib/text.js'
+import type { InterviewBufferRecord } from '../protocol/generated.js'
 import type { InterviewQuestion, InterviewRecord } from '../protocol/generated.js'
+import { RpcFixtures } from '../testing/rpcFixtures.js'
 import { waitForText } from '../testing/settle.js'
 import { DARK_THEME } from '../theme.js'
 
@@ -872,7 +874,7 @@ it.each([
     await ui.wait('define')
     ui.press('\r')
     await ui.wait('Local draft')
-    expect(request.mock.calls.every(([method]) => method === 'forecast.interview.list')).toBe(true)
+    expect(request.mock.calls.every(([method]) => ['forecast.interview.list', 'forecast.interview.buffers'].includes(method))).toBe(true)
   } finally {
     ui.close()
   }
@@ -1016,7 +1018,15 @@ it.each([
 })
 
 it('requires explicit discard to close edited answers without silently saving them', async () => {
-  const request = vi.fn(async () => ({ interviews: [fixture()] }))
+  const provider = new RpcFixtures()
+    .handle('forecast.interview.list', () => ({ interviews: [fixture()] }))
+    .handle('forecast.interview.buffers', () => ({ buffers: [] }))
+    .handle('forecast.interview.buffer.save', request => ({
+      ...request, buffer_revision: request.expected_buffer_revision + 1,
+      saved_at: '2030-01-01', discarded: request.buffer === null
+    }))
+
+  const request = vi.fn(provider.request.bind(provider))
   const close = vi.fn()
   const ui = await screen(request, 80, 24, false, close)
 
@@ -1029,7 +1039,7 @@ it('requires explicit discard to close edited answers without silently saving th
     expect(close).not.toHaveBeenCalled()
     ui.press('\x18')
     await vi.waitFor(() => expect(close).toHaveBeenCalledOnce())
-    expect(request.mock.calls).toHaveLength(1)
+    expect(request.mock.calls).toContainEqual(['forecast.interview.buffer.save', expect.objectContaining({ buffer: null })])
   } finally {
     ui.close()
   }
@@ -1166,11 +1176,102 @@ it('does not create a question or launch analysis while edits remain unconfirmed
     ui.press('\r')
     await ui.wait('Confirm your edits first')
     expect(
-      request.mock.calls.every(([method]) => ['forecast.interview.list', 'forecast.interview.preview'].includes(method))
+      request.mock.calls.every(([method]) => ['forecast.interview.list', 'forecast.interview.preview', 'forecast.interview.buffers'].includes(method))
     ).toBe(true)
     ui.press('\x1b[Z')
     await ui.wait('Unsaved question')
   } finally {
     ui.close()
   }
+})
+
+
+it('restores acknowledged unconfirmed edits after remount without confirming an answer', async () => {
+  const record = fixture()
+  let stored: InterviewBufferRecord[] = []
+
+  const provider = new RpcFixtures()
+    .handle('forecast.interview.list', () => ({ interviews: [record] }))
+    .handle('forecast.interview.buffers', () => ({ buffers: stored }))
+    .handle('forecast.interview.buffer.save', request => {
+      const receipt = {
+        interview_id: request.interview_id, question_id: request.question_id,
+        base_revision: request.base_revision, buffer_revision: request.expected_buffer_revision + 1,
+        request_id: request.request_id, saved_at: '2030-01-01T00:00:00Z', discarded: request.buffer === null
+      }
+
+      stored = [{ ...receipt, buffer: request.buffer, stale: false }]
+
+      return receipt
+    })
+
+  const request = vi.fn(provider.request.bind(provider))
+  const first = await screen(request)
+
+  try {
+    await first.wait('What event?')
+    first.press('Recovered unconfirmed title')
+    await first.wait('saved locally')
+    expect(stored[0].buffer?.text).toBe('Recovered unconfirmed title')
+  } finally { first.close() }
+
+  const second = await screen(request)
+
+  try {
+    await second.wait('Recovered unconfirmed title')
+    expect(record.document.answers).toEqual([])
+    expect(request.mock.calls.some(([method]) => method === 'forecast.interview.answer')).toBe(false)
+  } finally { second.close() }
+})
+
+it('requires explicit review before restoring a stale draft', async () => {
+  const record = fixture()
+  record.revision = 2
+
+  const provider = new RpcFixtures()
+    .handle('forecast.interview.list', () => ({ interviews: [record] }))
+    .handle('forecast.interview.buffers', () => ({ buffers: [{
+      interview_id: 'draft', question_id: 'title', base_revision: 1, buffer_revision: 1,
+      request_id: 'previous', saved_at: '2030-01-01T00:00:00Z', discarded: false, stale: true,
+      buffer: { text: 'Old unconfirmed title', note: '', choice: 0, selected: [], custom_editing: false }
+    }] }))
+    .handle('forecast.interview.buffer.save', request => ({
+      interview_id: request.interview_id, question_id: request.question_id, base_revision: request.base_revision,
+      buffer_revision: request.expected_buffer_revision + 1, request_id: request.request_id,
+      saved_at: '2030-01-01T00:00:00Z', discarded: request.buffer === null
+    }))
+
+  const request = vi.fn(provider.request.bind(provider))
+  const ui = await screen(request)
+
+  try {
+    await ui.wait('RECOVERED DRAFT CONFLICT')
+    expect(request.mock.calls.some(([method]) => method === 'forecast.interview.buffer.save')).toBe(false)
+    ui.press('\r')
+    await ui.wait('What event?')
+    await ui.wait('Old unconfirmed title')
+    expect(record.document.answers).toEqual([])
+  } finally { ui.close() }
+})
+
+it('does not claim discard when storage is unavailable and permits explicitly leaving unsaved', async () => {
+  const provider = new RpcFixtures()
+    .handle('forecast.interview.list', () => ({ interviews: [fixture()] }))
+    .handle('forecast.interview.buffers', () => { throw new Error('Disconnected') })
+
+  const close = vi.fn()
+  const ui = await screen(provider.request.bind(provider), 80, 24, false, close)
+
+  try {
+    await ui.wait('What event?')
+    ui.press('Unsaved title')
+    await ui.wait('Unsaved title')
+    ui.press('\x1b')
+    await ui.wait('UNSAVED INTERVIEW EDITS')
+    ui.press('\x18')
+    await ui.wait('could not be discarded')
+    expect(close).not.toHaveBeenCalled()
+    ui.press('\x0c')
+    await vi.waitFor(() => expect(close).toHaveBeenCalledOnce())
+  } finally { ui.close() }
 })

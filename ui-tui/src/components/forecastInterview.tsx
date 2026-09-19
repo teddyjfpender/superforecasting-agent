@@ -6,9 +6,11 @@ import { useEffect, useRef, useState } from 'react'
 
 import { $globalModal } from '../app/overlayStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
+import { InterviewBuffers } from '../lib/interviewBuffers.js'
 import type {
   ForecastMarketSeed,
   InterviewAnswerRequest,
+  InterviewBufferRecord,
   InterviewPreviewResponse,
   InterviewRecord
 } from '../protocol/generated.js'
@@ -42,6 +44,9 @@ export function ForecastInterview({
   const blocked = useStore($globalModal)
   const [record, setRecord] = useState<InterviewRecord | null>(null)
   const [index, setIndex] = useState(0)
+  const [draftStatus, setDraftStatus] = useState('Loading draft storage…')
+  const buffers = useRef<InterviewBuffers | null>(null)
+  const [staleDrafts, setStaleDrafts] = useState<InterviewBufferRecord[]>([])
   const [text, setText] = useState('')
   const [note, setNote] = useState('')
   const [noteEditing, setNoteEditing] = useState(false)
@@ -71,6 +76,7 @@ export function ForecastInterview({
   const choiceStart = Math.max(0, choice - choiceVisible + 1)
 
   const select = (next: InterviewRecord, at: number) => {
+    buffers.current?.advance(next)
     setRecord(next)
     setIndex(at)
     setPreview(null)
@@ -142,14 +148,31 @@ export function ForecastInterview({
       return gw.request('forecast.interview.begin', { interview_id: id.current, question_id: questionId, seed })
     }
 
+    const editor = new InterviewBuffers(gw, setDraftStatus)
+    buffers.current = editor
+
+    const restore = (items: InterviewBufferRecord[]) => {
+      for (const item of items) {
+        if (!item.buffer || item.stale) { continue }
+        drafts.current.set(item.question_id, item.buffer.text)
+        noteDrafts.current.set(item.question_id, item.buffer.note)
+        choiceDrafts.current.set(item.question_id, { choice: item.buffer.choice, selected: item.buffer.selected })
+        dirtyQuestions.current.add(item.question_id)
+      }
+    }
+
     void load()
-      .then(next => {
+      .then(async next => {
+        const recovered = await editor.restore(next)
+
         if (!active) {
           return
         }
 
+        restore(recovered)
+        setStaleDrafts(recovered.filter(item => item.stale && item.buffer))
         const answered = new Set(next.document.answers.map(answer => answer.question_id))
-        const unanswered = next.document.questions.findIndex(item => !answered.has(item.id))
+        const unanswered = next.document.questions.findIndex(item => dirtyQuestions.current.has(item.id) || !answered.has(item.id))
         select(next, unanswered < 0 ? next.document.questions.length : unanswered)
       })
       .catch((cause: unknown) => {
@@ -166,6 +189,7 @@ export function ForecastInterview({
     return () => {
       active = false
       mounted.current = false
+      editor.dispose()
     }
   }, [gw, questionId, seed, interviewId])
 
@@ -192,6 +216,33 @@ export function ForecastInterview({
       active = false
     }
   }, [gw, record, review])
+
+  useEffect(() => {
+    if (!question || !dirtyQuestions.current.has(question.id) || staleDrafts.length) { return }
+    buffers.current?.stage(question.id, { text, note, choice, selected, custom_editing: customEditing })
+  }, [text, note, choice, selected, customEditing, question, staleDrafts.length])
+
+  const closeDraft = async (discard: boolean) => {
+    if (saving.current) { return }
+    saving.current = true
+    setBusy(true)
+
+    try {
+      if (discard) {
+        await buffers.current?.discard([...dirtyQuestions.current, ...staleDrafts.map(item => item.question_id)])
+      } else {
+        await buffers.current?.preserve()
+      }
+
+      if (mounted.current) { onClose() }
+    } catch (cause) {
+      if (mounted.current) { setError(cause instanceof Error ? cause.message : String(cause)) }
+    } finally {
+      saving.current = false
+
+      if (mounted.current) { setBusy(false) }
+    }
+  }
 
   const save = async (status: InterviewAnswerRequest['status'] = 'answered') => {
     if (!record || !question || saving.current) {
@@ -258,7 +309,9 @@ export function ForecastInterview({
     setError('')
 
     try {
+      await buffers.current?.flush()
       const next = await gw.request('forecast.interview.answer', request)
+      buffers.current?.confirmed(question.id, next)
 
       if (mounted.current) {
         pending.current = null
@@ -336,10 +389,14 @@ export function ForecastInterview({
     freshId.current ??= randomUUID()
 
     try {
+      await buffers.current?.flush()
+
       const next = await gw.request('forecast.interview.begin', {
         interview_id: freshId.current,
         question_id: record.document.question_id
       })
+
+      await buffers.current?.restore(next)
 
       if (mounted.current) {
         noteDrafts.current.clear()
@@ -381,8 +438,55 @@ export function ForecastInterview({
 
         if (key.escape) {
           setCloseConfirm(false)
+        } else if (key.ctrl && input === 's') {
+          void closeDraft(false)
         } else if (key.ctrl && input === 'x') {
+          void closeDraft(true)
+        } else if (key.ctrl && input === 'l' && !saving.current) {
           onClose()
+        }
+
+        return
+      }
+
+      if (staleDrafts.length) {
+        ;(event as unknown as { stopImmediatePropagation?: () => void }).stopImmediatePropagation?.()
+
+        if (key.escape) { onClose() }
+
+        if (key.ctrl && input === 'x') { void closeDraft(true) }
+
+        if (key.return && record) {
+          for (const item of staleDrafts) {
+            const current = record.document.questions.find(q => q.id === item.question_id)
+
+            if (!current || !item.buffer) {
+              setError('A recovered question was removed. Keep the stored draft or explicitly discard it.')
+
+              return
+            }
+
+            const valid = new Set(current.choices.map(option => option.id))
+
+            if (item.buffer.choice > current.choices.length || item.buffer.selected.some(value => !valid.has(value))) {
+              setError('Recovered choices no longer match. Keep the stored draft or explicitly discard it.')
+
+              return
+            }
+          }
+
+          for (const item of staleDrafts) {
+            if (!item.buffer) { continue }
+            drafts.current.set(item.question_id, item.buffer.text)
+            noteDrafts.current.set(item.question_id, item.buffer.note)
+            choiceDrafts.current.set(item.question_id, { choice: item.buffer.choice, selected: item.buffer.selected })
+            dirtyQuestions.current.add(item.question_id)
+            buffers.current?.stage(item.question_id, item.buffer)
+          }
+
+          const at = record.document.questions.findIndex(q => q.id === staleDrafts[0].question_id)
+          setStaleDrafts([])
+          select(record, Math.max(0, at))
         }
 
         return
@@ -539,13 +643,28 @@ export function ForecastInterview({
   const wide = cols >= 120
   const contentWidth = (cols < 100 ? Math.max(40, cols - 2) : Math.min(cols - 6, wide ? 140 : 100)) - 6
   const questionWidth = contentWidth - (wide ? 46 : 0)
-  const height = Math.max(3, Math.min(rows - 2, 34) - 12)
+  const height = Math.max(3, Math.min(rows - 2, 34) - 13)
+
+  if (staleDrafts.length) {
+    return (
+      <ModalOverlay cols={cols} footerHint="[Enter Restore as unconfirmed] [Ctrl+X Discard & close] [Esc Keep stored & close]" maxHeight={20} rows={rows} t={t}
+        title="RECOVERED DRAFT CONFLICT">
+        <Text color={t.color.accent}>The interview changed after these edits were saved. Review before confirming.</Text>
+        {staleDrafts.slice(0, 4).map(item => (
+          <Text color={t.color.primary} key={item.question_id} wrap="truncate-end">
+            {record?.document.questions.find(q => q.id === item.question_id)?.prompt ?? item.question_id}: {item.buffer?.text || item.buffer?.selected.join(', ')}
+          </Text>
+        ))}
+        {error ? <Text color={t.color.error}>{error}</Text> : null}
+      </ModalOverlay>
+    )
+  }
 
   if (closeConfirm) {
     return (
       <ModalOverlay
         cols={cols}
-        footerHint="[Esc Keep editing] [Ctrl+X Discard and close]"
+        footerHint="[Esc Edit] [Ctrl+S Save draft & close] [Ctrl+X Discard & close]"
         maxHeight={14}
         rows={rows}
         t={t}
@@ -554,8 +673,11 @@ export function ForecastInterview({
       >
         <Text color={t.color.primary}>{dirtyQuestions.current.size} question(s) have unconfirmed edits.</Text>
         <Text color={t.color.muted}>
-          Confirmed answers remain saved. Keep editing to confirm answers or save Unknown with a note.
+          Drafts remain unconfirmed until you explicitly save an answer. Saving a draft does not change a forecast.
         </Text>
+        <Text color={t.color.muted}>{draftStatus}</Text>
+        <Text color={t.color.muted}>[Ctrl+L Leave unsaved] Keeps any stored draft; recent edits may be lost.</Text>
+        {error ? <Text color={t.color.error}>{error}</Text> : null}
       </ModalOverlay>
     )
   }
@@ -576,7 +698,7 @@ export function ForecastInterview({
           provenance; the earlier interview remains in history.
         </Text>
         <Text color={t.color.muted}>
-          Unconfirmed text in this panel will be discarded. Save answers first if you want to keep them.
+          Unconfirmed edits stay with the earlier interview when draft storage is available. They are not copied into the new review.
         </Text>
         {busy ? <Text color={t.color.accent}>Creating review…</Text> : null}
         {error ? <Text color={t.color.error}>{error}</Text> : null}
@@ -832,6 +954,7 @@ export function ForecastInterview({
                     ? '[Space Toggle] [^Enter Save] [^U Unknown] [^S Skip]'
                     : '[Enter New line] [^Enter Save] [^U Unknown] [^S Skip]'}
         </Text>
+        <Text color={t.color.muted} wrap="truncate-end">{draftStatus}</Text>
         {error ? (
           <Text color={t.color.error} wrap="truncate-end">
             {error}
