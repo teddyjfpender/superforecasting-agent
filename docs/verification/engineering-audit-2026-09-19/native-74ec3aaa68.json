@@ -1,0 +1,377 @@
+{
+  "schema_version": 1,
+  "source_sha": "74ec3aaa68ae914b7196973abfe3ec94dcdfc08f",
+  "run_id": 35464861454,
+  "run_url": "https://github.com/teddyjfpender/superforecasting-agent/actions/runs/35464861454",
+  "scope": "Downloaded installed-product reports for completed Linux/macOS jobs; Windows pending with kernel step failure. Not full-suite or final merged qualification.",
+  "reports": {
+    "macos-latest-node-22": {
+      "report.json": {
+        "schema_version": 1,
+        "platform": {
+          "system": "Darwin",
+          "machine": "arm64",
+          "release": "25.6.0",
+          "driver_python": "3.14.7"
+        },
+        "status": "passed",
+        "checks": {
+          "fresh_install_dependencies": "passed",
+          "backend_lifecycle_worker_numerical_fallback": "passed",
+          "local_terminal_interaction": "passed",
+          "authenticated_headless_host": "passed",
+          "remote_terminal_interaction": "passed",
+          "backend_upgrade": "not_requested",
+          "terminal_upgrade": "not_requested"
+        },
+        "artifacts": {
+          "backend": {
+            "name": "superforecasting-agent",
+            "version": "0.22.4",
+            "sha256": "3281ab13ae5a8294b528c163d6a793869aaaf3de332e73704d1d50c527a7ed7e"
+          },
+          "terminal": {
+            "name": "superforecasting-agent-tui",
+            "version": "0.1.1",
+            "sha256": "4ff477176ec321ba0e7fbfa29762776c94a7d4441cefe5f22fe7b7b1b54b3796"
+          }
+        },
+        "installed_runtime": {
+          "python": "3.11.15",
+          "machine": "arm64",
+          "openssl": "OpenSSL 3.5.5 27 Jan 2026"
+        }
+      },
+      "upgrade-report.json": {
+        "schema_version": 1,
+        "platform": {
+          "system": "Darwin",
+          "machine": "arm64",
+          "release": "25.6.0",
+          "driver_python": "3.14.7"
+        },
+        "status": "passed",
+        "checks": {
+          "fresh_install_dependencies": "passed",
+          "backend_lifecycle_worker_numerical_fallback": "passed",
+          "local_terminal_interaction": "passed",
+          "authenticated_headless_host": "passed",
+          "remote_terminal_interaction": "passed",
+          "backend_upgrade": "passed",
+          "terminal_upgrade": "passed"
+        },
+        "artifacts": {
+          "backend": {
+            "name": "superforecasting-agent",
+            "version": "0.22.4",
+            "sha256": "3281ab13ae5a8294b528c163d6a793869aaaf3de332e73704d1d50c527a7ed7e"
+          },
+          "terminal": {
+            "name": "superforecasting-agent-tui",
+            "version": "0.1.1",
+            "sha256": "4ff477176ec321ba0e7fbfa29762776c94a7d4441cefe5f22fe7b7b1b54b3796"
+          },
+          "backend_previous": {
+            "name": "superforecasting-agent",
+            "version": "0.19.0",
+            "sha256": "1fdd753c680994131d55e90e23d0362d62c187b3cf0843cfe5b98f174fb56919"
+          },
+          "terminal_previous": {
+            "name": "superforecasting-agent-tui",
+            "version": "0.1.0",
+            "sha256": "23dd49eb718ee2d32f1275e462d29bce36565cd2fdc4d676675c99d222bf1d61"
+          }
+        },
+        "installed_runtime": {
+          "python": "3.11.15",
+          "machine": "arm64",
+          "openssl": "OpenSSL 3.5.5 27 Jan 2026"
+        },
+        "profile_migration": {
+          "legacy_profile": "passed",
+          "managed_skills": "passed",
+          "customized_skills": "passed",
+          "deleted_skills": "passed",
+          "plugin_execution": "passed",
+          "idempotent_retry": "passed"
+        }
+      }
+    },
+    "ubuntu-24.04-node-22": {
+      "report.json": {
+        "schema_version": 1,
+        "platform": {
+          "system": "Linux",
+          "machine": "x86_64",
+          "release": "6.17.0-1022-azure",
+          "driver_python": "3.12.3"
+        },
+        "status": "passed",
+        "checks": {
+          "fresh_install_dependencies": "passed",
+          "backend_lifecycle_worker_numerical_fallback": "passed",
+          "local_terminal_interaction": "passed",
+          "authenticated_headless_host": "passed",
+          "remote_terminal_interaction": "passed",
+          "backend_upgrade": "not_requested",
+          "terminal_upgrade": "not_requested"
+        },
+        "artifacts": {
+          "backend": {
+            "name": "superforecasting-agent",
+            "version": "0.22.4",
+            "sha256": "ff173e46b743d26e6646484eef235bcea02056b670aaaf57337722045ebfa0bd"
+          },
+          "terminal": {
+            "name": "superforecasting-agent-tui",
+            "version": "0.1.1",
+            "sha256": "e009e96a63ee79965b58dde3983cf5af9ca537846891f1bf2e7bed0370b79d85"
+          }
+        },
+        "installed_runtime": {
+          "python": "3.11.15",
+          "machine": "x86_64",
+          "openssl": "OpenSSL 3.5.5 27 Jan 2026"
+        }
+      },
+      "upgrade-report.json": {
+        "schema_version": 1,
+        "platform": {
+          "system": "Linux",
+          "machine": "x86_64",
+          "release": "6.17.0-1022-azure",
+          "driver_python": "3.12.3"
+        },
+        "status": "passed",
+        "checks": {
+          "fresh_install_dependencies": "passed",
+          "backend_lifecycle_worker_numerical_fallback": "passed",
+          "local_terminal_interaction": "passed",
+          "authenticated_headless_host": "passed",
+          "remote_terminal_interaction": "passed",
+          "backend_upgrade": "passed",
+          "terminal_upgrade": "passed"
+        },
+        "artifacts": {
+          "backend": {
+            "name": "superforecasting-agent",
+            "version": "0.22.4",
+            "sha256": "ff173e46b743d26e6646484eef235bcea02056b670aaaf57337722045ebfa0bd"
+          },
+          "terminal": {
+            "name": "superforecasting-agent-tui",
+            "version": "0.1.1",
+            "sha256": "e009e96a63ee79965b58dde3983cf5af9ca537846891f1bf2e7bed0370b79d85"
+          },
+          "backend_previous": {
+            "name": "superforecasting-agent",
+            "version": "0.19.0",
+            "sha256": "1fdd753c680994131d55e90e23d0362d62c187b3cf0843cfe5b98f174fb56919"
+          },
+          "terminal_previous": {
+            "name": "superforecasting-agent-tui",
+            "version": "0.1.0",
+            "sha256": "3878a47b8f55baf69e55e3387d7d2878031bf30814b451bea9cb60b6cd6715b5"
+          }
+        },
+        "installed_runtime": {
+          "python": "3.11.15",
+          "machine": "x86_64",
+          "openssl": "OpenSSL 3.5.5 27 Jan 2026"
+        },
+        "profile_migration": {
+          "legacy_profile": "passed",
+          "managed_skills": "passed",
+          "customized_skills": "passed",
+          "deleted_skills": "passed",
+          "plugin_execution": "passed",
+          "idempotent_retry": "passed"
+        }
+      }
+    },
+    "ubuntu-24.04-node-20.19.2": {
+      "report.json": {
+        "schema_version": 1,
+        "platform": {
+          "system": "Linux",
+          "machine": "x86_64",
+          "release": "6.17.0-1022-azure",
+          "driver_python": "3.12.3"
+        },
+        "status": "passed",
+        "checks": {
+          "fresh_install_dependencies": "passed",
+          "backend_lifecycle_worker_numerical_fallback": "passed",
+          "local_terminal_interaction": "passed",
+          "authenticated_headless_host": "passed",
+          "remote_terminal_interaction": "passed",
+          "backend_upgrade": "not_requested",
+          "terminal_upgrade": "not_requested"
+        },
+        "artifacts": {
+          "backend": {
+            "name": "superforecasting-agent",
+            "version": "0.22.4",
+            "sha256": "23f00e969e5acdf16f504a4e5b1277c31a826cbf1aa66a72951b3914af12ffe3"
+          },
+          "terminal": {
+            "name": "superforecasting-agent-tui",
+            "version": "0.1.1",
+            "sha256": "78a13575f4aac3c14bfd4d2ebeaf6c130572cb286b9adc1c5fe9d2e476135704"
+          }
+        },
+        "installed_runtime": {
+          "python": "3.11.15",
+          "machine": "x86_64",
+          "openssl": "OpenSSL 3.5.5 27 Jan 2026"
+        }
+      },
+      "upgrade-report.json": {
+        "schema_version": 1,
+        "platform": {
+          "system": "Linux",
+          "machine": "x86_64",
+          "release": "6.17.0-1022-azure",
+          "driver_python": "3.12.3"
+        },
+        "status": "passed",
+        "checks": {
+          "fresh_install_dependencies": "passed",
+          "backend_lifecycle_worker_numerical_fallback": "passed",
+          "local_terminal_interaction": "passed",
+          "authenticated_headless_host": "passed",
+          "remote_terminal_interaction": "passed",
+          "backend_upgrade": "passed",
+          "terminal_upgrade": "passed"
+        },
+        "artifacts": {
+          "backend": {
+            "name": "superforecasting-agent",
+            "version": "0.22.4",
+            "sha256": "23f00e969e5acdf16f504a4e5b1277c31a826cbf1aa66a72951b3914af12ffe3"
+          },
+          "terminal": {
+            "name": "superforecasting-agent-tui",
+            "version": "0.1.1",
+            "sha256": "78a13575f4aac3c14bfd4d2ebeaf6c130572cb286b9adc1c5fe9d2e476135704"
+          },
+          "backend_previous": {
+            "name": "superforecasting-agent",
+            "version": "0.19.0",
+            "sha256": "1fdd753c680994131d55e90e23d0362d62c187b3cf0843cfe5b98f174fb56919"
+          },
+          "terminal_previous": {
+            "name": "superforecasting-agent-tui",
+            "version": "0.1.0",
+            "sha256": "2c360fdd54b6d1d6871abd7ee81d5b5b02b1eb1a50f71010ecb8868c850fea9c"
+          }
+        },
+        "installed_runtime": {
+          "python": "3.11.15",
+          "machine": "x86_64",
+          "openssl": "OpenSSL 3.5.5 27 Jan 2026"
+        },
+        "profile_migration": {
+          "legacy_profile": "passed",
+          "managed_skills": "passed",
+          "customized_skills": "passed",
+          "deleted_skills": "passed",
+          "plugin_execution": "passed",
+          "idempotent_retry": "passed"
+        }
+      }
+    },
+    "macos-latest-node-20.19.2": {
+      "report.json": {
+        "schema_version": 1,
+        "platform": {
+          "system": "Darwin",
+          "machine": "arm64",
+          "release": "25.6.0",
+          "driver_python": "3.14.7"
+        },
+        "status": "passed",
+        "checks": {
+          "fresh_install_dependencies": "passed",
+          "backend_lifecycle_worker_numerical_fallback": "passed",
+          "local_terminal_interaction": "passed",
+          "authenticated_headless_host": "passed",
+          "remote_terminal_interaction": "passed",
+          "backend_upgrade": "not_requested",
+          "terminal_upgrade": "not_requested"
+        },
+        "artifacts": {
+          "backend": {
+            "name": "superforecasting-agent",
+            "version": "0.22.4",
+            "sha256": "eadda30f55197dd9c2a5a7e4d477e5e03859c4e563d07aa19102b7750d1f99ec"
+          },
+          "terminal": {
+            "name": "superforecasting-agent-tui",
+            "version": "0.1.1",
+            "sha256": "bca7b2f1ff461ab549a146664f33c273eecca43c6619c1e6e829c69787cad4b9"
+          }
+        },
+        "installed_runtime": {
+          "python": "3.11.15",
+          "machine": "arm64",
+          "openssl": "OpenSSL 3.5.5 27 Jan 2026"
+        }
+      },
+      "upgrade-report.json": {
+        "schema_version": 1,
+        "platform": {
+          "system": "Darwin",
+          "machine": "arm64",
+          "release": "25.6.0",
+          "driver_python": "3.14.7"
+        },
+        "status": "passed",
+        "checks": {
+          "fresh_install_dependencies": "passed",
+          "backend_lifecycle_worker_numerical_fallback": "passed",
+          "local_terminal_interaction": "passed",
+          "authenticated_headless_host": "passed",
+          "remote_terminal_interaction": "passed",
+          "backend_upgrade": "passed",
+          "terminal_upgrade": "passed"
+        },
+        "artifacts": {
+          "backend": {
+            "name": "superforecasting-agent",
+            "version": "0.22.4",
+            "sha256": "eadda30f55197dd9c2a5a7e4d477e5e03859c4e563d07aa19102b7750d1f99ec"
+          },
+          "terminal": {
+            "name": "superforecasting-agent-tui",
+            "version": "0.1.1",
+            "sha256": "bca7b2f1ff461ab549a146664f33c273eecca43c6619c1e6e829c69787cad4b9"
+          },
+          "backend_previous": {
+            "name": "superforecasting-agent",
+            "version": "0.19.0",
+            "sha256": "1fdd753c680994131d55e90e23d0362d62c187b3cf0843cfe5b98f174fb56919"
+          },
+          "terminal_previous": {
+            "name": "superforecasting-agent-tui",
+            "version": "0.1.0",
+            "sha256": "08cb79e8ab99554d6800da127168c21aad125b8063fa1b06ee234014efa832f1"
+          }
+        },
+        "installed_runtime": {
+          "python": "3.11.15",
+          "machine": "arm64",
+          "openssl": "OpenSSL 3.5.5 27 Jan 2026"
+        },
+        "profile_migration": {
+          "legacy_profile": "passed",
+          "managed_skills": "passed",
+          "customized_skills": "passed",
+          "deleted_skills": "passed",
+          "plugin_execution": "passed",
+          "idempotent_retry": "passed"
+        }
+      }
+    }
+  }
+}

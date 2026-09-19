@@ -1035,3 +1035,20 @@ contributor integration job were confirmed running while this increment was
 prepared. This is a live qualification attempt, not evidence of success; inspect
 that run before drawing platform conclusions. The subsequent documentation-only
 commit is not the source of that native run.
+
+## Native installed-product evidence at 74ec3aaa68
+
+Run `35464861454` has passed contributor quality and all four Linux/macOS jobs
+(Node 20.19.2 and 22). Downloaded reports are preserved in
+`docs/verification/engineering-audit-2026-09-19/native-74ec3aaa68.json`, bound to
+source SHA and run URL. They report fresh dependency installation, backend
+lifecycle/numerical fallback, local/remote terminal interaction, authenticated
+hosting, backend/terminal upgrades, legacy profiles, managed/custom/deleted skills,
+plugin execution and idempotent migration. Installed Python is 3.11.15; Linux is
+x86_64 and macOS arm64. Artifact hashes and previous-version hashes are retained.
+
+Windows Node 22 reported a failure in the broader persistent-kernel ownership
+step; both Windows jobs were still performing later qualification at capture time.
+The live job log endpoint was not yet available. Do not count the earlier narrow
+Windows investigation or these Linux/macOS reports as closing that failure. The
+native run is not final merged-source qualification or full-suite evidence.
