@@ -479,3 +479,44 @@ def test_lesson_provenance_is_frozen_typed_and_explains_exclusions(desk):
         )
     with pytest.raises(ValidationError, match="corrupt"):
         service.lessons("provenance")
+
+
+def test_generation_and_all_scenario_calls_consult_same_frozen_lessons(desk):
+    from forecasting.interviews.evaluation import prepare
+    from protocol.interviews import InterviewScenario
+    from protocol.scenarios import ScenarioEvaluationOptions
+
+    ledger, question, _, _ = desk
+    lesson = ledger.create_calibration_lesson(scope_type="global", scope_ref=None,
+        lesson="Inspect independent reference classes.", status="active")
+    service = InterviewService(ledger)
+    record = service.begin("matched-lessons", question_id=question.id)
+    record = service.answer("matched-lessons", expected_revision=record["revision"],
+        request_id="drivers", question_id="drivers", status="answered", value="Official confirmation arrives")
+    factor = record["document"]["assumptions"][0]["id"]
+    record = service.save_scenario("matched-lessons", expected_revision=record["revision"],
+        request_id="conditional", scenario=InterviewScenario(id="confirm", name="Confirmation", kind="conditional", conditions={factor: True}))
+    packet = json.loads(build_messages(ledger, record, InterviewGenerationOptions())[1]["content"])
+    expected = packet["lesson_selection"]
+    assert [item["lesson_id"] for item in expected["records"]] == [lesson["id"]]
+    ledger.update_calibration_lesson(lesson["id"], confidence=0.99, status="rejected")
+    plan = prepare(ledger, "matched-lessons", record["revision"], ScenarioEvaluationOptions(scenario_ids=["confirm"]))
+    assert len(plan["calls"]) == 2
+    for call in plan["calls"]:
+        actual = json.loads(call["messages"][1]["content"])
+        assert actual["lesson_selection"] == expected
+    assert ledger.get_current_snapshot(question.id) == desk[2]
+
+
+def test_prompt_budget_rejects_without_truncating_durable_context(desk):
+    ledger, question, _, _ = desk
+    content = "Evidence detail. " * 15000
+    ledger.add_evidence(question_id=question.id, source_or_note="Large controlled fixture",
+        summary=content, archive_url_snapshot=False)
+    record = InterviewService(ledger).begin("oversize", question_id=question.id)
+    digest = record["document"]["context_digest"]
+    before = read_context(ledger, "oversize", digest)
+    assert any(item["summary"] == content for item in before["evidence"])
+    with pytest.raises(ValidationError, match="exceeds the generation budget"):
+        build_messages(ledger, record, InterviewGenerationOptions())
+    assert read_context(ledger, "oversize", digest) == before

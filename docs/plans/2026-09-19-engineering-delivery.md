@@ -21,7 +21,7 @@ and installed-artifact requirements still need evidence at the appropriate miles
 | W04 CLI parity | In progress | Provider selection compatibility, slash capability/alias checks and shared command contexts improved. Complete command inventory, machine-output contracts and parity remain. |
 | W05 runtime ownership | In progress | Command/tool/completion/cron-skills RPC families have explicit contexts and host admission; threaded forkpty replaced with owned posix_spawn startup and signal defaults. Other global RPC families and full lifecycle-phase ownership remain. |
 | W06 TUI state | In progress | Job attachment epochs, stale-response admission and one authoritative primary route implemented; renderer fixtures are typed. Modal/focus ownership and broader asynchronous view behavior remain. |
-| W07 questionnaire durability/lessons | In progress | Durable unconfirmed buffers, atomic confirmation, frozen update/general new-question lessons, typed provenance API and TUI reader implemented. Real reconnect/conflict/process-death scenarios pass locally. Remaining acceptance review and native repetition are required. |
+| W07 questionnaire durability/lessons | Implementation acceptance verified | Durable buffers, atomic confirmation, frozen lessons, typed provenance and TUI guidance verified against the dedicated questionnaire acceptance record. Final merged/native qualification remains W09; no empirical improvement claim. |
 | W08 integrated recovery | In progress | Canonical bounded tier passes locally, including real Ink/gateway/SQLite/dashboard questionnaire recovery. Full specified scenario matrix and supported-platform repeatability remain. |
 | W09 merged product qualification | Pending | All specification criteria remain, subject to focused-test policy above. |
 
@@ -1052,3 +1052,13 @@ step; both Windows jobs were still performing later qualification at capture tim
 The live job log endpoint was not yet available. Do not count the earlier narrow
 Windows investigation or these Linux/macOS reports as closing that failure. The
 native run is not final merged-source qualification or full-suite evidence.
+
+## W07 acceptance review
+
+The focused questionnaire acceptance review is recorded in
+`docs/verification/engineering-audit-2026-09-19/questionnaire-acceptance.md`.
+Two explicit regressions now prove generation/scenario lesson-packet identity
+after live lesson changes and durable-context preservation under prompt-budget
+rejection. Existing focused buffer/context/generation tests and TUI controls pass.
+W07 implementation acceptance is verified; final merged/native product qualification
+remains W09. This does not claim measured calibration improvement.
