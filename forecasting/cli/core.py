@@ -5304,42 +5304,18 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
     if args.import_kind == "fred":
         if not args.question_id:
             raise SystemExit("forecast import fred requires --question")
-        observations = load_fred_observations(
-            args.source,
-            limit=args.limit,
-            since=args.since,
-            api_base_url=args.api_base_url,
+        from forecasting.application.source_imports import FredImportRequest, import_fred_evidence
+        from forecasting.sources.requests import CommonSourceOptions
+
+        request = FredImportRequest(
+            source=args.source, question_id=args.question_id,
+            options=CommonSourceOptions.read({
+                "limit": args.limit, "since": args.since, "api_base_url": args.api_base_url,
+            }),
+            as_of=args.as_of, reliability=args.reliability, relevance=args.relevance,
+            claim_type=args.claim_type,
         )
-        evidence_items = []
-        for observation in observations:
-            evidence_items.append(
-                ledger.add_evidence(
-                    question_id=args.question_id,
-                    source_or_note=observation.source_url or f"FRED:{observation.series_id}",
-                    source_url=observation.source_url,
-                    source_name=observation.source_name,
-                    source_type="adapter:fred",
-                    published_at=observation.published_at,
-                    available_at=observation.published_at or args.as_of,
-                    claim=f"{observation.series_id} {observation.observation_date}: {observation.value}",
-                    summary=(
-                        f"FRED observation for {observation.series_id} "
-                        f"on {observation.observation_date}: {observation.value}."
-                    ),
-                    reliability_rating=args.reliability,
-                    relevance_rating=args.relevance,
-                    stance="context",
-                    claim_type=args.claim_type,
-                    metadata={
-                        "adapter": "fred",
-                        "series_id": observation.series_id,
-                        "observation_date": observation.observation_date,
-                        "value": observation.value,
-                        "api_base_url": args.api_base_url,
-                        "raw": observation.raw,
-                    },
-                )
-            )
+        evidence_items = import_fred_evidence(ledger, request, fetch=load_fred_observations)
         print(f"captured {len(evidence_items)} fred evidence item(s)")
         for evidence in evidence_items:
             print(f"{evidence.id}: {evidence.available_at} {evidence.claim}")

@@ -162,3 +162,19 @@ Focused validation: 68 tests passed across request admission, source dispatch,
 market models and refresh. This is not completion of W03: adapter-specific request
 unions, shared CLI import migration, typed acquisition/import plans and durable
 import receipts remain open. The full suite was not run.
+
+## First shared CLI source-import operation
+
+The FRED CLI branch now delegates to `forecasting/application/source_imports.py`.
+Its strict request model validates common options, ratings, claim type and as-of
+input; the application owner fetches outside the ledger transaction, validates the
+whole returned batch, and commits evidence atomically. It rejects mismatched series,
+nonfinite/non-numeric measurements and conflicting duplicate entry identities.
+Identical entries collapse within the batch. Existing CLI copy and evidence metadata
+remain compatible, and missing publication times remain missing.
+
+Focused tests cover direct application use, the existing CLI invocation, pre-write
+batch rejection, provider defaults and injected mid-write rollback. Python static
+checks and all 76 import contracts pass. Cross-request idempotent receipts, typed
+import plans and prediction-market/remaining CLI adapter migrations are still open;
+this first migration does not close W03 or W04. No full suite was run.

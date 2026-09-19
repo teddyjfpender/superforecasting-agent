@@ -40,3 +40,18 @@ Update this guide when entry points or ownership change. See the
 and [engineering backlog](../../TODO.md) for cross-package context.
 
 [↑ Parent directory](../README.md)
+
+## Structured evidence imports
+
+`source_imports.py` owns the typed FRED evidence-import operation. Callers provide
+`FredImportRequest` and a fetch capability; the CLI only constructs the request and
+renders returned evidence. The operation fetches outside the write transaction,
+checks series identity, dates, finite numeric values and duplicate entry identities,
+then writes the batch atomically through ledger admission. Source observation dates
+are not promoted to publication timestamps. Raw evidence claims remain distinct
+from verified settlement bindings.
+
+Identical entries within a batch collapse; conflicting entries fail the batch.
+Cross-request import receipts and additional adapter migrations remain tracked in
+the engineering plan. Tests: `tests/application/test_source_imports.py` and the
+FRED CLI import regression in `tests/forecasting/test_cli.py`.
