@@ -3,7 +3,7 @@
   "source_sha": "74ec3aaa68ae914b7196973abfe3ec94dcdfc08f",
   "run_id": 35464861454,
   "run_url": "https://github.com/teddyjfpender/superforecasting-agent/actions/runs/35464861454",
-  "scope": "Downloaded installed-product reports for completed Linux/macOS jobs; Windows pending with kernel step failure. Not full-suite or final merged qualification.",
+  "scope": "Downloaded installed-product reports; all included install/upgrade reports passed, but the Windows Node 22 job failed a cleanup-ownership test before dispatcher entry. Not final merged qualification.",
   "reports": {
     "macos-latest-node-22": {
       "report.json": {
@@ -372,6 +372,111 @@
           "idempotent_retry": "passed"
         }
       }
+    },
+    "windows-latest-node-22": {
+      "report.json": {
+        "schema_version": 1,
+        "platform": {
+          "system": "Windows",
+          "machine": "AMD64",
+          "release": "2025Server",
+          "driver_python": "3.12.10"
+        },
+        "status": "passed",
+        "checks": {
+          "fresh_install_dependencies": "passed",
+          "backend_lifecycle_worker_numerical_fallback": "passed",
+          "local_terminal_interaction": "passed",
+          "authenticated_headless_host": "passed",
+          "remote_terminal_interaction": "passed",
+          "backend_upgrade": "not_requested",
+          "terminal_upgrade": "not_requested"
+        },
+        "artifacts": {
+          "backend": {
+            "name": "superforecasting-agent",
+            "version": "0.22.4",
+            "sha256": "c33a4ac55df153069b4d538995d0866eb36367025700f5f2736ecaa39882706b"
+          },
+          "terminal": {
+            "name": "superforecasting-agent-tui",
+            "version": "0.1.1",
+            "sha256": "d07502568c99cb87fe8bd831d46fcd6b3e3c6d0599a299a97c61daa4b95cac42"
+          }
+        },
+        "installed_runtime": {
+          "python": "3.11.15",
+          "machine": "",
+          "openssl": "OpenSSL 3.5.5 27 Jan 2026"
+        }
+      },
+      "upgrade-report.json": {
+        "schema_version": 1,
+        "platform": {
+          "system": "Windows",
+          "machine": "AMD64",
+          "release": "2025Server",
+          "driver_python": "3.12.10"
+        },
+        "status": "passed",
+        "checks": {
+          "fresh_install_dependencies": "passed",
+          "backend_lifecycle_worker_numerical_fallback": "passed",
+          "local_terminal_interaction": "passed",
+          "authenticated_headless_host": "passed",
+          "remote_terminal_interaction": "passed",
+          "backend_upgrade": "passed",
+          "terminal_upgrade": "passed"
+        },
+        "artifacts": {
+          "backend": {
+            "name": "superforecasting-agent",
+            "version": "0.22.4",
+            "sha256": "c33a4ac55df153069b4d538995d0866eb36367025700f5f2736ecaa39882706b"
+          },
+          "terminal": {
+            "name": "superforecasting-agent-tui",
+            "version": "0.1.1",
+            "sha256": "d07502568c99cb87fe8bd831d46fcd6b3e3c6d0599a299a97c61daa4b95cac42"
+          },
+          "backend_previous": {
+            "name": "superforecasting-agent",
+            "version": "0.19.0",
+            "sha256": "1fdd753c680994131d55e90e23d0362d62c187b3cf0843cfe5b98f174fb56919"
+          },
+          "terminal_previous": {
+            "name": "superforecasting-agent-tui",
+            "version": "0.1.0",
+            "sha256": "e7011fd6f0ddad88633d8cc55e5fd909e965c17654cf4d218f40b38a2678ee5f"
+          }
+        },
+        "installed_runtime": {
+          "python": "3.11.15",
+          "machine": "",
+          "openssl": "OpenSSL 3.5.5 27 Jan 2026"
+        },
+        "profile_migration": {
+          "legacy_profile": "passed",
+          "managed_skills": "passed",
+          "customized_skills": "passed",
+          "deleted_skills": "passed",
+          "plugin_execution": "passed",
+          "idempotent_retry": "passed"
+        }
+      }
     }
+  },
+  "windows_kernel_failure": {
+    "test": "tests/tools/test_code_kernel.py::test_interrupted_rpc_retains_cleanup_owner_until_dispatch_exits",
+    "error": "TimeoutError: Kernel execution deadline exceeded before dispatch",
+    "kernel_step": {
+      "failed": 1,
+      "passed": 42,
+      "skipped": 15
+    },
+    "terminal_step": {
+      "passed": 43
+    },
+    "background_step": "skipped after kernel failure"
   }
 }

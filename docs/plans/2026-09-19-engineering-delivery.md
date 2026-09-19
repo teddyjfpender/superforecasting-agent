@@ -1062,3 +1062,21 @@ after live lesson changes and durable-context preservation under prompt-budget
 rejection. Existing focused buffer/context/generation tests and TUI controls pass.
 W07 implementation acceptance is verified; final merged/native product qualification
 remains W09. This does not claim measured calibration improvement.
+
+## Windows qualification failure isolated to test admission timing
+
+Run `35464861454` completed: Windows Node 20 passed; Node 22 failed
+`test_interrupted_rpc_retains_cleanup_owner_until_dispatch_exits` because its
+300 ms deadline expired *before dispatch*. That test therefore never entered the
+blocked callback whose retained cleanup ownership it intended to verify. The
+kernel step had 42 passes/15 skips; terminal ownership had 43 passes. Downloaded
+Windows Node 22 fresh-install and upgrade reports passed and are now preserved in
+the native receipt. The later background-recovery step was skipped after failure.
+
+The cleanup test now requests interruption from the entered dispatcher under a
+cancellation scope, with a bounded startup guard. It still asserts pending cleanup,
+refusal to replace the owner, and eventual disposal after release. Separate 150 ms
+execution and pre-dispatch deadline cases are unchanged. Four focused local cases
+pass. The corrected case is included in the bounded Windows investigation workflow;
+its native result is still required. No runtime deadline was relaxed, and no full
+suite ran.

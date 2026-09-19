@@ -255,12 +255,17 @@ def test_owner_attachment_separates_profile_and_rejects_closed_agent(
 
 def test_interrupted_rpc_retains_cleanup_owner_until_dispatch_exits(owner, monkeypatch):
     import tools.code_execution_rpc as rpc
+    from superforecasting_agent.tooling.interrupts import cancellation_scope
 
     entered, release = threading.Event(), threading.Event()
+    cancellation = threading.Event()
 
     def dispatcher(task_id, policy):
         def dispatch(name, args):
             entered.set()
+            # Interrupt only after actual RPC entry; cold interpreter startup is
+            # not the cleanup-ownership behavior under test.
+            cancellation.set()
             release.wait(10)
             return "{}"
 
@@ -268,12 +273,12 @@ def test_interrupted_rpc_retains_cleanup_owner_until_dispatch_exits(owner, monke
 
     monkeypatch.setattr(rpc, "_dispatcher", dispatcher)
     try:
-        with pytest.raises(RuntimeError, match="cleanup is pending"):
+        with cancellation_scope(cancellation), pytest.raises(RuntimeError, match="cleanup is pending"):
             run(
                 owner,
                 'from forecast_tools import read_file\nread_file(path="a")',
                 tools=frozenset({"read_file"}),
-                timeout=0.3,
+                timeout=10,
             )
         assert entered.is_set()
         retained = owner.kernel
