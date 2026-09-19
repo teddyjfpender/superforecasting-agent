@@ -115,3 +115,9 @@ Single, batch and watched-source imports reuse this admission. Invalid per-sourc
 batch input is reported for that source, while invalid batch defaults fail before
 any fetch. A per-source dedupe flag overrides the batch default; auto-watch is never
 enabled by a string such as `"false"`. Provider-specific options remain untouched.
+
+Caller `metadata` is for annotations. The shared `source_annotations` validator
+reserves `adapter`, `source`, `entry_id` and `adapter_item` for acquisition/parser
+provenance. Import admission rejects attempts to replace those fields before
+network I/O; direct payload mapping uses the same validator. Preserve this boundary
+when adding an adapter so user annotations cannot impersonate a parsed observation.

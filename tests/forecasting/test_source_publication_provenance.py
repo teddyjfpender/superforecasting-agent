@@ -116,3 +116,18 @@ def test_cli_owner_tool_and_watch_preserve_unknown_publication(
     )
     assert cli[0].published_at is None
     assert not cli[0].available_at.startswith("2020-01-01")
+
+
+@pytest.mark.parametrize('key', ['adapter', 'source', 'entry_id', 'adapter_item'])
+def test_caller_metadata_cannot_replace_parser_owned_provenance(reading, key):
+    with pytest.raises(ValueError, match='acquired provenance'):
+        source_evidence_payload('fred', 'UNRATE', reading, {'metadata': {key: 'forged'}})
+
+
+def test_caller_annotations_preserve_acquired_record(reading):
+    annotations = {'review_note': 'Check release vintage', 'tags': ['economics']}
+    result = source_evidence_payload('fred', 'UNRATE', reading, {'metadata': annotations})
+    assert result['metadata']['adapter_item'] == asdict(reading)
+    assert result['metadata']['source'] == 'UNRATE'
+    assert result['metadata']['review_note'] == annotations['review_note']
+    assert annotations == {'review_note': 'Check release vintage', 'tags': ['economics']}

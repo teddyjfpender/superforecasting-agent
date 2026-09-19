@@ -1,10 +1,28 @@
 """Common acquisition admission; provider-specific options stay with each adapter."""
 
 from datetime import date, datetime
-from typing import Self
+from typing import Any, Self
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+
+SOURCE_PROVENANCE_KEYS = frozenset({"adapter", "source", "entry_id", "adapter_item"})
+
+
+def source_annotations(value: object) -> dict[str, Any]:
+    """Validate caller annotations without allowing replacement of acquired identity."""
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError("source metadata must be an object with string keys")
+    annotations: dict[str, Any] = {}
+    for key, item in value.items():
+        if not isinstance(key, str):
+            raise ValueError("source metadata must be an object with string keys")
+        if key in SOURCE_PROVENANCE_KEYS:
+            raise ValueError("source metadata cannot override acquired provenance")
+        annotations[key] = item
+    return annotations
 
 
 class CommonSourceOptions(BaseModel):
@@ -69,6 +87,13 @@ class CommonSourceOptions(BaseModel):
 
 class SourceImportOptions(CommonSourceOptions):
     """Shared import controls; malformed flags must not enable persistence effects."""
+
+    metadata: dict[str, Any] | None = None
+
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def validate_metadata(cls, value: object) -> dict[str, Any]:
+        return source_annotations(value)
 
     auto_watch: bool = False
     admissible_for_backtests: bool = True

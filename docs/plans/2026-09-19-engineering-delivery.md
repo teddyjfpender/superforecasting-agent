@@ -857,3 +857,18 @@ bounded probe adds child-side stage/stack diagnostics and compares the Windows
 venv launcher with the base interpreter. This distinguishes child startup or
 nested launch blocking from output transport failure. Both variants pass locally;
 Windows attribution remains unproven until the controlled comparison finishes.
+
+## Caller annotations cannot replace acquired provenance
+
+The source mapper previously merged caller metadata over `adapter`, `source`,
+`entry_id` and `adapter_item`, allowing the identity used for duplicate/revision
+checks to be replaced. One shared annotation validator now reserves those fields.
+Import controls apply it before acquisition on single, batch and watched surfaces;
+direct mapping applies the same validator before producing evidence. Ordinary
+annotations remain supported without mutating the caller mapping.
+
+80 focused source-batch/publication checks passed, including a no-fetch matrix for
+reserved fields and malformed metadata across all three import consumers. Strict
+source-owner typing passes. Windows child/interpreter comparison continues in
+run 35462370806 at commit 797f91455f; the previous trace establishes a parent pipe
+wait but not its cause.

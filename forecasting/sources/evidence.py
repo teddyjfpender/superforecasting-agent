@@ -7,6 +7,7 @@ from dataclasses import asdict, is_dataclass
 from typing import Any
 
 from forecasting.sources.filters import normalize_filter_terms
+from forecasting.sources.requests import source_annotations
 
 
 def news_triage_metadata(args: dict[str, Any]) -> dict[str, Any]:
@@ -86,7 +87,7 @@ def source_evidence_payload(
     }
     if adapter_name in {"rss", "news"}:
         metadata.update(news_triage_metadata(args))
-    metadata.update(args.get("metadata") or {})
+    metadata.update(source_annotations(args.get("metadata")))
     return {
         "source_or_note": source_url or claim or f"{adapter_name}:{source}",
         "source_url": source_url,
