@@ -630,7 +630,9 @@ def test_cmd_model_forwards_nous_login_tls_options(monkeypatch):
     monkeypatch.setattr("superforecasting_agent.runtime.config.save_env_value", lambda key, value: None)
     monkeypatch.setattr("superforecasting_agent.credentials.auth.resolve_provider", lambda requested, **kwargs: "nous")
     monkeypatch.setattr("superforecasting_agent.credentials.auth.get_provider_auth_state", lambda provider_id: None)
-    monkeypatch.setattr(hermes_main, "_prompt_provider_choice", lambda choices, **kwargs: 0)
+    monkeypatch.setattr(hermes_main, "_prompt_provider_choice", lambda choices, **kwargs: next(
+        i for i, label in enumerate(choices) if label.startswith("Nous Portal")
+    ))
 
     captured = {}
 

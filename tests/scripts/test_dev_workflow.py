@@ -191,3 +191,20 @@ def test_pre_push_runs_full_suite_and_propagates_failure(snapshot_repo, suite_st
     assert result.returncode == suite_status
     if suite_status:
         assert "Full Python suite failed" in result.stderr
+
+
+def test_canonical_check_runs_reference_freshness_and_propagates_rejection(monkeypatch):
+    from scripts import dev
+
+    calls = []
+    monkeypatch.setattr(dev, "venv_tool", lambda name: name)
+
+    def run(*args, **kwargs):
+        calls.append(args)
+        if args == ("python", "-m", "scripts.docgen", "--check"):
+            raise subprocess.CalledProcessError(1, args)
+
+    monkeypatch.setattr(dev, "run", run)
+    with pytest.raises(subprocess.CalledProcessError):
+        dev.check(python_only=True)
+    assert ("python", "-m", "scripts.docgen", "--check") in calls

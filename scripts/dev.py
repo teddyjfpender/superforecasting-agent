@@ -181,6 +181,7 @@ def check(*, python_only: bool = False) -> None:
     run(venv_tool("lint-imports"))
     run(venv_tool("python"), "-m", "protocol.codegen", "--check")
     run(venv_tool("python"), "scripts/gen-news-catalog.py", "--check")
+    run(venv_tool("python"), "-m", "scripts.docgen", "--check")
     if not python_only:
         npm = executable("npm")
         run(npm, "run", "lint", cwd=ROOT / "ui-tui")

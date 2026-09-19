@@ -3,6 +3,7 @@
 import hashlib
 import os
 import socket
+import subprocess
 import sys
 import uuid
 from pathlib import Path
@@ -25,6 +26,26 @@ def host_identity() -> str:
                 "Durable ownership requires Linux boot and PID namespace identity"
             ) from exc
         return hashlib.sha256(f"linux:{boot}:{namespace}".encode()).hexdigest()
+    if sys.platform == "darwin":
+        # The kernel boot session is shared across processes and independent of
+        # network interfaces. Never cache a failed probe or use UUID random fallback.
+        try:
+            result = subprocess.run(
+                ["/usr/sbin/sysctl", "-n", "kern.bootsessionuuid"],
+                capture_output=True,
+                text=True,
+                encoding="ascii",
+                check=True,
+                timeout=2,
+            )
+            boot = uuid.UUID(result.stdout.strip())
+            if boot.int == 0:
+                raise ValueError("empty boot identity")
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            raise RuntimeError(
+                "Durable ownership requires macOS kernel boot identity"
+            ) from exc
+        return "v2:darwin:" + hashlib.sha256(str(boot).encode()).hexdigest()
     node = uuid.getnode()
     if node & (1 << 40):
         # UUID marks its random fallback with the multicast bit. Such a value

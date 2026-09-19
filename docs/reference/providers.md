@@ -15,16 +15,27 @@ The server-side data plane (Arc C) turns external numbers into structured quotes
 ## Market-data quote providers
 
 
-**7 providers**, resolved by `MarketDataService`. `needs key` providers are skipped when no key resolves; the others degrade to a keyless path where noted in the source.
+**18 providers**, resolved by `MarketDataService`. `needs key` providers are skipped when no key resolves; the others degrade to a keyless path where noted in the source.
 
 | id | needs key | env var | class |
 | --- | --- | --- | --- |
+| `abs` | no | `—` | `SdmxProvider` |
+| `bcb` | no | `—` | `BcbProvider` |
 | `bea` | yes | `BEA_API_KEY` | `BeaProvider` |
+| `bis` | no | `—` | `SdmxProvider` |
 | `bls` | no | `BLS_API_KEY` | `BlsProvider` |
 | `coingecko` | no | `—` | `CoingeckoProvider` |
+| `ecb` | no | `—` | `EcbProvider` |
+| `eurostat` | no | `—` | `EurostatProvider` |
 | `frankfurter` | no | `—` | `FrankfurterProvider` |
 | `fred` | no | `FRED_API_KEY` | `FredProvider` |
+| `ibge` | no | `—` | `IbgeProvider` |
+| `imf` | no | `—` | `ImfProvider` |
+| `oecd` | no | `—` | `SdmxProvider` |
+| `openmeteo` | no | `—` | `OpenMeteoProvider` |
+| `singstat` | no | `—` | `SingStatProvider` |
 | `stooq` | no | `—` | `StooqProvider` |
+| `worldbank` | no | `—` | `WorldBankProvider` |
 | `yahoo` | no | `—` | `YahooProvider` |
 
 ## Prediction-market venues

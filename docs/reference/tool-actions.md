@@ -9,13 +9,13 @@
 
 > **Source of truth:** `tools/forecasting_tool.py (FORECAST_LEDGER_SCHEMA)`
 
-The agent operates the forecast desk through a single tool, **`forecast_ledger`**. Its `action` parameter selects one of **114 operations**; the remaining parameters form a shared bag (each operation reads the subset it needs). The only globally-required parameter is `action`; per-action requirements are enforced in the handler.
+The agent operates the forecast desk through a single tool, **`forecast_ledger`**. Its `action` parameter selects one of **115 operations**; the remaining parameters form a shared bag (each operation reads the subset it needs). The only globally-required parameter is `action`; per-action requirements are enforced in the handler.
 
 
 ## Actions
 
 
-Operate on the forecast ledger: create questions, add evidence, append forecast snapshots, resolve, score, review, self-check, and render forecast protocol context. Search actions can locate questions by title, topic, rationale, and evidence without requiring IDs. Forecast snapshots are append-only; source actions can plan and search watched RSS/Atom evidence candidates without moving probabilities; autopilot actions maintain watched-source update proposals through the ledger. The action='bayes' family runs an auditable Bayesian scratchpad (likelihood-ratio updates, log-odds pooling of disagreeing sources, evidence weighting that discounts correlated/biased signals, reference-class base-rate blending, poll→probability conversion, market de-vigging, sensitivity/tornado analysis, and forecast-diff decomposition) so probability moves are transparent rather than ad hoc.
+Operate on the forecast ledger: create questions, add evidence, append forecast snapshots, resolve, score, review, self-check, and render forecast protocol context. Search actions can locate questions by title, topic, rationale, and evidence without requiring IDs. Forecast snapshots are append-only; source actions can plan and search watched RSS/Atom evidence candidates without moving probabilities; autopilot actions maintain watched-source update proposals through the ledger. The action='bayes' family runs an auditable Bayesian scratchpad (likelihood-ratio updates, log-odds pooling of disagreeing sources, evidence weighting that discounts correlated/biased signals, reference-class base-rate blending, poll→probability conversion, market de-vigging, sensitivity/tornado analysis, and forecast-diff decomposition) so probability moves are transparent rather than ad hoc. Use action=interview with interview_request to begin/read/answer an agent-owned questionnaire, propose follow-ups and assumptions, or save a conditional/ablation scenario. Do this after evidence collection and before unattended update_forecast proposals.
 
 | action |
 | --- |
@@ -55,6 +55,7 @@ Operate on the forecast ledger: create questions, add evidence, append forecast 
 | `import_packet` |
 | `import_source_evidence` |
 | `import_source_evidence_batch` |
+| `interview` |
 | `keep_fresh` |
 | `label_score` |
 | `link_forecasts` |
@@ -154,7 +155,7 @@ Every parameter the tool accepts, sorted by name. Descriptions are often prefixe
 | `access` | string |  |  |
 | `ack_stale_evidence` | boolean |  |  |
 | `acknowledged_at` | string |  |  |
-| `action` | string | 114 values (see source) |  |
+| `action` | string | 115 values (see source) |  |
 | `action_threshold` | string |  | Probability/threshold that triggers an action (e.g. 'evacuate if P > 0.05'). |
 | `active_only` | boolean |  |  |
 | `actor` | string |  | Who is making the change (recorded in audit trails, e.g. rename_question). |
@@ -286,6 +287,8 @@ Every parameter the tool accepts, sorted by name. Descriptions are often prefixe
 | `inclusion_criteria` | string |  |  |
 | `inputs` | object |  |  |
 | `inside_view_error` | string |  |  |
+| `interview_id` | string |  | Completed structured review ID for an unattended update_forecast proposal. |
+| `interview_request` | object |  |  |
 | `invalidated_at` | string |  |  |
 | `judge` | string |  | start_quorum: provider/model id for the judge synthesis pass. |
 | `key_assumptions` | array<string> |  |  |

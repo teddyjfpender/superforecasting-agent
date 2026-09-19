@@ -96,3 +96,17 @@ centralizes the host identity also used by background research ownership.
 ## Data desk
 
 `market_selection.py` owns locked, atomic `markets.json` updates and revision comparisons. `files.atomic_text_write` reuses the atomic replacement lifecycle for credential text; callers own locking and file permissions.
+
+## Durable process identity
+
+`process_identity.host_identity()` binds recovery to the local process namespace.
+Linux uses the kernel boot UUID and PID namespace inode; macOS uses the kernel's
+`kern.bootsessionuuid`, acquired with a bounded native probe independently of
+network interfaces. macOS records carry the `v2:darwin:` identity prefix. Previous
+unversioned macOS identities remain readable but cannot authorize automatic owner
+retirement under the new scheme. An identity mismatch stays unreconciled; never
+substitute a PID-only check. Missing/invalid identity fails closed.
+
+PID creation time must also match before a process is considered the same owner.
+Only positively established absence or PID reuse permits retirement. Tests live
+in `tests/storage/test_process_identity.py` and the background/research-job suites.

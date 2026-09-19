@@ -9,7 +9,7 @@
 
 > **Source of truth:** `os.getenv / os.environ reads across forecasting/, tui_gateway/, tools/, superforecasting_agent/`
 
-Every environment variable the server, tools, and CLI actually **read** — harvested by walking the AST of every module under `forecasting/`, `tui_gateway/`, `tools/`, and `superforecasting_agent/` for `os.getenv` / `os.environ.get` / `os.environ[...]`. There are **212 variables** (50 flagged as secrets, 162 configuration/runtime). The **default** column shows the fallback passed at the call site — `None` means a bare `os.getenv` (unset → `None`), `(required)` means a subscript that raises `KeyError` when unset, `(computed)` means a non-literal default. A variable read in several modules lists each; differing defaults are all shown.
+Every environment variable the server, tools, and CLI actually **read** — harvested by walking the AST of every module under `forecasting/`, `tui_gateway/`, `tools/`, and `superforecasting_agent/` for `os.getenv` / `os.environ.get` / `os.environ[...]`. There are **213 variables** (50 flagged as secrets, 163 configuration/runtime). The **default** column shows the fallback passed at the call site — `None` means a bare `os.getenv` (unset → `None`), `(required)` means a subscript that raises `KeyError` when unset, `(computed)` means a non-literal default. A variable read in several modules lists each; differing defaults are all shown.
 
 
 > **Secrets** are classified by name (any variable whose name contains `KEY`, `TOKEN`, `SECRET`, `PASSWORD`, `PASSWD`, `CREDENTIAL`). This is a conservative naming heuristic, not a data-flow analysis — treat the list as "never log or commit these", and audit the source before assuming a variable *not* listed here is safe to print.
@@ -75,7 +75,7 @@ Every environment variable the server, tools, and CLI actually **read** — harv
 ## Configuration & runtime
 
 
-**162 variables** tune runtime behaviour, endpoints, paths, and feature flags, or are inherited from the surrounding shell/OS. Everything here is read directly from the environment at the call site shown.
+**163 variables** tune runtime behaviour, endpoints, paths, and feature flags, or are inherited from the surrounding shell/OS. Everything here is read directly from the environment at the call site shown.
 
 | variable | default | read in |
 | --- | --- | --- |
@@ -194,6 +194,7 @@ Every environment variable the server, tools, and CLI actually **read** — harv
 | `SUPERFORECASTING_AGENT_BIN` | `''` | `superforecasting_agent.runtime.kanban_db` |
 | `SUPERFORECASTING_AGENT_CODE_REVISION` | `None` | `forecasting.ledger.workflow` |
 | `SUPERFORECASTING_AGENT_HOME` | `''` | `superforecasting_agent.cli`, `superforecasting_agent.runtime.main` |
+| `SUPERFORECASTING_AGENT_KERNEL_OWN_GROUP` | `None` | `tools.code_kernel_runner` |
 | `SUPERFORECASTING_AGENT_TIMEZONE` | `''` | `superforecasting_agent.runtime.config` |
 | `TERM` | `'dumb'`, `None` | `superforecasting_agent.runtime.colors`, `superforecasting_agent.runtime.main` |
 | `TERMINAL_CONTAINER_DISK` | `'51200'` | `superforecasting_agent.runtime.doctor` |

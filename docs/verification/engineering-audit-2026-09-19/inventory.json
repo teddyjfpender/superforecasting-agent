@@ -1,0 +1,492 @@
+{
+  "python_version": "3.13.12",
+  "source_sha": "df8e3e33cd4d08c6eaad38a275f6e217e92a3375",
+  "method": "Tracked .py/.ts/.tsx files; physical lines. Runtime Python excludes plugins/skills/tests/scripts; TUI excludes tests/testing/generated protocol. Branch metric counts selected AST nodes, includes nested functions, and is not McCabe complexity.",
+  "tracked_files": 5888,
+  "tracked_source": {
+    "files": 3968,
+    "lines": 1430487
+  },
+  "runtime_python": {
+    "files": 1098,
+    "lines": 554648
+  },
+  "strict_runtime_python": {
+    "files": 321,
+    "lines": 66083
+  },
+  "tui_authored_source": {
+    "files": 311,
+    "lines": 81654
+  },
+  "python_tests": {
+    "files": 1796,
+    "lines": 578637
+  },
+  "tui_tests": {
+    "files": 201,
+    "lines": 38965
+  },
+  "root_directory_file_counts": {
+    "(root)": 34,
+    ".githooks": 6,
+    ".github": 29,
+    ".plans": 2,
+    "acp_adapter": 13,
+    "acp_registry": 2,
+    "agent": 135,
+    "assets": 2,
+    "cron": 4,
+    "deploy": 3,
+    "docker": 2,
+    "docs": 213,
+    "examples": 5,
+    "forecasting": 390,
+    "gateway": 73,
+    "locales": 16,
+    "nix": 13,
+    "optional-skills": 296,
+    "packaging": 3,
+    "plugins": 281,
+    "products": 6,
+    "protocol": 50,
+    "providers": 3,
+    "scripts": 94,
+    "skills": 582,
+    "superforecaster-terminal": 42,
+    "superforecasting_agent": 337,
+    "tests": 1861,
+    "tools": 132,
+    "tui_gateway": 31,
+    "ui-tui": 714,
+    "web": 120,
+    "website": 394
+  },
+  "largest_files": [
+    {
+      "path": "gateway/run.py",
+      "lines": 19162,
+      "strict_gate": false
+    },
+    {
+      "path": "superforecasting_agent/runtime/main.py",
+      "lines": 11704,
+      "strict_gate": false
+    },
+    {
+      "path": "cli.py",
+      "lines": 11415,
+      "strict_gate": false
+    },
+    {
+      "path": "forecasting/cli/core.py",
+      "lines": 10838,
+      "strict_gate": false
+    },
+    {
+      "path": "forecasting/ledger/core.py",
+      "lines": 6594,
+      "strict_gate": false
+    },
+    {
+      "path": "superforecasting_agent/runtime/kanban_db.py",
+      "lines": 6337,
+      "strict_gate": false
+    },
+    {
+      "path": "tui_gateway/server.py",
+      "lines": 6129,
+      "strict_gate": false
+    },
+    {
+      "path": "gateway/platforms/discord.py",
+      "lines": 5699,
+      "strict_gate": false
+    },
+    {
+      "path": "gateway/platforms/telegram.py",
+      "lines": 5656,
+      "strict_gate": false
+    },
+    {
+      "path": "superforecasting_agent/runtime/gateway.py",
+      "lines": 5608,
+      "strict_gate": false
+    },
+    {
+      "path": "agent/auxiliary_client.py",
+      "lines": 5511,
+      "strict_gate": false
+    },
+    {
+      "path": "gateway/platforms/feishu.py",
+      "lines": 5058,
+      "strict_gate": false
+    },
+    {
+      "path": "gateway/platforms/yuanbao.py",
+      "lines": 4867,
+      "strict_gate": false
+    },
+    {
+      "path": "superforecasting_agent/runtime/web_server.py",
+      "lines": 4819,
+      "strict_gate": false
+    },
+    {
+      "path": "forecasting/ledger/workflow.py",
+      "lines": 4704,
+      "strict_gate": false
+    },
+    {
+      "path": "agent/conversation_loop.py",
+      "lines": 4309,
+      "strict_gate": false
+    },
+    {
+      "path": "gateway/platforms/api_server.py",
+      "lines": 3985,
+      "strict_gate": false
+    },
+    {
+      "path": "tools/browser_tool.py",
+      "lines": 3965,
+      "strict_gate": false
+    },
+    {
+      "path": "tools/mcp_tool.py",
+      "lines": 3813,
+      "strict_gate": false
+    },
+    {
+      "path": "gateway/platforms/base.py",
+      "lines": 3780,
+      "strict_gate": false
+    }
+  ],
+  "longest_python_functions": [
+    {
+      "path": "agent/conversation_loop.py",
+      "name": "run_conversation",
+      "line": 189,
+      "lines": 4117,
+      "decision_nodes": 481,
+      "strict_gate": false
+    },
+    {
+      "path": "forecasting/cli/core.py",
+      "name": "_cmd_import_adapter",
+      "line": 3126,
+      "lines": 3245,
+      "decision_nodes": 353,
+      "strict_gate": false
+    },
+    {
+      "path": "superforecasting_agent/runtime/main.py",
+      "name": "_main",
+      "line": 8769,
+      "lines": 2932,
+      "decision_nodes": 104,
+      "strict_gate": false
+    },
+    {
+      "path": "cli.py",
+      "name": "run",
+      "line": 8722,
+      "lines": 2376,
+      "decision_nodes": 293,
+      "strict_gate": false
+    },
+    {
+      "path": "gateway/run.py",
+      "name": "_run_agent",
+      "line": 16303,
+      "lines": 2282,
+      "decision_nodes": 336,
+      "strict_gate": false
+    },
+    {
+      "path": "forecasting/cli/core.py",
+      "name": "register_cli",
+      "line": 458,
+      "lines": 1774,
+      "decision_nodes": 59,
+      "strict_gate": false
+    },
+    {
+      "path": "superforecasting_agent/runtime/doctor.py",
+      "name": "run_doctor",
+      "line": 405,
+      "lines": 1674,
+      "decision_nodes": 274,
+      "strict_gate": false
+    },
+    {
+      "path": "agent/agent_init.py",
+      "name": "init_agent",
+      "line": 74,
+      "lines": 1506,
+      "decision_nodes": 201,
+      "strict_gate": false
+    },
+    {
+      "path": "forecasting/ledger/snapshots.py",
+      "name": "create_snapshot",
+      "line": 392,
+      "lines": 1192,
+      "decision_nodes": 148,
+      "strict_gate": false
+    },
+    {
+      "path": "superforecasting_agent/runtime/main.py",
+      "name": "_cmd_update_impl",
+      "line": 6527,
+      "lines": 1178,
+      "decision_nodes": 142,
+      "strict_gate": false
+    },
+    {
+      "path": "gateway/run.py",
+      "name": "_handle_message_with_agent",
+      "line": 8693,
+      "lines": 1161,
+      "decision_nodes": 169,
+      "strict_gate": false
+    },
+    {
+      "path": "gateway/run.py",
+      "name": "_handle_message",
+      "line": 7346,
+      "lines": 1076,
+      "decision_nodes": 207,
+      "strict_gate": false
+    },
+    {
+      "path": "forecasting/ledger/core.py",
+      "name": "initialize_schema",
+      "line": 883,
+      "lines": 982,
+      "decision_nodes": 0,
+      "strict_gate": false
+    },
+    {
+      "path": "agent/chat_completion_helpers.py",
+      "name": "interruptible_streaming_api_call",
+      "line": 1828,
+      "lines": 917,
+      "decision_nodes": 118,
+      "strict_gate": false
+    },
+    {
+      "path": "gateway/run.py",
+      "name": "run_sync",
+      "line": 17014,
+      "lines": 871,
+      "decision_nodes": 116,
+      "strict_gate": false
+    },
+    {
+      "path": "gateway/platforms/discord.py",
+      "name": "_define_discord_view_classes",
+      "line": 4986,
+      "lines": 710,
+      "decision_nodes": 63,
+      "strict_gate": false
+    },
+    {
+      "path": "superforecasting_agent/runtime/model_switch.py",
+      "name": "list_authenticated_providers",
+      "line": 1058,
+      "lines": 709,
+      "decision_nodes": 127,
+      "strict_gate": false
+    },
+    {
+      "path": "forecasting/quorum/core.py",
+      "name": "run_quorum",
+      "line": 569,
+      "lines": 659,
+      "decision_nodes": 68,
+      "strict_gate": false
+    },
+    {
+      "path": "cron/scheduler.py",
+      "name": "_run_job_impl",
+      "line": 1223,
+      "lines": 647,
+      "decision_nodes": 74,
+      "strict_gate": false
+    },
+    {
+      "path": "gateway/config.py",
+      "name": "_apply_env_overrides",
+      "line": 1304,
+      "lines": 635,
+      "decision_nodes": 136,
+      "strict_gate": false
+    }
+  ],
+  "most_branched_python_functions": [
+    {
+      "path": "agent/conversation_loop.py",
+      "name": "run_conversation",
+      "line": 189,
+      "lines": 4117,
+      "decision_nodes": 481,
+      "strict_gate": false
+    },
+    {
+      "path": "forecasting/cli/core.py",
+      "name": "_cmd_import_adapter",
+      "line": 3126,
+      "lines": 3245,
+      "decision_nodes": 353,
+      "strict_gate": false
+    },
+    {
+      "path": "gateway/run.py",
+      "name": "_run_agent",
+      "line": 16303,
+      "lines": 2282,
+      "decision_nodes": 336,
+      "strict_gate": false
+    },
+    {
+      "path": "cli.py",
+      "name": "run",
+      "line": 8722,
+      "lines": 2376,
+      "decision_nodes": 293,
+      "strict_gate": false
+    },
+    {
+      "path": "superforecasting_agent/runtime/doctor.py",
+      "name": "run_doctor",
+      "line": 405,
+      "lines": 1674,
+      "decision_nodes": 274,
+      "strict_gate": false
+    },
+    {
+      "path": "gateway/run.py",
+      "name": "_handle_message",
+      "line": 7346,
+      "lines": 1076,
+      "decision_nodes": 207,
+      "strict_gate": false
+    },
+    {
+      "path": "agent/agent_init.py",
+      "name": "init_agent",
+      "line": 74,
+      "lines": 1506,
+      "decision_nodes": 201,
+      "strict_gate": false
+    },
+    {
+      "path": "gateway/config.py",
+      "name": "load_gateway_config",
+      "line": 682,
+      "lines": 549,
+      "decision_nodes": 192,
+      "strict_gate": false
+    },
+    {
+      "path": "gateway/run.py",
+      "name": "_handle_message_with_agent",
+      "line": 8693,
+      "lines": 1161,
+      "decision_nodes": 169,
+      "strict_gate": false
+    },
+    {
+      "path": "forecasting/ledger/snapshots.py",
+      "name": "create_snapshot",
+      "line": 392,
+      "lines": 1192,
+      "decision_nodes": 148,
+      "strict_gate": false
+    },
+    {
+      "path": "superforecasting_agent/runtime/main.py",
+      "name": "_cmd_update_impl",
+      "line": 6527,
+      "lines": 1178,
+      "decision_nodes": 142,
+      "strict_gate": false
+    },
+    {
+      "path": "cli.py",
+      "name": "process_command",
+      "line": 5301,
+      "lines": 460,
+      "decision_nodes": 136,
+      "strict_gate": false
+    },
+    {
+      "path": "gateway/config.py",
+      "name": "_apply_env_overrides",
+      "line": 1304,
+      "lines": 635,
+      "decision_nodes": 136,
+      "strict_gate": false
+    },
+    {
+      "path": "superforecasting_agent/runtime/config.py",
+      "name": "migrate_config",
+      "line": 860,
+      "lines": 582,
+      "decision_nodes": 134,
+      "strict_gate": false
+    },
+    {
+      "path": "superforecasting_agent/runtime/model_switch.py",
+      "name": "list_authenticated_providers",
+      "line": 1058,
+      "lines": 709,
+      "decision_nodes": 127,
+      "strict_gate": false
+    },
+    {
+      "path": "agent/chat_completion_helpers.py",
+      "name": "interruptible_streaming_api_call",
+      "line": 1828,
+      "lines": 917,
+      "decision_nodes": 118,
+      "strict_gate": false
+    },
+    {
+      "path": "gateway/run.py",
+      "name": "run_sync",
+      "line": 17014,
+      "lines": 871,
+      "decision_nodes": 116,
+      "strict_gate": false
+    },
+    {
+      "path": "forecasting/sources/dispatch.py",
+      "name": "load_source_items",
+      "line": 72,
+      "lines": 389,
+      "decision_nodes": 111,
+      "strict_gate": true
+    },
+    {
+      "path": "superforecasting_agent/runtime/main.py",
+      "name": "cmd_profile",
+      "line": 7866,
+      "lines": 568,
+      "decision_nodes": 111,
+      "strict_gate": false
+    },
+    {
+      "path": "forecasting/ledger/watches.py",
+      "name": "_watched_source_action",
+      "line": 742,
+      "lines": 356,
+      "decision_nodes": 110,
+      "strict_gate": false
+    }
+  ],
+  "parse_errors": []
+}

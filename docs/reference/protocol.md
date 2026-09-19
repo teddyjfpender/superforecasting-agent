@@ -9,7 +9,7 @@
 
 > **Source of truth:** `protocol/__init__.py (RPC_SPECS, EVENT_SPECS) + protocol/rpc, protocol/events`
 
-The gateway speaks **protocol version 1**. Every request, response, and event below is a pydantic model in the `protocol/` package; the TUI's TypeScript wire types (`ui-tui/src/protocol/generated.ts`) are generated from the same registry via `python -m protocol.codegen`. There are **106 RPCs** and **49 events**.
+The gateway speaks **protocol version 1**. Every request, response, and event below is a pydantic model in the `protocol/` package; the TUI's TypeScript wire types (`ui-tui/src/protocol/generated.ts`) are generated from the same registry via `python -m protocol.codegen`. There are **172 RPCs** and **49 events**.
 
 
 ## RPC methods
@@ -19,17 +19,26 @@ The gateway speaks **protocol version 1**. Every request, response, and event be
 | --- | --- | --- |
 | `agents.active.summary` | [`AgentsActiveSummaryRequest`](#agentsactivesummaryrequest) | [`AgentsActiveSummaryResponse`](#agentsactivesummaryresponse) |
 | `agents.list` | [`AgentsListRequest`](#agentslistrequest) | [`AgentsListResponse`](#agentslistresponse) |
-| `approval.respond` | [`RespondRequest`](#respondrequest) | [`ApprovalRespondResponse`](#approvalrespondresponse) |
+| `approval.respond` | [`ApprovalRespondRequest`](#approvalrespondrequest) | [`ApprovalRespondResponse`](#approvalrespondresponse) |
+| `auth.poll` | [`AuthPollRequest`](#authpollrequest) | [`AuthPollResponse`](#authpollresponse) |
+| `auth.start` | [`AuthStartRequest`](#authstartrequest) | [`AuthStartResponse`](#authstartresponse) |
 | `browser.manage` | [`BrowserManageRequest`](#browsermanagerequest) | [`BrowserManageResponse`](#browsermanageresponse) |
 | `clarify.respond` | [`ClarifyRespondRequest`](#clarifyrespondrequest) | [`ClarifyRespondResponse`](#clarifyrespondresponse) |
+| `cli.exec` | [`CliExecRequest`](#cliexecrequest) | [`CliExecResponse`](#cliexecresponse) |
 | `clipboard.paste` | [`ClipboardPasteRequest`](#clipboardpasterequest) | [`ClipboardPasteResponse`](#clipboardpasteresponse) |
+| `command.dispatch` | [`CommandDispatchRequest`](#commanddispatchrequest) | [`CommandDispatchResponse`](#commanddispatchresponse) |
+| `command.resolve` | [`CommandResolveRequest`](#commandresolverequest) | [`CommandResolveResponse`](#commandresolveresponse) |
 | `commands.catalog` | [`CommandsCatalogRequest`](#commandscatalogrequest) | [`CommandsCatalogResponse`](#commandscatalogresponse) |
 | `complete.path` | [`CompletionRequest`](#completionrequest) | [`CompletionResponse`](#completionresponse) |
 | `complete.slash` | [`CompletionRequest`](#completionrequest) | [`CompletionResponse`](#completionresponse) |
 | `config.get` | [`ConfigGetValueRequest`](#configgetvaluerequest) | [`ConfigFullResponse`](#configfullresponse) |
 | `config.set` | [`ConfigSetRequest`](#configsetrequest) | [`ConfigSetResponse`](#configsetresponse) |
+| `config.show` | [`OperationSessionRequest`](#operationsessionrequest) | [`SectionsResponse`](#sectionsresponse) |
+| `cron.manage` | [`CronManageRequest`](#cronmanagerequest) | [`CronManageResponse`](#cronmanageresponse) |
 | `delegation.pause` | [`DelegationPauseRequest`](#delegationpauserequest) | [`DelegationPauseResponse`](#delegationpauseresponse) |
 | `delegation.status` | [`DelegationStatusRequest`](#delegationstatusrequest) | [`DelegationStatusResponse`](#delegationstatusresponse) |
+| `events.replay` | [`EventsReplayRequest`](#eventsreplayrequest) | [`EventsReplayResponse`](#eventsreplayresponse) |
+| `forecast.article.attach` | [`ForecastArticleAttachRequest`](#forecastarticleattachrequest) | [`ForecastArticleAttachResponse`](#forecastarticleattachresponse) |
 | `forecast.bench` | [`ForecastBenchRequest`](#forecastbenchrequest) | [`ForecastBenchResponse`](#forecastbenchresponse) |
 | `forecast.calibration` | [`ForecastCalibrationRequest`](#forecastcalibrationrequest) | [`ForecastCalibrationResponse`](#forecastcalibrationresponse) |
 | `forecast.command` | [`ForecastCommandRequest`](#forecastcommandrequest) | [`ForecastCommandResponse`](#forecastcommandresponse) |
@@ -42,10 +51,26 @@ The gateway speaks **protocol version 1**. Every request, response, and event be
 | `forecast.hooks.remove_rule` | [`ForecastHooksRemoveRuleRequest`](#forecasthooksremoverulerequest) | [`ForecastHooksRemoveRuleResponse`](#forecasthooksremoveruleresponse) |
 | `forecast.hooks.save_rule` | [`ForecastHooksSaveRuleRequest`](#forecasthookssaverulerequest) | [`ForecastHooksSaveRuleResponse`](#forecasthookssaveruleresponse) |
 | `forecast.hooks.set` | [`ForecastHooksSetRequest`](#forecasthookssetrequest) | [`ForecastHooksSetResponse`](#forecasthookssetresponse) |
+| `forecast.interview.answer` | [`InterviewAnswerRequest`](#interviewanswerrequest) | [`InterviewRecord`](#interviewrecord) |
+| `forecast.interview.assumption.save` | [`InterviewAssumptionSaveRequest`](#interviewassumptionsaverequest) | [`InterviewRecord`](#interviewrecord) |
+| `forecast.interview.begin` | [`InterviewBeginRequest`](#interviewbeginrequest) | [`InterviewRecord`](#interviewrecord) |
+| `forecast.interview.commit` | [`InterviewPreviewRequest`](#interviewpreviewrequest) | [`InterviewCommitResponse`](#interviewcommitresponse) |
+| `forecast.interview.evaluate` | [`InterviewEvaluateRequest`](#interviewevaluaterequest) | [`InterviewGenerateResponse`](#interviewgenerateresponse) |
+| `forecast.interview.evaluation_status` | [`InterviewTargetRequest`](#interviewtargetrequest) | [`InterviewEvaluationStatusResponse`](#interviewevaluationstatusresponse) |
+| `forecast.interview.generate` | [`InterviewGenerateRequest`](#interviewgeneraterequest) | [`InterviewGenerateResponse`](#interviewgenerateresponse) |
+| `forecast.interview.generation_status` | [`InterviewTargetRequest`](#interviewtargetrequest) | [`InterviewGenerationStatusResponse`](#interviewgenerationstatusresponse) |
+| `forecast.interview.list` | [`InterviewListRequest`](#interviewlistrequest) | [`InterviewListResponse`](#interviewlistresponse) |
+| `forecast.interview.preview` | [`InterviewPreviewRequest`](#interviewpreviewrequest) | [`InterviewPreviewResponse`](#interviewpreviewresponse) |
+| `forecast.interview.promote` | [`InterviewPromoteRequest`](#interviewpromoterequest) | [`InterviewPromoteResponse`](#interviewpromoteresponse) |
+| `forecast.interview.promotion_preview` | [`InterviewPromotionPreviewRequest`](#interviewpromotionpreviewrequest) | [`InterviewPromotionPreviewResponse`](#interviewpromotionpreviewresponse) |
+| `forecast.interview.read` | [`InterviewReadRequest`](#interviewreadrequest) | [`InterviewRecord`](#interviewrecord) |
+| `forecast.interview.scenario.delete` | [`InterviewScenarioDeleteRequest`](#interviewscenariodeleterequest) | [`InterviewRecord`](#interviewrecord) |
+| `forecast.interview.scenario.save` | [`InterviewScenarioSaveRequest`](#interviewscenariosaverequest) | [`InterviewRecord`](#interviewrecord) |
 | `forecast.onboard_commit` | [`ForecastOnboardCommitRequest`](#forecastonboardcommitrequest) | [`ForecastOnboardCommitResponse`](#forecastonboardcommitresponse) |
 | `forecast.onboard_propose` | [`ForecastOnboardProposeRequest`](#forecastonboardproposerequest) | [`ForecastOnboardProposeResponse`](#forecastonboardproposeresponse) |
 | `forecast.operation` | [`ForecastOperationRequest`](#forecastoperationrequest) | [`ForecastOperationResponse`](#forecastoperationresponse) |
 | `forecast.question` | [`ForecastQuestionRequest`](#forecastquestionrequest) | [`ForecastQuestionPacketResponse`](#forecastquestionpacketresponse) |
+| `forecast.question.choices` | [`WireModel`](#wiremodel) | [`ForecastQuestionChoicesResponse`](#forecastquestionchoicesresponse) |
 | `forecast.question.readiness` | [`ForecastQuestionReadinessRequest`](#forecastquestionreadinessrequest) | [`ForecastQuestionReadinessResponse`](#forecastquestionreadinessresponse) |
 | `forecast.quorum.status` | [`ForecastQuorumStatusRequest`](#forecastquorumstatusrequest) | [`ForecastQuorumStatusResponse`](#forecastquorumstatusresponse) |
 | `forecast.reforecast` | [`ForecastReforecastRequest`](#forecastreforecastrequest) | [`ForecastReforecastMarkResponse`](#forecastreforecastmarkresponse) |
@@ -60,6 +85,7 @@ The gateway speaks **protocol version 1**. Every request, response, and event be
 | `forecast.triage.contested` | [`ForecastTriageContestedRequest`](#forecasttriagecontestedrequest) | [`ForecastTriageContestedResponse`](#forecasttriagecontestedresponse) |
 | `forecast.triage.relabel` | [`ForecastTriageRelabelRequest`](#forecasttriagerelabelrequest) | [`ForecastTriageRelabelResponse`](#forecasttriagerelabelresponse) |
 | `forecast.warnings.aggregate` | [`ForecastWarningsAggregateRequest`](#forecastwarningsaggregaterequest) | [`ForecastWarningsAggregateResponse`](#forecastwarningsaggregateresponse) |
+| `forecast.warnings.automode.cancel` | [`AutomodeCancelRequest`](#automodecancelrequest) | [`AutomodeCancelResponse`](#automodecancelresponse) |
 | `forecast.warnings.automode.run` | [`ForecastWarningsAutomodeRunRequest`](#forecastwarningsautomoderunrequest) | [`ForecastWarningsAutomodeRunResponse`](#forecastwarningsautomoderunresponse) |
 | `forecast.warnings.dismiss` | [`ForecastWarningsDismissRequest`](#forecastwarningsdismissrequest) | [`ForecastWarningsDismissResponse`](#forecastwarningsdismissresponse) |
 | `forecast.warnings.list` | [`ForecastWarningsListRequest`](#forecastwarningslistrequest) | [`ForecastWarningsListResponse`](#forecastwarningslistresponse) |
@@ -68,16 +94,48 @@ The gateway speaks **protocol version 1**. Every request, response, and event be
 | `host.negotiate` | [`HostNegotiateRequest`](#hostnegotiaterequest) | [`HostNegotiateResponse`](#hostnegotiateresponse) |
 | `image.attach` | [`ImageAttachRequest`](#imageattachrequest) | [`ImageAttachResponse`](#imageattachresponse) |
 | `input.detect_drop` | [`InputDetectDropRequest`](#inputdetectdroprequest) | [`InputDetectDropResponse`](#inputdetectdropresponse) |
+| `insights.get` | [`InsightsRequest`](#insightsrequest) | [`InsightsResponse`](#insightsresponse) |
 | `jobs.active` | [`JobsActiveRequest`](#jobsactiverequest) | [`JobsActiveResponse`](#jobsactiveresponse) |
 | `jobs.cancel` | [`JobsCancelRequest`](#jobscancelrequest) | [`JobsCancelResponse`](#jobscancelresponse) |
 | `jobs.start` | [`JobsStartRequest`](#jobsstartrequest) | [`JobsStartResponse`](#jobsstartresponse) |
 | `jobs.status` | [`JobsStatusRequest`](#jobsstatusrequest) | [`JobsStatusResponse`](#jobsstatusresponse) |
+| `llm.oneshot` | [`OneShotRequest`](#oneshotrequest) | [`TextResponse`](#textresponse) |
+| `market.catalog` | [`MarketCatalogRequest`](#marketcatalogrequest) | [`MarketCatalogResponse`](#marketcatalogresponse) |
+| `market.discover` | [`MarketDiscoverRequest`](#marketdiscoverrequest) | [`MarketDiscoverResponse`](#marketdiscoverresponse) |
+| `market.events.list` | [`MarketEventsRequest`](#marketeventsrequest) | [`MarketEventsResponse`](#marketeventsresponse) |
+| `market.provider.connect` | [`MarketProviderConnectRequest`](#marketproviderconnectrequest) | [`MarketProviderConnectResponse`](#marketproviderconnectresponse) |
 | `market.quotes` | [`MarketQuotesRequest`](#marketquotesrequest) | [`MarketQuotesResponse`](#marketquotesresponse) |
 | `market.search` | [`MarketSearchRequest`](#marketsearchrequest) | [`MarketSearchResponse`](#marketsearchresponse) |
+| `market.selection.apply` | [`MarketSelectionApplyRequest`](#marketselectionapplyrequest) | [`MarketSelectionApplyResponse`](#marketselectionapplyresponse) |
+| `market.selection.events.update` | [`MarketEventsEditRequest`](#marketeventseditrequest) | [`MarketSelectionApplyResponse`](#marketselectionapplyresponse) |
+| `market.selection.preview` | [`MarketSelectionPreviewRequest`](#marketselectionpreviewrequest) | [`MarketSelectionPreviewResponse`](#marketselectionpreviewresponse) |
+| `market.selection.update` | [`MarketSelectionUpdateRequest`](#marketselectionupdaterequest) | [`MarketSelectionApplyResponse`](#marketselectionapplyresponse) |
+| `markets.model.chat` | [`ModelChatRequest`](#modelchatrequest) | [`ModelBuildResponse`](#modelbuildresponse) |
+| `markets.model.create` | [`ModelCreateRequest`](#modelcreaterequest) | [`ModelBuildResponse`](#modelbuildresponse) |
+| `markets.model.delete` | [`ModelIdentityRequest`](#modelidentityrequest) | [`ModelDeleteResponse`](#modeldeleteresponse) |
+| `markets.model.export` | [`ModelIdentityRequest`](#modelidentityrequest) | [`ModelExportResponse`](#modelexportresponse) |
+| `markets.model.get` | [`ModelGetRequest`](#modelgetrequest) | [`ModelGetResponse`](#modelgetresponse) |
+| `markets.model.list` | [`ModelListRequest`](#modellistrequest) | [`ModelListResponse`](#modellistresponse) |
+| `markets.model.renarrate` | [`ModelIdentityRequest`](#modelidentityrequest) | [`ModelBuildResponse`](#modelbuildresponse) |
+| `markets.model.retry` | [`ModelSessionRequest`](#modelsessionrequest) | [`ModelBuildResponse`](#modelbuildresponse) |
+| `markets.model.to_forecast` | [`ModelIdentityRequest`](#modelidentityrequest) | [`ModelForecastResponse`](#modelforecastresponse) |
+| `model.disconnect` | [`ModelDisconnectRequest`](#modeldisconnectrequest) | [`ModelDisconnectResponse`](#modeldisconnectresponse) |
 | `model.options` | [`ModelOptionsRequest`](#modeloptionsrequest) | [`ModelOptionsResponse`](#modeloptionsresponse) |
+| `model.save_key` | [`ModelSaveKeyRequest`](#modelsavekeyrequest) | [`ModelOptionProvider`](#modeloptionprovider) |
+| `news.article` | [`NewsFeedRequest`](#newsfeedrequest) | [`NewsArticleResponse`](#newsarticleresponse) |
+| `news.configure` | [`NewsConfigureRequest`](#newsconfigurerequest) | [`NewsDeskResponse`](#newsdeskresponse) |
+| `news.desk` | [`NewsDeskRequest`](#newsdeskrequest) | [`NewsDeskResponse`](#newsdeskresponse) |
+| `news.feed` | [`NewsFeedRequest`](#newsfeedrequest) | [`NewsFeedResponse`](#newsfeedresponse) |
+| `news.search` | [`NewsSearchRequest`](#newssearchrequest) | [`NewsSearchResponse`](#newssearchresponse) |
+| `obsidian.append` | [`ObsidianAppendRequest`](#obsidianappendrequest) | [`ObsidianWriteResponse`](#obsidianwriteresponse) |
+| `obsidian.create` | [`ObsidianCreateRequest`](#obsidiancreaterequest) | [`ObsidianWriteResponse`](#obsidianwriteresponse) |
 | `obsidian.note` | [`ObsidianNoteRequest`](#obsidiannoterequest) | [`ObsidianNoteResponse`](#obsidiannoteresponse) |
 | `obsidian.search` | [`ObsidianSearchRequest`](#obsidiansearchrequest) | [`ObsidianSearchResponse`](#obsidiansearchresponse) |
+| `obsidian.setup` | [`ObsidianStatusRequest`](#obsidianstatusrequest) | [`ObsidianSetupResponse`](#obsidiansetupresponse) |
 | `obsidian.status` | [`ObsidianStatusRequest`](#obsidianstatusrequest) | [`ObsidianStatusResponse`](#obsidianstatusresponse) |
+| `obsidian.write` | [`ObsidianWriteRequest`](#obsidianwriterequest) | [`ObsidianWriteResponse`](#obsidianwriteresponse) |
+| `paste.collapse` | [`PasteCollapseRequest`](#pastecollapserequest) | [`PasteCollapseResponse`](#pastecollapseresponse) |
+| `plugins.list` | [`EmptyRequest`](#emptyrequest) | [`PluginsResponse`](#pluginsresponse) |
 | `pm.book` | [`PmBookRequest`](#pmbookrequest) | [`PmBookResponse`](#pmbookresponse) |
 | `pm.detail` | [`PmDetailRequest`](#pmdetailrequest) | [`PmDetailResponse`](#pmdetailresponse) |
 | `pm.history` | [`PmHistoryRequest`](#pmhistoryrequest) | [`PmHistoryResponse`](#pmhistoryresponse) |
@@ -92,7 +150,7 @@ The gateway speaks **protocol version 1**. Every request, response, and event be
 | `rollback.diff` | [`RollbackDiffRequest`](#rollbackdiffrequest) | [`RollbackDiffResponse`](#rollbackdiffresponse) |
 | `rollback.list` | [`RollbackListRequest`](#rollbacklistrequest) | [`RollbackListResponse`](#rollbacklistresponse) |
 | `rollback.restore` | [`RollbackRestoreRequest`](#rollbackrestorerequest) | [`RollbackRestoreResponse`](#rollbackrestoreresponse) |
-| `secret.respond` | [`RespondRequest`](#respondrequest) | [`SecretRespondResponse`](#secretrespondresponse) |
+| `secret.respond` | [`SecretRespondRequest`](#secretrespondrequest) | [`SecretRespondResponse`](#secretrespondresponse) |
 | `session.branch` | [`SessionBranchRequest`](#sessionbranchrequest) | [`SessionBranchResponse`](#sessionbranchresponse) |
 | `session.branch_replace` | [`SessionBranchRequest`](#sessionbranchrequest) | [`SessionBranchResponse`](#sessionbranchresponse) |
 | `session.close` | [`SessionCloseRequest`](#sessioncloserequest) | [`SessionCloseResponse`](#sessioncloseresponse) |
@@ -112,17 +170,25 @@ The gateway speaks **protocol version 1**. Every request, response, and event be
 | `session.usage` | [`SessionUsageRequest`](#sessionusagerequest) | [`SessionUsageResponse`](#sessionusageresponse) |
 | `setup.status` | [`SetupStatusRequest`](#setupstatusrequest) | [`SetupStatusResponse`](#setupstatusresponse) |
 | `shell.exec` | [`ShellExecRequest`](#shellexecrequest) | [`ShellExecResponse`](#shellexecresponse) |
+| `skills.manage` | [`SkillsManageRequest`](#skillsmanagerequest) | [`SkillsManageResponse`](#skillsmanageresponse) |
+| `skills.reload` | [`SkillsReloadRequest`](#skillsreloadrequest) | [`SkillsReloadResponse`](#skillsreloadresponse) |
 | `slash.exec` | [`SlashExecRequest`](#slashexecrequest) | [`SlashExecResponse`](#slashexecresponse) |
 | `spawn_tree.list` | [`SpawnTreeListRequest`](#spawntreelistrequest) | [`SpawnTreeListResponse`](#spawntreelistresponse) |
 | `spawn_tree.load` | [`SpawnTreeLoadRequest`](#spawntreeloadrequest) | [`SpawnTreeLoadResponse`](#spawntreeloadresponse) |
+| `spawn_tree.save` | [`SpawnTreeSaveRequest`](#spawntreesaverequest) | [`SpawnTreeSaveResponse`](#spawntreesaveresponse) |
 | `subagent.interrupt` | [`SubagentInterruptRequest`](#subagentinterruptrequest) | [`SubagentInterruptResponse`](#subagentinterruptresponse) |
-| `sudo.respond` | [`RespondRequest`](#respondrequest) | [`SudoRespondResponse`](#sudorespondresponse) |
+| `sudo.respond` | [`SudoRespondRequest`](#sudorespondrequest) | [`SudoRespondResponse`](#sudorespondresponse) |
+| `superforecasting_agent.tooling.toolsets.list` | [`OperationSessionRequest`](#operationsessionrequest) | [`ToolsetsResponse`](#toolsetsresponse) |
 | `terminal.resize` | [`TerminalResizeRequest`](#terminalresizerequest) | [`TerminalResizeResponse`](#terminalresizeresponse) |
 | `theme.list` | [`ThemeListRequest`](#themelistrequest) | [`ThemeListResponse`](#themelistresponse) |
 | `tools.configure` | [`ToolsConfigureRequest`](#toolsconfigurerequest) | [`ToolsConfigureResponse`](#toolsconfigureresponse) |
+| `tools.list` | [`OperationSessionRequest`](#operationsessionrequest) | [`ToolsetsResponse`](#toolsetsresponse) |
+| `tools.show` | [`OperationSessionRequest`](#operationsessionrequest) | [`SectionsResponse`](#sectionsresponse) |
+| `toolsets.list` | [`OperationSessionRequest`](#operationsessionrequest) | [`ToolsetsResponse`](#toolsetsresponse) |
 | `voice.record` | [`VoiceRecordRequest`](#voicerecordrequest) | [`VoiceRecordResponse`](#voicerecordresponse) |
 | `voice.stop` | [`VoiceRecordRequest`](#voicerecordrequest) | [`VoiceRecordResponse`](#voicerecordresponse) |
 | `voice.toggle` | [`VoiceToggleRequest`](#voicetogglerequest) | [`VoiceToggleResponse`](#voicetoggleresponse) |
+| `voice.tts` | [`VoiceTtsRequest`](#voicettsrequest) | [`VoiceTtsResponse`](#voicettsresponse) |
 
 ## Events
 
@@ -242,11 +308,74 @@ _(no fields)_
 | `description` | `string` |
 | `request_id` | `string?` |
 
+### ApprovalRespondRequest
+
+| field | type |
+| --- | --- |
+| `all` | `boolean` |
+| `choice` | `string` |
+| `request_id` | `string | null` |
+| `session_id` | `string | null` |
+
 ### ApprovalRespondResponse
 
 | field | type |
 | --- | --- |
 | `ok` | `boolean?` |
+
+### ApprovalResult
+
+| field | type |
+| --- | --- |
+| `choice` | `'always' | 'deny' | 'once' | 'session'` |
+
+### AuthPollRequest
+
+| field | type |
+| --- | --- |
+| `cancel` | `boolean` |
+| `session_id` | `string | null` |
+
+### AuthPollResponse
+
+| field | type |
+| --- | --- |
+| `credentials_applied` | `boolean?` |
+| `message` | `string?` |
+| `provider` | `string? | null` |
+| `status` | `string` |
+| `url` | `string? | null` |
+| `user_code` | `string? | null` |
+
+### AuthStartRequest
+
+| field | type |
+| --- | --- |
+| `provider` | `string` |
+| `session_id` | `string | null` |
+
+### AuthStartResponse
+
+| field | type |
+| --- | --- |
+| `interval` | `number` |
+| `provider` | `string` |
+| `url` | `string` |
+| `user_code` | `string` |
+
+### AutomodeCancelRequest
+
+| field | type |
+| --- | --- |
+| `job_id` | `string` |
+
+### AutomodeCancelResponse
+
+| field | type |
+| --- | --- |
+| `cancelled` | `boolean?` |
+| `found` | `boolean` |
+| `job_id` | `string` |
 
 ### AutomodeCompletePayload
 
@@ -301,6 +430,8 @@ _(no fields)_
 | field | type |
 | --- | --- |
 | `action` | `string | null` |
+| `session_id` | `string | null` |
+| `url` | `string | null` |
 
 ### BrowserManageResponse
 
@@ -341,6 +472,7 @@ _(no fields)_
 
 | field | type |
 | --- | --- |
+| `answer` | `string` |
 | `request_id` | `string | null` |
 | `session_id` | `string | null` |
 
@@ -349,6 +481,28 @@ _(no fields)_
 | field | type |
 | --- | --- |
 | `ok` | `boolean?` |
+
+### ClarifyResult
+
+| field | type |
+| --- | --- |
+| `answer` | `string` |
+
+### CliExecRequest
+
+| field | type |
+| --- | --- |
+| `argv` | `string[]` |
+| `timeout` | `number` |
+
+### CliExecResponse
+
+| field | type |
+| --- | --- |
+| `blocked` | `boolean` |
+| `code` | `number` |
+| `hint` | `string?` |
+| `output` | `string` |
 
 ### ClipboardPasteRequest
 
@@ -367,6 +521,34 @@ _(no fields)_
 | `token_estimate` | `number?` |
 | `width` | `number?` |
 
+### CommandAliasResult
+
+| field | type |
+| --- | --- |
+| `target` | `string` |
+| `type` | `'alias'` |
+
+### CommandDispatchRequest
+
+| field | type |
+| --- | --- |
+| `arg` | `string` |
+| `name` | `string` |
+| `session_id` | `string | null` |
+
+### CommandDispatchResponse
+
+| field | type |
+| --- | --- |
+| `root` | `CommandAliasResult | CommandExecResult | CommandSendResult | CommandSkillResult` |
+
+### CommandExecResult
+
+| field | type |
+| --- | --- |
+| `output` | `string` |
+| `type` | `'exec' | 'plugin'` |
+
 ### CommandFinished
 
 | field | type |
@@ -381,6 +563,36 @@ _(no fields)_
 | `command_id` | `string` |
 | `stream` | `'stderr' | 'stdout'` |
 | `text` | `string` |
+
+### CommandResolveRequest
+
+| field | type |
+| --- | --- |
+| `name` | `string` |
+
+### CommandResolveResponse
+
+| field | type |
+| --- | --- |
+| `canonical` | `string` |
+| `category` | `string` |
+| `description` | `string` |
+
+### CommandSendResult
+
+| field | type |
+| --- | --- |
+| `message` | `string` |
+| `notice` | `string?` |
+| `type` | `'send'` |
+
+### CommandSkillResult
+
+| field | type |
+| --- | --- |
+| `message` | `string` |
+| `name` | `string` |
+| `type` | `'skill'` |
 
 ### CommandStarted
 
@@ -410,6 +622,7 @@ _(no fields)_
 | field | type |
 | --- | --- |
 | `text` | `string | null` |
+| `word` | `string | null` |
 
 ### CompletionResponse
 
@@ -449,13 +662,23 @@ _(no fields)_
 
 | field | type |
 | --- | --- |
+| `authentication_status` | `string?` |
 | `config` | `ConfigFullConfig?` |
+| `display` | `string?` |
+| `home` | `string?` |
+| `model` | `string?` |
+| `mtime` | `number?` |
+| `prompt` | `string?` |
+| `provider` | `string?` |
+| `providers` | `Record<string, unknown>[]?` |
+| `value` | `string?` |
 
 ### ConfigGetValueRequest
 
 | field | type |
 | --- | --- |
 | `key` | `string | null` |
+| `session_id` | `string | null` |
 
 ### ConfigGetValueResponse
 
@@ -519,6 +742,157 @@ _(no fields)_
 | --- | --- |
 | `count` | `number?` |
 
+### CronManageRequest
+
+| field | type |
+| --- | --- |
+| `action` | `string` |
+| `name` | `string` |
+| `prompt` | `string` |
+| `schedule` | `string` |
+
+### CronManageResponse
+
+| field | type |
+| --- | --- |
+| `count` | `number?` |
+| `error` | `string?` |
+| `job` | `Record<string, unknown>?` |
+| `jobs` | `Record<string, unknown>[]?` |
+| `message` | `string?` |
+| `status` | `string?` |
+| `success` | `boolean?` |
+
+### DataCatalog
+
+| field | type |
+| --- | --- |
+| `categories` | `Array<DataCategory>` |
+| `countries` | `Array<DataCountry>` |
+| `presets` | `Array<DataPreset>` |
+| `providers` | `Array<DataProvider>` |
+| `regions` | `Array<DataRegion>` |
+| `series` | `Array<DataSeries>` |
+| `version` | `number` |
+
+### DataCategory
+
+| field | type |
+| --- | --- |
+| `aliases` | `Array<string>` |
+| `group` | `string` |
+| `id` | `string` |
+| `name` | `string` |
+
+### DataCountry
+
+| field | type |
+| --- | --- |
+| `id` | `string` |
+| `name` | `string` |
+| `region` | `string` |
+
+### DataEvent
+
+| field | type |
+| --- | --- |
+| `area` | `string | null` |
+| `description` | `string` |
+| `effective_at` | `string | null` |
+| `event_id` | `string` |
+| `expires_at` | `string | null` |
+| `issued_at` | `string | null` |
+| `severity` | `string | null` |
+| `source_url` | `string | null` |
+| `title` | `string` |
+
+### DataEvents
+
+| field | type |
+| --- | --- |
+| `events` | `DataEvent[]` |
+| `retrieved_at` | `string` |
+| `series_id` | `string` |
+| `truncated` | `boolean` |
+
+### DataLocation
+
+| field | type |
+| --- | --- |
+| `latitude` | `number` |
+| `longitude` | `number` |
+| `name` | `string` |
+| `timezone` | `string` |
+
+### DataPreset
+
+| field | type |
+| --- | --- |
+| `description` | `string` |
+| `id` | `string` |
+| `name` | `string` |
+| `series_ids` | `Array<string>` |
+| `version` | `number` |
+
+### DataProvider
+
+| field | type |
+| --- | --- |
+| `access_note` | `string` |
+| `auth` | `'none' | 'optional' | 'required'` |
+| `capabilities` | `Array<'events' | 'history' | 'latest' | 'search' | 'stream'>` |
+| `description` | `string` |
+| `id` | `string` |
+| `key_env` | `string | null` |
+| `name` | `string` |
+| `signup_url` | `string | null` |
+| `website` | `string` |
+
+### DataRegion
+
+| field | type |
+| --- | --- |
+| `id` | `string` |
+| `members` | `Array<string>` |
+| `name` | `string` |
+
+### DataSeries
+
+| field | type |
+| --- | --- |
+| `category` | `string` |
+| `change_basis` | `'last_transition' | 'previous_observation'` |
+| `concept_id` | `string` |
+| `country` | `string | null` |
+| `dimensions` | `Record<string, string>` |
+| `expected_lag_seconds` | `number | null` |
+| `frequency` | `'annual' | 'daily' | 'event' | 'hourly' | 'monthly' | 'quarterly' | 'tick' | 'weekly'` |
+| `history_points` | `number` |
+| `id` | `string` |
+| `kind` | `'estimate' | 'event' | 'forecast' | 'observation' | 'probability' | 'quote' | 'reanalysis'` |
+| `line` | `string | null` |
+| `location` | `DataLocation | null` |
+| `name` | `string` |
+| `provider` | `string` |
+| `refresh_seconds` | `number` |
+| `region` | `string` |
+| `revision_policy` | `'as_issued' | 'first_release' | 'latest' | 'unknown'` |
+| `source_family` | `string` |
+| `source_url` | `string` |
+| `symbol` | `string` |
+| `tags` | `Array<string>` |
+| `unit` | `string` |
+
+### DatedValue
+
+| field | type |
+| --- | --- |
+| `period_end` | `string` |
+| `period_start` | `string` |
+| `published_at` | `string | null` |
+| `status` | `string | null` |
+| `value` | `number | null` |
+
 ### DelegationActiveEntry
 
 | field | type |
@@ -532,6 +906,18 @@ _(no fields)_
 | `status` | `string?` |
 | `subagent_id` | `string?` |
 | `tool_count` | `number?` |
+
+### DelegationBackgroundEntry
+
+| field | type |
+| --- | --- |
+| `delegation_id` | `string` |
+| `dispatched_at` | `number?` |
+| `durable_status` | `string?` |
+| `goal` | `string?` |
+| `model` | `string? | null` |
+| `result` | `Record<string, unknown>? | null` |
+| `status` | `string` |
 
 ### DelegationPauseRequest
 
@@ -557,9 +943,86 @@ _(no fields)_
 | field | type |
 | --- | --- |
 | `active` | `DelegationActiveEntry[]?` |
+| `background` | `DelegationBackgroundEntry[]?` |
+| `max_async_children` | `number?` |
 | `max_concurrent_children` | `number?` |
 | `max_spawn_depth` | `number?` |
 | `paused` | `boolean?` |
+
+### DeskCustomSeries
+
+| field | type |
+| --- | --- |
+| `category` | `string` |
+| `line` | `string | null` |
+| `name` | `string` |
+| `provider` | `string` |
+| `symbol` | `string` |
+| `unit` | `string` |
+
+### DeskEdit
+
+| field | type |
+| --- | --- |
+| `add` | `string[]` |
+| `catalog_revision` | `string` |
+| `custom_add` | `DeskCustomSeries[]?` |
+| `custom_remove` | `DeskCustomSeries[]?` |
+| `home_region` | `string? | null` |
+| `preset_id` | `string | null` |
+| `remove` | `string[]` |
+| `start_empty` | `boolean` |
+| `weather_locations` | `string[]? | null` |
+
+### DeskPatch
+
+| field | type |
+| --- | --- |
+| `categories` | `string[]? | null` |
+| `custom` | `DeskCustomSeries[]? | null` |
+| `pm_saved` | `DeskSavedEvent[]? | null` |
+| `providers` | `string[]? | null` |
+| `server_side` | `string[]? | null` |
+| `watchlist` | `DeskCustomSeries[]? | null` |
+
+### DeskPreview
+
+| field | type |
+| --- | --- |
+| `added` | `string[]` |
+| `already_selected` | `string[]` |
+| `catalog_revision` | `string` |
+| `credential_providers` | `string[]` |
+| `removed` | `string[]` |
+| `revision` | `string` |
+| `selection` | `DeskSelection` |
+
+### DeskSavedEvent
+
+| field | type |
+| --- | --- |
+| `event_id` | `string` |
+| `venue` | `string` |
+
+### DeskSelection
+
+| field | type |
+| --- | --- |
+| `categories` | `string[]` |
+| `custom` | `DeskCustomSeries[]` |
+| `home_region` | `string | null` |
+| `pm_saved` | `DeskSavedEvent[]` |
+| `providers` | `string[]` |
+| `revision` | `string` |
+| `series_ids` | `string[]` |
+| `server_side` | `string[] | null` |
+| `state` | `'custom' | 'empty' | 'preset' | 'unconfigured'` |
+| `watchlist` | `DeskCustomSeries[]` |
+| `weather_locations` | `string[] | null` |
+
+### EmptyRequest
+
+_(no fields)_
 
 ### ErrorPayload
 
@@ -568,6 +1031,26 @@ _(no fields)_
 | `durable_status` | `string?` |
 | `message` | `string` |
 | `turn_id` | `string?` |
+
+### EventsReplayRequest
+
+| field | type |
+| --- | --- |
+| `limit` | `number` |
+| `session_id` | `string` |
+| `since_id` | `number` |
+| `types` | `string | string[] | null` |
+
+### EventsReplayResponse
+
+| field | type |
+| --- | --- |
+| `count` | `number` |
+| `frames` | `Record<string, unknown>[]` |
+| `last_id` | `number` |
+| `records` | `Record<string, unknown>[]` |
+| `session_id` | `string` |
+| `since_id` | `number` |
 
 ### EvidenceShareBody
 
@@ -586,6 +1069,16 @@ _(no fields)_
 | `stance` | `string | null` |
 | `triage_label` | `string | null` |
 
+### FeedShare
+
+| field | type |
+| --- | --- |
+| `feeds` | `SharedFeed[]` |
+| `horizon` | `SharedPeriod` |
+| `presentation` | `'bar-chart' | 'line-chart'` |
+| `type` | `'sfa.feed'` |
+| `version` | `number | number` |
+
 ### ForecastAnalystNote
 
 | field | type |
@@ -603,6 +1096,35 @@ _(no fields)_
 | `looking_for` | `string?` |
 | `stance` | `string? | null` |
 | `verdict` | `string? | null` |
+
+### ForecastArticleAttachRequest
+
+| field | type |
+| --- | --- |
+| `article` | `ForecastArticleClaim` |
+| `prepare_update` | `boolean` |
+| `question_id` | `string` |
+
+### ForecastArticleAttachResponse
+
+| field | type |
+| --- | --- |
+| `already_attached` | `boolean` |
+| `evidence_id` | `string` |
+| `interview_id` | `string | null` |
+| `question_id` | `string` |
+
+### ForecastArticleClaim
+
+| field | type |
+| --- | --- |
+| `content` | `string` |
+| `extraction` | `'article' | 'feed'` |
+| `feed_url` | `string` |
+| `published_at` | `string | null` |
+| `publisher` | `string` |
+| `title` | `string` |
+| `url` | `string` |
 
 ### ForecastBenchAggregate
 
@@ -1267,6 +1789,9 @@ _(no fields)_
 | field | type |
 | --- | --- |
 | `instruction` | `string | null` |
+| `max_iterations` | `number | null` |
+| `model` | `string | null` |
+| `provider` | `string | null` |
 | `question_ids` | `string[] | null` |
 | `session_id` | `string | null` |
 
@@ -1487,6 +2012,30 @@ _(no fields)_
 | `mean_brier` | `number? | null` |
 | `mean_log_score` | `number? | null` |
 
+### ForecastMarketSeed
+
+| field | type |
+| --- | --- |
+| `captured_at` | `string` |
+| `close_time` | `string | null` |
+| `event_id` | `string | null` |
+| `kind` | `'prediction_market' | 'series'` |
+| `market_price` | `number | null` |
+| `observed_at` | `string | null` |
+| `observed_value` | `number | null` |
+| `outcome_id` | `string | null` |
+| `outcome_label` | `string | null` |
+| `period_end` | `string | null` |
+| `period_start` | `string | null` |
+| `provider` | `string` |
+| `published_at` | `string | null` |
+| `retrieved_at` | `string | null` |
+| `revision_policy` | `string | null` |
+| `source_url` | `string | null` |
+| `symbol` | `string` |
+| `title` | `string` |
+| `units` | `string | null` |
+
 ### ForecastNextAction
 
 | field | type |
@@ -1566,6 +2115,20 @@ _(no fields)_
 | --- | --- |
 | `n` | `number?` |
 | `reasons` | `Record<string, unknown>?` |
+
+### ForecastQuestionChoice
+
+| field | type |
+| --- | --- |
+| `domain` | `string | null` |
+| `id` | `string` |
+| `title` | `string` |
+
+### ForecastQuestionChoicesResponse
+
+| field | type |
+| --- | --- |
+| `questions` | `ForecastQuestionChoice[]` |
 
 ### ForecastQuestionPacket
 
@@ -1824,7 +2387,7 @@ _(no fields)_
 | `error` | `string? | null` |
 | `forecast_id` | `string? | null` |
 | `question_id` | `string` |
-| `quorum_autorun` | `boolean? | null` |
+| `quorum_autorun` | `Record<string, unknown>? | null` |
 | `saturation` | `number? | null` |
 | `title` | `string?` |
 
@@ -1832,6 +2395,9 @@ _(no fields)_
 
 | field | type |
 | --- | --- |
+| `max_iterations` | `number | null` |
+| `model` | `string | null` |
+| `provider` | `string | null` |
 | `question_ids` | `string[] | null` |
 | `session_id` | `string | null` |
 
@@ -2444,7 +3010,7 @@ _(no fields)_
 | `kinds` | `unknown | null` |
 | `note` | `string | null` |
 | `now` | `string | null` |
-| `reason` | `string | null` |
+| `reason` | `string | string[] | null` |
 | `scope` | `string | null` |
 | `ttl_days` | `number | null` |
 
@@ -2775,6 +3341,7 @@ _(no fields)_
 
 | field | type |
 | --- | --- |
+| `path` | `string | null` |
 | `session_id` | `string | null` |
 
 ### ImageAttachResponse
@@ -2791,6 +3358,7 @@ _(no fields)_
 
 | field | type |
 | --- | --- |
+| `session_id` | `string | null` |
 | `text` | `string | null` |
 
 ### InputDetectDropResponse
@@ -2804,6 +3372,316 @@ _(no fields)_
 | `text` | `string?` |
 | `token_estimate` | `number?` |
 | `width` | `number?` |
+
+### InsightsRequest
+
+| field | type |
+| --- | --- |
+| `days` | `number` |
+| `source` | `string | null` |
+
+### InsightsResponse
+
+| field | type |
+| --- | --- |
+| `days` | `number` |
+| `messages` | `number` |
+| `sessions` | `number` |
+
+### InterviewAnswer
+
+| field | type |
+| --- | --- |
+| `actor` | `'agent' | 'user'` |
+| `custom_text` | `string | null` |
+| `evidence_refs` | `string[]` |
+| `note` | `string` |
+| `question_id` | `string` |
+| `status` | `'answered' | 'skipped' | 'unknown'` |
+| `value` | `number | string | string[] | null` |
+
+### InterviewAnswerRequest
+
+| field | type |
+| --- | --- |
+| `custom_text` | `string | null` |
+| `expected_revision` | `number` |
+| `interview_id` | `string` |
+| `note` | `string` |
+| `question_id` | `string` |
+| `request_id` | `string` |
+| `status` | `'answered' | 'skipped' | 'unknown'` |
+| `value` | `number | string | string[] | null` |
+
+### InterviewAssumption
+
+| field | type |
+| --- | --- |
+| `actor` | `'agent' | 'user'` |
+| `evidence_refs` | `string[]` |
+| `id` | `string` |
+| `probability` | `number | null` |
+| `rationale` | `string` |
+| `statement` | `string` |
+| `uncertainty` | `'aleatoric' | 'epistemic' | 'measurement' | 'mixed' | 'unclassified'` |
+
+### InterviewAssumptionSaveRequest
+
+| field | type |
+| --- | --- |
+| `assumption` | `InterviewAssumption` |
+| `expected_revision` | `number` |
+| `interview_id` | `string` |
+| `request_id` | `string` |
+
+### InterviewBeginRequest
+
+| field | type |
+| --- | --- |
+| `interview_id` | `string` |
+| `question_id` | `string | null` |
+| `seed` | `ForecastMarketSeed | null` |
+| `title` | `string` |
+
+### InterviewChoice
+
+| field | type |
+| --- | --- |
+| `id` | `string` |
+| `label` | `string` |
+
+### InterviewCommitResponse
+
+| field | type |
+| --- | --- |
+| `question_id` | `string` |
+| `revision` | `number` |
+
+### InterviewDraft
+
+| field | type |
+| --- | --- |
+| `answers` | `InterviewAnswer[]` |
+| `assumptions` | `InterviewAssumption[]` |
+| `baseline_forecast_id` | `string | null` |
+| `context_digest` | `string | null` |
+| `evidence_refs` | `string[]` |
+| `generations` | `InterviewGenerationRecord[]` |
+| `mode` | `'create' | 'update'` |
+| `parent_interview` | `InterviewParent | null` |
+| `question_id` | `string | null` |
+| `questions` | `InterviewQuestion[]` |
+| `scenarios` | `InterviewScenario[]` |
+| `schema_version` | `number` |
+| `seed` | `ForecastMarketSeed | null` |
+| `status` | `'cancelled' | 'draft' | 'needs_research' | 'needs_user' | 'ready'` |
+| `title` | `string` |
+
+### InterviewEvaluateRequest
+
+| field | type |
+| --- | --- |
+| `interview_id` | `string` |
+| `options` | `ScenarioEvaluationOptions` |
+| `request_id` | `string` |
+| `revision` | `number` |
+
+### InterviewEvaluationStatusResponse
+
+| field | type |
+| --- | --- |
+| `found` | `boolean` |
+| `job` | `JobRecordDTO | null` |
+| `report` | `ScenarioReport | null` |
+| `request_id` | `string | null` |
+| `stale` | `boolean` |
+
+### InterviewGenerateRequest
+
+| field | type |
+| --- | --- |
+| `interview_id` | `string` |
+| `options` | `InterviewGenerationOptions` |
+| `request_id` | `string` |
+| `revision` | `number` |
+
+### InterviewGenerateResponse
+
+| field | type |
+| --- | --- |
+| `job_id` | `string` |
+
+### InterviewGenerationOptions
+
+| field | type |
+| --- | --- |
+| `max_questions` | `number` |
+| `max_tokens` | `number` |
+| `model` | `string | null` |
+| `provider` | `string | null` |
+| `timeout_seconds` | `number` |
+
+### InterviewGenerationRecord
+
+| field | type |
+| --- | --- |
+| `created_at` | `string` |
+| `input_digest` | `string` |
+| `input_revision` | `number` |
+| `job_id` | `string` |
+| `max_tokens` | `number` |
+| `output_tokens` | `number | null` |
+| `prompt_digest` | `string` |
+| `requested_provider` | `string | null` |
+| `response_model` | `string` |
+| `summary` | `string` |
+
+### InterviewGenerationStatusResponse
+
+| field | type |
+| --- | --- |
+| `found` | `boolean` |
+| `job` | `JobRecordDTO | null` |
+| `request_id` | `string | null` |
+
+### InterviewListRequest
+
+| field | type |
+| --- | --- |
+| `question_id` | `string | null` |
+
+### InterviewListResponse
+
+| field | type |
+| --- | --- |
+| `interviews` | `InterviewRecord[]` |
+
+### InterviewParent
+
+| field | type |
+| --- | --- |
+| `digest` | `string` |
+| `interview_id` | `string` |
+| `revision` | `number` |
+
+### InterviewPreviewRequest
+
+| field | type |
+| --- | --- |
+| `interview_id` | `string` |
+| `revision` | `number` |
+
+### InterviewPreviewResponse
+
+| field | type |
+| --- | --- |
+| `committable` | `boolean` |
+| `issues` | `Record<string, unknown>[]` |
+| `spec` | `Record<string, unknown>` |
+| `unanswered` | `string[]` |
+
+### InterviewPromoteRequest
+
+| field | type |
+| --- | --- |
+| `job_id` | `string` |
+| `preview_digest` | `string` |
+| `repetition` | `number` |
+
+### InterviewPromoteResponse
+
+| field | type |
+| --- | --- |
+| `forecast_id` | `string` |
+| `question_id` | `string` |
+
+### InterviewPromotionPreviewRequest
+
+| field | type |
+| --- | --- |
+| `job_id` | `string` |
+| `repetition` | `number` |
+
+### InterviewPromotionPreviewResponse
+
+| field | type |
+| --- | --- |
+| `blockers` | `string[]` |
+| `candidate` | `Record<string, number> | number` |
+| `job_id` | `string` |
+| `preview_digest` | `string` |
+| `promoted_forecast_id` | `string | null` |
+| `question_id` | `string` |
+| `repetition` | `number` |
+| `would_commit` | `boolean` |
+
+### InterviewQuestion
+
+| field | type |
+| --- | --- |
+| `allow_custom` | `boolean` |
+| `assumption_ids` | `string[]` |
+| `choices` | `InterviewChoice[]` |
+| `id` | `string` |
+| `kind` | `'multiple' | 'number' | 'probability' | 'single' | 'text'` |
+| `prompt` | `string` |
+| `rationale` | `string` |
+| `required` | `boolean` |
+| `section` | `'beliefs' | 'challenge' | 'define' | 'drivers' | 'outside_view' | 'resolve' | 'review' | 'scenarios' | 'uncertainty' | 'update_plan'` |
+
+### InterviewReadRequest
+
+| field | type |
+| --- | --- |
+| `interview_id` | `string` |
+| `revision` | `number | null` |
+
+### InterviewRecord
+
+| field | type |
+| --- | --- |
+| `actor` | `'agent' | 'user'` |
+| `created_at` | `string` |
+| `digest` | `string` |
+| `document` | `InterviewDraft` |
+| `interview_id` | `string` |
+| `request_id` | `string` |
+| `revision` | `number` |
+
+### InterviewScenario
+
+| field | type |
+| --- | --- |
+| `actor` | `'agent' | 'user'` |
+| `conditions` | `Record<string, boolean>` |
+| `excluded_assumption_ids` | `string[]` |
+| `id` | `string` |
+| `kind` | `'ablation' | 'conditional'` |
+| `name` | `string` |
+
+### InterviewScenarioDeleteRequest
+
+| field | type |
+| --- | --- |
+| `expected_revision` | `number` |
+| `interview_id` | `string` |
+| `request_id` | `string` |
+| `scenario_id` | `string` |
+
+### InterviewScenarioSaveRequest
+
+| field | type |
+| --- | --- |
+| `expected_revision` | `number` |
+| `interview_id` | `string` |
+| `request_id` | `string` |
+| `scenario` | `InterviewScenario` |
+
+### InterviewTargetRequest
+
+| field | type |
+| --- | --- |
+| `interview_id` | `string` |
 
 ### JobCompletePayload
 
@@ -2920,6 +3798,75 @@ _(no fields)_
 | `scope_type` | `string` |
 | `status` | `string | null` |
 
+### MarketCatalogRequest
+
+_(no fields)_
+
+### MarketCatalogResponse
+
+| field | type |
+| --- | --- |
+| `catalog` | `DataCatalog` |
+| `catalog_revision` | `string` |
+| `configured_providers` | `string[]` |
+| `selection` | `DeskSelection` |
+
+### MarketDiscoverRequest
+
+| field | type |
+| --- | --- |
+| `category` | `string?` |
+| `country` | `string?` |
+| `kind` | `string?` |
+| `provider` | `string?` |
+| `query` | `string` |
+| `region` | `string?` |
+
+### MarketDiscoverResponse
+
+| field | type |
+| --- | --- |
+| `results` | `MarketDiscoveryHit[]` |
+| `statuses` | `MarketProviderStatus[]` |
+
+### MarketDiscoveryHit
+
+| field | type |
+| --- | --- |
+| `catalog_id` | `string | null` |
+| `category` | `string` |
+| `country` | `string | null` |
+| `description` | `string` |
+| `frequency` | `string` |
+| `id` | `string` |
+| `kind` | `string` |
+| `name` | `string` |
+| `provider` | `string` |
+| `region` | `string` |
+| `source_url` | `string` |
+| `symbol` | `string` |
+| `unit` | `string` |
+
+### MarketEventsEditRequest
+
+| field | type |
+| --- | --- |
+| `add` | `DeskSavedEvent[]` |
+| `remove` | `DeskSavedEvent[]` |
+
+### MarketEventsRequest
+
+| field | type |
+| --- | --- |
+| `series_id` | `string` |
+
+### MarketEventsResponse
+
+| field | type |
+| --- | --- |
+| `data` | `DataEvents | null` |
+| `status` | `MarketProviderStatus` |
+
 ### MarketModelCompletePayload
 
 | field | type |
@@ -2950,6 +3897,28 @@ _(no fields)_
 | `id` | `string` |
 | `presentation` | `Record<string, unknown>?` |
 
+### MarketProviderConnectRequest
+
+| field | type |
+| --- | --- |
+| `provider` | `string` |
+| `session_id` | `string` |
+
+### MarketProviderConnectResponse
+
+| field | type |
+| --- | --- |
+| `stored` | `boolean` |
+
+### MarketProviderStatus
+
+| field | type |
+| --- | --- |
+| `message` | `string | null` |
+| `provider` | `string` |
+| `retry_after` | `number | null` |
+| `status` | `string` |
+
 ### MarketQuotesRequest
 
 | field | type |
@@ -2961,6 +3930,7 @@ _(no fields)_
 | field | type |
 | --- | --- |
 | `quotes` | `Quote[]` |
+| `statuses` | `MarketProviderStatus[]` |
 
 ### MarketSearchRequest
 
@@ -2983,10 +3953,43 @@ _(no fields)_
 | `provider` | `string` |
 | `symbol` | `string` |
 
+### MarketSelectionApplyRequest
+
+| field | type |
+| --- | --- |
+| `edit` | `DeskEdit` |
+| `expected_revision` | `string` |
+
+### MarketSelectionApplyResponse
+
+| field | type |
+| --- | --- |
+| `selection` | `DeskSelection` |
+
+### MarketSelectionPreviewRequest
+
+| field | type |
+| --- | --- |
+| `edit` | `DeskEdit` |
+
+### MarketSelectionPreviewResponse
+
+| field | type |
+| --- | --- |
+| `preview` | `DeskPreview` |
+
+### MarketSelectionUpdateRequest
+
+| field | type |
+| --- | --- |
+| `expected_revision` | `string` |
+| `patch` | `DeskPatch` |
+
 ### MarketSeriesRef
 
 | field | type |
 | --- | --- |
+| `catalog_id` | `string?` |
 | `category` | `string?` |
 | `line` | `string?` |
 | `name` | `string?` |
@@ -3032,6 +4035,103 @@ _(no fields)_
 | `durable_status` | `string?` |
 | `turn_id` | `string?` |
 
+### ModelBuildResponse
+
+| field | type |
+| --- | --- |
+| `model_id` | `string` |
+| `presentation` | `Record<string, unknown>? | null` |
+| `renarrated` | `boolean?` |
+| `status` | `string` |
+| `version` | `number? | null` |
+
+### ModelChatRequest
+
+| field | type |
+| --- | --- |
+| `id` | `string` |
+| `message` | `string` |
+| `params` | `ModelParameters | null` |
+| `session_id` | `string | null` |
+
+### ModelCreateRequest
+
+| field | type |
+| --- | --- |
+| `params` | `ModelParameters | null` |
+| `question` | `string` |
+| `session_id` | `string | null` |
+
+### ModelDeleteResponse
+
+| field | type |
+| --- | --- |
+| `deleted` | `boolean` |
+
+### ModelDisconnectRequest
+
+| field | type |
+| --- | --- |
+| `slug` | `string` |
+
+### ModelDisconnectResponse
+
+| field | type |
+| --- | --- |
+| `disconnected` | `boolean` |
+| `name` | `string` |
+| `slug` | `string` |
+
+### ModelExportResponse
+
+| field | type |
+| --- | --- |
+| `bytes` | `number` |
+| `path` | `string` |
+
+### ModelForecastResponse
+
+| field | type |
+| --- | --- |
+| `model_id` | `string` |
+| `model_run_id` | `string | null` |
+| `question_id` | `string | null` |
+| `reference_class_id` | `string | null` |
+| `seed` | `Record<string, unknown> | null` |
+
+### ModelGetRequest
+
+| field | type |
+| --- | --- |
+| `id` | `string` |
+| `session_id` | `string | null` |
+| `version` | `number | null` |
+
+### ModelGetResponse
+
+| field | type |
+| --- | --- |
+| `packet` | `Record<string, unknown>` |
+
+### ModelIdentityRequest
+
+| field | type |
+| --- | --- |
+| `id` | `string` |
+
+### ModelListRequest
+
+| field | type |
+| --- | --- |
+| `limit` | `number` |
+| `status` | `string | null` |
+
+### ModelListResponse
+
+| field | type |
+| --- | --- |
+| `models` | `Record<string, unknown>[]` |
+
 ### ModelOptionProvider
 
 | field | type |
@@ -3051,7 +4151,9 @@ _(no fields)_
 
 ### ModelOptionsRequest
 
-_(no fields)_
+| field | type |
+| --- | --- |
+| `session_id` | `string | null` |
 
 ### ModelOptionsResponse
 
@@ -3061,6 +4163,133 @@ _(no fields)_
 | `provider` | `string?` |
 | `providers` | `ModelOptionProvider[]?` |
 | `reasoning_effort` | `string?` |
+
+### ModelParameters
+
+| field | type |
+| --- | --- |
+| `analysis_type` | `string` |
+| `assumptions` | `string` |
+| `depth` | `string` |
+| `horizon` | `string` |
+| `question` | `string` |
+| `tags` | `string[]?` |
+| `tickers` | `string[]` |
+| `title` | `string?` |
+
+### ModelSaveKeyRequest
+
+| field | type |
+| --- | --- |
+| `api_key` | `string` |
+| `session_id` | `string | null` |
+| `slug` | `string` |
+
+### ModelSessionRequest
+
+| field | type |
+| --- | --- |
+| `id` | `string` |
+| `session_id` | `string | null` |
+
+### NewsArticle
+
+| field | type |
+| --- | --- |
+| `source` | `string` |
+| `summary` | `string` |
+| `title` | `string` |
+
+### NewsArticleResponse
+
+| field | type |
+| --- | --- |
+| `message` | `string` |
+| `status` | `'article' | 'excerpt' | 'unavailable'` |
+| `text` | `string` |
+| `url` | `string` |
+
+### NewsConfigureRequest
+
+| field | type |
+| --- | --- |
+| `action` | `'add' | 'empty' | 'remove' | 'starter'` |
+| `feed` | `NewsSubscription | null` |
+
+### NewsDeskRequest
+
+_(no fields)_
+
+### NewsDeskResponse
+
+| field | type |
+| --- | --- |
+| `feeds` | `NewsSubscription[]` |
+| `starter` | `NewsSubscription[]` |
+| `state` | `'configured' | 'unconfigured'` |
+
+### NewsFeedRequest
+
+| field | type |
+| --- | --- |
+| `url` | `string` |
+
+### NewsFeedResponse
+
+| field | type |
+| --- | --- |
+| `url` | `string` |
+| `xml` | `string` |
+
+### NewsSearchRequest
+
+| field | type |
+| --- | --- |
+| `articles` | `NewsArticle[]` |
+| `limit` | `number` |
+| `query` | `string` |
+
+### NewsSearchResponse
+
+| field | type |
+| --- | --- |
+| `engine` | `string` |
+| `results` | `Record<string, unknown>[]` |
+
+### NewsSubscription
+
+| field | type |
+| --- | --- |
+| `addedAt` | `number` |
+| `category` | `string` |
+| `custom` | `boolean` |
+| `title` | `string` |
+| `url` | `string` |
+
+### ObservationComparison
+
+| field | type |
+| --- | --- |
+| `basis` | `'last_transition' | 'previous_observation'` |
+| `current_period` | `string` |
+| `current_value` | `number` |
+| `previous_period` | `string` |
+| `previous_value` | `number` |
+
+### ObsidianAppendRequest
+
+| field | type |
+| --- | --- |
+| `rel_path` | `string` |
+| `text` | `string` |
+
+### ObsidianCreateRequest
+
+| field | type |
+| --- | --- |
+| `content` | `string` |
+| `rel_path` | `string` |
+| `title` | `string` |
 
 ### ObsidianNote
 
@@ -3093,6 +4322,7 @@ _(no fields)_
 
 | field | type |
 | --- | --- |
+| `limit` | `number` |
 | `query` | `string | null` |
 
 ### ObsidianSearchResponse
@@ -3114,9 +4344,20 @@ _(no fields)_
 | `snippet` | `string?` |
 | `title` | `string?` |
 
+### ObsidianSetupResponse
+
+| field | type |
+| --- | --- |
+| `created` | `string[]` |
+| `ok` | `boolean` |
+| `skipped` | `string[]` |
+| `vault` | `string` |
+
 ### ObsidianStatusRequest
 
-_(no fields)_
+| field | type |
+| --- | --- |
+| `limit` | `number` |
 
 ### ObsidianStatusResponse
 
@@ -3126,6 +4367,41 @@ _(no fields)_
 | `exists` | `boolean?` |
 | `notes` | `ObsidianNote[]?` |
 | `vault` | `string? | null` |
+
+### ObsidianWriteRequest
+
+| field | type |
+| --- | --- |
+| `content` | `string` |
+| `expected_content` | `string | null` |
+| `rel_path` | `string` |
+
+### ObsidianWriteResponse
+
+| field | type |
+| --- | --- |
+| `ok` | `boolean` |
+| `rel_path` | `string` |
+| `size` | `number?` |
+
+### OneShotRequest
+
+| field | type |
+| --- | --- |
+| `input` | `string` |
+| `instructions` | `string` |
+| `max_tokens` | `number` |
+| `session_id` | `string | null` |
+| `task` | `string` |
+| `temperature` | `number | null` |
+| `template` | `string | null` |
+| `variables` | `Record<string, unknown> | null` |
+
+### OperationSessionRequest
+
+| field | type |
+| --- | --- |
+| `session_id` | `string | null` |
 
 ### PMDistributionDTO
 
@@ -3256,6 +4532,34 @@ _(no fields)_
 | `payload` | `Record<string, unknown>` |
 | `venue` | `string` |
 
+### PasteCollapseRequest
+
+| field | type |
+| --- | --- |
+| `text` | `string` |
+
+### PasteCollapseResponse
+
+| field | type |
+| --- | --- |
+| `lines` | `number` |
+| `path` | `string` |
+| `placeholder` | `string` |
+
+### PluginItem
+
+| field | type |
+| --- | --- |
+| `enabled` | `boolean` |
+| `name` | `string` |
+| `version` | `string` |
+
+### PluginsResponse
+
+| field | type |
+| --- | --- |
+| `plugins` | `PluginItem[]` |
+
 ### PmBookRequest
 
 | field | type |
@@ -3378,19 +4682,33 @@ _(no fields)_
 | field | type |
 | --- | --- |
 | `asOf` | `number` |
+| `catalog_id` | `string | null` |
 | `category` | `string` |
 | `change` | `number | null` |
 | `changePct` | `number | null` |
+| `comparison` | `ObservationComparison | null` |
 | `currency` | `string | null` |
+| `dated_history` | `DatedValue[]` |
 | `dayHigh` | `number | null` |
 | `dayLow` | `number | null` |
 | `exchange` | `string | null` |
 | `history` | `number[]` |
+| `issue_time` | `string | null` |
+| `kind` | `string` |
+| `last_movement` | `ObservationComparison | null` |
 | `name` | `string` |
 | `prevClose` | `number | null` |
 | `provider` | `string` |
+| `published_at` | `string | null` |
+| `refresh_seconds` | `number` |
+| `retrieved_at` | `string | null` |
+| `revision_policy` | `string` |
+| `source_family` | `string | null` |
+| `source_url` | `string | null` |
 | `symbol` | `string` |
 | `unit` | `string` |
+| `valid_from` | `string | null` |
+| `valid_until` | `string | null` |
 | `value` | `number | null` |
 | `volume` | `number | null` |
 | `week52High` | `number | null` |
@@ -3420,7 +4738,11 @@ _(no fields)_
 
 ### ReloadMcpRequest
 
-_(no fields)_
+| field | type |
+| --- | --- |
+| `always` | `boolean` |
+| `confirm` | `boolean` |
+| `session_id` | `string | null` |
 
 ### ReloadMcpResponse
 
@@ -3428,13 +4750,6 @@ _(no fields)_
 | --- | --- |
 | `message` | `string?` |
 | `status` | `string?` |
-
-### RespondRequest
-
-| field | type |
-| --- | --- |
-| `request_id` | `string | null` |
-| `session_id` | `string | null` |
 
 ### ReviewSummaryPayload
 
@@ -3465,6 +4780,7 @@ _(no fields)_
 | field | type |
 | --- | --- |
 | `hash` | `string | null` |
+| `session_id` | `string | null` |
 
 ### RollbackDiffResponse
 
@@ -3476,7 +4792,9 @@ _(no fields)_
 
 ### RollbackListRequest
 
-_(no fields)_
+| field | type |
+| --- | --- |
+| `session_id` | `string | null` |
 
 ### RollbackListResponse
 
@@ -3489,7 +4807,9 @@ _(no fields)_
 
 | field | type |
 | --- | --- |
+| `file_path` | `string | null` |
 | `hash` | `string | null` |
+| `session_id` | `string | null` |
 
 ### RollbackRestoreResponse
 
@@ -3502,6 +4822,83 @@ _(no fields)_
 | `restored_to` | `string?` |
 | `success` | `boolean?` |
 
+### ScenarioCallResult
+
+| field | type |
+| --- | --- |
+| `created_at` | `string` |
+| `estimate` | `ScenarioEstimate` |
+| `kind` | `'ablation' | 'baseline' | 'conditional'` |
+| `output_tokens` | `number | null` |
+| `prompt_digest` | `string` |
+| `repetition` | `number` |
+| `request_receipt` | `ScenarioRouteReceipt` |
+| `response_model` | `string` |
+| `variant_id` | `string` |
+
+### ScenarioComparison
+
+| field | type |
+| --- | --- |
+| `dimensions` | `Record<string, ScenarioDimension>` |
+| `kind` | `'ablation' | 'baseline' | 'conditional'` |
+| `repetitions` | `number` |
+| `variant_id` | `string` |
+
+### ScenarioDimension
+
+| field | type |
+| --- | --- |
+| `mean` | `number` |
+| `model_dispersion` | `number | null` |
+| `paired_delta` | `number` |
+
+### ScenarioEstimate
+
+| field | type |
+| --- | --- |
+| `categories` | `Record<string, number>` |
+| `evidence_refs` | `string[]` |
+| `outcome_type` | `'binary' | 'categorical' | 'distribution' | 'numeric'` |
+| `probability` | `number | null` |
+| `q10` | `number | null` |
+| `q50` | `number | null` |
+| `q90` | `number | null` |
+| `rationale` | `string` |
+| `reference_class_refs` | `string[]` |
+| `units` | `string | null` |
+| `unresolved_questions` | `string[]` |
+
+### ScenarioEvaluationOptions
+
+| field | type |
+| --- | --- |
+| `model` | `InterviewGenerationOptions` |
+| `repetitions` | `number` |
+| `scenario_ids` | `string[]` |
+
+### ScenarioReport
+
+| field | type |
+| --- | --- |
+| `assumptions` | `InterviewAssumption[]` |
+| `comparisons` | `ScenarioComparison[]` |
+| `input_digest` | `string` |
+| `interview_id` | `string` |
+| `limitation` | `string` |
+| `matched` | `boolean` |
+| `results` | `ScenarioCallResult[]` |
+| `revision` | `number` |
+| `scenarios` | `InterviewScenario[]` |
+
+### ScenarioRouteReceipt
+
+| field | type |
+| --- | --- |
+| `fingerprint` | `string` |
+| `model` | `string` |
+| `provider` | `string` |
+
 ### SecretRequestPayload
 
 | field | type |
@@ -3511,11 +4908,31 @@ _(no fields)_
 | `prompt` | `string` |
 | `request_id` | `string` |
 
+### SecretRespondRequest
+
+| field | type |
+| --- | --- |
+| `request_id` | `string | null` |
+| `session_id` | `string | null` |
+| `value` | `string` |
+
 ### SecretRespondResponse
 
 | field | type |
 | --- | --- |
 | `ok` | `boolean?` |
+
+### SecretResult
+
+| field | type |
+| --- | --- |
+| `value` | `string` |
+
+### SectionsResponse
+
+| field | type |
+| --- | --- |
+| `sections` | `Record<string, unknown>[]` |
 
 ### SessionBranchRequest
 
@@ -3548,6 +4965,7 @@ _(no fields)_
 
 | field | type |
 | --- | --- |
+| `focus_topic` | `string | null` |
 | `session_id` | `string | null` |
 
 ### SessionCompressResponse
@@ -3604,6 +5022,7 @@ _(no fields)_
 | field | type |
 | --- | --- |
 | `cols` | `number | null` |
+| `server_requests` | `boolean` |
 
 ### SessionCreateResponse
 
@@ -3676,7 +5095,7 @@ _(no fields)_
 | `service_tier` | `string` |
 | `skills` | `Record<string, unknown>` |
 | `tools` | `Record<string, unknown>` |
-| `update_behind` | `boolean | null` |
+| `update_behind` | `number | null` |
 | `update_command` | `string` |
 | `usage` | `Record<string, unknown>` |
 | `version` | `string` |
@@ -3707,7 +5126,9 @@ _(no fields)_
 
 ### SessionListRequest
 
-_(no fields)_
+| field | type |
+| --- | --- |
+| `limit` | `number` |
 
 ### SessionListResponse
 
@@ -3717,7 +5138,9 @@ _(no fields)_
 
 ### SessionMostRecentRequest
 
-_(no fields)_
+| field | type |
+| --- | --- |
+| `limit` | `number | null` |
 
 ### SessionMostRecentResponse
 
@@ -3734,6 +5157,7 @@ _(no fields)_
 | --- | --- |
 | `cols` | `number | null` |
 | `replace_session_id` | `string | null` |
+| `server_requests` | `boolean` |
 | `session_id` | `string` |
 
 ### SessionResumeResponse
@@ -3743,6 +5167,7 @@ _(no fields)_
 | `info` | `SessionInfo?` |
 | `message_count` | `number?` |
 | `messages` | `GatewayTranscriptMessage[]` |
+| `open_requests` | `Record<string, unknown>[]?` |
 | `recovery` | `Record<string, unknown>?` |
 | `resumed` | `string?` |
 | `session_id` | `string` |
@@ -3790,6 +5215,7 @@ _(no fields)_
 | field | type |
 | --- | --- |
 | `session_id` | `string | null` |
+| `title` | `string | null` |
 
 ### SessionTitleResponse
 
@@ -3904,6 +5330,35 @@ _(no fields)_
 | `instance_id` | `string` |
 | `team` | `string | null` |
 
+### SharedFeed
+
+| field | type |
+| --- | --- |
+| `kind` | `string` |
+| `name` | `string` |
+| `points` | `SharedObservation[]` |
+| `provider` | `string` |
+| `retrieved_at` | `string | null` |
+| `revision_policy` | `string` |
+| `source_url` | `string | null` |
+| `symbol` | `string` |
+| `unit` | `string` |
+
+### SharedObservation
+
+| field | type |
+| --- | --- |
+| `end` | `string` |
+| `start` | `string` |
+| `value` | `number | null` |
+
+### SharedPeriod
+
+| field | type |
+| --- | --- |
+| `end` | `string` |
+| `start` | `string` |
+
 ### ShellExecRequest
 
 | field | type |
@@ -3917,6 +5372,50 @@ _(no fields)_
 | `code` | `number` |
 | `stderr` | `string?` |
 | `stdout` | `string?` |
+
+### SkillItem
+
+| field | type |
+| --- | --- |
+| `description` | `string?` |
+| `name` | `string` |
+| `source` | `string?` |
+| `trust` | `string?` |
+
+### SkillsManageRequest
+
+| field | type |
+| --- | --- |
+| `action` | `'browse' | 'inspect' | 'install' | 'list' | 'search'` |
+| `page` | `number` |
+| `page_size` | `number` |
+| `query` | `string` |
+| `session_id` | `string | null` |
+
+### SkillsManageResponse
+
+| field | type |
+| --- | --- |
+| `info` | `Record<string, unknown>?` |
+| `installed` | `boolean?` |
+| `items` | `SkillItem[]?` |
+| `name` | `string?` |
+| `page` | `number?` |
+| `results` | `SkillItem[]?` |
+| `skills` | `Record<string, string[]>?` |
+| `total` | `number?` |
+| `total_pages` | `number?` |
+
+### SkillsReloadRequest
+
+_(no fields)_
+
+### SkillsReloadResponse
+
+| field | type |
+| --- | --- |
+| `output` | `string` |
+| `result` | `Record<string, unknown>` |
 
 ### SkinPayload
 
@@ -3965,7 +5464,11 @@ _(no fields)_
 
 ### SpawnTreeListRequest
 
-_(no fields)_
+| field | type |
+| --- | --- |
+| `cross_session` | `boolean` |
+| `limit` | `number` |
+| `session_id` | `string | null` |
 
 ### SpawnTreeListResponse
 
@@ -3988,6 +5491,22 @@ _(no fields)_
 | `session_id` | `string?` |
 | `started_at` | `number? | null` |
 | `subagents` | `unknown[]?` |
+
+### SpawnTreeSaveRequest
+
+| field | type |
+| --- | --- |
+| `finished_at` | `number | null` |
+| `label` | `string` |
+| `session_id` | `string | null` |
+| `started_at` | `number | null` |
+| `subagents` | `unknown[]` |
+
+### SpawnTreeSaveResponse
+
+| field | type |
+| --- | --- |
+| `path` | `string` |
 
 ### StatusUpdatePayload
 
@@ -4042,7 +5561,7 @@ _(no fields)_
 | `output_tokens` | `number?` |
 | `parent_id` | `string? | null` |
 | `reasoning_tokens` | `number?` |
-| `status` | `'completed' | 'error' | 'failed' | 'interrupted' | 'queued' | 'running' | 'timeout'?` |
+| `status` | `'cleanup_pending' | 'completed' | 'completion_pending' | 'error' | 'failed' | 'interrupted' | 'queued' | 'running' | 'timeout' | 'unconfirmed'?` |
 | `subagent_id` | `string?` |
 | `summary` | `string?` |
 | `task_count` | `number?` |
@@ -4081,11 +5600,25 @@ _(no fields)_
 | --- | --- |
 | `request_id` | `string` |
 
+### SudoRespondRequest
+
+| field | type |
+| --- | --- |
+| `password` | `string` |
+| `request_id` | `string | null` |
+| `session_id` | `string | null` |
+
 ### SudoRespondResponse
 
 | field | type |
 | --- | --- |
 | `ok` | `boolean?` |
+
+### SudoResult
+
+| field | type |
+| --- | --- |
+| `password` | `string` |
 
 ### TerminalResizeRequest
 
@@ -4100,6 +5633,12 @@ _(no fields)_
 | field | type |
 | --- | --- |
 | `ok` | `boolean?` |
+
+### TextResponse
+
+| field | type |
+| --- | --- |
+| `text` | `string` |
 
 ### ThemeListRequest
 
@@ -4206,6 +5745,12 @@ _(no fields)_
 | `reset` | `boolean?` |
 | `unknown` | `string[]?` |
 
+### ToolsetsResponse
+
+| field | type |
+| --- | --- |
+| `toolsets` | `Record<string, unknown>[]` |
+
 ### Usage
 
 | field | type |
@@ -4226,6 +5771,7 @@ _(no fields)_
 
 | field | type |
 | --- | --- |
+| `action` | `string` |
 | `session_id` | `string | null` |
 
 ### VoiceRecordResponse
@@ -4245,6 +5791,7 @@ _(no fields)_
 
 | field | type |
 | --- | --- |
+| `action` | `string` |
 | `session_id` | `string | null` |
 
 ### VoiceToggleResponse
@@ -4265,3 +5812,20 @@ _(no fields)_
 | --- | --- |
 | `no_speech_limit` | `boolean?` |
 | `text` | `string?` |
+
+### VoiceTtsRequest
+
+| field | type |
+| --- | --- |
+| `session_id` | `string | null` |
+| `text` | `string` |
+
+### VoiceTtsResponse
+
+| field | type |
+| --- | --- |
+| `status` | `string` |
+
+### WireModel
+
+_(no fields)_

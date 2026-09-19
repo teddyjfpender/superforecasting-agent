@@ -1978,9 +1978,17 @@ def select_provider_and_model(args=None):
     print()
 
     # Step 1: Provider selection — shared setup presentation policy
-    from superforecasting_agent.configuration.provider_catalog import SETUP_PROVIDERS
+    from superforecasting_agent.configuration.provider_catalog import (
+        CANONICAL_PROVIDERS, SETUP_PROVIDERS,
+    )
 
     all_providers = [(p.slug, p.tui_desc) for p in SETUP_PROVIDERS]
+    # Hidden legacy providers remain manageable for profiles already using them.
+    # Fresh setup still exposes only the supported presentation catalog.
+    if active and active not in {key for key, _ in all_providers}:
+        all_providers.extend(
+            (p.slug, p.tui_desc) for p in CANONICAL_PROVIDERS if p.slug == active
+        )
 
     for key, provider_info in _custom_provider_map.items():
         name = provider_info["name"]
