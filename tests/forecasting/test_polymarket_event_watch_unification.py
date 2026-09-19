@@ -147,7 +147,7 @@ def test_bare_event_slug_resolves_via_event_fallback(monkeypatch):
 def test_numeric_event_id_resolves_via_events_id(monkeypatch):
     def fake_read(url, label, **kw):
         if url.endswith("/events/677008"):
-            return _event([_market()])
+            return {**_event([_market()]), "id": "677008"}
         return []
 
     monkeypatch.setattr(sa, "_read_json_endpoint", fake_read)

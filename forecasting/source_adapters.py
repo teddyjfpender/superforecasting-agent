@@ -2157,16 +2157,22 @@ def load_polymarket_market(
     # SAME endpoint first (identical payload → identical watch signature), while a
     # bare event slug / numeric event id / event-page URL now resolves instead of
     # raising a validation miss.
+    from forecasting.sources.polymarket_selection import PolymarketSelector
+
+    candidates = [
+        (endpoint, PolymarketSelector.from_endpoint(endpoint, source=source))
+        for endpoint in _polymarket_endpoint_candidates(source.strip(), api_base_url=api_base_url)
+    ]
     payload = None
-    for endpoint in _polymarket_endpoint_candidates(source.strip(), api_base_url=api_base_url):
-        payload = _polymarket_first_market(_read_json_endpoint(endpoint, "polymarket market"))
+    for endpoint, selector in candidates:
+        payload = selector.select(_read_json_endpoint(endpoint, "polymarket market"))
         if payload is None and "condition_ids=" in endpoint and "closed=" not in endpoint:
             # Gamma's default ``condition_ids`` view is OPEN-only, so a SETTLED
             # market (exactly what RESOLUTION needs to read) comes back empty on
             # the first call. Re-query explicitly for closed markets to recover
             # its terminal ``outcomePrices``.
             closed_endpoint = f"{endpoint}&{urlencode({'closed': 'true'})}"
-            payload = _polymarket_first_market(_read_json_endpoint(closed_endpoint, "polymarket market (closed)"))
+            payload = selector.select(_read_json_endpoint(closed_endpoint, "polymarket market (closed)"))
         if payload is not None:
             break
     if payload is None:
@@ -2604,20 +2610,6 @@ def _polymarket_endpoint_candidates(source: str, *, api_base_url: str) -> list[s
 def _polymarket_endpoint_for_source(source: str, *, api_base_url: str) -> str:
     """The PRIMARY (market) endpoint for a source — first of the candidate list."""
     return _polymarket_endpoint_candidates(source, api_base_url=api_base_url)[0]
-
-
-def _polymarket_first_market(payload: object) -> dict | None:
-    """The first market dict from a Gamma ``/markets`` response, or None when the
-    response carried no market. Accepts the three shapes Gamma returns: a bare
-    market list, a ``{"markets": [...]}`` envelope, or a single market object."""
-    if isinstance(payload, list):
-        return next((item for item in payload if isinstance(item, dict)), None)
-    if isinstance(payload, dict):
-        markets = payload.get("markets")
-        if isinstance(markets, list):
-            return next((item for item in markets if isinstance(item, dict)), None)
-        return payload
-    return None
 
 
 def _polymarket_sequence(value: object) -> list[str]:

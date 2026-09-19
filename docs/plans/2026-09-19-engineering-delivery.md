@@ -247,3 +247,24 @@ passed. The CLI mismatch regression checks nonzero exit, actionable stderr,
 empty evidence/baseline collections and unchanged active forecast. No full suite
 was run. Polymarket event/market identity selection and the remaining W03 request,
 plan and receipt requirements are still open.
+
+
+## Polymarket event and market identity admission
+
+Removed arbitrary first-row selection from evidence acquisition. A strict pure
+selector validates endpoint identifiers before I/O, matches market/event identity,
+and admits one event child only when unambiguous or explicitly selected by the
+public child URL. Market IDs, slugs and condition hashes are checked independently;
+nonempty mismatches cannot trigger fallback to a different event. Empty responses
+retain the existing event and settled-condition fallback. Duplicate matches,
+malformed objects and event metadata masquerading as a market response fail closed.
+Lookalike website hosts are no longer rewritten as Polymarket URLs.
+
+66 focused tests passed across identity, condition-ID resolution, event-watch
+compatibility, timestamps and local-HTTP CLI import. The final identity file,
+including an event-envelope and CLI no-write regression, passed 20 tests. Existing
+numeric-event and timestamp fixtures were corrected to return their requested IDs.
+Canonical Python checks and all 76 import contracts passed before the final
+regressions; pre-commit repeats these checks against the final staged code. No full
+suite was run. This closes single-market identity selection, not all Polymarket
+probability semantics, typed source plans, shared command parity or retry receipts.

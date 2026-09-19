@@ -82,3 +82,12 @@ multiple matches are errors; source ordering never determines the imported
 question. API URLs remain distinct from website URLs. Identity regressions live
 in `tests/forecasting/test_kalshi_identity_contract.py`, including a CLI check
 that mismatched responses cannot write evidence or a baseline.
+
+
+`polymarket_selection.PolymarketSelector` binds Gamma market/event responses to
+validated ID, slug or condition-hash selectors. A single-child event is admissible;
+a multi-market event needs an explicit child URL or market ID. Empty collections
+permit documented event/closed-market fallback. Nonempty mismatches, duplicate
+matches and malformed records fail closed. Identity checks run before parsing
+probabilities or ledger writes. See `test_polymarket_identity_contract.py` for
+ordering, ambiguity, selector admission and CLI no-write regressions.

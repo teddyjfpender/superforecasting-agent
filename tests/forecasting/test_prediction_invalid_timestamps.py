@@ -17,7 +17,7 @@ def market_loader(request, monkeypatch):
             payload = {"question": "Fixture", "closeTime": value}
             loader = source_adapters.load_manifold_market
         else:
-            payload = {"question": "Fixture", "endDate": value}
+            payload = {"id": "123", "question": "Fixture", "endDate": value}
             loader = source_adapters.load_polymarket_market
         monkeypatch.setattr(source_adapters, "_read_json_endpoint", lambda *args, **kwargs: payload)
         return loader("FIXTURE" if venue == "kalshi" else "123")

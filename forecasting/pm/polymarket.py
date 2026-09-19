@@ -73,7 +73,7 @@ def market_endpoint_candidates(source: str, *, gamma_base: str = GAMMA_BASE) -> 
     if parsed.scheme in {"http", "https"}:
         if parsed.netloc == "gamma-api.polymarket.com":
             return [source]  # already a Gamma endpoint — pass through unchanged
-        if parsed.netloc.endswith("polymarket.com"):
+        if parsed.hostname == "polymarket.com" or (parsed.hostname or "").endswith(".polymarket.com"):
             parts = [part for part in parsed.path.split("/") if part]
             if not parts:
                 raise ValueError("polymarket URL must include a market or event slug")
