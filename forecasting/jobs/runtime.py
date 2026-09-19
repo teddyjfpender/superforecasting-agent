@@ -29,7 +29,14 @@ def run(
     store = store or JobStore()
     with store.claim(job_id) as record:
         if record is None:
-            return store.read(job_id)
+            current = store.read(job_id)
+            # Cancellation may finish before a worker starts. Report that durable
+            # terminal result to this caller without executing the job again.
+            if current.status == "cancelled":
+                store.clear_stop(job_id)
+                if on_complete is not None:
+                    on_complete(current.result or {"cancelled": True})
+            return current
         return _run_claimed(
             record,
             store,

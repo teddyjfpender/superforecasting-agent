@@ -137,6 +137,11 @@ def test_the_whole_journey(desk, monkeypatch):
 
     # ── 3. DETERMINISTIC PROPOSAL: background work never mutates probability ────
     ledger.add_watched_source(scope_type="question", scope_ref=qid, source="fed-cut", source_type="manifold")
+    # Pin the due instant: the initial commit can advance the auto-created review
+    # relative to wall time, so a fixed future test date alone is not deterministic.
+    ledger.schedule_review(scope_type="question", scope_ref=qid, cadence="weekly",
+                           trigger_reason="question_review_cadence", next_run_at="2026-09-25T07:00:00Z",
+                           auto_score=True, auto_postmortem=True)
     # five days before the close deadline: proposal pass fires and cadence escalates
     now = "2026-09-25T08:00:00Z"
     results = ledger.run_due_scheduled_reviews(now=now, refresh_fetcher=_market_fetcher(0.80))

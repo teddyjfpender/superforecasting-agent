@@ -1,6 +1,6 @@
 # Forecast interview verification
 
-Review checkpoint: 18 September 2026. This is engineering evidence, not evidence
+Review checkpoint: 19 September 2026. This is engineering evidence, not evidence
 that the feature improves predictive accuracy. The implementation is PR #65.
 
 ## Requested workflows
@@ -28,8 +28,17 @@ Test paths above are under `tests/forecasting/`, `tests/tui_gateway/`, or
   the latest committed checkpoints.
 - The controlled RPC review-to-promotion round trip passes with the declared
   optional request defaults and durable state restored on every request.
-- The canonical full Python suite is in progress; final completion is not yet
-  claimed. Additional RPC checks added after its collection pass separately.
+- The first canonical full Python run finished with 32,674 passed, 150 skipped
+  and six failures. All six have been addressed; the five affected test modules
+  pass together (54 tests). Additional RPC checks added after full-suite
+  collection pass separately. A final combined run remains outstanding.
+- The signed-webhook integration now executes structured review through the real
+  agent tool loop before creating its pending proposal. Replay remains idempotent
+  and the active forecast is unchanged.
+- Historical evaluator compatibility was reviewed against source revision
+  `90176bc000`: only the import/call initializing separate interview tables differs
+  in evaluation-owned sources. Explicit compatibility entries preserve frozen
+  trials; unknown hashes continue to fail closed.
 
 ## Explicit limits
 
