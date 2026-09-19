@@ -6,6 +6,8 @@ import { sortIndicator, type TableSortState } from '../lib/tableSort.js'
 import { pad, type Semantics } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
 
+import { ShortcutText } from './shortcutText.js'
+
 interface PMTableProps {
   active: boolean
   avail: number
@@ -117,9 +119,9 @@ export function PredictionMarketsTable({
       <Text color={sem.rule}>{'─'.repeat(avail)}</Text>
       <Box flexDirection="column">
         {rowsLength === 0 ? (
-          <Text color={sem.subtle} wrap="wrap">
+          <ShortcutText color={sem.subtle} t={t} wrap="wrap">
             {emptyText}
-          </Text>
+          </ShortcutText>
         ) : (
           windowed.map((row, i) => {
             const idx = listStart + i

@@ -103,6 +103,7 @@ import {
 import { ModalOverlay } from './modalOverlay.js'
 import { OperationsCockpit } from './operationsCockpit.js'
 import { windowItems } from './overlayControls.js'
+import { ShortcutText } from './shortcutText.js'
 
 // ── Desk view (redesigned forecast workspace) ────────────────────────────────
 // Mirrors the MARKETS view: a horizontal lens-tab strip (Tab/←/→/click) over a
@@ -1474,7 +1475,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
         {header}
         <Box flexDirection="column" flexGrow={1}>
           <Text color={t.color.error}>Failed to load forecasts: {error}</Text>
-          <Text color={t.color.muted}>Press r to retry · q to close</Text>
+          <ShortcutText color={t.color.muted} t={t}>Press r to retry · q to close</ShortcutText>
         </Box>
       </Box>
     )

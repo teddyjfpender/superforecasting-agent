@@ -19,6 +19,7 @@ import { docsDir } from '../lib/latexDocs.js'
 import type { Theme } from '../theme.js'
 
 import { ModalOverlay } from './modalOverlay.js'
+import { ShortcutText } from './shortcutText.js'
 import { TextInput } from './textInput.js'
 
 export function DocumentConnections({
@@ -191,7 +192,7 @@ export function DocumentConnections({
         <Text bold color={t.color.accent}>
           Obsidian
         </Text>
-        <Text color={t.color.text}>{vault || 'Managed vault · press s to initialize'}</Text>
+        <ShortcutText color={t.color.text} t={t}>{vault || 'Managed vault · press s to initialize'}</ShortcutText>
         <Text color={t.color.muted}>
           Reads and writes use the gateway vault. Existing vaults use OBSIDIAN_VAULT_PATH.
         </Text>

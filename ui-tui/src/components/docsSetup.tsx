@@ -11,6 +11,7 @@ import { semantics } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
 
 import { FooterChips } from './footerChips.js'
+import { ShortcutText } from './shortcutText.js'
 
 // First-run setup for the Docs view. When ~/.superforecasting-agent/docs doesn't
 // exist yet, offer to create the one git-backed workspace that holds BOTH the
@@ -127,9 +128,9 @@ export function DocsSetup({ onClose, onReady, t }: DocsSetupProps) {
             </Text>
           </Box>
           <Box marginTop={1}>
-            <Text bold color={t.color.accent}>
+            <ShortcutText bold color={t.color.accent} t={t}>
               Press c
-            </Text>
+            </ShortcutText>
             <Text color={t.color.text}> to create the workspace.</Text>
           </Box>
         </Box>

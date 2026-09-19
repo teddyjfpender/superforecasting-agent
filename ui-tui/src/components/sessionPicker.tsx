@@ -7,6 +7,7 @@ import { asRpcResult, rpcErrorMessage } from '../lib/rpc.js'
 import type { Theme } from '../theme.js'
 
 import { OverlayHint, useOverlayKeys, windowOffset } from './overlayControls.js'
+import { ShortcutText } from './shortcutText.js'
 
 const VISIBLE = 15
 const MIN_WIDTH = 60
@@ -223,7 +224,11 @@ export function SessionPicker({ gw, onCancel, onSelect, t }: SessionPickerProps)
               inverse={selected}
               wrap="truncate-end"
             >
-              {pendingDelete ? 'press d again to delete' : s.title || s.preview || '(untitled)'}
+              {pendingDelete ? (
+                <ShortcutText t={t}>press d again to delete</ShortcutText>
+              ) : (
+                s.title || s.preview || '(untitled)'
+              )}
             </Text>
           </Box>
         )

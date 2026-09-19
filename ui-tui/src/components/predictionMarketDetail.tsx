@@ -17,6 +17,8 @@ import { hbar } from '../lib/sparkline.js'
 import { pad, semantics } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
 
+import { ShortcutText } from './shortcutText.js'
+
 interface PMDetailProps {
   book: null | PMOrderBookDTO
   bookLabel: string
@@ -294,9 +296,9 @@ export function PredictionMarketDetail({
 
       {keyHint ? (
         <Box marginTop={1}>
-          <Text color={sem.star} wrap="wrap">
+          <ShortcutText color={sem.star} t={t} wrap="wrap">
             {keyHint}
-          </Text>
+          </ShortcutText>
         </Box>
       ) : null}
     </Box>

@@ -75,6 +75,7 @@ import {
   unitSuffix
 } from './forecast/headlines.js'
 import { windowItems } from './overlayControls.js'
+import { ShortcutText } from './shortcutText.js'
 
 export const openForecastsWorkspace = (initialId: string | null = null) =>
   patchOverlayState({ forecasts: true, forecastsInitialId: initialId })
@@ -813,7 +814,7 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
     body = (
       <Box flexDirection="column" flexGrow={1}>
         <Text color={t.color.error}>Failed to load forecasts: {error}</Text>
-        <Text color={t.color.muted}>Press r to retry · q to close</Text>
+        <ShortcutText color={t.color.muted} t={t}>Press r to retry · q to close</ShortcutText>
       </Box>
     )
   } else if (!filtered.length && !theses.length && !factors.length) {
@@ -979,9 +980,9 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
       {flash ? <Text color={t.color.accent}>{flash}</Text> : null}
-      <Text color={t.color.muted} wrap="truncate-end">
+      <ShortcutText color={t.color.muted} t={t} wrap="truncate-end">
         {footerHint}
-      </Text>
+      </ShortcutText>
     </Box>
   )
 

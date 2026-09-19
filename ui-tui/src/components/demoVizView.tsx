@@ -9,6 +9,7 @@ import type { Theme } from '../theme.js'
 
 import { OverlayScrollbar } from './agentsOverlay.js'
 import { FooterChips } from './footerChips.js'
+import { ShortcutText } from './shortcutText.js'
 import { Rule, SectionTitle } from './textBlocks.js'
 import { Chart as VizChart } from './viz/Chart.js'
 
@@ -199,9 +200,9 @@ export function DemoVizView({ onClose, t }: { onClose: () => void; t: Theme }) {
             {SAMPLES.map((s, i) => (
               <Box flexDirection="column" key={s.kind} marginTop={i ? 2 : 0}>
                 <SectionTitle t={t}>{s.title}</SectionTitle>
-                <Text color={t.color.muted} wrap="truncate-end">
+                <ShortcutText color={t.color.muted} t={t} wrap="truncate-end">
                   {s.subtitle}
-                </Text>
+                </ShortcutText>
                 <Box marginTop={1}>
                   <VizChart data={s.data} height={s.height} kind={s.kind} t={t} width={chartW} />
                 </Box>

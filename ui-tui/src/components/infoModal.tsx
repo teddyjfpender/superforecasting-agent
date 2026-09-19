@@ -7,6 +7,7 @@ import { semantics } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
 
 import { ModalOverlay } from './modalOverlay.js'
+import { ShortcutText } from './shortcutText.js'
 
 // A small, reusable "Information" modal (open with `i`) so a view can surface
 // warnings and tips WITHOUT a persistent header line that steals footer rows.
@@ -45,9 +46,9 @@ export function InfoModal({ cols, items, onClose, rows, subtitle, t, title }: In
   return (
     <ModalOverlay cols={cols} footerHint="Esc close" maxHeight={28} maxWidth={96} rows={rows} scrollRef={scrollRef} t={t} title={title}>
       {subtitle ? (
-        <Text color={t.color.muted} wrap="wrap">
+        <ShortcutText color={t.color.muted} t={t} wrap="wrap">
           {subtitle}
-        </Text>
+        </ShortcutText>
       ) : null}
 
       <Box flexDirection="column" marginTop={subtitle ? 1 : 0}>

@@ -18,6 +18,7 @@ import { DocumentConnections } from './documentConnections.js'
 import { DocumentReader } from './documentReader.js'
 import { FooterChips } from './footerChips.js'
 import { ModalOverlay } from './modalOverlay.js'
+import { ShortcutText } from './shortcutText.js'
 import { TextInput } from './textInput.js'
 
 interface Doc {
@@ -558,7 +559,7 @@ export function DocumentDesk({ gw, t, onClose }: { gw: GatewayClient; t: Theme; 
               </Box>
             ))}
           {!visible.length && (
-            <Text color={t.color.muted}>No documents. Press n to create one, or c for connections.</Text>
+            <ShortcutText color={t.color.muted} t={t}>No documents. Press n to create one, or c for connections.</ShortcutText>
           )}
         </Box>
         <Box
