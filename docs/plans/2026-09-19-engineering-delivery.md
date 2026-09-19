@@ -915,3 +915,20 @@ the schema/reference; frozen acquisition replay remains separate W03 work.
 The new cases cover concurrent retries, failure after receipt insertion, invalid
 receipt mappings, duplicate-row association and anonymous-record tool parity.
 Strict owner typing passes. No full suite was run.
+
+## Command identity admission and generated surface inventory
+
+The shared catalog now rejects name/alias collisions rather than allowing later
+entries to overwrite dispatch lookup. Canonical spellings and contradictory
+CLI/gateway capability declarations are checked when building the catalog.
+Existing aliases retain the same canonical objects and configured quick-command
+precedence remains unchanged.
+
+A command-surfaces reference is generated from the catalog and existing terminal
+routing owner through the current docgen registry. It records every slash command,
+alias, definition owner and advertised CLI/messaging/TUI dispatch surface, including
+conditional gateway gates. The canonical freshness check now protects this page.
+The page explicitly distinguishes this inventory from root runtime/plugin/local
+TUI actions and from behavioral or machine-output parity; those W04 requirements
+remain open. Five focused catalog/docgen checks passed and strict catalog typing
+passes. Existing quick-command compatibility was also checked separately.

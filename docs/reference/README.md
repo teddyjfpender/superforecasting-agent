@@ -15,6 +15,7 @@ python -m scripts.docgen --check    # CI gate: fail if stale
 
 | page | contents |
 | --- | --- |
+| [Command identities and surfaces](command-surfaces.md) | Canonical slash commands, compatibility aliases and adapter dispatch ownership. |
 | [Gateway wire protocol](protocol.md) | Every RPC method and event crossing the gateway, with request/response/payload schemas. |
 | [Forecast tool actions](tool-actions.md) | The `forecast_ledger` tool's actions and parameter bag — how the agent drives the desk. |
 | [Background job types](job-types.md) | The detached-job runtime's registered job types (quorum, reforecast, refresh, task, warnings). |

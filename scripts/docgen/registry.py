@@ -14,6 +14,7 @@ from typing import Callable
 
 from scripts.docgen import (
     cli_reference_doc,
+    command_surfaces_doc,
     config_env_doc,
     hooks_rules_doc,
     job_types_doc,
@@ -37,6 +38,12 @@ class Generated:
 
 
 GENERATORS: list[Generated] = [
+    Generated(
+        "command-surfaces.md",
+        "Command identities and surfaces",
+        command_surfaces_doc.render,
+        "Canonical slash commands, compatibility aliases and adapter dispatch ownership.",
+    ),
     Generated(
         "protocol.md",
         "Gateway wire protocol",

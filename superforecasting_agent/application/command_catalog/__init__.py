@@ -7,7 +7,7 @@ this catalog assembles them in stable order and owns alias resolution.
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from .operations import COMMANDS as _OPERATION_COMMANDS
@@ -28,13 +28,26 @@ COMMAND_CATEGORY_ORDER: tuple[str, ...] = (
 COMMAND_REGISTRY: list[CommandDef] = [*_WORKFLOW_COMMANDS, *_OPERATION_COMMANDS]
 
 
-def _build_command_lookup() -> dict[str, CommandDef]:
-    """Map every name and alias to its CommandDef."""
+def _build_command_lookup(
+    commands: Sequence[CommandDef] = COMMAND_REGISTRY,
+) -> dict[str, CommandDef]:
+    """Validate stable command identities before building any consumer lookup."""
     lookup: dict[str, CommandDef] = {}
-    for cmd in COMMAND_REGISTRY:
-        lookup[cmd.name] = cmd
-        for alias in cmd.aliases:
-            lookup[alias] = cmd
+    for cmd in commands:
+        if cmd.cli_only and cmd.gateway_only:
+            raise ValueError(
+                f"Command {cmd.name!r} cannot be both CLI-only and gateway-only"
+            )
+        if cmd.gateway_config_gate and not cmd.cli_only:
+            raise ValueError(
+                f"Command {cmd.name!r} has a gateway override without a CLI-only restriction"
+            )
+        for name in (cmd.name, *cmd.aliases):
+            if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", name):
+                raise ValueError(f"Invalid canonical command spelling: {name!r}")
+            if name in lookup:
+                raise ValueError(f"Command name or alias collision: {name!r}")
+            lookup[name] = cmd
     return lookup
 
 
