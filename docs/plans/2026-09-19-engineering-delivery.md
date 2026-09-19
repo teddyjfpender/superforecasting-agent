@@ -692,3 +692,24 @@ All cancellation, reconnect, receipt preservation and independent-session assert
 The controlled barrier reproduces queued-before-claim ordering rather than hoping the race
 occurs. The focused real Ink/gateway/SQLite/dashboard test passed in 6.96 seconds locally;
 native repeat remains required.
+
+## Shared atomic source-batch persistence
+
+Single-source and parallel-batch tool imports now delegate writes to one application
+operation. Fetching/parsing precedes the transaction; duplicate reads and evidence
+writes share its immediate lock. A bad later row or interruption after an insert
+rolls back the whole source. The parallel tool reports the failed source with zero
+imports and can retain other successful sources. Input indices preserve adapter-item
+presentation and strict common option admission rejects coerced dedupe booleans.
+Auto-watch remains a separate optional action after successful evidence persistence.
+
+23 focused source-batch/tool import tests passed, covering late invalid timestamps,
+post-insert failures, retries, concurrent importers, ownership override rejection and
+single/batch parity. Existing entry-ID deduplication semantics are retained; typed
+acquisition plans, revision conflicts, missing-ID retry receipts, watched-source and
+remaining CLI migration are still pending under W03.
+
+Native run 35458178951 passed its bounded Linux integration job, confirming the portable
+PTY and deterministic handoff changes there. Its Linux Node 22 kernel job failed in
+child cleanup when the live-system guard rejected a reparented descendant. Investigation
+continues without bypassing that guard; the run is not full qualification.

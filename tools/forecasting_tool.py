@@ -1729,6 +1729,10 @@ def _import_source_evidence_batch_payload(ledger: "ForecastLedger", args: dict[s
     """
 
     import time
+    from forecasting.application.source_batches import commit_source_payloads
+    from forecasting.sources.requests import CommonSourceOptions
+
+    options = CommonSourceOptions.read(args)
     from concurrent.futures import ThreadPoolExecutor
 
     question_id = _required(args, "question_id")
@@ -1775,8 +1779,6 @@ def _import_source_evidence_batch_payload(ledger: "ForecastLedger", args: dict[s
 
     # Sequential ledger writes (keeps SQLite single-writer; cheap once the
     # network fetches are done).
-    dedupe = bool(args.get("dedupe", True))
-    seen_keys = ledger.existing_evidence_keys(question_id) if dedupe else set()
     results: list[dict[str, Any]] = []
     total_imported = 0
     total_skipped = 0
@@ -1784,18 +1786,19 @@ def _import_source_evidence_batch_payload(ledger: "ForecastLedger", args: dict[s
         if not fetch.get("success"):
             results.append({k: fetch[k] for k in ("index", "source_type", "source", "error", "elapsed_s") if k in fetch} | {"success": False, "imported_count": 0})
             continue
-        evidence_rows: list[dict[str, Any]] = []
-        skipped_here = 0
-        for payload in fetch["payloads"]:
-            entry_id = (payload.get("metadata") or {}).get("entry_id")
-            dedupe_key = (payload.get("source_type") or "", str(entry_id)) if entry_id else None
-            if dedupe and dedupe_key and dedupe_key in seen_keys:
-                skipped_here += 1
-                continue
-            ev = ledger.add_evidence(question_id=question_id, archive_url_snapshot=False, **payload)
-            if dedupe_key:
-                seen_keys.add(dedupe_key)
-            evidence_rows.append({"id": ev.id, "source_url": ev.source_url, "claim": ev.claim})
+        try:
+            committed = commit_source_payloads(ledger, question_id, fetch["payloads"], dedupe=options.dedupe)
+        except Exception as exc:
+            results.append({
+                "index": fetch["index"], "source_type": fetch["source_type"], "source": fetch["source"],
+                "success": False, "error": str(exc), "elapsed_s": fetch["elapsed_s"], "imported_count": 0,
+            })
+            continue
+        evidence_rows = [
+            {"id": row.evidence.id, "source_url": row.evidence.source_url, "claim": row.evidence.claim}
+            for row in committed.imported
+        ]
+        skipped_here = len(committed.duplicate_indices)
         total_skipped += skipped_here
         # Optional auto_watch (same dedup as the single-source path).
         watch_note = None

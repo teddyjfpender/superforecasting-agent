@@ -91,3 +91,17 @@ Downgrades require a pre-upgrade ledger backup: binaries using the previous
 four-column positional receipt insert cannot write after the comparison column
 has been added. Do not remove the new column and discard market receipt data to
 force an in-place downgrade.
+
+`source_batches.commit_source_payloads` is the shared persistence operation for
+single-source and concurrent-batch tool imports. Fetch and parse first; pass one
+source's payloads, the target question and a strict boolean dedupe policy. The
+operation reads duplicate identities inside an immediate transaction and either
+commits all accepted rows or rolls the source back. Results retain input indices
+for presentation without duplicating persistence policy. Existing ledger validation
+remains authoritative; URL archival is disabled during these structured imports.
+Auto-watch remains a separately reported optional action after successful import.
+
+This operation preserves existing entry-ID deduplication semantics. It does not
+establish revision equivalence, deduplicate observations without IDs, or replace
+the typed FRED/market request receipts. Those acquisition-plan and cross-interface
+migrations remain in W03. Tests: `tests/application/test_source_batches.py`.

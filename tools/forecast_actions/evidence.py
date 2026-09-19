@@ -50,8 +50,10 @@ def import_source_evidence(args: dict[str, Any], ledger) -> str:
     question_id = _required(args, "question_id")
     adapter = _required(args, "source_type")
     source = _required(args, "source")
-    dedupe = bool(args.get("dedupe", True))
-    seen_keys = ledger.existing_evidence_keys(question_id) if dedupe else set()
+    from forecasting.application.source_batches import commit_source_payloads
+    from forecasting.sources.requests import CommonSourceOptions
+
+    options = CommonSourceOptions.read(args)
     # Inherit the per-source reliability prior set during onboarding when
     # the caller didn't pass an explicit rating, so imported readings
     # carry the user's stated confidence in that source.
@@ -66,38 +68,19 @@ def import_source_evidence(args: dict[str, Any], ledger) -> str:
                 break
     except Exception:
         _default_prior = None
-    imported = []
-    skipped_duplicates = 0
-    for item in _ft._load_source_adapter_items(adapter, source, args):
-        evidence_payload = _source_adapter_evidence_payload(adapter, source, item, args)
-        if _default_prior is not None and evidence_payload.get("reliability_rating") is None:
-            evidence_payload["reliability_rating"] = _default_prior
-        # Skip a structured reading already imported for this question
-        # (same source_type + entry_id) so repeated refreshes don't bloat
-        # the evidence table with identical observations.
-        entry_id = (evidence_payload.get("metadata") or {}).get("entry_id")
-        dedupe_key = (evidence_payload.get("source_type") or "", str(entry_id)) if entry_id else None
-        if dedupe and dedupe_key and dedupe_key in seen_keys:
-            skipped_duplicates += 1
-            continue
-        # Structured adapters already capture the observation (the raw
-        # series value lives in metadata); fetching the source's HTML
-        # page to archive a snapshot adds ~5s/row of latency and no data
-        # value, which surfaced to the agent as "FRED refresh timed out".
-        # Skip the per-row URL snapshot on this batch import path.
-        evidence = ledger.add_evidence(
-            question_id=question_id,
-            archive_url_snapshot=False,
-            **evidence_payload,
-        )
-        if dedupe_key:
-            seen_keys.add(dedupe_key)
-        imported.append(
-            {
-                "evidence": evidence.__dict__,
-                "adapter_item": _adapter_item_dict(item),
-            }
-        )
+    items = list(_ft._load_source_adapter_items(adapter, source, args))
+    payloads = []
+    for item in items:
+        payload = _source_adapter_evidence_payload(adapter, source, item, args)
+        if _default_prior is not None and payload.get("reliability_rating") is None:
+            payload["reliability_rating"] = _default_prior
+        payloads.append(payload)
+    result = commit_source_payloads(ledger, question_id, payloads, dedupe=options.dedupe)
+    imported = [
+        {"evidence": row.evidence.__dict__, "adapter_item": _adapter_item_dict(items[row.index])}
+        for row in result.imported
+    ]
+    skipped_duplicates = len(result.duplicate_indices)
     watch: dict[str, Any] | None = None
     watch_note: str | None = None
     if imported and bool(args.get("auto_watch")):
