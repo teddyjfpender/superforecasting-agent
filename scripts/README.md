@@ -13,6 +13,7 @@ These are entry points and representative modules, not an exhaustive inventory.
 | File                                                   | Responsibility                                                          |
 | ------------------------------------------------------ | ----------------------------------------------------------------------- |
 | [dev.py](dev.py)                                       | Bootstrap and run the repository's shared, blocking quality checks.     |
+| [strict_scope.py](strict_scope.py) | Protect strict ownership and report tracked runtime file/line scope; `--record` only adds paths. |
 | [run_tests.sh](run_tests.sh)                           | Hermetic Python runner for explicit selections or the full suite.                                                              |
 | [verify_profiles.py](verify_profiles.py)               | Verify built product wheels outside the checkout in fresh environments. |
 | [benchmark_browser_eval.py](benchmark_browser_eval.py) | Quick benchmark: subprocess eval vs supervisor-WS eval.                 |

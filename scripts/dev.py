@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # the repository-wide encoding gate; no silent baseline hides new-layer errors.
 STRICT_PYTHON = (
     "scripts/dev.py",
+    "scripts/strict_scope.py",
     "forecasting/news",
     "forecasting/interviews",
     "superforecasting_agent/runtime/news_desk.py",
@@ -186,6 +187,7 @@ def check(*, python_only: bool = False) -> None:
     run(venv_tool("python"), "scripts/check_naming.py")
     run(venv_tool("python"), "scripts/check-windows-footguns.py", "--all")
     run(venv_tool("ruff"), "check", ".")
+    run(venv_tool("python"), "scripts/strict_scope.py")
     run(venv_tool("ruff"), "check", "--select", "E4,E7,E9,F", *CORRECTNESS_PYTHON)
     run(venv_tool("ruff"), "check", "--select", "E4,E7,E9,F,I", *STRICT_PYTHON)
     run(venv_tool("ruff"), "format", "--check", *STRICT_PYTHON)

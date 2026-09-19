@@ -16,13 +16,13 @@ and installed-artifact requirements still need evidence at the appropriate miles
 | Package | State | Evidence / remaining work |
 |---|---|---|
 | W01 qualification | In progress | Reproduced provider test failure; preserved legacy active-provider menu; macOS boot identity replaces network discovery; docs freshness added to canonical check. Focused tests below. Windows identity capability/versioning and remote native receipts remain. |
-| W02 quality ratchet | In progress | Added test TypeScript project; initial valid-root measurement found 291 diagnostics, including incomplete selection mocks, terminal stream types and protocol fixtures. Fix these before making it blocking. Remaining coverage ratchet, typed fixtures and execution tiers. |
-| W03 typed sources | Pending | All specification criteria remain. |
-| W04 CLI parity | Pending | Legacy active-provider behavior corrected as part of W01; shared command inventory/parity remains. |
-| W05 runtime ownership | Pending | All specification criteria remain. |
-| W06 TUI state | Pending | All specification criteria remain. |
-| W07 questionnaire durability/lessons | In progress | Update interviews freeze advisory lesson selection, exclusions, digests and score/postmortem support. Historical contexts remain readable, and model prompts omit excluded guidance. Durable editor buffer API implemented with revision conflicts, discard tombstones, atomic receipts and lifecycle cleanup. Pending TUI autosave/restoration/status integration, new-question context and TUI provenance display. |
-| W08 integrated recovery | Pending | All specification criteria remain. |
+| W02 quality ratchet | In progress | Production and test TypeScript checks are blocking; initial fixture diagnostics resolved. Protected strict-file inventory and measured coverage added. Push/CI integration tier aligned. Inherited diagnostic baselines and further ownership coverage remain. |
+| W03 typed sources | In progress | Common option admission, atomic FRED and prediction-market import owners/receipts, exact market identity/units, and publication provenance fixes implemented. Remaining adapters and cross-interface plan/error parity need migration. |
+| W04 CLI parity | In progress | Provider selection compatibility, slash capability/alias checks and shared command contexts improved. Complete command inventory, machine-output contracts and parity remain. |
+| W05 runtime ownership | In progress | Command/tool RPC families have explicit contexts and host admission; threaded forkpty replaced with owned posix_spawn startup and signal defaults. Other global RPC families and full lifecycle-phase ownership remain. |
+| W06 TUI state | In progress | Job attachment epochs and stale-response admission improved; renderer fixtures are typed. Route/modal/focus ownership and broader asynchronous view behavior remain. |
+| W07 questionnaire durability/lessons | In progress | Durable unconfirmed buffers, atomic confirmation, frozen update/general new-question lessons, typed provenance API and TUI reader implemented. Real reconnect/conflict/process-death scenarios pass locally. Remaining acceptance review and native repetition are required. |
+| W08 integrated recovery | In progress | Canonical bounded tier passes locally, including real Ink/gateway/SQLite/dashboard questionnaire recovery. Full specified scenario matrix and supported-platform repeatability remain. |
 | W09 merged product qualification | Pending | All specification criteria remain, subject to focused-test policy above. |
 
 ## Focused receipts
@@ -577,3 +577,21 @@ required W02 work. No full Python or TUI suite was run.
   integration tier passed in 42.80s: static gates, product build, 36 Python and
   59 TUI recovery tests. No full suite was run. This is a local duration receipt,
   not a cross-platform flakiness estimate or qualification claim.
+
+### W02 — protected strict scope and reproducible coverage reporting
+
+- Added a canonical gate protecting the tracked files currently under complete
+  strict checks. Adding an owner requires an additive inventory update; dropping
+  a file through relocation or allowlist changes fails. Explicit reviewed retirement
+  reasons remain in the inventory instead of silently erasing prior protection.
+  The gate itself receives complete strict lint, formatting and typing.
+- The report uses the audit's runtime roots and physical-line definition and clearly
+  identifies current tracked worktree measurement, rather than claiming behavioral
+  test coverage or a diagnostic count. Current runtime coverage: 334/1,110 files,
+  67,969/556,304 physical lines (about 12.2%). All 346 strict files, including tooling,
+  are protected. These counts should be regenerated as the repository changes.
+- Verification: 32 focused scope/runner/developer-workflow tests passed. Fixtures
+  exercise file moves, scope loss, additive recording, explicit retirement and
+  empty-reason rejection. Canonical Python static checks passed. No full suite ran.
+- Updated the package status table above to distinguish delivered work from the
+  early baseline; remaining work is not inferred complete from these local checks.

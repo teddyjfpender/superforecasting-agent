@@ -25,6 +25,16 @@ code does not weaken enforcement here. It is not a
 claim that all inherited Python code is type checked or formatted. Run behavioral
 tests through `scripts/run_tests.sh`; quality checks do not replace that suite.
 
+`scripts/strict_scope.py` reports tracked runtime file/physical-line coverage using
+our audit definition; these counts are neither test coverage nor diagnostic counts.
+The canonical gate protects the files in `scripts/strict-scope-policy.json`. After
+staging a new strict owner, run `python3 scripts/strict_scope.py --record` and commit
+the additive inventory change. This command never silently removes protection.
+Moving or deleting a protected file requires a reviewed `retired` entry explaining
+its destination or removal, and the replacement must remain in the strict scope.
+Do not remove protected entries to make a gate pass. Retirements and the strict
+scope itself are reviewable policy changes, not automatic proof of safe extraction.
+
 If dependencies are already installed, `scripts/install-hooks.sh` installs just
 the hooks. Hooks never stage or rewrite your files.
 
