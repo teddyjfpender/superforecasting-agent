@@ -32,7 +32,7 @@ def test_inventory_uses_current_selection(monkeypatch, method, agent, configured
     build.assert_not_called()
 
 
-@pytest.mark.parametrize("agent,expected", [(None, ["forecasting"]), (SimpleNamespace(enabled_toolsets=[]), [])])
+@pytest.mark.parametrize("agent,expected", [(None, ["forecasting"]), (SimpleNamespace(enabled_toolsets=[]), []), (SimpleNamespace(enabled_toolsets=("web",)), ["web"]), (SimpleNamespace(enabled_toolsets=None), None)])
 def test_tools_show_passes_the_same_selection_to_resolution(monkeypatch, agent, expected):
     monkeypatch.setattr(server, "_host", RuntimeHost())
     server._host.sessions["fixture"] = {"agent": agent}

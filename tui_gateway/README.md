@@ -61,3 +61,14 @@ services still have separate ownership work. Keep those limitations explicit.
 An import contract forbids direct command-handler imports of `tui_gateway.server`.
 Tests in `tests/tui_gateway/test_command_context.py` cover independent registration,
 repeated shutdown, active-call draining and host replacement during a call.
+
+
+`tools_rpc.ToolContext` similarly owns tool inspection, configuration access and
+session reset callbacks. Inject profile-specific persistence and reset operations
+for independent hosts; `register(server)` is only the singleton compatibility
+composition. Configuration still reserves session replacement before saving and
+resetting. `rpc_binding.bind_host_handler` is the shared command/tool admission
+owner: it pins the runtime for each call and retains worker ownership until exit.
+Tests in `test_tool_context.py` verify separate configuration/reset destinations
+for hosts with identical session IDs. This family and the binding owner receive
+complete strict checks and cannot directly import the singleton server.

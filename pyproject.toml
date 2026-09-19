@@ -874,8 +874,8 @@ forbidden_modules = ["superforecasting_agent.runtime", "cli", "tui_gateway", "ga
 
 
 [[tool.importlinter.contracts]]
-name = "command RPC handlers do not import the singleton server"
+name = "owned RPC handlers do not import the singleton server"
 type = "forbidden"
-source_modules = ["tui_gateway.commands_rpc"]
+source_modules = ["tui_gateway.commands_rpc", "tui_gateway.tools_rpc", "tui_gateway.rpc_binding"]
 forbidden_modules = ["tui_gateway.server"]
 allow_indirect_imports = true

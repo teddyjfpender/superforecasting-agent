@@ -1,34 +1,29 @@
 """Re-registering an RPC family must bind it to the receiving server owner."""
 
 from types import SimpleNamespace
-from unittest.mock import Mock
 
 from tui_gateway import server, tools_rpc
 
 
-def test_tools_registration_rebinds_runtime_and_callbacks(monkeypatch):
-    original = tools_rpc._core
-    monkeypatch.setattr(tools_rpc, '_core', original)
-    monkeypatch.setattr(tools_rpc, '_ok', tools_rpc._ok)
-    monkeypatch.setattr(tools_rpc, '_err', tools_rpc._err)
-    monkeypatch.setattr(tools_rpc, '_reset_session_agent', tools_rpc._reset_session_agent)
-    old = SimpleNamespace(_host=SimpleNamespace(sessions={}), _load_enabled_toolsets=lambda: None)
-    tools_rpc._core = old
-    handlers = {}
-    def register(name):
-        return lambda fn: handlers.setdefault(name, fn)
-    replacement = SimpleNamespace(
-        _host=SimpleNamespace(sessions={}), _load_enabled_toolsets=lambda: [],
-        method=register, rpc_validated=register,
-        _ok=Mock(), _err=Mock(), _reset_session_agent=Mock(),
-    )
-    tools_rpc.register(replacement)
-    assert tools_rpc._session_toolsets({'session_id': 'runtime'}) == []
-    assert tools_rpc._core is replacement
-    assert tools_rpc._reset_session_agent is replacement._reset_session_agent
-    assert tools_rpc._ok is replacement._ok
-    assert tools_rpc._err is replacement._err
-    assert 'tools.list' in handlers
+def test_tools_registration_keeps_original_callbacks(monkeypatch):
+    from superforecasting_agent.hosting.runtime import RuntimeHost
+    monkeypatch.setattr("superforecasting_agent.tooling.inventory.toolset_inventory", lambda selection: list(selection or []))
+    def make_server(label):
+        handlers = {}
+        def register(name):
+            return lambda fn: handlers.setdefault(name, fn)
+        return SimpleNamespace(
+            _host=RuntimeHost(), _methods=handlers, method=register, rpc_validated=register,
+            _load_enabled_toolsets=lambda: [label],
+            _ok=lambda rid, result: {"result": result},
+            _err=lambda rid, code, message: {"error": message},
+        )
+    first, second = make_server("first"), make_server("second")
+    tools_rpc.register(first)
+    tools_rpc.register(second)
+    assert first._methods["tools.list"](1, {})["result"]["toolsets"] == ["first"]
+    assert second._methods["tools.list"](1, {})["result"]["toolsets"] == ["second"]
+    assert not hasattr(tools_rpc, "_core")
 
 
 def test_command_registration_keeps_receiving_owner():

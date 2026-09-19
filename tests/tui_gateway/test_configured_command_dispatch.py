@@ -911,8 +911,10 @@ def test_toolset_command_uses_its_host_when_sibling_adapter_is_rebound(configure
 
     configure({})
     monkeypatch.setattr(server, '_load_enabled_toolsets', lambda: [])
-    monkeypatch.setattr(tools_rpc, '_core', SimpleNamespace(
-        _host=SimpleNamespace(sessions={}), _load_enabled_toolsets=lambda: ['forecasting'],
+    register = lambda name: lambda handler: handler
+    tools_rpc.register(SimpleNamespace(
+        _host=RuntimeHost(), _load_enabled_toolsets=lambda: ['forecasting'],
+        method=register, rpc_validated=register,
     ))
     monkeypatch.setattr('superforecasting_agent.tooling.toolsets.get_all_toolsets', lambda: {'forecasting': {}})
     monkeypatch.setattr('superforecasting_agent.tooling.toolsets.get_toolset_info', lambda name: {

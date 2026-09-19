@@ -1,85 +1,118 @@
-"""Gateway RPCs for the tools / toolsets family — carved from server.py.
+"""Tool inspection and configuration bound to explicit runtime capabilities."""
 
-Moves-only slice of the Wave-2 server family-split (docs/plans/2026-07-10-
-modularization-program.md §W2.a). ``tools.list`` / ``tools.show`` /
-``tools.configure`` / ``toolsets.list`` moved here VERBATIM. The local
-``rpc_validated`` / ``method`` decorators capture handlers into ``_REGISTRARS``;
-``server.py`` calls :func:`register` (at load AND on ``importlib.reload`` — the
-pm_rpc/jobs_rpc sibling contract), replaying them through the REAL
-``server.rpc_validated`` / ``server.method`` so registration lands in the same
-``tui_gateway.server._methods`` dispatch dict — wire byte-identical.
-
-The monkeypatched ``_load_enabled_toolsets`` and the mutable ``_sessions``
-registry are reached via the ``_core.`` call-time hop. ``_reset_session_agent``
-(session runtime, stays in core) and ``_ok`` / ``_err`` are imported bare.
-"""
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, replace
+from typing import Any, Protocol
+
+from superforecasting_agent.hosting.runtime import RuntimeHost
 from superforecasting_agent.hosting.sessions import SessionBusy
-
-import tui_gateway.server as _core
-from tui_gateway.server import _err, _ok, _reset_session_agent
-
-_REGISTRARS: list[tuple[str, str, object]] = []
-
-
-def rpc_validated(name: str):
-    def _dec(fn):
-        _REGISTRARS.append(("rpc_validated", name, fn))
-        return fn
-
-    return _dec
+from tui_gateway.rpc_binding import (
+    ErrorResponse,
+    Registrar,
+    RpcHandler,
+    bind_host_handler,
+)
 
 
-def method(name: str):
-    def _dec(fn):
-        _REGISTRARS.append(("method", name, fn))
-        return fn
+class ResetSession(Protocol):
+    def __call__(
+        self, sid: str, session: dict[str, Any], *, reserved: bool = False
+    ) -> dict[str, Any]: ...
 
-    return _dec
+
+@dataclass(frozen=True)
+class ToolContext:
+    host: Callable[[], RuntimeHost]
+    enabled_toolsets: Callable[[], list[str] | None]
+    load_config: Callable[[], dict[str, Any]]
+    save_config: Callable[[dict[str, Any]], None]
+    reset_session: ResetSession
+    ok: Callable[[Any, dict[str, Any]], dict[str, Any]]
+    error: ErrorResponse
+
+
+def register_handlers(
+    context: ToolContext, *, method: Registrar, rpc_validated: Registrar
+) -> None:
+    def bind(
+        handler: Callable[[ToolContext, Any, dict[str, Any]], dict[str, Any]],
+    ) -> RpcHandler:
+        return bind_host_handler(
+            context.host,
+            context.error,
+            lambda owner, rid, params: handler(
+                replace(context, host=lambda: owner), rid, params
+            ),
+        )
+
+    method("tools.list")(bind(tools_list))
+    method("tools.show")(bind(tools_show))
+    rpc_validated("tools.configure")(bind(tools_configure))
+    method("toolsets.list")(bind(toolsets_list))
+    method("superforecasting_agent.tooling.toolsets.list")(bind(toolsets_list))
 
 
 def register(server) -> None:
-    """(Re-)register every carved tools/toolsets handler into ``server._methods``."""
-    global _core, _ok, _err, _reset_session_agent
-    _core = server
-    _ok = server._ok
-    _err = server._err
-    _reset_session_agent = server._reset_session_agent
-    for kind, name, fn in _REGISTRARS:
-        getattr(server, kind)(name)(fn)
+    """Legacy singleton composition; no handler globals are rebound."""
+    from superforecasting_agent.runtime import config
+
+    context = ToolContext(
+        host=lambda: server._host,
+        enabled_toolsets=lambda: server._load_enabled_toolsets(),
+        load_config=lambda: config.load_config(),
+        save_config=lambda cfg: config.save_config(cfg),
+        reset_session=lambda sid, session, *, reserved=False: (
+            server._reset_session_agent(sid, session, reserved=reserved)
+        ),
+        ok=lambda rid, result: server._ok(rid, result),
+        error=lambda rid, code, message: server._err(rid, code, message),
+    )
+    register_handlers(context, method=server.method, rpc_validated=server.rpc_validated)
 
 
-__all__ = ["register"]
+__all__ = ["ToolContext", "register", "register_handlers"]
 
 
-def _session_toolsets(params: dict):
+def _session_toolsets(
+    context: ToolContext, params: dict[str, Any]
+) -> Sequence[str] | None:
     """Use a live agent's selection, or configured selection before its build."""
     from superforecasting_agent.tooling.inventory import session_toolset_selection
+
     return session_toolset_selection(
-        _core._host.sessions.get(params.get("session_id", "")),
-        _core._load_enabled_toolsets,
+        context.host().sessions.get(params.get("session_id", "")),
+        context.enabled_toolsets,
     )
 
 
-@method("tools.list")
-def _(rid, params: dict) -> dict:
+def tools_list(
+    context: ToolContext, rid: Any, params: dict[str, Any]
+) -> dict[str, Any]:
     try:
         from superforecasting_agent.tooling.inventory import toolset_inventory
 
-        items = toolset_inventory(_session_toolsets(params))
-        return _ok(rid, {"toolsets": items})
+        items = toolset_inventory(_session_toolsets(context, params))
+        return context.ok(rid, {"toolsets": items})
     except Exception as e:
-        return _err(rid, 5031, str(e))
+        return context.error(rid, 5031, str(e))
 
 
-@method("tools.show")
-def _(rid, params: dict) -> dict:
+def tools_show(
+    context: ToolContext, rid: Any, params: dict[str, Any]
+) -> dict[str, Any]:
     try:
-        from superforecasting_agent.tooling.runtime import get_toolset_for_tool, get_tool_definitions
+        from superforecasting_agent.tooling.runtime import (
+            get_tool_definitions,
+            get_toolset_for_tool,
+        )
 
-        enabled = _session_toolsets(params)
-        tools = get_tool_definitions(enabled_toolsets=enabled, quiet_mode=True)
+        enabled = _session_toolsets(context, params)
+        tools = get_tool_definitions(
+            enabled_toolsets=list(enabled) if enabled is not None else None,
+            quiet_mode=True,
+        )
         sections = {}
 
         for tool in sorted(tools, key=lambda t: t["function"]["name"]):
@@ -87,14 +120,12 @@ def _(rid, params: dict) -> dict:
             desc = str(tool["function"].get("description", "") or "").split("\n")[0]
             if ". " in desc:
                 desc = desc[: desc.index(". ") + 1]
-            sections.setdefault(get_toolset_for_tool(name) or "unknown", []).append(
-                {
-                    "name": name,
-                    "description": desc,
-                }
-            )
+            sections.setdefault(get_toolset_for_tool(name) or "unknown", []).append({
+                "name": name,
+                "description": desc,
+            })
 
-        return _ok(
+        return context.ok(
             rid,
             {
                 "sections": [
@@ -105,32 +136,35 @@ def _(rid, params: dict) -> dict:
             },
         )
     except Exception as e:
-        return _err(rid, 5034, str(e))
+        return context.error(rid, 5034, str(e))
 
 
-@rpc_validated("tools.configure")
-def _(rid, params: dict) -> dict:
+def tools_configure(
+    context: ToolContext, rid: Any, params: dict[str, Any]
+) -> dict[str, Any]:
     from superforecasting_agent.tooling.selection import normalize_tool_names
 
     action = params.get("action")
     if isinstance(action, str):
         action = action.strip().lower()
     if not isinstance(action, str) or action not in {"disable", "enable"}:
-        return _err(rid, 4017, f"unknown tools action: {action}")
+        return context.error(rid, 4017, f"unknown tools action: {action}")
     try:
         targets = normalize_tool_names(params.get("names"))
     except ValueError as exc:
-        return _err(rid, 4018, str(exc))
+        return context.error(rid, 4018, str(exc))
 
-    session = _core._host.sessions.get(params.get("session_id", ""))
+    session = context.host().sessions.get(params.get("session_id", ""))
     if params.get("session_id") and session is None:
-        return _err(rid, 4001, "session not found")
+        return context.error(rid, 4001, "session not found")
 
     try:
-        from superforecasting_agent.runtime.config import load_config, save_config
-        from superforecasting_agent.tooling.selection import change_tools, _get_platform_tools
+        from superforecasting_agent.tooling.selection import (
+            _get_platform_tools,
+            change_tools,
+        )
 
-        cfg = load_config()
+        cfg = context.load_config()
         result = change_tools(cfg, "cli", targets, action)
         changed = result["changed"]
         unknown = result["unknown"] + result["restricted"]
@@ -138,30 +172,40 @@ def _(rid, params: dict) -> dict:
         info = None
         if changed:
             from contextlib import ExitStack
+
             from superforecasting_agent.hosting.sessions import replacement
 
             with ExitStack() as reservation:
                 # Own admission rather than the dispatcher's ordinary use lease:
                 # that lease would make this request reject its own replacement.
-                with _core._host.sessions.lock:
-                    if _core._host.sessions.get(params.get("session_id", "")) is not session:
-                        raise SessionBusy("session changed before tool configuration could be applied")
+                with context.host().sessions.lock:
+                    if (
+                        context.host().sessions.get(params.get("session_id", ""))
+                        is not session
+                    ):
+                        raise SessionBusy(
+                            "session changed before tool configuration could be applied"
+                        )
                     if session is not None:
                         reservation.enter_context(replacement(session))
-                save_config(cfg)
+                context.save_config(cfg)
                 if session is not None:
                     try:
-                        info = _reset_session_agent(params.get("session_id", ""), session, reserved=True)
+                        info = context.reset_session(
+                            params.get("session_id", ""), session, reserved=True
+                        )
                     except Exception as exc:
                         raise RuntimeError(
                             "Tool configuration saved, but session reset failed; "
                             "close or recreate the session to recover. " + str(exc)
                         ) from exc
         enabled = sorted(
-            _get_platform_tools(load_config(), "cli", include_default_mcp_servers=False)
+            _get_platform_tools(
+                context.load_config(), "cli", include_default_mcp_servers=False
+            )
         )
 
-        return _ok(
+        return context.ok(
             rid,
             {
                 "changed": changed,
@@ -175,19 +219,19 @@ def _(rid, params: dict) -> dict:
     except SessionBusy:
         raise
     except Exception as e:
-        return _err(rid, 5035, str(e))
+        return context.error(rid, 5035, str(e))
 
 
-@method("toolsets.list")
-@method("superforecasting_agent.tooling.toolsets.list")
-def _(rid, params: dict) -> dict:
+def toolsets_list(
+    context: ToolContext, rid: Any, params: dict[str, Any]
+) -> dict[str, Any]:
     try:
         from superforecasting_agent.tooling.inventory import toolset_inventory
 
         items = [
             {key: value for key, value in item.items() if key != "tools"}
-            for item in toolset_inventory(_session_toolsets(params))
+            for item in toolset_inventory(_session_toolsets(context, params))
         ]
-        return _ok(rid, {"toolsets": items})
+        return context.ok(rid, {"toolsets": items})
     except Exception as e:
-        return _err(rid, 5032, str(e))
+        return context.error(rid, 5032, str(e))

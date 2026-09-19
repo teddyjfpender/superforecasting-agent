@@ -17,14 +17,12 @@ from typing import Any, Protocol
 
 from superforecasting_agent.configuration.goals import configured_goal_turn_budget
 from superforecasting_agent.hosting.runtime import RuntimeHost
-from superforecasting_agent.hosting.workers import HostStopping
-
-RpcHandler = Callable[[Any, dict[str, Any]], dict[str, Any]]
-Registrar = Callable[[str], Callable[[RpcHandler], RpcHandler]]
-
-
-class ErrorResponse(Protocol):
-    def __call__(self, rid: Any, code: int, message: str) -> dict[str, Any]: ...
+from tui_gateway.rpc_binding import (
+    ErrorResponse,
+    Registrar,
+    RpcHandler,
+    bind_host_handler,
+)
 
 
 class DatabaseError(Protocol):
@@ -63,17 +61,13 @@ def register_handlers(
     def bind(
         handler: Callable[[CommandContext, Any, dict[str, Any]], dict[str, Any]],
     ) -> RpcHandler:
-        def invoke(rid: Any, params: dict[str, Any]) -> dict[str, Any]:
-            try:
-                owner = context.host()
-                with owner.workers.operation():
-                    # Host replacement during this call cannot move its session
-                    # lookup or worker ownership into the replacement lifetime.
-                    return handler(replace(context, host=lambda: owner), rid, params)
-            except HostStopping:
-                return context.error(rid, 5030, "runtime host is stopping")
-
-        return invoke
+        return bind_host_handler(
+            context.host,
+            context.error,
+            lambda owner, rid, params: handler(
+                replace(context, host=lambda: owner), rid, params
+            ),
+        )
 
     rpc_validated("commands.catalog")(bind(command_catalog))
     method("cli.exec")(bind(cli_exec))

@@ -90,7 +90,7 @@ def test_rejected_or_unchanged_tools_do_not_reset_session(monkeypatch, names):
     from unittest.mock import Mock
     from superforecasting_agent.hosting.runtime import RuntimeHost
     from superforecasting_agent.runtime import config
-    from tui_gateway import server, tools_rpc
+    from tui_gateway import server
 
     monkeypatch.setattr(server, '_host', RuntimeHost())
     session = {'history': [{'role': 'user', 'content': 'preserve'}]}
@@ -100,7 +100,7 @@ def test_rejected_or_unchanged_tools_do_not_reset_session(monkeypatch, names):
     })
     save, reset = Mock(), Mock()
     monkeypatch.setattr(config, 'save_config', save)
-    monkeypatch.setattr(tools_rpc, '_reset_session_agent', reset)
+    monkeypatch.setattr(server, '_reset_session_agent', reset)
     response = server.handle_request({'id': 1, 'method': 'tools.configure',
                                      'params': {'action': 'disable', 'names': names, 'session_id': 'runtime'}})
     assert response['result']['changed'] == []
@@ -127,7 +127,7 @@ def test_malformed_tool_names_fail_before_configuration_access(monkeypatch, name
     from unittest.mock import Mock
     from superforecasting_agent.runtime import config
     from superforecasting_agent.tooling.selection import change_tools
-    from tui_gateway import server, tools_rpc
+    from tui_gateway import server
 
     snapshot = {'platform_toolsets': {'cli': ['web']}}
     before = deepcopy(snapshot)
@@ -137,7 +137,7 @@ def test_malformed_tool_names_fail_before_configuration_access(monkeypatch, name
     load, save, reset = Mock(), Mock(), Mock()
     monkeypatch.setattr(config, 'load_config', load)
     monkeypatch.setattr(config, 'save_config', save)
-    monkeypatch.setattr(tools_rpc, '_reset_session_agent', reset)
+    monkeypatch.setattr(server, '_reset_session_agent', reset)
     response = server.handle_request({'id': 1, 'method': 'tools.configure',
                                      'params': {'action': 'disable', 'names': names}})
     assert response['error']['code'] == 4018

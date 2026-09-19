@@ -316,3 +316,24 @@ This closes command-family registration rebinding, not all W05 host ownership:
 other carved RPC modules still use the server adapter; singleton callbacks and
 profile-global plugin/skill services require further migration and integrated
 qualification before claiming arbitrary multi-host isolation.
+
+
+## Tool RPC capabilities and shared invocation ownership
+
+Removed the tool family's singleton imports and registration rebinding. Named
+handlers now capture `ToolContext`, including configuration read/write and session
+reset capabilities, and retain the existing reservation before persistence/reset.
+Command/tool handlers share `rpc_binding` for pinned-host admission and draining.
+The singleton composition retains legacy profile behavior; direct registrations
+can supply separate persistence and callbacks without changing another host.
+
+212 focused registration, command, inventory, tool configuration/reset and context
+tests passed. Expanding strict typing exposed a Sequence-versus-list mismatch at
+tool-definition lookup; the adapter now copies a present selection into a list
+while preserving None. All 19 inventory tests passed after adding tuple and None
+regressions. Canonical Python static/generated checks and 77 import contracts
+passed, with tools_rpc/rpc_binding added to full strict coverage and the direct
+server-import prohibition. No full suite was run.
+
+Other RPC families, singleton profile services and complete integrated recovery
+qualification remain open; these tests establish this family's ownership only.
