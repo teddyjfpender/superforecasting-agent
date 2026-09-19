@@ -20,7 +20,7 @@ import signal
 import sys
 import threading
 import traceback
-from typing import Any
+from typing import Any, BinaryIO
 
 MAX_REQUEST_BYTES = 1_048_576
 MAX_OUTPUT_CHARS = 250_000
@@ -137,11 +137,38 @@ class Capture(io.TextIOBase):
             return "".join(self.parts)
 
 
-def _read_requests(inbox: queue.Queue[dict[str, Any]]) -> None:
+def isolate_control_input() -> BinaryIO:
+    """Keep RPC input private; cells and their children receive EOF on stdin."""
+    descriptor = os.dup(sys.stdin.fileno())
+    try:
+        os.set_inheritable(descriptor, False)
+        with open(os.devnull, "rb") as empty:
+            os.dup2(empty.fileno(), sys.stdin.fileno())
+        if os.name == "nt":
+            import ctypes
+            import msvcrt
+            from ctypes import wintypes
+
+            # Windows subprocess obtains defaults from the process handle table,
+            # not Python's redirected stream object or just its CRT descriptor.
+            api = ctypes.WinDLL("kernel32", use_last_error=True)
+            api.SetStdHandle.argtypes = [wintypes.DWORD, wintypes.HANDLE]
+            api.SetStdHandle.restype = wintypes.BOOL
+            if not api.SetStdHandle(
+                wintypes.DWORD(-10), msvcrt.get_osfhandle(sys.stdin.fileno())
+            ):
+                raise ctypes.WinError(ctypes.get_last_error())
+        return os.fdopen(descriptor, "rb")
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+def _read_requests(inbox: queue.Queue[dict[str, Any]], control: BinaryIO) -> None:
     """Watch owner EOF concurrently with execution; never queue unbounded work."""
     try:
         while True:
-            raw = sys.stdin.buffer.readline(MAX_REQUEST_BYTES + 1)
+            raw = control.readline(MAX_REQUEST_BYTES + 1)
             if not raw:
                 owner_exit(0)
             if len(raw) > MAX_REQUEST_BYTES or not raw.endswith(b"\n"):
@@ -182,11 +209,12 @@ def main() -> None:
     protocol_fd = os.dup(sys.stdout.fileno())
     os.set_inheritable(protocol_fd, False)
     os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
+    control = isolate_control_input()
     inbox: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=1)
     namespace: dict[str, Any] = {"__name__": "__main__"}
     sequence = 0
     previous = ""
-    reader = threading.Thread(target=_read_requests, args=(inbox,), daemon=True)
+    reader = threading.Thread(target=_read_requests, args=(inbox, control), daemon=True)
     reader.start()
     with os.fdopen(protocol_fd, "w", encoding="utf-8") as protocol:
         runtime = {

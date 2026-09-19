@@ -128,6 +128,7 @@ jobs:
           scripts/run_tests.sh
           tests/tools/test_code_kernel.py::test_nested_background_processes_are_stopped_before_their_parents
           tests/tools/test_code_kernel.py::test_timeout_retires_exact_process_and_requires_explicit_reset
+          tests/tools/test_code_kernel_runner.py::test_cell_and_child_stdin_cannot_consume_control_frames
       - name: Preserve bounded investigation evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

@@ -872,3 +872,20 @@ reserved fields and malformed metadata across all three import consumers. Strict
 source-owner typing passes. Windows child/interpreter comparison continues in
 run 35462370806 at commit 797f91455f; the previous trace establishes a parent pipe
 wait but not its cause.
+
+## Private kernel control input
+
+Native comparison 35462370806 fails with both venv and base interpreters before
+child code reaches its first marker. The parent remains at child stdout readline;
+this rules out a venv-only explanation. Inspection also found that the runner's
+live RPC input remained the cell's stdin and the default stdin inherited by children.
+
+The runner now owns a non-inheritable duplicate for control reads and redirects
+ordinary stdin to the null device before starting the reader. Windows' standard
+input handle table is updated explicitly, following the SetStdHandle contract
+(https://learn.microsoft.com/en-us/windows/console/setstdhandle). Cell/child input
+cannot compete for RPC frames, while owner EOF still terminates the runner.
+Focused real-process tests exercise direct stdin EOF, child stdin EOF and a later
+successful control frame alongside deadline, EOF and nested-process recovery.
+Native confirmation is pending; this is a concrete ownership fix, not yet final
+attribution of the Windows startup failure.

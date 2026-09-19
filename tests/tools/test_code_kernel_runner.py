@@ -197,3 +197,18 @@ def test_malformed_or_oversized_control_frame_fails_closed(payload):
         except BrokenPipeError:
             pass
         assert child.wait(timeout=5) == 65
+
+
+def test_cell_and_child_stdin_cannot_consume_control_frames():
+    with running_kernel() as child:
+        result = cell(child, 'import sys; print(repr(sys.stdin.read()))')
+        assert result['stdout'] == "''\n"
+        result = cell(child,
+            'import subprocess,sys\n'
+            'result=subprocess.run([sys.executable,"-c","import sys; print(repr(sys.stdin.read()))"],'
+            'stdout=subprocess.PIPE,text=True,timeout=3)\n'
+            'print(result.stdout.strip())')
+        assert result['stdout'] == "''\n"
+        assert not result['error']
+        # Neither read stole this subsequent protocol frame.
+        assert cell(child, 'print("still owned")')['stdout'] == 'still owned\n'
