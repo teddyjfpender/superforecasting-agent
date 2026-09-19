@@ -589,13 +589,20 @@ def interrupt_all(reason: str = "shutdown", *, session_key: str | None = None) -
 
 
 def _reset_for_tests() -> None:
-    """Test-only: clear all state and tear down the executor."""
+    """Test-only teardown; callers must stop submitting before resetting.
+
+    A terminal record is not a joined worker: completion notification publication
+    follows the terminal-state update. Join before clearing records/queue hints so
+    the preceding test cannot publish into the next test's completion queue.
+    """
     global _executor, _executor_max_workers
     with _executor_lock:
-        if _executor is not None:
-            _executor.shutdown(wait=False)
+        executor = _executor
         _executor = None
         _executor_max_workers = 0
+    # Never join while holding registry locks needed by finishing workers.
+    if executor is not None:
+        executor.shutdown(wait=True)
     with _records_lock:
         _records.clear()
         _hinted_events.clear()

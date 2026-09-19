@@ -425,9 +425,12 @@ def test_nested_background_processes_are_stopped_before_their_parents(owner):
         'child=subprocess.Popen([sys.executable,"-c","import time; time.sleep(30)"]); '
         'print(child.pid,flush=True); time.sleep(30)'
     )
+    # This exercises descendant ownership, not execution-budget enforcement.
+    # Two nested interpreter/venv launches can exceed the ordinary 3s cell
+    # fixture budget on Windows. Keep a bounded budget, below the 30s sleepers.
     result = run(owner, 'import subprocess,sys\n'
                  f'child=subprocess.Popen([sys.executable,"-c",{nested!r}],stdout=subprocess.PIPE,text=True)\n'
-                 'print(child.pid, child.stdout.readline().strip())')
+                 'print(child.pid, child.stdout.readline().strip())', timeout=10)
     assert result['retirement_reason'] == 'cell_left_running_processes'
     assert not result['state_preserved']
     for pid in map(int, result['stdout'].split()):

@@ -651,3 +651,53 @@ def test_background_dispatch_preserves_parent_session_without_approval_context(m
     assert event['session_key'] == expected
     assert ad.pending_notifications(expected)[0]['session_key'] == expected
     assert parent._active_children == []
+
+
+def test_reset_joins_terminal_worker_before_clearing_notification_state(monkeypatch):
+    publishing = threading.Event()
+    release = threading.Event()
+    shutdown_started = threading.Event()
+    reset_done = threading.Event()
+    publish = ad._push_completion_event
+
+    def paused_publish(*args):
+        publishing.set()
+        assert release.wait(5)
+        publish(*args)
+
+    monkeypatch.setattr(ad, "_push_completion_event", paused_publish)
+    ad.dispatch_async_delegation(
+        goal="last completion", context=None, toolsets=None, role="leaf", model="m",
+        session_key="", runner=lambda: {"status": "completed", "summary": "owned"},
+        max_async_children=1,
+    )
+    assert publishing.wait(5)
+    assert ad.active_count() == 0  # terminal state precedes notification publication
+    executor = ad._executor
+    shutdown = executor.shutdown
+
+    def observed_shutdown(*args, **kwargs):
+        shutdown_started.set()
+        shutdown(*args, **kwargs)
+
+    monkeypatch.setattr(executor, "shutdown", observed_shutdown)
+
+    def reset():
+        ad._reset_for_tests()
+        reset_done.set()
+
+    thread = threading.Thread(target=reset)
+    thread.start()
+    try:
+        assert shutdown_started.wait(3)
+        assert not reset_done.wait(0.05)
+        release.set()
+        thread.join(5)
+        assert not thread.is_alive()
+        assert reset_done.is_set()
+        assert process_registry.completion_queue.get_nowait()["summary"] == "owned"
+        assert process_registry.completion_queue.empty()
+        assert not ad._records
+    finally:
+        release.set()
+        thread.join(5)

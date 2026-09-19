@@ -777,3 +777,26 @@ background-result test; its Windows Node 22 nested-process test reached the
 kernel execution deadline. These are distinct unresolved qualification failures,
 not evidence that all platforms have passed. Logs were retrieved for follow-up;
 no full suite was run to investigate them.
+
+## Native qualification fixture ownership
+
+The macOS `ok` notification symptom has a concrete teardown race: terminal record
+state is published before the notification hint, while `_reset_for_tests` previously
+shut down its executor without joining. Test teardown could therefore drain the
+queue before an old worker published. Reset now detaches the current executor and
+joins outside registry locks before clearing records. A controlled publication
+barrier reproduces the vulnerable interval and verifies that reset waits. This is
+test-lifetime isolation, not a change to production cancellation acknowledgement.
+26 focused async-delegation tests passed. Native confirmation remains pending.
+
+The Windows nested-process ownership fixture exhausted its ordinary three-second
+cell budget while launching nested interpreters. That fixture now allows ten
+seconds, still bounded below its thirty-second child sleepers; production deadlines
+are unchanged. Both the nested cleanup case and the separate 150ms execution-deadline
+regression pass locally. Native repetition must determine whether launch latency
+explains the Windows failure; that attribution is not yet claimed.
+
+The preceding primary-route commit passed a frozen affected selection of 60 files /
+780 TUI tests, plus canonical static checks and bounded integration (47 Python /
+59 TUI). The push hook independently expanded to the full suite and refused it;
+a documented logged exception honored the user's focused-test-only requirement.
