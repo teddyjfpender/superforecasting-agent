@@ -124,3 +124,12 @@ Preview, scenario preparation and unattended updates now share the same frozen
 contract comparison. Conflicting answers remain editable but cannot be passed off
 as a probability update. Adaptive questioning receives explicit conflict diagnostics
 so it can clarify the intended question instead of silently changing settlement.
+
+### Usability review: readable beliefs and uncertainty navigation
+
+The review transcript now identifies answers by question wording instead of
+hashed category IDs. Outline shortcuts jump to unresolved or required gaps,
+wrap around, retain saved notes and never confirm answers. Tests cover label
+readability and navigation at 60×18, 80×24 and 120×40. The final targeted backend
+run passed **128 tests**; the repository-wide suite was not repeated for these
+bounded changes.

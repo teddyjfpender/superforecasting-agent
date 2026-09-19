@@ -776,7 +776,9 @@ export function ForecastInterview({
                 ))}
                 {record?.document.answers.map(answer => (
                   <Text color={t.color.muted} key={answer.question_id}>
-                    {answer.question_id}:{' '}
+                    {record.document.questions.find(question => question.id === answer.question_id)?.prompt ??
+                      answer.question_id}
+                    :{' '}
                     {answer.status === 'answered'
                       ? [Array.isArray(answer.value) ? answer.value.join(', ') : answer.value, answer.custom_text]
                           .filter(value => value !== null && value !== undefined)

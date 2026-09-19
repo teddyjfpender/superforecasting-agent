@@ -285,3 +285,17 @@ Leaving with unconfirmed edits requires **Ctrl+X** to discard them, or **Esc**
 to keep editing. Confirmed answers remain durable. Notes and unconfirmed text
 survive question navigation and resizing within the open interview; they are
 not automatically persisted on close or process termination.
+
+### Returning to uncertainty
+
+Open **Ctrl+L Outline**, then use **u** for the next unresolved question or **r**
+for the next required gap. Both wrap around and include Unknown/Skipped; they
+navigate only and never confirm an answer. The selected answer's saved note is
+shown below the list. Review summaries use the question wording, including exact
+category names, rather than internal identifiers.
+
+Changes to a frozen question's title, resolution criteria, source, deadline,
+outcome type, units or categories are reported consistently by preview and
+rejected before comparisons or unattended updates. Adaptive questioning sees
+these conflicts and can clarify whether a new question is intended. Editing a
+draft remains possible; changing settlement meaning is not an ordinary update.

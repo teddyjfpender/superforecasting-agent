@@ -99,9 +99,10 @@ export function InterviewOutline({
   onClose: () => void
 }) {
   const [selected, setSelected] = useState(index)
+  const [navigationMessage, setNavigationMessage] = useState('')
   const questions = record.document.questions
   const count = questions.length + 1
-  const visible = Math.max(2, Math.min(20, rows - 12))
+  const visible = Math.max(2, Math.min(20, rows - 13))
   const offset = windowOffset(count, selected, visible)
   useInput(
     (input, key, event) => {
@@ -109,6 +110,25 @@ export function InterviewOutline({
 
       if (key.escape) {
         onClose()
+      } else if (!key.ctrl && (input === 'u' || input === 'r')) {
+        const candidates = questions
+          .map((question, at) => ({ question, at }))
+          .filter(
+            ({ question }) =>
+              (input !== 'r' || question.required) &&
+              !record.document.answers.some(
+                answer => answer.question_id === question.id && answer.status === 'answered'
+              )
+          )
+
+        const next = candidates.find(item => item.at > selected) ?? candidates[0]
+
+        if (next) {
+          setSelected(next.at)
+          setNavigationMessage('')
+        } else {
+          setNavigationMessage(input === 'r' ? 'No required gaps.' : 'No unresolved questions.')
+        }
       } else if (key.return) {
         onSelect(selected)
       } else if (key.upArrow || key.downArrow || key.pageUp || key.pageDown) {
@@ -132,7 +152,7 @@ export function InterviewOutline({
   return (
     <ModalOverlay
       cols={cols}
-      footerHint="[↑↓] [←→ Section] [PgUp/Dn] [Enter Open] [Esc]"
+      footerHint="[↑↓] [←→ Section] [u Gap] [r Required] [Enter] [Esc]"
       maxHeight={34}
       rows={rows}
       t={t}
@@ -165,7 +185,11 @@ export function InterviewOutline({
           )
         })}
       <Text color={t.color.muted} wrap="truncate-end">
-        {selected + 1}/{count} · Opening a question never confirms an answer.
+        {navigationMessage || `${selected + 1}/${count} · Opening never confirms an answer.`}
+      </Text>
+      <Text color={t.color.muted} wrap="truncate-end">
+        {record.document.answers.find(answer => answer.question_id === questions[selected]?.id)?.note ||
+          'Unknown is a valid state; revisit it when useful evidence becomes available.'}
       </Text>
     </ModalOverlay>
   )

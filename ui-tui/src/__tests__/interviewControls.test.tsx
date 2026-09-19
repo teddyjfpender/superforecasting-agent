@@ -945,7 +945,9 @@ it('distinguishes unknown and skipped from answered and explains review gaps bef
     await ui.wait('Record comparable cases.')
     expect(ui.text()).toContain('define 0/2')
     expect(ui.text()).toContain('Answer coverage is not evidence quality')
-    expect(ui.text().lastIndexOf('Record comparable cases.')).toBeLessThan(ui.text().lastIndexOf('title: unknown'))
+    expect(ui.text().lastIndexOf('Record comparable cases.')).toBeLessThan(
+      ui.text().lastIndexOf('What event?: unknown')
+    )
     ui.press('\x0c')
     await ui.wait('INTERVIEW OUTLINE')
     expect(ui.text()).toContain('[unknown]')
@@ -1026,6 +1028,109 @@ it('requires explicit discard to close edited answers without silently saving th
     ui.press('\x18')
     await vi.waitFor(() => expect(close).toHaveBeenCalledOnce())
     expect(request.mock.calls).toHaveLength(1)
+  } finally {
+    ui.close()
+  }
+})
+
+it.each([
+  [60, 18],
+  [80, 24],
+  [120, 40]
+])('jumps to gaps without confirming answers and shows uncertainty notes at %s×%s', async (cols, rows) => {
+  const record = fixture()
+  record.document.questions.push({
+    ...record.document.questions[0]!,
+    id: 'drivers',
+    required: false,
+    prompt: 'Which driver?'
+  })
+  record.document.answers = [
+    {
+      question_id: 'title',
+      status: 'unknown',
+      value: null,
+      actor: 'user',
+      evidence_refs: [],
+      note: 'Await official definition',
+      custom_text: null
+    },
+    {
+      question_id: 'drivers',
+      status: 'skipped',
+      value: null,
+      actor: 'user',
+      evidence_refs: [],
+      note: '',
+      custom_text: null
+    }
+  ]
+
+  const request = vi.fn(async (method: string) => {
+    if (method === 'forecast.interview.list') {
+      return { interviews: [record] }
+    }
+
+    if (method === 'forecast.interview.preview') {
+      return { spec: {}, issues: [], unanswered: [], committable: false }
+    }
+
+    throw new Error(`Unexpected ${method}`)
+  })
+
+  const ui = await screen(request, cols, rows)
+
+  try {
+    await ui.wait('Review answers')
+    ui.press('\x0c')
+    await ui.wait('INTERVIEW OUTLINE')
+    ui.press('r')
+    await ui.wait('Await official definition')
+    ui.press('u')
+    await ui.wait('› [skipped]')
+    ui.press('r')
+    await ui.wait('› [unknown]')
+    ui.press('\r')
+    await ui.wait('What event?')
+    expect(request.mock.calls.every(([method]) => method !== 'forecast.interview.answer')).toBe(true)
+  } finally {
+    ui.close()
+  }
+})
+
+it('labels category beliefs with their question instead of internal hashes in review', async () => {
+  const record = fixture()
+  record.document.questions = [
+    {
+      ...record.document.questions[0]!,
+      id: 'category_prob_123abc',
+      prompt: 'What is the probability of A?',
+      kind: 'probability'
+    }
+  ]
+  record.document.answers = [
+    {
+      question_id: 'category_prob_123abc',
+      status: 'answered',
+      value: 0.4,
+      actor: 'user',
+      evidence_refs: [],
+      note: '',
+      custom_text: null
+    }
+  ]
+
+  const request = vi.fn(async (method: string) =>
+    method === 'forecast.interview.list'
+      ? { interviews: [record] }
+      : { spec: {}, issues: [], unanswered: [], committable: false }
+  )
+
+  const ui = await screen(request)
+
+  try {
+    await ui.wait('What is the probability of A?: 0.4')
+    expect(ui.text()).not.toContain('category_prob_123abc')
   } finally {
     ui.close()
   }
