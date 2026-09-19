@@ -446,3 +446,25 @@ required W02 work. No full Python or TUI suite was run.
   but safe child spawning is not established by that outcome. W05/W08 must examine the
   PTY spawn boundary; do not silence the warning or attribute historical SSL/BFD failures
   from this evidence. The focused tests retained their normal warning output.
+
+### W05/W08 — remove Python-after-fork dashboard startup
+
+- Traced all 18 integration warnings to `PtyProcess.spawn` calling Python `forkpty`
+  in the threaded dashboard process. Replaced that allocation/startup path with
+  a strict hosting owner using `os.posix_spawn(setsid=True)` and an isolated helper
+  interpreter. The helper acquires the controlling terminal, closes unrelated inherited
+  fds and executes the requested argv; no Python application state is copied after fork.
+- Bounded startup/error handshake preserves missing-executable/cwd errors and detects
+  helper failure or timeout. Failed startup releases descriptors and reaps the direct
+  child before returning; successful startup transfers PID/master ownership to the
+  existing PtyProcess bridge. Unsupported safe spawning fails closed with an actionable
+  platform diagnostic, without an unsafe fork fallback. Existing resize/read/write and
+  retained-dashboard session behavior are preserved.
+- Verification on macOS ARM64/Python 3.13: 39 focused hosting/PTY/dashboard/local-desk
+  tests passed with no warnings (previous integrated run had 18 forkpty warnings).
+  Dedicated spawn regressions additionally cover closed standard descriptors and
+  unsupported runtime diagnostics. Canonical Python static checks pass; new hosting
+  modules receive complete selected lint/format/type checks.
+- This is evidence for removal of the observed threaded-fork hazard, not attribution
+  of historical SSL or bad-file-descriptor incidents. Native Linux and installed-artifact
+  requalification, other runtime lifecycle seams and the full W08 matrix remain open.

@@ -20,6 +20,21 @@ These are entry points and representative modules, not an exhaustive inventory.
 | [browser_processes.py](browser_processes.py)   | Daemon identity, PID reuse safeguards and confirmed termination. |
 | [browser_connection.py](browser_connection.py) | Browser endpoint connection ownership.                           |
 
+## POSIX terminal startup
+
+`pty_spawn.spawn_pty` owns allocation through confirmed executable startup. It uses
+`posix_spawn` with a new session and an isolated Python helper (`pty_exec.py`), so
+application threads and Python locks are not copied into a fork child. The helper
+acquires the controlling terminal and closes unrelated inherited descriptors before
+exec. A bounded error pipe preserves ordinary executable/cwd errors. Failure closes
+allocations and reaps the direct child; success transfers its PID/master descriptor
+to the dashboard's existing PTY process owner. No unsafe fork fallback is used.
+
+This path requires POSIX `posix_spawn(setsid=True)`, `/dev/fd`, and controlling-terminal
+ioctls. Native Windows continues to use its existing unavailable/WSL behavior.
+Tests live in `tests/hosting/test_pty_spawn.py` and `tests/runtime_cli/test_pty_bridge.py`.
+This change does not identify the historical SSL or bad-file-descriptor crash causes.
+
 ## Working in this directory
 
 Run checks from the repository root:

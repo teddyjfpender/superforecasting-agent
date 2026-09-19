@@ -15,8 +15,9 @@ Design constraints:
   raises :class:`ImportError` and the dashboard's Forecast Desk tab shows a
   WSL-recommended banner instead of crashing.  Every other feature in the
   dashboard (sessions, jobs, metrics, config editor) works natively.
-* **Zero Node dependency on the server side.**  We use :mod:`ptyprocess`,
-  which is a pure-Python wrapper around the OS calls.  The browser talks
+* **No Python-after-fork startup.** The hosting owner uses POSIX spawn and a
+  fresh helper interpreter; :mod:`ptyprocess` retains master-fd and child-reaping
+  ownership after successful exec.  The browser talks
   to the same Forecast Desk TUI flow exposed by ``superforecasting-agent tui``,
   so every TUI feature (slash popover, model picker, tool rows, markdown, skin
   engine, clarify/sudo/approval prompts) ships automatically.
@@ -37,6 +38,8 @@ import struct
 import sys
 import termios
 import time
+
+from superforecasting_agent.hosting.pty_spawn import spawn_pty
 from typing import Optional, Sequence
 
 try:
@@ -119,12 +122,24 @@ class PtyBridge:
         spawn_env = (os.environ.copy() if env is None else env.copy())
         if not spawn_env.get("TERM"):
             spawn_env["TERM"] = "xterm-256color"
-        proc = ptyprocess.PtyProcess.spawn(  # type: ignore[union-attr]
-            list(argv),
-            cwd=cwd,
-            env=spawn_env,
-            dimensions=(rows, cols),
-        )
+        try:
+            pid, fd = spawn_pty(argv, cwd=cwd, env=spawn_env, rows=rows, cols=cols)
+        except NotImplementedError as exc:
+            raise PtyUnavailableError(
+                "Safe POSIX terminal spawning is unavailable on this runtime. "
+                "Use a supported desktop runtime or WSL."
+            ) from exc
+        try:
+            proc = ptyprocess.PtyProcess(pid, fd)  # type: ignore[union-attr]
+        except BaseException:
+            # Adoption failed; this unreaped direct child still belongs to us.
+            try:
+                os.kill(pid, signal.SIGKILL)  # windows-footgun: ok — POSIX-only terminal owner
+            except ProcessLookupError:
+                pass
+            os.waitpid(pid, 0)
+            os.close(fd)
+            raise
         return cls(proc)
 
     @property
