@@ -1397,6 +1397,7 @@ describe('DeskView mass forced re-run (selection + U/u fan-out)', () => {
     // The job runs the whole batch server-side and reports back a done JobRecord
     // carrying the honest tally it computed (1 refreshed, 1 unchanged, 1 no-sources).
     const doneJob = {
+      job_id: 'job_1',
       done_count: 3,
       result: { tally: { error: 0, no_sources: 1, refreshed: 1, unchanged: 1 } },
       status: 'done',

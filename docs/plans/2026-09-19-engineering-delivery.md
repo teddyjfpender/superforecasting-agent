@@ -370,3 +370,20 @@ required W02 work. No full Python or TUI suite was run.
   W02 remains partial and no full suite was run.
 - The protocol round-trip test now excludes unset additive fields, matching the actual
   gateway's validate-without-rewriting behavior. Required null values are preserved.
+
+### W02/W06 follow-up — job attachment response ownership
+
+- Migrated job-attachment fixtures to generated jobs.active/jobs.status responses and
+  complete job DTOs using RpcFixtures; removed the request-only gateway cast. The
+  production hook consumes generated results directly rather than an unchecked mirror.
+- Added attachment epochs and monotonic response admission: returning to the same job
+  cannot admit an earlier attachment's completion, overlapping responses cannot regress
+  displayed progress, and delayed startup discovery cannot resurrect an old attachment
+  after an explicitly selected job completes. Wrong-job records are ignored and repeated
+  stop calls unsubscribe once.
+- Focused verification: 81 tests passed across job attachment and Desk rendering; the
+  subsequently added wrong-job regression brings the attachment file to 10 passing tests.
+  The Desk completion fixture now includes the job identity emitted by the actual backend.
+  Canonical static checks passed; test-project diagnostics fell from 165 to 160.
+- W02/W06 remain partial: this does not establish real transport reconnect qualification,
+  complete test-fixture typing, or the remaining route/modal ownership requirements.

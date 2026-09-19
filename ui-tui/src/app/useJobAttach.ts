@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react'
 
-import { asRpcResult } from '../lib/rpc.js'
 import type { RpcRequest } from '../protocol/generated.js'
 import { WireEvent } from '../protocol/generated.js'
 
@@ -76,6 +75,9 @@ export function attachJobLoop(
 ): JobAttachController {
   let cancelled = false
   let jobId: null | string = null
+  let attachmentEpoch = 0
+  let requestSequence = 0
+  let appliedSequence = 0
   let timer: null | ReturnType<typeof setInterval> = null
 
   const clearTimer = () => {
@@ -85,9 +87,10 @@ export function attachJobLoop(
     }
   }
 
-  // A record reached a terminal state (or the run vanished): stop polling and
+  // A record reached a terminal state: stop polling and
   // release the attachment so a fresh job can be attached later.
   const release = () => {
+    attachmentEpoch += 1
     jobId = null
     clearTimer()
   }
@@ -99,19 +102,23 @@ export function attachJobLoop(
       return
     }
 
+    const epoch = attachmentEpoch
+    const sequence = ++requestSequence
+
     gw.request('jobs.status', { job_id: id })
       .then(raw => {
-        // Guard a late resolve after stop() OR after we moved off this job.
-        if (cancelled || jobId !== id) {
+        // Only the current attachment may publish, in response order.
+        if (cancelled || jobId !== id || attachmentEpoch !== epoch || sequence < appliedSequence) {
           return
         }
 
-        const envelope = asRpcResult<{ found?: boolean; job?: JobRecordShape }>(raw)
-        const rec = envelope?.job
+        const rec = raw.job
 
-        if (!rec) {
+        if (!rec || rec.job_id !== id) {
           return
         }
+
+        appliedSequence = sequence
 
         if (TERMINAL.has(String(rec.status))) {
           release()
@@ -136,26 +143,27 @@ export function attachJobLoop(
       return
     }
 
+    attachmentEpoch += 1
     jobId = id
     startPolling()
   }
 
   // Mount discovery: the newest live job of `types` (jobs.active returns newest
-  // first). An explicit attach() that already fired wins the race (jobId set), so
-  // discovery never clobbers a just-started job.
+  // first). Any explicit attachment wins, including one that has already
+  // completed before this discovery response arrives.
   gw.request('jobs.active', types.length ? { types } : {})
     .then(raw => {
-      if (cancelled || jobId) {
+      if (cancelled || attachmentEpoch !== 0 || jobId) {
         return
       }
 
-      const r = asRpcResult<{ jobs?: JobRecordShape[] }>(raw)
-      const live = r?.jobs?.[0]
+      const live = raw.jobs[0]
 
       if (!live?.job_id) {
         return
       }
 
+      attachmentEpoch += 1
       jobId = live.job_id
       // Paint the first frame off the discovered active record (targetIds, current,
       // done) before the poll refines it.
@@ -187,6 +195,10 @@ export function attachJobLoop(
   return {
     attach,
     stop: () => {
+      if (cancelled) {
+        return
+      }
+
       cancelled = true
       clearTimer()
       gw.off?.('event', onEvent)
