@@ -90,3 +90,33 @@ def belief_errors(draft: InterviewDraft) -> list[str]:
         elif abs(sum(v for v in probabilities if isinstance(v, float)) - 1.0) > 1e-9:
             errors.append("Category probabilities must sum to 1.")
     return errors
+
+
+def contract_errors(draft: InterviewDraft, contract: dict) -> list[str]:
+    """Use the frozen settlement meaning across preview, agents and comparisons."""
+    expected = {
+        "title": contract["title"],
+        "criteria": contract["resolution_criteria"],
+        "source": contract["resolution_source"],
+        "deadline": contract["close_time"] or contract["resolution_time"],
+        "outcome": contract["outcome_space"]["type"],
+        "units": contract["outcome_space"]["units"],
+    }
+    errors = []
+    for answer in draft.answers:
+        if answer.status != "answered":
+            continue
+        if answer.question_id == "categories":
+            labels = [v.strip() for v in str(answer.value).splitlines() if v.strip()]
+            if labels != contract["outcome_space"]["choices"]:
+                errors.append(
+                    "changed category identities require a new question, not a probability update"
+                )
+        elif (
+            answer.question_id in expected
+            and answer.value != expected[answer.question_id]
+        ):
+            errors.append(
+                f"changed resolution contract ({answer.question_id}) requires a new question, not a probability update"
+            )
+    return errors

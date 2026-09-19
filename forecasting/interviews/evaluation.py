@@ -13,7 +13,7 @@ from forecasting.interviews.generation import (
     prompt_digest,
     run_model,
 )
-from forecasting.interviews.review import belief_errors
+from forecasting.interviews.review import belief_errors, contract_errors
 from forecasting.interviews.service import InterviewService
 from forecasting.interviews.store import InterviewStore
 from forecasting.jobs.policy import ActionClass
@@ -79,41 +79,9 @@ def prepare(
         }
     else:
         contract = packet["frozen_question"]
-        contract_answers = {
-            "title": contract["title"],
-            "criteria": contract["resolution_criteria"],
-            "source": contract["resolution_source"],
-            "deadline": contract["close_time"] or contract["resolution_time"],
-            "outcome": contract["outcome_space"]["type"],
-            "units": contract["outcome_space"]["units"],
-        }
-        category_answer = next(
-            (
-                a
-                for a in draft.answers
-                if a.question_id == "categories" and a.status == "answered"
-            ),
-            None,
-        )
-        if (
-            category_answer
-            and [
-                v.strip() for v in str(category_answer.value).splitlines() if v.strip()
-            ]
-            != contract["outcome_space"]["choices"]
-        ):
-            raise ValidationError(
-                "changed category identities require a new question, not a scenario comparison"
-            )
-        if any(
-            answer.status == "answered"
-            and answer.question_id in contract_answers
-            and answer.value != contract_answers[answer.question_id]
-            for answer in draft.answers
-        ):
-            raise ValidationError(
-                "changed resolution contract requires a new question, not a scenario comparison"
-            )
+        errors = contract_errors(draft, contract)
+        if errors:
+            raise ValidationError(" ".join(errors))
     scenarios = {item.id: item for item in draft.scenarios}
     if any(key not in scenarios for key in options.scenario_ids):
         raise ValidationError(

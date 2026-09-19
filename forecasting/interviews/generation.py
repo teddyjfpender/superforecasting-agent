@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 from forecasting.interviews.context import read_context
 from forecasting.interviews.model_worker import MAX_RESPONSE_BYTES
-from forecasting.interviews.review import review_findings
+from forecasting.interviews.review import contract_errors, review_findings
 from forecasting.interviews.store import InterviewStore
 from forecasting.models import ValidationError
 from protocol.interviews import (
@@ -45,6 +45,7 @@ Ask about overlooked drivers, competing hypotheses, reference-class selection, b
 resolution ambiguities, dependent causes, disconfirming evidence and what would change the estimate.
 Distinguish missing knowledge from future variability and measurement error. Do not promise to eliminate
 irreducible randomness or invent an exact epistemic/aleatoric variance split. Ask useful conditioning questions.
+The frozen question contract is authoritative. If answers conflict with it, clarify whether a new question is needed; never silently reinterpret settlement.
 Prior interview answers are historical, not newly confirmed beliefs or the active forecast.
 A conditional scenario assumes specified states; an ablation excludes a factor without asserting it false.
 Do not answer for the user, suggest their probability, revise existing answers or restate already asked questions.
@@ -78,6 +79,9 @@ def build_messages(
         "context_captured_at": context["captured_at"] if context else None,
         "max_questions": options.max_questions,
         "elicitation_gaps": review_findings(draft),
+        "contract_conflicts": contract_errors(draft, context["question"])
+        if context
+        else [],
         "schema": InterviewFollowups.model_json_schema(),
     }
     encoded = json.dumps(packet, ensure_ascii=False, allow_nan=False)

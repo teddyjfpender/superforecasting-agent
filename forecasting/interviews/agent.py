@@ -7,7 +7,11 @@ from typing import TYPE_CHECKING
 
 from forecasting.interviews.context import read_context
 from forecasting.interviews.generation import apply_followups
-from forecasting.interviews.review import belief_errors, review_findings
+from forecasting.interviews.review import (
+    belief_errors,
+    contract_errors,
+    review_findings,
+)
 from forecasting.interviews.service import InterviewService
 from forecasting.models import ValidationError
 from protocol.interview_agent import InterviewAgentRequest
@@ -121,6 +125,9 @@ def review_for_update(
             "review does not match the current question/baseline; start a new interview"
         )
     context = read_context(ledger, interview_id, draft.context_digest)
+    errors = contract_errors(draft, context["question"])
+    if errors:
+        raise ValidationError(" ".join(errors))
     current = asdict(question)
     if any(
         context["question"].get(key) != current.get(key)

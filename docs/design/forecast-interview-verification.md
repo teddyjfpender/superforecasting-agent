@@ -117,3 +117,10 @@ integration run passed **125 tests**, including outcome-space and citation-edit
 regressions. The rendered questionnaire coverage includes explicit discard without
 implicit saving, alongside note editing at three terminal sizes. The complete
 repository suite has not been rerun for these bounded changes.
+
+### Consistency review: shared contract conflicts
+
+Preview, scenario preparation and unattended updates now share the same frozen
+contract comparison. Conflicting answers remain editable but cannot be passed off
+as a probability update. Adaptive questioning receives explicit conflict diagnostics
+so it can clarify the intended question instead of silently changing settlement.

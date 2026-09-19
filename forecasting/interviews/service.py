@@ -8,9 +8,13 @@ from typing import TYPE_CHECKING, Literal
 if TYPE_CHECKING:
     from forecasting.ledger import ForecastLedger
 
-from forecasting.interviews.context import capture_context
+from forecasting.interviews.context import capture_context, read_context
 from forecasting.interviews.questions import category_questions, core_questions
-from forecasting.interviews.review import belief_errors, review_findings
+from forecasting.interviews.review import (
+    belief_errors,
+    contract_errors,
+    review_findings,
+)
 from forecasting.interviews.store import InterviewStore
 from forecasting.models import ValidationError, parse_timestamp
 from forecasting.question_spec import spec_from_dict
@@ -378,6 +382,9 @@ class InterviewService:
                 if v.strip()
             ]
         missing.extend(belief_errors(draft))
+        if draft.mode == "update" and draft.context_digest:
+            context = read_context(self.ledger, interview_id, draft.context_digest)
+            missing.extend(contract_errors(draft, context["question"]))
         try:
             deadline = raw["close_time"]
             if deadline is not None and not isinstance(deadline, str):

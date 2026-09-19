@@ -177,3 +177,21 @@ def test_tool_contract_advertises_only_agent_operations():
         "enum"
     ] == ["begin", "read", "answer", "propose", "scenario"]
     assert "actor" not in schema["$defs"]["InterviewAgentAnswer"]["properties"]
+
+
+@pytest.mark.parametrize("field,value", [("title", "A different event"), ("source", "A different authority"), ("criteria", "A different settlement condition")])
+def test_contract_edits_are_rejected_consistently_before_agent_or_model_work(desk, field, value):
+    from forecasting.interviews.evaluation import prepare
+    from protocol.scenarios import ScenarioEvaluationOptions
+
+    ledger, question = desk
+    service = InterviewService(ledger)
+    service.begin("changed-contract", question_id=question.id)
+    record = service.answer("changed-contract", expected_revision=1, request_id="edit", question_id=field, status="answered", value=value)
+    preview = service.preview("changed-contract", record["revision"])
+    assert not preview["committable"]
+    assert any(f"({field})" in issue for issue in preview["unanswered"])
+    with pytest.raises(ValidationError, match="changed resolution contract"):
+        review_for_update(ledger, question.id, "changed-contract", [])
+    with pytest.raises(ValidationError, match="changed resolution contract"):
+        prepare(ledger, "changed-contract", record["revision"], ScenarioEvaluationOptions(scenario_ids=["unused"]))
