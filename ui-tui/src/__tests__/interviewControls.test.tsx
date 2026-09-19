@@ -58,11 +58,11 @@ function fixture(): InterviewRecord {
   }
 }
 
-async function screen(request: (method: string, params: any) => Promise<any>, cols = 80, rows = 24) {
+async function screen(request: (method: string, params: any) => Promise<any>, cols = 80, rows = 24, tty = false) {
   resetOverlayState()
   const stdout = new PassThrough()
   const stdin = new PassThrough()
-  Object.assign(stdout, { columns: cols, rows, isTTY: false })
+  Object.assign(stdout, { columns: cols, rows, isTTY: tty })
   Object.assign(stdin, { isTTY: true, isRaw: false, setRawMode: () => {}, ref: () => stdin, unref: () => stdin })
   let output = ''
   stdout.on('data', chunk => {
@@ -81,8 +81,14 @@ async function screen(request: (method: string, params: any) => Promise<any>, co
       output = ''
       stdin.write(keys)
     },
-    text: () => stripAnsi(output),
-    wait: (text: string) => waitForText(() => stripAnsi(output), text),
+    resize: (columns: number, rows: number) => {
+      output = ''
+      Object.assign(stdout, { columns, rows })
+      stdout.emit('resize')
+    },
+    text: () => (tty ? stripAnsi(output).replace(/\s/g, '') : stripAnsi(output)),
+    wait: (text: string) =>
+      waitForText(() => (tty ? stripAnsi(output).replace(/\s/g, '') : stripAnsi(output)), text, { timeout: 2000 }),
     clear: () => {
       output = ''
     },
@@ -777,12 +783,16 @@ it('confirms fresh review and retries the same durable interview identity', asyn
   const attempts: any[] = []
 
   const request = vi.fn(async (method: string, params: any) => {
-    if (method === 'forecast.interview.list') {return { interviews: [record] }}
+    if (method === 'forecast.interview.list') {
+      return { interviews: [record] }
+    }
 
     if (method === 'forecast.interview.begin') {
       attempts.push(params)
 
-      if (attempts.length === 1) {throw new Error('Review response lost')}
+      if (attempts.length === 1) {
+        throw new Error('Review response lost')
+      }
 
       return { ...record, interview_id: params.interview_id }
     }
@@ -805,6 +815,76 @@ it('confirms fresh review and retries the same durable interview identity', asyn
     expect(attempts[0]).toEqual(attempts[1])
     expect(attempts[1].question_id).toBe('question')
     expect(attempts[1].interview_id).not.toBe(record.interview_id)
+  } finally {
+    ui.close()
+  }
+})
+
+it.each([
+  [80, 24],
+  [120, 40]
+])('navigates the outline without confirming local text at %s×%s', async (cols, rows) => {
+  const record = fixture()
+  record.document.questions.push({
+    ...record.document.questions[0]!,
+    id: 'counter',
+    section: 'challenge',
+    prompt: 'What would change your mind?'
+  })
+
+  const request = vi.fn(async (method: string) => {
+    if (method === 'forecast.interview.list') {
+      return { interviews: [record] }
+    }
+
+    throw new Error(`Unexpected mutation: ${method}`)
+  })
+
+  const ui = await screen(request, cols, rows)
+
+  try {
+    await ui.wait('What event?')
+
+    if (cols >= 120) {
+      expect(ui.text()).toContain('SECTIONS')
+      expect(ui.text()).toContain('SAVED CONTEXT')
+    }
+
+    ui.press('Local draft')
+    await ui.wait('Local draft')
+    ui.press('\x0c')
+    await ui.wait('INTERVIEW OUTLINE')
+    ui.press('\x1b[C')
+    await ui.wait('challenge')
+    ui.press('\r')
+    await ui.wait('What would change your mind?')
+    ui.press('\x0c')
+    await ui.wait('INTERVIEW OUTLINE')
+    ui.press('\x1b[D')
+    await ui.wait('define')
+    ui.press('\r')
+    await ui.wait('Local draft')
+    expect(request.mock.calls.every(([method]) => method === 'forecast.interview.list')).toBe(true)
+  } finally {
+    ui.close()
+  }
+})
+
+it('responds to viewport resizing without losing the current answer', async () => {
+  const record = fixture()
+  const ui = await screen(async () => ({ interviews: [record] }), 120, 40, true)
+
+  try {
+    await ui.wait('SAVEDCONTEXT')
+    ui.press('Unconfirmed belief')
+    await ui.wait('Unconfirmedbelief')
+    ui.resize(60, 18)
+    await ui.wait('Unconfirmedbelief')
+    expect(ui.text()).not.toContain('SAVEDCONTEXT')
+    expect(ui.text()).toContain('[^LList]')
+    ui.resize(140, 40)
+    await ui.wait('SAVEDCONTEXT')
+    expect(ui.text()).toContain('Unconfirmedbelief')
   } finally {
     ui.close()
   }

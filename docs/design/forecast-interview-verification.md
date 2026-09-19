@@ -57,6 +57,8 @@ Test paths above are under `tests/forecasting/`, `tests/tui_gateway/`, or
 - Source claims retain timestamps and identities but do not acquire verified
   settlement provenance merely by being attached. Syndication independence may
   remain unassessed.
-- The current interface is a sequential, scrollable modal. The wide three-pane
-  layout and richer typed dependency/distribution controls in the design remain
-  unimplemented design work; the audit does not claim those extensions are done.
+- Interviews now have a wide section/question/context layout and a question outline
+  with section jumps. Resize tests preserve unconfirmed text when switching between
+  wide and compact layouts. Typed causal dependencies and distribution-valued
+  assumptions remain unimplemented design extensions; current factors are explicit
+  statements with probabilities, true/false conditions and exclusion toggles.

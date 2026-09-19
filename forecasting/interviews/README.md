@@ -233,3 +233,16 @@ add a supported reference class through the forecast workflow, then start a fres
 review and reevaluate. This preserves the original comparison's frozen provenance.
 Generation jobs must match a committed enqueue receipt before spending, so a
 rolled-back enqueue cannot leave an executable orphan model call.
+
+### Navigating longer interviews
+
+`Ctrl+L` opens the question outline. Arrows select a question, Left/Right jumps
+between sections, Page Up/Down moves a page, and Enter opens the selection.
+Answered, Unknown and Skipped are distinct saved states. Opening a question never
+confirms it, and local unconfirmed text is retained while moving around.
+
+At 120 columns and wider, the interview shows a section/progress rail beside the
+question and a saved-context panel with answer attribution and evidence/assumption
+counts. Smaller terminals retain the single-question layout and the same outline.
+The layout uses renderer-owned dimensions and responds to resize events without
+resetting the active question or its editor.

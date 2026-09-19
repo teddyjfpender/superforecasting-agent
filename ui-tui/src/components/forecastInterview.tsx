@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 
 import { useStore } from '@nanostores/react'
-import { Box, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdout } from '@superforecasting/ink'
+import { Box, ScrollBox, type ScrollBoxHandle, Text, useInput, useTerminalSize } from '@superforecasting/ink'
 import { useEffect, useRef, useState } from 'react'
 
 import { $globalModal } from '../app/overlayStore.js'
@@ -16,6 +16,7 @@ import type { Theme } from '../theme.js'
 
 import { InterviewEvaluation } from './interviewEvaluation.js'
 import { InterviewGeneration } from './interviewGeneration.js'
+import { InterviewContext, InterviewOutline, InterviewRail } from './interviewNavigation.js'
 import { InterviewScenarios } from './interviewScenarios.js'
 import { ModalOverlay } from './modalOverlay.js'
 import { TextInput } from './textInput.js'
@@ -37,9 +38,7 @@ export function ForecastInterview({
   onDone?: (id: string) => void
   t: Theme
 }) {
-  const { stdout } = useStdout()
-  const cols = stdout?.columns ?? 80
-  const rows = stdout?.rows ?? 24
+  const { columns: cols, rows } = useTerminalSize()
   const blocked = useStore($globalModal)
   const [record, setRecord] = useState<InterviewRecord | null>(null)
   const [index, setIndex] = useState(0)
@@ -47,7 +46,7 @@ export function ForecastInterview({
   const [choice, setChoice] = useState(0)
   const [selected, setSelected] = useState<string[]>([])
   const [customEditing, setCustomEditing] = useState(false)
-  const [pane, setPane] = useState<'answers' | 'generation' | 'scenarios' | 'evaluation'>('answers')
+  const [pane, setPane] = useState<'answers' | 'generation' | 'scenarios' | 'evaluation' | 'outline'>('answers')
   const [busy, setBusy] = useState(true)
   const [error, setError] = useState('')
   const [freshConfirm, setFreshConfirm] = useState(false)
@@ -305,7 +304,10 @@ export function ForecastInterview({
   }
 
   const freshReview = async () => {
-    if (!record?.document.question_id || saving.current) {return}
+    if (!record?.document.question_id || saving.current) {
+      return
+    }
+
     saving.current = true
     setBusy(true)
     setError('')
@@ -326,11 +328,15 @@ export function ForecastInterview({
         setFreshConfirm(false)
       }
     } catch (cause) {
-      if (mounted.current) {setError(cause instanceof Error ? cause.message : String(cause))}
+      if (mounted.current) {
+        setError(cause instanceof Error ? cause.message : String(cause))
+      }
     } finally {
       saving.current = false
 
-      if (mounted.current) {setBusy(false)}
+      if (mounted.current) {
+        setBusy(false)
+      }
     }
   }
 
@@ -341,7 +347,7 @@ export function ForecastInterview({
         key.tab ||
         key.pageUp ||
         key.pageDown ||
-        (key.ctrl && ['u', 's', 'g', 'o', 'e', 'n'].includes(input))
+        (key.ctrl && ['u', 's', 'g', 'o', 'e', 'n', 'l'].includes(input))
       ) {
         ;(event as unknown as { stopImmediatePropagation?: () => void }).stopImmediatePropagation?.()
       }
@@ -349,8 +355,11 @@ export function ForecastInterview({
       if (freshConfirm) {
         ;(event as unknown as { stopImmediatePropagation?: () => void }).stopImmediatePropagation?.()
 
-        if (key.escape) {setFreshConfirm(false)}
-        else if (key.return) {void freshReview()}
+        if (key.escape) {
+          setFreshConfirm(false)
+        } else if (key.return) {
+          void freshReview()
+        }
 
         return
       }
@@ -383,12 +392,12 @@ export function ForecastInterview({
         return
       }
 
-      if (key.ctrl && (input === 'g' || input === 'o' || input === 'e')) {
+      if (key.ctrl && (input === 'g' || input === 'o' || input === 'e' || input === 'l')) {
         if (question) {
           choiceDrafts.current.set(question.id, { choice, selected })
         }
 
-        setPane(input === 'g' ? 'generation' : input === 'e' ? 'evaluation' : 'scenarios')
+        setPane(input === 'l' ? 'outline' : input === 'g' ? 'generation' : input === 'e' ? 'evaluation' : 'scenarios')
 
         return
       }
@@ -452,6 +461,9 @@ export function ForecastInterview({
     { isActive: !blocked && pane === 'answers' }
   )
 
+  const wide = cols >= 120
+  const contentWidth = (cols < 100 ? Math.max(40, cols - 2) : Math.min(cols - 6, wide ? 140 : 100)) - 6
+  const questionWidth = contentWidth - (wide ? 46 : 0)
   const height = Math.max(3, Math.min(rows - 2, 34) - 12)
 
   if (freshConfirm) {
@@ -512,6 +524,24 @@ export function ForecastInterview({
     )
   }
 
+  if (record && pane === 'outline') {
+    return (
+      <InterviewOutline
+        blocked={Boolean(blocked)}
+        cols={cols}
+        index={index}
+        onClose={() => setPane('answers')}
+        onSelect={at => {
+          select(record, at)
+          setPane('answers')
+        }}
+        record={record}
+        rows={rows}
+        t={t}
+      />
+    )
+  }
+
   if (record && pane === 'scenarios') {
     return (
       <InterviewScenarios
@@ -536,11 +566,11 @@ export function ForecastInterview({
       cols={cols}
       footerHint={
         record?.document.mode === 'update'
-          ? '[Tab/⇧Tab] [^G Ask] [^O Scenarios] [^E Compare] [^N Fresh] [Esc]'
-          : '[Tab/⇧Tab] [^G Ask] [^O Scenarios] [^E Compare] [Esc]'
+          ? '[^G Ask] [^O Scenarios] [^E Run] [^N Fresh] [Esc]'
+          : '[^G Ask] [^O Scenarios] [^E Compare] [Esc]'
       }
       maxHeight={34}
-      maxWidth={100}
+      maxWidth={wide ? 140 : 100}
       rows={rows}
       t={t}
       title={`FORECAST INTERVIEW · ${record?.document.mode === 'update' ? 'Update beliefs' : 'New question'}`}
@@ -554,92 +584,98 @@ export function ForecastInterview({
           {review
             ? 'Review answers'
             : `${index + 1}/${questions.length} · ${question?.section.replaceAll('_', ' ') ?? ''}`}
-          {busy ? ' · saving…' : ''}
+          {busy ? ' · saving…' : ' · [Tab/⇧Tab] [^L List]'}
         </Text>
-        <ScrollBox
-          decstbm={false}
-          flexDirection="column"
-          followContent={false}
-          height={height}
-          key={`${index}:${record?.interview_id}`}
-          ref={scroll}
-        >
-          {question ? (
-            <>
-              <Text bold color={t.color.primary}>
-                {question.prompt}
-                {question.required ? ' *' : ''}
-              </Text>
-              <Text color={t.color.muted}>{question.rationale}</Text>
-              {(question.kind === 'single' || question.kind === 'multiple') && !customEditing ? (
-                [
-                  ...question.choices,
-                  ...(question.allow_custom
-                    ? [{ id: '__custom', label: text ? `Other: ${text}` : 'Other — write your answer' }]
-                    : [])
-                ]
-                  .slice(choiceStart, choiceStart + choiceVisible)
-                  .map((option, offset) => {
-                    const at = choiceStart + offset
+        <Box flexDirection="row" flexShrink={0} height={height} overflow="hidden">
+          {wide && record ? <InterviewRail index={index} record={record} t={t} /> : null}
+          <ScrollBox
+            decstbm={false}
+            flexDirection="column"
+            flexShrink={0}
+            followContent={false}
+            height={height}
+            key={`${index}:${record?.interview_id}`}
+            ref={scroll}
+            width={questionWidth}
+          >
+            {question ? (
+              <>
+                <Text bold color={t.color.primary}>
+                  {question.prompt}
+                  {question.required ? ' *' : ''}
+                </Text>
+                <Text color={t.color.muted}>{question.rationale}</Text>
+                {(question.kind === 'single' || question.kind === 'multiple') && !customEditing ? (
+                  [
+                    ...question.choices,
+                    ...(question.allow_custom
+                      ? [{ id: '__custom', label: text ? `Other: ${text}` : 'Other — write your answer' }]
+                      : [])
+                  ]
+                    .slice(choiceStart, choiceStart + choiceVisible)
+                    .map((option, offset) => {
+                      const at = choiceStart + offset
 
-                    return (
-                      <Text color={at === choice ? t.color.accent : t.color.primary} key={option.id}>
-                        {at === choice ? '› ' : '  '}
-                        {question.kind === 'multiple' && at < question.choices.length
-                          ? selected.includes(option.id)
-                            ? '[x] '
-                            : '[ ] '
-                          : ''}
-                        {option.label}
-                      </Text>
-                    )
-                  })
-              ) : (
-                <TextInput
-                  columns={Math.max(20, Math.min(cols - 10, 90))}
-                  focus={!busy && !blocked}
-                  immediateChange
-                  key={question.id}
-                  multiline
-                  onChange={value => {
-                    drafts.current.set(question.id, value)
-                    setText(value)
-                  }}
-                  onSubmit={() => void save()}
-                  placeholder="Your answer; Unknown and Skip are always available"
-                  value={text}
-                />
-              )}
-            </>
-          ) : review ? (
-            <>
-              <Text color={t.color.primary}>
-                Answers are saved. Nothing has changed the active forecast probability.
-              </Text>
-              {record?.document.answers.map(answer => (
-                <Text color={t.color.muted} key={answer.question_id}>
-                  {answer.question_id}:{' '}
-                  {answer.status === 'answered'
-                    ? [Array.isArray(answer.value) ? answer.value.join(', ') : answer.value, answer.custom_text]
-                        .filter(value => value !== null && value !== undefined)
-                        .join(' · ')
-                    : answer.status}{' '}
-                  · {answer.actor}
+                      return (
+                        <Text color={at === choice ? t.color.accent : t.color.primary} key={option.id}>
+                          {at === choice ? '› ' : '  '}
+                          {question.kind === 'multiple' && at < question.choices.length
+                            ? selected.includes(option.id)
+                              ? '[x] '
+                              : '[ ] '
+                            : ''}
+                          {option.label}
+                        </Text>
+                      )
+                    })
+                ) : (
+                  <TextInput
+                    columns={Math.max(20, questionWidth - 2)}
+                    focus={!busy && !blocked}
+                    immediateChange
+                    key={question.id}
+                    multiline
+                    onChange={value => {
+                      drafts.current.set(question.id, value)
+                      setText(value)
+                    }}
+                    onSubmit={() => void save()}
+                    placeholder="Your answer; Unknown and Skip are always available"
+                    value={text}
+                  />
+                )}
+              </>
+            ) : review ? (
+              <>
+                <Text color={t.color.primary}>
+                  Answers are saved. Nothing has changed the active forecast probability.
                 </Text>
-              ))}
-              {preview?.unanswered.map(item => (
-                <Text color={t.color.error} key={item}>
-                  Required: {item}
-                </Text>
-              ))}
-              {preview?.issues.map((issue, at) => (
-                <Text color={t.color.error} key={at}>
-                  {String(issue.message)}
-                </Text>
-              ))}
-            </>
-          ) : null}
-        </ScrollBox>
+                {record?.document.answers.map(answer => (
+                  <Text color={t.color.muted} key={answer.question_id}>
+                    {answer.question_id}:{' '}
+                    {answer.status === 'answered'
+                      ? [Array.isArray(answer.value) ? answer.value.join(', ') : answer.value, answer.custom_text]
+                          .filter(value => value !== null && value !== undefined)
+                          .join(' · ')
+                      : answer.status}{' '}
+                    · {answer.actor}
+                  </Text>
+                ))}
+                {preview?.unanswered.map(item => (
+                  <Text color={t.color.error} key={item}>
+                    Required: {item}
+                  </Text>
+                ))}
+                {preview?.issues.map((issue, at) => (
+                  <Text color={t.color.error} key={at}>
+                    {String(issue.message)}
+                  </Text>
+                ))}
+              </>
+            ) : null}
+          </ScrollBox>
+          {wide && record ? <InterviewContext index={index} record={record} t={t} /> : null}
+        </Box>
         <Text color={t.color.accent}>
           {review
             ? record?.document.mode === 'create'
