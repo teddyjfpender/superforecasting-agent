@@ -11,19 +11,19 @@ from .values import _first_present, _optional_float, _optional_str
 def _kalshi_endpoint_for_source(source: str, *, api_base_url: str) -> str:
     parsed = urlparse(source)
     if parsed.scheme in {"http", "https"}:
-        if parsed.netloc == "external-api.kalshi.com":
+        if parsed.hostname in {"external-api.kalshi.com", "api.elections.kalshi.com"}:
             return source
-        if parsed.netloc.endswith("kalshi.com"):
+        if parsed.hostname == "kalshi.com" or (parsed.hostname or "").endswith(".kalshi.com"):
             parts = [part for part in parsed.path.split("/") if part]
             if len(parts) >= 2 and parts[0].lower() == "markets":
                 ticker = parts[-1].upper()
-                return f"{api_base_url.rstrip('/')}/markets/{quote(ticker)}"
+                return f"{api_base_url.rstrip('/')}/markets/{quote(ticker, safe='')}"
             raise ValidationError("kalshi market URL must include a market ticker")
         return source
     ticker = source.removeprefix("ticker:").strip().upper()
     if not ticker:
         raise ValidationError("kalshi market ticker is empty")
-    return f"{api_base_url.rstrip('/')}/markets/{quote(ticker)}"
+    return f"{api_base_url.rstrip('/')}/markets/{quote(ticker, safe='')}"
 
 
 def _kalshi_yes_probability(payload: dict) -> float | None:

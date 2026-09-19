@@ -92,6 +92,7 @@ STRICT_PYTHON = (
     "forecasting/appconfig.py",
     "forecasting/sources/dispatch.py",
     "forecasting/sources/kalshi_prices.py",
+    "forecasting/sources/kalshi_selection.py",
     "forecasting/sources/requests.py",
     "forecasting/sources/evidence.py",
     "forecasting/sources/filters.py",

@@ -73,3 +73,12 @@ documents the fixed-point dollar fields. Tests in
 `tests/forecasting/test_kalshi_price_contract.py` cover cross-consumer units,
 legacy precedence and malformed values. Keep measurement conversion here rather
 than duplicating it in another transport or ledger adapter.
+
+
+`kalshi_selection` validates single-market URL selectors before acquisition and
+selects the matching ticker from the response. A custom mirror without a ticker
+must return exactly one identified market. Missing identities, no match and
+multiple matches are errors; source ordering never determines the imported
+question. API URLs remain distinct from website URLs. Identity regressions live
+in `tests/forecasting/test_kalshi_identity_contract.py`, including a CLI check
+that mismatched responses cannot write evidence or a baseline.

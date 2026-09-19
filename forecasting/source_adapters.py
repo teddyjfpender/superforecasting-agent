@@ -2208,18 +2208,13 @@ def load_kalshi_market(
     if not source.strip():
         raise ValidationError("kalshi import source is required")
     endpoint = _kalshi_endpoint_for_source(source.strip(), api_base_url=api_base_url)
-    payload = _read_json_endpoint(endpoint, "kalshi market")
-    if isinstance(payload, dict) and isinstance(payload.get("market"), dict):
-        payload = payload["market"]
-    elif isinstance(payload, dict) and isinstance(payload.get("markets"), list):
-        row = next((item for item in payload["markets"] if isinstance(item, dict)), None)
-        if row is None:
-            raise ValidationError("kalshi market response did not include any markets")
-        payload = row
-    if not isinstance(payload, dict):
-        raise ValidationError("kalshi market response must be a JSON object or object with market")
+    from forecasting.sources.kalshi_selection import kalshi_requested_ticker, select_kalshi_market
 
-    return _kalshi_market_from_payload(payload)
+    expected_ticker = kalshi_requested_ticker(endpoint)
+    payload = _read_json_endpoint(endpoint, "kalshi market")
+    return _kalshi_market_from_payload(
+        select_kalshi_market(payload, expected_ticker=expected_ticker)
+    )
 
 
 def load_kalshi_resolved_binary_cases(

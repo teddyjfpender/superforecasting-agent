@@ -228,3 +228,22 @@ and local-HTTP CLI evidence/benchmark imports. Canonical Python static and gener
 checks passed, with all 76 import contracts kept. No full suite was run. This closes
 quote conversion for those consumers, not order-book/candlestick validation,
 market identity selection, provider retry receipts or full W03 acceptance.
+
+
+## Kalshi single-market identity admission
+
+Replaced first-row selection with a pure strictly checked source owner. Ticker
+paths and query filters must identify one market before network acquisition;
+returned records must contain exactly one matching ticker. Untargeted custom
+mirrors may return one identified market, never an ambiguous collection. Invalid
+wrappers and missing identities fail closed. API URL routing now preserves both
+external-api and api.elections endpoints; lookalike domains are not rewritten,
+and raw tickers are URL-escaped without permitting path substitution.
+
+The initial focused identity/timestamp/CLI selection passed 43 tests. After API
+routing coverage and the CLI no-write regression were added, the final identity
+file passed all 25 tests. Canonical Python checks and all 76 import contracts
+passed. The CLI mismatch regression checks nonzero exit, actionable stderr,
+empty evidence/baseline collections and unchanged active forecast. No full suite
+was run. Polymarket event/market identity selection and the remaining W03 request,
+plan and receipt requirements are still open.
