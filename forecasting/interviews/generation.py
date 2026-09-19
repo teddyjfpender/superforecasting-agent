@@ -177,7 +177,7 @@ def apply_followups(
     existing_ids = {q.id for q in draft.questions}
     reserved_ids = {
         q.id
-        for kind in ("binary", "numeric", "categorical")
+        for kind in ("binary", "numeric", "distribution", "categorical")
         for q in core_questions(kind, update=True)
     }
     existing_prompts = {q.prompt.strip().casefold() for q in draft.questions}

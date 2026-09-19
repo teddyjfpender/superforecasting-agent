@@ -91,3 +91,13 @@ proposal commits. The rendered questionnaire suite passed **22 tests**, includin
 Unknown/Skipped progress, review guidance, resizing, recovery and old comparison
 reports without reference-class fields. This is targeted validation of the review
 changes; the earlier full-suite counts above belong to the preceding commit.
+
+### Additional review, pass one: outcome and belief integrity
+
+Continuous-distribution questions now receive numeric elicitation with their exact
+outcome type preserved. Existing categorical questions seed their category contract
+and individual probability questions instead of asking users to recreate it.
+Shared belief validation prevents contradictory quantiles and incomplete or
+unnormalized supplied category probabilities from reaching comparison or unattended
+update paths. Partial drafts remain editable. Comparisons also reject changes to
+the frozen title and category identities, alongside the existing units/source checks.

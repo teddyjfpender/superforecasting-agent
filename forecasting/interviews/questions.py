@@ -1,6 +1,22 @@
 """Deterministic interview spine; model follow-ups supplement these safeguards."""
 
+import hashlib
+
 from protocol.interviews import InterviewChoice, InterviewQuestion, InterviewSection
+
+
+def category_questions(labels: list[str]) -> list[InterviewQuestion]:
+    """Stable identities shared by creation and existing-question review."""
+    return [
+        InterviewQuestion(
+            id="category_prob_" + hashlib.sha256(label.encode()).hexdigest()[:16],
+            section="beliefs",
+            kind="probability",
+            prompt=f"What is the probability of {label}?",
+            rationale="All category probabilities must sum to 1; include residual outcomes.",
+        )
+        for label in labels
+    ]
 
 
 def core_questions(
@@ -146,6 +162,7 @@ def core_questions(
             choices=[
                 InterviewChoice(id="binary", label="Yes / no"),
                 InterviewChoice(id="numeric", label="Numeric measurement"),
+                InterviewChoice(id="distribution", label="Continuous distribution"),
                 InterviewChoice(
                     id="categorical", label="Mutually exclusive categories"
                 ),
@@ -162,7 +179,7 @@ def core_questions(
                 rationale="If you say 0.7, about 7 of 10 comparable forecasts should occur.",
             )
         ]
-    elif outcome == "numeric":
+    elif outcome in {"numeric", "distribution"}:
         belief = [
             InterviewQuestion(
                 id="units",
@@ -202,7 +219,7 @@ def core_questions(
         base_rate = next(q for q in result if q.id == "base_rate")
         base_rate.prompt = (
             "Across comparable cases, what is the distribution (median, spread and tails), in these units? State the sample size and period."
-            if outcome == "numeric"
+            if outcome in {"numeric", "distribution"}
             else "Across comparable cases, how many fell in each category? State the total sample size and period."
         )
         base_rate.rationale = "Use comparable measurements and a defined sample; do not substitute a binary success rate or treat a small sample as precise."

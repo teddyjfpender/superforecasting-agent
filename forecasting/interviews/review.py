@@ -71,3 +71,22 @@ def review_findings(draft: InterviewDraft) -> list[dict[str, str]]:
             "fix": "Check for overlooked paths, reporting error and ambiguity before retaining absolute certainty.",
         })
     return findings
+
+
+def belief_errors(draft: InterviewDraft) -> list[str]:
+    """Allow partial drafts, but reject contradictory supplied distributions before analysis."""
+    values = {a.question_id: a.value for a in draft.answers if a.status == "answered"}
+    errors = []
+    quantiles = [values.get(f"quantile_{q}") for q in (10, 50, 90)]
+    present = [v for v in quantiles if isinstance(v, float)]
+    if present != sorted(present):
+        errors.append("Quantiles must increase from the 10th to the 90th percentile.")
+    probabilities = [
+        values.get(q.id) for q in draft.questions if q.id.startswith("category_prob_")
+    ]
+    if any(v is not None for v in probabilities):
+        if not all(isinstance(v, float) for v in probabilities):
+            errors.append("Complete every category probability, or leave all unknown.")
+        elif abs(sum(v for v in probabilities if isinstance(v, float)) - 1.0) > 1e-9:
+            errors.append("Category probabilities must sum to 1.")
+    return errors

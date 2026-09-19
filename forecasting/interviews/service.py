@@ -9,8 +9,8 @@ if TYPE_CHECKING:
     from forecasting.ledger import ForecastLedger
 
 from forecasting.interviews.context import capture_context
-from forecasting.interviews.questions import core_questions
-from forecasting.interviews.review import review_findings
+from forecasting.interviews.questions import category_questions, core_questions
+from forecasting.interviews.review import belief_errors, review_findings
 from forecasting.interviews.store import InterviewStore
 from forecasting.models import ValidationError, parse_timestamp
 from forecasting.question_spec import spec_from_dict
@@ -20,7 +20,6 @@ from protocol.interviews import (
     InterviewAssumption,
     InterviewDraft,
     InterviewParent,
-    InterviewQuestion,
     InterviewScenario,
 )
 
@@ -99,7 +98,25 @@ class InterviewService:
                     "deadline": question.close_time or question.resolution_time,
                     "outcome": outcome,
                     "units": question.outcome_space.units,
+                    "categories": "\n".join(question.outcome_space.choices)
+                    if outcome == "categorical"
+                    else None,
                 }
+                if outcome == "categorical":
+                    document.questions = [
+                        q for q in document.questions if q.id != "category_beliefs"
+                    ]
+                    at = (
+                        next(
+                            i
+                            for i, q in enumerate(document.questions)
+                            if q.id == "categories"
+                        )
+                        + 1
+                    )
+                    document.questions[at:at] = category_questions(
+                        question.outcome_space.choices
+                    )
                 ids = {q.id for q in document.questions}
                 document.answers = [
                     InterviewAnswer(
@@ -158,7 +175,7 @@ class InterviewService:
             questions = core_questions(str(value), update=draft.mode == "update")
             core_ids = {
                 q.id
-                for kind in ("binary", "numeric", "categorical")
+                for kind in ("binary", "numeric", "distribution", "categorical")
                 for q in core_questions(kind, update=draft.mode == "update")
             }
             questions += [
@@ -206,17 +223,7 @@ class InterviewService:
                 next(i for i, q in enumerate(draft.questions) if q.id == "categories")
                 + 1
             )
-            draft.questions[at:at] = [
-                InterviewQuestion(
-                    id="category_prob_"
-                    + hashlib.sha256(label.encode()).hexdigest()[:16],
-                    section="beliefs",
-                    kind="probability",
-                    prompt=f"What is the probability of {label}?",
-                    rationale="All category probabilities must sum to 1; include residual outcomes.",
-                )
-                for label in labels
-            ]
+            draft.questions[at:at] = category_questions(labels)
         if status == "answered" and question_id == "title":
             draft.title = str(value)
         if status == "answered" and question_id == "drivers":
@@ -358,40 +365,15 @@ class InterviewService:
             "evidence_refs": list(draft.evidence_refs),
             "verification_status": "interview_context_not_settlement_verification",
         })
-        if outcome == "numeric":
+        if outcome in {"numeric", "distribution"}:
             raw["units"] = values.get("units")
-            quantiles = [values.get(f"quantile_{q}") for q in (10, 50, 90)]
-            present = [value for value in quantiles if isinstance(value, float)]
-            if present != sorted(present):
-                missing.append(
-                    "Quantiles must increase from the 10th to the 90th percentile."
-                )
         elif outcome == "categorical":
             raw["choices"] = [
                 v.strip()
                 for v in str(values.get("categories", "")).splitlines()
                 if v.strip()
             ]
-        if outcome == "categorical":
-            probability_questions = [
-                q.id for q in draft.questions if q.id.startswith("category_prob_")
-            ]
-            probabilities = [values.get(key) for key in probability_questions]
-            if any(value is not None for value in probabilities):
-                if not all(isinstance(value, float) for value in probabilities):
-                    missing.append(
-                        "Complete every category probability, or leave all unknown."
-                    )
-                elif (
-                    abs(
-                        sum(
-                            value for value in probabilities if isinstance(value, float)
-                        )
-                        - 1.0
-                    )
-                    > 1e-9
-                ):
-                    missing.append("Category probabilities must sum to 1.")
+        missing.extend(belief_errors(draft))
         try:
             deadline = raw["close_time"]
             if deadline is not None and not isinstance(deadline, str):

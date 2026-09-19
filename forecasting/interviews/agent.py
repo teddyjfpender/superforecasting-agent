@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 from forecasting.interviews.context import read_context
 from forecasting.interviews.generation import apply_followups
-from forecasting.interviews.review import review_findings
+from forecasting.interviews.review import belief_errors, review_findings
 from forecasting.interviews.service import InterviewService
 from forecasting.models import ValidationError
 from protocol.interview_agent import InterviewAgentRequest
@@ -107,6 +107,9 @@ def review_for_update(
     service = InterviewService(ledger)
     record = service.store.read(interview_id)
     draft = InterviewDraft.model_validate(record["document"])
+    errors = belief_errors(draft)
+    if errors:
+        raise ValidationError(" ".join(errors))
     question = ledger.get_question(question_id)
     if (
         draft.question_id != question_id

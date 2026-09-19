@@ -585,3 +585,47 @@ def test_scenario_cannot_cite_reference_class_outside_frozen_context(work, monke
     assert outcome.status == "error"
     assert "invented a reference-class reference" in outcome.error
     assert service.ledger.list_snapshots(question.id) == []
+
+
+@pytest.mark.parametrize("kind", ["numeric", "distribution", "categorical"])
+def test_existing_outcome_contracts_have_typed_elicitation_and_reject_incoherence(tmp_path, kind):
+    from forecasting.models import OutcomeSpace
+
+    ledger = ForecastLedger(tmp_path / "typed.db")
+    with allow_ledger_writes(reason="fixture"):
+        question = ledger.create_question(
+            title="Measured outcome", resolution_criteria="Official result in 2030",
+            outcome_space=OutcomeSpace(type=kind, units="USD" if kind != "categorical" else None,
+                                       choices=["A", "B"] if kind == "categorical" else []),
+        )
+    service = InterviewService(ledger)
+    record = service.begin("typed", question_id=question.id)
+    qs = record["document"]["questions"]
+    if kind == "categorical":
+        assert next(a["value"] for a in record["document"]["answers"] if a["question_id"] == "categories") == "A\nB"
+        values = [(q["id"], 0.7) for q in qs if q["id"].startswith("category_prob_")]
+        assert len(values) == 2
+    else:
+        assert "quantile_10" in {q["id"] for q in qs}
+        assert "categories" not in {q["id"] for q in qs}
+        values = [("quantile_10", 10.0), ("quantile_90", 2.0)]
+    for key, value in values:
+        record = service.answer("typed", expected_revision=record["revision"], request_id=key,
+                                question_id=key, status="answered", value=value)
+    with pytest.raises(ValidationError, match="Quantiles|sum to 1"):
+        evaluation.prepare(ledger, "typed", record["revision"], ScenarioEvaluationOptions(scenario_ids=["unused"]))
+
+
+def test_comparison_rejects_changed_categorical_contract(tmp_path):
+    from forecasting.models import OutcomeSpace
+
+    ledger = ForecastLedger(tmp_path / "categories.db")
+    with allow_ledger_writes(reason="fixture"):
+        question = ledger.create_question(title="Which result?", resolution_criteria="Official result",
+                                          outcome_space=OutcomeSpace(type="categorical", choices=["A", "B"]))
+    service = InterviewService(ledger)
+    service.begin("categories", question_id=question.id)
+    record = service.answer("categories", expected_revision=1, request_id="change", question_id="categories",
+                            status="answered", value="A\nC")
+    with pytest.raises(ValidationError, match="category identities"):
+        evaluation.prepare(ledger, "categories", record["revision"], ScenarioEvaluationOptions(scenario_ids=["unused"]))
