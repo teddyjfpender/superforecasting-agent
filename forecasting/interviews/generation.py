@@ -186,8 +186,15 @@ def apply_followups(
     }
     existing_prompts = {q.prompt.strip().casefold() for q in draft.questions}
     assumptions = {a.id for a in draft.assumptions}
+    statements = {" ".join(a.statement.split()).casefold() for a in draft.assumptions}
     allowed_evidence = set(draft.evidence_refs)
     for assumption in output.assumptions:
+        statement = " ".join(assumption.statement.split()).casefold()
+        if statement in statements:
+            raise ValidationError(
+                "model repeated an existing assumption; reuse its identifier"
+            )
+        statements.add(statement)
         if (
             assumption.id in assumptions
             or not set(assumption.evidence_refs) <= allowed_evidence

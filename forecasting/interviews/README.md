@@ -299,3 +299,16 @@ outcome type, units or categories are reported consistently by preview and
 rejected before comparisons or unattended updates. Adaptive questioning sees
 these conflicts and can clarify whether a new question is intended. Editing a
 draft remains possible; changing settlement meaning is not an ordinary update.
+
+### Stable factors and saved-input boundaries
+
+An assumption referenced by a saved scenario or an answered question cannot be
+renamed in place: add a new driver and rebuild the affected relationships. Its
+probability, uncertainty classification and rationale can still be updated with
+revision history. AI follow-ups reject duplicate assumption wording under new
+IDs (case/whitespace normalized); this is not a detector of semantic dependence.
+
+Question creation, AI follow-ups and scenario work require pending questionnaire
+edits to be confirmed first. The review shows saved answers and explicitly marks
+unconfirmed edits. Navigating to review never saves them implicitly. Required
+answer errors and unsaved edits have visible recovery instructions.

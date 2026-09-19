@@ -133,3 +133,20 @@ wrap around, retain saved notes and never confirm answers. Tests cover label
 readability and navigation at 60×18, 80×24 and 120×40. The final targeted backend
 run passed **128 tests**; the repository-wide suite was not repeated for these
 bounded changes.
+
+### Additional passes: factor meaning and saved-input authority
+
+The ledger now prevents a linked assumption's statement from being rewritten
+under a scenario or answered question. Probability/rationale updates remain
+supported; actor-ownership errors retain their precedence. Duplicate AI-proposed
+assumption text under a new ID is rejected without a partial revision.
+
+Questionnaire creation and analysis no longer silently ignore unconfirmed edits.
+The review labels its saved-only state and directs users back to outstanding edits
+or required gaps. Regression tests verify that blocked actions issue no mutation
+or analysis request and retain the user's unconfirmed text.
+
+These two passes passed **131 canonical backend/integration tests** and **31
+rendered questionnaire tests**. This targeted evidence supersedes the smaller
+counts above for the affected paths; it is not a new full-suite or live-model
+forecast-accuracy qualification.

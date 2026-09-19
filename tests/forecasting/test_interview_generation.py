@@ -376,3 +376,14 @@ def test_no_followups_does_not_manufacture_pending_user_work(work, monkeypatch):
     document = service.store.read("interview")["document"]
     assert document["status"] == "draft"
     assert len(document["generations"]) == 1
+
+
+def test_duplicate_assumption_wording_is_not_added_as_an_independent_factor(work):
+    from protocol.interviews import InterviewFollowups
+
+    service, _, _ = work
+    record = service.answer("interview", expected_revision=1, request_id="drivers", question_id="drivers", status="answered", value="Demand grows")
+    output = InterviewFollowups(questions=[], assumptions=[InterviewAssumption(id="another-id", statement="  DEMAND   grows  ")], summary="More factors")
+    with pytest.raises(ValidationError, match="repeated an existing assumption"):
+        generation.apply_followups(service.ledger, record, output, None, 3, request_id="duplicate")
+    assert service.store.read("interview")["revision"] == record["revision"]

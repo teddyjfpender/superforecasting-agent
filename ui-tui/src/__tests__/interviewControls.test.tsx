@@ -1135,3 +1135,40 @@ it('labels category beliefs with their question instead of internal hashes in re
     ui.close()
   }
 })
+
+it('does not create a question or launch analysis while edits remain unconfirmed', async () => {
+  const record = fixture()
+
+  const request = vi.fn(async (method: string) => {
+    if (method === 'forecast.interview.list') {
+      return { interviews: [record] }
+    }
+
+    if (method === 'forecast.interview.preview') {
+      return { spec: {}, issues: [], unanswered: [], committable: true }
+    }
+
+    throw new Error(`Unexpected mutation: ${method}`)
+  })
+
+  const ui = await screen(request)
+
+  try {
+    await ui.wait('What event?')
+    ui.press('Unsaved question')
+    await ui.wait('Unsaved question')
+    ui.press('\x07')
+    await ui.wait('Confirm your edits first')
+    ui.press('\t')
+    await ui.wait('unconfirmed edits')
+    ui.press('\r')
+    await ui.wait('Confirm your edits first')
+    expect(
+      request.mock.calls.every(([method]) => ['forecast.interview.list', 'forecast.interview.preview'].includes(method))
+    ).toBe(true)
+    ui.press('\x1b[Z')
+    await ui.wait('Unsaved question')
+  } finally {
+    ui.close()
+  }
+})

@@ -297,6 +297,27 @@ class InterviewStore:
                     raise ValidationError(
                         "agents cannot invent, edit or remove user answers"
                     )
+            if old:
+                linked_assumptions = {
+                    key
+                    for scenario in old.scenarios
+                    for key in [*scenario.conditions, *scenario.excluded_assumption_ids]
+                } | {
+                    key
+                    for question in old.questions
+                    if any(a.question_id == question.id for a in old.answers)
+                    for key in question.assumption_ids
+                }
+                previous_assumptions = {a.id: a for a in old.assumptions}
+                for assumption in draft.assumptions:
+                    if (
+                        assumption.id in linked_assumptions
+                        and assumption.statement
+                        != previous_assumptions[assumption.id].statement
+                    ):
+                        raise ValidationError(
+                            "linked assumptions cannot change meaning; add a new driver and rebuild its scenarios or questions"
+                        )
             conn.execute(
                 "INSERT INTO forecast_interview_revisions "
                 "(interview_id, revision, request_id, actor, document, digest, created_at) "

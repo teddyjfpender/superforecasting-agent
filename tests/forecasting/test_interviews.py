@@ -510,3 +510,24 @@ def test_editing_answer_preserves_citations_unless_explicitly_replaced(store):
     assert record["document"]["answers"][0]["note"] == "Source may be revised"
     record = service.answer("interview", expected_revision=2, request_id="remove-ref", question_id="belief", status="unknown", evidence_refs=[])
     assert record["document"]["answers"][0]["evidence_refs"] == []
+
+
+@pytest.mark.parametrize("link", ["scenario", "answered_question"])
+def test_linked_assumptions_cannot_silently_change_meaning(store, link):
+    from forecasting.interviews.service import InterviewService
+
+    document = draft(assumptions=[{"id": "health", "statement": "Candidate stays healthy"}])
+    if link == "scenario":
+        from protocol.interviews import InterviewScenario
+        document.scenarios = [InterviewScenario(id="healthy", name="Healthy", kind="conditional", conditions={"health": True}, actor="user")]
+    else:
+        document.questions[0].assumption_ids = ["health"]
+        from protocol.interviews import InterviewAnswer
+        document.answers = [InterviewAnswer.model_validate(answer())]
+    save(store, document)
+    service = InterviewService(store.ledger)
+    with pytest.raises(ValidationError, match="linked assumptions cannot change meaning"):
+        service.save_assumption("interview", expected_revision=1, request_id="rewrite", assumption={"id": "health", "statement": "Candidate withdraws"})
+    assert store.read("interview")["revision"] == 1
+    result = service.save_assumption("interview", expected_revision=1, request_id="belief", assumption={"id": "health", "statement": "Candidate stays healthy", "probability": 0.6})
+    assert result["document"]["assumptions"][0]["probability"] == 0.6

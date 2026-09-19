@@ -74,6 +74,7 @@ export function ForecastInterview({
     setRecord(next)
     setIndex(at)
     setPreview(null)
+    setError('')
     const item = next.document.questions[at]
     const prior = next.document.answers.find(answer => answer.question_id === item?.id)
     setNote(noteDrafts.current.get(item?.id ?? '') ?? prior?.note ?? '')
@@ -281,7 +282,19 @@ export function ForecastInterview({
   }
 
   const commit = async () => {
-    if (!record || !preview?.committable || saving.current || record.document.mode !== 'create') {
+    if (dirtyQuestions.current.size) {
+      setError('Confirm your edits first. Use Ctrl+L to return to the edited questions.')
+
+      return
+    }
+
+    if (!record || saving.current || record.document.mode !== 'create') {
+      return
+    }
+
+    if (!preview?.committable) {
+      setError('Complete required answers and resolve review errors before creating the question.')
+
       return
     }
 
@@ -430,6 +443,12 @@ export function ForecastInterview({
       }
 
       if (key.ctrl && (input === 'g' || input === 'o' || input === 'e' || input === 'l')) {
+        if (input !== 'l' && dirtyQuestions.current.size) {
+          setError('Confirm your edits first; analysis and scenarios use saved answers.')
+
+          return
+        }
+
         if (question) {
           choiceDrafts.current.set(question.id, { choice, selected })
         }
@@ -749,7 +768,9 @@ export function ForecastInterview({
             ) : review ? (
               <>
                 <Text color={t.color.primary}>
-                  Answers are saved. Nothing has changed the active forecast probability.
+                  {dirtyQuestions.current.size
+                    ? `${dirtyQuestions.current.size} question(s) still have unconfirmed edits. The review below shows saved answers only.`
+                    : 'Answers are saved. Nothing has changed the active forecast probability.'}
                 </Text>
                 <Text color={t.color.muted}>
                   {record?.document.mode === 'create'
@@ -797,7 +818,9 @@ export function ForecastInterview({
           {!review && question ? '[^T Note] ' : ''}
           {review
             ? record?.document.mode === 'create'
-              ? '[Enter Create question] [PgUp/Dn Review]'
+              ? dirtyQuestions.current.size || !preview?.committable
+                ? '[Ctrl+L Review gaps / edits] [PgUp/Dn Review]'
+                : '[Enter Create question] [PgUp/Dn Review]'
               : 'Review draft saved · [PgUp/Dn Review]'
             : customEditing
               ? '[^Enter Save custom answer] [Esc Choices]'
