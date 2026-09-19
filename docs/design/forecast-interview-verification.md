@@ -23,15 +23,16 @@ Test paths above are under `tests/forecasting/`, `tests/tui_gateway/`, or
 
 ## Verification status
 
-- Full TUI suite: **2,263 passed, one skipped** (220 test files).
+- Full TUI suite: **2,266 passed, one skipped** (220 test files).
 - Canonical lint, typing, architecture and generated-contract gates passed at
   the latest committed checkpoints.
 - The controlled RPC review-to-promotion round trip passes with the declared
   optional request defaults and durable state restored on every request.
-- The first canonical full Python run finished with 32,674 passed, 150 skipped
-  and six failures. All six have been addressed; the five affected test modules
-  pass together (54 tests). Additional RPC checks added after full-suite
-  collection pass separately. A final combined run remains outstanding.
+- Final canonical Python suite: **32,681 passed, 150 skipped**, no failures
+  (571.64 seconds). The first run's six failures were fixed before this rerun.
+  JUnit artifact: `.test-results/pytest-20260919T100145Z-79814.xml`.
+- Final TUI suite includes real renderer dimensions at 60×18, 80×24 and 120×40,
+  plus live resize from 120×40 to 60×18 and back to 140×40 with editor retention.
 - The signed-webhook integration now executes structured review through the real
   agent tool loop before creating its pending proposal. Replay remains idempotent
   and the active forecast is unchanged.

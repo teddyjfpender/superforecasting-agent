@@ -1,8 +1,8 @@
 # Forecast interviews, assumptions, and scenarios
 
-Status: implementation design, 18 September 2026. This document defines the full
-requested feature, not a claim that the feature is shipped. Implementation progress
-and acceptance evidence belong in the checklist below.
+Status: implemented for review, 19 September 2026. See the
+[acceptance evidence and limits](forecast-interview-verification.md) for the tested
+workflows and the boundary between the implementation and broader design extensions.
 
 ## Outcome
 
@@ -237,9 +237,9 @@ scenario. Engineering correctness and predictive usefulness need separate eviden
 - [x] Implement coherent scenario evaluation and matched ablation records.
 - [x] Add Markets-to-interview and News-to-question evidence/update flows.
 - [x] Integrate cron/tool execution with explicit unresolved-user status.
-- [ ] Verify terminal layouts, keyboard collisions, reconnect/resume and failure paths.
-- [ ] Run focused unit, integration and generated-contract checks, then required gates.
-- [ ] Publish a reviewable implementation with current README/usage instructions.
+- [x] Verify terminal layouts, keyboard collisions, reconnect/resume and failure paths.
+- [x] Run focused unit, integration and generated-contract checks, then required gates.
+- [x] Publish a reviewable implementation with current README/usage instructions.
 
 Acceptance fixtures: ambiguous geopolitical question; monthly first-release CPI;
 revised economic series; weather threshold; multi-outcome prediction market;
@@ -294,6 +294,7 @@ user beliefs. Scheduled proposal generation does not advance active probabilitie
 Focused checks cover immutable context, user attribution, probability coherence,
 explicit tails, stale revisions, duplicate commits, lost responses, rollback,
 matched routes, worker deadlines/cancellation and terminal controls at 60×18,
-80×24 and 120×40. The final broad integration gates and remaining acceptance
-fixture audit above are still required. Controlled-provider engineering checks do
-not demonstrate predictive improvement; that requires prospective resolved scores.
+80×24 and 120×40, plus resizing with editor retention. The final Python suite
+passed 32,681 tests (150 skipped), and the TUI suite passed 2,266 (one skipped).
+Controlled-provider engineering checks do not demonstrate predictive improvement;
+that requires prospective resolved scores.
