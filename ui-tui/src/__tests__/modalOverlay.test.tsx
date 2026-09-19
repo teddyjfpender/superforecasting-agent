@@ -27,26 +27,23 @@ describe('ModalOverlay', () => {
     const sink = mk(120, 40)
 
     // Mount like a real view: a sized body container with the overlay stacked last.
-    const app = React.createElement(
-      Box as never,
-      { flexDirection: 'column', height: 40, width: 120 } as never,
-      React.createElement(Text as never, { key: 'b' } as never, 'BODY ROW behind the modal'),
-      React.createElement(
-        ModalOverlay as never,
-        {
-          cols: 120,
-          footerHint: 'Esc cancel',
-          key: 'm',
-          maxHeight: 12,
-          rows: 40,
-          t: DARK_THEME,
-          title: 'Add data provider'
-        } as never,
-        React.createElement(Text as never, {} as never, 'a form field')
-      )
+    const app = (
+      <Box flexDirection="column" height={40} width={120}>
+        <Text>BODY ROW behind the modal</Text>
+        <ModalOverlay
+          cols={120}
+          footerHint="Esc cancel"
+          maxHeight={12}
+          rows={40}
+          t={DARK_THEME}
+          title="Add data provider"
+        >
+          <Text>a form field</Text>
+        </ModalOverlay>
+      </Box>
     )
 
-    renderSync(app, { exitOnCtrlC: false, patchConsole: false, stdout: sink.s } as never)
+    renderSync(app, { exitOnCtrlC: false, patchConsole: false, stdout: sink.s })
     const text = stripAnsi(sink.text())
     expect(text).toContain('BODY ROW behind the modal') // body stays visible
     expect(text).toContain('Add data provider')
@@ -99,6 +96,55 @@ it('bounds the scroll viewport and scrollbar after overscroll and content shrink
     await wait()
     expect(scrollRef.current?.getViewportHeight()).toBe(5)
     expect(scrollRef.current?.getScrollTop()).toBe(0)
+  } finally {
+    app.unmount()
+    app.cleanup()
+    sink.s.destroy()
+  }
+})
+
+it.each([
+  [80, 24],
+  [120, 36],
+  [180, 50],
+  [40, 10],
+  [24, 5],
+  [16, 3]
+])('keeps the exit hint visible within %s×%s with wide title text', async (cols, rows) => {
+  const [{ Box, render, Text, stringWidth }, { ModalOverlay }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
+    import('@superforecasting/ink'),
+    import('../components/modalOverlay.js'),
+    import('../theme.js'),
+    import('../lib/text.js')
+  ])
+
+  const sink = mk(cols, rows)
+
+  const app = await render(
+    <Box height={rows} width={cols}>
+      <ModalOverlay
+        cols={cols}
+        footerHint="Esc close"
+        rows={rows}
+        t={DARK_THEME}
+        title={'市場資料 · é · 👩🏽‍💻 '.repeat(10)}
+      >
+        <Text>{'Long content '.repeat(50)}</Text>
+      </ModalOverlay>
+    </Box>,
+    { stdout: sink.s, patchConsole: false, exitOnCtrlC: false }
+  )
+
+  try {
+    await new Promise(resolve => setTimeout(resolve, 80))
+    const output = stripAnsi(sink.text())
+    expect(output).toContain('Esc close')
+    expect(output).not.toContain('\uFFFD')
+    expect(output.trimEnd().split('\n').length).toBeLessThanOrEqual(rows)
+
+    for (const line of output.split('\n')) {
+      expect(stringWidth(line)).toBeLessThanOrEqual(cols)
+    }
   } finally {
     app.unmount()
     app.cleanup()

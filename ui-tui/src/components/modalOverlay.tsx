@@ -16,9 +16,6 @@ import { ShortcutText } from './shortcutText.js'
 // stack the overlay LAST, trap the keyboard (if (modalOpen) return in useInput),
 // and gate the still-visible body's MOUSE handlers (onClick/onSelect) while open.
 
-const clip = (value: string, max: number): string =>
-  value.length > max ? `${value.slice(0, Math.max(0, max - 1))}…` : value
-
 export function ModalOverlay({
   children,
   cols,
@@ -50,18 +47,19 @@ export function ModalOverlay({
   verticalMargin?: number
 }) {
   const narrow = cols < 100
-  const modalW = narrow ? Math.max(40, cols - 2) : Math.max(48, Math.min(cols - 6, maxWidth))
-  const modalH = Math.max(8, Math.min(rows - verticalMargin, maxHeight))
+  const modalW = Math.max(1, Math.min(cols, maxWidth, cols - (narrow ? 2 : 6)))
+  const modalH = Math.max(1, Math.min(rows, maxHeight, Math.max(8, rows - verticalMargin)))
+  const bordered = modalH >= 4 && modalW >= 8
+  const paddingX = bordered ? (modalW < 48 ? 1 : 2) : 0
+  const paddingY = modalH < 12 ? 0 : 1
+  const showTitle = Boolean(title) && modalH >= 6
+  const contentH = Math.max(0, modalH - (bordered ? 2 : 0) - 2 * paddingY - (showTitle ? 2 : 0) - (footerHint ? 1 : 0))
   // Computed offsets centre the box deterministically (alignItems on an absolute
   // box doesn't reliably centre, and a full-width centring wrapper reflows the body).
   const modalTop = Math.max(0, Math.floor((rows - modalH) / 2) - 1)
   const modalLeft = Math.max(0, Math.floor((cols - modalW) / 2))
 
-  // The content region's height = box minus border(2) + padding(2) + title and gap(2) +
-  // footer(1). A ScrollBox needs an EXPLICIT height (flexGrow doesn't resolve under
-  // absolute positioning); forms render directly and manage their own layout.
-  const contentH = Math.max(3, modalH - 4 - (title ? 2 : 0) - (footerHint ? 1 : 0))
-
+  // Compact windows surrender decorative padding/title before the exit hint.
   const body = scrollRef ? (
     <Box flexDirection="row" flexShrink={0} height={contentH} minHeight={0} overflow="hidden">
       <ScrollBox decstbm={false} flexDirection="column" flexGrow={1} flexShrink={1} height={contentH} ref={scrollRef}>
@@ -81,23 +79,23 @@ export function ModalOverlay({
     <Box
       backgroundColor="black"
       borderColor={t.color.accent}
-      borderStyle="round"
+      borderStyle={bordered ? 'round' : undefined}
       flexDirection="column"
       height={modalH}
       left={modalLeft}
       overflow="hidden"
-      paddingX={2}
-      paddingY={1}
+      paddingX={paddingX}
+      paddingY={paddingY}
       position="absolute"
       top={modalTop}
       width={modalW}
     >
-      {title ? (
-        <Text bold color={t.color.primary} wrap="truncate-end">
-          {clip(title, Math.max(10, modalW - 6))}
+      {showTitle ? (
+        <Text bold color={t.color.primary} flexShrink={0} wrap="truncate-end">
+          {title}
         </Text>
       ) : null}
-      {title ? (
+      {showTitle ? (
         <Box flexGrow={1} flexShrink={1} marginTop={1} minHeight={0}>
           {body}
         </Box>
@@ -105,7 +103,7 @@ export function ModalOverlay({
         body
       )}
       {footerHint ? (
-        <ShortcutText color={t.color.muted} t={t} wrap="truncate-end">
+        <ShortcutText color={t.color.muted} flexShrink={0} t={t} wrap="truncate-end">
           {footerHint}
         </ShortcutText>
       ) : null}

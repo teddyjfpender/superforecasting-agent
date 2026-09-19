@@ -105,3 +105,13 @@ its normal color. Put ambiguous single-letter keys in backticks, for example
 and bracketed hints are recognized automatically. Keep actual bindings in their
 existing input handlers/keymap registry; this component only renders instructions.
 Never apply it to user messages, articles, documents, or model-generated prose.
+
+### Shared modal bounds
+
+`ModalOverlay` clamps its box to the supplied terminal dimensions and width/height
+caps. Small windows surrender decorative padding and title space before the footer.
+Use a concise footer with the exit action first; arbitrary long hints can truncate.
+Title text is clipped by the terminal renderer, preserving wide characters.
+Forms still own their internal compact layout and keyboard/mouse gating; the modal
+does not install a competing input handler. Verify changed consumers with the
+focused modal render tests and the relevant keyboard tests.

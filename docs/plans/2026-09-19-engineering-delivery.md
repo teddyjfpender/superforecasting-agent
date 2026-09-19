@@ -1080,3 +1080,26 @@ execution and pre-dispatch deadline cases are unchanged. Four focused local case
 pass. The corrected case is included in the bounded Windows investigation workflow;
 its native result is still required. No runtime deadline was relaxed, and no full
 suite ran.
+
+## Native interruption correction verified
+
+Focused Windows run `35465634775` passed all five cases in 9.41 seconds at exact
+source `18802e48aff078c0963e7a009c2445135c131e2e` (job `105957323255`). It includes
+both nested interpreter variants, execution-deadline retirement, private stdin
+ownership and interruption after confirmed RPC entry. This resolves the identified
+cleanup-test admission race; the background group skipped in the earlier native
+matrix still requires final qualification evidence.
+
+## Shared modal viewport containment
+
+The shared modal no longer forces a 40-column/eight-row minimum beyond the terminal.
+It honors width caps consistently, reduces padding/title decoration in short windows,
+and reserves footer space. Title truncation uses the terminal renderer rather than
+slicing JavaScript code units. Typed fixtures replace the older casting workaround.
+
+Forty-eight focused modal/contact-picker/questionnaire-control tests pass. Render
+checks cover 80x24, 120x36, 180x50 and compact 40x10/24x5/16x3 with wide/combining
+characters, bounded output width/height and a visible short exit hint. Production
+and test TypeScript checks pass. This does not qualify arbitrary long footer text,
+all form layouts or every modal's keyboard ownership; W06 remains open. No full
+suite ran.
