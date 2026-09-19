@@ -176,3 +176,25 @@ def test_review_comparison_and_promotion_round_trip_uses_durable_contracts(tmp_p
     assert snapshot.probability_or_distribution == 0.4
     assert snapshot.reference_class_refs == [reference["id"]]
     assert request("promotion_preview", job_id=started["job_id"])["promoted_forecast_id"] == promoted["forecast_id"]
+
+
+def test_buffer_rpc_cannot_confirm_answers_or_accept_secret_fields(tmp_path, monkeypatch):
+    from tui_gateway import server, forecast_rpc
+
+    service = InterviewService(ForecastLedger(tmp_path / "buffers.db"))
+    service.begin("draft")
+    monkeypatch.setattr(forecast_rpc, "_interview_service", lambda: service)
+    params = dict(interview_id="draft", question_id="title", base_revision=1,
+                  expected_buffer_revision=0, request_id="save", buffer={"text": "Draft title"})
+
+    def request(method, data):
+        return server.handle_request({"jsonrpc": "2.0", "id": 9, "method": method, "params": data})
+
+    result = request("forecast.interview.buffer.save", params)
+    assert result["result"]["buffer_revision"] == 1
+    assert service.store.read("draft")["revision"] == 1
+    assert service.store.read("draft")["document"]["answers"] == []
+    restored = request("forecast.interview.buffers", {"interview_id": "draft"})
+    assert restored["result"]["buffers"][0]["buffer"]["text"] == "Draft title"
+    assert "error" in request("forecast.interview.buffer.save", {**params, "buffer": {"password": "never-store"}})
+    assert "error" in request("forecast.interview.buffer.save", {**params, "actor": "agent"})

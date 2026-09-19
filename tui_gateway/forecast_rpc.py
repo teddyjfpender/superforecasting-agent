@@ -1281,3 +1281,23 @@ def _(rid, params: dict) -> dict:
         return _ok(rid, _interview_service().save_assumption(**params))
     except Exception as exc:
         return _err(rid, 5008, str(exc))
+
+
+@rpc_validated("forecast.interview.buffers")
+def _(rid, params: dict) -> dict:
+    try:
+        from forecasting.interviews.buffers import read_buffers
+        return _ok(rid, read_buffers(_interview_service().ledger, **params))
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))
+
+
+@rpc_validated("forecast.interview.buffer.save")
+def _(rid, params: dict) -> dict:
+    try:
+        from forecasting.interviews.buffers import save_buffer
+        from protocol.rpc.interviews import InterviewBufferSaveRequest
+        request = InterviewBufferSaveRequest.model_validate(params, strict=True)
+        return _ok(rid, save_buffer(_interview_service().ledger, request))
+    except Exception as exc:
+        return _err(rid, 5008, str(exc))

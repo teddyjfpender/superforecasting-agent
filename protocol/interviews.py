@@ -330,3 +330,13 @@ class InterviewDraft(InterviewModel):
             if any(q.required and q.id not in completed for q in self.questions):
                 raise ValueError("required questions remain unanswered")
         return self
+
+
+class InterviewEditorBuffer(InterviewModel):
+    """Unconfirmed editor state; never a forecast answer or a secret prompt."""
+
+    text: str = Field(default="", max_length=32000)
+    note: str = Field(default="", max_length=8000)
+    choice: int = Field(default=0, ge=0)
+    selected: list[str] = Field(default_factory=list, max_length=256)
+    custom_editing: bool = False

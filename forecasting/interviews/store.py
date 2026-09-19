@@ -16,6 +16,24 @@ if TYPE_CHECKING:
 
 def initialize_schema(conn: sqlite3.Connection) -> None:
     conn.execute("""
+        CREATE TABLE IF NOT EXISTS forecast_interview_buffers (
+            interview_id TEXT NOT NULL, question_id TEXT NOT NULL,
+            buffer_revision INTEGER NOT NULL CHECK(buffer_revision > 0),
+            base_revision INTEGER NOT NULL, request_id TEXT NOT NULL,
+            document TEXT, saved_at TEXT NOT NULL,
+            PRIMARY KEY(interview_id, question_id),
+            FOREIGN KEY(interview_id, base_revision)
+                REFERENCES forecast_interview_revisions(interview_id, revision)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS forecast_interview_buffer_receipts (
+            interview_id TEXT NOT NULL, request_id TEXT NOT NULL,
+            digest TEXT NOT NULL, receipt TEXT NOT NULL,
+            PRIMARY KEY(interview_id, request_id)
+        )
+    """)
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS forecast_interview_promotions (
             job_id TEXT PRIMARY KEY,
             repetition INTEGER NOT NULL,
@@ -332,4 +350,9 @@ class InterviewStore:
                     utc_now_iso(),
                 ),
             )
+            if draft.status == "cancelled":
+                conn.execute(
+                    "UPDATE forecast_interview_buffers SET document=NULL WHERE interview_id=?",
+                    (interview_id,),
+                )
             return self.read(interview_id)

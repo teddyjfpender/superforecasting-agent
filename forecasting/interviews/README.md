@@ -332,3 +332,24 @@ Legacy version-1 contexts remain readable without adding current library content
 adjust lessons. Tests: `tests/forecasting/test_interview_context.py` and the lesson
 and learning-trial suites. New-question context and TUI provenance presentation
 remain tracked in the engineering delivery record.
+
+## Durable editor buffer API
+
+`buffers.py` stores unconfirmed text, notes and choice state independently of
+interview answers. `forecast.interview.buffers` reads current buffers;
+`forecast.interview.buffer.save` saves one or explicitly discards it with `buffer: null`.
+Every mutation supplies the interview base revision, expected buffer revision and
+a stable request ID. A stale base or competing buffer write fails without overwriting
+anything. Reads label stale buffers so consumers can offer explicit conflict recovery.
+
+A save receipt acknowledges its specific revision, not that it is still current.
+Retries cannot resurrect later-discarded content. The latest buffer replaces prior
+text; retry receipts retain only hashes and acknowledgement metadata. Discard,
+cancellation and interview commit remove buffer text; profile removal removes its
+database. Buffers otherwise remain available until an explicit discard, allowing
+long-running interviews to resume. They must never contain secret-prompt content.
+
+The API is ready for TUI integration; autosave, restoration and save-status presentation
+are still tracked in the engineering delivery record. Until that integration lands,
+ordinary TUI edits remain in component memory. Focused persistence/recovery tests are
+in `tests/forecasting/test_interview_buffers.py` and the gateway contract suite.

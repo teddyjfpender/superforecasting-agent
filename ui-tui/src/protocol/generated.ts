@@ -2656,6 +2656,45 @@ export interface InterviewBeginRequest {
   title: string
 }
 
+export interface InterviewBufferReceipt {
+  base_revision: number
+  buffer_revision: number
+  discarded: boolean
+  interview_id: string
+  question_id: string
+  request_id: string
+  saved_at: string
+}
+
+export interface InterviewBufferRecord {
+  base_revision: number
+  buffer: null | InterviewEditorBuffer
+  buffer_revision: number
+  discarded: boolean
+  interview_id: string
+  question_id: string
+  request_id: string
+  saved_at: string
+  stale: boolean
+}
+
+export interface InterviewBufferSaveRequest {
+  base_revision: number
+  buffer: null | InterviewEditorBuffer
+  expected_buffer_revision: number
+  interview_id: string
+  question_id: string
+  request_id: string
+}
+
+export interface InterviewBuffersRequest {
+  interview_id: string
+}
+
+export interface InterviewBuffersResponse {
+  buffers: InterviewBufferRecord[]
+}
+
 export interface InterviewChoice {
   id: string
   label: string
@@ -2682,6 +2721,14 @@ export interface InterviewDraft {
   seed: null | ForecastMarketSeed
   status: 'cancelled' | 'draft' | 'needs_research' | 'needs_user' | 'ready'
   title: string
+}
+
+export interface InterviewEditorBuffer {
+  choice: number
+  custom_editing: boolean
+  note: string
+  selected: string[]
+  text: string
 }
 
 export interface InterviewEvaluateRequest {
@@ -4780,6 +4827,23 @@ export interface RpcMethods {
       title?: string
     }
     result: InterviewRecord
+  }
+  'forecast.interview.buffer.save': {
+    params: {
+      base_revision: number
+      buffer: null | InterviewEditorBuffer
+      expected_buffer_revision: number
+      interview_id: string
+      question_id: string
+      request_id: string
+    }
+    result: InterviewBufferReceipt
+  }
+  'forecast.interview.buffers': {
+    params: {
+      interview_id: string
+    }
+    result: InterviewBuffersResponse
   }
   'forecast.interview.commit': {
     params: {

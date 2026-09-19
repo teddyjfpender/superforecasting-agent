@@ -9,7 +9,9 @@ from protocol.interviews import (
     ForecastMarketSeed,
     InterviewAssumption,
     InterviewDraft,
+    InterviewEditorBuffer,
     InterviewGenerationOptions,
+    InterviewModel,
     InterviewScenario,
 )
 from protocol.rpc.jobs import JobsStatusResponse
@@ -181,3 +183,40 @@ class InterviewAssumptionSaveRequest(WireModel):
     expected_revision: int
     request_id: str
     assumption: InterviewAssumption
+
+
+class InterviewBufferSaveRequest(WireModel):
+    model_config = InterviewModel.model_config
+
+    interview_id: str = Field(min_length=1, max_length=200)
+    question_id: str = Field(min_length=1, max_length=200)
+    base_revision: int = Field(ge=1)
+    expected_buffer_revision: int = Field(ge=0)
+    request_id: str = Field(min_length=1, max_length=200)
+    # Null is an explicit discard, with its own revision and retry identity.
+    buffer: InterviewEditorBuffer | None
+
+
+class InterviewBufferReceipt(InterviewModel):
+    interview_id: str
+    question_id: str
+    base_revision: int
+    buffer_revision: int
+    request_id: str
+    saved_at: str
+    discarded: bool
+
+
+class InterviewBufferRecord(InterviewBufferReceipt):
+    buffer: InterviewEditorBuffer | None
+    stale: bool
+
+
+class InterviewBuffersRequest(WireModel):
+    model_config = InterviewModel.model_config
+
+    interview_id: str = Field(min_length=1, max_length=200)
+
+
+class InterviewBuffersResponse(InterviewModel):
+    buffers: list[InterviewBufferRecord]

@@ -9,7 +9,7 @@
 
 > **Source of truth:** `protocol/__init__.py (RPC_SPECS, EVENT_SPECS) + protocol/rpc, protocol/events`
 
-The gateway speaks **protocol version 1**. Every request, response, and event below is a pydantic model in the `protocol/` package; the TUI's TypeScript wire types (`ui-tui/src/protocol/generated.ts`) are generated from the same registry via `python -m protocol.codegen`. There are **172 RPCs** and **49 events**.
+The gateway speaks **protocol version 1**. Every request, response, and event below is a pydantic model in the `protocol/` package; the TUI's TypeScript wire types (`ui-tui/src/protocol/generated.ts`) are generated from the same registry via `python -m protocol.codegen`. There are **174 RPCs** and **49 events**.
 
 
 ## RPC methods
@@ -54,6 +54,8 @@ The gateway speaks **protocol version 1**. Every request, response, and event be
 | `forecast.interview.answer` | [`InterviewAnswerRequest`](#interviewanswerrequest) | [`InterviewRecord`](#interviewrecord) |
 | `forecast.interview.assumption.save` | [`InterviewAssumptionSaveRequest`](#interviewassumptionsaverequest) | [`InterviewRecord`](#interviewrecord) |
 | `forecast.interview.begin` | [`InterviewBeginRequest`](#interviewbeginrequest) | [`InterviewRecord`](#interviewrecord) |
+| `forecast.interview.buffer.save` | [`InterviewBufferSaveRequest`](#interviewbuffersaverequest) | [`InterviewBufferReceipt`](#interviewbufferreceipt) |
+| `forecast.interview.buffers` | [`InterviewBuffersRequest`](#interviewbuffersrequest) | [`InterviewBuffersResponse`](#interviewbuffersresponse) |
 | `forecast.interview.commit` | [`InterviewPreviewRequest`](#interviewpreviewrequest) | [`InterviewCommitResponse`](#interviewcommitresponse) |
 | `forecast.interview.evaluate` | [`InterviewEvaluateRequest`](#interviewevaluaterequest) | [`InterviewGenerateResponse`](#interviewgenerateresponse) |
 | `forecast.interview.evaluation_status` | [`InterviewTargetRequest`](#interviewtargetrequest) | [`InterviewEvaluationStatusResponse`](#interviewevaluationstatusresponse) |
@@ -3443,6 +3445,55 @@ _(no fields)_
 | `seed` | `ForecastMarketSeed | null` |
 | `title` | `string` |
 
+### InterviewBufferReceipt
+
+| field | type |
+| --- | --- |
+| `base_revision` | `number` |
+| `buffer_revision` | `number` |
+| `discarded` | `boolean` |
+| `interview_id` | `string` |
+| `question_id` | `string` |
+| `request_id` | `string` |
+| `saved_at` | `string` |
+
+### InterviewBufferRecord
+
+| field | type |
+| --- | --- |
+| `base_revision` | `number` |
+| `buffer` | `InterviewEditorBuffer | null` |
+| `buffer_revision` | `number` |
+| `discarded` | `boolean` |
+| `interview_id` | `string` |
+| `question_id` | `string` |
+| `request_id` | `string` |
+| `saved_at` | `string` |
+| `stale` | `boolean` |
+
+### InterviewBufferSaveRequest
+
+| field | type |
+| --- | --- |
+| `base_revision` | `number` |
+| `buffer` | `InterviewEditorBuffer | null` |
+| `expected_buffer_revision` | `number` |
+| `interview_id` | `string` |
+| `question_id` | `string` |
+| `request_id` | `string` |
+
+### InterviewBuffersRequest
+
+| field | type |
+| --- | --- |
+| `interview_id` | `string` |
+
+### InterviewBuffersResponse
+
+| field | type |
+| --- | --- |
+| `buffers` | `InterviewBufferRecord[]` |
+
 ### InterviewChoice
 
 | field | type |
@@ -3476,6 +3527,16 @@ _(no fields)_
 | `seed` | `ForecastMarketSeed | null` |
 | `status` | `'cancelled' | 'draft' | 'needs_research' | 'needs_user' | 'ready'` |
 | `title` | `string` |
+
+### InterviewEditorBuffer
+
+| field | type |
+| --- | --- |
+| `choice` | `number` |
+| `custom_editing` | `boolean` |
+| `note` | `string` |
+| `selected` | `string[]` |
+| `text` | `string` |
 
 ### InterviewEvaluateRequest
 

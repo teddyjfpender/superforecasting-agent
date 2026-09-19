@@ -446,4 +446,8 @@ class InterviewService:
                 "VALUES (?, ?, ?, ?)",
                 (interview_id, revision, result["question_id"], utc_now_iso()),
             )
+            conn.execute(
+                "UPDATE forecast_interview_buffers SET document=NULL WHERE interview_id=?",
+                (interview_id,),
+            )
             return {"question_id": result["question_id"], "revision": revision}

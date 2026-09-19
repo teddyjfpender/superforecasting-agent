@@ -535,6 +535,16 @@ RPC_SPECS: list[RpcSpec] = [
         _rpc_interviews.InterviewListResponse,
     ),
     RpcSpec(
+        "forecast.interview.buffers",
+        _rpc_interviews.InterviewBuffersRequest,
+        _rpc_interviews.InterviewBuffersResponse,
+    ),
+    RpcSpec(
+        "forecast.interview.buffer.save",
+        _rpc_interviews.InterviewBufferSaveRequest,
+        _rpc_interviews.InterviewBufferReceipt,
+    ),
+    RpcSpec(
         "forecast.interview.answer",
         _rpc_interviews.InterviewAnswerRequest,
         _rpc_interviews.InterviewRecord,

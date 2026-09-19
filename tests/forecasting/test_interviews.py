@@ -154,6 +154,14 @@ def test_application_answers_adapt_resume_and_commit_once(store):
     service = InterviewService(store.ledger)
     first = service.begin("flow")
     assert service.begin("flow") == first
+    from forecasting.interviews.buffers import read_buffers, save_buffer
+    from protocol.rpc.interviews import InterviewBufferSaveRequest
+
+    save_buffer(store.ledger, InterviewBufferSaveRequest.model_validate({
+        "interview_id": "flow", "question_id": "title", "base_revision": 1,
+        "expected_buffer_revision": 0, "request_id": "draft-text",
+        "buffer": {"text": "Unconfirmed scratch text"},
+    }))
     record = first
     values = {
         "title": "Will June 2030 CPI exceed 3 percent?",
@@ -178,6 +186,9 @@ def test_application_answers_adapt_resume_and_commit_once(store):
     assert len(store.list_latest()) == 1
     result = service.commit("flow", record["revision"])
     assert service.commit("flow", record["revision"]) == result
+    assert read_buffers(store.ledger, "flow") == {"buffers": []}
+    with store.ledger._connect() as conn:
+        assert conn.execute("SELECT document FROM forecast_interview_buffers WHERE interview_id='flow'").fetchone()[0] is None
     assert store.list_latest() == []
     assert len(store.ledger.list_questions()) == 1
     created = store.ledger.get_question(result["question_id"])
