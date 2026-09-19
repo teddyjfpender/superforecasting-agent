@@ -67,13 +67,21 @@ from forecasting.source_adapters import (
     load_yahoo_finance_prices,
 )
 from forecasting.sources.filters import normalize_filter_terms as normalize_filter_terms
+from forecasting.sources.requests import CommonSourceOptions
 
 
 def load_source_items(adapter: str, source: str, args: dict[str, Any]) -> list[Any]:
-    adapter_name = adapter.removeprefix("adapter:").strip().lower()
-    limit = int(args.get("limit") or 10)
-    since = args.get("since")
-    api_base_url = args.get("api_base_url")
+    if not isinstance(adapter, str) or not adapter.strip():
+        raise ValueError("source adapter must be a nonempty string")
+    if not isinstance(source, str) or not source.strip():
+        raise ValueError("source identity must be a nonempty string")
+    if not isinstance(args, dict):
+        raise ValueError("source options must be a mapping")
+    options = CommonSourceOptions.read(args)
+    adapter_name = adapter.strip().lower().removeprefix("adapter:")
+    limit = options.limit
+    since = options.since
+    api_base_url = options.api_base_url
     kwargs: dict[str, Any]
 
     if adapter_name in {"rss", "news"}:
@@ -83,7 +91,7 @@ def load_source_items(adapter: str, source: str, args: dict[str, Any]) -> list[A
             since=since,
             keywords=normalize_filter_terms(args.get("keywords")),
             exclude_keywords=normalize_filter_terms(args.get("exclude_keywords")),
-            dedupe=bool(args.get("dedupe", True)),
+            dedupe=options.dedupe,
         )
     if adapter_name == "gdelt":
         kwargs = {
@@ -310,8 +318,8 @@ def load_source_items(adapter: str, source: str, args: dict[str, Any]) -> list[A
         kwargs = {
             "limit": limit,
             "since": since,
-            "local": bool(args.get("local", False)),
-            "only_media": bool(args.get("only_media", False)),
+            "local": options.local,
+            "only_media": options.only_media,
         }
         if api_base_url:
             kwargs["api_base_url"] = api_base_url
@@ -349,7 +357,9 @@ def load_source_items(adapter: str, source: str, args: dict[str, Any]) -> list[A
         kwargs = {
             "limit": limit,
             "since": since,
-            "forecast_days": int(args.get("forecast_days") or 7),
+            "forecast_days": options.forecast_days
+            if options.forecast_days is not None
+            else 7,
         }
         if api_base_url:
             kwargs["api_base_url"] = api_base_url
@@ -358,7 +368,9 @@ def load_source_items(adapter: str, source: str, args: dict[str, Any]) -> list[A
         kwargs = {
             "limit": limit,
             "since": since,
-            "forecast_days": int(args.get("forecast_days") or 5),
+            "forecast_days": options.forecast_days
+            if options.forecast_days is not None
+            else 5,
         }
         if api_base_url:
             kwargs["api_base_url"] = api_base_url

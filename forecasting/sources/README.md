@@ -40,3 +40,20 @@ Update this guide when entry points or ownership change. See the
 and [engineering backlog](../../TODO.md) for cross-package context.
 
 [↑ Parent directory](../README.md)
+
+## Common request admission
+
+`requests.py` validates shared acquisition options before dispatch: positive integer
+limits/horizons, actual booleans, ISO dates or timezone-bearing timestamps, and HTTP
+endpoint URLs. Explicit zero, numeric strings and string booleans are invalid; they
+must not be coerced into plausible requests. Omitted fields use declared defaults.
+Validation errors name fields without echoing endpoint credentials.
+
+`dispatch.py` applies this check before provider I/O. Watched-source orchestration
+passes original input types through admission and isolates per-source failures.
+Provider-specific options still belong to their adapters; this common projection
+is not a complete discriminated request schema or a settlement measurement contract.
+Those stricter semantics remain separately required before ledger settlement.
+
+Focused regressions: `tests/forecasting/test_source_request_admission.py` and
+`tests/forecasting/test_source_dispatch.py`.

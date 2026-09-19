@@ -346,7 +346,7 @@ def _repull_series(spec: dict) -> tuple[list[dict], list[str]]:
     for s in runnable:
         tag = f"{s['source_type']}:{s['source']}"
         try:
-            items = load_source_items(s["source_type"], s["source"], {"limit": int(s.get("limit") or 60)})
+            items = load_source_items(s["source_type"], s["source"], {"limit": 60 if s.get("limit") is None else s["limit"]})
         except Exception as e:
             reasons.append(f"{tag} fetch error: {_clean_text(str(e), limit=80)}")
             continue

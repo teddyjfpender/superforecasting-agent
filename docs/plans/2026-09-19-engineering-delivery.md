@@ -144,3 +144,21 @@ The complete test TypeScript project still fails on legacy fixtures and remains
 unqualified. It reports no diagnostics in the new capability fixture or changed
 application interfaces. This is W02/W04 progress, not completion of their full
 acceptance scope. No full suite was run.
+
+## Common source admission tranche
+
+W03 now has a strict common acquisition-options owner, included in blocking Python
+lint/format/type checks. Dispatch no longer coerces numeric strings, booleans as
+integers, zero limits, string booleans or invalid date/endpoint filters into provider
+requests. Date-only filters remain supported; timestamp filters require a timezone.
+Errors identify fields without echoing potential endpoint credentials.
+
+Market-model refresh preserves limit types for shared admission. Watched-source
+orchestration no longer converts option-pair lists into mappings or passes coerced
+numeric source identities to acquisition. Failures remain isolated per source, with
+no payloads produced by invalid requests.
+
+Focused validation: 68 tests passed across request admission, source dispatch,
+market models and refresh. This is not completion of W03: adapter-specific request
+unions, shared CLI import migration, typed acquisition/import plans and durable
+import receipts remain open. The full suite was not run.

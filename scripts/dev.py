@@ -91,6 +91,7 @@ STRICT_PYTHON = (
     "tools/environments/configuration.py",
     "forecasting/appconfig.py",
     "forecasting/sources/dispatch.py",
+    "forecasting/sources/requests.py",
     "forecasting/sources/evidence.py",
     "forecasting/sources/filters.py",
     "forecasting/sources/watched.py",

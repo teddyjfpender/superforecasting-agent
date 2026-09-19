@@ -35,8 +35,14 @@ def fetch_watched_source_payloads(
             "error": None,
         }
         try:
-            adapter_args = dict(spec.get("args") or {})
-            items = load_source_items(adapter, source, adapter_args)
+            adapter_args = spec.get("args")
+            if adapter_args is None:
+                adapter_args = {}
+            # Admission sees the original types; display labels must not turn an
+            # invalid source identity or options list into a valid request.
+            items = load_source_items(
+                spec.get("source_type", ""), spec.get("source", ""), adapter_args
+            )
             result["payloads"] = [
                 source_evidence_payload(adapter, source, item, adapter_args)
                 for item in items
