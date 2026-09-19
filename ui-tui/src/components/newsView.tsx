@@ -39,6 +39,7 @@ import { type FooterChip, FooterChips } from './footerChips.js'
 import { ForecastArticlePicker } from './forecastArticlePicker.js'
 import { Md } from './markdown.js'
 import { NewsStarterModal } from './newsStarterModal.js'
+import { ShortcutText } from './shortcutText.js'
 
 export const openNewsView = () => patchOverlayState({ news: true })
 export const closeNewsView = () => patchOverlayState({ news: false })
@@ -570,7 +571,9 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
 
   const handleFooterKey = useViewInput(
     (ch, key) => {
-      if (attaching) {return}
+      if (attaching) {
+        return
+      }
 
       if (starterOpen) {
         if (saving) {
@@ -959,11 +962,16 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
           </Text>
           <Text color={t.color.muted}> {statusWord} · </Text>
           <Text color={t.color.text}>live RSS feeds</Text>
-          <Text color={t.color.muted}>
+          <ShortcutText color={t.color.muted} t={t}>
             {' · '}
             {hasFeeds ? `${subscribed.length} feeds · ${articles.length} articles` : 'press a to add feeds'}
-          </Text>
-          {pendingArticles ? <Text color={t.color.accent}> · Updates ready [u apply]</Text> : null}
+          </ShortcutText>
+          {pendingArticles ? (
+            <ShortcutText color={t.color.accent} t={t}>
+              {' '}
+              · Updates ready [u apply]
+            </ShortcutText>
+          ) : null}
           {searchActive ? (
             <Text>
               <Text color={t.color.muted}>{'  ·  '}</Text>
@@ -1095,15 +1103,15 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
             )
           })
         ) : searchActive && searchResults ? (
-          <Text color={t.color.muted} wrap="wrap">
+          <ShortcutText color={t.color.muted} t={t} wrap="wrap">
             {`No articles match “${truncate(searchActive, 40)}” — press Esc to clear or / to refine.`}
-          </Text>
+          </ShortcutText>
         ) : hasFeeds ? (
-          <Text color={t.color.muted} wrap="wrap">
+          <ShortcutText color={t.color.muted} t={t} wrap="wrap">
             {fetching
               ? 'Fetching articles…'
               : `No articles${activeSource === ALL_FEEDS ? '' : ` in ${activeSource}`} yet — feeds may be slow or unreachable. Press r to retry.`}
-          </Text>
+          </ShortcutText>
         ) : (
           <Box flexDirection="column">
             {Array.from({ length: Math.min(6, listRows) }, (_, r) => (
@@ -1169,14 +1177,14 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
             </Box>
           ) : null}
           <Box marginTop={1}>
-            <Text color={t.color.muted} wrap="wrap">
+            <ShortcutText color={t.color.muted} t={t} wrap="wrap">
               {reading
                 ? 'Loading article…'
                 : usingArticle
                   ? articleBody?.message
                   : `Publisher feed content${articleBody?.status === 'unavailable' ? ' · article unavailable' : ''}`}{' '}
               · PgUp/PgDn scroll · Enter opens source.
-            </Text>
+            </ShortcutText>
           </Box>
         </ScrollBox>
       ) : (
@@ -1189,7 +1197,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
             ))}
           </Box>
           <Box marginTop={1}>
-            <Text color={t.color.muted} wrap="wrap">
+            <ShortcutText color={t.color.muted} t={t} wrap="wrap">
               {hasFeeds
                 ? fetching
                   ? 'Fetching the latest articles…'
@@ -1197,7 +1205,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
                 : starter.length
                   ? 'No feeds yet. Press s to load the global news starter, or a to choose feeds and add your own URL.'
                   : 'No feeds yet. Press a to choose feeds or add your own URL.'}
-            </Text>
+            </ShortcutText>
           </Box>
         </Box>
       )}
@@ -1345,8 +1353,9 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
               result.already_attached ? 'Article already linked to this forecast' : 'Article attached to forecast'
             )
 
-            if (result.interview_id)
-              {openForecastInterview({ questionId: result.question_id, interviewId: result.interview_id })}
+            if (result.interview_id) {
+              openForecastInterview({ questionId: result.question_id, interviewId: result.interview_id })
+            }
           }}
           onClose={() => setAttaching(null)}
           rows={termRows}

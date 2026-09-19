@@ -1,0 +1,38 @@
+{
+  "type": "sfa.feed",
+  "version": 2,
+  "presentation": "bar-chart",
+  "horizon": {
+    "start": "2026-09-16T14:00:00.000Z",
+    "end": "2026-09-16T15:00:00.000Z"
+  },
+  "feeds": [
+    {
+      "provider": "polymarket",
+      "symbol": "condition-yes",
+      "name": "Example outcome \u00b7 YES",
+      "unit": "%",
+      "kind": "raw YES price",
+      "source_url": "https://polymarket.com/event/example",
+      "retrieved_at": "2026-09-16T09:00:00Z",
+      "revision_policy": "latest",
+      "points": [
+        {
+          "start": "2026-09-16T14:00:00.000Z",
+          "end": "2026-09-16T14:00:00.000Z",
+          "value": 38
+        },
+        {
+          "start": "2026-09-16T14:30:00.000Z",
+          "end": "2026-09-16T14:30:00.000Z",
+          "value": null
+        },
+        {
+          "start": "2026-09-16T15:00:00.000Z",
+          "end": "2026-09-16T15:00:00.000Z",
+          "value": 44
+        }
+      ]
+    }
+  ]
+}

@@ -8,7 +8,7 @@ Before this module the three call-sites each duplicated:
    ``providers:``, and ``custom_providers:`` out of ``load_config()``;
 2. The call into ``list_authenticated_providers`` with the resulting kwargs;
 3. (TUI only) a 45-LOC post-pass that merges authenticated rows with
-   unconfigured ``CANONICAL_PROVIDERS`` rows and emits ``authenticated``/
+   unconfigured ``SETUP_PROVIDERS`` rows and emits ``authenticated``/
    ``auth_type``/``key_env``/``warning`` hints for the picker UI.
 
 Consolidating those three steps into one entry point eliminates two bugs
@@ -120,13 +120,13 @@ def build_models_payload(
     needs from a single substrate call.
 
     Flags:
-    - ``include_unconfigured``: append ``CANONICAL_PROVIDERS`` rows that
+    - ``include_unconfigured``: append ``SETUP_PROVIDERS`` rows that
       ``list_authenticated_providers`` didn't emit (TUI uses this to show
       the full provider universe in the picker).
     - ``picker_hints``: add ``authenticated``/``auth_type``/``key_env``/
       ``warning`` per row (TUI ``ModelPickerDialog`` shape).
     - ``canonical_order``: reorder canonical-slug rows to
-      ``CANONICAL_PROVIDERS`` declaration order; truly-custom rows go
+      shared setup display order; truly-custom rows go
       last (TUI display order).
     """
     from superforecasting_agent.runtime.model_switch import list_authenticated_providers
@@ -160,12 +160,13 @@ def build_models_payload(
 
 def _append_unconfigured_rows(rows: list[dict], ctx: ConfigContext) -> list[dict]:
     """Build skeleton rows for canonical providers missing from ``rows``."""
-    from superforecasting_agent.runtime.models import CANONICAL_PROVIDERS, _PROVIDER_LABELS
+    from superforecasting_agent.configuration.provider_catalog import SETUP_PROVIDERS
+    from superforecasting_agent.runtime.models import _PROVIDER_LABELS
 
     seen = {r["slug"].lower() for r in rows}
     cur = (ctx.current_provider or "").lower()
     extras: list[dict] = []
-    for entry in CANONICAL_PROVIDERS:
+    for entry in SETUP_PROVIDERS:
         if entry.slug.lower() in seen:
             continue
         extras.append(
@@ -262,7 +263,7 @@ def _apply_reasoning_hints(rows: list[dict]) -> None:
 
 
 def _reorder_canonical(rows: list[dict]) -> list[dict]:
-    """Canonical slugs in ``CANONICAL_PROVIDERS`` declaration order;
+    """Setup display order, followed by configured compatibility providers;
     truly-custom rows last.
 
     Keys on slug membership, NOT ``is_user_defined`` — section 3 of
@@ -271,9 +272,10 @@ def _reorder_canonical(rows: list[dict]) -> list[dict]:
     canonical. Keying on the flag would silently demote canonical
     providers configured via the new keyed schema.
     """
-    from superforecasting_agent.runtime.models import CANONICAL_PROVIDERS
+    from superforecasting_agent.configuration.provider_catalog import CANONICAL_PROVIDERS, SETUP_PROVIDERS
 
-    order = {e.slug: i for i, e in enumerate(CANONICAL_PROVIDERS)}
+    entries = [*SETUP_PROVIDERS, *(e for e in CANONICAL_PROVIDERS if e not in SETUP_PROVIDERS)]
+    order = {e.slug: i for i, e in enumerate(entries)}
     canon = sorted(
         (r for r in rows if r["slug"] in order),
         key=lambda r: order[r["slug"]],

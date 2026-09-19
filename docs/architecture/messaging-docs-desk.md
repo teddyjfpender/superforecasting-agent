@@ -112,15 +112,15 @@ up/down selects the latest 6, 12, 24 or 120 observations; Enter returns to writi
 **Ctrl+R** includes/excludes the forwarded item. Sparse observations keep their
 actual periods, and a source with only one dated reading displays that limitation.
 
-[`protocol/feed_share.py`](../../protocol/feed_share.py) defines `sfa.feed` version
-1; TypeScript declarations are generated with the other contracts. The text wire
+[`protocol/feed_share.py`](../../protocol/feed_share.py) defines `sfa.feed` versions
+1 (calendar periods) and 2 (calendar periods or exact UTC timestamps); TypeScript declarations are generated with the other contracts. The text wire
 format is a readable caption followed by a fenced `sfa-feed` JSON block. It works
 through Signal's existing text send/receive and history persistence. A future
 Telegram adapter can carry the same body without changing chart semantics.
 Ordinary clients see the readable caption and JSON; the TUI renders a chart card.
 This is **not** a native chart attachment in the Signal phone application.
 
-The payload specifies presentation, an explicit date horizon and up to four
+The payload specifies presentation, an explicit date/time horizon and up to four
 feeds, each with provider/series identity, name, unit, kind, revision policy,
 public source URL, retrieval time and dated numeric/null observations. Rendering
 accepts at most 48 KiB, 120 observations per feed and nonoverlapping chronological
@@ -134,3 +134,24 @@ one never runs code, fetches a URL, subscribes to a feed or creates settlement
 provenance. Unknown versions and malformed payloads remain ordinary text. Shared
 Python/TypeScript fixtures cover the boundary. New versions must retain this
 fallback, and transport adapters must preserve the complete message body.
+
+Version 2 preserves hourly weather readings and prediction-market price history;
+no daily aggregation or invented dates are applied. Calendar-only feeds continue
+to emit v1. Older clients display unsupported v2 snapshots as caption plus JSON.
+A snapshot must use one consistent time precision and ordered, nonoverlapping
+periods. Offset timestamps are converted to UTC without changing the instant.
+
+Prediction-market sharing uses the selected outcome's fetched raw YES-price
+history, expressed as percentages, with the venue and contract identity. It does
+not substitute the event's normalized distribution or a live tick for history.
+History belongs to a backend/profile, event, contract and requested range; old
+responses cannot be attached to a replacement selection. While history is
+unavailable, forwarding remains text-only with an explicit explanation; close
+and reopen the composer once history loads to capture a fresh snapshot.
+
+The order book uses the same backend/profile and selection ownership as history.
+Responses must match the requested venue and book identifier; cross-venue ticks
+are ignored even when identifiers collide. Spot-only feeds (currently CoinGecko)
+share their single source-timestamped value and explicitly report that a trend
+is unavailable. Retrieval timestamps require a real ISO date/time and timezone;
+Python and TypeScript reject invalid calendar dates and offset fields alike.

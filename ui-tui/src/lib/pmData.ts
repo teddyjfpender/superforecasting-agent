@@ -190,7 +190,7 @@ const toLevels = (raw: unknown): null | PMOrderLevelDTO[] => {
 // 50%). A null estimate leaves the last honest mid untouched. Returns a new
 // object when it changed, else the same reference (so React can bail on ===).
 export function applyBookTick(book: null | PMOrderBookDTO, tick: PMTickPayload): null | PMOrderBookDTO {
-  if (!book || tick.market_id !== book.market_id) {
+  if (!book || tick.venue !== book.venue || tick.market_id !== book.market_id) {
     return book
   }
 

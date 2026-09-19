@@ -35,6 +35,7 @@ import { FeedShareCard } from './feedShareCard.js'
 import { type FooterChip, FooterChips } from './footerChips.js'
 import { MessageComposer, messageComposerRows } from './messageComposer.js'
 import { ModalOverlay } from './modalOverlay.js'
+import { ShortcutText } from './shortcutText.js'
 import { SignalSetupModal } from './signalSetupModal.js'
 
 export const openMessagingView = () => patchOverlayState({ messaging: true })
@@ -1118,9 +1119,9 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
               </Text>
             </Box>
             <Box marginTop={1}>
-              <Text bold color={t.color.accent}>
+              <ShortcutText bold color={t.color.accent} t={t}>
                 Press s
-              </Text>
+              </ShortcutText>
               <Text color={t.color.text}> to set up Signal.</Text>
             </Box>
           </Box>
@@ -1223,9 +1224,9 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
             )
           })
         ) : (
-          <Text color={t.color.muted} wrap="wrap">
+          <ShortcutText color={t.color.muted} t={t} wrap="wrap">
             {connected ? 'No conversations yet. Press f to find a contact or n to start a chat.' : ''}
-          </Text>
+          </ShortcutText>
         )}
       </Box>
     </Box>
@@ -1254,11 +1255,11 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
 
       {!connected ? (
         <Box flexDirection="column" height={msgRows} marginTop={1}>
-          <Text color={reachable === false ? t.color.error : t.color.muted} wrap="wrap">
+          <ShortcutText color={reachable === false ? t.color.error : t.color.muted} t={t} wrap="wrap">
             {reachable === false
               ? `Can't reach signal-cli at ${cfg.httpUrl}. Start the daemon (signal-cli -a ${cfg.account} daemon --http 127.0.0.1:8080) and press r.`
               : 'Connecting to signal-cli…'}
-          </Text>
+          </ShortcutText>
         </Box>
       ) : (
         <ScrollBox

@@ -9,7 +9,7 @@ import type { MarketSeries } from '../content/marketProviders.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import { catalogSeries, deskConfig, saveDeskFields } from '../lib/dataDesk.js'
 import { deskViewCache } from '../lib/deskViewCache.js'
-import { shareQuote } from '../lib/feedShare.js'
+import { sharePredictionMarket, shareQuote } from '../lib/feedShare.js'
 import { predictionForecastSeed, seriesForecastSeed } from '../lib/forecastSeeds.js'
 import { type FieldSpec, rankItems } from '../lib/fuzzyRank.js'
 import { statusGlyph } from '../lib/icons.js'
@@ -50,6 +50,7 @@ import { PmFilterModal } from './pmFilterModal.js'
 import { PredictionMarketDetail } from './predictionMarketDetail.js'
 import { PredictionMarketsTable } from './predictionMarketsTable.js'
 import { PresentationView } from './presentationView.js'
+import { ShortcutText } from './shortcutText.js'
 
 export const openMarketsView = () => patchOverlayState({ markets: true })
 export const closeMarketsView = () => patchOverlayState({ markets: false })
@@ -917,7 +918,9 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
       if (pmTabActive) {
         const row = pm.rows[pm.clampedSel]
 
-        if (row) {openForecastInterview({ seed: predictionForecastSeed(row) })}
+        if (row) {
+          openForecastInterview({ seed: predictionForecastSeed(row) })
+        }
       } else if (selectedRow) {
         openForecastInterview({ seed: seriesForecastSeed(selectedRow.series, selectedRow.quote ?? undefined) })
       }
@@ -1438,17 +1441,19 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
                 {' '}
                 {fetching ? 'updating…' : hasContent ? 'latest data' : 'no providers'} ·{' '}
               </Text>
-              <Text color={t.color.text}>
+              <ShortcutText color={t.color.text} t={t}>
                 {hasContent
                   ? `${config.providers.length} providers · ${watchlist.length} watched`
                   : 'press d to add data'}
-              </Text>
+              </ShortcutText>
             </>
           )}
           {dataWarnings.length ? (
             <Text color={sem.star}>
               {'   [!] '}
-              <Text color={t.color.muted}>press </Text>
+              <ShortcutText color={t.color.muted} t={t}>
+                press{' '}
+              </ShortcutText>
               <Text color={sem.star}>i · Data status</Text>
             </Text>
           ) : null}
@@ -1476,9 +1481,9 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
         </Box>
         <Box marginTop={1}>
           <Text wrap="wrap">
-            <Text bold color={t.color.accent}>
+            <ShortcutText bold color={t.color.accent} t={t}>
               Press d
-            </Text>{' '}
+            </ShortcutText>{' '}
             to search data or load a starter set.{' '}
             <Text bold color={t.color.accent}>
               /
@@ -1692,13 +1697,13 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
       </Text>
       <Box flexDirection="column">
         {sortedRows.length === 0 ? (
-          <Text color={t.color.muted} wrap="wrap">
+          <ShortcutText color={t.color.muted} t={t} wrap="wrap">
             {searchActive
               ? `No matches for “${searchActive}” in the loaded tape — press d to add data and pull in what you're looking for.`
               : fetching
                 ? 'Fetching…'
                 : `No ${activeCategory ?? ''} series. Press d to add data.`}
-          </Text>
+          </ShortcutText>
         ) : (
           windowed.map(({ quote, series }, i) => {
             const idx = listStart + i
@@ -1741,7 +1746,19 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
 
   // ---- right: security detail card ----------------------------------------
   const q = selectedRow?.quote
-  const feedShare = useMemo(() => (q && !pmTabActive ? shareQuote(q) : null), [q, pmTabActive])
+
+  const feedShare = useMemo(
+    () =>
+      pmTabActive
+        ? pm.detailItem && pm.activeOutcome
+          ? sharePredictionMarket(pm.detailItem.event, pm.activeOutcome, pm.history)
+          : null
+        : q
+          ? shareQuote(q)
+          : null,
+    [q, pmTabActive, pm.detailItem, pm.activeOutcome, pm.history]
+  )
+
   useShareItem(
     pmTabActive ? pm.detailItem?.event.title || '' : q?.name || q?.symbol || '',
     pmTabActive
@@ -1749,7 +1766,12 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
       : q
         ? `${q.value ?? 'Unavailable'} ${q.unit || ''} · CHG ${q.change ?? 'unavailable'} · ${q.provider} · observed ${q.asOf ? new Date(q.asOf).toISOString() : 'unknown'}`
         : '',
+    feedShare,
     feedShare
+      ? undefined
+      : pmTabActive
+        ? 'Chart unavailable · close, wait for outcome history, then reopen'
+        : 'Chart unavailable · source has no valid dated observations'
   )
   const s = selectedRow?.series
   const chartW = Math.max(12, detailWidth - 2)
@@ -1835,11 +1857,11 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
               {providerStatus[s.provider].message} · r Retry · d Sources
             </Text>
           ) : q?.value == null ? (
-            <Text color={sem.subtle}>
+            <ShortcutText color={sem.subtle} t={t}>
               {fetching
                 ? 'Retrieving source data…'
                 : 'No measurement returned. Press r to retry or d for source access.'}
-            </Text>
+            </ShortcutText>
           ) : null}
           <Box marginTop={1}>
             <Text bold color={t.color.text}>

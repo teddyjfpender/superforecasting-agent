@@ -517,6 +517,8 @@ describe('Prediction section inside the Data tape', () => {
     expect(text).toContain('de-vigged')
     expect(text).toContain('Order book')
     expect(text).toContain('History')
+    const { $shareItem } = await import('../lib/messagingState.js')
+    expect($shareItem.get()?.feed?.feeds[0]?.kind).toBe('raw YES price')
     // honest raw-vs-devig labelling as one muted line
     expect(text).toContain('raw YES mids sum')
     m.cleanup()

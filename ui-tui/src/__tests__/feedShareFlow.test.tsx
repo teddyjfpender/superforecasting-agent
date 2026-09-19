@@ -6,7 +6,7 @@ import { PassThrough } from 'node:stream'
 import React from 'react'
 import { expect, it, vi } from 'vitest'
 
-import { decodeFeedMessage } from '../lib/feedShare.js'
+import { decodeFeedMessage, shareQuote } from '../lib/feedShare.js'
 import type * as SignalClient from '../lib/signalClient.js'
 import { waitForText } from '../testing/settle.js'
 
@@ -40,11 +40,33 @@ it.each([
     const { stripAnsi } = await import('../lib/text.js')
     resetOverlayState()
 
-    const feed = JSON.parse(
+    const fixture = JSON.parse(
       readFileSync(new URL('../../../tests/fixtures/feed_share/v1.json', import.meta.url), 'utf8')
     )
 
-    $quickMessage.set({ item: { title: 'IPCA', text: 'Monthly release', feed } })
+    // Exercise the quote-to-share boundary too: Yahoo returns timestamped closes,
+    // unlike the calendar-date wire fixture used by economics feeds.
+    const feed = shareQuote({
+      provider: 'yahoo',
+      symbol: '^GSPC',
+      name: 'S&P 500',
+      category: 'indices',
+      unit: 'index points',
+      asOf: Date.parse('2026-09-16T14:00:00Z'),
+      value: -0.32,
+      change: null,
+      changePct: null,
+      dated_history: fixture.feeds[0].points.map((point: { end: string; value: number | null }) => ({
+        period_start: `${point.end}T14:00:00+00:00`,
+        period_end: `${point.end}T14:00:00+00:00`,
+        value: point.value,
+        published_at: null,
+        status: null
+      }))
+    })
+
+    expect(feed).not.toBeNull()
+    $quickMessage.set({ item: { title: 'S&P 500', text: 'Daily closes', feed } })
 
     const stdout = new PassThrough(),
       stdin = new PassThrough()

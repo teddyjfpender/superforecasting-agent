@@ -705,7 +705,7 @@ export interface FeedShare {
   horizon: SharedPeriod
   presentation: 'bar-chart' | 'line-chart'
   type: 'sfa.feed'
-  version: number
+  version: number | number
 }
 
 export interface ForecastAnalystNote {

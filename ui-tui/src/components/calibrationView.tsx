@@ -22,6 +22,7 @@ import type { Theme } from '../theme.js'
 
 import { OverlayScrollbar } from './agentsOverlay.js'
 import { type FooterChip, FooterChips } from './footerChips.js'
+import { ShortcutText } from './shortcutText.js'
 
 export const openCalibrationView = () => patchOverlayState({ calibration: true })
 
@@ -293,7 +294,7 @@ export function CalibrationView({ gw, onClose, t }: CalibrationViewProps) {
     body = (
       <Box flexDirection="column">
         <Text color={t.color.error}>Failed to load calibration: {error}</Text>
-        <Text color={t.color.muted}>Press r to retry · q to close</Text>
+        <ShortcutText color={t.color.muted} t={t}>Press r to retry · q to close</ShortcutText>
       </Box>
     )
   } else if (!data?.summary || !(data.summary.count ?? 0)) {

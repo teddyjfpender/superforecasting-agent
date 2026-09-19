@@ -9,6 +9,7 @@ import { buildSummaryLine, isBuildStale, staleRemedy } from '../lib/buildInfo.js
 import type { Theme } from '../theme.js'
 
 import { ModalOverlay } from './modalOverlay.js'
+import { ShortcutText } from './shortcutText.js'
 
 // THE one shared Help modal. It UNIFIES the three help surfaces that used to
 // drift apart: the keymaps registry (PER_VIEW_KEYS), the old `?` cheat-sheet,
@@ -175,9 +176,9 @@ export function HelpOverlay({ activeView, cols, onClose, rows, t }: HelpOverlayP
         {/* The "how to use this view" guide — wrapped prose, never truncated. */}
         {guide.map((para, i) => (
           <Box key={`g${i}`} marginBottom={1}>
-            <Text color={t.color.text} wrap="wrap">
+            <ShortcutText color={t.color.text} t={t} wrap="wrap">
               {para}
-            </Text>
+            </ShortcutText>
           </Box>
         ))}
 

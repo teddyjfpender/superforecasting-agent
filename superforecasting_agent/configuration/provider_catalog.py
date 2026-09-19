@@ -178,3 +178,18 @@ PROVIDER_LABELS["custom"] = "Custom endpoint"  # special case: not a named provi
 KNOWN_PROVIDER_NAMES: set[str] = (
     set(PROVIDER_LABELS) | set(PROVIDER_ALIASES) | {"openrouter", "custom"}
 )
+
+
+# Presentation policy only: keep the full catalog for saved profiles and auth.
+# New setup choices lead with the two common labs, then sort by display label.
+_SETUP_PRIORITY = {"anthropic": 0, "openai-api": 1, "openai-codex": 2}
+SETUP_PROVIDERS: tuple[ProviderEntry, ...] = tuple(
+    sorted(
+        (entry for entry in CANONICAL_PROVIDERS if entry.slug != "nous"),
+        key=lambda entry: (
+            _SETUP_PRIORITY.get(entry.slug, 3),
+            entry.label.casefold(),
+            entry.slug,
+        ),
+    )
+)
