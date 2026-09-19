@@ -538,7 +538,7 @@ FORECAST_LEDGER_SCHEMA = {
                 "description": "import_source_evidence_batch: array of per-source specs, each like {source_type, source, [limit, since, auto_watch, api_base_url, …]}. Fetched in parallel under `concurrency`.",
                 "items": {"type": "object"},
             },
-            "concurrency": {"type": "integer", "description": "import_source_evidence_batch: max parallel fetch workers (default 4, capped at 8)."},
+            "concurrency": {"type": "integer", "minimum": 1, "maximum": 8, "description": "import_source_evidence_batch: parallel fetch workers (integer 1–8, default 4)."},
             "api_base_url": {"type": "string"},
             "appname": {"type": "string"},
             "range_value": {"type": "string"},
@@ -1730,41 +1730,38 @@ def _import_source_evidence_batch_payload(ledger: "ForecastLedger", args: dict[s
 
     import time
     from forecasting.application.source_batches import commit_source_payloads
-    from forecasting.sources.requests import CommonSourceOptions
+    from forecasting.sources.requests import SourceBatchOptions, SourceIdentity, SourceImportOptions
 
-    options = CommonSourceOptions.read(args)
+    options = SourceBatchOptions.read(args)
     from concurrent.futures import ThreadPoolExecutor
 
     question_id = _required(args, "question_id")
     sources = args.get("sources")
     if not isinstance(sources, list) or not sources:
         return tool_error("import_source_evidence_batch requires `sources`: a non-empty array", success=False)
-    try:
-        concurrency = max(1, min(8, int(args.get("concurrency", 4))))
-    except (TypeError, ValueError):
-        concurrency = 4
+    concurrency = options.concurrency
 
     # Per-source args inherit batch-level defaults the agent set once.
     inherited_keys = ("limit", "since", "api_base_url", "claim", "summary", "stance", "claim_type",
-                      "source_name", "reliability_rating", "relevance_rating", "auto_watch")
+                      "source_name", "reliability_rating", "relevance_rating", "auto_watch", "dedupe", "admissible_for_backtests")
     inherited = {k: args[k] for k in inherited_keys if k in args}
 
     def _fetch_one(index: int, spec: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(spec, dict):
             return {"index": index, "success": False, "error": "each source spec must be an object"}
         merged: dict[str, Any] = {**inherited, **spec}
-        source_type = str(merged.get("source_type") or "").strip()
-        source = str(merged.get("source") or "").strip()
-        if not source_type or not source:
-            return {"index": index, "success": False, "error": "source_type and source are required",
-                    "source_type": source_type or None, "source": source or None}
+        source_type = source = None
         started = time.time()
         try:
+            identity = SourceIdentity.read(merged)
+            source_type, source = identity.source_type, identity.source
+            import_options = SourceImportOptions.read(merged)
             items = _load_source_adapter_items(source_type, source, merged)
             payloads = [_source_adapter_evidence_payload(source_type, source, item, merged) for item in items]
             return {
                 "index": index, "success": True, "source_type": source_type, "source": source,
                 "items": items, "payloads": payloads, "merged_args": merged,
+                "dedupe": import_options.dedupe, "auto_watch": import_options.auto_watch,
                 "elapsed_s": round(time.time() - started, 3),
             }
         except Exception as exc:
@@ -1787,7 +1784,7 @@ def _import_source_evidence_batch_payload(ledger: "ForecastLedger", args: dict[s
             results.append({k: fetch[k] for k in ("index", "source_type", "source", "error", "elapsed_s") if k in fetch} | {"success": False, "imported_count": 0})
             continue
         try:
-            committed = commit_source_payloads(ledger, question_id, fetch["payloads"], dedupe=options.dedupe)
+            committed = commit_source_payloads(ledger, question_id, fetch["payloads"], dedupe=fetch["dedupe"])
         except Exception as exc:
             results.append({
                 "index": fetch["index"], "source_type": fetch["source_type"], "source": fetch["source"],
@@ -1803,7 +1800,7 @@ def _import_source_evidence_batch_payload(ledger: "ForecastLedger", args: dict[s
         # Optional auto_watch (same dedup as the single-source path).
         watch_note = None
         watch_record: dict[str, Any] | None = None
-        if evidence_rows and bool(fetch["merged_args"].get("auto_watch")):
+        if evidence_rows and fetch["auto_watch"]:
             watch_type = fetch["source_type"].removeprefix("adapter:").strip().lower()
             try:
                 existing = ledger.list_watched_sources(scope_type="question", scope_ref=question_id, status="active")

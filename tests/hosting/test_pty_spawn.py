@@ -199,8 +199,9 @@ def test_ignored_parent_signals_do_not_disable_terminal_interrupts():
     original = signal.getsignal(signal.SIGINT)
     signal.signal(signal.SIGINT, signal.SIG_IGN)
     script = (
-        "print('READY', flush=True)\n"
-        "try: input()\n"
+        "try:\n"
+        "    print('READY', flush=True)\n"
+        "    input()\n"
         "except KeyboardInterrupt: print('INTERRUPTED', flush=True)\n"
     )
     bridge = None

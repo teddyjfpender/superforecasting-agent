@@ -48,12 +48,12 @@ def add_evidence(args: dict[str, Any], ledger) -> str:
 
 def import_source_evidence(args: dict[str, Any], ledger) -> str:
     question_id = _required(args, "question_id")
-    adapter = _required(args, "source_type")
-    source = _required(args, "source")
     from forecasting.application.source_batches import commit_source_payloads
-    from forecasting.sources.requests import CommonSourceOptions
+    from forecasting.sources.requests import SourceIdentity, SourceImportOptions
 
-    options = CommonSourceOptions.read(args)
+    identity = SourceIdentity.read(args)
+    adapter, source = identity.source_type, identity.source
+    options = SourceImportOptions.read(args)
     # Inherit the per-source reliability prior set during onboarding when
     # the caller didn't pass an explicit rating, so imported readings
     # carry the user's stated confidence in that source.
@@ -83,7 +83,7 @@ def import_source_evidence(args: dict[str, Any], ledger) -> str:
     skipped_duplicates = len(result.duplicate_indices)
     watch: dict[str, Any] | None = None
     watch_note: str | None = None
-    if imported and bool(args.get("auto_watch")):
+    if imported and options.auto_watch:
         watch_type = adapter.removeprefix("adapter:").strip().lower()
         try:
             existing = ledger.list_watched_sources(

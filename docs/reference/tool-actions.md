@@ -214,7 +214,7 @@ Every parameter the tool accepts, sorted by name. Descriptions are often prefixe
 | `comparator` | string | `>=`, `>`, `<=`, `<`, `==`, `!=` | For set_resolution_rule: how the observed value is compared to threshold. |
 | `components` | object |  | update_forecast: the structured ensemble you pooled, as {"components":[{name, probability, weight, source}]}. PERSIST THIS on any snapshot that combines sources — do not leave the pool in prose or a model_run. Give each market/crowd component a stable `source` slug (e.g. 'polymarket:<slug>') so `forecast refresh` can match and re-pool it next run. |
 | `concept` | string |  |  |
-| `concurrency` | integer |  | import_source_evidence_batch: max parallel fetch workers (default 4, capped at 8). |
+| `concurrency` | integer |  | import_source_evidence_batch: parallel fetch workers (integer 1–8, default 4). |
 | `confidence` | number |  |  |
 | `confidence_above` | number |  |  |
 | `confidence_below` | number |  |  |

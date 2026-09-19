@@ -32,8 +32,8 @@ scripts/run_tests.sh tests/forecasting/
 
 Use the canonical runner for Python tests so isolation and environment settings
 match repository policy. Extend a regression around the changed contract; use
-controlled failures for retries, cancellation and interrupted writes. The full
-Python suite is required before pushing.
+controlled failures for retries, cancellation and interrupted writes. Push checks use the canonical bounded integration tier; full suites belong to
+explicit qualification.
 
 Update this guide when entry points or ownership change. See the
 [ownership map](../../docs/architecture/ownership-map.md)

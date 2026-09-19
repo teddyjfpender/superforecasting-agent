@@ -111,3 +111,68 @@ def test_source_payload_cannot_redirect_ownership_or_enable_fetching(desk, overr
     with pytest.raises(ValueError, match='ownership'):
         commit_source_payloads(ledger, qid, [payload('one', **override)])
     assert ledger.list_evidence(qid) == []
+
+
+@pytest.mark.parametrize('surface', ['single', 'batch', 'watch'])
+@pytest.mark.parametrize('invalid', [
+    {'source': ['UNRATE']}, {'source_type': 17}, {'auto_watch': 'false'},
+    {'admissible_for_backtests': 'false'}, {'reliability_rating': True}, {'dedupe': 'false'},
+])
+def test_import_admission_rejects_coercion_before_fetch(desk, monkeypatch, surface, invalid):
+    from tools import forecasting_tool as tool
+    from tools.forecast_actions.evidence import import_source_evidence, import_source_evidence_batch
+    from forecasting.sources import watched
+    ledger, qid = desk
+    calls = []
+    def fetch(*args, **kwargs):
+        calls.append(args)
+        return []
+    monkeypatch.setattr(tool, '_load_source_adapter_items', fetch)
+    monkeypatch.setattr(watched, 'load_source_items', fetch)
+    spec = {'source_type': 'fred', 'source': 'UNRATE', **invalid}
+    if surface == 'single':
+        with pytest.raises(ValueError, match='invalid source'):
+            import_source_evidence({'question_id': qid, **spec}, ledger)
+    elif surface == 'batch':
+        result = json.loads(import_source_evidence_batch({'question_id': qid, 'sources': [spec]}, ledger))
+        assert result['results'][0]['success'] is False
+        assert 'invalid source' in result['results'][0]['error']
+    else:
+        identity = {key: spec[key] for key in ('source_type', 'source')}
+        result = watched.fetch_watched_source_payloads([{**identity, 'args': spec}])[0]
+        assert result['success'] is False
+        assert 'invalid source' in result['error']
+    assert calls == []
+    assert ledger.list_evidence(qid) == []
+
+
+@pytest.mark.parametrize('concurrency', [0, 9, True, '4', None])
+def test_batch_concurrency_is_explicit_and_strict(desk, monkeypatch, concurrency):
+    from tools import forecasting_tool as tool
+    ledger, qid = desk
+    def forbidden(*args):
+        raise AssertionError('must validate before fetch')
+    monkeypatch.setattr(tool, '_load_source_adapter_items', forbidden)
+    with pytest.raises(ValueError, match='concurrency'):
+        tool._import_source_evidence_batch_payload(ledger, {
+            'question_id': qid, 'concurrency': concurrency,
+            'sources': [{'source_type': 'fred', 'source': 'UNRATE'}],
+        })
+
+
+def test_batch_honors_source_dedupe_override(desk, monkeypatch):
+    from tools import forecasting_tool as tool
+    ledger, qid = desk
+    monkeypatch.setattr(tool, '_load_source_adapter_items', lambda *args: [
+        {'entry_id': 'same', 'title': 'Observation', 'source_url': 'https://example.test/series'}
+    ])
+    result = json.loads(tool._import_source_evidence_batch_payload(ledger, {
+        'question_id': qid, 'dedupe': True, 'sources': [
+            {'source_type': 'fred', 'source': 'UNRATE'},
+            {'source_type': 'fred', 'source': 'UNRATE', 'dedupe': False},
+            {'source_type': 'fred', 'source': 'UNRATE'},
+        ],
+    }))
+    assert [item['imported_count'] for item in result['results']] == [1, 1, 0]
+    assert result['skipped_duplicates'] == 1
+    assert len(ledger.list_evidence(qid)) == 2

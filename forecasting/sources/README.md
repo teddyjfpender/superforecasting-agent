@@ -32,8 +32,8 @@ scripts/run_tests.sh tests/forecasting/
 
 Use the canonical runner for Python tests so isolation and environment settings
 match repository policy. Extend a regression around the changed contract; use
-controlled failures for retries, cancellation and interrupted writes. The full
-Python suite is required before pushing.
+controlled failures for retries, cancellation and interrupted writes. Push checks use the canonical bounded integration tier; full suites belong to
+explicit qualification.
 
 Update this guide when entry points or ownership change. See the
 [ownership map](../../docs/architecture/ownership-map.md)
@@ -106,3 +106,12 @@ This policy applies to tool imports and watched refreshes. The FRED application/
 owner also preserves unknown publication. Regression coverage lives in
 `tests/forecasting/test_source_publication_provenance.py`. Existing ledger rows are
 not silently re-dated: reviewing older records requires an audited correction.
+
+
+`SourceIdentity` rejects non-string or blank adapter/source identities before fetching.
+`SourceImportOptions` adds strict auto-watch/backtest flags and optional ratings in
+[0, 1]; `SourceBatchOptions` constrains tool batch concurrency to integers 1–8.
+Single, batch and watched-source imports reuse this admission. Invalid per-source
+batch input is reported for that source, while invalid batch defaults fail before
+any fetch. A per-source dedupe flag overrides the batch default; auto-watch is never
+enabled by a string such as `"false"`. Provider-specific options remain untouched.

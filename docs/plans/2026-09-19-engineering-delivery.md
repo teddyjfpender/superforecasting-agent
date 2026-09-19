@@ -728,3 +728,25 @@ and retry behavior remain, and the live-system guard was not bypassed or changed
 and repeated-close/dead-child cases. An additional real nested-child/grandchild test
 passed after adding reverse ordering. Native Linux repeat remains pending; this change
 does not attribute the historical SSL or bad-file-descriptor incident.
+
+## Strict shared source-import controls
+
+Source identity and import-control models now reject non-string identities, string
+booleans, boolean ratings and invalid concurrency before fetching. Single-source,
+per-source batch and watched-source admission share these models. Batch concurrency
+is an explicit integer 1–8 (default 4), rather than silent conversion/clamping; tool
+schema/reference copy now states that contract. Per-source dedupe overrides the batch
+default, and auto-watch uses the validated boolean. Provider-specific discriminated
+request migration remains open; this is the shared control boundary, not that full API.
+
+66 focused import/publication tests passed, including a no-fetch matrix across all
+three consumers and explicit dedupe overrides. A further 22 focused request/watched/
+terminal tests passed. Related directory guides now describe the bounded push tier
+instead of incorrectly requiring the full suite on every push.
+
+Native run 35458695426 passed Linux Node 22 kernel qualification, supporting the cleanup
+ordering fix. Its integration job passed 46 tests and exposed a signal-test readiness
+race: Ctrl+C arrived after READY was printed but before entering the exception handler.
+The readiness marker now lives inside the protected block; the expected interrupt is
+caught regardless of whether input() has started. The test's interrupt assertion and
+parent-signal preservation assertion remain intact. Native repeat is still required.

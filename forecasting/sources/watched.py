@@ -6,6 +6,7 @@ from typing import Any
 
 from forecasting.sources.dispatch import load_source_items
 from forecasting.sources.evidence import source_evidence_payload
+from forecasting.sources.requests import SourceIdentity, SourceImportOptions
 
 
 def fetch_watched_source_payloads(
@@ -40,10 +41,12 @@ def fetch_watched_source_payloads(
                 adapter_args = {}
             if not isinstance(adapter_args, dict):
                 raise ValueError("source options must be a mapping")
+            identity = SourceIdentity.read(spec)
+            SourceImportOptions.read(adapter_args)
             # Admission sees the original types; display labels must not turn an
             # invalid source identity or options list into a valid request.
             items = load_source_items(
-                spec.get("source_type", ""), spec.get("source", ""), adapter_args
+                identity.source_type, identity.source, adapter_args
             )
             result["payloads"] = [
                 source_evidence_payload(adapter, source, item, adapter_args)

@@ -1,6 +1,7 @@
 """Common acquisition admission; provider-specific options stay with each adapter."""
 
 from datetime import date, datetime
+from typing import Self
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
@@ -57,10 +58,41 @@ class CommonSourceOptions(BaseModel):
         return value
 
     @classmethod
-    def read(cls, args: dict[str, object]) -> "CommonSourceOptions":
+    def read(cls, args: dict[str, object]) -> Self:
         try:
             return cls.model_validate(args)
         except ValidationError as exc:
             fields = sorted({str(error["loc"][0]) for error in exc.errors()})
             # Do not echo values: endpoints can contain credentials or tokens.
             raise ValueError("invalid source options: " + ", ".join(fields)) from None
+
+
+class SourceImportOptions(CommonSourceOptions):
+    """Shared import controls; malformed flags must not enable persistence effects."""
+
+    auto_watch: bool = False
+    admissible_for_backtests: bool = True
+    reliability_rating: float | None = Field(default=None, ge=0, le=1)
+    relevance_rating: float | None = Field(default=None, ge=0, le=1)
+
+
+class SourceBatchOptions(SourceImportOptions):
+    concurrency: int = Field(default=4, ge=1, le=8)
+
+
+class SourceIdentity(BaseModel):
+    """Admission before source dispatch, without stringifying arbitrary objects."""
+
+    model_config = ConfigDict(
+        strict=True, extra="ignore", frozen=True, str_strip_whitespace=True
+    )
+    source_type: str = Field(min_length=1)
+    source: str = Field(min_length=1)
+
+    @classmethod
+    def read(cls, args: dict[str, object]) -> Self:
+        try:
+            return cls.model_validate(args)
+        except ValidationError as exc:
+            fields = sorted({str(error["loc"][0]) for error in exc.errors()})
+            raise ValueError("invalid source identity: " + ", ".join(fields)) from None
