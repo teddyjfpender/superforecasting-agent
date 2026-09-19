@@ -124,3 +124,23 @@ fixing error forwarding, the final renderer/recovery subset passed all 12 tests.
 static checks passed. The full Python or TUI suite was not run. Complete test-project
 strict typing remains unfinished; remaining fixtures and handwritten declarations need
 migration, and renderer/native qualification remains distinct from these local tests.
+
+## Slash-command capability and alias admission tranche
+
+The slash dispatcher now consumes request, log and reconnect capabilities rather
+than the concrete gateway client. Generated request/result typing remains intact.
+New cast-free fixtures exercise stale session responses, backend failures and
+reconnect intent without constructing a process-owning client.
+
+Inspection exposed unbounded alias recursion across catalog and backend aliases.
+Per-invocation admission now detects repeated canonical names and bounds unique
+chains to 32 steps. A deliberate subsequent invocation starts a fresh path. Tests
+prove bounded network calls, local catalog rejection and absence of outbound chat
+messages on alias failure. The nearest README now explains the actual owners,
+contracts and failure behavior.
+
+Validation: 103 focused slash-command tests passed; canonical static checks passed.
+The complete test TypeScript project still fails on legacy fixtures and remains
+unqualified. It reports no diagnostics in the new capability fixture or changed
+application interfaces. This is W02/W04 progress, not completion of their full
+acceptance scope. No full suite was run.

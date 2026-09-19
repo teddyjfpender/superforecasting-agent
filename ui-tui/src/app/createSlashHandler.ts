@@ -11,11 +11,20 @@ export function createSlashHandler(ctx: SlashHandlerContext): (cmd: string) => b
   const { catalog } = ctx.local
   const { page, send, sys } = ctx.transcript
 
-  const handler = (cmd: string): boolean => {
+  const handler = (cmd: string, aliases: readonly string[] = []): boolean => {
+    const parsed = parseSlashCommand(cmd)
+    const identity = parsed.name.toLowerCase()
+
+    if (aliases.includes(identity) || aliases.length >= 32) {
+      sys(`error: command alias ${aliases.includes(identity) ? 'cycle' : 'limit exceeded'}: /${parsed.name}`)
+
+      return true
+    }
+
+    const path = [...aliases, identity]
     const flight = ++ctx.slashFlightRef.current
     const ui = getUiState()
     const sid = ui.sid
-    const parsed = parseSlashCommand(cmd)
     const argTail = parsed.arg ? ` ${parsed.arg}` : ''
 
     const stale = () => flight !== ctx.slashFlightRef.current || getUiState().sid !== sid
@@ -50,7 +59,7 @@ export function createSlashHandler(ctx: SlashHandlerContext): (cmd: string) => b
 
       if (exact) {
         if (exact.toLowerCase() !== needle) {
-          return handler(`${exact}${argTail}`)
+          return handler(`${exact}${argTail}`, path)
         }
       } else {
         const matches = [
@@ -62,7 +71,7 @@ export function createSlashHandler(ctx: SlashHandlerContext): (cmd: string) => b
         ]
 
         if (matches.length === 1 && matches[0]!.toLowerCase() !== needle) {
-          return handler(`${matches[0]}${argTail}`)
+          return handler(`${matches[0]}${argTail}`, path)
         }
 
         if (matches.length > 1) {
@@ -102,7 +111,7 @@ export function createSlashHandler(ctx: SlashHandlerContext): (cmd: string) => b
             return sys(`/${parsed.name} requires a terminal command handler unavailable in this client`)
           }
 
-          return handler(`/${d.target}${argTail}`)
+          return handler(`/${d.target}${argTail}`, path)
         }
 
         if (d.type === 'skill') {

@@ -1,40 +1,54 @@
 # Terminal slash routing
 
-Defines the client slash-command registry and local dispatch contracts.
+This directory owns local terminal commands and their dispatch metadata. Shared
+forecast, configuration and job operations remain backend-owned; local handlers
+translate user intent into versioned RPC requests and render the results.
 
-## Ownership and boundaries
+## Entry points and contracts
 
-Keep local screen commands here; route shared backend operations through the versioned gateway.
+- [`registry.ts`](registry.ts) resolves built-in command names and aliases.
+- [`types.ts`](types.ts) defines command handlers and their per-invocation context.
+- [`../createSlashHandler.ts`](../createSlashHandler.ts) coordinates catalog aliases,
+  backend dispatch, fallback and stale-response admission.
+- [`../interfaces.ts`](../interfaces.ts) defines `SlashHandlerContext`. Its gateway
+  dependency exposes requests, logs and reconnect capabilities, without access to
+  client construction, process handles or destruction.
+- [`commands/`](commands/README.md) contains local command behavior.
 
-## Start here
+Use generated method-to-parameter/result mappings through `GatewayRpc` and the
+client's typed request function. Do not add caller-selected response casts or
+replicate provider validation and persistence here. Unknown backend failures remain
+errors; only the documented handoff error permits the slash-execution fallback.
 
-These are entry points and representative modules, not an exhaustive inventory.
+## Execution and recovery
 
-| File                       | Responsibility |
-| -------------------------- | -------------- |
-| [registry.ts](registry.ts) | registry.      |
-| [types.ts](types.ts)       | types.         |
+Each user invocation owns a flight identifier and session identity. Late responses
+must pass both guards before changing the transcript. A reconnect is requested from
+the host; slash handlers do not kill or replace transport resources themselves.
 
-## Subdirectories
+Catalog and backend aliases share a visited-name path. Cycles fail locally; chains
+stop after 32 steps, including chains of unique names. This bound belongs to one
+invocation and must not prevent a later deliberate retry. Alias errors never become
+outgoing chat messages.
 
-- [commands/](commands/README.md) — Local slash handlers.
+## Extending and testing
 
-## Working in this directory
+Add local metadata and behavior together, retaining documented aliases. Add a typed
+fixture using `src/testing/rpcFixtures.ts`; unsupported calls must reject instead of
+returning an empty success. Cover session replacement while a response is pending,
+domain errors and any new state mutation.
 
-From the repository root, run:
+From `ui-tui/`, run focused checks:
 
 ```sh
-npm --prefix ui-tui run type-check
-npm --prefix ui-tui run lint
-npm --prefix ui-tui test
+npx vitest run src/__tests__/slashCapabilities.test.ts src/__tests__/createSlashHandler.test.ts
+npm run type-check
+npm run lint
 ```
 
-For input, resize or shutdown changes, also run the relevant installed-terminal
-verification on the affected native platform; renderer tests do not establish
-ConPTY or PTY behavior.
+The complete test-type project remains a separate migration target. Passing
+production TypeScript alone does not qualify legacy fixtures. See the repository
+[ownership map](../../../../docs/architecture/ownership-map.md) and
+[engineering backlog](../../../../TODO.md).
 
-Update this guide when entry points or ownership change. See the
-[ownership map](../../../../docs/architecture/ownership-map.md)
-and [engineering backlog](../../../../TODO.md) for cross-package context.
-
-[↑ Parent directory](../README.md)
+[Parent directory](../README.md)

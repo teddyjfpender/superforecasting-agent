@@ -322,7 +322,10 @@ export interface SlashHandlerContext {
     selection: Pick<SelectionApi, 'copySelection'>
     setInput: StateSetter<string>
   }
-  gateway: GatewayServices
+  gateway: {
+    gw: Pick<GatewayClient, 'request' | 'getLogTail' | 'isRestartPending' | 'reconnect'>
+    rpc: GatewayRpc
+  }
   local: {
     catalog: null | SlashCatalog
     getHistoryItems: () => Msg[]
