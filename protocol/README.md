@@ -86,7 +86,7 @@ Pure data-desk schemas live in `data_desk.py`; RPC envelopes live in `rpc/market
 
 ## Portable feed messages
 
-[`feed_share.py`](feed_share.py) owns the transport-neutral `sfa.feed` v1 snapshot
+[`feed_share.py`](feed_share.py) owns the transport-neutral `sfa.feed` v1/v2 snapshot
 contract. It is an extra generated model, not a gateway operation. The receiving
 TUI validates untrusted JSON before rendering; Python and TypeScript tests consume
 [the same fixture](../tests/fixtures/feed_share/README.md). See

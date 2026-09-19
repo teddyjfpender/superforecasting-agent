@@ -240,6 +240,11 @@ export function QuickMessage({ cols, rows, t }: { cols: number; rows: number; t:
             <Text color={t.color.muted} wrap="truncate-end">
               {request.item.text.replace(/\s+/g, ' ')}
             </Text>
+            {request.item.chartUnavailable && (
+              <Text color={t.color.muted} wrap="truncate-end">
+                {request.item.chartUnavailable}
+              </Text>
+            )}
           </Box>
         )
       )}

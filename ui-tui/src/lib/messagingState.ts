@@ -74,6 +74,7 @@ export const updateChatState = (id: string, patch: Partial<ChatState>): boolean 
 }
 
 export interface ShareItem {
+  chartUnavailable?: string
   feed?: FeedShare | null
   title: string
   text: string

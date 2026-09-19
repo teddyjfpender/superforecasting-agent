@@ -150,7 +150,9 @@ describe('bookMarketId + seriesTickerFor', () => {
     }
 
     expect(bookMarketId('polymarket', poly, 'cond-alpha')).toBe('tok-yes')
-    expect(bookMarketId('kalshi', { ...poly, venue: 'kalshi', market_id: 'FED-Y', token_ids: [] }, 'FED-Y')).toBe('FED-Y')
+    expect(bookMarketId('kalshi', { ...poly, venue: 'kalshi', market_id: 'FED-Y', token_ids: [] }, 'FED-Y')).toBe(
+      'FED-Y'
+    )
     // fallback when the market (and its tokens) aren't loaded yet
     expect(bookMarketId('polymarket', undefined, 'cond-alpha')).toBe('cond-alpha')
   })
@@ -209,15 +211,32 @@ describe('applyBookTick / tickEstimate', () => {
     expect(applyBookTick(b, { estimate: 0.9, kind: 'book', market_id: 'other', venue: 'polymarket' })).toBe(b)
   })
 
+  it('ignores a different venue even when the market identifier collides', () => {
+    const b = book()
+    expect(applyBookTick(b, { estimate: 0.9, kind: 'book', market_id: b.market_id, venue: 'kalshi' })).toBe(b)
+  })
+
   it('tickEstimate folds ONLY the server estimate — never derived from the raw book', () => {
     // A real estimate passes through untouched…
     expect(
-      tickEstimate({ estimate: 0.13, kind: 'price_change', market_id: 'x', payload: { price: 0.99 }, venue: 'polymarket' })
+      tickEstimate({
+        estimate: 0.13,
+        kind: 'price_change',
+        market_id: 'x',
+        payload: { price: 0.99 },
+        venue: 'polymarket'
+      })
     ).toBe(0.13)
     // …a null estimate is null EVEN when the raw book could yield a mid (proof
     // by absence: no code derives a price from the payload, so 50% is impossible).
     expect(
-      tickEstimate({ estimate: null, kind: 'book', market_id: 'x', payload: { asks: [[0.6, 1]], bids: [[0.4, 1]] }, venue: 'polymarket' })
+      tickEstimate({
+        estimate: null,
+        kind: 'book',
+        market_id: 'x',
+        payload: { asks: [[0.6, 1]], bids: [[0.4, 1]] },
+        venue: 'polymarket'
+      })
     ).toBeNull()
     // …a missing / NaN estimate is null (defensive).
     expect(tickEstimate({ kind: 'noise', market_id: 'x', payload: {}, venue: 'polymarket' })).toBeNull()

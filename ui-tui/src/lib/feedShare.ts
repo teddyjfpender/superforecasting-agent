@@ -1,7 +1,14 @@
 /** Versioned plain JSON survives Signal/Telegram text transport and ordinary history exports.
  * Only validated, bounded snapshots render. Unknown versions remain ordinary text.
  */
-import type { FeedShare, SharedFeed, SharedObservation } from '../protocol/generated.js'
+import type {
+  FeedShare,
+  PMEventDTO,
+  PMHistoryPointDTO,
+  PMOutcomeDTO,
+  SharedFeed,
+  SharedObservation
+} from '../protocol/generated.js'
 
 import type { MarketQuote } from './marketFetch.js'
 
@@ -24,15 +31,29 @@ const plain = (v: unknown, max: number, min = 0): v is string =>
 
 const day = (v: unknown): v is string =>
   typeof v === 'string' &&
-  /^\d{4}-\d{2}-\d{2}$/.test(v) &&
+  /^(?!0000)\d{4}-\d{2}-\d{2}$/.test(v) &&
   Number.isFinite(Date.parse(v)) &&
   new Date(v).toISOString().slice(0, 10) === v
 
-const period = (v: unknown): v is Record<string, unknown> & { start: string; end: string } =>
-  object(v) && day(v.start) && day(v.end) && v.start <= v.end
+const chartTime = (v: unknown): v is string =>
+  day(v) ||
+  (typeof v === 'string' &&
+    /^(?!0000)\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(v) &&
+    Number.isFinite(Date.parse(v)) &&
+    new Date(v).toISOString() === v)
 
-const instant = (v: unknown) =>
-  v === null || (plain(v, 40) && /(?:Z|[+-]\d{2}:\d{2})$/.test(v) && Number.isFinite(Date.parse(v)))
+const period = (v: unknown): v is Record<string, unknown> & { start: string; end: string } =>
+  object(v) && chartTime(v.start) && chartTime(v.end) && v.start.length === v.end.length && v.start <= v.end
+
+const sourceInstant = (v: unknown): v is string =>
+  plain(v, 40) &&
+  /^(?!0000)\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,6})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/.test(
+    v
+  ) &&
+  day(v.slice(0, 10)) &&
+  Number.isFinite(Date.parse(v))
+
+const instant = (v: unknown) => v === null || sourceInstant(v)
 
 const publicUrl = (v: unknown) => {
   if (v === null) {
@@ -59,10 +80,11 @@ export function validFeedShare(v: unknown): v is FeedShare {
     !object(v) ||
     !keys(v, ['type', 'version', 'presentation', 'horizon', 'feeds']) ||
     v.type !== 'sfa.feed' ||
-    v.version !== 1 ||
+    (v.version !== 1 && v.version !== 2) ||
     (v.presentation !== 'bar-chart' && v.presentation !== 'line-chart') ||
     !period(v.horizon) ||
     !keys(v.horizon, ['start', 'end']) ||
+    (v.version === 1 && v.horizon.start.length !== 10) ||
     !Array.isArray(v.feeds) ||
     v.feeds.length < 1 ||
     v.feeds.length > 4
@@ -115,6 +137,7 @@ export function validFeedShare(v: unknown): v is FeedShare {
         !period(p) ||
         !keys(p, ['start', 'end', 'value']) ||
         !(p.value === null || (typeof p.value === 'number' && Number.isFinite(p.value))) ||
+        p.start.length !== v.horizon.start.length ||
         p.start <= previous ||
         p.start < v.horizon.start ||
         p.end > v.horizon.end
@@ -164,12 +187,32 @@ export function encodeFeedMessage(text: string, share: FeedShare): string {
 }
 
 export function shareQuote(quote: MarketQuote): FeedShare | null {
+  // Preserve intraday observations; normalize timezone offsets to canonical UTC.
+  // Calendar-period sources retain their original period boundaries.
+  const chartDate = (value: string): string => {
+    if (day(value as unknown)) {
+      return value
+    }
+
+    if (
+      /^(?!0000)\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,3})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/.test(
+        value
+      ) &&
+      day(value.slice(0, 10)) &&
+      Number.isFinite(Date.parse(value))
+    ) {
+      return new Date(value).toISOString()
+    }
+
+    return value
+  }
+
   let points: SharedObservation[] = (quote.dated_history ?? [])
-    .map(p => ({ start: p.period_start, end: p.period_end, value: p.value }))
+    .map(p => ({ start: chartDate(p.period_start), end: chartDate(p.period_end), value: p.value }))
     .slice(-120)
 
   if (!points.length && quote.asOf > 0 && Number.isFinite(quote.asOf) && quote.asOf <= 8.64e15) {
-    const date = new Date(quote.asOf).toISOString().slice(0, 10)
+    const date = new Date(quote.asOf).toISOString()
     points = [{ start: date, end: date, value: quote.value }]
   }
 
@@ -204,7 +247,7 @@ export function shareQuote(quote: MarketQuote): FeedShare | null {
 
   const share: FeedShare = {
     type: 'sfa.feed',
-    version: 1,
+    version: points[0]!.start.length === 10 ? 1 : 2,
     presentation: 'bar-chart',
     horizon: { start: points[0]!.start, end: points.at(-1)!.end },
     feeds: [feed]
@@ -228,4 +271,41 @@ export function presentFeedShare(share: FeedShare, presentation: FeedShare['pres
         .at(-1)!
     }
   }
+}
+
+/** Share the selected contract's raw YES price, never a de-vigged event distribution. */
+export function sharePredictionMarket(
+  event: PMEventDTO,
+  outcome: PMOutcomeDTO,
+  history: PMHistoryPointDTO[]
+): FeedShare | null {
+  if (
+    !history.length ||
+    history.some(
+      p => !Number.isFinite(p.ts) || p.ts <= 0 || p.ts > 8.64e12 || !Number.isFinite(p.p) || p.p < 0 || p.p > 1
+    )
+  ) {
+    return null
+  }
+
+  return shareQuote({
+    provider: event.venue,
+    symbol: outcome.market_id,
+    name: `${event.title} · ${outcome.label}`,
+    category: 'prediction-markets',
+    kind: 'raw YES price',
+    unit: '%',
+    source_url: event.url,
+    asOf: 0,
+    value: history.at(-1)!.p * 100,
+    change: null,
+    changePct: null,
+    dated_history: history.map(p => ({
+      period_start: new Date(p.ts * 1000).toISOString(),
+      period_end: new Date(p.ts * 1000).toISOString(),
+      value: p.p * 100,
+      published_at: null,
+      status: null
+    }))
+  })
 }
