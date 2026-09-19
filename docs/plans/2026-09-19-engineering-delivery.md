@@ -713,3 +713,18 @@ Native run 35458178951 passed its bounded Linux integration job, confirming the 
 PTY and deterministic handoff changes there. Its Linux Node 22 kernel job failed in
 child cleanup when the live-system guard rejected a reparented descendant. Investigation
 continues without bypassing that guard; the run is not full qualification.
+
+## Kernel cleanup ordering
+
+The Linux Node 22 failure in run 35458178951 reached real local-kernel cleanup:
+stdin was closed before captured descendants were signalled, allowing interpreter
+exit/reparenting before the test's ancestry safety check. Cleanup now processes
+captured descendants in reverse discovery order before closing input or terminating
+the interpreter; psutil retains its captured-identity check. Already dead/zombie
+processes are not signalled again. Existing confirmation waits, cleanup ownership
+and retry behavior remain, and the live-system guard was not bypassed or changed.
+
+24 focused kernel/supervisor tests passed, including a real-process ordering assertion
+and repeated-close/dead-child cases. An additional real nested-child/grandchild test
+passed after adding reverse ordering. Native Linux repeat remains pending; this change
+does not attribute the historical SSL or bad-file-descriptor incident.

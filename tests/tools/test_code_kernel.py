@@ -371,3 +371,67 @@ def test_changed_working_directory_requires_explicit_reset(
     with pytest.raises(RuntimeError, match="working directory changed"):
         run(owner, "print(x)")
     assert run(owner, "print('x' in globals())", reset=True)["stdout"] == "False\n"
+
+
+def test_descendants_are_signalled_before_interpreter_input_closes(owner, monkeypatch):
+    import subprocess
+    import psutil
+
+    run(owner, 'value = 1')
+    kernel = owner.kernel
+    child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])
+    captured = psutil.Process(child.pid)
+    kernel.children[(child.pid, captured.create_time())] = captured
+    original = captured.kill
+    observed = []
+
+    def kill_owned():
+        assert kernel.process.poll() is None
+        assert not kernel.process.stdin.closed
+        observed.append(child.pid)
+        original()
+
+    monkeypatch.setattr(captured, 'kill', kill_owned)
+    try:
+        owner.close()
+        child.wait(timeout=3)
+        assert observed == [child.pid]
+        owner.close()
+        assert observed == [child.pid]
+    finally:
+        if child.poll() is None:
+            child.kill()
+        child.wait(timeout=3)
+
+
+def test_confirmed_dead_descendant_is_not_signalled_again(owner):
+    import psutil
+    from unittest.mock import Mock
+
+    run(owner, 'value = 1')
+    dead = Mock()
+    dead.is_running.return_value = True
+    dead.status.return_value = psutil.STATUS_ZOMBIE
+    owner.kernel.children[(123, 1.0)] = dead
+    owner.close()
+    dead.kill.assert_not_called()
+
+
+def test_nested_background_processes_are_stopped_before_their_parents(owner):
+    import psutil
+
+    nested = (
+        'import subprocess,sys,time; '
+        'child=subprocess.Popen([sys.executable,"-c","import time; time.sleep(30)"]); '
+        'print(child.pid,flush=True); time.sleep(30)'
+    )
+    result = run(owner, 'import subprocess,sys\n'
+                 f'child=subprocess.Popen([sys.executable,"-c",{nested!r}],stdout=subprocess.PIPE,text=True)\n'
+                 'print(child.pid, child.stdout.readline().strip())')
+    assert result['retirement_reason'] == 'cell_left_running_processes'
+    assert not result['state_preserved']
+    for pid in map(int, result['stdout'].split()):
+        try:
+            assert psutil.Process(pid).status() in {psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD}
+        except psutil.NoSuchProcess:
+            pass

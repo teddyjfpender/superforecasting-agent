@@ -400,6 +400,18 @@ class LocalKernel:
         try:
             self._capture_children()
             if self.process is not None:
+                # Stop captured descendants before stdin EOF or killing the
+                # interpreter can orphan them. psutil rechecks process identity
+                # on kill; confirmed dead processes need no further signal.
+                for child in reversed(tuple(self.children.values())):
+                    try:
+                        if child.is_running() and child.status() not in {
+                            psutil.STATUS_ZOMBIE,
+                            psutil.STATUS_DEAD,
+                        }:
+                            child.kill()
+                    except psutil.NoSuchProcess:
+                        pass
                 # Closing a buffered stream while its writer is blocked can
                 # deadlock. Stop its exact child first, then join the writer.
                 if self.writer is not None and self.writer.is_alive():
@@ -412,11 +424,6 @@ class LocalKernel:
                     try:
                         self.process.stdin.close()
                     except BrokenPipeError:
-                        pass
-                for child in self.children.values():
-                    try:
-                        child.kill()  # psutil verifies the captured process identity
-                    except psutil.NoSuchProcess:
                         pass
                 try:
                     self.process.wait(timeout=2)
